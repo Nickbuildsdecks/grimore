@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
+import { customDeck } from './customDeck.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
@@ -135,7 +136,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     { card: 'Woe Strider', keyword: 'Escape', fields: ['escape'] },
     { card: 'Distortion Strike', keyword: 'Rebound', fields: ['rebound'] },
     // Morph and echo, read through the same `keywordWithCost` the whole-card path uses.
-    { card: 'Ainok Survivalist', keyword: 'Morph', fields: ['morph'] },
+    // Megamorph, as printed: this pool had it as a plain morph until D571 read its Oracle row.
+    { card: 'Ainok Survivalist', keyword: 'Megamorph', fields: ['morph'] },
     { card: 'Hidden Dragonslayer', keyword: 'Megamorph', fields: ['morph'] },
     { card: 'Mogg War Marshal', keyword: 'Echo', fields: ['echo'] },
     // Crew is an ability rather than a declaration, so it has its own test below: an `AbilityDef`
@@ -3108,17 +3110,17 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const theirs = triggerOf(scriptFor('Murderous Redcap'))!.effect(ctx);
       expect(mine).toEqual(theirs);
       /*
-        Not vacuous, and read off the card rather than written as a literal: this pool's Redcap is a
-        **1/1**, which is why its own comment says the body persist returns deals nothing — a 1/1
-        with a −1/−1 counter is a 0/0. So the damage is its live power, and the assertion that it is
-        above zero is what stops this passing on a reader that always dealt none.
+        Not vacuous, and read off the card rather than written as a literal: the damage is the
+        Redcap's live power, and the assertion that it is above zero is what stops this passing on a
+        reader that always dealt none. (The card is a 2/2. This pool had it as a 1/1 until D571,
+        which is why an earlier version of this comment said persist's second body deals nothing.)
       */
       const power = characteristicsOf(base, base.instances[redcap]!).power;
       expect(power).toBeGreaterThan(0);
       expect(mine.instances[bear]!.damage).toBe(power);
     });
 
-    it('deals nothing when its power is zero, which persist makes the common case', () => {
+    it('deals nothing when its power is zero', () => {
       const base = arena({
         decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
         battlefield: { 0: ['Murderous Redcap'], 1: ['Grizzly Bears'] },
@@ -3126,8 +3128,10 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       const redcap = find(base, 0 as SeatIndex, 'battlefield', 'Murderous Redcap');
       const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
-      // One −1/−1 counter on a 1/1: power 0, exactly the body persist returns (CR 702.78a).
-      const shrunk = addCounters(base, redcap, '-1/-1', 1);
+      // Two −1/−1 counters on a 2/2: power 0. Not a board the game leaves standing — state-based
+      // actions would bury it — which is fine, because the question is what the reader does with
+      // a zero and nothing here runs them.
+      const shrunk = addCounters(base, redcap, '-1/-1', 2);
       const ctx = contextOn(shrunk, 0 as SeatIndex, redcap, [{ kind: 'card', id: bear }]);
       const mine = triggerOf(compiledScript('Murderous Redcap').script)!.effect(ctx);
       const theirs = triggerOf(scriptFor('Murderous Redcap'))!.effect(ctx);
@@ -4399,7 +4403,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(charm.unread).toEqual([]);
       const slayer = compiledScript('Hidden Dragonslayer');
       const slayerSpec = (triggerOf(slayer.script)!.targets ?? [])[0]!;
-      expect(slayerSpec.description).toBe('target creature an opponent controls with power 4 or greater');
+      expect(slayerSpec.description).toBe('target creature with power 4 or greater an opponent controls');
     });
 
     it('asks about the creature’s current power, not its printed one', () => {
@@ -6422,15 +6426,92 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     D424 gave the three readers one classifier and the compiler one predicate — `isPrintedAbilityLine`
     — and the two protection cards then needed no script at all.
   */
+  /*
+    A leveler's bands are not the card's abilities (CR 711.2, D572).
+
+    Found by D571, and only because it put the printed text on a pool card: Student of Warfare's
+    Oracle text prints `First strike` on a line of its own inside the LEVEL 2-6 band, and the
+    moment the pool carried that text the Student had first strike with no counters on it. The
+    reader that did it — `printedKeywords`, line by line — had always done it to every leveler
+    read from the card table. The pool's two were typed in a one-line form nothing could parse,
+    so the suite never saw it.
+
+    Rows copied from the corpus unchanged, and each claim run both ways: what the card must not
+    have at level zero, and what it must still have.
+  */
+  describe('a level band is not the card\'s own text (D572)', () => {
+    const BRIMSTONE_MAGE = {
+      name: 'Brimstone Mage', type_line: 'Creature — Human Shaman', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Level up {3}{R} ({3}{R}: Put a level counter on this. Level up only as a sorcery.)\n{T}: Brimstone Mage deals 1 damage to any target.\nLEVEL 1-2\n2/3\n{T}: Brimstone Mage deals 3 damage to any target.\nLEVEL 3+\n2/4\n{T}: Brimstone Mage deals 5 damage to any target.',
+    };
+    const KARGAN_DRAGONLORD = {
+      name: 'Kargan Dragonlord', type_line: 'Creature — Human Warrior', mana_cost: '{R}{R}', cmc: 2,
+      colors: ['R'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Level up {R} ({R}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 4-7\n4/4\nFlying\nLEVEL 8+\n8/8\nFlying, trample\n{R}: Kargan Dragonlord gets +1/+0 until end of turn.',
+    };
+
+    it('reads the keyword printed above the first band, and none of the ones under it', () => {
+      expect(printedKeywords('Flying\nLevel up {1}\nLEVEL 2-3\n3/3\nTrample\nLEVEL 4+\n4/4\nTrample, lifelink'))
+        .toEqual(['flying']);
+      expect(printedKeywords(KARGAN_DRAGONLORD.oracle_text)).toEqual([]);
+      // The pool's old one-line form stops the reader too, so a card still written that way is safe.
+      expect(printedKeywords('Level up {W}\nLEVEL 2-6: 3/3, first strike\nFirst strike')).toEqual([]);
+      // And a card that is not a leveler is read exactly as before.
+      expect(printedKeywords('Flying\nTrample')).toEqual(['flying', 'trample']);
+    });
+
+    it('Brimstone Mage taps for one damage, and not also for three and for five', () => {
+      const mage = compileCard(BRIMSTONE_MAGE as never);
+      expect(mage.ok).toBe(true);
+      if (!mage.ok) return;
+      // Its level-zero ability is above the first band and is the card's own.
+      expect(mage.compiled).toEqual(['{T}: Brimstone Mage deals 1 damage to any target.']);
+      expect(mage.script?.abilities ?? []).toHaveLength(1);
+      // Everything from the first header down is reported, not read.
+      const unread = mage.unread.map((u) => u.line);
+      expect(unread).toContain('LEVEL 1-2');
+      expect(unread).toContain('{T}: Brimstone Mage deals 3 damage to any target.');
+      expect(unread).toContain('{T}: Brimstone Mage deals 5 damage to any target.');
+    });
+
+    it('Kargan Dragonlord has no ability of its own under the bands: no firebreathing, no flying', () => {
+      const lord = compileCard(KARGAN_DRAGONLORD as never);
+      expect(lord.ok).toBe(true);
+      if (!lord.ok) return;
+      expect(lord.compiled).toEqual([]);
+      expect(lord.script?.abilities ?? []).toEqual([]);
+      expect(lord.unread.map((u) => u.line)).toContain('{R}: Kargan Dragonlord gets +1/+0 until end of turn.');
+    });
+
+    it('and on the battlefield it is a 2/2 that does not fly', () => {
+      const list = customDeck({
+        id: 'levelers', name: 'Levelers',
+        entries: [{ name: 'Kargan Dragonlord', count: 4 }, { name: 'Mountain', count: 20 }],
+        data: [KARGAN_DRAGONLORD] as never[],
+      });
+      expect(list.unknown).toEqual([]);
+      const s = arena({
+        decks: { 0: 'levelers', 1: 'levelers' }, deckSpecs: { levelers: list.deck },
+        battlefield: { 0: ['Mountain', 'Mountain', 'Kargan Dragonlord'] }, turn: 3, firstSeat: 0,
+      });
+      const id = find(s, 0 as SeatIndex, 'battlefield', 'Kargan Dragonlord');
+      const ch = characteristicsOf(s, s.instances[id]!);
+      expect([ch.power, ch.toughness]).toEqual([2, 2]);
+      expect(ch.keywords.has('flying')).toBe(false);
+      expect(ch.keywords.has('trample')).toBe(false);
+    });
+  });
+
   describe('printed ability lines the engine reads off the card definition', () => {
     it.each([
       ['River Boa', 'Islandwalk', 'landwalk, read since #324 and miscounted ever since'],
-      ['Paladin en-Vec', 'Protection from black and from red', 'the and-from printing'],
-      [
-        'Phyrexian Crusader',
-        'First strike, protection from red, protection from white, infect',
-        'a mixed list no single reader would take',
-      ],
+      // Both as Oracle prints them (D571). The pool had typed each a different way — the Paladin's
+      // protection on a line of its own, the Crusader's as one four-part list — so these rows were
+      // checking the reader against sentences no card carries.
+      ['Paladin en-Vec', 'First strike, protection from black and from red', 'a keyword and the and-from printing in one list'],
+      ['Phyrexian Crusader', 'First strike, protection from red and from white', 'the same, the other two colours'],
+      ['Phyrexian Crusader', 'Infect', 'and the keyword Oracle gives a line of its own'],
     ])('%s counts "%s" as compiled rather than unread', (card, line) => {
       const mine = compiledScript(card as string);
       expect(mine.unread).toEqual([]);

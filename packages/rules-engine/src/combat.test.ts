@@ -480,9 +480,11 @@ describe('evasion', () => {
     s = resolveCombat(s);
     expect(namesIn(s, 0, 'graveyard')).toContain('Lotleth Giant');
     expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
-    // Three damage on a 2/4 is not lethal, and the third blocker was never reached at all.
-    expect(namesIn(s, 1, 'battlefield')).toContain('Giant Spider');
-    expect(damageOn(s, spider)).toBe(3);
+    // Six power down the line: two is lethal to the Bears, the other four are exactly lethal to a
+    // 2/4, and the third blocker was never reached at all. (The Giant was a 5/6 in this pool until
+    // D571 — a 6/5 is what the card is, and it kills the Spider it used to leave standing.)
+    expect(namesIn(s, 1, 'graveyard')).toContain('Giant Spider');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
     expect(damageOn(s, courser)).toBe(0);
     // Nobody was hit: a blocked attacker without trample deals nothing to the player.
     expect(life(s, 1)).toBe(20);

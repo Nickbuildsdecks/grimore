@@ -2958,9 +2958,15 @@ function settle(state: GameState, before: GameState): GameState {
       One event per landing, with one exception that is a rule rather than an economy: combat
       damage is dealt **simultaneously** (CR 510.2), so a creature blocked by three is dealt damage
       once and its enrage triggers once. `hurtInCombat` is that — keyed by the creature, and only
-      ever consulted for a record stamped `combat`, so two Shocks at the same creature are still two
-      events. The source side needs no such set: a creature deals its combat damage to one player
-      in one record.
+      ever consulted for a record stamped `combat`. The source side needs no such set: a creature
+      deals its combat damage to one player in one record.
+
+      **The `combat` test is a guard nothing reaches today**, and is said so rather than left to
+      look load-bearing (D566's break run, where widening it to every record went uncaught). Two
+      Shocks at one creature are two casts and two passes through here, so they were always two
+      events; the test only matters for a single resolution that damages one creature **twice**,
+      and no card in the pool and no effect the compiler emits does that. It stays because the
+      rule is the rule, and the first such card should not have to rediscover it.
     */
     const hurtInCombat = new Set<string>();
     for (const record of landed) {

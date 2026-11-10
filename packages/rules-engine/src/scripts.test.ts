@@ -571,7 +571,7 @@ describe('green and white', () => {
   });
 
   it('Sigarda flies and has hexproof', () => {
-    let s = withMana(1, ['Sigarda, Host of Herons'], ['Forest', 'Forest', 'Forest', 'Forest', 'Plains']);
+    let s = withMana(1, ['Sigarda, Host of Herons'], ['Forest', 'Forest', 'Forest', 'Plains', 'Plains']);
     s = cast(s, 1, 'Sigarda, Host of Herons');
     const sigarda = find(s, 1, 'battlefield', 'Sigarda, Host of Herons');
     expect([...characteristicsOf(s, s.instances[sigarda]!).keywords].sort()).toEqual(['flying', 'hexproof']);
@@ -1036,7 +1036,7 @@ describe('the graveyard, which is a place cards come back from', () => {
   it('Izoni makes an Insect for each creature card in your graveyard', () => {
     // In a format with no command zone the commander is simply the deck's 61st card, so it can be
     // drawn and cast like anything else.
-    let s = rot(['Izoni, Thousand-Eyed'], ['Forest', 'Swamp', 'Swamp', 'Swamp']);
+    let s = rot(['Izoni, Thousand-Eyed'], ['Forest', 'Forest', 'Swamp', 'Swamp', 'Swamp', 'Swamp']);
     s = bury(s, 1, 'Centaur Courser');
     s = bury(s, 1, 'Thornweald Archer');
     s = bury(s, 1, 'Swamp'); // a land is not a creature card
@@ -2365,7 +2365,7 @@ describe('the fifth deck, which is built out of what the engine learned', () => 
   });
 
   it('pumps the whole team and nobody else', () => {
-    let s = forge(['Inspired Charge'], ['Plains', 'Plains', 'Plains'], ['Elite Vanguard']);
+    let s = forge(['Inspired Charge'], ['Plains', 'Plains', 'Plains', 'Plains'], ['Elite Vanguard']);
     s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Grizzly Bears'), toZone: 'battlefield' });
     const mine = find(s, 0, 'battlefield', 'Elite Vanguard');
     const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
@@ -2394,8 +2394,8 @@ describe('the fifth deck, which is built out of what the engine learned', () => 
     s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: balan, abilityIndex: 0 }));
     expect(s.instances[axe]!.attachedTo).toBe(balan);
     expect(s.instances[hammer]!.attachedTo).toBe(balan);
-    // 2/2 with +2/+0 and +3/+0, and the Warhammer's keywords with it.
-    expect(power(s, balan)).toBe(7);
+    // 3/3 with +2/+0 and +3/+0, and the Warhammer's keywords with it.
+    expect(power(s, balan)).toBe(8);
     expect(power(s, vanguard)).toBe(2);
     const ch = characteristicsOf(s, s.instances[balan]!);
     expect(ch.keywords.has('trample')).toBe(true);
@@ -3000,7 +3000,7 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
       format: 'pod', seats: 4, firstSeat: 0,
       decks: { 0: 'tidal-mind' },
       hands: { 0: ['Exsanguinate'] },
-      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] },
       turn: 2,
     });
     s = advanceTo(s, 'precombat-main');
@@ -3312,13 +3312,13 @@ describe('eight that needed nothing new', () => {
 
 describe('mana that is not a land', () => {
   it('Sol Ring makes two off one tap, and the engine taps it for a cost it offered', () => {
-    // A Mountain, a Swamp and a Sol Ring: four mana from three permanents, so a three-drop leaves
-    // a land up. The point is not the arithmetic — it is that `legalActions` offers the spell and
-    // the engine then pays for it, because both read the same solver, and that the Ring counts as
-    // the two mana it makes.
+    // Two Mountains, a Swamp and a Sol Ring: five mana from four permanents, so a four-mana spell
+    // leaves a land up. The point is not the arithmetic — it is that `legalActions` offers the
+    // spell and the engine then pays for it, because both read the same solver, and that the Ring
+    // counts as the two mana it makes.
     let s = arena({
       decks: { 0: 'ashen-rite' }, hands: { 0: ['Agonizing Demise'] },
-      battlefield: { 0: ['Mountain', 'Swamp', 'Sol Ring'], 1: ['Grizzly Bears'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Swamp', 'Sol Ring'], 1: ['Grizzly Bears'] },
       turn: 3, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
@@ -3327,11 +3327,13 @@ describe('mana that is not a land', () => {
     // Nothing is tapped yet: the engine works out what to tap when the spell is cast.
     s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
       targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] });
-    // {2}{B} off the Swamp and the Ring, so the Mountain is still up for an instant — a solver
-    // that treated the Ring as one mana would have tapped everything for a three-mana spell.
+    // {3}{B} off the Swamp, the Ring and one Mountain, so the other Mountain is still up for an
+    // instant — a solver that treated the Ring as one mana would have tapped everything for a
+    // four-mana spell.
     expect(s.instances[find(s, 0, 'battlefield', 'Sol Ring')]!.tapped).toBe(true);
     expect(s.instances[find(s, 0, 'battlefield', 'Swamp')]!.tapped).toBe(true);
-    expect(s.instances[find(s, 0, 'battlefield', 'Mountain')]!.tapped).toBe(false);
+    expect([...ids(s, 0, 'battlefield')]
+      .filter((id) => nameOf(s, id) === 'Mountain' && !s.instances[id]!.tapped)).toHaveLength(1);
   });
 
   it('and tapping it by hand puts two colourless in the pool', () => {
@@ -3791,7 +3793,7 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
     const inHand = legalActions(s, 0).plays.filter((p) => p.name === 'Barren Moor');
     // A land in hand: it can be played, and it can be cycled. What it cannot do is make mana.
     expect(inHand.map((p) => p.kind).sort()).toEqual(['activate', 'land']);
-    expect(inHand.find((p) => p.kind === 'activate')?.description).toMatch(/Cycling \{2\}/);
+    expect(inHand.find((p) => p.kind === 'activate')?.description).toMatch(/Cycling \{B\}/);
     expect(inHand.find((p) => p.kind === 'activate')?.fromHand).toBe(true);
 
     s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Barren Moor') });
@@ -3910,7 +3912,8 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
       // One copy: the deck runs one since Thorn of the Black Rose took the other slot, and this
       // test only ever casts one of them.
       hands: { 0: ['Agonizing Demise'] },
-      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
+      // {3}{B} and a {1}{R} kicker: six lands. (Five, while the pool printed the spell at {2}{B}.)
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain'], 1: ['Centaur Courser'] },
       turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
     });
     s = advanceTo(s, 'precombat-main');
@@ -3930,7 +3933,8 @@ describe('costs that are choices: cycling, kicker, and a creature on the altar',
   it('Agonizing Demise will not point at a black creature', () => {
     let s = arena({
       hands: { 0: ['Agonizing Demise'] },
-      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Vampire Nighthawk'] },
+      // Four Swamps, so the spell could be paid for: "not offered" has to mean the colour.
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Vampire Nighthawk'] },
       turn: 2, firstSeat: 0, decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
     });
     s = advanceTo(s, 'precombat-main');
@@ -4733,7 +4737,7 @@ describe('eleven more cards', () => {
     expect(legalActions(s, 0).plays.some((play) => play.card === kavu)).toBe(true);
   });
 
-  it('Borderland Marauder is a 4/2 on the swing and a 2/2 the rest of the time', () => {
+  it('Borderland Marauder is a 3/2 on the swing and a 1/2 the rest of the time', () => {
     let s = arena({
       decks: { 0: 'ember-rush', 1: 'verdant-guard' },
       battlefield: { 0: ['Borderland Marauder'] },
@@ -4741,16 +4745,16 @@ describe('eleven more cards', () => {
     });
     s = advanceTo(s, 'declare-attackers');
     const marauder = find(s, 0, 'battlefield', 'Borderland Marauder');
-    expect([power(s, marauder), toughness(s, marauder)]).toEqual([2, 2]);
+    expect([power(s, marauder), toughness(s, marauder)]).toEqual([1, 2]);
     s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: marauder, defender: 1 }] }));
     // Its own attack and nobody else's: the trigger says nothing about `who`, so the widening of
     // the event left it meaning exactly what it meant.
-    expect([power(s, marauder), toughness(s, marauder)]).toEqual([4, 2]);
+    expect([power(s, marauder), toughness(s, marauder)]).toEqual([3, 2]);
     s = advanceTo(s, 'postcombat-main', 120);
-    expect(life(s, 1)).toBe(16);
-    // And it is a 2/2 again next turn.
+    expect(life(s, 1)).toBe(17);
+    // And it is a 1/2 again next turn.
     s = advanceTo(nextTurn(s), 'precombat-main');
-    expect(power(s, marauder)).toBe(2);
+    expect(power(s, marauder)).toBe(1);
   });
 
   it('Prey Upon makes two creatures fight, and both deal their damage', () => {
@@ -8196,8 +8200,8 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
   };
 
   it('is offered for {3} on a board that cannot pay the printed cost', () => {
-    // Three Islands, and Dirgur Nemesis costs {4}{U}. The face-down play is the only one there is,
-    // which is the whole reason morph is in a deck: a five-mana card on turn three.
+    // Three Islands, and Dirgur Nemesis costs {5}{U}. The face-down play is the only one there is,
+    // which is the whole reason morph is in a deck: a six-mana card on turn three.
     const s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
     const card = find(s, 1, 'hand', 'Dirgur Nemesis');
     const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
@@ -8209,12 +8213,17 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
 
   it('is offered beside the printed cast once that can be paid for', () => {
     const s = holding(1, 'Dirgur Nemesis', 'tidal-mind',
-      ['Island', 'Island', 'Island', 'Island', 'Island']);
+      ['Island', 'Island', 'Island', 'Island', 'Island', 'Island']);
     const card = find(s, 1, 'hand', 'Dirgur Nemesis');
     const plays = legalActions(s, 1).plays.filter((p) => p.card === card);
     expect(plays).toHaveLength(2);
     expect(plays.filter((p) => p.faceDown === true)).toHaveLength(1);
-    expect(plays.find((p) => p.faceDown === undefined)?.manaCost).toBe('{4}{U}');
+    expect(plays.find((p) => p.faceDown === undefined)?.manaCost).toBe('{5}{U}');
+    // One land short of the printed cost and only the face-down play is left, which is what makes
+    // the two-play count above a statement about six lands and not about any board at all.
+    const five = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island', 'Island', 'Island']);
+    expect(legalActions(five, 1).plays.filter((p) => p.name === 'Dirgur Nemesis' || p.faceDown === true))
+      .toHaveLength(1);
   });
 
   it('waits on the stack as a 2/2 creature spell with no name, and the opponent cannot read it', () => {
@@ -8258,26 +8267,30 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
     expect(characteristicsOf(s, s.instances[card]!).toughness).toBe(2);
   });
 
-  it('keeps its damage when it is turned up, which is how a 2/2 becomes a 2/6 and lives', () => {
+  it('keeps its damage when it is turned up, which is how a 2/2 becomes a 7/6 and lives', () => {
     /*
       The rule that makes morph more than a discount: turning face up is not a new object
-      (CR 702.37d), so nothing about the permanent resets. A 2/2 holding two damage from blocking
-      is a 2/6 holding two damage, and state-based actions let it live.
+      (CR 702.37d), so nothing about the permanent resets. A 2/2 holding three damage from blocking
+      is a 7/6 holding three damage, and state-based actions let it live.
+
+      A 7/6 because the card is a 6/5 with **megamorph** {6}{U}, and megamorph puts a +1/+1 counter
+      on it as it turns up (CR 702.37b). This pool had it as a 2/6 with a plain morph for {5}{U}
+      until D571 checked it against its Oracle row, and this test said "trades neither way".
     */
     let s = advanceTo(arena({
       decks: { 0: 'ember-rush', 1: 'tidal-mind' },
       hands: { 1: ['Dirgur Nemesis'] },
       battlefield: {
         0: ['Hill Giant'],
-        1: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Swamp', 'Swamp', 'Swamp'],
+        1: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
       },
       turn: 4, firstSeat: 1,
     }), 'precombat-main');
     const card = find(s, 1, 'hand', 'Dirgur Nemesis');
     /*
       Nothing is tapped by hand here, and the land count is why: the turn-up happens on the
-      *opponent's* turn, when seat 1's lands have not untapped since it cast the morph. Nine lands
-      so that paying {3} leaves the six the {5}{U} needs — which is also what the card asks of a
+      *opponent's* turn, when seat 1's lands have not untapped since it cast the morph. Ten lands
+      so that paying {3} leaves the seven the {6}{U} needs — which is also what the card asks of a
       real deck, and the reason morph is a thing a control deck does on turn three.
     */
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
@@ -8293,16 +8306,18 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
     // window once seat 0 has passed — which is also the window a real player would use.
     if (!legalActions(s, 1).hasPriority) s = apply(s, { type: 'auto:pass', by: 0 });
 
-    // Turned up before damage, with the mana that was left. It is now a 2/6, and three damage is
-    // not lethal to a 2/6.
+    // Turned up before damage, with the mana that was left. It is now a 7/6, and three damage is
+    // not lethal to a 7/6.
     s = apply(s, { type: 'auto:turnUp', by: 1, card });
     expect(s.instances[card]!.faceDown).toBe(false);
-    expect(characteristicsOf(s, s.instances[card]!).toughness).toBe(6);
+    expect([power(s, card), toughness(s, card)]).toEqual([7, 6]);
+    expect(s.instances[card]!.counters['+1/+1']).toBe(1);
     s = drain(advanceTo(s, 'combat-damage'));
     expect(s.instances[card]!.zone).toBe('battlefield');
     expect(damageOn(s, card)).toBe(3);
-    // The damage it dealt back killed nothing: a 2/6 against a 3/3 trades neither way.
-    expect(s.instances[giant]!.zone).toBe('battlefield');
+    // And the seven it dealt back is the end of a 3/3: the blocker that was a 2/2 when it was
+    // declared won the combat.
+    expect(s.instances[giant]!.zone).toBe('graveyard');
   });
 
   it('turns up during combat, after blockers, with nothing an opponent can do about it', () => {
@@ -8471,8 +8486,8 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
     // Nothing went on the stack, and its controller's own enchantment is untouched.
     expect(s.stackOrder).toHaveLength(0);
     expect(s.instances[mine]!.zone).toBe('battlefield');
-    // A 2/1 again, with the anthem lifting it.
-    expect(characteristicsOf(s, s.instances[card]!).power).toBe(3);
+    // A 2/1 again, with megamorph's +1/+1 counter on it and the anthem lifting it.
+    expect(characteristicsOf(s, s.instances[card]!).power).toBe(4);
   });
 
   it('wins the combat it is turned up in, which is what the trigger is held for', () => {
@@ -8565,12 +8580,12 @@ describe('morph: cast it face down for {3}, turn it up for its own cost (CR 702.
   });
 
   it('is not offered a turn-up it cannot pay for, and refuses one that is already face up', () => {
-    // Three Islands, all spent on the face-down cast: {5}{U} is a long way off.
+    // Three Islands, all spent on the face-down cast: {6}{U} is a long way off.
     let s = holding(1, 'Dirgur Nemesis', 'tidal-mind', ['Island', 'Island', 'Island']);
     const card = find(s, 1, 'hand', 'Dirgur Nemesis');
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card, faceDown: true }));
     expect(legalActions(s, 1).plays.some((p) => p.kind === 'turnUp')).toBe(false);
-    expect(refusal(s, { type: 'auto:turnUp', by: 1, card })).toContain('cannot pay {5}{U}');
+    expect(refusal(s, { type: 'auto:turnUp', by: 1, card })).toContain('cannot pay {6}{U}');
 
     // Face up already: there is nothing to turn.
     const up = holding(1, "Man-o'-War", 'tidal-mind', ['Island', 'Island', 'Island']);
@@ -9090,16 +9105,20 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     /*
       "Each Wizard you control" — narrower than any scope in `ContinuousEffect`, and it does not
       need one: `pump` takes a list of ids, so which creatures are in the list is the card's
-      business. Adeliz is a Wizard herself, Gelectrode is a Weird Wizard, and Young Pyromancer is a
-      Human Shaman who gets nothing.
+      business. Adeliz is a Wizard herself, Goblin Electromancer is a Goblin Wizard, and Young
+      Pyromancer is a Human Shaman who gets nothing.
+
+      The second Wizard was a Gelectrode until D571: this pool had typed it `Weird Wizard`, and the
+      card is a Weird. It was the only reason this test passed with it.
     */
     // Burst Lightning rather than Shock: Shock's slot in Arc Tempest is the pool's split card
     // now, and this test wants any one-mana red spell the deck still holds.
-    let s = izzet(['Adeliz, the Cinder Wind', 'Gelectrode', 'Young Pyromancer'], ['Burst Lightning']);
+    let s = izzet(['Adeliz, the Cinder Wind', 'Goblin Electromancer', 'Gelectrode', 'Young Pyromancer'], ['Burst Lightning']);
     const adeliz = find(s, 0, 'battlefield', 'Adeliz, the Cinder Wind');
-    const wizard = find(s, 0, 'battlefield', 'Gelectrode');
+    const wizard = find(s, 0, 'battlefield', 'Goblin Electromancer');
+    const weird = find(s, 0, 'battlefield', 'Gelectrode');
     const shaman = find(s, 0, 'battlefield', 'Young Pyromancer');
-    expect([power(s, adeliz), power(s, wizard), power(s, shaman)]).toEqual([2, 0, 2]);
+    expect([power(s, adeliz), power(s, wizard), power(s, weird), power(s, shaman)]).toEqual([2, 2, 0, 2]);
 
     s = tapAllLands(s, 0);
     // The Shock and Adeliz's trigger are both on the stack, so the board is read once both have
@@ -9108,8 +9127,8 @@ describe('red-blue: six cards whose job is to read the spells', () => {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
       targets: [{ kind: 'player', seat: 1 }],
     })));
-    expect([power(s, adeliz), power(s, wizard), power(s, shaman)]).toEqual([3, 1, 2]);
-    expect([toughness(s, adeliz), toughness(s, wizard)]).toEqual([3, 2]);
+    expect([power(s, adeliz), power(s, wizard), power(s, weird), power(s, shaman)]).toEqual([3, 3, 0, 2]);
+    expect([toughness(s, adeliz), toughness(s, wizard)]).toEqual([3, 3]);
   });
 
   it('does not pump on a creature spell, which is the half the filter is for', () => {
@@ -9246,7 +9265,7 @@ describe('a static effect scoped to a creature type: the pool’s first tribal l
   it('lifts the Vampires Stromkirk Captain shares a type with, and hands them first strike', () => {
     // A Boggart Brute for the non-Vampire, because the Goblin Arsonist this used to borrow is
     // Tormented Soul's slot now. Any Goblin does: the claim is about the type line.
-    let s = lord('ashen-rite', ['Mountain', 'Swamp'], ['Blood Artist', 'Boggart Brute'],
+    let s = lord('ashen-rite', ['Mountain', 'Swamp', 'Swamp'], ['Blood Artist', 'Boggart Brute'],
       'Stromkirk Captain');
     const artist = find(s, 0, 'battlefield', 'Blood Artist');
     const goblin = find(s, 0, 'battlefield', 'Boggart Brute');
@@ -9403,7 +9422,7 @@ describe('megamorph, and a morph cost that is not mana (CR 702.37a, 702.37c)', (
       type: 'auto:cast', by: seat, card: find(state, seat, 'hand', name), faceDown: true,
     })));
 
-  it('turns a Zombie Cutthroat up for three life and no mana at all', () => {
+  it('turns a Zombie Cutthroat up for five life and no mana at all', () => {
     let s = holding(0, 'Zombie Cutthroat', 'ashen-rite', ['Swamp', 'Swamp', 'Swamp']);
     s = faceDown(s, 0, 'Zombie Cutthroat');
     const card = find(s, 0, 'battlefield', 'Zombie Cutthroat');
@@ -9413,33 +9432,33 @@ describe('megamorph, and a morph cost that is not mana (CR 702.37a, 702.37c)', (
 
     // The offer says what it costs in the words a player reads, and asks for no mana.
     const play = legalActions(s, 0).plays.find((p) => p.kind === 'turnUp');
-    expect(play?.description).toContain('morph pay 3 life');
+    expect(play?.description).toContain('morph pay 5 life');
     expect(play?.manaCost).toBe('');
 
     const before = life(s, 0);
     // Every land is already tapped and the pool is empty, which is the point: nothing but life.
     s = drain(apply(s, { type: 'auto:turnUp', by: 0, card }));
     expect(s.instances[card]!.faceDown).toBe(false);
-    expect([power(s, card), toughness(s, card)]).toEqual([3, 3]);
-    expect(life(s, 0)).toBe(before - 3);
+    expect([power(s, card), toughness(s, card)]).toEqual([3, 4]);
+    expect(life(s, 0)).toBe(before - 5);
   });
 
   it('refuses the turn-up at exactly the life that would pay for it', () => {
     /*
       CR 118.4, and the reason the cost is an `AbilityCost`: a cost you cannot pay is not a cost you
-      may choose to pay. At three life, paying three life would lose the game, so the turn-up is not
+      may choose to pay. At five life, paying five life would lose the game, so the turn-up is not
       *offered* — the same rule that stops the engine offering a Mana Confluence's mana at one life.
     */
     let s = holding(0, 'Zombie Cutthroat', 'ashen-rite', ['Swamp', 'Swamp', 'Swamp']);
     s = faceDown(s, 0, 'Zombie Cutthroat');
     const card = find(s, 0, 'battlefield', 'Zombie Cutthroat');
-    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 3 } : seat)) };
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 5 } : seat)) };
 
     expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp')).toBe(false);
-    expect(refusal(s, { type: 'auto:turnUp', by: 0, card })).toContain('3 life to pay');
+    expect(refusal(s, { type: 'auto:turnUp', by: 0, card })).toContain('5 life to pay');
 
     // One life more and it is a play again, which is what "exactly" means.
-    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 4 } : seat)) };
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 6 } : seat)) };
     expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp')).toBe(true);
   });
 
@@ -9754,7 +9773,7 @@ describe('the creature the event was about: exalted, and evolve’s intervening-
     expect([power(s, angel), toughness(s, angel)]).toEqual([5, 5]);
     // The one that stayed home is untouched, and so are the Guardians — who cannot attack at all.
     expect([power(s, hawk), toughness(s, hawk)]).toEqual([1, 1]);
-    expect([power(s, guards), toughness(s, guards)]).toEqual([2, 3]);
+    expect([power(s, guards), toughness(s, guards)]).toEqual([0, 4]);
   });
 
   it('pays nothing when two creatures attack, which is the whole of “alone”', () => {
@@ -10376,14 +10395,14 @@ describe('the tenth deck: the life total that goes up', () => {
   it('Bloodthirsty Aerialist grows on every gain, whatever caused it', () => {
     let s = dawn(['Revitalize'], ['Bloodthirsty Aerialist']);
     const bird = find(s, 0, 'battlefield', 'Bloodthirsty Aerialist');
-    expect([power(s, bird), toughness(s, bird)]).toEqual([2, 2]);
+    expect([power(s, bird), toughness(s, bird)]).toEqual([2, 3]);
 
     const before = life(s, 0);
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Revitalize') })));
     // Three life and a card, and one counter — the trigger is "whenever you gain life", once per
     // event rather than once per point.
     expect(life(s, 0)).toBe(before + 3);
-    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 3]);
+    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 4]);
   });
 
   it('Cruel Celebrant drains without a target when one of yours dies', () => {
@@ -10434,7 +10453,7 @@ describe('the tenth deck: the life total that goes up', () => {
     expect(s.instances[dragon]!.zone).toBe('exile');
     expect(life(s, 0)).toBe(before + 2);
     // And the removal spell advanced the clock, which is the argument for the card.
-    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 3]);
+    expect([power(s, bird), toughness(s, bird)]).toEqual([3, 4]);
   });
 
   it('Kambal charges the player who cast the spell, and only that player', () => {
@@ -13269,11 +13288,12 @@ describe('a land on the back of a spell (CR 712)', () => {
     expect(refusal(s, { type: 'auto:playLand', by: 0, card, half: 4 })).toContain('no face 4');
   });
 
-  it('is still a three-mana instant in every other zone (CR 712.4a)', () => {
+  it('is still a four-mana instant in every other zone (CR 712.4a)', () => {
     let s = advanceTo(inHand('ashen-rite', 'Hagra Mauling', ['Swamp', 'Swamp', 'Swamp']), 'precombat-main');
     const card = find(s, 0, 'hand', 'Hagra Mauling');
     // In hand: the front face, which is what a Chalice of the Void counts and a discard spell sees.
-    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(3);
+    // {2}{B}{B} — it was {2}{B} in this pool until D571 read its Oracle row.
+    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(4);
     expect(characteristicsOf(s, s.instances[card]!).isLand).toBe(false);
 
     // Played as the land and then destroyed: the card that reaches the graveyard is the card again.
@@ -13281,14 +13301,14 @@ describe('a land on the back of a spell (CR 712)', () => {
     expect(nameOf(s, card)).toBe('Hagra Broodpit');
     s = apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' });
     expect(namesIn(s, 0, 'graveyard')).toContain('Hagra Mauling');
-    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(3);
+    expect(s.cardDefs[s.instances[card]!.defKey]!.cmc).toBe(4);
   });
 
   it('casts the front face instead, when that is the half the board asks for', () => {
     let s = arena({
       decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
       hands: { 0: ['Hagra Mauling'] },
-      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Centaur Courser'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Centaur Courser'] },
       turn: 2, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
@@ -14828,7 +14848,7 @@ describe('miracle: the cast offered the moment you draw it', () => {
       decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
       hands: { 0: ['Terminus'] },
       battlefield: {
-        0: ['Plains', 'Plains', 'Plains', 'Island', 'Island', 'Wall of Air'],
+        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Island', 'Island', 'Wall of Air'],
         1: ['Gravedigger', 'Blood Artist'],
       },
       turn: 6, firstSeat: 0,
@@ -15289,7 +15309,7 @@ describe('rebound: the spell that casts itself again next turn', () => {
   };
 
   it('exiles itself as it resolves, and schedules the free cast for your next upkeep', () => {
-    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain', 'Mountain']);
     const shock = find(s, 0, 'hand', 'Staggershock');
     const before = life(s, 1);
     s = drain(apply(s, {
@@ -15307,7 +15327,7 @@ describe('rebound: the spell that casts itself again next turn', () => {
   });
 
   it('offers it for nothing in the upkeep, and the second casting does not rebound again', () => {
-    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain', 'Mountain']);
     const shock = find(s, 0, 'hand', 'Staggershock');
     s = drain(apply(s, {
       type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
@@ -15343,7 +15363,7 @@ describe('rebound: the spell that casts itself again next turn', () => {
   });
 
   it('declining leaves it in exile for good, and it is not offered twice', () => {
-    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain', 'Mountain']);
     const shock = find(s, 0, 'hand', 'Staggershock');
     s = drain(apply(s, {
       type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
@@ -15390,7 +15410,7 @@ describe('rebound: the spell that casts itself again next turn', () => {
     let s = arena({
       decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
       hands: { 0: ['Staggershock'], 1: ['Counterspell'] },
-      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Island', 'Island'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Island', 'Island'] },
       turn: 5, firstSeat: 0,
     });
     s = advanceTo(s, 'precombat-main');
@@ -15654,18 +15674,30 @@ describe('undying and persist: the creature that comes back with a counter on it
     expect(s.instances[redcap]!.zone).toBe('graveyard');
   });
 
-  it('persist brings the Redcap back as a 0/0, which dies again on its own', () => {
+  it('persist brings the Redcap back as a 1/1, once', () => {
     /*
-      The printed card, and the reason persist creatures are not all 1/1s: a 1/1 with a −1/−1
-      counter on it is a 0/0, so the second body is really a second *trigger* — it enters, deals
-      damage equal to its power (which is nothing), and the state-based actions sweep it up.
+      The printed card is a 2/2, so the body persist returns is a 1/1 that shoots for one — two
+      damage and then one, which is what the card has always been played for.
+
+      Until D571 this pool had the Redcap as a **1/1**, and this test was called "brings the Redcap
+      back as a 0/0, which dies again on its own". It passed, on a card that does not exist: the
+      second body died to state-based actions before it could do anything, and the deck built
+      around it was measured with half of its best card missing.
     */
     let s = grave(['Murderous Redcap'], 'ashen-rite', 'Swamp');
     const redcap = find(s, 0, 'battlefield', 'Murderous Redcap');
     s = drain(apply(s, { type: 'card:move', by: 0, card: redcap, toZone: 'graveyard' }), 40);
-    // It came back, took its own counter, and went straight back to the graveyard as a 0/0.
-    expect(s.instances[redcap]!.zone).toBe('graveyard');
-    expect(s.replacements.length + s.log.length).toBeGreaterThan(0);
+    expect(s.instances[redcap]!.zone).toBe('battlefield');
+    expect(s.instances[redcap]!.counters['-1/-1']).toBe(1);
+    expect([power(s, redcap), toughness(s, redcap)]).toEqual([1, 1]);
+    // Its enters trigger is asking what to shoot, with the one power it has left.
+    expect(s.pendingDecision ?? s.pendingChoice ?? stackNames(s).join(' | ')).toBeTruthy();
+
+    // Once, because the counter is what persist reads: the second death is a death.
+    let again = s;
+    for (let i = 0; i < 6 && again.stackOrder.length > 0 && again.pendingDecision === null; i += 1) again = passBoth(again);
+    again = drain(apply(again, { type: 'card:move', by: 0, card: redcap, toZone: 'graveyard' }), 40);
+    expect(again.instances[redcap]!.zone).toBe('graveyard');
   });
 });
 
@@ -15774,8 +15806,8 @@ describe('hybrid mana, at a real table', () => {
     s = drain(apply(s, {
       type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }],
     }), 40);
-    // Its own arrival trigger: one damage, its power.
-    expect(life(s, 1)).toBe(19);
+    // Its own arrival trigger: two damage, its power.
+    expect(life(s, 1)).toBe(18);
     // Four lands for a four-mana spell, and nothing left over.
     expect([...ids(s, 0, 'battlefield')]
       .filter((id) => nameOf(s, id) === 'Swamp' && s.instances[id]!.tapped)).toHaveLength(4);
@@ -18949,10 +18981,10 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
     refusals, and the two things the keyword is not: it is not a declaration, so nothing that
     watches attacking sees it, and the ninja is not castable off its ninjutsu cost.
   */
-  const board = (): GameState => arena({
+  const board = (islands = 2): GameState => arena({
     decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
     hands: { 0: ['Ninja of the Deep Hours'] },
-    battlefield: { 0: ['Island', 'Island', 'Healer\'s Hawk'], 1: ['Island'] },
+    battlefield: { 0: [...Array.from({ length: islands }, () => 'Island'), 'Healer\'s Hawk'], 1: ['Island'] },
     turn: 5, firstSeat: 0,
   });
 
@@ -19067,8 +19099,12 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
   });
 
   it('is still a creature you can simply cast, when you would rather have it early', () => {
-    // The ninjutsu cost is an extra row, not a replacement: a 2/2 for two is still a 2/2 for two.
-    let s = tapAllLands(advanceTo(board(), 'precombat-main'), 0);
+    // The ninjutsu cost is an extra row, not a replacement: a 2/2 for {3}{U} is still that, which
+    // is twice what ninjutsu asks and the whole reason the keyword is on the card. (This pool had
+    // the Ninja at {1}{U} until D571, so its two costs were the same number.)
+    expect(legalActions(tapAllLands(advanceTo(board(3), 'precombat-main'), 0), 0).plays
+      .some((play) => play.name === 'Ninja of the Deep Hours' && play.kind === 'cast')).toBe(false);
+    let s = tapAllLands(advanceTo(board(4), 'precombat-main'), 0);
     s = drain(apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ninja of the Deep Hours'),
     }), 40);
@@ -19084,7 +19120,7 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
   });
 });
 
-describe('the bot holds a ninja instead of casting it as a two-drop', () => {
+describe('the bot holds a ninja instead of casting it as a plain 2/2', () => {
   /*
     The rule that makes ninjutsu happen at all (D219): without it the keyword fired **zero** times in
     48 bot games, because the bot cast the card as a 2/2 the moment it could and it was never in hand
@@ -19098,7 +19134,9 @@ describe('the bot holds a ninja instead of casting it as a two-drop', () => {
     const s = arena({
       decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
       hands: { 0: ['Ninja of the Deep Hours'] },
-      battlefield: { 0: ['Island', 'Island', ...mine], 1: ['Island', ...theirs] },
+      // Four Islands: the Ninja is {3}{U} to cast, and a board that could not pay for it would
+      // "hold" it whatever the rule said.
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island', ...mine], 1: ['Island', ...theirs] },
       turn: 5, firstSeat: 0,
     });
     return tapAllLands(advanceTo(s, 'precombat-main'), 0);
@@ -21290,7 +21328,8 @@ describe('a granted triggered ability: the first ability on a permanent that did
     const board = (): GameState => advanceTo(arena({
       decks: { 0: 'eye-and-outlet', 1: 'verdant-guard' },
       deckSpecs: { 'eye-and-outlet': list },
-      battlefield: { 0: ['Island', 'Island', 'Vampire Aristocrat', "Healer's Hawk"] },
+      // Three Islands: the Eye is {2}{U}.
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Vampire Aristocrat', "Healer's Hawk"] },
       hands: { 0: ['Ophidian Eye'] },
       turn: 6, firstSeat: 0,
     }), 'precombat-main');
@@ -21337,7 +21376,7 @@ describe('a granted triggered ability: the first ability on a permanent that did
     */
     const board = (): GameState => advanceTo(arena({
       decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
-      battlefield: { 0: ['Island', 'Island', 'Wall of Air', "Healer's Hawk"] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Wall of Air', "Healer's Hawk"] },
       hands: { 0: ['Ophidian Eye'] },
       turn: 6, firstSeat: 0,
     }), 'precombat-main');
@@ -38808,6 +38847,19 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
       expect(countOf(s, 0, 'graveyard', 'Bant Sojourners')).toBe(1);
       expect(s.pendingDecision).toBeNull();
       expect(soldiers(s)).toBe(0);
+    });
+
+    it('and "when you cycle THIS card": one on the battlefield says nothing when a land is cycled', () => {
+      /*
+        The row the D567 break run found missing. "When you cycle Bant Sojourners" is about one
+        card, and with the matcher answering for *any* cycled card every row above still passed —
+        because every row above cycles the Sojourners itself. This is the other card.
+      */
+      let s = start(['Barren Moor'], ['Bant Sojourners']);
+      s = offered(cycle(s, 0, 'Barren Moor'));
+      expect(countOf(s, 0, 'graveyard', 'Barren Moor')).toBe(1);
+      expect(s.pendingDecision).toBeNull();
+      expect(soldiers(drain(s))).toBe(0);
     });
   });
 

@@ -415,6 +415,25 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
  * clears rather than climbs. Clearing is correct at any moment, which is the whole merit of
  * memoising a pure function.
  */
+/**
+ * The header of a leveler's level band: `LEVEL 2-6`, `LEVEL 7+` (CR 711.2).
+ *
+ * Everything printed from the first of these to the end of the card belongs to a band — it is what
+ * the creature has **while it has that many level counters**, not what the card has. Oracle prints
+ * a band as a header line, a power/toughness line and then one ability to a line, so to a reader
+ * that goes line by line a band's `Flying` is indistinguishable from the card's own.
+ *
+ * It was not distinguished until D572, and every leveler read from printed data came out holding
+ * its top band at level zero: Coralhelm Commander flew, Hada Spy Patrol was unblockable with
+ * shroud, Brimstone Mage tapped for one damage *and* for three. 26 legal cards. Nothing noticed,
+ * because the pool's own two levelers were typed in a one-line form (`LEVEL 2-6: 3/3, first
+ * strike`) that no reader could parse — so the pool's text hid the bug its real text would have
+ * shown, which is what D571's comparison against the Oracle rows turned up.
+ *
+ * Both forms are matched, so a pool card written the old way stops here too.
+ */
+export const LEVEL_BAND_HEADER = /^LEVEL \d+(?:-\d+|\+)(?![\w/])/i;
+
 const PARTS_CACHE = new Map<string, readonly PrintedPart[]>();
 const PARTS_CACHE_CAP = 200_000;
 
@@ -438,6 +457,8 @@ function printedParts(
   for (const rawLine of text.split('\n')) {
     const line = rawLine.replace(/\([^)]*\)/g, '').trim();
     if (!line) continue;
+    // A level band and everything under it: not this card's abilities. See `LEVEL_BAND_HEADER`.
+    if (LEVEL_BAND_HEADER.test(line)) break;
     const combat = printedCombatLine(line, name);
     if (combat !== null) { found.push(combat); continue; }
     const blockers = printedBlockerLine(line, name);

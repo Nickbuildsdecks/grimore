@@ -22273,3 +22273,173 @@ One thing this does not do: a permanent you **stole** and then sacrificed. The a
 for you, correctly; but a trigger on the sacrificed card itself is matched and controlled from
 where the card ended up, which is its owner's graveyard. The same is true of every `dies` trigger
 and is not new here.
+
+## D571 — Every built-in card, checked against its Oracle row for the first time
+
+**The built-in pool was typed in from memory, and a great deal of it was wrong.** 336 cards, built
+up a few at a time over many sessions, and until now nothing had ever compared what was typed with
+what the card says. Two findings in one day pointed at it — Thieving Magpie's text in D566, Rancor's
+in D569 — so this is the comparison, done for every card and every printed fact.
+
+What it found, against the corpus row for each card:
+
+| fact | wrong |
+| --- | --- |
+| mana cost | 59 |
+| mana value | 42 |
+| type line | 35 |
+| toughness | 21 |
+| power | 15 |
+| colours | 2 |
+| rules text, in substance | about 100 |
+
+**174 wrong facts on 107 cards**, before the rules text. Some of what that means at a table:
+Murderous Redcap was a 1/1, so the body persist returns died on arrival and the deck built around
+it was measured with half its best card missing. Dirgur Nemesis was a 2/6 morph; it is a 6/5
+megamorph. Ninja of the Deep Hours cost {1}{U} — the same as its ninjutsu, which is the opposite of
+the card. The five cycling lands were typed `Land — Swamp` and so on, and cycled for {2}. Plague
+Stinger was an artifact creature. Gelectrode was a Wizard. Terminus, Exsanguinate, Staggershock,
+Grapeshot, Explore, Agonizing Demise and Hagra Mauling were all a mana cheap; Twincast, Banishing
+Light and Conclave Tribunal a mana or two dear.
+
+### What is fixed in this pass
+
+- **All 174 facts**, mechanically, from the rows.
+- **83 rules texts.** 73 were wording only — "enters the battlefield" where Oracle says "enters", a
+  different line break, a British spelling — and now read as the row does. Ten changed what the
+  card does and were fixed whole, text and script together: the five cycling lands (a plain `Land`,
+  cycling for one mana of its own colour) and the five morphs (Dirgur Nemesis and Ainok Survivalist
+  are megamorphs; Battering Craghorn turns up for {1}{R}{R}, Master of Pearls for {3}{W}{W}, Zombie
+  Cutthroat for five life rather than three).
+- **About forty tests** that had been written around the wrong numbers, each re-fitted by hand to
+  the real card and not just to the new value: the Redcap's persist test was called "comes back as a 0/0,
+  which dies again on its own" and now asserts a 1/1 that shoots for one.
+
+### What is not, and where it is written down
+
+**65 cards still do something other than what they print**, and each is listed by name with the
+difference in `KNOWN_DIFFERENT` in `poolOracle.test.ts`: Doom Blade kills black creatures, Preordain
+scries one, Walking Ballista grows for {1}, Faithless Looting and Cackling Counterpart have no
+flashback, Fireball hits one target, Jace Memory Adept has the wrong abilities. A card's text
+changes together with its script and its tests, never ahead of them — a card whose text is right
+and whose script is not is a card that lies to the player holding it. That list is the work order
+for the next increments.
+
+Two more entries are a convention, not an error: an adventurer's front face quotes its Adventure.
+
+### The standing check
+
+`poolOracle.fixture.json` is the Oracle row for each pool card, and `poolOracle.test.ts` requires
+every printed fact of every card to equal its row — cost, mana value, type line, colours, power,
+toughness, loyalty exactly; rules text with reminder text removed and nothing else forgiven. It
+fails in both directions: on a difference that is not listed, and on a listed one that no longer
+differs. Proved by removing an entry and by adding a false one. `scripts/measure/pool-oracle.mjs
+--file <corpus> --write` regenerates the fixture.
+
+It caught its own author within the hour: a throwaway `sed` meant to demonstrate a failure rewrote
+five mana costs in the real file, and the next full run named all four that have rows. (The fifth,
+Ice, has none — see below — and was restored from the last commit.) Experiments go on a copy.
+
+### What this check cannot see
+
+**The corpus carries front faces only**, and is built from a public card-script repository rather
+than from Scryfall, which this container cannot reach. So twelve definitions have no row and are
+named in `NO_ORACLE_ROW` rather than passed: the back halves of the three split cards (Ice, Wane,
+Battery), the two Adventures (Venture Deeper, Shield's Might), the back faces of the two transforming
+cards and the two modal ones, and the three whole-split-card names. Those are unverified. So is any
+row where the corpus itself is behind Oracle; it is the best source reachable here and it is one
+source.
+
+### Three compiler rows that read sentences no card prints
+
+The useful surprise. Putting the printed text on the pool's cards broke seven compiler tests —
+because the compiler had been written, and tested, against the pool's wording:
+
+| the compiler read | cards that print it | the printed sentence | cards |
+| --- | --- | --- | --- |
+| "has protection from **all colors**" | 0 | "from **each color**" | 8 |
+| "gains haste until end of turn **and becomes red**" | 0 | "**becomes red and** gains haste until end of turn" | 2 |
+| "creature **an opponent controls** with power 4 or greater" | 6 | also "with power 4 or greater **an opponent controls**" | 2 |
+
+All three now read the printed form. The first two had passing tests and read nothing in Magic.
+
+### Tests that passed for the wrong reason
+
+Raising a cost can turn "is not offered" into "cannot be paid", which passes just the same. A scan
+of every test that holds a re-costed card and asserts something negative found two: Agonizing
+Demise "will not point at a black creature" had three Swamps for a four-mana spell, and the bot's
+"holds a ninja" test gave it two Islands for a card that now costs four. Both have the lands to
+cast the card now, so the refusal is the one the test is named for.
+
+### What this does to every number measured before it
+
+**Every deck measurement in these docs and in the deck file's comments was taken on the
+uncorrected cards.** Win rates, cast counts, slot comparisons — all of it. None has been re-taken
+in this pass, and the comments that quote them have not been rewritten; the two I touched (the
+Redcap's and the Cutthroat's) say so in place. Re-measuring belongs after the 65 queued cards are
+right, not before, or it is done twice.
+
+Also noted and not acted on: the engine refuses a life payment **equal to** the payer's life total
+(a Zombie Cutthroat cannot be turned up at five life). I believe the rules allow that payment, and
+could not check it here — no rules text is reachable from this container — so it is queued as a
+question rather than changed on a recollection, which is the mistake this whole entry is about.
+
+    engine tests: 3,838 → 3,847, all passing
+    pool facts that differ from their Oracle row: 174 → 0
+    pool rules texts that differ: 154 → 67 (65 queued by name, 2 conventions)
+
+**Break runs owed from earlier.** D566 and D567 together: 41 of 44 caught. One was expected (a
+spell's damage raising `deals-damage`, labelled unreached when it was written). One is a guard
+nothing reaches — the test that only *combat* damage is one event per creature can be widened to
+all damage without a test noticing, because no card damages one creature twice in a single
+resolution; the comment at the guard now says so instead of claiming otherwise. The third was a
+missing row: "when you cycle **this** card" answered for any card cycled and every existing row
+cycled the card itself. A Bant Sojourners on the battlefield while a land is cycled is that row,
+and it fails with the break applied. D570's pod sweep (seeds 44001–44040): 40 of 40 finished, no
+throw, no stall.
+
+## D572 — A level band is not the card's own text
+
+**Found by D571, in the same hour.** Student of Warfare's Oracle text prints its level bands the
+way every leveler does — a header line, a size line, then one ability to a line:
+
+    Level up {W}
+    LEVEL 2-6
+    3/3
+    First strike
+    LEVEL 7+
+    4/4
+    Double strike
+
+The moment the pool carried that text, the Student had first strike with no counters on it. The
+reader that did it goes line by line, and to it a band's `First strike` is the card's.
+
+It had always done that to levelers read from the card table. There are **26** of them (25
+legal), and on **21** at least one band line was being read as the card's own — 37 lines in all.
+Coralhelm Commander flew, Hada Spy Patrol was unblockable with shroud, Kargan Dragonlord flew and
+trampled, and Brimstone Mage compiled to a creature that taps for one damage *and* for three *and*
+for five. Nothing noticed because the
+pool's own two levelers had been typed in a one-line form — `LEVEL 2-6: 3/3, first strike` — that
+no reader could parse. The pool's wording hid the bug its real wording would have shown.
+
+**The fix.** From the first `LEVEL n-m` or `LEVEL n+` header to the end of the card, nothing is the
+card's own (CR 711.2): the printed-keyword readers stop there, and the compiler reports the whole
+tail as unread rather than offering any line under it to a reader. Abilities printed above the
+first band are level zero and are read as before.
+
+A leveler from the card table is therefore a creature with its level-zero abilities and a flagged
+card, which is honest. What it is not yet is a leveler: nothing reads `Level up {cost}` or fills
+`levelBands` from printed text, so it never grows. That is the next step and it is a reading job,
+not an engine one — the pool's two levelers already level through `levelBands`.
+
+    printed legal lines read:            24,284 → 24,254 of 56,421 (43.0%)
+    cards with a compiled script:        12,486 → 12,481
+    cards with every printed line read:   8,283 → 8,287
+
+Lines go **down**, and that is the point of the entry: 37 lines that were counted as read were
+band lines read as something they are not. The net figure is smaller than that because the same
+measurement includes the sentences D571's three compiler rows newly read.
+
+Tests: four, on two rows copied from the corpus. The keyword above the first band is read and the
+ones below are not; Brimstone Mage has one ability; Kargan Dragonlord has none, and on the
+battlefield is a 2/2 that does not fly. With either half of the fix removed, they fail.

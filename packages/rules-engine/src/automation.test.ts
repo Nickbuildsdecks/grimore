@@ -13,8 +13,8 @@ import {
   STARTER_DECKS,
 } from './index.js';
 import {
-  advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, namesIn, nextTurn, passBoth,
-  refusal, stackNames, tapAllLands, PLAYERS, WIRE_CAP,
+  advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, nameOf, namesIn, nextTurn,
+  passBoth, refusal, stackNames, tapAllLands, PLAYERS, WIRE_CAP,
 } from './testkit.js';
 import type { GameState } from './types.js';
 
@@ -403,13 +403,16 @@ describe('casting and the stack', () => {
   it('picks the right lands for a two-colour cost', () => {
     let s = advanceTo(arena({
       hands: { 1: ['Sigarda, Host of Herons'] },
-      battlefield: { 1: ['Forest', 'Forest', 'Forest', 'Forest', 'Plains'] },
+      battlefield: { 1: ['Forest', 'Forest', 'Forest', 'Plains', 'Plains'] },
       turn: 2, firstSeat: 1,
     }), 'precombat-main');
-    // {3}{G}{W} from four Forests and one Plains has exactly one solution, and the Plains is in it.
+    // {2}{G}{W}{W} from three Forests and two Plains has exactly one solution, and both Plains are
+    // in it. (The pool printed this card at {3}{G}{W} until D571 checked it against its Oracle row.)
     s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Sigarda, Host of Herons') });
     expect(stackNames(s)).toEqual(['Sigarda, Host of Herons']);
-    expect(s.instances[find(s, 1, 'battlefield', 'Plains')]!.tapped).toBe(true);
+    for (const id of ids(s, 1, 'battlefield')) {
+      if (nameOf(s, id) === 'Plains') expect(s.instances[id]!.tapped).toBe(true);
+    }
     expect([...ids(s, 1, 'battlefield')].filter((id) => s.instances[id]!.tapped).length).toBe(5);
   });
 

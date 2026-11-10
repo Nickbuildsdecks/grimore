@@ -1392,7 +1392,8 @@ describe('a sweep aimed at the board it is winning', () => {
       decks: { 0: 'skyward-writ', 1: 'ember-rush' },
       hands: { 0: ['Terminus'] },
       battlefield: {
-        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', ...mine],
+        // Six Plains: Terminus is {4}{W}{W}, and five would make "declined" mean "could not pay".
+        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains', ...mine],
         1: ['Mountain', ...theirs],
       },
       turn: 5, firstSeat: 0,
@@ -1712,7 +1713,7 @@ describe('a Naturalize pointed at its own board', () => {
     `creature-fate.mjs` followed every creature Blight Vector put onto the battlefield and said that
     **6% of them were killed by the deck's own Naturalize** — nine creatures across 48 games. The
     card is "destroy target artifact or enchantment", which is a legal aim at an *artifact creature*,
-    and that deck's Plague Stingers and Ichorclaw Myrs are artifact creatures. With nothing of the
+    and that deck's Ichorclaw Myrs are artifact creatures. With nothing of the
     opponent's to point at, the only legal targets the engine can offer are its own, and the search
     took one every time: a card spent to kill its own 1/1.
 
@@ -1724,14 +1725,14 @@ describe('a Naturalize pointed at its own board', () => {
   const board = (theirs: readonly string[]): GameState => advanceTo(arena({
     decks: { 0: 'blight-vector', 1: 'forge-alliance' },
     hands: { 0: ['Naturalize'] },
-    battlefield: { 0: ['Forest', 'Forest', 'Plague Stinger'], 1: [...theirs] },
+    battlefield: { 0: ['Forest', 'Forest', 'Ichorclaw Myr'], 1: [...theirs] },
     turn: 4, firstSeat: 0,
   }), 'precombat-main');
 
   it('is not cast at its own artifact creature, and is cast the moment theirs lands', () => {
     const alone = board(['Plains']);
     const naturalize = find(alone, 0, 'hand', 'Naturalize');
-    // Offered, because its own Plague Stinger is a legal target and the table is never lied to
+    // Offered, because its own Ichorclaw Myr is a legal target and the table is never lied to
     // about what the rules allow.
     expect(legalActions(alone, 0).plays.some((play) => play.card === naturalize)).toBe(true);
     const declined = botAction(alone, 0);

@@ -244,8 +244,11 @@ function checkPlayerDocCoversEveryMechanic() {
     was matching the file's own comments. Extracting the quoted `oracleText` values is the question
     that was meant.
   */
-  const printed = [...decksSrc.matchAll(/oracleText:\s*(?:'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/g)]
-    .map((m) => m[1] ?? m[2] ?? '')
+  // All three quote styles. Double-quoted texts were skipped until D571, which is how a card whose
+  // text holds an apostrophe (and is therefore written in double quotes) could print a mechanic the
+  // cheat sheet never had to mention.
+  const printed = [...decksSrc.matchAll(/oracleText:\s*(?:'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`|"((?:[^"\\]|\\.)*)")/g)]
+    .map((m) => m[1] ?? m[2] ?? m[3] ?? '')
     .join('\n')
     .toLowerCase();
   // The cheat sheet is the table; prose elsewhere in the file is not where a player looks.

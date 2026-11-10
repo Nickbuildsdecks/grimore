@@ -230,9 +230,9 @@ const cyclingLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScrip
   abilities: [
     { cost: { tap: true }, description: `{T}: Add {${type}}.`, produces: [type] },
     {
-      cost: { mana: '{2}', discardSelf: true },
+      cost: { mana: `{${type}}`, discardSelf: true },
       cycling: true,
-      description: 'Cycling {2} ({2}, Discard this card: Draw a card.)',
+      description: `Cycling {${type}} ({${type}}, Discard this card: Draw a card.)`,
       effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
@@ -4331,13 +4331,15 @@ const ZOETIC_CAVERN: CardScript = {
 const DIRGUR_NEMESIS: CardScript = {
   name: 'Dirgur Nemesis',
   keywords: ['defender'],
-  morph: { cost: { mana: '{5}{U}' } },
+  // Megamorph {6}{U}, on a 6/5 that costs {5}{U}: the pool had this as a 2/6 with a plain morph
+  // for {5}{U} until D571 read its Oracle row. Turned up it is a 7/6.
+  morph: { cost: { mana: '{6}{U}' }, mega: true },
 };
 
 const BATTERING_CRAGHORN: CardScript = {
   name: 'Battering Craghorn',
   keywords: ['first strike'],
-  morph: { cost: { mana: '{4}{R}' } },
+  morph: { cost: { mana: '{1}{R}{R}' } },
 };
 
 /*
@@ -4353,7 +4355,7 @@ const BATTERING_CRAGHORN: CardScript = {
 */
 const AINOK_SURVIVALIST: CardScript = {
   name: 'Ainok Survivalist',
-  morph: { cost: { mana: '{1}{G}' } },
+  morph: { cost: { mana: '{1}{G}' }, mega: true },
   triggers: [{
     on: { kind: 'turned-face-up' },
     description: 'destroy target artifact or enchantment an opponent controls',
@@ -4385,7 +4387,7 @@ const AINOK_SURVIVALIST: CardScript = {
 
 const MASTER_OF_PEARLS: CardScript = {
   name: 'Master of Pearls',
-  morph: { cost: { mana: '{2}{W}{W}' } },
+  morph: { cost: { mana: '{3}{W}{W}' } },
   triggers: [{
     on: { kind: 'turned-face-up' },
     description: 'creatures you control get +2/+2 until end of turn',
@@ -4400,7 +4402,7 @@ const MASTER_OF_PEARLS: CardScript = {
   likes for turning itself up, and the first five morphs all printed mana, so the engine held the
   cost as a mana string — which is the sort of shortcut that reads as a design until the sixth card
   arrives. The cost is an `AbilityCost` now, the same vocabulary an activated ability uses, and it
-  brought the life clause's own rule with it: a player on three life is not *offered* a Zombie
+  brought the life clause's own rule with it: a player on five life is not *offered* a Zombie
   Cutthroat's turn-up, because a cost you cannot pay is not a cost you may choose to pay.
 
   Megamorph (CR 702.37c) is one flag, and the reason it is a flag rather than a `turned-face-up`
@@ -4412,8 +4414,8 @@ const MASTER_OF_PEARLS: CardScript = {
 */
 const ZOMBIE_CUTTHROAT: CardScript = {
   name: 'Zombie Cutthroat',
-  // No mana at all, which is the case the string could not express: `{ life: 3 }` and nothing else.
-  morph: { cost: { life: 3 } },
+  // No mana at all, which is the case the string could not express: `{ life: 5 }` and nothing else.
+  morph: { cost: { life: 5 } },
 };
 
 /**
@@ -4436,10 +4438,10 @@ const HIDDEN_DRAGONSLAYER: CardScript = {
   morph: { cost: { mana: '{2}{W}' }, mega: true },
   triggers: [{
     on: { kind: 'turned-face-up' },
-    description: "destroy target creature an opponent controls with power 4 or greater",
+    description: "destroy target creature with power 4 or greater an opponent controls",
     targets: [{
       kind: 'creature',
-      description: 'target creature an opponent controls with power 4 or greater',
+      description: 'target creature with power 4 or greater an opponent controls',
       filter: (state, candidate, chooser) => {
         if (candidate.kind !== 'card') return false;
         const inst = state.instances[candidate.id];
@@ -5664,11 +5666,13 @@ const BUTCHER_GHOUL: CardScript = {
  * Murderous Redcap: persist, and the half of the family that has text of its own.
  *
  * "When this enters, it deals damage equal to its power to any target" plus persist is two cards in
- * one: two damage now, one damage later, and the 1/1 that comes back is a 0/0 with a −1/−1 counter
- * on it — which the layer system kills on arrival unless something is adding to it. That is the
- * printed card and the reason persist creatures are 3/2s and 1/1s rather than 1/1s alone: a
- * Redcap's second body is a *trigger*, not a creature, and the engine's state-based actions put the
- * 0/0 back in the graveyard the moment the trigger has resolved.
+ * one: a 2/2 and two damage now, then a 1/1 and one damage later, because the body persist returns
+ * carries a −1/−1 counter and the damage is read off its power as it is.
+ *
+ * Until D571 this comment said the second body was "a 0/0 … which the layer system kills on
+ * arrival", and called that the printed card. It was this pool's card: the definition had the
+ * Redcap as a 1/1, nothing had ever compared it with its Oracle row, and the deck built around it
+ * was measured with the second body dying before it could do anything.
  */
 const MURDEROUS_REDCAP: CardScript = {
   name: 'Murderous Redcap',
@@ -16736,6 +16740,11 @@ function targetSpecFrom(
     case 'target creature an opponent controls with power 4 or greater':
     case 'target creature an opponent controls with power 5 or greater':
     case 'target creature an opponent controls with power 6 or greater':
+    // The other printed order, which is the one Hidden Dragonslayer itself uses (D571): the pool
+    // had typed its card the first way round, so that was the only order this read.
+    case 'target creature with power 4 or greater an opponent controls':
+    case 'target creature with power 5 or greater an opponent controls':
+    case 'target creature with power 6 or greater an opponent controls':
       return spec({
         kind: 'creature',
         filter: permanentFilter({
@@ -17596,9 +17605,9 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
  * ## The zero branches are inherited, and are belt and braces rather than load-bearing
  *
  * Three of the four `apply` bodies open by returning the state untouched for an amount of zero.
- * They came across from `damageEffect` unchanged, and they are Murderous Redcap's reading: the body
- * persist gives back is a 1/1 with a −1/−1 counter, so its power is zero and the printed card deals
- * nothing. Worth being accurate about why they are harmless rather than why they are needed —
+ * They came across from `damageEffect` unchanged, and they were written for this pool's Murderous
+ * Redcap while it was mistakenly a 1/1 (D571): the body persist gave back had power zero and dealt
+ * nothing. The card is a 2/2, so that case is gone. Worth being accurate about why they are harmless rather than why they are needed —
  * `dealDamage` refuses a non-positive amount itself, so deleting any of them changes nothing a test
  * can see (established by a break run, D423). They are kept because they were here, and the sweep
  * added below deliberately has none.
@@ -18920,8 +18929,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
-    A granted keyword, and optionally a colour it becomes with it: "target creature gains haste
-    until end of turn **and becomes red**", which is Crimson Wisps.
+    A granted keyword, and optionally a colour it becomes with it: "target creature **becomes
+    red and** gains haste until end of turn", which is Crimson Wisps.
+
+    The colour comes **first** in the printed sentence. Until D571 this read "gains haste until end
+    of turn and becomes red" — the order the pool had typed the card in, and a sentence no card in
+    the corpus prints. The reader passed its tests against that text and read neither of the two
+    cards that say it (Crimson Wisps and Aphotic Wisps).
 
     The colour rides in the same `PumpOptions` as the keyword, for `pumpAndGrant`'s reason one
     sentence over: `pump` takes both and the hand-written card passes
@@ -18936,15 +18950,15 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     absence of the effect. Nothing in the pool prints it, so it is left unread rather than guessed.
   */
   const granted =
-    /^(target creature(?: you control)?) gains ([a-z][a-z' ]*?) until end of turn(?: and becomes ([a-z]+))?$/i
+    /^(target creature(?: you control)?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z' ]*?) until end of turn$/i
       .exec(text);
   if (granted !== null) {
-    const words = grantedKeywordList(granted[2]!);
+    const words = grantedKeywordList(granted[3]!);
     const spec = targetSpecFrom(granted[1]!, true);
-    const becomes = granted[3] === undefined
+    const becomes = granted[2] === undefined
       ? undefined
-      : TOKEN_COLOURS[granted[3].toLowerCase()] ?? null;
-    const colourOk = granted[3] === undefined || (becomes !== undefined && becomes !== null);
+      : TOKEN_COLOURS[granted[2].toLowerCase()] ?? null;
+    const colourOk = granted[2] === undefined || (becomes !== undefined && becomes !== null);
     if (words !== null && spec !== null && colourOk) {
       const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
       const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
@@ -20871,7 +20885,9 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
     printed line opens with those four words.
   */
   const metalcraft = new RegExp(
-    `^(?:${self}|it) (gets \\+(\\d+)\\/\\+(\\d+)|has protection from all colors)` +
+    // "from each color" is the printed phrase (8 legal cards). This read "from all colors" until
+    // D571 — the pool's own wording for Etched Champion, which no card in the corpus prints.
+    `^(?:${self}|it) (gets \\+(\\d+)\\/\\+(\\d+)|has protection from each color)` +
     ' as long as you control three or more artifacts$',
     'i',
   ).exec(text);

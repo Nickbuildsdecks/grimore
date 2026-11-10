@@ -39,7 +39,7 @@
  * the text of a real card is worse than leaving the mechanic out (D259).
  */
 import type { CardDef } from './cards.js';
-import { hasType, isPrintedAbilityLine, parseTypeLine } from './characteristics.js';
+import { hasType, isPrintedAbilityLine, parseTypeLine, LEVEL_BAND_HEADER } from './characteristics.js';
 import {
   cardFromData, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
   printedLoyalty, printedRulesLines,
@@ -359,8 +359,22 @@ function compileUncached(row: CardDataRow): Compilation {
     compiled.push(...attachment.claimed);
   }
 
-  for (const line of lines) {
+  /*
+    A leveler's bands are not the card's abilities (CR 711.2, D572).
+
+    From the first `LEVEL n-m` header to the end of the card, every line is something the creature
+    has while it holds that many level counters. Read line by line they would each become an
+    ability of the card itself — which is what happened until D572, and it is the worst kind of
+    reading: Brimstone Mage compiled to a creature that taps for one damage and also for three,
+    from the turn it arrives. So the whole tail is reported unread, header and size lines included,
+    and nothing under it is offered to a reader. `levelBands` on the definition is the engine's
+    reading of a band; nothing fills it from printed text yet, and an unread line is what says so.
+  */
+  const firstBand = lines.findIndex((line) => LEVEL_BAND_HEADER.test(line));
+
+  for (const [index, line] of lines.entries()) {
     if (claimed.has(line)) continue;
+    if (firstBand >= 0 && index >= firstBand) { unread.push({ line, why: 'no-reader' }); continue; }
     /*
       A printed ability line the engine already reads off the `CardDef` itself — `characteristicsOf`
       asks `printedKeywords`, `printedLandwalk` and `printedProtection` of the oracle text, with no

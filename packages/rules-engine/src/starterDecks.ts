@@ -40,7 +40,7 @@ const SELESNYA_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Selesnya Guildgate enters the battlefield tapped.\n{T}: Add {G} or {W}.',
+  oracleText: 'Selesnya Guildgate enters tapped.\n{T}: Add {G} or {W}.',
   colors: [],
 };
 
@@ -49,7 +49,7 @@ const DIMIR_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Dimir Guildgate enters the battlefield tapped.\n{T}: Add {U} or {B}.',
+  oracleText: 'Dimir Guildgate enters tapped.\n{T}: Add {U} or {B}.',
   colors: [],
 };
 
@@ -58,7 +58,7 @@ const GOLGARI_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Golgari Guildgate enters the battlefield tapped.\n{T}: Add {B} or {G}.',
+  oracleText: 'Golgari Guildgate enters tapped.\n{T}: Add {B} or {G}.',
   colors: [],
 };
 
@@ -91,8 +91,8 @@ const FIREBRAND_ARCHER: CardDef = {
   typeLine: 'Creature — Human Archer',
   manaCost: '{1}{R}',
   cmc: 2,
-  power: '1',
-  toughness: '2',
+  power: '2',
+  toughness: '1',
   oracleText: 'Whenever you cast a noncreature spell, Firebrand Archer deals 1 damage to each opponent.',
   colors: ['R'],
 };
@@ -102,7 +102,7 @@ const IMPACT_TREMORS: CardDef = {
   typeLine: 'Enchantment',
   manaCost: '{1}{R}',
   cmc: 2,
-  oracleText: 'Whenever a creature you control enters the battlefield, Impact Tremors deals 1 damage to each opponent.',
+  oracleText: 'Whenever a creature you control enters, Impact Tremors deals 1 damage to each opponent.',
   colors: ['R'],
 };
 
@@ -121,7 +121,7 @@ const MOGG_WAR_MARSHAL: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'Echo {1}{R} (At the beginning of your upkeep, if this came under your control since your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Mogg War Marshal enters the battlefield or dies, create a 1/1 red Goblin creature token.',
+  oracleText: 'Echo {1}{R} (At the beginning of your upkeep, if this came under your control since your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Mogg War Marshal enters or dies, create a 1/1 red Goblin creature token.',
   colors: ['R'],
 };
 
@@ -134,7 +134,7 @@ const MOGG_WAR_MARSHAL: CardDef = {
  */
 const YAVIMAYA_GRANGER: CardDef = {
   name: 'Yavimaya Granger',
-  typeLine: 'Creature — Elf Scout',
+  typeLine: 'Creature — Elf',
   manaCost: '{2}{G}',
   cmc: 3,
   power: '2',
@@ -157,8 +157,8 @@ const GOBLIN_ARSONIST: CardDef = {
 const THERMO_ALCHEMIST: CardDef = {
   name: 'Thermo-Alchemist',
   typeLine: 'Creature — Human Shaman',
-  manaCost: '{2}{R}',
-  cmc: 3,
+  manaCost: '{1}{R}',
+  cmc: 2,
   power: '0',
   toughness: '3',
   oracleText: 'Defender\n{T}: Thermo-Alchemist deals 1 damage to each opponent.\nWhenever you cast an instant or sorcery spell, untap Thermo-Alchemist.',
@@ -223,10 +223,10 @@ const LAVA_SPIKE: CardDef = {
  */
 const CRIMSON_WISPS: CardDef = {
   name: 'Crimson Wisps',
-  typeLine: 'Sorcery',
+  typeLine: 'Instant',
   manaCost: '{R}',
   cmc: 1,
-  oracleText: 'Target creature gains haste until end of turn and becomes red.\nDraw a card.',
+  oracleText: 'Target creature becomes red and gains haste until end of turn.\nDraw a card.',
   colors: ['R'],
 };
 
@@ -253,7 +253,7 @@ const ACT_OF_TREASON: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{2}{R}',
   cmc: 3,
-  oracleText: 'Gain control of target creature until end of turn. Untap it. It gains haste until end of turn.',
+  oracleText: 'Gain control of target creature until end of turn. Untap that creature. It gains haste until end of turn.',
   colors: ['R'],
 };
 
@@ -264,7 +264,7 @@ const FLAMETONGUE_KAVU: CardDef = {
   cmc: 4,
   power: '4',
   toughness: '2',
-  oracleText: 'When Flametongue Kavu enters the battlefield, it deals 4 damage to target creature.',
+  oracleText: 'When Flametongue Kavu enters, it deals 4 damage to target creature.',
   colors: ['R'],
 };
 
@@ -330,8 +330,8 @@ const BONESPLITTER: CardDef = {
 const BLADE_OF_SELVES: CardDef = {
   name: 'Blade of Selves',
   typeLine: 'Artifact — Equipment',
-  manaCost: '{3}',
-  cmc: 3,
+  manaCost: '{2}',
+  cmc: 2,
   oracleText: 'Equipped creature has myriad. (Whenever this creature attacks, for each opponent '
     + 'other than defending player, you may create a token that\u2019s a copy of this creature '
     + 'that\u2019s tapped and attacking that player or a planeswalker they control. Exile those '
@@ -344,7 +344,7 @@ const MAGMA_JET: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{R}',
   cmc: 2,
-  oracleText: 'Magma Jet deals 2 damage to any target.\nScry 2.',
+  oracleText: 'Magma Jet deals 2 damage to any target. Scry 2.',
   colors: ['R'],
 };
 
@@ -381,7 +381,7 @@ const LLANOWAR_ELVES: CardDef = {
 */
 const DRAGONSGUARD_ELITE: CardDef = {
   name: 'Dragonsguard Elite',
-  typeLine: 'Creature — Human Wizard',
+  typeLine: 'Creature — Human Druid',
   manaCost: '{1}{G}',
   cmc: 2,
   power: '2',
@@ -393,8 +393,8 @@ const DRAGONSGUARD_ELITE: CardDef = {
 const SEDGEMOOR_WITCH: CardDef = {
   name: 'Sedgemoor Witch',
   typeLine: 'Creature — Human Warlock',
-  manaCost: '{2}{B}{B}',
-  cmc: 4,
+  manaCost: '{2}{B}',
+  cmc: 3,
   power: '3',
   toughness: '2',
   oracleText: "Menace, ward {3}\nMagecraft — Whenever you cast or copy an instant or sorcery spell, create a 1/1 black Pest creature token with \"When this creature dies, you gain 1 life.\"",
@@ -437,7 +437,7 @@ const SOULBOND_REMINDER = 'Soulbond (You may pair this creature with another unp
 const TRUSTED_FORCEMAGE: CardDef = {
   name: 'Trusted Forcemage',
   typeLine: 'Creature — Human Shaman',
-  manaCost: '{1}{G}{G}',
+  manaCost: '{2}{G}',
   cmc: 3,
   power: '2',
   toughness: '2',
@@ -490,7 +490,7 @@ const TANDEM_LOOKOUT: CardDef = {
   typeLine: 'Creature — Human Scout',
   manaCost: '{2}{U}',
   cmc: 3,
-  power: '1',
+  power: '2',
   toughness: '1',
   oracleText: `${SOULBOND_REMINDER}\nAs long as Tandem Lookout is paired with another creature, `
     + "each of those creatures has \"Whenever this creature deals damage to a player, draw a card.\"",
@@ -507,8 +507,8 @@ const TANDEM_LOOKOUT: CardDef = {
 const OPHIDIAN_EYE: CardDef = {
   name: 'Ophidian Eye',
   typeLine: 'Enchantment — Aura',
-  manaCost: '{1}{U}',
-  cmc: 2,
+  manaCost: '{2}{U}',
+  cmc: 3,
   oracleText: 'Flash\nEnchant creature\nEnchanted creature has "Whenever this creature deals '
     + 'damage to a player, draw a card."',
   colors: ['U'],
@@ -516,9 +516,9 @@ const OPHIDIAN_EYE: CardDef = {
 
 const WOLFIR_SILVERHEART: CardDef = {
   name: 'Wolfir Silverheart',
-  typeLine: 'Creature — Werewolf',
-  manaCost: '{4}{G}{G}',
-  cmc: 6,
+  typeLine: 'Creature — Wolf Warrior',
+  manaCost: '{3}{G}{G}',
+  cmc: 5,
   power: '4',
   toughness: '4',
   oracleText: `${SOULBOND_REMINDER}\nAs long as Wolfir Silverheart is paired with another creature, `
@@ -557,11 +557,11 @@ const ZOETIC_CAVERN: CardDef = {
 const DIRGUR_NEMESIS: CardDef = {
   name: 'Dirgur Nemesis',
   typeLine: 'Creature — Serpent',
-  manaCost: '{4}{U}',
-  cmc: 5,
-  power: '2',
-  toughness: '6',
-  oracleText: 'Defender\nMorph {5}{U}',
+  manaCost: '{5}{U}',
+  cmc: 6,
+  power: '6',
+  toughness: '5',
+  oracleText: 'Defender\nMegamorph {6}{U}',
   colors: ['U'],
 };
 
@@ -572,7 +572,7 @@ const BATTERING_CRAGHORN: CardDef = {
   cmc: 4,
   power: '3',
   toughness: '1',
-  oracleText: 'First strike\nMorph {4}{R}',
+  oracleText: 'First strike\nMorph {1}{R}{R}',
   colors: ['R'],
 };
 
@@ -588,12 +588,12 @@ const BATTERING_CRAGHORN: CardDef = {
 */
 const AINOK_SURVIVALIST: CardDef = {
   name: 'Ainok Survivalist',
-  typeLine: 'Creature — Hound Shaman',
+  typeLine: 'Creature — Dog Shaman',
   manaCost: '{1}{G}',
   cmc: 2,
   power: '2',
   toughness: '1',
-  oracleText: 'Morph {1}{G}\nWhen Ainok Survivalist is turned face up, destroy target artifact or enchantment an opponent controls.',
+  oracleText: 'Megamorph {1}{G}\nWhen Ainok Survivalist is turned face up, destroy target artifact or enchantment an opponent controls.',
   colors: ['G'],
 };
 
@@ -604,7 +604,7 @@ const MASTER_OF_PEARLS: CardDef = {
   cmc: 2,
   power: '2',
   toughness: '2',
-  oracleText: 'Morph {2}{W}{W}\nWhen Master of Pearls is turned face up, creatures you control get +2/+2 until end of turn.',
+  oracleText: 'Morph {3}{W}{W}\nWhen Master of Pearls is turned face up, creatures you control get +2/+2 until end of turn.',
   colors: ['W'],
 };
 
@@ -681,8 +681,8 @@ const THE_BIRTH_OF_MELETIS: CardDef = {
 const THE_ELDEST_REBORN: CardDef = {
   name: 'The Eldest Reborn',
   typeLine: 'Enchantment — Saga',
-  manaCost: '{4}{B}{B}',
-  cmc: 6,
+  manaCost: '{4}{B}',
+  cmc: 5,
   oracleText: 'I — Each opponent sacrifices a creature.\nII — Each opponent discards a card.\nIII — Return target creature card from a graveyard to the battlefield under your control.',
   colors: ['B'],
 };
@@ -719,9 +719,9 @@ const SAW_IT_COMING: CardDef = {
 const CONCLAVE_TRIBUNAL: CardDef = {
   name: 'Conclave Tribunal',
   typeLine: 'Enchantment',
-  manaCost: '{3}{W}{W}',
-  cmc: 5,
-  oracleText: 'Convoke\nWhen Conclave Tribunal enters the battlefield, exile target nonland permanent an opponent controls until Conclave Tribunal leaves the battlefield.',
+  manaCost: '{3}{W}',
+  cmc: 4,
+  oracleText: 'Convoke\nWhen Conclave Tribunal enters, exile target nonland permanent an opponent controls until Conclave Tribunal leaves the battlefield.',
   colors: ['W'],
 };
 
@@ -738,8 +738,8 @@ const GRIZZLY_BEARS: CardDef = {
 
 const MARDU_SCOUT: CardDef = {
   name: 'Mardu Scout',
-  typeLine: 'Creature — Human Scout',
-  manaCost: '{1}{R}',
+  typeLine: 'Creature — Goblin Scout',
+  manaCost: '{R}{R}',
   cmc: 2,
   power: '3',
   toughness: '1',
@@ -768,7 +768,7 @@ const CENTAUR_COURSER: CardDef = {
 const LHURGOYF: CardDef = {
   name: 'Lhurgoyf',
   typeLine: 'Creature — Lhurgoyf',
-  manaCost: '{3}{G}',
+  manaCost: '{2}{G}{G}',
   cmc: 4,
   power: '*',
   toughness: '1+*',
@@ -796,14 +796,14 @@ const SOUL_WARDEN: CardDef = {
   cmc: 1,
   power: '1',
   toughness: '1',
-  oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
+  oracleText: 'Whenever another creature enters, you gain 1 life.',
   colors: ['W'],
 };
 
 const GLORIOUS_ANTHEM: CardDef = {
   name: 'Glorious Anthem',
   typeLine: 'Enchantment',
-  manaCost: '{2}{W}',
+  manaCost: '{1}{W}{W}',
   cmc: 3,
   oracleText: 'Creatures you control get +1/+1.',
   colors: ['W'],
@@ -823,7 +823,7 @@ const GLORIOUS_ANTHEM: CardDef = {
 const CALCIDERM: CardDef = {
   name: 'Calciderm',
   typeLine: 'Creature \u2014 Beast',
-  manaCost: '{3}{W}',
+  manaCost: '{2}{W}{W}',
   cmc: 4,
   power: '5',
   toughness: '5',
@@ -877,7 +877,7 @@ const RAMPANT_GROWTH: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{1}{G}',
   cmc: 2,
-  oracleText: 'Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.',
+  oracleText: 'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.',
   colors: ['G'],
 };
 
@@ -892,7 +892,7 @@ const GIANT_GROWTH: CardDef = {
 
 const DREGSCAPE_ZOMBIE: CardDef = {
   name: 'Dregscape Zombie',
-  typeLine: 'Creature — Zombie Warrior',
+  typeLine: 'Creature — Zombie',
   manaCost: '{1}{B}',
   cmc: 2,
   power: '2',
@@ -919,7 +919,7 @@ const HELLSPARK_ELEMENTAL: CardDef = {
 
 const FLEECEMANE_LION: CardDef = {
   name: 'Fleecemane Lion',
-  typeLine: 'Creature — Cat Hydra',
+  typeLine: 'Creature — Cat',
   manaCost: '{G}{W}',
   cmc: 2,
   power: '3',
@@ -972,8 +972,8 @@ const SWORDS_TO_PLOWSHARES: CardDef = {
 const HARMONIZE: CardDef = {
   name: 'Harmonize',
   typeLine: 'Sorcery',
-  manaCost: '{3}{G}{G}',
-  cmc: 5,
+  manaCost: '{2}{G}{G}',
+  cmc: 4,
   oracleText: 'Draw three cards.',
   colors: ['G'],
 };
@@ -990,7 +990,7 @@ const OVERRUN: CardDef = {
 const SIGARDA_HOST_OF_HERONS: CardDef = {
   name: 'Sigarda, Host of Herons',
   typeLine: 'Legendary Creature — Angel',
-  manaCost: '{3}{G}{W}',
+  manaCost: '{2}{G}{W}{W}',
   cmc: 5,
   power: '5',
   toughness: '5',
@@ -1088,9 +1088,9 @@ const MIND_ROT: CardDef = {
 const DIABOLIC_TUTOR: CardDef = {
   name: 'Diabolic Tutor',
   typeLine: 'Sorcery',
-  manaCost: '{3}{B}',
+  manaCost: '{2}{B}{B}',
   cmc: 4,
-  oracleText: 'Search your library for a card and put that card into your hand, then shuffle.',
+  oracleText: 'Search your library for a card, put that card into your hand, then shuffle.',
   colors: ['B'],
 };
 
@@ -1172,7 +1172,7 @@ const MAN_O_WAR: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: "When Man-o'-War enters the battlefield, return target creature to its owner's hand.",
+  oracleText: "When Man-o'-War enters, return target creature to its owner's hand.",
   colors: ['U'],
 };
 
@@ -1190,8 +1190,8 @@ const AIR_ELEMENTAL: CardDef = {
 const TALRAND: CardDef = {
   name: 'Talrand, Sky Summoner',
   typeLine: 'Legendary Creature — Merfolk Wizard',
-  manaCost: '{2}{U}',
-  cmc: 3,
+  manaCost: '{2}{U}{U}',
+  cmc: 4,
   power: '2',
   toughness: '2',
   oracleText: 'Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.',
@@ -1225,7 +1225,7 @@ const ENDLESS_ONE: CardDef = {
   cmc: 0,
   power: '0',
   toughness: '0',
-  oracleText: 'Endless One enters the battlefield with X +1/+1 counters on it.',
+  oracleText: 'Endless One enters with X +1/+1 counters on it.',
   colors: [],
 };
 
@@ -1261,8 +1261,8 @@ const PREORDAIN: CardDef = {
 const NINJA_OF_THE_DEEP_HOURS: CardDef = {
   name: 'Ninja of the Deep Hours',
   typeLine: 'Creature \u2014 Human Ninja',
-  manaCost: '{1}{U}',
-  cmc: 2,
+  manaCost: '{3}{U}',
+  cmc: 4,
   power: '2',
   toughness: '2',
   oracleText: 'Ninjutsu {1}{U} ({1}{U}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nWhenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
@@ -1276,7 +1276,7 @@ const OMENSPEAKER: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '3',
-  oracleText: 'When Omenspeaker enters the battlefield, scry 2.',
+  oracleText: 'When Omenspeaker enters, scry 2.',
   colors: ['U'],
 };
 
@@ -1305,7 +1305,7 @@ const CLONE: CardDef = {
   cmc: 4,
   power: '0',
   toughness: '0',
-  oracleText: 'You may have Clone enter the battlefield as a copy of any creature on the battlefield.',
+  oracleText: 'You may have Clone enter as a copy of any creature on the battlefield.',
   colors: ['U'],
 };
 
@@ -1330,18 +1330,18 @@ const CACKLING_COUNTERPART: CardDef = {
 const MIRKO_VOSK: CardDef = {
   name: 'Mirko Vosk, Mind Drinker',
   typeLine: 'Legendary Creature \u2014 Vampire',
-  manaCost: '{2}{U}{B}',
-  cmc: 4,
+  manaCost: '{3}{U}{B}',
+  cmc: 5,
   power: '2',
   toughness: '4',
-  oracleText: 'Flying\nWhenever Mirko Vosk, Mind Drinker deals combat damage to a player, that player mills until they reveal four land cards.',
+  oracleText: 'Flying\nWhenever Mirko Vosk, Mind Drinker deals combat damage to a player, that player reveals cards from the top of their library until they reveal four land cards, then puts those cards into their graveyard.',
   colors: ['U', 'B'],
 };
 
 const CHASM_SKULKER: CardDef = {
   name: 'Chasm Skulker',
   typeLine: 'Creature — Squid Horror',
-  manaCost: '{1}{U}{U}',
+  manaCost: '{2}{U}',
   cmc: 3,
   power: '1',
   toughness: '1',
@@ -1377,7 +1377,7 @@ const THOUGHT_SCOUR: CardDef = {
   typeLine: 'Instant',
   manaCost: '{U}',
   cmc: 1,
-  oracleText: 'Target player mills two cards. Draw a card.',
+  oracleText: 'Target player mills two cards.\nDraw a card.',
   colors: ['U'],
 };
 
@@ -1393,19 +1393,19 @@ const COMPELLING_ARGUMENT: CardDef = {
 const RETURNED_CENTAUR: CardDef = {
   name: 'Returned Centaur',
   typeLine: 'Creature \u2014 Zombie Centaur',
-  manaCost: '{3}{U}',
+  manaCost: '{3}{B}',
   cmc: 4,
   power: '2',
   toughness: '4',
-  oracleText: 'When Returned Centaur enters the battlefield, target player mills four cards.',
-  colors: ['U'],
+  oracleText: 'When Returned Centaur enters, target player mills four cards.',
+  colors: ['B'],
 };
 
 const NEMESIS_OF_REASON: CardDef = {
   name: 'Nemesis of Reason',
   typeLine: 'Creature \u2014 Leviathan Horror',
-  manaCost: '{4}{U}{B}',
-  cmc: 6,
+  manaCost: '{3}{U}{B}',
+  cmc: 5,
   power: '3',
   toughness: '7',
   oracleText: 'Whenever Nemesis of Reason attacks, defending player mills ten cards.',
@@ -1443,8 +1443,8 @@ const MIND_SPRING: CardDef = {
 const EXSANGUINATE: CardDef = {
   name: 'Exsanguinate',
   typeLine: 'Sorcery',
-  manaCost: '{X}{B}',
-  cmc: 1,
+  manaCost: '{X}{B}{B}',
+  cmc: 2,
   oracleText: 'Each opponent loses X life. You gain life equal to the life lost this way.',
   colors: ['B'],
 };
@@ -1461,11 +1461,11 @@ const EXSANGUINATE: CardDef = {
 
 const BLOODTHIRSTY_AERIALIST: CardDef = {
   name: 'Bloodthirsty Aerialist',
-  typeLine: 'Creature \u2014 Vampire Soldier',
-  manaCost: '{2}{B}',
+  typeLine: 'Creature \u2014 Vampire Rogue',
+  manaCost: '{1}{B}{B}',
   cmc: 3,
   power: '2',
-  toughness: '2',
+  toughness: '3',
   oracleText: 'Flying\nWhenever you gain life, put a +1/+1 counter on Bloodthirsty Aerialist.',
   colors: ['B'],
 };
@@ -1474,12 +1474,12 @@ const BLOODTHIRSTY_AERIALIST: CardDef = {
 
 const FLESHBAG_MARAUDER: CardDef = {
   name: 'Fleshbag Marauder',
-  typeLine: 'Creature — Human Warrior',
+  typeLine: 'Creature — Zombie Warrior',
   manaCost: '{2}{B}',
   cmc: 3,
-  power: '2',
-  toughness: '2',
-  oracleText: 'When Fleshbag Marauder enters the battlefield, each player sacrifices a creature.',
+  power: '3',
+  toughness: '1',
+  oracleText: 'When Fleshbag Marauder enters, each player sacrifices a creature.',
   colors: ['B'],
 };
 
@@ -1508,7 +1508,7 @@ const ZOMBIFY: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{3}{B}',
   cmc: 4,
-  oracleText: 'Put target creature card from your graveyard onto the battlefield under your control.',
+  oracleText: 'Return target creature card from your graveyard to the battlefield.',
   colors: ['B'],
 };
 
@@ -1530,7 +1530,7 @@ const WALL_OF_BLOSSOMS: CardDef = {
   cmc: 2,
   power: '0',
   toughness: '4',
-  oracleText: 'Defender\nWhen Wall of Blossoms enters the battlefield, draw a card.',
+  oracleText: 'Defender\nWhen Wall of Blossoms enters, draw a card.',
   colors: ['G'],
 };
 
@@ -1547,7 +1547,7 @@ const BLOOD_ARTIST: CardDef = {
 
 const ZULAPORT_CUTTHROAT: CardDef = {
   name: 'Zulaport Cutthroat',
-  typeLine: 'Creature — Human Rogue',
+  typeLine: 'Creature — Human Rogue Ally',
   manaCost: '{1}{B}',
   cmc: 2,
   power: '1',
@@ -1559,8 +1559,8 @@ const ZULAPORT_CUTTHROAT: CardDef = {
 const DOOMED_DISSENTER: CardDef = {
   name: 'Doomed Dissenter',
   typeLine: 'Creature — Human',
-  manaCost: '{B}',
-  cmc: 1,
+  manaCost: '{1}{B}',
+  cmc: 2,
   power: '1',
   toughness: '1',
   oracleText: 'When Doomed Dissenter dies, create a 2/2 black Zombie creature token.',
@@ -1581,15 +1581,15 @@ const LOTLETH_GIANT: CardDef = {
   typeLine: 'Creature — Zombie Giant',
   manaCost: '{6}{B}',
   cmc: 7,
-  power: '5',
-  toughness: '6',
+  power: '6',
+  toughness: '5',
   oracleText: 'When Lotleth Giant enters the battlefield, each opponent loses 1 life for each creature card in your graveyard.',
   colors: ['B'],
 };
 
 const VAMPIRE_ARISTOCRAT: CardDef = {
   name: 'Vampire Aristocrat',
-  typeLine: 'Creature — Vampire Rogue',
+  typeLine: 'Creature — Vampire Rogue Noble',
   manaCost: '{2}{B}',
   cmc: 3,
   power: '2',
@@ -1612,11 +1612,11 @@ const BLOODTHRONE_VAMPIRE: CardDef = {
 const IZONI: CardDef = {
   name: 'Izoni, Thousand-Eyed',
   typeLine: 'Legendary Creature — Elf Shaman',
-  manaCost: '{2}{B}{G}',
-  cmc: 4,
+  manaCost: '{2}{B}{B}{G}{G}',
+  cmc: 6,
   power: '2',
   toughness: '3',
-  oracleText: 'When Izoni, Thousand-Eyed enters the battlefield, create a 1/1 black and green Insect creature token for each creature card in your graveyard.\n{B}{G}, Sacrifice another creature: You gain 1 life and draw a card.',
+  oracleText: 'Undergrowth \u2014 When Izoni, Thousand-Eyed enters, create a 1/1 black and green Insect creature token for each creature card in your graveyard.\n{B}{G}, Sacrifice another creature: You gain 1 life and draw a card.',
   colors: ['B', 'G'],
 };
 
@@ -1636,7 +1636,7 @@ const BOROS_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Boros Guildgate enters the battlefield tapped.\n{T}: Add {R} or {W}.',
+  oracleText: 'Boros Guildgate enters tapped.\n{T}: Add {R} or {W}.',
   colors: [],
 };
 
@@ -1695,7 +1695,7 @@ const ICHOR_WELLSPRING: CardDef = {
   typeLine: 'Artifact',
   manaCost: '{2}',
   cmc: 2,
-  oracleText: 'When Ichor Wellspring enters the battlefield or is put into a graveyard from the battlefield, draw a card.',
+  oracleText: 'When Ichor Wellspring enters or is put into a graveyard from the battlefield, draw a card.',
   colors: [],
 };
 
@@ -1735,15 +1735,15 @@ const ANGELIC_GIFT: CardDef = {
   typeLine: 'Enchantment — Aura',
   manaCost: '{1}{W}',
   cmc: 2,
-  oracleText: 'Enchant creature\nWhen Angelic Gift enters the battlefield, draw a card.\nEnchanted creature has flying.',
+  oracleText: 'Enchant creature\nWhen Angelic Gift enters, draw a card.\nEnchanted creature has flying.',
   colors: ['W'],
 };
 
 const INSPIRED_CHARGE: CardDef = {
   name: 'Inspired Charge',
   typeLine: 'Instant',
-  manaCost: '{2}{W}',
-  cmc: 3,
+  manaCost: '{2}{W}{W}',
+  cmc: 4,
   oracleText: 'Creatures you control get +2/+1 until end of turn.',
   colors: ['W'],
 };
@@ -1753,8 +1753,8 @@ const BALAN: CardDef = {
   typeLine: 'Legendary Creature — Cat Knight',
   manaCost: '{2}{W}{W}',
   cmc: 4,
-  power: '2',
-  toughness: '2',
+  power: '3',
+  toughness: '3',
   oracleText: 'Double strike\n{1}{W}: Attach all Equipment you control to Balan, Wandering Knight.',
   colors: ['W'],
 };
@@ -1819,16 +1819,13 @@ const HANGARBACK_WALKER: CardDef = {
   cmc: 0,
   power: '0',
   toughness: '0',
-  oracleText: 'Hangarback Walker enters the battlefield with X +1/+1 counters on it. '
-    + 'When Hangarback Walker dies, create a 1/1 colorless Thopter artifact creature token with '
-    + 'flying for each +1/+1 counter on it. '
-    + '{1}, {T}: Put a +1/+1 counter on Hangarback Walker.',
+  oracleText: 'Hangarback Walker enters with X +1/+1 counters on it.\nWhen Hangarback Walker dies, create a 1/1 colorless Thopter artifact creature token with flying for each +1/+1 counter on Hangarback Walker.\n{1}, {T}: Put a +1/+1 counter on Hangarback Walker.',
   colors: [],
 };
 
 const TORMENTED_SOUL: CardDef = {
   name: 'Tormented Soul',
-  typeLine: 'Creature — Human Warrior',
+  typeLine: 'Creature — Spirit',
   manaCost: '{B}',
   cmc: 1,
   power: '1',
@@ -1851,7 +1848,7 @@ const RIVER_BOA: CardDef = {
 const WALL_OF_FROST: CardDef = {
   name: 'Wall of Frost',
   typeLine: 'Creature — Wall',
-  manaCost: '{2}{U}',
+  manaCost: '{1}{U}{U}',
   cmc: 3,
   power: '0',
   toughness: '7',
@@ -1862,7 +1859,7 @@ const WALL_OF_FROST: CardDef = {
 
 const OPHIDIAN: CardDef = {
   name: 'Ophidian',
-  typeLine: 'Creature — Serpent',
+  typeLine: 'Creature — Snake',
   manaCost: '{2}{U}',
   cmc: 3,
   power: '1',
@@ -1891,8 +1888,7 @@ const FLICKERWISP: CardDef = {
   cmc: 3,
   power: '3',
   toughness: '1',
-  oracleText: 'Flying\nWhen Flickerwisp enters the battlefield, exile another target permanent. '
-    + "Return it to the battlefield under its owner's control at the beginning of the next end step.",
+  oracleText: "Flying\nWhen Flickerwisp enters, exile another target permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step.",
   colors: ['W'],
 };
 
@@ -1902,17 +1898,17 @@ const PALACE_SENTINELS: CardDef = {
   manaCost: '{3}{W}',
   cmc: 4,
   power: '2',
-  toughness: '3',
-  oracleText: 'When Palace Sentinels enters the battlefield, you become the monarch.',
+  toughness: '4',
+  oracleText: 'When Palace Sentinels enters, you become the monarch.',
   colors: ['W'],
 };
 
 const FATE_UNRAVELER: CardDef = {
   name: 'Fate Unraveler',
-  typeLine: 'Creature — Elder',
+  typeLine: 'Enchantment Creature — Hag',
   manaCost: '{3}{B}',
   cmc: 4,
-  power: '2',
+  power: '3',
   toughness: '4',
   oracleText: 'Whenever an opponent draws a card, Fate Unraveler deals 1 damage to that player.',
   colors: ['B'],
@@ -1921,11 +1917,11 @@ const FATE_UNRAVELER: CardDef = {
 const THORN_OF_THE_BLACK_ROSE: CardDef = {
   name: 'Thorn of the Black Rose',
   typeLine: 'Creature — Human Assassin',
-  manaCost: '{2}{B}{B}',
+  manaCost: '{3}{B}',
   cmc: 4,
-  power: '2',
+  power: '1',
   toughness: '3',
-  oracleText: 'Deathtouch\nWhen Thorn of the Black Rose enters the battlefield, you become the monarch.',
+  oracleText: 'Deathtouch\nWhen Thorn of the Black Rose enters, you become the monarch.',
   colors: ['B'],
 };
 
@@ -1967,9 +1963,9 @@ const MURDEROUS_REDCAP: CardDef = {
   */
   manaCost: '{2}{B/R}{B/R}',
   cmc: 4,
-  power: '1',
-  toughness: '1',
-  oracleText: 'When Murderous Redcap enters the battlefield, it deals damage equal to its power to '
+  power: '2',
+  toughness: '2',
+  oracleText: 'When Murderous Redcap enters, it deals damage equal to its power to '
     + 'any target.\nPersist (When this creature dies, if it had no -1/-1 counter on it, return it to '
     + 'the battlefield under its owner\u2019s control with a -1/-1 counter on it.)',
   colors: ['B', 'R'],
@@ -1977,7 +1973,7 @@ const MURDEROUS_REDCAP: CardDef = {
 
 const GLISTENER_ELF: CardDef = {
   name: 'Glistener Elf',
-  typeLine: 'Creature — Elf Warrior',
+  typeLine: 'Creature — Phyrexian Elf Warrior',
   manaCost: '{G}',
   cmc: 1,
   power: '1',
@@ -1988,18 +1984,18 @@ const GLISTENER_ELF: CardDef = {
 
 const PLAGUE_STINGER: CardDef = {
   name: 'Plague Stinger',
-  typeLine: 'Artifact Creature — Insect',
+  typeLine: 'Creature — Phyrexian Insect Horror',
   manaCost: '{1}{B}',
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'Flying, infect',
+  oracleText: 'Flying\nInfect',
   colors: ['B'],
 };
 
 const ICHORCLAW_MYR: CardDef = {
   name: 'Ichorclaw Myr',
-  typeLine: 'Artifact Creature — Myr',
+  typeLine: 'Artifact Creature — Phyrexian Myr',
   manaCost: '{2}',
   cmc: 2,
   power: '1',
@@ -2037,7 +2033,7 @@ const PHYREXIAN_CRUSADER: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'First strike, protection from red, protection from white, infect',
+  oracleText: 'First strike, protection from red and from white\nInfect',
   colors: ['B'],
 };
 
@@ -2057,8 +2053,7 @@ const SKITHIRYX: CardDef = {
   cmc: 5,
   power: '4',
   toughness: '4',
-  oracleText: 'Flying, infect\n{B}: Skithiryx, the Blight Dragon gains haste until end of turn.\n'
-    + '{B}{B}: Regenerate Skithiryx, the Blight Dragon.',
+  oracleText: 'Flying\nInfect\n{B}: Skithiryx, the Blight Dragon gains haste until end of turn.\n{B}{B}: Regenerate Skithiryx.',
   colors: ['B'],
 };
 
@@ -2089,7 +2084,7 @@ const AETHER_HUB: CardDef = {
   typeLine: 'Land',
   manaCost: '',
   cmc: 0,
-  oracleText: 'When Aether Hub enters the battlefield, you get {E} (an energy counter).\n'
+  oracleText: 'When Aether Hub enters, you get {E} (an energy counter).\n'
     + '{T}: Add {C}.\n'
     + '{T}, Pay {E}: Add one mana of any color.',
   colors: [],
@@ -2097,7 +2092,7 @@ const AETHER_HUB: CardDef = {
 
 const LONGTUSK_CUB: CardDef = {
   name: 'Longtusk Cub',
-  typeLine: 'Creature — Cat Beast',
+  typeLine: 'Creature — Cat',
   manaCost: '{1}{G}',
   cmc: 2,
   power: '2',
@@ -2114,7 +2109,7 @@ const BRISTLING_HYDRA: CardDef = {
   cmc: 4,
   power: '4',
   toughness: '3',
-  oracleText: 'When Bristling Hydra enters the battlefield, you get {E}{E}{E}.\n'
+  oracleText: 'When Bristling Hydra enters, you get {E}{E}{E}.\n'
     + 'Pay {E}{E}{E}: Put a +1/+1 counter on Bristling Hydra. It gains hexproof until end of turn.',
   colors: ['G'],
 };
@@ -2151,7 +2146,7 @@ const SKEWER_THE_CRITICS: CardDef = {
 
 const FIERY_TEMPER: CardDef = {
   name: 'Fiery Temper',
-  typeLine: 'Sorcery',
+  typeLine: 'Instant',
   manaCost: '{1}{R}{R}',
   cmc: 3,
   oracleText:
@@ -2163,8 +2158,8 @@ const FIERY_TEMPER: CardDef = {
 const GRAPESHOT: CardDef = {
   name: 'Grapeshot',
   typeLine: 'Sorcery',
-  manaCost: '{R}',
-  cmc: 1,
+  manaCost: '{1}{R}',
+  cmc: 2,
   oracleText:
     'Grapeshot deals 1 damage to any target.\nStorm (When you cast this spell, copy it for each '
     + 'spell cast before it this turn. You may choose new targets for the copies.)',
@@ -2174,8 +2169,8 @@ const GRAPESHOT: CardDef = {
 const TWINCAST: CardDef = {
   name: 'Twincast',
   typeLine: 'Instant',
-  manaCost: '{2}{U}{U}',
-  cmc: 4,
+  manaCost: '{U}{U}',
+  cmc: 2,
   oracleText: 'Copy target instant or sorcery spell. You may choose new targets for the copy.',
   colors: ['U'],
 };
@@ -2195,7 +2190,7 @@ const CHALICE_OF_THE_VOID: CardDef = {
   // One number paid twice, which is a cost shape nothing here had: see `ManaCost.xCount`.
   manaCost: '{X}{X}',
   cmc: 0,
-  oracleText: 'Chalice of the Void enters the battlefield with X charge counters on it. '
+  oracleText: 'Chalice of the Void enters with X charge counters on it.\n'
     + 'Whenever a player casts a spell with mana value equal to the number of charge counters on '
     + 'Chalice of the Void, counter that spell.',
   colors: [],
@@ -2227,7 +2222,7 @@ const TORMODS_CRYPT: CardDef = {
   typeLine: 'Artifact',
   manaCost: '{0}',
   cmc: 0,
-  oracleText: "{T}, Sacrifice Tormod's Crypt: Exile target player's graveyard.",
+  oracleText: "{T}, Sacrifice Tormod's Crypt: Exile all cards from target player's graveyard.",
   colors: [],
 };
 
@@ -2258,7 +2253,7 @@ const THRABEN_INSPECTOR: CardDef = {
   cmc: 1,
   power: '1',
   toughness: '2',
-  oracleText: 'When Thraben Inspector enters the battlefield, investigate. (Create a colorless Clue artifact token with "{2}, Sacrifice this artifact: Draw a card.")',
+  oracleText: 'When Thraben Inspector enters, investigate. (Create a colorless Clue artifact token with "{2}, Sacrifice this artifact: Draw a card.")',
   colors: ['W'],
 };
 
@@ -2278,7 +2273,7 @@ const ELVISH_VISIONARY: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'When Elvish Visionary enters the battlefield, draw a card.',
+  oracleText: 'When Elvish Visionary enters, draw a card.',
   colors: ['G'],
 };
 
@@ -2311,7 +2306,7 @@ const BALL_LIGHTNING: CardDef = {
   cmc: 3,
   power: '6',
   toughness: '1',
-  oracleText: 'Trample, haste\nAt the beginning of the end step, sacrifice Ball Lightning.',
+  oracleText: 'Trample\nHaste\nAt the beginning of the end step, sacrifice Ball Lightning.',
   colors: ['R'],
 };
 
@@ -2330,14 +2325,14 @@ const BALL_LIGHTNING: CardDef = {
 const SOULHERDER: CardDef = {
   name: 'Soulherder',
   typeLine: 'Creature \u2014 Spirit',
-  manaCost: '{1}{U}',
-  cmc: 2,
+  manaCost: '{1}{W}{U}',
+  cmc: 3,
   power: '1',
   toughness: '1',
   oracleText: 'Whenever a creature you control is exiled, put a +1/+1 counter on Soulherder.\n'
     + 'At the beginning of your end step, you may exile another target creature you control, then '
     + 'return that card to the battlefield under its owner\'s control.',
-  colors: ['U'],
+  colors: ['W', 'U'],
 };
 
 /**
@@ -2388,14 +2383,14 @@ const YOUTHFUL_KNIGHT: CardDef = {
   manaCost: '{1}{W}',
   cmc: 2,
   power: '2',
-  toughness: '2',
+  toughness: '1',
   oracleText: 'First strike',
   colors: ['W'],
 };
 
 const BOGGART_BRUTE: CardDef = {
   name: 'Boggart Brute',
-  typeLine: 'Creature \u2014 Goblin Berserker',
+  typeLine: 'Creature \u2014 Goblin Warrior',
   manaCost: '{2}{R}',
   cmc: 3,
   power: '3',
@@ -2425,8 +2420,8 @@ const ROBE_OF_MIRRORS: CardDef = {
 const NIGHT_OF_SOULS_BETRAYAL: CardDef = {
   name: "Night of Souls' Betrayal",
   typeLine: 'Legendary Enchantment',
-  manaCost: '{2}{B}{B}{B}',
-  cmc: 5,
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
   oracleText: 'All creatures get -1/-1.',
   colors: ['B'],
 };
@@ -2439,7 +2434,7 @@ const AZORIUS_GUILDGATE: CardDef = {
   typeLine: 'Land \u2014 Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Azorius Guildgate enters the battlefield tapped.\n{T}: Add {W} or {U}.',
+  oracleText: 'Azorius Guildgate enters tapped.\n{T}: Add {W} or {U}.',
   colors: [],
 };
 
@@ -2449,7 +2444,7 @@ const HANNA_SHIPS_NAVIGATOR: CardDef = {
   manaCost: '{1}{W}{U}',
   cmc: 3,
   power: '1',
-  toughness: '3',
+  toughness: '2',
   oracleText: '{1}{W}{U}, {T}: Return target artifact or enchantment card from your graveyard to your hand.',
   colors: ['W', 'U'],
 };
@@ -2562,8 +2557,8 @@ const TITANIC_GROWTH: CardDef = {
 const SAMITE_HEALER: CardDef = {
   name: 'Samite Healer',
   typeLine: 'Creature \u2014 Human Cleric',
-  manaCost: '{1}{W}{W}',
-  cmc: 3,
+  manaCost: '{1}{W}',
+  cmc: 2,
   power: '1',
   toughness: '1',
   oracleText: '{T}: Prevent the next 1 damage that would be dealt to any target this turn.',
@@ -2613,7 +2608,7 @@ const BORDERLAND_MARAUDER: CardDef = {
   typeLine: 'Creature \u2014 Human Warrior',
   manaCost: '{1}{R}',
   cmc: 2,
-  power: '2',
+  power: '1',
   toughness: '2',
   oracleText: 'Whenever Borderland Marauder attacks, it gets +2/+0 until end of turn.',
   colors: ['R'],
@@ -2640,8 +2635,8 @@ const FOG: CardDef = {
 const HOLY_DAY: CardDef = {
   name: 'Holy Day',
   typeLine: 'Instant',
-  manaCost: '{1}{W}',
-  cmc: 2,
+  manaCost: '{W}',
+  cmc: 1,
   oracleText: 'Prevent all combat damage that would be dealt this turn.',
   colors: ['W'],
 };
@@ -2680,8 +2675,8 @@ const HOLY_DAY: CardDef = {
 const CHROME_STEED: CardDef = {
   name: 'Chrome Steed',
   typeLine: 'Artifact Creature \u2014 Horse',
-  manaCost: '{3}',
-  cmc: 3,
+  manaCost: '{4}',
+  cmc: 4,
   power: '2',
   toughness: '2',
   oracleText: 'Metalcraft \u2014 Chrome Steed gets +2/+2 as long as you control three or more artifacts.',
@@ -2693,9 +2688,9 @@ const ETCHED_CHAMPION: CardDef = {
   typeLine: 'Artifact Creature \u2014 Soldier',
   manaCost: '{3}',
   cmc: 3,
-  power: '1',
-  toughness: '1',
-  oracleText: 'Metalcraft \u2014 Etched Champion has protection from all colors as long as you control three or more artifacts.',
+  power: '2',
+  toughness: '2',
+  oracleText: 'Metalcraft \u2014 Etched Champion has protection from each color as long as you control three or more artifacts.',
   colors: [],
 };
 
@@ -2733,7 +2728,7 @@ const JUGGERNAUT: CardDef = {
 const DISRUPT_DECORUM: CardDef = {
   name: 'Disrupt Decorum',
   typeLine: 'Sorcery',
-  manaCost: '{3}{R}',
+  manaCost: '{2}{R}{R}',
   cmc: 4,
   oracleText: "Goad all creatures you don't control.",
   colors: ['R'],
@@ -2782,7 +2777,7 @@ const PALADIN_EN_VEC: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'First strike\nProtection from black and from red',
+  oracleText: 'First strike, protection from black and from red',
   colors: ['W'],
 };
 
@@ -2835,7 +2830,7 @@ const CITY_OF_BRASS: CardDef = {
   manaCost: '',
   cmc: 0,
   oracleText:
-    'Whenever City of Brass becomes tapped, it deals 1 damage to you.\n{T}: Add one mana of any colour.',
+    'Whenever City of Brass becomes tapped, it deals 1 damage to you.\n{T}: Add one mana of any color.',
   colors: [],
 };
 
@@ -2844,7 +2839,7 @@ const MANA_CONFLUENCE: CardDef = {
   typeLine: 'Land',
   manaCost: '',
   cmc: 0,
-  oracleText: '{T}, Pay 1 life: Add one mana of any colour.',
+  oracleText: '{T}, Pay 1 life: Add one mana of any color.',
   colors: [],
 };
 
@@ -2901,7 +2896,7 @@ const MULLDRIFTER: CardDef = {
   cmc: 5,
   power: '2',
   toughness: '2',
-  oracleText: 'Flying\nWhen Mulldrifter enters the battlefield, draw two cards.\nEvoke {2}{U}',
+  oracleText: 'Flying\nWhen Mulldrifter enters, draw two cards.\nEvoke {2}{U}',
   colors: ['U'],
 };
 
@@ -2993,7 +2988,7 @@ const REST_IN_PEACE: CardDef = {
 */
 const FIREMANE_AVENGER: CardDef = {
   name: 'Firemane Avenger',
-  typeLine: 'Creature — Archon',
+  typeLine: 'Creature — Angel',
   manaCost: '{2}{R}{W}',
   cmc: 4,
   power: '3',
@@ -3010,7 +3005,7 @@ const SUNHOME_STALWART: CardDef = {
   manaCost: '{1}{W}',
   cmc: 2,
   power: '2',
-  toughness: '1',
+  toughness: '2',
   oracleText:
     'First strike\nMentor (Whenever this creature attacks, put a +1/+1 counter on target attacking '
     + 'creature with lesser power.)',
@@ -3047,7 +3042,7 @@ const BLOODBRAID_ELF: CardDef = {
 const GOBLIN_WARDRIVER: CardDef = {
   name: 'Goblin Wardriver',
   typeLine: 'Creature — Goblin Warrior',
-  manaCost: '{1}{R}',
+  manaCost: '{R}{R}',
   cmc: 2,
   power: '2',
   toughness: '2',
@@ -3066,13 +3061,13 @@ const GOBLIN_WARDRIVER: CardDef = {
 */
 const KITCHEN_FINKS: CardDef = {
   name: 'Kitchen Finks',
-  typeLine: 'Creature — Elemental',
+  typeLine: 'Creature — Ouphe',
   manaCost: '{1}{G/W}{G/W}',
   cmc: 3,
   power: '3',
   toughness: '2',
   oracleText:
-    'When Kitchen Finks enters the battlefield, you gain 2 life.\n'
+    'When Kitchen Finks enters, you gain 2 life.\n'
     + 'Persist (When this creature dies, if it had no -1/-1 counter on it, return it to the '
     + 'battlefield under its owner\u2019s control with a -1/-1 counter on it.)',
   colors: ['G', 'W'],
@@ -3147,7 +3142,7 @@ const MAZE_OF_ITH: CardDef = {
 const DIVINE_VERDICT: CardDef = {
   name: 'Divine Verdict',
   typeLine: 'Instant',
-  manaCost: '{2}{W}{W}',
+  manaCost: '{3}{W}',
   cmc: 4,
   oracleText: 'Destroy target attacking or blocking creature.',
   colors: ['W'],
@@ -3195,7 +3190,7 @@ const BANISHER_PRIEST: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'When Banisher Priest enters the battlefield, exile target creature an opponent controls until Banisher Priest leaves the battlefield.',
+  oracleText: 'When Banisher Priest enters, exile target creature an opponent controls until Banisher Priest leaves the battlefield.',
   colors: ['W'],
 };
 
@@ -3204,7 +3199,7 @@ const JOURNEY_TO_NOWHERE: CardDef = {
   typeLine: 'Enchantment',
   manaCost: '{1}{W}',
   cmc: 2,
-  oracleText: 'When Journey to Nowhere enters the battlefield, exile target creature.\nWhen Journey to Nowhere leaves the battlefield, return the exiled card to the battlefield under its owner\u2019s control.',
+  oracleText: 'When Journey to Nowhere enters, exile target creature.\nWhen Journey to Nowhere leaves the battlefield, return the exiled card to the battlefield under its owner\u2019s control.',
   colors: ['W'],
 };
 
@@ -3219,8 +3214,8 @@ const JOURNEY_TO_NOWHERE: CardDef = {
 const BANISHING_LIGHT: CardDef = {
   name: 'Banishing Light',
   typeLine: 'Enchantment',
-  manaCost: '{3}{W}',
-  cmc: 4,
+  manaCost: '{2}{W}',
+  cmc: 3,
   oracleText: 'When Banishing Light enters the battlefield, exile another target nonland permanent until Banishing Light leaves the battlefield.',
   colors: ['W'],
 };
@@ -3232,27 +3227,30 @@ const BANISHING_LIGHT: CardDef = {
  * The cycling lands: a land that is never a dead draw, because the late-game version of it is a
  * cantrip. One per colour, and the first cards in the pool with an ability used from the hand.
  */
-const cyclingLand = (name: string, symbol: string, type: string): CardDef => ({
+const cyclingLand = (name: string, symbol: string): CardDef => ({
   name,
-  typeLine: `Land — ${type}`,
+  // A plain Land. These were typed `Land — Swamp` and so on until D571, which made each one a
+  // basic-typed land that a Rampant Growth could not find and a landwalker could walk past — and
+  // they cycled for {2}, which is the Onslaught cycle's cost in no printing.
+  typeLine: 'Land',
   manaCost: '',
   cmc: 0,
-  oracleText: `${name} enters the battlefield tapped.\n{T}: Add {${symbol}}.\nCycling {2} ({2}, Discard this card: Draw a card.)`,
+  oracleText: `${name} enters tapped.\n{T}: Add {${symbol}}.\nCycling {${symbol}} ({${symbol}}, Discard this card: Draw a card.)`,
   colors: [],
 });
 
-const BARREN_MOOR = cyclingLand('Barren Moor', 'B', 'Swamp');
-const FORGOTTEN_CAVE = cyclingLand('Forgotten Cave', 'R', 'Mountain');
-const LONELY_SANDBAR = cyclingLand('Lonely Sandbar', 'U', 'Island');
-const SECLUDED_STEPPE = cyclingLand('Secluded Steppe', 'W', 'Plains');
-const TRANQUIL_THICKET = cyclingLand('Tranquil Thicket', 'G', 'Forest');
+const BARREN_MOOR = cyclingLand('Barren Moor', 'B');
+const FORGOTTEN_CAVE = cyclingLand('Forgotten Cave', 'R');
+const LONELY_SANDBAR = cyclingLand('Lonely Sandbar', 'U');
+const SECLUDED_STEPPE = cyclingLand('Secluded Steppe', 'W');
+const TRANQUIL_THICKET = cyclingLand('Tranquil Thicket', 'G');
 
 const RAKDOS_GUILDGATE: CardDef = {
   name: 'Rakdos Guildgate',
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Rakdos Guildgate enters the battlefield tapped.\n{T}: Add {B} or {R}.',
+  oracleText: 'Rakdos Guildgate enters tapped.\n{T}: Add {B} or {R}.',
   colors: [],
 };
 
@@ -3277,8 +3275,8 @@ const BREATH_OF_DARIGAAZ: CardDef = {
 const AGONIZING_DEMISE: CardDef = {
   name: 'Agonizing Demise',
   typeLine: 'Instant',
-  manaCost: '{2}{B}',
-  cmc: 3,
+  manaCost: '{3}{B}',
+  cmc: 4,
   oracleText: 'Kicker {1}{R}\nDestroy target nonblack creature. If this spell was kicked, it deals damage equal to that creature\u2019s power to the creature\u2019s controller.',
   colors: ['B'],
 };
@@ -3450,7 +3448,7 @@ const THING_IN_THE_ICE: CardDef = {
   typeLine: 'Creature — Horror',
   manaCost: '{1}{U}',
   cmc: 2,
-  oracleText: 'Defender\nThing in the Ice enters the battlefield with four ice counters on it.\nWhenever you cast an instant or sorcery spell, remove an ice counter from Thing in the Ice. Then if it has no ice counters on it, transform it.',
+  oracleText: 'Defender\nThing in the Ice enters with four ice counters on it.\nWhenever you cast an instant or sorcery spell, remove an ice counter from Thing in the Ice. Then if it has no ice counters on it, transform it.',
   colors: ['U'],
   power: '0',
   toughness: '4',
@@ -3472,8 +3470,8 @@ const THING_IN_THE_ICE: CardDef = {
 const HAGRA_MAULING: CardDef = {
   name: 'Hagra Mauling',
   typeLine: 'Instant',
-  manaCost: '{2}{B}',
-  cmc: 3,
+  manaCost: '{2}{B}{B}',
+  cmc: 4,
   oracleText: 'Destroy target creature.',
   colors: ['B'],
   faces: {
@@ -3492,8 +3490,8 @@ const HAGRA_MAULING: CardDef = {
 const VASTWOOD_FORTIFICATION: CardDef = {
   name: 'Vastwood Fortification',
   typeLine: 'Instant',
-  manaCost: '{1}{G}',
-  cmc: 2,
+  manaCost: '{G}',
+  cmc: 1,
   oracleText: 'Put a +1/+1 counter on target creature.',
   colors: ['G'],
   faces: {
@@ -3534,10 +3532,10 @@ const MERFOLK_SECRETKEEPER: CardDef = {
 const GARENBRIG_CARVER: CardDef = {
   name: 'Garenbrig Carver',
   typeLine: 'Creature \u2014 Human Warrior',
-  manaCost: '{2}{G}',
-  cmc: 3,
+  manaCost: '{3}{G}',
+  cmc: 4,
   power: '3',
-  toughness: '3',
+  toughness: '2',
   oracleText: "Shield's Might {1}{G} (Instant) \u2014 Target creature gets +3/+3 until end of turn. Then exile this card. You may cast the creature later from exile.",
   colors: ['G'],
   faces: {
@@ -3916,7 +3914,7 @@ const WILLBENDER: CardDef = {
   manaCost: '{1}{U}',
   cmc: 2,
   power: '1',
-  toughness: '1',
+  toughness: '2',
   oracleText: 'Morph {1}{U}\nWhen Willbender is turned face up, change the target of target spell or ability with a single target.',
   colors: ['U'],
 };
@@ -3924,8 +3922,8 @@ const WILLBENDER: CardDef = {
 const SWERVE: CardDef = {
   name: 'Swerve',
   typeLine: 'Instant',
-  manaCost: '{1}{U}{R}',
-  cmc: 3,
+  manaCost: '{U}{R}',
+  cmc: 2,
   oracleText: 'Change the target of target instant or sorcery spell with a single target.',
   colors: ['U', 'R'],
 };
@@ -3967,8 +3965,8 @@ const DISALLOW: CardDef = {
 const STAGGERSHOCK: CardDef = {
   name: 'Staggershock',
   typeLine: 'Instant',
-  manaCost: '{1}{R}',
-  cmc: 2,
+  manaCost: '{2}{R}',
+  cmc: 3,
   oracleText: 'Staggershock deals 2 damage to any target.\nRebound (If you cast this spell from '
     + 'your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast this '
     + 'card from exile without paying its mana cost.)',
@@ -3980,9 +3978,7 @@ const DISTORTION_STRIKE: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{U}',
   cmc: 1,
-  oracleText: 'Target creature gets +1/+0 and can\u2019t be blocked this turn.\nRebound (If you cast '
-    + 'this spell from your hand, exile it as it resolves. At the beginning of your next upkeep, '
-    + 'you may cast this card from exile without paying its mana cost.)',
+  oracleText: "Target creature gets +1/+0 until end of turn and can't be blocked this turn.\nRebound (If you cast this spell from your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast this card from exile without paying its mana cost.)",
   colors: ['U'],
 };
 
@@ -4032,7 +4028,7 @@ const CONTAGION_CLASP: CardDef = {
   typeLine: 'Artifact',
   manaCost: '{2}',
   cmc: 2,
-  oracleText: 'When Contagion Clasp enters the battlefield, put a -1/-1 counter on target creature.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players with counters on them, then give each another counter of each kind already there.)',
+  oracleText: 'When Contagion Clasp enters, put a -1/-1 counter on target creature.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players with counters on them, then give each another counter of each kind already there.)',
   colors: [],
 };
 
@@ -4048,7 +4044,7 @@ const STEADY_PROGRESS: CardDef = {
   typeLine: 'Instant',
   manaCost: '{2}{U}',
   cmc: 3,
-  oracleText: 'Proliferate, then draw a card. (Choose any number of permanents and/or players with counters on them, then give each another counter of each kind already there.)',
+  oracleText: 'Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)\nDraw a card.',
   colors: ['U'],
 };
 
@@ -4464,8 +4460,8 @@ export const TIDAL_MIND: DeckSpec = {
 const STROMKIRK_CAPTAIN: CardDef = {
   name: 'Stromkirk Captain',
   typeLine: 'Creature — Vampire Soldier',
-  manaCost: '{R}{B}',
-  cmc: 2,
+  manaCost: '{1}{B}{R}',
+  cmc: 3,
   power: '2',
   toughness: '2',
   oracleText: 'First strike\nOther Vampire creatures you control get +1/+1 and have first strike.',
@@ -4504,20 +4500,20 @@ const IMPERIOUS_PERFECT: CardDef = {
 const OBELISK_OF_URD: CardDef = {
   name: 'Obelisk of Urd',
   typeLine: 'Artifact',
-  manaCost: '{5}',
-  cmc: 5,
-  oracleText: 'Convoke\nAs Obelisk of Urd enters the battlefield, choose a creature type.\nCreatures you control of the chosen type get +2/+2.',
+  manaCost: '{6}',
+  cmc: 6,
+  oracleText: 'Convoke\nAs Obelisk of Urd enters, choose a creature type.\nCreatures you control of the chosen type get +2/+2.',
   colors: [],
 };
 
 const VOICE_OF_ALL: CardDef = {
   name: 'Voice of All',
   typeLine: 'Creature — Angel',
-  manaCost: '{3}{W}',
+  manaCost: '{2}{W}{W}',
   cmc: 4,
   power: '2',
   toughness: '2',
-  oracleText: 'Flying\nAs Voice of All enters the battlefield, choose a color.\nVoice of All has protection from the chosen color.',
+  oracleText: 'Flying\nAs Voice of All enters, choose a color.\nVoice of All has protection from the chosen color.',
   colors: ['W'],
 };
 
@@ -4534,8 +4530,8 @@ const GUARDIANS_OF_AKRASA: CardDef = {
   typeLine: 'Creature — Human Soldier',
   manaCost: '{2}{W}',
   cmc: 3,
-  power: '2',
-  toughness: '3',
+  power: '0',
+  toughness: '4',
   // The reminder text in brackets, as printed, which is also what keeps the keyword parser off it:
   // only a line that is nothing but keywords is read as keywords, and "Defender" is on its own.
   oracleText:
@@ -4579,8 +4575,8 @@ const SHAMBLING_SHELL: CardDef = {
   typeLine: 'Creature — Plant Zombie',
   manaCost: '{1}{B}{G}',
   cmc: 3,
-  power: '2',
-  toughness: '2',
+  power: '3',
+  toughness: '1',
   oracleText: 'Sacrifice Shambling Shell: Put a +1/+1 counter on target creature.\nDredge 3 (If you would draw a card, you may mill three cards instead. If you do, return this card from your graveyard to your hand.)',
   colors: ['B', 'G'],
 };
@@ -5024,11 +5020,11 @@ export const FORGE_ALLIANCE: DeckSpec = {
 const ZOMBIE_CUTTHROAT: CardDef = {
   name: 'Zombie Cutthroat',
   typeLine: 'Creature — Zombie',
-  manaCost: '{3}{B}',
-  cmc: 4,
+  manaCost: '{3}{B}{B}',
+  cmc: 5,
   power: '3',
-  toughness: '3',
-  oracleText: 'Morph — Pay 3 life.',
+  toughness: '4',
+  oracleText: 'Morph\u2014Pay 5 life.',
   colors: ['B'],
 };
 
@@ -5039,7 +5035,7 @@ const HIDDEN_DRAGONSLAYER: CardDef = {
   cmc: 2,
   power: '2',
   toughness: '1',
-  oracleText: 'Lifelink\nMegamorph {2}{W}\nWhen Hidden Dragonslayer is turned face up, destroy target creature an opponent controls with power 4 or greater.',
+  oracleText: 'Lifelink\nMegamorph {2}{W}\nWhen Hidden Dragonslayer is turned face up, destroy target creature with power 4 or greater an opponent controls.',
   colors: ['W'],
 };
 
@@ -5216,11 +5212,14 @@ export const ASHEN_RITE: DeckSpec = {
       **Murderous Redcap, for the third Blood Artist**, and persist is the other half of the family
       undying belongs to.
 
-      Four mana for two damage now, a 1/1, and then one more damage later: it dies, comes back as a
-      0/0 with a −1/−1 counter on it, deals its damage on the way in and goes straight back to the
-      graveyard when the state-based actions catch up. Which is the printed card — the second body
-      is a trigger rather than a creature — and in *this* deck it is a third thing as well: eight
-      cards here read a creature dying, and a Redcap dies **twice** for one draw.
+      Four mana for a 2/2 and two damage now, and then a 1/1 and one more damage later: it dies,
+      comes back with a −1/−1 counter on it and shoots again for the power it has left. In *this*
+      deck it is a third thing as well: eight cards here read a creature dying, and a Redcap dies
+      **twice** for one draw.
+
+      (Corrected in D571. The pool had the Redcap as a 1/1, so the body persist returned was a 0/0
+      that died on arrival, and this comment called that the printed card. The numbers in the next
+      paragraph were measured on that weaker card and have not been re-taken.)
 
       The slot is the second Gravedigger (83%), and the first slot it was tried in is worth writing
       down: against the **third Blood Artist** it measured +7 and +29 on the revert, which is to say
@@ -5229,15 +5228,17 @@ export const ASHEN_RITE: DeckSpec = {
     */
     { card: MURDEROUS_REDCAP, count: 1 },
     /*
-      The morph whose cost is not mana: three life, and no mana at all (CR 702.37a).
+      The morph whose cost is not mana: five life, and no mana at all (CR 702.37a).
 
       Here rather than anywhere else because this is the deck whose whole identity is costs that are
       decisions — a kicker you may pay for, removal paid for with your own creature, a Dark
-      Confidant and a City of Brass that both charge life. A 2/2 on turn three that becomes a 3/3
-      for three life on a turn you had no mana to spare is the same card as the rest of that list.
+      Confidant and a City of Brass that both charge life. A 2/2 on turn three that becomes a 3/4
+      for five life on a turn you had no mana to spare is the same card as the rest of that list.
+      (Five life and a 3/4 for {3}{B}{B}, as printed. The pool had it at three life, a 3/3 and
+      {3}{B} until D571, so every number this deck was measured with had a cheaper Cutthroat in it.)
 
       It is also the one card in the pool whose play the engine refuses on *life* rather than on
-      mana: at three life the turn-up is not offered, because a cost you cannot pay is not a cost
+      mana: at five life the turn-up is not offered, because a cost you cannot pay is not a cost
       you may choose to pay.
     */
     { card: ZOMBIE_CUTTHROAT, count: 1 },
@@ -5336,19 +5337,16 @@ const THUNDEROUS_WRATH: CardDef = {
   typeLine: 'Instant',
   manaCost: '{4}{R}{R}',
   cmc: 6,
-  oracleText: 'Miracle {R} (You may cast this card for its miracle cost when you draw it if it\u2019s '
-    + 'the first card you drew this turn.)\nThunderous Wrath deals 5 damage to any target.',
+  oracleText: "Thunderous Wrath deals 5 damage to any target.\nMiracle {R} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)",
   colors: ['R'],
 };
 
 const TERMINUS: CardDef = {
   name: 'Terminus',
   typeLine: 'Sorcery',
-  manaCost: '{3}{W}{W}',
-  cmc: 5,
-  oracleText: 'Miracle {W} (You may cast this card for its miracle cost when you draw it if it\u2019s '
-    + 'the first card you drew this turn.)\nPut all creatures on the bottom of their owners\u2019 '
-    + 'libraries.',
+  manaCost: '{4}{W}{W}',
+  cmc: 6,
+  oracleText: "Put all creatures on the bottom of their owners' libraries.\nMiracle {W} (You may cast this card for its miracle cost when you draw it if it's the first card you drew this turn.)",
   colors: ['W'],
 };
 
@@ -5372,9 +5370,9 @@ const TERMINUS: CardDef = {
 */
 const BASILICA_SCREECHER: CardDef = {
   name: 'Basilica Screecher',
-  typeLine: 'Creature — Bat Cleric',
-  manaCost: '{2}{B}',
-  cmc: 3,
+  typeLine: 'Creature — Bat',
+  manaCost: '{1}{B}',
+  cmc: 2,
   power: '1',
   toughness: '2',
   oracleText: 'Flying\nExtort (Whenever you cast a spell, you may pay {W/B}. If you do, each '
@@ -5385,9 +5383,9 @@ const BASILICA_SCREECHER: CardDef = {
 const BASILICA_GUARDS: CardDef = {
   name: 'Basilica Guards',
   typeLine: 'Creature — Human Soldier',
-  manaCost: '{1}{W}',
-  cmc: 2,
-  power: '0',
+  manaCost: '{2}{W}',
+  cmc: 3,
+  power: '1',
   toughness: '4',
   oracleText: 'Defender\nExtort (Whenever you cast a spell, you may pay {W/B}. If you do, each '
     + 'opponent loses 1 life and you gain that much life.)',
@@ -5786,8 +5784,8 @@ const PYROMATICS: CardDef = {
 const TRAIN_OF_THOUGHT: CardDef = {
   name: 'Train of Thought',
   typeLine: 'Sorcery',
-  manaCost: '{2}{U}',
-  cmc: 3,
+  manaCost: '{1}{U}',
+  cmc: 2,
   oracleText: 'Draw a card.\nReplicate {2}{U} (When you cast this spell, copy it for each time '
     + 'you paid its replicate cost.)',
   colors: ['U'],
@@ -6021,7 +6019,7 @@ const IZZET_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Izzet Guildgate enters the battlefield tapped.\n{T}: Add {U} or {R}.',
+  oracleText: 'Izzet Guildgate enters tapped.\n{T}: Add {U} or {R}.',
   colors: [],
 };
 
@@ -6032,18 +6030,18 @@ const ADELIZ: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'Flying, haste\nWhenever you cast an instant or sorcery spell, each Wizard you control gets +1/+1 until end of turn.',
+  oracleText: 'Flying, haste\nWhenever you cast an instant or sorcery spell, Wizards you control get +1/+1 until end of turn.',
   colors: ['U', 'R'],
 };
 
 const STORMCHASER_MAGE: CardDef = {
   name: 'Stormchaser Mage',
-  typeLine: 'Creature — Human Monk Wizard',
+  typeLine: 'Creature — Human Wizard',
   manaCost: '{U}{R}',
   cmc: 2,
   power: '1',
   toughness: '3',
-  oracleText: 'Flying, haste, prowess',
+  oracleText: 'Flying, haste\nProwess',
   colors: ['U', 'R'],
 };
 
@@ -6071,7 +6069,7 @@ const GUTTERSNIPE: CardDef = {
 
 const GELECTRODE: CardDef = {
   name: 'Gelectrode',
-  typeLine: 'Creature — Weird Wizard',
+  typeLine: 'Creature — Weird',
   manaCost: '{1}{U}{R}',
   cmc: 3,
   power: '0',
@@ -6091,8 +6089,8 @@ const GELECTRODE: CardDef = {
 const ENIGMA_DRAKE: CardDef = {
   name: 'Enigma Drake',
   typeLine: 'Creature — Drake',
-  manaCost: '{2}{U}{R}',
-  cmc: 4,
+  manaCost: '{1}{U}{R}',
+  cmc: 3,
   power: '*',
   toughness: '4',
   oracleText: "Flying\nEnigma Drake's power is equal to the number of instant and sorcery cards in your graveyard.",
@@ -6452,7 +6450,7 @@ const ORZHOV_GUILDGATE: CardDef = {
   typeLine: 'Land \u2014 Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Orzhov Guildgate enters the battlefield tapped.\n{T}: Add {W} or {B}.',
+  oracleText: 'Orzhov Guildgate enters tapped.\n{T}: Add {W} or {B}.',
   colors: [],
 };
 
@@ -6462,14 +6460,14 @@ const IMPASSIONED_ORATOR: CardDef = {
   manaCost: '{1}{W}',
   cmc: 2,
   power: '2',
-  toughness: '1',
+  toughness: '2',
   oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
   colors: ['W'],
 };
 
 const CRUEL_CELEBRANT: CardDef = {
   name: 'Cruel Celebrant',
-  typeLine: 'Creature \u2014 Vampire Soldier',
+  typeLine: 'Creature \u2014 Vampire',
   manaCost: '{W}{B}',
   cmc: 2,
   power: '1',
@@ -6481,8 +6479,8 @@ const CRUEL_CELEBRANT: CardDef = {
 const REVITALIZE: CardDef = {
   name: 'Revitalize',
   typeLine: 'Instant',
-  manaCost: '{W}',
-  cmc: 1,
+  manaCost: '{1}{W}',
+  cmc: 2,
   oracleText: 'You gain 3 life.\nDraw a card.',
   colors: ['W'],
 };
@@ -6499,8 +6497,8 @@ const VRASKAS_CONTEMPT: CardDef = {
 const KAMBAL: CardDef = {
   name: 'Kambal, Consul of Allocation',
   typeLine: 'Legendary Creature \u2014 Human Advisor',
-  manaCost: '{2}{W}{B}',
-  cmc: 4,
+  manaCost: '{1}{W}{B}',
+  cmc: 3,
   power: '2',
   toughness: '3',
   oracleText: 'Whenever an opponent casts a noncreature spell, that player loses 2 life and you gain 2 life.',
@@ -6538,12 +6536,12 @@ const KAMBAL: CardDef = {
  */
 const STUDENT_OF_WARFARE: CardDef = {
   name: 'Student of Warfare',
-  typeLine: 'Creature — Human Soldier',
+  typeLine: 'Creature — Human Knight',
   manaCost: '{W}',
   cmc: 1,
   power: '1',
   toughness: '1',
-  oracleText: 'Level up {W} (Activate only as a sorcery.)\nLEVEL 2-6: 3/3, first strike\nLEVEL 7+: 4/4, double strike',
+  oracleText: 'Level up {W} ({W}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 2-6\n3/3\nFirst strike\nLEVEL 7+\n4/4\nDouble strike',
   colors: ['W'],
   levelBands: [
     { from: 2, power: 3, toughness: 3, keywords: ['first strike'] },
@@ -6601,11 +6599,11 @@ const ADORNED_POUNCER: CardDef = {
 
 const SUNSCOURGE_CHAMPION: CardDef = {
   name: 'Sunscourge Champion',
-  typeLine: 'Creature \u2014 Human Cleric',
+  typeLine: 'Creature \u2014 Human Wizard',
   manaCost: '{2}{W}',
   cmc: 3,
   power: '2',
-  toughness: '2',
+  toughness: '3',
   oracleText: 'When Sunscourge Champion enters the battlefield, you gain 2 life.\n'
     + 'Eternalize {5}{W}{W} ({5}{W}{W}, Exile this card from your graveyard: Create a token '
     + 'that\u2019s a copy of it, except it\u2019s a black Zombie Human Cleric with base power and '
@@ -6817,7 +6815,7 @@ const GRUUL_GUILDGATE: CardDef = {
   typeLine: 'Land \u2014 Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Gruul Guildgate enters the battlefield tapped.\n{T}: Add {R} or {G}.',
+  oracleText: 'Gruul Guildgate enters tapped.\n{T}: Add {R} or {G}.',
   colors: [],
 };
 
@@ -6874,11 +6872,11 @@ const ASSAULT_BATTERY: CardDef = {
 const BURNING_TREE_EMISSARY: CardDef = {
   name: 'Burning-Tree Emissary',
   typeLine: 'Creature \u2014 Human Shaman',
-  manaCost: '{R}{G}',
+  manaCost: '{R/G}{R/G}',
   cmc: 2,
   power: '2',
   toughness: '2',
-  oracleText: 'When Burning-Tree Emissary enters the battlefield, add {R}{G}.',
+  oracleText: 'When Burning-Tree Emissary enters, add {R}{G}.',
   colors: ['R', 'G'],
 };
 
@@ -6888,8 +6886,8 @@ const GRUUL_RAGEBEAST: CardDef = {
   manaCost: '{5}{R}{G}',
   cmc: 7,
   power: '6',
-  toughness: '5',
-  oracleText: 'Whenever Gruul Ragebeast or another creature enters the battlefield under your control, that creature fights target creature you don\u2019t control.',
+  toughness: '6',
+  oracleText: 'Whenever Gruul Ragebeast or another creature you control enters, that creature fights target creature an opponent controls.',
   colors: ['R', 'G'],
 };
 
@@ -6918,7 +6916,7 @@ const THRAGTUSK: CardDef = {
   cmc: 5,
   power: '5',
   toughness: '3',
-  oracleText: 'When Thragtusk enters the battlefield, you gain 5 life.\nWhen Thragtusk leaves the battlefield, create a 3/3 green Beast creature token.',
+  oracleText: 'When Thragtusk enters, you gain 5 life.\nWhen Thragtusk leaves the battlefield, create a 3/3 green Beast creature token.',
   colors: ['G'],
 };
 
@@ -6927,22 +6925,22 @@ const SIMIC_GUILDGATE: CardDef = {
   typeLine: 'Land — Gate',
   manaCost: '',
   cmc: 0,
-  oracleText: 'Simic Guildgate enters the battlefield tapped.\n{T}: Add {G} or {U}.',
+  oracleText: 'Simic Guildgate enters tapped.\n{T}: Add {G} or {U}.',
   colors: [],
 };
 
 const EXPLORE: CardDef = {
   name: 'Explore',
   typeLine: 'Sorcery',
-  manaCost: '{G}',
-  cmc: 1,
+  manaCost: '{1}{G}',
+  cmc: 2,
   oracleText: 'You may play an additional land this turn.\nDraw a card.',
   colors: ['G'],
 };
 
 const KIORAS_FOLLOWER: CardDef = {
   name: "Kiora's Follower",
-  typeLine: 'Creature — Merfolk Elemental',
+  typeLine: 'Creature — Merfolk',
   manaCost: '{G}{U}',
   cmc: 2,
   power: '2',
@@ -6958,7 +6956,7 @@ const PELAKKA_WURM: CardDef = {
   cmc: 7,
   power: '7',
   toughness: '7',
-  oracleText: 'Trample\nWhen Pelakka Wurm enters the battlefield, you gain 7 life.\nWhen Pelakka Wurm dies, draw a card.',
+  oracleText: 'Trample\nWhen Pelakka Wurm enters, you gain 7 life.\nWhen Pelakka Wurm dies, draw a card.',
   colors: ['G'],
 };
 
@@ -6967,9 +6965,9 @@ const TATYOVA: CardDef = {
   typeLine: 'Legendary Creature — Merfolk Druid',
   manaCost: '{3}{G}{U}',
   cmc: 5,
-  power: '2',
-  toughness: '2',
-  oracleText: 'Whenever a land you control enters the battlefield, draw a card and you gain 1 life.',
+  power: '3',
+  toughness: '3',
+  oracleText: 'Landfall \u2014 Whenever a land you control enters, you gain 1 life and draw a card.',
   colors: ['G', 'U'],
 };
 
