@@ -38585,3 +38585,84 @@ rather than after the harness.)
 The compiled-script count does not move for either of these two rows, and that is correct rather
 than a miss: a line read off the `CardDef` emits no script. "Fully read" is the number that says
 what a player gets.
+
+## D557 — Mentor, Afterlife N and Rampage N: three rows on one cycle
+
+Three keyword rows read together because the engine already had every part of all three, and
+because the fixed cost of an increment — a gate, a break run, a pod sweep, two progress entries —
+is the same for one row as for three.
+
+| keyword | rule | what it was built from |
+| --- | --- | --- |
+| **Mentor** (CR 702.133a) | whenever this attacks, +1/+1 counter on target attacking creature with lesser power | Sunhome Stalwart's own trigger, moved behind `mentorTrigger()` so the pool card and the compiled reading are the same code — renown's arrangement (D549) |
+| **Afterlife N** (CR 702.135a) | when this dies, create N 1/1 white and black Spirit tokens with flying | a `dies` trigger and `createToken` |
+| **Rampage N** (CR 702.23a) | when this becomes blocked, +N/+N until end of turn for each blocker beyond the first | the batched `blocked-creature` event and `pump` |
+
+All three are genuinely triggered abilities, so unlike flanking and toxic they read in
+`keywordScriptFor` and use the stack as the rules do.
+
+### Two details that were decisions
+
+**The afterlife Spirit is its own token definition.** The pool already has a `SPIRIT_TOKEN` — a
+*white* 1/1 flier, the one Doomed Traveler leaves. Afterlife's is **white and black**, which a
+"nonblack" removal spell and a protection-from-black creature can both see. Both are named
+"Spirit", and token definitions are keyed by name, so the second kind to arrive would have
+recoloured the first. It is registered under its own key, and a test kills one of each in a single
+game and checks the board holds `['BW', 'BW', 'W']`.
+
+**Rampage reads the batched event, not the per-blocker one.** `becomes-blocked` fires once per
+blocker and would count the whole gang each time; `blocked-creature` fires once however many
+blocked. That is D482's finding on Ichorclaw Myr and bushido's choice, made a third time.
+
+### Measured — the audit exact on three rows at once
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,651 (41.9%) | **23,689 / 56,421 (42.0%)** |
+| cards with a compiled script | 12,051 | **12,082** |
+| cards with every printed line read | 7,879 | **7,903** |
+
+Predicted 8 + 7 + 9 = **24** finishes and 18 + 11 + 9 = **38** printings. Delivered **24** and
+**38**. Seven keyword rows have now been read through a *reader* (evoke, renown, improvise, toxic
+and these three) and all seven landed on the audit's figure exactly; the two that beat it —
+D551's clause vocabulary and flanking's `KEYWORDS` entry — were both changes to something shared.
+
+### A test-helper mistake worth keeping
+
+The first draft of the rampage rows read the Berserker as a 2/4 against two and three blockers —
+the mechanic apparently doing nothing on exactly the board it exists for. The trigger was fine. Two
+or more blockers owe the attacking player a **damage assignment order** (CR 509.2), priority does
+not return until it is given, and the helper never gave it, so the trigger sat on the stack
+unresolved. Third entry for the lesson that began with `drain` not advancing a step: when a combat
+test reads a trigger as inert, ask what the table is waiting for before asking what the card did.
+
+### Addendum to D554 and D556 — the second and third harness runs
+
+**D555 and D556: 10 of 10 caught on the first run**, each catch naming the test that defends it.
+That is the first increment this session whose tests needed no correction after the harness, and
+the reason is not luck: the toxic rows were written with the D551/D552 lesson in hand — every
+creature has a toxic value different from its power, so no row can pass for a reason other than
+its own.
+
+**D554's duration break took three runs to catch, and the second miss was a real one.** The first
+run had no duration test at all. The second had one and *still* passed against a permanent
+penalty: it sent a 1/1 flanker into a 3/3 blocker, the flanker died, and an effect whose source
+has left the battlefield is cleaned up regardless of its duration — so the blocker was restored
+next turn for a reason that had nothing to do with "until end of turn". The row now uses a 2/2
+Cavalry into a 2/4 Giant Spider, where both creatures survive and the duration is the only thing
+that can restore the Spider.
+
+That is the fifth vacuous row the harness has found in four increments, and the fourth distinct
+way of being vacuous: a second restriction on the same card (D551), an empty colour list (D551,
+D552), and now **a second mechanism producing the asserted outcome**. The common shape is worth
+more than the list: a test is vacuous whenever something other than the code under test can
+produce what it asserts, and the cheapest check for that is to break the code and see whether
+the test notices.
+
+### Break harness for D557: 13 of 13
+
+Twelve breaks for the three keywords and the D554 duration break on its third attempt, all caught
+on the first run of this spec — the "lesser, not equal" mentor filter, the afterlife count, the
+white-versus-two-coloured token, the registry-key collision, rampage's off-by-one in both
+directions and its per-blocker event, and both end anchors. 22 minutes for thirteen full-suite
+runs on two mirrors, against roughly 33 serially.

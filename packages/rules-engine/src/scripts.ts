@@ -2436,33 +2436,91 @@ const FIREMANE_AVENGER: CardScript = {
  * board as the trigger goes on the stack — `state.combat.attacks` is the declaration, and the
  * source's own power is what "lesser" is measured against — and the counter is permanent, which is
  * what makes a one-mana 2/1 worth a slot in a deck that attacks with four creatures.
+ *
+ * A factory rather than a literal on the one card that used it, since D557: `keywordScriptFor`
+ * reads the bare `Mentor` line by calling this, so the hand-written Stalwart and the 18 legal
+ * printings compiled from their text are the same code. Renown's arrangement (D549), and a compile
+ * test asserts the two agree.
  */
+const mentorTrigger = (): TriggerDef => ({
+  on: { kind: 'attacks' },
+  description: 'put a +1/+1 counter on target attacking creature with lesser power',
+  targets: [{
+    kind: 'creature',
+    description: 'target attacking creature with lesser power',
+    friendly: true,
+    filter: (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card' || source === undefined) return false;
+      if (candidate.id === source) return false;
+      if (!state.combat.attacks.some((attack) => attack.attacker === candidate.id)) return false;
+      const mine = state.instances[source];
+      const theirs = state.instances[candidate.id];
+      if (mine === undefined || theirs === undefined) return false;
+      return characteristicsOf(state, theirs).power < characteristicsOf(state, mine).power;
+    },
+  }],
+  effect: (c) => {
+    const target = c.targets?.[0];
+    return target?.kind === 'card' ? addCounters(c.state, target.id, '+1/+1', 1) : c.state;
+  },
+});
+
 const SUNHOME_STALWART: CardScript = {
   name: 'Sunhome Stalwart',
   keywords: ['first strike'],
-  triggers: [{
-    on: { kind: 'attacks' },
-    description: 'put a +1/+1 counter on target attacking creature with lesser power',
-    targets: [{
-      kind: 'creature',
-      description: 'target attacking creature with lesser power',
-      friendly: true,
-      filter: (state, candidate, controller, source) => {
-        if (candidate.kind !== 'card' || source === undefined) return false;
-        if (candidate.id === source) return false;
-        if (!state.combat.attacks.some((attack) => attack.attacker === candidate.id)) return false;
-        const mine = state.instances[source];
-        const theirs = state.instances[candidate.id];
-        if (mine === undefined || theirs === undefined) return false;
-        return characteristicsOf(state, theirs).power < characteristicsOf(state, mine).power;
-      },
-    }],
-    effect: (c) => {
-      const target = c.targets?.[0];
-      return target?.kind === 'card' ? addCounters(c.state, target.id, '+1/+1', 1) : c.state;
-    },
-  }],
+  triggers: [mentorTrigger()],
 };
+
+/**
+ * Afterlife N: when this creature dies, create N 1/1 white and black Spirit creature tokens with
+ * flying (CR 702.135a).
+ *
+ * The token is its own definition rather than the pool's `SPIRIT_TOKEN`, because that one is white
+ * and this one is **white and black** — a difference a Doom Blade can see, and a protection-from-
+ * black creature too. Both are named "Spirit", so this one is registered under its own key: two
+ * definitions sharing a name would otherwise be one entry in `cardDefs`, and whichever arrived
+ * second would recolour the first.
+ */
+export const AFTERLIFE_SPIRIT_TOKEN: CardDef = {
+  name: 'Spirit', typeLine: 'Token Creature — Spirit', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: 'Flying', colors: ['W', 'B'],
+};
+const AFTERLIFE_SPIRIT_KEY = 'Spirit (afterlife)';
+
+const afterlifeTrigger = (count: number): TriggerDef => ({
+  on: { kind: 'dies' },
+  description: count === 1
+    ? 'create a 1/1 white and black Spirit creature token with flying'
+    : `create ${count} 1/1 white and black Spirit creature tokens with flying`,
+  effect: (c) => createToken(
+    c.state, c.controller, AFTERLIFE_SPIRIT_TOKEN, count, AFTERLIFE_SPIRIT_KEY,
+  ),
+});
+
+/**
+ * Rampage N: whenever this creature becomes blocked, it gets +N/+N until end of turn for each
+ * creature blocking it **beyond the first** (CR 702.23a).
+ *
+ * `blocked-creature` rather than `becomes-blocked`, for D482's reason and bushido's: the batched
+ * event fires once however many creatures blocked, and the count is read off the declaration when
+ * the ability resolves. The per-blocker event would fire once for each and count the lot each
+ * time. One blocker is the common case and gives nothing at all, which is the rule and not an
+ * off-by-one — rampage is a punishment for gang-blocking and says so with "beyond the first".
+ */
+const rampageTrigger = (count: number): TriggerDef => ({
+  on: { kind: 'blocked-creature' },
+  description: `it gets +${count}/+${count} until end of turn for each creature blocking it beyond the first`,
+  effect: (c) => {
+    const blockers = c.state.combat.attacks
+      .find((attack) => attack.attacker === c.source)?.blockers.length ?? 0;
+    const extra = Math.max(0, blockers - 1);
+    return extra === 0
+      ? c.state
+      : pump(c.state, [c.source], c.source, c.controller, {
+        power: count * extra, toughness: count * extra,
+      });
+  },
+});
 
 /**
  * Renown N: the first time it connects with a player, it keeps N +1/+1 counters (CR 702.112a).
@@ -10033,6 +10091,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     whole of the reading.
   */
   if (word === 'improvise') return { improvise: true };
+  // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
+  if (word === 'mentor') return { triggers: [mentorTrigger()] };
 
   // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
   /*
@@ -10224,6 +10284,17 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const renowned = /^renown\s+(\d+)$/i.exec(text);
   if (renowned !== null) return { triggers: [renownTrigger(Number(renowned[1]))] };
+
+  /*
+    Afterlife N and Rampage N (D557), two more counted keywords whose one line is the whole ability
+    and which the engine already had every part of: a dies trigger that makes tokens, and a
+    becomes-blocked trigger that pumps. See `afterlifeTrigger` and `rampageTrigger`. Digits only
+    and anchored, as renown is and for renown's reasons.
+  */
+  const afterlife = /^afterlife\s+(\d+)$/i.exec(text);
+  if (afterlife !== null) return { triggers: [afterlifeTrigger(Number(afterlife[1]))] };
+  const rampage = /^rampage\s+(\d+)$/i.exec(text);
+  if (rampage !== null) return { triggers: [rampageTrigger(Number(rampage[1]))] };
 
   /*
     Soulshift N, the same counted-keyword shape one zone over. See `soulshiftTriggers`, and note

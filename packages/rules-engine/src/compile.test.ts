@@ -16839,3 +16839,78 @@ describe('the Toxic keyword line (D556)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+/*
+  **Mentor, Afterlife N and Rampage N** (D557): three keyword rows read in one increment, because
+  each was a factory away. 8, 7 and 9 cards by the audit; the three of them share a gate, a break
+  run and a pod sweep, which is the point of batching rows whose mechanisms already exist.
+*/
+describe('the Mentor, Afterlife and Rampage keyword lines (D557)', () => {
+  const creature = (text: string) => compileCard({
+    name: 'Blade Instructor', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], power: '3', toughness: '1', layout: 'normal', oracle_text: text,
+  });
+  const descriptions = (text: string): string[] => {
+    const read = creature(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return [];
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    return (read.script?.triggers ?? []).map((t) => t.description);
+  };
+
+  it('mentor compiles to the same trigger the pool card carries', () => {
+    /*
+      Sunhome Stalwart prints `Mentor` and its hand-written script calls the factory the reader
+      calls, so compiling the keyword has to produce what the pool card has — the check that stops
+      the two drifting, and the reason every keyword here is built from a factory a hand-written
+      card also uses (D364, and D549's row for renown).
+    */
+    expect(POOL.get('Sunhome Stalwart')).toBeDefined();
+    const written = scriptFor('Sunhome Stalwart')?.triggers ?? [];
+    expect(written).toHaveLength(1);
+    expect(descriptions('Mentor (Whenever this creature attacks, put a +1/+1 counter on target'
+      + ' attacking creature with lesser power.)')).toEqual(written.map((t) => t.description));
+    const read = creature('Mentor');
+    expect(read.ok && read.script?.triggers?.[0]?.on).toEqual({ kind: 'attacks' });
+    expect(read.ok && read.script?.triggers?.[0]?.targets).toHaveLength(1);
+  });
+
+  it.each([
+    ['Afterlife 1', 'create a 1/1 white and black Spirit creature token with flying'],
+    ['Afterlife 2', 'create 2 1/1 white and black Spirit creature tokens with flying'],
+    ['Afterlife 3', 'create 3 1/1 white and black Spirit creature tokens with flying'],
+  ])('reads %s as a dies trigger, and says so in the log', (line, description) => {
+    // 1, 2 and 3 are every count the legal corpus prints.
+    expect(descriptions(line)).toEqual([description]);
+    const read = creature(line);
+    expect(read.ok && read.script?.triggers?.[0]?.on).toEqual({ kind: 'dies' });
+  });
+
+  it.each([
+    ['Rampage 1', 1], ['Rampage 2', 2], ['Rampage 3', 3], ['Rampage 4', 4],
+  ])('reads %s as a becomes-blocked trigger', (line, count) => {
+    expect(descriptions(line)).toEqual(
+      [`it gets +${count}/+${count} until end of turn for each creature blocking it beyond the first`],
+    );
+    const read = creature(line);
+    // The batched event, not the per-blocker one: see `rampageTrigger` and D482.
+    expect(read.ok && read.script?.triggers?.[0]?.on).toEqual({ kind: 'blocked-creature' });
+  });
+
+  it.each([
+    ['a counted mentor, which no card prints', 'Mentor 2'],
+    ['afterlife with no count', 'Afterlife'],
+    ['afterlife with a word for the count', 'Afterlife two'],
+    ['rampage with no count', 'Rampage'],
+    ['a line that only starts with a keyword', 'Rampage 2 as long as it is attacking'],
+    ['an afterlife line with a condition after it', 'Afterlife 2 if it was attacking'],
+    ['a grant, which is somebody else having it', 'Other creatures you control have mentor.'],
+  ])('leaves %s unread', (_what, line) => {
+    // An invented number (D259), a dropped condition (D487) or a different card: each reported.
+    const read = creature(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.triggers).toBeUndefined();
+    expect(read.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

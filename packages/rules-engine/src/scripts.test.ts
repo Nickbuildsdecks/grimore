@@ -35911,15 +35911,22 @@ describe('flanking: the blocker that shrinks (D554)', () => {
   it('wears off at end of turn', () => {
     /*
       "Until end of turn", which is the half of the sentence the other rows cannot see: they all
-      look at the board the moment blockers are declared. A 1/1 Herder attacks into a 3/3 Giant, so
-      the Giant survives the combat as a 2/2 and is still there on the next turn to be measured —
-      a blocker that died would prove nothing about duration.
+      look at the board the moment blockers are declared.
+
+      **Both creatures have to live**, and the first version of this row got that half right and
+      half wrong. It sent a 1/1 Herder into a 3/3 Giant: the Giant survived to be measured, the
+      Herder did not — and an effect whose source has left the battlefield is cleaned up on its own,
+      so the Giant was a 3/3 again next turn whether the penalty was temporary or not. The break
+      harness made the penalty permanent and this row still passed. A 2/2 Cavalry into a 2/4 Spider
+      leaves both standing (the Spider is a 1/3 dealing one and taking two), so the only thing that
+      can restore the Spider is the duration.
     */
-    const { state, blockerIds } = fight('Mtenda Herder', ['Hill Giant']);
-    expect(`${power(state, blockerIds[0]!)}/${toughness(state, blockerIds[0]!)}`).toBe('2/2');
+    const { state, attackerId, blockerIds } = fight('Benalish Cavalry', ['Giant Spider']);
+    expect(`${power(state, blockerIds[0]!)}/${toughness(state, blockerIds[0]!)}`).toBe('1/3');
     const later = nextTurn(state);
-    expect(namesIn(later, 1, 'battlefield')).toContain('Hill Giant');
-    expect(`${power(later, blockerIds[0]!)}/${toughness(later, blockerIds[0]!)}`).toBe('3/3');
+    expect(later.instances[attackerId]!.zone).toBe('battlefield');
+    expect(namesIn(later, 1, 'battlefield')).toContain('Giant Spider');
+    expect(`${power(later, blockerIds[0]!)}/${toughness(later, blockerIds[0]!)}`).toBe('2/4');
   });
 
   it('reads both keywords out of a mixed printed line', () => {
@@ -36177,5 +36184,200 @@ describe('toxic: poison that arrives with the damage (D556)', () => {
     expect(s.seats[1]!.eliminated).toBe(true);
     expect(s.winnerSeat).toBe(0);
     expect(s.stackOrder).toEqual([]);
+  });
+});
+
+describe('mentor, afterlife and rampage, at the table (D557)', () => {
+  /*
+    Three keywords read in one increment because the engine already had every part of all three:
+    mentor is Sunhome Stalwart's own trigger behind a factory, afterlife is a dies trigger that
+    makes tokens, and rampage is a becomes-blocked trigger that pumps.
+
+    Four printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Blade Instructor', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3,
+      colors: ['W'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'Mentor (Whenever this creature attacks, put a +1/+1 counter on target attacking creature with lesser power.)',
+    },
+    {
+      name: 'Ministrant of Obligation', type_line: 'Creature — Human Cleric', mana_cost: '{2}{W}',
+      cmc: 3, colors: ['W'], power: '2', toughness: '1', layout: 'normal',
+      oracle_text: 'Afterlife 2 (When this creature dies, create two 1/1 white and black Spirit creature tokens with flying.)',
+    },
+    {
+      name: 'Imperious Oligarch', type_line: 'Creature — Human Cleric', mana_cost: '{W}{B}', cmc: 2,
+      colors: ['W', 'B'], power: '2', toughness: '1', layout: 'normal',
+      oracle_text: 'Vigilance\nAfterlife 1 (When this creature dies, create a 1/1 white and black Spirit creature token with flying.)',
+    },
+    {
+      name: 'Aerathi Berserker', type_line: 'Creature — Human Berserker', mana_cost: '{2}{R}{R}{R}',
+      cmc: 5, colors: ['R'], power: '2', toughness: '4', layout: 'normal',
+      oracle_text: 'Rampage 3 (Whenever this creature becomes blocked, it gets +3/+3 until end of turn for each creature blocking it beyond the first.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'counted',
+      name: 'Counted',
+      entries: [
+        { name: 'Blade Instructor', count: 4 }, { name: 'Ministrant of Obligation', count: 4 },
+        { name: 'Imperious Oligarch', count: 4 }, { name: 'Aerathi Berserker', count: 4 },
+        { name: 'Doomed Traveler', count: 4 },
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Hill Giant', count: 4 },
+        { name: 'Elite Vanguard', count: 4 },
+        { name: 'Plains', count: 20 }, { name: 'Mountain', count: 12 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(
+      ['Aerathi Berserker', 'Blade Instructor', 'Imperious Oligarch', 'Ministrant of Obligation'],
+    );
+    return list.deck;
+  };
+
+  /**
+   * Seat 0 attacks with `attackers`; seat 1 blocks the FIRST attacker with every name in
+   * `blockers`. Returns the state right after the block is declared and its triggers resolve.
+   */
+  const fight = (attackers: readonly string[], blockers: readonly string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'counted', 1: 'counted' },
+      deckSpecs: { counted: deck() },
+      battlefield: { 0: ['Plains', ...attackers], 1: ['Plains', ...blockers] },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const attackerIds = attackers.map((name) => find(s, 0, 'battlefield', name));
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: attackerIds.map((attacker) => ({ attacker, defender: 1 as const })),
+    }));
+    const afterAttack = s;
+    s = passBoth(s);
+    const blockerIds = blockers.map((name) => find(s, 1, 'battlefield', name));
+    if (blockerIds.length > 0 && s.step === 'declare-blockers') {
+      s = apply(s, {
+        type: 'auto:block', by: 1,
+        blocks: blockerIds.map((blocker) => ({ blocker, attacker: attackerIds[0]! })),
+      });
+      /*
+        Two or more blockers owe the attacking player a damage assignment order (CR 509.2), and
+        priority does not come back until it is given — so a becomes-blocked trigger sits on the
+        stack unresolved behind it. The first draft of this helper skipped the order and read
+        rampage as doing nothing against a gang block, which is the exact board it exists for.
+      */
+      if (pendingDeclaration(s)?.kind === 'order') {
+        s = apply(s, {
+          type: 'auto:order', by: 0, orders: [{ attacker: attackerIds[0]!, blockers: blockerIds }],
+        });
+      }
+      s = drain(passBoth(s));
+    }
+    return { state: s, afterAttack, attackerIds, blockerIds };
+  };
+
+  /** Run the rest of combat out. */
+  const finish = (s: GameState): GameState => {
+    let next = s;
+    for (let i = 0; i < 16 && next.step !== 'postcombat-main'; i += 1) next = drain(passBoth(next));
+    return next;
+  };
+
+  const size = (s: GameState, id: string) => `${power(s, id)}/${toughness(s, id)}`;
+
+  // ── mentor ───────────────────────────────────────────────────────────────────────────────────
+
+  it('mentor puts a counter on a smaller creature attacking beside it', () => {
+    // A 3/1 Instructor and a 2/2 Bears attack together: the Bears is the one legal target, and the
+    // counter is permanent, so it is a 3/3 for the rest of the game.
+    const { state, attackerIds } = fight(['Blade Instructor', 'Grizzly Bears'], []);
+    const settled = drain(passBoth(state));
+    expect(size(settled, attackerIds[1]!)).toBe('3/3');
+    expect(settled.instances[attackerIds[1]!]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('mentor has nothing to aim at beside a creature as big as it is', () => {
+    /*
+      "With **lesser** power": a 3/3 Giant beside the 3-power Instructor is not smaller, so there is
+      no legal target and the ability never goes on the stack (CR 603.3d). The row a filter written
+      as "at most" would fail.
+    */
+    const { afterAttack, attackerIds } = fight(['Blade Instructor', 'Hill Giant'], []);
+    expect(afterAttack.stackOrder).toEqual([]);
+    expect(afterAttack.pendingChoice).toBeNull();
+    expect(size(afterAttack, attackerIds[1]!)).toBe('3/3');
+  });
+
+  // ── afterlife ────────────────────────────────────────────────────────────────────────────────
+
+  it.each([
+    ['Ministrant of Obligation', 2],
+    ['Imperious Oligarch', 1],
+  ])('afterlife: %s leaves %i Spirit(s) behind when it dies', (name, count) => {
+    // Each is a 2/1 attacking into a 3/3 Giant, so it dies in combat and the trigger makes the
+    // printed number of tokens — for the dead creature's controller.
+    const { state } = fight([name], ['Hill Giant']);
+    const after = finish(state);
+    expect(namesIn(after, 0, 'graveyard')).toContain(name);
+    const spirits = [...ids(after, 0, 'battlefield')].filter((id) => nameOf(after, id) === 'Spirit');
+    expect(spirits).toHaveLength(count);
+    expect(namesIn(after, 1, 'battlefield')).not.toContain('Spirit');
+  });
+
+  it('afterlife Spirits are white AND black fliers, not the pool\'s white ones', () => {
+    /*
+      The reason the token has its own definition. Doomed Traveler leaves a **white** Spirit and
+      afterlife leaves a **white and black** one, and both are called "Spirit" — so they have to be
+      two entries in `cardDefs`, or whichever died second would recolour the first. Both die in
+      this combat, and each token keeps the colours its own card printed.
+    */
+    const first = finish(fight(['Ministrant of Obligation'], ['Hill Giant']).state);
+    const afterlife = [...ids(first, 0, 'battlefield')].filter((id) => nameOf(first, id) === 'Spirit');
+    expect(afterlife).toHaveLength(2);
+    for (const id of afterlife) {
+      const ch = characteristicsOf(first, first.instances[id]!);
+      expect([...ch.colors].sort()).toEqual(['B', 'W']);
+      expect(ch.keywords.has('flying')).toBe(true);
+      expect(size(first, id)).toBe('1/1');
+    }
+
+    // And the white one, made on a board that already holds the two-coloured kind.
+    let s = fight(['Ministrant of Obligation', 'Doomed Traveler'], ['Hill Giant']).state;
+    s = finish(s);
+    const traveler = find(s, 0, 'battlefield', 'Doomed Traveler');
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: traveler, toZone: 'graveyard' })));
+    const colours = [...ids(s, 0, 'battlefield')]
+      .filter((id) => nameOf(s, id) === 'Spirit')
+      .map((id) => [...characteristicsOf(s, s.instances[id]!).colors].sort().join(''))
+      .sort();
+    expect(colours).toEqual(['BW', 'BW', 'W']);
+  });
+
+  // ── rampage ──────────────────────────────────────────────────────────────────────────────────
+
+  it.each([
+    [1, '2/4'],
+    [2, '5/7'],
+    [3, '8/10'],
+  ])('rampage 3: blocked by %i creature(s), the Berserker is %s', (count, expected) => {
+    /*
+      "For each creature blocking it **beyond the first**": one blocker is nothing, two is +3/+3,
+      three is +6/+6. The first row is the one an off-by-one fails in the generous direction and
+      the third is the one a flat bonus fails — together they pin the count from both sides.
+    */
+    const blockers = ['Grizzly Bears', 'Hill Giant', 'Elite Vanguard'].slice(0, count);
+    const { state, attackerIds } = fight(['Aerathi Berserker'], blockers);
+    expect(size(state, attackerIds[0]!)).toBe(expected);
+  });
+
+  it('rampage wears off at end of turn', () => {
+    const { state, attackerIds } = fight(['Aerathi Berserker'], ['Grizzly Bears', 'Elite Vanguard']);
+    expect(size(state, attackerIds[0]!)).toBe('5/7');
+    const later = nextTurn(finish(state));
+    expect(namesIn(later, 0, 'battlefield')).toContain('Aerathi Berserker');
+    expect(size(later, attackerIds[0]!)).toBe('2/4');
   });
 });
