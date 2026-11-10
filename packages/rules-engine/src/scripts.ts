@@ -8398,7 +8398,7 @@ const ICHOR_WELLSPRING: CardScript = {
       effect: (c) => drawLater(c.state, c.controller, 1),
     },
     {
-      on: { kind: 'to-graveyard', who: 'self' },
+      on: { kind: 'to-graveyard', who: 'self', from: 'battlefield' },
       description: 'draw a card',
       /*
         **No guard**, which is a correction (D409). This read
@@ -9546,16 +9546,20 @@ const SAVAGE_TWISTER: CardScript = {
  * Rancor: the Aura that comes back, and the card that reads a graveyard it is in itself.
  *
  * What makes the card is the interaction — answering the creature does not answer the Aura, so a
- * removal spell trades one card for nothing — and what makes the *trigger* interesting is one
- * word of its printed text. It was written here as a `dies` trigger (`what: 'permanent'`, because
- * an Aura is not a creature), which is the old printing: "put into a graveyard **from the
- * battlefield**". The card has read **"from anywhere"** for years, and the three other anywheres
- * were invisible to that event: a Rancor discarded out of a hand, milled off a library, or put
- * into a graveyard by anything that is not a death came back in the old version and does now.
+ * removal spell trades one card for nothing.
  *
- * So it is a `to-graveyard` trigger with `who: 'self'` — the option that event grew for this card,
- * since it was written for a Planar Void whose printed word is "another" (D172, D179). Two things
- * travel with it. The watcher fires from the graveyard it has just reached, which `raise` now
+ * **Its trigger is "from the battlefield", and this docblock used to say otherwise.** D179 changed
+ * the card from a `dies` trigger to the wide `to-graveyard` event on the claim that "the card has
+ * read 'from anywhere' for years". It has not: the Oracle text is "When Rancor is put into a
+ * graveyard **from the battlefield**, return Rancor to its owner's hand", which is what the corpus
+ * row says and what every printing since Urza's Legacy has meant. The claim was written from
+ * memory, the pool's card text was changed to match it, and for four hundred increments a Rancor
+ * that was discarded or milled came back to its owner's hand. D569 found it when a pod looped on
+ * an Undying Rage, which prints the same sentence, and put the word back.
+ *
+ * The `to-graveyard` event is still the right one — an Aura is not a creature, so it does not
+ * "die" — with `from: 'battlefield'`, which is the half of the sentence that was missing. Two
+ * things travel with it. The watcher fires from the graveyard it has just reached, which `raise`
  * allows for a `to-graveyard` subject the way it always has for a death. And the effect is
  * **guarded**: by the time the ability resolves the card may have been exiled — by the Planar Void
  * whose own trigger was on the stack beside it, or by a Scavenging Ooze in between — and an
@@ -9569,7 +9573,10 @@ const RANCOR: CardScript = {
     effect: { power: 2, keywords: ['trample'] },
   },
   triggers: [{
-    on: { kind: 'to-graveyard', who: 'self' },
+    // From the **battlefield**, which is what the card says (D569). This was the wide event, and
+    // the pool's own card text said "from anywhere" to match it — both wrong together, so the
+    // check that compares them agreed. A Rancor that is discarded or milled stays where it lands.
+    on: { kind: 'to-graveyard', who: 'self', from: 'battlefield' },
     description: 'return Rancor to its owner’s hand',
     effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
       ? moveToHand(c.state, [c.source])
@@ -14120,7 +14127,7 @@ const TRIGGER_SHAPES: readonly ({
       `^When ${self} ${ENTERS} or is put into a graveyard from the battlefield, (.+)$`,
       'i',
     ),
-    on: [{ kind: 'etb', who: 'self' }, { kind: 'to-graveyard', who: 'self' }],
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'to-graveyard', who: 'self', from: 'battlefield' }],
   },
   {
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS}, (.+)$`, 'i'),
@@ -14191,7 +14198,9 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(
       `^When ${self} is put into a graveyard from the battlefield, (.+)$`, 'i',
     ),
-    on: [{ kind: 'to-graveyard', who: 'self' }],
+    // `from: 'battlefield'` is the printed half of the sentence that was dropped until D569: see
+    // the event's `from`. Without it an Aura discarded from a hand fires as if it had been in play.
+    on: [{ kind: 'to-graveyard', who: 'self', from: 'battlefield' }],
   },
   /*
     "Whenever ~ becomes the target of a spell or ability" (D461). **8 legal cards**, among them

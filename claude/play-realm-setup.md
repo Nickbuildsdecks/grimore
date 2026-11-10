@@ -398,11 +398,12 @@ Ragebeast. It is the only deck here whose removal is mostly **combat**: two Prey
 Ragebeast point your creature at theirs rather than pointing a spell at anything, which is the
 red-green trade — the answer costs a creature instead of a card. Two cards are worth knowing at the
 table. **Rancor** is +2/+0 and trample for one mana that **comes back to your hand** whenever it
-reaches a graveyard — from the battlefield, from your hand if somebody makes you discard it, or off
-the top of your library if somebody mills it — so killing the creature does not answer the Aura and
-neither does making you throw it away. The one card that does is a **Planar Void**, which exiles it
-on the way past; the bot casts the two copies in this deck **139 times in the 64 games it draws
-one**, which is what a card that will not stay gone is worth. And **Thragtusk** gains five as
+goes to a graveyard **from the battlefield** — so killing the creature does not answer the Aura. It
+does **not** come back if you are made to discard it or it is milled: the card says "from the
+battlefield", and until D569 this table got that wrong and returned it from anywhere. The card that
+answers it in play is a **Planar Void**, which exiles it on the way past; the bot cast the two
+copies in this deck **139 times in the 64 games it drew one** — a count taken while it still
+returned from a discard, so read it as roughly right rather than exact. And **Thragtusk** gains five as
 it arrives and leaves a 3/3 behind when it *leaves* — exiled or bounced as well as killed — so a
 removal spell spent on it trades a card for half a card and five life. **Ruric Thar, the Unbowed**
 leads it, and he is a tax on the whole table including his own side: six damage to **whoever** casts

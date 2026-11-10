@@ -39629,3 +39629,59 @@ madness is offered in the cleanup step and resolves before the turn ends; declin
 turn end. Engine suite: 3,799.
 
 No card count moves: this is the engine doing what 29 already-read cards say.
+
+## D569 — "From the battlefield" meant from anywhere, and a pod looped on it
+
+D568's pod sweep (SEED0=43801) was the first in nine not to come back clean:
+
+    Games: 40    finished 39    looping 1
+    seed 43821: looping — 2000 moves with no progress in cleanup of turn 188,
+                1000 of them auto:discard (Undying Rage)
+
+**What it was.** Undying Rage: "When Undying Rage is put into a graveyard **from the
+battlefield**, return Undying Rage to its owner's hand." The compiler had two rows for that
+sentence (the solo form and Ichor Wellspring's "enters or is put into a graveyard from the
+battlefield") and both emitted the bare `to-graveyard` event, which is Planar Void's — a card
+arriving in a graveyard from **anywhere**. So an Undying Rage discarded from a hand returned
+itself. So did one that was milled, or countered.
+
+**How old.** D461 for the solo row, and the pair row since the table was first written. The
+pool's own Rancor had it too, and its card text said "from anywhere" to match — so the check that
+compares a hand-written script against the compiled reading agreed with itself.
+
+**And Rancor was made wrong on purpose, which is the part to remember.** D179 is titled "Rancor
+says 'from anywhere'" and changed a correct `dies`-shaped trigger into the wide one, on the
+statement that "the card has read 'from anywhere' for years". It has not. The corpus row — the
+Oracle text — is "When Rancor is put into a graveyard from the battlefield", and it was sitting in
+the corpus the whole time. That sentence in D179 was written from memory and checked against
+nothing, which is exactly what D259 forbids for numbers and nobody had thought to forbid for card
+text. D179 and D172's table row stand corrected by this entry; the player cheat sheet, which
+described the returning-from-a-discard as a feature of the deck, is corrected too.
+
+**Why nobody saw it.** A card coming back to a hand a turn late does not look like anything. With
+D568 the discard's trigger resolves in the cleanup step, the card is back in hand, the second
+cleanup step asks for a discard again, and the bot discards the same card: for ever.
+
+So this is D568 working, not D568 breaking something. The loop is what a correct cleanup step does
+with a card that was already wrong; the sweep is what noticed.
+
+**The fix.** The `to-graveyard` event takes `from: 'battlefield'`, answered from the list of
+permanents that died in the same pass — the engine already knows exactly which arrivals in a
+graveyard came from play. Both rows set it; so do the hand-written Rancor and Ichor Wellspring,
+and Rancor's text is the Oracle's.
+
+    legal cards whose trigger this narrows:   55  (37 of them fully read)
+    of those, cards that return themselves:   20  (Brilliant Halo, Aspect of Mongoose, Fortitude,
+                                                   Despondency, Fallen Ideal, Launch, …)
+
+No count moves — the same lines are read, correctly. Six rows, each card both ways: discarded
+from a hand it stays in the graveyard, and leaving the battlefield it does what it says; Ichor
+Wellspring draws for the second and not the first; and the pod's own position — an Undying Rage
+discarded to hand size — ends the turn. With the filter deleted, four of the six fail. Seed 43821
+replayed on the fix: finishes, 212 turns. Engine suite: 3,805.
+
+**The lesson is the same one as D566's Thieving Magpie, a second time in a day.** A hand-written
+pool card whose text was typed from memory is not ground truth, and a check that compares two
+readings of the same wrong text passes. The compiled-against-written check cannot see this class
+of error; only the corpus text can. Worth an instrument: every pool card's text against its corpus
+row. Queued as its own task.

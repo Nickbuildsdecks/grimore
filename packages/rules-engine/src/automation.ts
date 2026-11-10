@@ -1054,6 +1054,9 @@ function triggerMatches(
       asked: the event carries no `by` and no `what`, for the reason its declaration gives.
     */
     case 'to-graveyard': {
+      // "from the battlefield" (D569): a card that was milled, discarded or countered did not.
+      if ((want.from ?? 'anywhere') === 'battlefield'
+        && (event as { cameFrom?: string }).cameFrom !== 'battlefield') return false;
       const who = want.who ?? 'another';
       if (who === 'self') return isSubject;
       if (who === 'another') return !isSubject;
@@ -3024,8 +3027,16 @@ function settle(state: GameState, before: GameState): GameState {
       It also means the card is still in the graveyard when the death trigger resolves, which is
       what the rules say about a card that is exiled by something else's trigger afterwards.
     */
+    // Which of them came from the battlefield, for "put into a graveyard **from the
+    // battlefield**" (D569). `dead` is exactly that list: a permanent that moved from the
+    // battlefield to a graveyard, whatever kind of permanent it was.
+    const fromPlay = new Set(dead);
     for (const id of buried) {
-      next = raise(next, { kind: 'to-graveyard' }, next.instances[id]?.zoneSeat, id);
+      next = raise(
+        next,
+        { kind: 'to-graveyard', ...(fromPlay.has(id) ? { cameFrom: 'battlefield' as const } : {}) },
+        next.instances[id]?.zoneSeat, id,
+      );
     }
     /*
       And the exiles, after the graveyards for the same reason the graveyards come after the deaths:

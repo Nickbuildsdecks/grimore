@@ -24661,7 +24661,7 @@ describe('two printed prologues the compiler could not read (D461)', () => {
     // time anything reached any graveyard.
     const triggers = compiled.ok ? (compiled.script?.triggers ?? []) : [];
     expect(triggers.find((t) => t.on.kind === 'to-graveyard')?.on)
-      .toEqual({ kind: 'to-graveyard', who: 'self' });
+      .toEqual({ kind: 'to-graveyard', who: 'self', from: 'battlefield' });
   });
 
   it('draws a card when it goes to the graveyard, and not when something else does', () => {
@@ -25074,7 +25074,7 @@ describe('a card that picks itself up, and the zone that decides whether it may 
     // The graveyard kind is a `to-graveyard` trigger about itself, which is the event D157 added.
     const triggers = halo.ok ? (halo.script?.triggers ?? []) : [];
     expect(triggers.find((t) => t.on.kind === 'to-graveyard')?.on)
-      .toEqual({ kind: 'to-graveyard', who: 'self' });
+      .toEqual({ kind: 'to-graveyard', who: 'self', from: 'battlefield' });
   });
 
   it('returns itself from the battlefield when the ability resolves', () => {
@@ -38966,5 +38966,118 @@ describe('the cleanup step that holds priority (CR 514.3a, D568)', () => {
     }
     expect(s.turn).toBe(6);
     expect(life(s, 1)).toBe(20);
+  });
+});
+
+describe('"put into a graveyard from the battlefield" means from the battlefield (D569)', () => {
+  /*
+    Found by a pod, not by a reader. Sweep 43801, seed 43821: "looping — 2000 moves with no
+    progress in cleanup of turn 188, 1000 of them auto:discard (Undying Rage)". The card says
+    "from the battlefield"; both table rows and the pool's own Rancor emitted the wide event, which
+    fires from anywhere, so a discarded Undying Rage returned itself to the hand it had just left.
+    Before D568 that was a card coming back a turn late and nobody noticed. With the cleanup step
+    holding priority it was discard, return, discard, for ever.
+
+    Each card both ways: discarded or milled it stays put, and leaving the battlefield it does what
+    it says.
+  */
+  const DATA = [
+    {
+      name: 'Undying Rage', type_line: 'Enchantment — Aura', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], layout: 'normal',
+      oracle_text: 'Enchant creature\nEnchanted creature gets +2/+2 and can\'t block.\nWhen Undying Rage is put into a graveyard from the battlefield, return Undying Rage to its owner\'s hand.',
+    },
+    {
+      name: 'Brilliant Halo', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Enchant creature\nEnchanted creature gets +1/+2.\nWhen Brilliant Halo is put into a graveyard from the battlefield, return Brilliant Halo to its owner\'s hand.',
+    },
+  ];
+  const deck = () => customDeck({
+    id: 'halo',
+    name: 'Halo',
+    entries: [
+      ...DATA.map((row) => ({ name: row.name, count: 4 })),
+      { name: 'Rancor', count: 4 }, { name: 'Ichor Wellspring', count: 4 },
+      { name: 'Grizzly Bears', count: 4 }, { name: 'Shock', count: 4 },
+      { name: 'Faithless Looting', count: 4 }, { name: 'Mind Sculpt', count: 2 },
+      { name: 'Mountain', count: 10 }, { name: 'Plains', count: 8 }, { name: 'Forest', count: 8 },
+      { name: 'Island', count: 4 },
+    ],
+    data: DATA as never[],
+  }).deck;
+  const LANDS = ['Mountain', 'Mountain', 'Mountain', 'Plains', 'Plains', 'Forest', 'Forest', 'Island', 'Island'];
+  const start = (hand: readonly string[], mine: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'halo', 1: 'halo' },
+    deckSpecs: { halo: deck() },
+    hands: { 0: [...hand], 1: ['Grizzly Bears'] },
+    battlefield: { 0: [...LANDS, ...mine], 1: ['Mountain'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, target?: Target): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(target === undefined ? {} : { targets: [target] }),
+  })), 24);
+  /** Casts Faithless Looting and discards the two named cards. */
+  const loot = (s: GameState, names: readonly string[]): GameState => {
+    const asked = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+    // The copies that were in hand before the draw, so a test can name one by its id beforehand.
+    const held = new Set(ids(s, 0, 'hand'));
+    const cards = names.map((name) => asked.pendingDecision!.candidates
+      .find((id) => held.has(id) && nameOf(asked, id) === name)!);
+    return drain(apply(asked, { type: 'auto:decide', by: 0, cards }), 24);
+  };
+
+  it.each(['Brilliant Halo', 'Rancor'])('%s discarded from a hand stays in the graveyard', (aura) => {
+    const board = start(['Faithless Looting', aura, 'Shock']);
+    // By id rather than by name: the Looting may draw another copy, and that one is not this one.
+    const card = find(board, 0, 'hand', aura);
+    const s = loot(board, [aura, 'Shock']);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(s.stackOrder).toHaveLength(0);
+  });
+
+  it.each(['Brilliant Halo', 'Rancor'])('%s returns when the creature under it dies', (aura) => {
+    let s = start([aura, 'Shock'], ['Grizzly Bears']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = cast(s, aura, { kind: 'card', id: bears });
+    expect(namesIn(s, 0, 'battlefield')).toContain(aura);
+    // The Bears has to actually die for the Aura to fall off: Lightning-proofed by the Halo's +1/+2
+    // it would not, so it is destroyed the plain way.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: bears, toZone: 'graveyard' }), 24);
+    s = drain(passBoth(s), 24);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain(aura);
+    expect(namesIn(s, 0, 'hand')).toContain(aura);
+  });
+
+  it('Ichor Wellspring draws when it leaves the battlefield and not when it is discarded', () => {
+    const board = start(['Faithless Looting', 'Ichor Wellspring', 'Shock']);
+    const before = ids(board, 0, 'library').length;
+    const discarded = loot(board, ['Ichor Wellspring', 'Shock']);
+    expect(namesIn(discarded, 0, 'graveyard')).toContain('Ichor Wellspring');
+    // The Looting drew two and nothing else drew anything: a Wellspring that took its discard for
+    // leaving the battlefield would make this three.
+    expect(ids(discarded, 0, 'library').length).toBe(before - 2);
+
+    // And from the battlefield it does: sacrificed by hand here, which is a move to the graveyard.
+    let s = start([], ['Ichor Wellspring']);
+    const cards = ids(s, 0, 'library').length;
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Ichor Wellspring'), toZone: 'graveyard',
+    }), 24);
+    s = drain(passBoth(s), 24);
+    expect(ids(s, 0, 'library').length).toBe(cards - 1);
+  });
+
+  it('the pod that found it: an Undying Rage discarded to hand size does not come back, and the turn ends', () => {
+    const grip = ['Undying Rage', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Shock', 'Shock', 'Shock', 'Shock'];
+    let s = passBoth(advanceTo(start(grip), 'end'));
+    expect(s.pendingDiscard).toEqual({ seat: 0, count: 2 });
+    s = apply(s, { type: 'auto:discard', by: 0, card: find(s, 0, 'hand', 'Undying Rage') });
+    s = apply(s, { type: 'auto:discard', by: 0, card: find(s, 0, 'hand', 'Shock') });
+    // No trigger, so the cleanup step is the silent kind and the turn is over.
+    expect(s.turn).toBe(6);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Undying Rage');
+    expect(namesIn(s, 0, 'hand')).not.toContain('Undying Rage');
   });
 });

@@ -1067,6 +1067,20 @@ export type TriggerEvent =
        */
       readonly who?: 'self' | 'another' | 'any';
       /**
+       * Where the card has to have come from. `anywhere` — the default — is what the event has
+       * always meant: Planar Void exiles a card that was milled, discarded or countered as readily
+       * as one that died. `battlefield` is the narrower printed sentence and by far the commoner:
+       * "When ~ is put into a graveyard **from the battlefield**", which is how a noncreature
+       * permanent says "dies" (CR 700.4).
+       *
+       * **The narrow one was read as the wide one until D569**, by both table rows and by the pool's
+       * own Rancor: an Undying Rage discarded to hand size returned itself to its owner's hand. It
+       * went unseen for a hundred increments because a card coming back a turn late looks like
+       * nothing, and then D568 made the cleanup step hold priority and a pod looped on it for two
+       * thousand moves — discard, return, discard.
+       */
+      readonly from?: 'battlefield' | 'anywhere';
+      /**
        * Set by the engine when it raises the event: **which** card arrived in a graveyard, so the
        * ability can say "exile that card" (CR 400.7). Read through `EffectContext.subject`, the
        * same channel exalted and evolve read their creature through.
@@ -1074,6 +1088,8 @@ export type TriggerEvent =
       readonly subject?: string;
       /** Set by the engine: whose graveyard it arrived in. Nothing reads it yet; see above. */
       readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: `battlefield` when the card arrived from there, absent otherwise. */
+      readonly cameFrom?: 'battlefield';
     }
   /**
    * "Whenever a creature you control is exiled" (CR 400.7) — the last zone change nothing could
