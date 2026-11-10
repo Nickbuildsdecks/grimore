@@ -167,6 +167,17 @@ export function relocate(
    */
   if (state.automated && inst.zone === 'battlefield' && toZone === 'graveyard') {
     next = { ...next, died: [...next.died, inst.id] };
+    /*
+      And the turn's count of creatures that died, which is morbid's fact (D564).
+
+      Asked of the permanent **as it was on the battlefield** — `state` and `inst` are both from
+      before the move — so a land that was a creature when it was destroyed counts and a creature
+      card that was not one (a Vehicle nobody crewed) does not. That is last-known information,
+      which is what "died" is defined over (CR 700.4, 603.10a).
+    */
+    if (characteristicsOf(state, inst).isCreature) {
+      next = { ...next, creaturesDiedThisTurn: (next.creaturesDiedThisTurn ?? 0) + 1 };
+    }
   }
   /*
     And *leaving* the battlefield at all is its own event (CR 603.6c), wider than dying.
@@ -178,6 +189,10 @@ export function relocate(
   */
   if (state.automated && inst.zone === 'battlefield' && toZone !== 'battlefield') {
     next = { ...next, left: [...next.left, inst.id] };
+    // And for whom, which is revolt's fact (D564): the seat that controlled it as it left.
+    const key = String(inst.zoneSeat);
+    const before = next.leftBattlefieldThisTurn ?? {};
+    next = { ...next, leftBattlefieldThisTurn: { ...before, [key]: (before[key] ?? 0) + 1 } };
   }
   // And arriving from anywhere else is *entering* the battlefield. Changing controller is not —
   // it moves between two battlefields, and a creature that changed hands has not entered.

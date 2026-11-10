@@ -37556,3 +37556,305 @@ describe('an intervening-if in a trigger: asked as it triggers (D563)', () => {
     });
   });
 });
+
+describe('what happened this turn: raid, morbid, revolt and life gained (D564)', () => {
+  /*
+    Four conditions that ask about the turn rather than the board, and four records the engine now
+    keeps to answer them. Each is tested through real plays — an attack declared, a creature
+    Shocked, a permanent bounced, a life-gain spell cast — so what is pinned is the **recording**
+    as well as the reading. And each has the row that tells it from its neighbour: an attack of
+    nothing, an artifact destroyed, an *opponent's* permanent leaving, three life where four is
+    asked for.
+
+    Four printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Mardu Hordechief', type_line: 'Creature — Human Warrior', mana_cost: '{2}{W}', cmc: 3,
+      colors: ['W'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Raid — When Mardu Hordechief enters, if you attacked this turn, create a 1/1 white Warrior creature token.',
+    },
+    {
+      name: 'Cackling Prowler', type_line: 'Creature — Hyena Rogue', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], power: '4', toughness: '3', layout: 'normal',
+      oracle_text: 'Ward {2} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {2}.)\nMorbid — At the beginning of your end step, if a creature died this turn, put a +1/+1 counter on this creature.',
+    },
+    {
+      name: 'Airdrop Aeronauts', type_line: 'Creature — Dwarf Scout', mana_cost: '{3}{W}{W}', cmc: 5,
+      colors: ['W'], power: '4', toughness: '3', layout: 'normal',
+      oracle_text: 'Flying\nRevolt — When Airdrop Aeronauts enters, if a permanent you controlled left the battlefield this turn, you gain 5 life.',
+    },
+    {
+      name: 'Angelic Accord', type_line: 'Enchantment', mana_cost: '{3}{W}', cmc: 4, colors: ['W'],
+      layout: 'normal',
+      oracle_text: 'At the beginning of each end step, if you gained 4 or more life this turn, create a 4/4 white Angel creature token with flying.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'turnfacts',
+      name: 'Turn facts',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Shock', count: 4 }, { name: 'Unsummon', count: 4 },
+        { name: 'Healing Salve', count: 4 }, { name: 'Disenchant', count: 4 }, { name: 'Sol Ring', count: 4 },
+        { name: 'Plains', count: 12 }, { name: 'Island', count: 4 }, { name: 'Mountain', count: 4 },
+        { name: 'Forest', count: 4 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Island', 'Mountain'];
+
+  const start = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'turnfacts', 1: 'turnfacts' },
+    deckSpecs: { turnfacts: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...LANDS, ...mine], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const cast = (s: GameState, name: string, extra: Partial<Extract<Action, { type: 'auto:cast' }>> = {}): GameState =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra })));
+  const named = (s: GameState, seat: SeatIndex, name: string): number =>
+    ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === name).length;
+
+  describe('raid — "if you attacked this turn"', () => {
+    it('no attack: the Hordechief arrives alone', () => {
+      const s = cast(start(['Mardu Hordechief'], ['Grizzly Bears']), 'Mardu Hordechief');
+      expect(named(s, 0, 'Mardu Hordechief')).toBe(1);
+      expect(named(s, 0, 'Warrior')).toBe(0);
+      expect(s.attackedThisTurn ?? {}).toEqual({});
+    });
+
+    it('after attacking with the Bears: a Warrior comes with it', () => {
+      let s = advanceTo(start(['Mardu Hordechief'], ['Grizzly Bears']), 'declare-attackers');
+      const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+      s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] });
+      expect(s.attackedThisTurn).toEqual({ 0: 1 });
+      s = advanceTo(s, 'postcombat-main');
+      s = cast(s, 'Mardu Hordechief');
+      expect(named(s, 0, 'Warrior')).toBe(1);
+    });
+
+    it('a declaration of no attackers is not an attack', () => {
+      let s = advanceTo(start(['Mardu Hordechief'], ['Grizzly Bears']), 'declare-attackers');
+      s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [] }), 'postcombat-main');
+      expect(s.attackedThisTurn ?? {}).toEqual({});
+      s = cast(s, 'Mardu Hordechief');
+      expect(named(s, 0, 'Warrior')).toBe(0);
+    });
+
+    it('last turn\'s attack is forgotten', () => {
+      let s = advanceTo(start(['Mardu Hordechief'], ['Grizzly Bears']), 'declare-attackers');
+      const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+      s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] });
+      s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+      expect(s.activeSeat).toBe(0);
+      s = cast(s, 'Mardu Hordechief');
+      expect(named(s, 0, 'Warrior')).toBe(0);
+    });
+  });
+
+  describe('morbid — "if a creature died this turn"', () => {
+    const prowler = (s: GameState): number =>
+      s.instances[find(s, 0, 'battlefield', 'Cackling Prowler')]!.counters['+1/+1'] ?? 0;
+
+    it('nothing died: no counter at the end step', () => {
+      const s = nextTurn(start([], ['Cackling Prowler'], ['Grizzly Bears']));
+      expect(prowler(s)).toBe(0);
+    });
+
+    it('an opponent\'s Bears is Shocked: one counter, and only for that turn', () => {
+      let s = start(['Shock'], ['Cackling Prowler'], ['Grizzly Bears']);
+      s = cast(s, 'Shock', { targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] });
+      expect(named(s, 1, 'Grizzly Bears')).toBe(0);
+      expect(s.creaturesDiedThisTurn).toBe(1);
+      s = nextTurn(s);
+      expect(prowler(s)).toBe(1);
+      // Through the Prowler's next end step with nothing dying: still one.
+      s = nextTurn(nextTurn(s));
+      expect(prowler(s)).toBe(1);
+    });
+
+    it('an artifact destroyed is not a creature dying', () => {
+      // Battlefield to graveyard, like a death, and the record is asserted so the row is about
+      // what kind of permanent it was and not about nothing having happened.
+      let s = start(['Disenchant'], ['Cackling Prowler'], ['Sol Ring']);
+      s = cast(s, 'Disenchant', { targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Sol Ring') }] });
+      expect(named(s, 1, 'Sol Ring')).toBe(0);
+      expect(namesIn(s, 1, 'graveyard')).toContain('Sol Ring');
+      expect(s.creaturesDiedThisTurn ?? 0).toBe(0);
+      expect(prowler(nextTurn(s))).toBe(0);
+    });
+  });
+
+  describe('revolt — "if a permanent you controlled left the battlefield this turn"', () => {
+    it('nothing left: no life', () => {
+      const s = cast(start(['Airdrop Aeronauts'], ['Grizzly Bears']), 'Airdrop Aeronauts');
+      expect(life(s, 0)).toBe(20);
+    });
+
+    it('your own Bears bounced first: five life', () => {
+      let s = start(['Unsummon', 'Airdrop Aeronauts'], ['Grizzly Bears']);
+      s = cast(s, 'Unsummon', { targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }] });
+      expect(s.leftBattlefieldThisTurn).toEqual({ 0: 1 });
+      s = cast(s, 'Airdrop Aeronauts');
+      expect(life(s, 0)).toBe(25);
+    });
+
+    it('an opponent\'s Bears bounced: theirs left, yours did not', () => {
+      let s = start(['Unsummon', 'Airdrop Aeronauts'], [], ['Grizzly Bears']);
+      s = cast(s, 'Unsummon', { targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] });
+      expect(s.leftBattlefieldThisTurn).toEqual({ 1: 1 });
+      s = cast(s, 'Airdrop Aeronauts');
+      expect(life(s, 0)).toBe(20);
+    });
+  });
+
+  describe('"if you gained 4 or more life this turn"', () => {
+    const salve = (s: GameState): GameState =>
+      cast(s, 'Healing Salve', { modes: [0], targets: [{ kind: 'player', seat: 0 }] });
+
+    it.each([
+      [1, 3, 0],
+      [2, 6, 1],
+    ])('%i Healing Salve: %i life gained, %i Angel at the end step', (salves, gained, angels) => {
+      // Three is one Salve and short of four; six is two, added up across the turn.
+      let s = start(['Healing Salve', 'Healing Salve'], ['Angelic Accord']);
+      for (let i = 0; i < salves; i += 1) s = salve(s);
+      expect(life(s, 0)).toBe(20 + gained);
+      expect(s.lifeGainedThisTurn).toEqual({ 0: gained });
+      s = nextTurn(s);
+      expect(named(s, 0, 'Angel')).toBe(angels);
+    });
+  });
+});
+
+describe('conditions about a player and the board, asked directly (D564)', () => {
+  /*
+    The rest of D564's vocabulary, where the thing to pin is a comparison rather than a recording:
+    ten or less against eleven, an opponent's poison against your own, a 3/3 against a 4/3. Each
+    condition is compiled from a printed sentence and then **asked**, of a board that differs from
+    its neighbour by the one fact in question. No play is needed to set these up, so none is made.
+  */
+  const conditionOf = (clause: string) => {
+    const got = compileCard({
+      name: 'Probe Card', type_line: 'Creature — Human', mana_cost: '{1}', cmc: 1, colors: [],
+      power: '1', toughness: '1', layout: 'normal',
+      oracle_text: `When Probe Card enters, if ${clause}, draw a card.`,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    const condition = got.script!.triggers![0]!.condition;
+    expect(typeof condition).toBe('function');
+    return condition!;
+  };
+  const ask = (clause: string, state: GameState): boolean => conditionOf(clause)({
+    state, controller: 0, source: 'probe', targets: [], x: 0, decisions: [], kicked: false,
+  } as never);
+
+  const plain = () => customDeck({
+    id: 'plain-board', name: 'Plain board',
+    entries: [
+      { name: 'Grizzly Bears', count: 4 }, { name: 'Hill Giant', count: 4 }, { name: 'Forest', count: 32 },
+    ],
+  }).deck;
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'plain-board', 1: 'plain-board' },
+    deckSpecs: { 'plain-board': plain() },
+    battlefield: { 0: ['Forest', 'Grizzly Bears', 'Hill Giant'], 1: ['Forest', 'Hill Giant'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const withSeat = (s: GameState, seat: number, patch: Partial<GameState['seats'][number]>): GameState => ({
+    ...s, seats: s.seats.map((each) => (each.index === seat ? { ...each, ...patch } : each)),
+  });
+  const withInstance = (s: GameState, id: string, patch: Partial<GameState['instances'][string]>): GameState => ({
+    ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, ...patch } },
+  });
+
+  it.each([
+    ['you, seat 0', 0, true],
+    ['the opponent', 1, false],
+    ['nobody', null, false],
+  ])('"you\'re the monarch" when the monarch is %s', (_who, monarch, expected) => {
+    expect(ask("you're the monarch", { ...board(), monarch: monarch as SeatIndex | null })).toBe(expected);
+  });
+
+  it.each([
+    ['you have 10 or less life', 10, true],
+    ['you have 10 or less life', 11, false],
+    ['you have 30 or more life', 30, true],
+    ['you have 30 or more life', 29, false],
+  ])('"%s" at %i life', (clause, lifeTotal, expected) => {
+    expect(ask(clause, withSeat(board(), 0, { life: lifeTotal }))).toBe(expected);
+  });
+
+  it.each([
+    ['the opponent has three', 1, 3, true],
+    ['the opponent has two', 1, 2, false],
+    ['you have three and they have none', 0, 3, false],
+  ])('"an opponent has three or more poison counters" when %s', (_who, seat, poison, expected) => {
+    expect(ask('an opponent has three or more poison counters', withSeat(board(), seat, { poison }))).toBe(expected);
+  });
+
+  it('"you control a creature with power 4 or greater" reads the live power, and only yours', () => {
+    const s = board();
+    const clause = 'you control a creature with power 4 or greater';
+    // A 2/2 and a 3/3 of yours; a 3/3 of theirs.
+    expect(ask(clause, s)).toBe(false);
+    // Your Giant with a counter is a 4/4.
+    expect(ask(clause, addCounters(s, find(s, 0, 'battlefield', 'Hill Giant'), '+1/+1', 1))).toBe(true);
+    // Their Giant with three counters is a 6/6 and is not yours.
+    expect(ask(clause, addCounters(s, find(s, 1, 'battlefield', 'Hill Giant'), '+1/+1', 3))).toBe(false);
+  });
+
+  it('"you control your commander" wants it yours, on the battlefield, and under your control', () => {
+    const s = board();
+    const clause = 'you control your commander';
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Hill Giant');
+    expect(ask(clause, s)).toBe(false);
+    expect(ask(clause, withInstance(s, mine, { isCommander: true }))).toBe(true);
+    // Somebody else's commander is not yours.
+    expect(ask(clause, withInstance(s, theirs, { isCommander: true }))).toBe(false);
+    // Yours, but not on the battlefield.
+    expect(ask(clause, withInstance(s, mine, { isCommander: true, zone: 'command' }))).toBe(false);
+    // Yours, on the battlefield, under an opponent's control.
+    expect(ask(clause, withInstance(s, mine, { isCommander: true, zoneSeat: 1 }))).toBe(false);
+  });
+
+  it.each([
+    ['you gained life this turn', { lifeGainedThisTurn: { 0: 1 } }, true],
+    ['you gained life this turn', { lifeGainedThisTurn: { 1: 5 } }, false],
+    ['you gained 3 or more life this turn', { lifeGainedThisTurn: { 0: 3 } }, true],
+    ['you gained 3 or more life this turn', { lifeGainedThisTurn: { 0: 2 } }, false],
+    ['you attacked with a creature this turn', { attackedThisTurn: { 0: 1 } }, true],
+    ['you attacked with a creature this turn', { attackedThisTurn: { 1: 2 } }, false],
+    ['a permanent left the battlefield under your control this turn', { leftBattlefieldThisTurn: { 0: 1 } }, true],
+    ['a permanent left the battlefield under your control this turn', { leftBattlefieldThisTurn: { 1: 1 } }, false],
+    ['a creature died this turn', { creaturesDiedThisTurn: 1 }, true],
+    ['a creature died this turn', { creaturesDiedThisTurn: 0 }, false],
+  ])('"%s" with %j', (clause, record, expected) => {
+    expect(ask(clause, { ...board(), ...record } as GameState)).toBe(expected);
+  });
+
+  it('answers "nothing happened" for a record saved before the fields existed', () => {
+    // The four fields are optional so an older game still loads; a reader must not throw on it.
+    const { attackedThisTurn, creaturesDiedThisTurn, leftBattlefieldThisTurn, lifeGainedThisTurn, ...old } = board();
+    void attackedThisTurn; void creaturesDiedThisTurn; void leftBattlefieldThisTurn; void lifeGainedThisTurn;
+    for (const clause of [
+      'you attacked this turn', 'a creature died this turn', 'you gained life this turn',
+      'a permanent you controlled left the battlefield this turn',
+    ]) expect(ask(clause, old as GameState)).toBe(false);
+  });
+});

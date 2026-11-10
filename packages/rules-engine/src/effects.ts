@@ -607,8 +607,28 @@ export function gainLife(state: GameState, seat: SeatIndex, amount: number): Gam
   if (amount <= 0) return state;
   const s = state.seats[seat];
   if (s === undefined) return state;
-  return replaceSeat(state, seat, { life: clampValue(s.life + amount) });
+  const key = String(seat);
+  const gained = state.lifeGainedThisTurn ?? {};
+  return {
+    ...replaceSeat(state, seat, { life: clampValue(s.life + amount) }),
+    // "If you gained life this turn" — see `GameState.attackedThisTurn` for the four of them.
+    lifeGainedThisTurn: { ...gained, [key]: (gained[key] ?? 0) + amount },
+  };
 }
+
+/**
+ * The turn's facts, read for one seat (D564). A record older than D564 has none of the fields, and
+ * every answer here is then "it did not happen", which is what an old save can honestly say.
+ */
+export const turnFacts = {
+  attacked: (state: GameState, seat: SeatIndex): number =>
+    state.attackedThisTurn?.[String(seat)] ?? 0,
+  creaturesDied: (state: GameState): number => state.creaturesDiedThisTurn ?? 0,
+  leftBattlefield: (state: GameState, seat: SeatIndex): number =>
+    state.leftBattlefieldThisTurn?.[String(seat)] ?? 0,
+  lifeGained: (state: GameState, seat: SeatIndex): number =>
+    state.lifeGainedThisTurn?.[String(seat)] ?? 0,
+} as const;
 
 /**
  * The key `Seat.counters` keeps energy under. One constant, because three files spell it.

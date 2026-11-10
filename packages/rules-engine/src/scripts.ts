@@ -33,7 +33,7 @@ import {
   counterUnlessPaid, createToken,
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
-  chosenOption, ENTERS_COUNTER_OPTION, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
@@ -20893,9 +20893,10 @@ function entersTappedFromLine(line: string, name: string): Partial<CardScript> |
  *
  * Anything else is `null`, which refuses the whole line. That matters more here than for an
  * effect: a condition read loosely is a trigger that fires when it should not, on a card that
- * reports every line read (D362). "You control a creature with power 4 or greater" and "you
- * control another Spirit" are both refused today — the first needs a filter and the second needs
- * to know whether the card asking is one of the things counted, and neither is guessed at.
+ * reports every line read (D362). "You control another Spirit" is refused, because it needs to
+ * know whether the card asking is one of the things counted, and so is any filter this has no row
+ * for ("a creature with flying"). D564 added the rows below the count family: the turn's facts,
+ * three about a player, a creature of a given power, and lieutenant.
  */
 function interveningConditionFor(
   printed: string, name: string,
@@ -20907,6 +20908,70 @@ function interveningConditionFor(
   }
   const number = (word: string): number | undefined =>
     (/^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word.toLowerCase()]);
+
+  /*
+    The turn's facts (D564) — raid, morbid, revolt and the life-gain family. Each is a record the
+    engine writes where the thing happens (`GameState.attackedThisTurn`), so these are lookups.
+
+    "With a creature" is the older printing of raid and means the same thing: nothing but a
+    creature is ever declared as an attacker.
+  */
+  if (/^you attacked(?: with a creature)? this turn$/i.test(text)) {
+    return (c) => turnFacts.attacked(c.state, c.controller) > 0;
+  }
+  if (/^a creature died this turn$/i.test(text)) {
+    return (c) => turnFacts.creaturesDied(c.state) > 0;
+  }
+  if (/^a permanent (?:you controlled left the battlefield|left the battlefield under your control) this turn$/i.test(text)) {
+    return (c) => turnFacts.leftBattlefield(c.state, c.controller) > 0;
+  }
+  if (/^you gained life this turn$/i.test(text)) {
+    return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
+  }
+  const gained = /^you gained (\w+) or more life this turn$/i.exec(text);
+  if (gained !== null) {
+    const atLeast = number(gained[1]!);
+    if (atLeast === undefined || atLeast < 1) return null;
+    return (c) => turnFacts.lifeGained(c.state, c.controller) >= atLeast;
+  }
+
+  // Facts about a player, read off the seat.
+  if (/^you(?:'re| are) the monarch$/i.test(text)) return (c) => c.state.monarch === c.controller;
+  const life = /^you have (\w+) or (less|more) life$/i.exec(text);
+  if (life !== null) {
+    const bound = number(life[1]!);
+    if (bound === undefined) return null;
+    const atMost = life[2]!.toLowerCase() === 'less';
+    return (c) => {
+      const mine = c.state.seats[c.controller]?.life;
+      return mine !== undefined && (atMost ? mine <= bound : mine >= bound);
+    };
+  }
+  const poisoned = /^an opponent has (\w+) or more poison counters$/i.exec(text);
+  if (poisoned !== null) {
+    const atLeast = number(poisoned[1]!);
+    if (atLeast === undefined || atLeast < 1) return null;
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
+      && seat.poison >= atLeast);
+  }
+
+  /*
+    A creature of a given size, which a count cannot say: "you control a creature with power 4 or
+    greater" (ferocious, and nine cards that print it bare). Read live, since a pump counts.
+  */
+  const sized = /^you control a creature with power (\d+) or greater$/i.exec(text);
+  if (sized !== null) {
+    const atLeast = Number(sized[1]);
+    return (c) => creaturesControlledBy(c.state, c.controller).some((id) => {
+      const inst = c.state.instances[id];
+      return inst !== undefined && characteristicsOf(c.state, inst).power >= atLeast;
+    });
+  }
+  // Lieutenant: your commander, on the battlefield, under your control.
+  if (/^you control your commander$/i.test(text)) {
+    return (c) => Object.values(c.state.instances).some((inst) => inst.isCommander
+      && inst.owner === c.controller && inst.zone === 'battlefield' && inst.zoneSeat === c.controller);
+  }
 
   const several = /^you control (\w+) or more (.+)$/i.exec(text);
   if (several !== null) {
@@ -20957,7 +21022,13 @@ function interveningConditionFor(
  * effect: a Gatekeeper with one Gate puts nothing on the stack.
  */
 function interveningIfFromLine(line: string, name: string): Partial<CardScript> | null {
-  const text = plain(line).trim();
+  /*
+    The ability word comes off first (D564). "Raid — When ~ enters, if you attacked this turn, …"
+    is the sentence after the dash, and the word in front has no rules meaning (CR 207.2c) — the
+    condition it names is spelled out in the clause that follows it. 176 of the unread
+    intervening-if lines print one.
+  */
+  const text = plain(withoutAbilityWord(line)).trim();
   const clause = /^((?:When|Whenever|At the beginning of) [^,]+), if ([^,]+), (.+)$/i.exec(text);
   if (clause === null) return null;
   const condition = interveningConditionFor(clause[2]!, name);

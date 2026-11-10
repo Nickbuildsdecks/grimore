@@ -840,6 +840,11 @@ export function endTurnCleanup(state: GameState): GameState {
     lifeLostThisTurn: {},
     // And the turn's damage, which is bloodthirst's fact and cleared with the others (D558).
     damagedThisTurn: {},
+    // And D564's four: who attacked, what died, what left and who gained life.
+    attackedThisTurn: {},
+    creaturesDiedThisTurn: 0,
+    leftBattlefieldThisTurn: {},
+    lifeGainedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
     // what makes it a miracle.

@@ -17309,8 +17309,10 @@ describe('an intervening-if in a trigger (D563)', () => {
   });
 
   it.each([
+    // Retargeted by D564, which reads "a creature with power 4 or greater": a keyword filter is
+    // the nearest condition still out of reach.
     ['a condition that needs a filter',
-      'When this creature enters, if you control a creature with power 4 or greater, draw a card.'],
+      'When this creature enters, if you control a creature with flying, draw a card.'],
     ['"another", which needs to know whether the card asking is one of them',
       'When this creature enters, if you control another Wizard, draw a card.'],
     ['a choice of two things',
@@ -17327,6 +17329,71 @@ describe('an intervening-if in a trigger (D563)', () => {
       'When this creature enters, draw a card, then if you control an artifact, draw a card.'],
     ['your own life, where the card says an opponent\'s',
       'When this creature enters, if you lost life this turn, draw a card.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = creature(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});
+
+describe('the second condition vocabulary, and the ability word in front of it (D564)', () => {
+  const creature = (text: string) => {
+    const got = compileCard({
+      name: 'Mardu Hordechief', type_line: 'Creature — Human Warrior', mana_cost: '{2}{W}', cmc: 3,
+      colors: ['W'], power: '2', toughness: '3', layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['Raid — When Mardu Hordechief enters, if you attacked this turn, create a 1/1 white Warrior creature token.',
+      'if you attacked this turn, create a 1/1 white Warrior creature token'],
+    ['Morbid — At the beginning of your end step, if a creature died this turn, put a +1/+1 counter on Mardu Hordechief.',
+      'if a creature died this turn, put a +1/+1 counter on Mardu Hordechief'],
+    ['Revolt — When Mardu Hordechief enters, if a permanent you controlled left the battlefield this turn, you gain 5 life.',
+      'if a permanent you controlled left the battlefield this turn, you gain 5 life'],
+    ['Metalcraft — When Mardu Hordechief enters, if you control three or more artifacts, draw a card.',
+      'if you control three or more artifacts, draw a card'],
+    ['Lieutenant — When Mardu Hordechief enters, if you control your commander, draw a card.',
+      'if you control your commander, draw a card'],
+    // And the same conditions with no ability word, which is how the older printings read.
+    ['When Mardu Hordechief enters, if a creature died this turn, draw a card.',
+      'if a creature died this turn, draw a card'],
+    ['At the beginning of each end step, if you gained 4 or more life this turn, create a 4/4 white Angel creature token with flying.',
+      'if you gained 4 or more life this turn, create a 4/4 white Angel creature token with flying'],
+    ["At the beginning of your end step, if you're the monarch, draw a card.",
+      "if you're the monarch, draw a card"],
+    ['At the beginning of your upkeep, if you have 10 or less life, you gain 1 life.',
+      'if you have 10 or less life, you gain 1 life'],
+    ['When Mardu Hordechief enters, if you control a creature with power 4 or greater, draw a card.',
+      'if you control a creature with power 4 or greater, draw a card'],
+  ])('reads %s', (line, description) => {
+    const got = creature(line);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.triggers).toHaveLength(1);
+    expect(got.script!.triggers![0]!.description).toBe(description);
+    expect(typeof got.script!.triggers![0]!.condition).toBe('function');
+  });
+
+  it.each([
+    ['coven, which counts distinct powers',
+      'Coven — At the beginning of your end step, if you control three or more creatures with different powers, draw a card.'],
+    ['a comparison between two players',
+      'When Mardu Hordechief enters, if an opponent controls more lands than you, draw a card.'],
+    ['a per-turn fact the engine does not keep',
+      'When Mardu Hordechief enters, if you descended this turn, draw a card.'],
+    ['a narrower death than "a creature"',
+      'When Mardu Hordechief enters, if a nontoken creature died this turn, draw a card.'],
+    ['more than one death',
+      'When Mardu Hordechief enters, if two or more creatures died this turn, draw a card.'],
+    ['a size it does not print',
+      'When Mardu Hordechief enters, if you control a creature with power X or greater, draw a card.'],
+    ['a life total it does not print',
+      'When Mardu Hordechief enters, if you gained X or more life this turn, draw a card.'],
+    ['a keyword cost that only looks like an ability word',
+      'Kicker — When Mardu Hordechief enters, if you attacked this turn, draw a card.'],
   ])('leaves %s unread', (_what, line) => {
     const got = creature(line);
     expect(got.script?.triggers ?? []).toEqual([]);

@@ -2052,6 +2052,14 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   let next: GameState = {
     ...state,
     pacts: markPactsBroken(state.pacts, broken),
+    // Raid's fact (D564): how many creatures this seat has declared as attackers this turn. A
+    // declaration of nothing is not an attack, so an empty list leaves the record alone.
+    ...(attacks.length === 0 ? {} : {
+      attackedThisTurn: {
+        ...(state.attackedThisTurn ?? {}),
+        [String(action.by)]: (state.attackedThisTurn?.[String(action.by)] ?? 0) + attacks.length,
+      },
+    }),
     seats: state.seats.map((seat) => {
       const spared = sparedBy[String(seat.index)];
       if (spared === undefined) return seat;

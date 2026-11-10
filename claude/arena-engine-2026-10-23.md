@@ -21750,3 +21750,101 @@ type checker**, because the patch I wrote for it did not compile. That is a brea
 run. It is in the next spec with a patch that compiles.
 
 D563's pod sweep (SEED0=43301): 40 of 40 to a finish, no throw, no stall.
+
+## D564 — What happened this turn: raid, morbid, revolt, life gained, and the ability word in front
+
+D563 measured 334 unread intervening-if lines. That number was wrong by a factor of three, in my
+own instrument: the probe only matched a line that **began** with "When", and only four events.
+Counted properly — any trigger event, and with the ability word some lines print in front —
+there are **1,046**, of which **176** sit behind an ability word, **385** have an effect that
+already reads, and **249** cards would be finished. D563's own reader had the same blind spot, so
+"Metalcraft — When ~ enters, if you control three or more artifacts, …" was unread although both
+its condition and its effect were readable.
+
+Ranked by cards finished, the conditions were not about the board at all:
+
+| cards | condition | needs |
+| --- | --- | --- |
+| 17 | [Raid] you attacked this turn | a record |
+| 12 | [Morbid] a creature died this turn | a record |
+| 9 | you gained life / N or more life this turn | a record |
+| 8 | [Revolt] a permanent you controlled left the battlefield this turn | a record |
+| 7 | you control a creature with power N or greater (ferocious) | a filter |
+| 4 | you're the monarch | nothing — `state.monarch` |
+| 4 | [Metalcraft] you control three or more artifacts | only the ability word off |
+
+### Four records, each written where the thing happens
+
+`damagedThisTurn` (D558) is the pattern: optional on the state so an older save loads, written
+in exactly one place, cleared at cleanup with the others, read through one helper (`turnFacts`).
+
+| field | written by | the decision in it |
+| --- | --- | --- |
+| `attackedThisTurn[seat]` | `declareAttackers` | counts creatures **declared**; an empty declaration writes nothing, and a creature put onto the battlefield attacking was never declared (CR 508.4) |
+| `creaturesDiedThisTurn` | `relocate`, battlefield to graveyard | asks whether the permanent **was a creature as it left**, from the state and instance before the move — last-known information (CR 603.10a). An animated land counts; an uncrewed Vehicle does not; a token does |
+| `leftBattlefieldThisTurn[seat]` | `relocate`, leaving the battlefield | keyed by whoever **controlled** it as it left, which is what "you controlled" means and is not always its owner |
+| `lifeGainedThisTurn[seat]` | `gainLife` | an amount and not a flag, because eleven cards ask for "N or more" |
+
+### The vocabulary now
+
+D563's four, and: you attacked [with a creature] this turn · a creature died this turn · a
+permanent you controlled left the battlefield this turn (and the newer "left the battlefield
+under your control") · you gained life this turn · you gained N or more life this turn · you're
+the monarch · you have N or less / or more life · an opponent has N or more poison counters · you
+control a creature with power N or greater · you control your commander.
+
+`interveningIfFromLine` takes the ability word off first with the compiler's existing
+`withoutAbilityWord`. An ability word has no rules meaning (CR 207.2c); the condition it names is
+spelled out in the clause after it, which is the thing actually read.
+
+### Refused, with the reason for each
+
+Coven (distinct powers), "an opponent controls more lands than you", "you descended this turn",
+"a nontoken creature died", "two or more creatures died", and any X. Each is either a comparison
+this vocabulary has no row for or a narrower fact than the record keeps, and a narrower condition
+read as the wider one is a trigger that fires when it should not.
+
+### Tests: the recording through real plays, the comparisons asked directly
+
+**Twelve table rows** on printed Mardu Hordechief, Cackling Prowler, Airdrop Aeronauts and Angelic
+Accord. Each fact is made to happen by a real play and each has the row that tells it from its
+neighbour:
+
+- raid — no attack; an attack with the Bears; **a declaration of no attackers**; an attack last turn;
+- morbid — nothing died; a Bears Shocked (one counter, still one a turn later); **an artifact
+  destroyed**, with the graveyard asserted so the row is about what kind of permanent it was;
+- revolt — nothing left; your Bears bounced; **an opponent's** Bears bounced, with the record
+  asserted to be theirs;
+- life — one Healing Salve is three and makes nothing, two is six and makes an Angel.
+
+**Twenty-three direct rows** for the comparisons, where no play is needed: the condition is
+compiled from the printed sentence and then asked of boards that differ by one fact — monarch
+you / them / nobody; life 10 against 11 and 30 against 29; three poison on them, two on them,
+three on you; a 3/3 that becomes a 4/4 and an opponent's 6/6; a commander that is yours, theirs,
+in the command zone, or yours under an opponent's control; and a state with the four fields
+missing altogether, which must answer "nothing happened" and not throw.
+
+**Eighteen compile rows**: five ability words read, five bare conditions read, eight refusals.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,952 | **24,047** of 56,421 (42.6%) |
+| cards with a compiled script | 12,243 | **12,326** (40.1%) |
+| cards with every printed line read | 8,049 | **8,122** |
+
++73 fully read, the largest increment of the session and more than any keyword row has given.
+129 cards carry a read intervening-if, up from 34. Of the 249, about 150 are still to come.
+
+### What the wrong first measurement is worth
+
+A probe's regex is a claim about the corpus, and I reported its count as the size of the family.
+It was the size of the part my regex could see. The check that would have caught it is cheap:
+count the same thing a second, cruder way — here, every unread line containing ", if " — and see
+whether the two numbers are within sight of each other. They were not: 334 against well over a
+thousand.
+
+The gate caught one stale refusal before this was committed (D516's kind): D563's compile row
+"leaves a condition that needs a filter unread" used "a creature with power 4 or greater", which
+this increment reads. Retargeted to "a creature with flying".

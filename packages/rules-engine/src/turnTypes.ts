@@ -1094,6 +1094,25 @@ export interface AutomationState {
    */
   readonly damagedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * Four more facts about **this turn**, each one a condition printed on a card (D564).
+   *
+   * | field | the card asks | written by |
+   * | --- | --- | --- |
+   * | `attackedThisTurn` | "if you attacked this turn" (raid) | `declareAttackers`, per attacking seat, counting the creatures **declared** — one put onto the battlefield attacking was never declared and does not count (CR 508.4) |
+   * | `creaturesDiedThisTurn` | "if a creature died this turn" (morbid) | `relocate`, when a permanent that **was a creature as it left** goes from the battlefield to a graveyard — tokens included, since they get there before they cease to exist |
+   * | `leftBattlefieldThisTurn` | "if a permanent you controlled left the battlefield this turn" (revolt) | `relocate`, keyed by whoever **controlled** it as it left |
+   * | `lifeGainedThisTurn` | "if you gained life this turn" | `gainLife`, per seat, as an amount, because some cards ask for "3 or more" |
+   *
+   * The same arrangement as `damagedThisTurn` and for its reasons: written in the one place the
+   * thing happens, cleared in the cleanup step with the rest, and **optional** so a game saved
+   * before D564 still loads — every reader goes through `turnFacts` in `effects.ts`, which treats
+   * a missing record as nothing having happened.
+   */
+  readonly attackedThisTurn?: Readonly<Record<string, number>>;
+  readonly creaturesDiedThisTurn?: number;
+  readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
+  readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
+  /**
    * How many cards each seat has **drawn this turn**, keyed by seat index as a string.
    *
    * The third thing this engine remembers about a turn rather than about a permanent or a seat, and
