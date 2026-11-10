@@ -10286,6 +10286,14 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (renowned !== null) return { triggers: [renownTrigger(Number(renowned[1]))] };
 
   /*
+    Bloodthirst N (D558). Digits only: two legal cards print `Bloodthirst X`, whose count is the
+    damage dealt this turn rather than a number on the card, and reading that as a fixed N would be
+    inventing one (D259). They stay reported.
+  */
+  const bloodthirst = /^bloodthirst\s+(\d+)$/i.exec(text);
+  if (bloodthirst !== null) return { bloodthirst: Number(bloodthirst[1]) };
+
+  /*
     Afterlife N and Rampage N (D557), two more counted keywords whose one line is the whole ability
     and which the engine already had every part of: a dies trigger that makes tokens, and a
     becomes-blocked trigger that pumps. See `afterlifeTrigger` and `rampageTrigger`. Digits only

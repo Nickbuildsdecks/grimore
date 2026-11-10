@@ -1077,6 +1077,23 @@ export interface AutomationState {
    */
   readonly lifeLostThisTurn: Readonly<Record<string, number>>;
   /**
+   * How much **damage** each seat has been dealt this turn, keyed by seat index as a string.
+   *
+   * `lifeLostThisTurn`'s sibling and deliberately not the same record, because the two facts come
+   * apart in both directions and a card reads each. Life can be lost with no damage dealt — a
+   * Zulaport Cutthroat's drain, a life payment — and damage can be dealt with no life lost: an
+   * infect source's damage to a player is poison (CR 702.90b). Bloodthirst asks about damage
+   * ("if an opponent was dealt damage this turn", CR 702.54a) and spectacle about life, so an
+   * infect hit turns on the first and not the second, and a drain the second and not the first.
+   *
+   * Recorded in one place, `dealDamage`'s player branch, after shields and prevention have taken
+   * their share — prevented damage was never dealt. Reset in the cleanup step with the others.
+   *
+   * Optional, unlike its siblings, so that a game saved before D558 still loads: every reader
+   * goes through `damagedThisTurn` in `effects.ts`, which treats a missing record as an empty one.
+   */
+  readonly damagedThisTurn?: Readonly<Record<string, number>>;
+  /**
    * How many cards each seat has **drawn this turn**, keyed by seat index as a string.
    *
    * The third thing this engine remembers about a turn rather than about a permanent or a seat, and

@@ -16914,3 +16914,51 @@ describe('the Mentor, Afterlife and Rampage keyword lines (D557)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+/*
+  **Bloodthirst N** (D558): 21 legal lines, 14 cards finished by the audit. The reading is a flag
+  with a number in it; the work was the fact it asks about — "an opponent was dealt damage this
+  turn" — which the engine did not record and which is deliberately not `lifeLostThisTurn`.
+*/
+describe('the Bloodthirst keyword line (D558)', () => {
+  const thirsty = (text: string) => compileCard({
+    name: 'Bloodrage Vampire', type_line: 'Creature — Vampire', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '3', toughness: '1', layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Bloodthirst 1 (If an opponent was dealt damage this turn, this creature enters with a +1/+1 counter on it.)', 1],
+    ['Bloodthirst 2', 2],
+    ['Bloodthirst 3', 3],
+    ['Bloodthirst 6', 6],
+  ])('reads %s as the count and nothing else', (line, count) => {
+    // 1, 2, 3 and 6 are every fixed count the legal corpus prints.
+    const read = thirsty(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.bloodthirst).toBe(count);
+    // Not `entersWith`: that field is unconditional, and this one is the same counters behind a
+    // condition. A reader that set both would hand the creature its counters every time.
+    expect(read.script?.entersWith).toBeUndefined();
+    expect(read.script?.triggers).toBeUndefined();
+  });
+
+  it.each([
+    ['Bloodthirst X, whose count is the damage dealt and not a number on the card', 'Bloodthirst X'],
+    ['no count at all', 'Bloodthirst'],
+    ['a line that only starts with the keyword', 'Bloodthirst 2 if you control a Vampire'],
+  ])('leaves %s unread', (_what, line) => {
+    /*
+      Two legal cards print `Bloodthirst X` (Petrified Wood-Kin and its kin), where X is the damage
+      your opponents were dealt this turn. Reading that as a fixed number would be inventing one
+      (D259), so it is reported — the same answer `Renown` and `Toxic` give to a count they have
+      not seen.
+    */
+    const read = thirsty(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.bloodthirst).toBeUndefined();
+    expect(read.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

@@ -550,6 +550,8 @@ export function dealDamage(
         replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt }),
         target.seat, left,
       );
+    // After both branches, because both dealt damage: poison or life is what it *did* (D558).
+    next = recordDamaged(next, target.seat, left);
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;
@@ -670,6 +672,22 @@ export function loseLife(state: GameState, seat: SeatIndex, amount: number): Gam
  * oversight: infect replaces what being dealt damage *does* to you, and what it does is not lose
  * you life (CR 120.3). An infect deck's hits do not turn on a spectacle cost.
  */
+/**
+ * Remembers that a seat was **dealt damage** this turn — see `GameState.damagedThisTurn` for why
+ * this is not `recordLifeLost` and must not become it.
+ */
+function recordDamaged(state: GameState, seat: SeatIndex, amount: number): GameState {
+  if (amount <= 0) return state;
+  const key = String(seat);
+  const before = state.damagedThisTurn ?? {};
+  return { ...state, damagedThisTurn: { ...before, [key]: (before[key] ?? 0) + amount } };
+}
+
+/** How much damage this seat has been dealt this turn. Zero for a record older than D558. */
+export function damagedThisTurn(state: GameState, seat: SeatIndex): number {
+  return state.damagedThisTurn?.[String(seat)] ?? 0;
+}
+
 export function recordLifeLost(state: GameState, seat: SeatIndex, amount: number): GameState {
   if (amount <= 0) return state;
   const key = String(seat);

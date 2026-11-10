@@ -38666,3 +38666,87 @@ on the first run of this spec — the "lesser, not equal" mentor filter, the aft
 white-versus-two-coloured token, the registry-key collision, rampage's off-by-one in both
 directions and its per-blocker event, and both end anchors. 22 minutes for thirteen full-suite
 runs on two mirrors, against roughly 33 serially.
+
+## D558 — Bloodthirst N, and the fact "was dealt damage this turn"
+
+**Bloodthirst N** (CR 702.54a): "If an opponent was dealt damage this turn, this creature enters
+with N +1/+1 counters on it." 21 legal cards print it with a number; the keyword audit ranked it
+the largest remaining row whose parts the engine mostly had.
+
+It had all but one. `entersWith` already puts counters on a permanent as its spell resolves, and
+bloodthirst is that replacement with a condition in front of it. The condition is the new part.
+
+### The fact is damage, and the engine only remembered life
+
+`lifeLostThisTurn` (spectacle's fact, D197) was the obvious thing to reuse and it is the wrong
+one, in both directions:
+
+| what happened to the opponent | life lost this turn | dealt damage this turn | bloodthirst |
+| --- | --- | --- | --- |
+| Shocked for 2 | yes | yes | **on** |
+| drained by Zulaport Cutthroat | yes | no | **off** |
+| hit by an infect creature | no | yes (CR 702.90b: the damage is dealt, its result is poison) | **on** |
+
+So there is a second record, `GameState.damagedThisTurn`, written by `recordDamaged` at the one
+place a player is dealt damage (`dealDamage`'s player path, after both the infect branch and the
+life branch) and cleared with the turn's other records at cleanup. It is optional on the state so
+a snapshot saved before today still loads, and read only through `damagedThisTurn(state, seat)`,
+which answers zero for such a snapshot. Prevented damage never reaches the record: it is written
+with what was left after prevention, and zero writes nothing.
+
+### Where the condition is asked
+
+As the permanent arrives, beside `entersWith` — not when the spell is cast. A burn spell cast in
+response to the creature resolves first and turns it on, which is what the rule says and what a
+player expects. **An** opponent: any one seat other than the controller's, so in a pod it does not
+matter whom you hit.
+
+`CardScript.bloodthirst?: number` rather than a predicate on `entersWith`: the script stays data
+(D364), and the engine owns what the word means.
+
+### What is not read
+
+- **`Bloodthirst X`** (two legal cards): X is the damage dealt this turn, not a number on the
+  card. The reader takes digits only and the line stays reported (D259).
+- **A bloodthirst creature that arrives without being cast** gets no counters, because the block
+  that applies them runs on spell resolution. That is the gap task #397 already names for
+  `entersWith` (Vanishing, Fading, Modular); bloodthirst joins the list rather than widening it,
+  and the fix is one move for all four.
+
+### Tests: one row per word of the condition
+
+Bloodrage Vampire (3/1, bloodthirst 1) and Ghor-Clan Savage (2/3, bloodthirst **3**), rows copied
+from the corpus, cast through the engine's own casting path. Nine rows:
+
+1. no damage → no counter (the control; without it the rest prove nothing)
+2. Shock an opponent → one counter, 4/2
+3. two points of Shock turn on bloodthirst 3 → **three** counters, 5/6 — the number is the card's,
+   and a reader that used the damage would make a 4/5
+4. an ordinary unblocked combat hit, cast in the second main phase — how the keyword is played
+5. Zulaport Cutthroat drains for one → life lost (asserted on `lifeLostThisTurn`), **no** counter
+6. a Bears with Tainted Strike gives three poison → no life lost (asserted), counter **on**
+7. City of Brass pings its own controller → damage this turn, to the wrong player, no counter
+8. Shock on turn five, cast on the caster's next turn → forgotten
+9. a three-seat pod, the Shock aimed at seat 2 and seat 1 untouched → counter **on**: *an*
+   opponent, not the next one round the table and not all of them
+
+Rows 5 and 6 are a pair that only the damage/life distinction can satisfy together; each asserts
+the other record so that the missing or present counter cannot be explained by the event not
+having happened.
+
+Seven compile rows: the line reads on both printed cards and says N; `Bloodthirst X` does not;
+the end anchor holds; the script carries `bloodthirst` and not `entersWith`.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,689 | **23,710** of 56,421 (42.0%) |
+| cards with a compiled script | 12,082 | **12,102** |
+| cards with every printed line read | 7,903 | **7,917** |
+
++14 fully read, exactly the audit's prediction — the eighth reader row in eight for which it has
+been exact. The other seven of the 21 print a second line something else has to read.
+
+D557's pod sweep (SEED0=42701) finished while this was being written: 40 of 40 to a finish, no
+throw, no stall.

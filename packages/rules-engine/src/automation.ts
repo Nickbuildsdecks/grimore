@@ -45,7 +45,7 @@ import {
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
-  type EffectContext, type EffectFn, type PumpOptions,
+  type EffectContext, type EffectFn, type PumpOptions, damagedThisTurn,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -837,6 +837,8 @@ export function endTurnCleanup(state: GameState): GameState {
     // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
     // was lost *this* turn, so a spectacle cost is payable until the turn is actually over.
     lifeLostThisTurn: {},
+    // And the turn's damage, which is bloodthirst's fact and cleared with the others (D558).
+    damagedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
     // what makes it a miracle.
@@ -4110,6 +4112,20 @@ function completeResolution(
       if (arrives !== undefined) {
         const amount = arrives.amount === 'x' ? (object.x ?? 0) : arrives.amount;
         if (amount > 0) next = addCounters(next, inst.id, arrives.counter, amount);
+      }
+      /*
+        Bloodthirst (CR 702.54a): "if an opponent was dealt damage this turn, this creature enters
+        with N +1/+1 counters on it".
+
+        Beside `entersWith` because it is the same replacement with a condition in front of it, and
+        asked as the permanent arrives rather than as the spell was cast: a burn spell on the stack
+        above it has resolved by now, and one cast in response to it has too. **An** opponent, so
+        any one of them in a pod; and damage rather than life — see `GameState.damagedThisTurn`.
+      */
+      if (script?.bloodthirst !== undefined
+        && state.seats.some((seat) => seat.index !== object.controller
+          && damagedThisTurn(next, seat.index) > 0)) {
+        next = addCounters(next, inst.id, '+1/+1', script.bloodthirst);
       }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');

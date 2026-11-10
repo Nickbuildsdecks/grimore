@@ -2177,6 +2177,17 @@ export interface CardScript {
    */
   readonly entersWith?: { readonly counter: string; readonly amount: number | 'x' };
   /**
+   * Bloodthirst N (CR 702.54a): this creature enters with N +1/+1 counters **if an opponent was
+   * dealt damage this turn**.
+   *
+   * Its own field rather than a condition bolted onto `entersWith`, because the two are read by
+   * different cards for different reasons and one of them is unconditional: a Triskelion always
+   * has its counters, and a reader of `entersWith` should not have to ask whether it does. The
+   * condition is the engine's `damagedThisTurn` — damage, not life lost, which is a different
+   * record for the reason that field's docblock gives.
+   */
+  readonly bloodthirst?: number;
+  /**
    * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
    *
    * The third member of the family that already holds X and modes, and for the same reason: it is

@@ -7541,6 +7541,19 @@ describe('deck coverage', () => {
         flanking of its own is spared, two blockers take one each, a flanker that *blocks* gives
         nothing, and both halves of "Flying; flanking" work off the one line.
 
+      **And bloodthirst** (D558):
+
+      - `script bloodthirst`: **21 legal lines** (Bloodrage Vampire, Ghor-Clan Savage, Carnage Wurm,
+        Furyborn Hellkite and 17 more), 14 finished by reading it. None is in the pool, and D442
+        forbids putting one into a measured deck to satisfy this check.
+
+        Driven at runtime by seven tests in "bloodthirst: counters for damage dealt this turn
+        (D558)", on printed Bloodrage Vampire and Ghor-Clan Savage cast through the engine's own
+        plays, one row for each word of the condition: no damage and no counters, counters after a
+        Shock, the count taken from the card and not from the damage, **life lost without damage
+        does not count** (a Zulaport Cutthroat drain), **damage that became poison does** (Tainted
+        Strike), damage dealt to the caster does not, and last turn's damage is forgotten.
+
       **And one payment flag** (D552):
 
       - `script improvise`: **23 legal printings** (Foundry Assembler, Sweatworks Brawler, Reverse
@@ -7562,6 +7575,7 @@ describe('deck coverage', () => {
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
+      'script bloodthirst',
     ]);
 
     const declared = [
@@ -36379,5 +36393,212 @@ describe('mentor, afterlife and rampage, at the table (D557)', () => {
     const later = nextTurn(finish(state));
     expect(namesIn(later, 0, 'battlefield')).toContain('Aerathi Berserker');
     expect(size(later, attackerIds[0]!)).toBe('2/4');
+  });
+});
+
+describe('bloodthirst: counters for damage dealt this turn (D558)', () => {
+  /*
+    "If an opponent was dealt damage this turn, this creature enters with N +1/+1 counters on it"
+    (CR 702.54a). Every word of the condition can go wrong on its own, so each row moves one:
+    **an opponent** (not you), **dealt damage** (not lost life — and poison damage is damage),
+    **this turn** (not last).
+
+    Two printed cards, none in the pool, rows copied from the corpus unchanged. The Savage is a
+    2/3 with bloodthirst **3**, and it is fed by a two-point hit, so the counters can be told from
+    the damage that turned them on.
+  */
+  const DATA = [
+    {
+      name: 'Bloodrage Vampire', type_line: 'Creature — Vampire', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'Bloodthirst 1 (If an opponent was dealt damage this turn, this creature enters with a +1/+1 counter on it.)',
+    },
+    {
+      name: 'Ghor-Clan Savage', type_line: 'Creature — Centaur Berserker', mana_cost: '{3}{G}{G}',
+      cmc: 5, colors: ['G'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Bloodthirst 3 (If an opponent was dealt damage this turn, this creature enters with three +1/+1 counters on it.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'thirsty',
+      name: 'Thirsty',
+      entries: [
+        { name: 'Bloodrage Vampire', count: 4 }, { name: 'Ghor-Clan Savage', count: 4 },
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Zulaport Cutthroat', count: 4 },
+        { name: 'Shock', count: 4 }, { name: 'Tainted Strike', count: 4 },
+        { name: 'City of Brass', count: 4 },
+        { name: 'Swamp', count: 12 }, { name: 'Mountain', count: 8 }, { name: 'Forest', count: 12 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(['Bloodrage Vampire', 'Ghor-Clan Savage']);
+    return list.deck;
+  };
+
+  const start = (mine: readonly string[], hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'thirsty', 1: 'thirsty' },
+    deckSpecs: { thirsty: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: [] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const LANDS = ['Swamp', 'Swamp', 'Swamp', 'Mountain', 'Forest', 'Forest', 'Forest', 'Forest'];
+
+  /** Cast a creature from seat 0's hand and return it as it sits on the battlefield. */
+  const land = (s: GameState, name: string) => {
+    const card = find(s, 0, 'hand', name);
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card })));
+    expect(after.instances[card]!.zone).toBe('battlefield');
+    return { state: after, id: card };
+  };
+
+  const counters = (s: GameState, id: string): number => s.instances[id]!.counters['+1/+1'] ?? 0;
+
+  it('enters plain when nobody has been dealt damage', () => {
+    // The control: same card, same board, no damage. If this row had a counter the others prove
+    // nothing.
+    const { state, id } = land(start(LANDS, ['Bloodrage Vampire']), 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(0);
+    expect(`${power(state, id)}/${toughness(state, id)}`).toBe('3/1');
+  });
+
+  it('enters with its counters after an opponent is burned', () => {
+    // Non-combat damage counts: "dealt damage", with no word about combat.
+    let s = start(LANDS, ['Shock', 'Bloodrage Vampire']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 1)).toBe(18);
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(1);
+    expect(`${power(state, id)}/${toughness(state, id)}`).toBe('4/2');
+  });
+
+  it('takes its number from the card, not from the damage', () => {
+    // Two points of Shock turn on bloodthirst **3**: three counters, a 5/6. A reader that used the
+    // damage for the count would make it a 4/5.
+    let s = start(LANDS, ['Shock', 'Ghor-Clan Savage']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    const { state, id } = land(s, 'Ghor-Clan Savage');
+    expect(counters(state, id)).toBe(3);
+    expect(`${power(state, id)}/${toughness(state, id)}`).toBe('5/6');
+  });
+
+  it('is not turned on by life an opponent merely lost', () => {
+    /*
+      **Damage, not life.** A Zulaport Cutthroat drains each opponent for one when a creature of
+      yours dies — life lost, no damage dealt — and the opponent's life total going down is all a
+      reader of `lifeLostThisTurn` would see. The assertion on that record is what shows the drain
+      really happened, so the missing counter is about the kind of loss and not its absence.
+    */
+    let s = start([...LANDS, 'Zulaport Cutthroat', 'Grizzly Bears'], ['Bloodrage Vampire']);
+    s = drain(passBoth(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Grizzly Bears'), toZone: 'graveyard',
+    })));
+    // Until the stack is empty rather than once: the Vampire is a sorcery-speed cast.
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i += 1) s = drain(passBoth(s));
+    expect(s.stackOrder).toEqual([]);
+    expect(life(s, 1)).toBe(19);
+    expect(s.lifeLostThisTurn['1']).toBe(1);
+    // A tabletop move puts its trigger on the stack as the turn moves on, so by the time the drain
+    // has resolved the table is in combat. Declare no attack and cast in the second main phase.
+    if (s.step !== 'precombat-main') {
+      s = advanceTo(s, 'declare-attackers');
+      s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [] }), 'postcombat-main');
+    }
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(0);
+  });
+
+  it('IS turned on by damage that became poison', () => {
+    /*
+      The other direction, and the row that says the two records really are different: a Bears
+      given infect by Tainted Strike hits for three **poison**. No life is lost — `lifeLostThisTurn`
+      stays empty — and damage was dealt all the same (CR 702.90b), so bloodthirst is on.
+    */
+    let s = advanceTo(start([...LANDS, 'Grizzly Bears'], ['Tainted Strike', 'Bloodrage Vampire']),
+      'declare-attackers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Tainted Strike'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    for (let i = 0; i < 16 && s.step !== 'postcombat-main'; i += 1) s = drain(passBoth(s));
+    expect(life(s, 1)).toBe(20);
+    expect(s.seats[1]!.poison).toBe(3);
+    expect(s.lifeLostThisTurn['1'] ?? 0).toBe(0);
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(1);
+  });
+
+  it('is turned on by an ordinary combat hit, cast in the second main phase', () => {
+    // How the keyword is actually played: attack, connect, then cast after combat.
+    let s = advanceTo(start([...LANDS, 'Grizzly Bears'], ['Ghor-Clan Savage']), 'declare-attackers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] });
+    for (let i = 0; i < 16 && s.step !== 'postcombat-main'; i += 1) s = drain(passBoth(s));
+    expect(life(s, 1)).toBe(18);
+    const { state, id } = land(s, 'Ghor-Clan Savage');
+    expect(counters(state, id)).toBe(3);
+  });
+
+  it('is turned on by damage to ANY one opponent in a pod', () => {
+    /*
+      "**An** opponent". Three seats, and the Shock goes at seat 2 — not the next player round the
+      table, and not every opponent. Seat 1 is untouched and the Vampire still has its counter.
+    */
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3,
+      decks: { 0: 'thirsty', 1: 'thirsty', 2: 'thirsty' },
+      deckSpecs: { thirsty: deck() },
+      hands: { 0: ['Shock', 'Bloodrage Vampire'] },
+      battlefield: { 0: [...LANDS], 1: [], 2: [] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 2);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 2 }],
+    })));
+    expect(life(s, 2)).toBe(before - 2);
+    expect(life(s, 1)).toBe(before);
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(1);
+  });
+
+  it('is not turned on by damage dealt to you', () => {
+    /*
+      "An **opponent**". A City of Brass deals one damage to its controller whenever it becomes
+      tapped, so paying for the Vampire with it damages the caster and nobody else — damage this
+      turn, to the wrong player.
+    */
+    const s = start(['City of Brass', 'Swamp', 'Swamp'], ['Bloodrage Vampire']);
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(life(state, 0)).toBe(19);
+    expect(life(state, 1)).toBe(20);
+    expect(counters(state, id)).toBe(0);
+  });
+
+  it('forgets the damage when the turn ends', () => {
+    // "This turn". The Shock lands on turn five; the Vampire is cast on seat 0's next turn.
+    let s = start(LANDS, ['Shock', 'Bloodrage Vampire']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 1)).toBe(18);
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    const { state, id } = land(s, 'Bloodrage Vampire');
+    expect(counters(state, id)).toBe(0);
   });
 });
