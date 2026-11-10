@@ -16212,3 +16212,105 @@ describe('two clauses the engine already had the primitive for (D546)', () => {
     if (land.ok) expect(land.unread.length).toBe(1);
   });
 });
+
+describe('the Equipment that arrives already attached (D547)', () => {
+  /*
+    **46 printings that were worse than unread.** `Living weapon` and `For Mirrodin!` are both in
+    `KEYWORD_ABILITY_NAMES`, so their line counted as a recognised keyword declaration while nothing
+    implemented it: the Equipment arrived with no creature to hold it, nothing happened, and no badge
+    told the player. `Job select` — the same mechanic under a third name — was missing from that list
+    entirely, so it at least had an unread line to show for itself.
+
+    That is why the one-blocker instrument never surfaced this: it counts lines nothing can read, and
+    these read. The mechanic had to be looked for.
+  */
+  const equipment = (text: string, name = 'Probe Rite'): ReturnType<typeof compileCard> =>
+    compileCard({
+      name, type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: text,
+    });
+
+  it.each([
+    ['Living weapon (Flayer Husk)', 'Living weapon', '0/0 black Phyrexian Germ'],
+    ['For Mirrodin! (Barbed Batterfist)', 'For Mirrodin!', '2/2 red Rebel'],
+    ['Job select (Astrologian\'s Planisphere)', 'Job select', '1/1 colorless Hero'],
+  ])('reads %s and makes its own creature to hold it', (_what, keyword, token) => {
+    const read = equipment(`${keyword}\nEquipped creature gets +1/+1.\nEquip {2}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // The keyword line is **claimed**, not merely recognised: nothing is left unread.
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const triggers = read.script?.triggers ?? [];
+    expect(triggers).toHaveLength(1);
+    // The token is the rule's own, named in the description so a player can see what arrived.
+    expect(triggers[0]?.description).toContain(token);
+  });
+
+  it('reads the targeted shape, and aims it at your own board', () => {
+    /*
+      Baseball Bat's wording — 27 printings — which puts the Equipment on a creature you already
+      have rather than making one. `friendly` because an Equipment attaching itself to your creature
+      is help, and the bot's default aim is the enemy's board (D252); beside a filter that already
+      restricts to your side, which is what D419 settled.
+    */
+    const read = equipment(
+      'When Probe Rite enters, attach it to target creature you control.\n'
+      + 'Equipped creature gets +1/+1.\nEquip {3}',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const trigger = (read.script?.triggers ?? [])[0];
+    expect(trigger?.targets?.[0]).toMatchObject({
+      kind: 'creature', description: 'target creature you control', friendly: true,
+    });
+  });
+
+  it.each([
+    ['this Equipment', 'When this Equipment enters, attach it to target creature you control.'],
+    ['the card\'s own name', 'When Probe Rite enters, attach it to target creature you control.'],
+    ['"the battlefield" spelled out',
+      'When Probe Rite enters the battlefield, attach it to target creature you control.'],
+  ])('reads the arrival written as %s', (_what, line) => {
+    // Three printed spellings of one sentence; `selfRef` and `ENTERS` already read the other two
+    // everywhere else, so this costs nothing beyond saying which ones are covered.
+    const read = equipment(`${line}\nEquipped creature gets +1/+1.\nEquip {3}`);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  /*
+    **`job select` joins `KEYWORD_ABILITY_NAMES` and no test can tell**, which a break run and then a
+    probe established in that order.
+
+    The break — deleting the entry — came back uncaught, so a row was written to catch it: an
+    Equipment printing `Job select` with no `Equip {N}` line, which `attachmentScriptFor` turns down,
+    so the keyword line would fall through to the per-line path where the list decides. **The row
+    failed.** Not because the list is wrong but because such a card does not compile at all: with the
+    attachment reading refused there is nothing to carry the rest of the text, so D487 makes *every*
+    line unread and the keyword's status is invisible.
+
+    So the entry is correct and unfalsifiable. It stays, on D259's standard — writing down the name
+    of a keyword invents nothing, and `Living weapon` and `For Mirrodin!` have been in that list
+    since before this increment — and it is recorded here as a vacuous break rather than defended
+    with a test that passes for the wrong reason (D533's four).
+  */
+  it('does not read the keyword onto something that is not an Equipment', () => {
+    /*
+      A probe, and the guard is `attachmentScriptFor`'s own type-line test rather than anything new:
+      the reading lives there **because that is the only function that has the whole card**, and the
+      bonus the Equipment gives is on a different printed line. A reader in `keywordScriptFor` — which
+      is handed one line and a name — could have attached the Equipment and silently given the
+      creature nothing, which is the strictly-worse card D362 rules out.
+    */
+    const creature = compileCard({
+      name: 'Probe Rite', type_line: 'Creature — Phyrexian Horror', mana_cost: '{3}', cmc: 3,
+      colors: [], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Living weapon',
+    });
+    expect(creature.ok).toBe(true);
+    // Still recognised as a keyword declaration, so it is not reported unread — but no trigger is
+    // emitted, because there is no Equipment to attach.
+    if (creature.ok) expect(creature.script?.triggers ?? []).toEqual([]);
+  });
+});

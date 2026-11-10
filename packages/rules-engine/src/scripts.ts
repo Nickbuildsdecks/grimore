@@ -27,7 +27,8 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards,
+  addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
+  chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
@@ -10283,6 +10284,9 @@ const KEYWORD_ABILITY_NAMES: readonly string[] = [
   'casualty', 'enlist', 'read ahead', 'ravenous', 'squad', 'prototype', 'living metal',
   'for mirrodin!', 'toxic', 'backup', 'bargain', 'craft', 'disguise', 'cloak', 'plot', 'saddle',
   'spree', 'freerunning', 'gift', 'offspring', 'impending', 'eerie', 'max speed',
+  // `Job select` was missing, which is why every card printing it had an unread line while
+  // `Living weapon` and `For Mirrodin!` — the same mechanic under two older names — did not.
+  'job select',
   'start your engines!', 'exhaust', 'harmonize', 'mobilize', 'warp',
 ];
 
@@ -12860,6 +12864,29 @@ function attachmentBonus(
  * is a complete, playable mechanic, which `equipFragment` has always allowed with an empty bonus
  * and nothing had yet asked for.
  */
+/**
+ * The three keywords that print an Equipment which **arrives already attached** (D547).
+ *
+ * `Living weapon` (CR 702.91a), `For Mirrodin!` and `Job select` are one mechanic under three
+ * names: when the Equipment enters, its controller creates a creature token and the Equipment
+ * attaches itself to it. The token is part of the *rule*, not of any card's text — which is what
+ * makes writing the three bodies down here a reading rather than an invention (D259: the rule is
+ * not a card), and why the value is the rule's own sentence handed to `tokenFrom` rather than a
+ * `CardDef` built by hand.
+ *
+ * **46 legal printings, and two of the three names were worse than unread.** `living weapon` and
+ * `for mirrodin!` are both in `KEYWORD_ABILITY_NAMES`, so their line counted as *read* — a
+ * keyword declaration the compiler recognises — while nothing implemented it. The Equipment arrived
+ * with no body, nothing said so, and the line was not even flagged for a human. That is the D362
+ * failure in its worst form, and it is the reason this increment is about a mechanic rather than
+ * about a queue row: the one-blocker instrument cannot see a line that reads and does nothing.
+ */
+const ARRIVES_ATTACHED: Readonly<Record<string, string>> = {
+  'living weapon': 'create a 0/0 black Phyrexian Germ creature token',
+  'for mirrodin!': 'create a 2/2 red Rebel creature token',
+  'job select': 'create a 1/1 colorless Hero creature token',
+};
+
 export function attachmentScriptFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
@@ -13012,6 +13039,111 @@ export function attachmentScriptFor(
     .map((line) => /^equip\s*(\{[^\n]+\})$/i.exec(plain(line).trim()))
     .find((m) => m !== null);
   if (equip === undefined || equip === null) return null;
+  /*
+    **The bonus is hoisted** (D547), because two things need it now: the equip ability, and the
+    trigger of an Equipment that attaches itself. It was built inline inside `equipFragment`'s
+    argument list, which was right while the equip ability was the only way the thing got onto a
+    creature.
+  */
+  const equipBonus: PumpOptions = {
+    ...(read?.bonus ?? {}),
+    // See the Aura branch above and #230: indices into `grantedTriggers` (D511).
+    ...(read?.grantedTriggers === undefined
+      ? {}
+      : { grants: read.grantedTriggers.map((_, i) => i) }),
+    // And into `grantedAbilities` (D512), which is how an Equipment hands its bearer a `{T}:`
+    // ability — Fire Whip's shape.
+    ...(read?.grantedAbilities === undefined
+      ? {}
+      : { grantsAbilities: read.grantedAbilities.map((_, i) => i) }),
+  };
+
+  /*
+    **The Equipment that arrives already attached** (D547), in its two printed shapes.
+
+    The keyword shape — `Living weapon`, `For Mirrodin!`, `Job select` — makes its own creature to
+    hold it: the token is part of the rule, so `ARRIVES_ATTACHED` hands `tokenFrom` the rule's own
+    sentence rather than building a `CardDef` by hand. 46 legal printings, and two of the three names
+    were **worse than unread** before this: they are in `KEYWORD_ABILITY_NAMES`, so the line counted
+    as a recognised keyword declaration while nothing implemented it, and the Equipment arrived with
+    no body and no badge to say so.
+
+    The targeted shape — "When ~ enters, attach it to target creature you control" — puts it on a
+    creature you already have. 27 printings, and the only thing it needs that the equip ability does
+    not is to fire on arrival for free.
+
+    **Read here rather than in `keywordScriptFor`, and that is the whole reason this is one change
+    rather than three.** Attaching an Equipment means applying its bonus, and the bonus is on a
+    *different printed line*. `keywordScriptFor(line, name)` is handed one line and a name, so a
+    reader there could attach the Equipment and silently give the creature nothing — the strictly
+    worse card D362 rules out. This function is the one that has the whole card.
+  */
+  const arrival = (() => {
+    /*
+      `selfRef(def.name)` rather than a bare `self`, and this cost a run to find: `self` is a DOM
+      global, so a draft that used the name typechecked cleanly and threw `self is not defined` on
+      the first card measured. The lesson is specific and worth keeping — a name that is also a
+      browser global will not be caught by `tsc` in this project's lib settings.
+    */
+    const selfName = selfRef(def.name);
+    const attachTarget = new RegExp(
+      `^When (?:${selfName}|this Equipment) ${ENTERS}, attach (?:it|this|${selfName})`
+      + ' to target creature you control$',
+      'i',
+    );
+    for (const line of lines) {
+      const flat = plain(line).trim().replace(/\.$/, '');
+      const rule = ARRIVES_ATTACHED[flat.toLowerCase()];
+      if (rule !== undefined) {
+        const made = tokenFrom(rule);
+        // A token the token parser cannot build is no trigger at all rather than a trigger that
+        // attaches the Equipment to nothing: `tokenFrom`'s own discipline (D536).
+        if (made === null) continue;
+        return {
+          line,
+          trigger: {
+            on: { kind: 'etb' as const },
+            description: `${flat} — ${rule}, then attach this to it`,
+            effect: (c: EffectContext) => {
+              const { state, created } = addTokens(c.state, c.controller, made.token, 1);
+              const germ = created[0];
+              return germ === undefined
+                ? state
+                : equipTo(state, c.source, germ, c.controller, equipBonus);
+            },
+          },
+        };
+      }
+      if (attachTarget.test(flat)) {
+        return {
+          line,
+          trigger: {
+            on: { kind: 'etb' as const },
+            targets: [{
+              kind: 'creature' as const,
+              description: 'target creature you control',
+              filter: creatureYouControl,
+              /*
+                `friendly`, because an Equipment that attaches itself to one of your creatures is
+                help and the bot's default aim is the enemy's board (D252). Beside a filter that
+                already restricts to your side, which is what D419 settled.
+              */
+              friendly: true as const,
+            }],
+            description: 'attach it to target creature you control',
+            effect: (c: EffectContext) => {
+              const host = firstCardTarget(c);
+              return host === null
+                ? c.state
+                : equipTo(c.state, c.source, host, c.controller, equipBonus);
+            },
+          },
+        };
+      }
+    }
+    return null;
+  })();
+
   return {
     fragment: {
       ...equipFragment(
@@ -13048,6 +13180,8 @@ export function attachmentScriptFor(
       ...(read?.grantedAbilities === undefined
         ? {}
         : { grantedAbilities: read.grantedAbilities }),
+      // The arrival trigger, when the card prints one (D547).
+      ...(arrival === null ? {} : { triggers: [arrival.trigger] }),
     },
     /*
       Only the lines this actually accounted for: with no bonus line there is nothing to claim but
@@ -13062,7 +13196,12 @@ export function attachmentScriptFor(
       test, so an Equipment whose bonus was not read describes what it does do — attach — rather
       than quoting a bonus it is not giving.
     */
-    claimed: read === null ? [equip.input] : [equip.input, staticLine!],
+    claimed: [
+      equip.input,
+      ...(read === null ? [] : [staticLine!]),
+      // And the arrival line, which is now accounted for rather than recognised-and-ignored.
+      ...(arrival === null ? [] : [arrival.line]),
+    ],
   };
 }
 

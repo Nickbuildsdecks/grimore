@@ -37832,3 +37832,87 @@ cardboard.
 **Five increments, five clean sweeps, and the running total for the stretch:** 23,228 → 23,403
 printed legal lines read (41.2% → 41.5%), 11,875 → 12,003 cards with a compiled script, 7,620 →
 7,753 with every printed line read. 3,321 → 3,380 engine tests, green at every push.
+
+## D547 — The Equipment that arrives already attached
+
+**46 printings that were worse than unread**, and the increment the queue could not have found.
+
+`Living weapon`, `For Mirrodin!` and `Job select` are one mechanic under three names: when the
+Equipment enters, its controller creates a creature token and the Equipment attaches itself to it.
+Beside them, a fourth shape with the same job: "When ~ enters, attach it to target creature you
+control" — 27 printings that put it on a creature you already have.
+
+### Why the instrument was never going to surface this
+
+`living weapon` and `for mirrodin!` are both in `KEYWORD_ABILITY_NAMES`, the list of keyword names
+the compiler **recognises as declarations**. So their line did not count as unread — and nothing
+implemented it. The Equipment arrived on an empty battlefield with no creature to hold it, the
+mechanic did nothing, and no badge told the player anything was missing.
+
+`one-blocker.mjs` counts lines nothing can read. These read. The row it does show, "attach ~ to it"
+at 8 cards, is the *reminder text* of the keyword, which is stripped before the compiler sees it.
+**A mechanic that is recognised and unimplemented is invisible to the whole measuring apparatus**,
+and the only way to find one is to read a family rather than a queue. That is now a standing
+caution: the coverage figure counts lines, and a line can be read and still do nothing.
+
+`job select` — the same mechanic under a third name — was missing from that list entirely, so it at
+least had an unread line to show for itself.
+
+### Why it lives in `attachmentScriptFor` and not in `keywordScriptFor`
+
+Attaching an Equipment means **applying its bonus**, and the bonus is on a different printed line.
+`keywordScriptFor(line, name)` is handed one line and a card name, so a reader there could have
+created the token, attached the Equipment and given the creature nothing — the strictly-worse card
+D362 rules out. `attachmentScriptFor` is the one function that has the whole card, so the bonus was
+hoisted out of `equipFragment`'s argument list and both the equip ability and the arrival trigger now
+read it.
+
+The token's body comes from the **rule**, not from any card, which is what makes writing the three
+down a reading rather than an invention (D259 is about what a card says; a keyword is not a card).
+They are handed to `tokenFrom` as the rule's own sentence — "create a 0/0 black Phyrexian Germ
+creature token" — rather than built as a `CardDef`, so the one token parser stays the only one.
+
+### The 0/0 is the whole test
+
+A Living weapon's Germ is a **0/0**. It survives only because the Equipment's +1/+1 is applied as it
+attaches; without the bonus, state-based actions bin it immediately (CR 704.5a) and the card does
+nothing at all while reading as fully compiled. So the table row asserts the Germ is a 1/1 and that
+the Husk is attached to it, and the break that passes `{}` as the bonus is caught by exactly that.
+
+### Two mistakes worth recording
+
+**`self` is a DOM global.** A draft wrote `` `^When ${self} …` `` inside `attachmentScriptFor`,
+copying the name from `exileUntilLeavesShapeFor` where it is a local. It typechecked cleanly — `self`
+exists in this project's lib — and threw `self is not defined` on the first card measured. The name
+is `selfName` now, with the reason beside it.
+
+**A test that looked like it covered a choice.** The targeted row cast the Equipment with one
+creature on the board and guarded the `auto:choose` behind `s.pendingTargets`, a field that does not
+exist; `tsc -p tsconfig.test.json` caught it in the gate's typecheck. With one legal target the engine
+chooses for you, so the row would have passed without ever proving the trigger asks. It has two
+creatures now and asserts `pendingChoice.seat` before answering.
+
+### The break run: 7 of 8, and the eighth is vacuous — established in two steps
+
+Deleting `job select` from the vocabulary came back uncaught, so a row was written to catch it: an
+Equipment printing the keyword with no `Equip {N}` line, which `attachmentScriptFor` turns down, so
+the line should fall through to the per-line path where the list decides. **That row failed.** Not
+because the entry is wrong but because such a card does not compile at all — with the attachment
+reading refused nothing carries the rest of the text, so D487 makes every line unread and the
+keyword's status is invisible.
+
+The entry stays, as rules vocabulary that invents nothing, and the break is recorded as vacuous with
+the probe that proved it. Better than a test that passes for the wrong reason.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,403 / 56,421 (41.5%) | **23,464 / 56,421 (41.6%)** |
+| cards with a compiled script | 12,003 | 12,003 |
+| cards with every printed line read | 7,753 | **7,783** |
+
+**The script count does not move at all, and that is the point.** These Equipment already had a
+script — the equip ability — so by every number this compiler reports, two of the three keywords
+were already "done". What changed is that 46 cards now do what they print. The +30 fully-read and
++61 lines are the Job select printings, the only ones whose line was honest about being unread.

@@ -34925,3 +34925,99 @@ describe('two clauses the engine already had the primitive for, at the table (D5
     expect(namesIn(s, 1, 'graveyard')).toContain('Hill Giant');
   });
 });
+
+describe('the Equipment that arrives already attached, at the table (D547)', () => {
+  /*
+    **The row that makes this increment worth more than its line count.** A Living weapon's token is
+    a **0/0**: it survives only because the Equipment's own bonus is applied to it as it attaches. An
+    implementation that created the token and attached without the bonus would put a 0/0 on the
+    battlefield, and state-based actions would bin it immediately (CR 704.5a) — so the card would
+    "work", read as fully compiled, and do nothing at all.
+
+    That is also why the reading lives in `attachmentScriptFor` rather than in `keywordScriptFor`:
+    the bonus is on a different printed line, and only the whole-card reader has it.
+  */
+  const DATA = [
+    {
+      name: 'Flayer Husk', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+      colors: [], layout: 'normal',
+      oracle_text: 'Living weapon\nEquipped creature gets +1/+1.\nEquip {2}',
+    },
+    {
+      name: 'Baseball Bat', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+      colors: [], layout: 'normal',
+      oracle_text: 'When Baseball Bat enters, attach it to target creature you control.\n'
+        + 'Equipped creature gets +1/+1.\nEquip {3}',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'living-weapon',
+      name: 'Living Weapon',
+      entries: [
+        { name: 'Flayer Husk', count: 4 }, { name: 'Baseball Bat', count: 4 },
+        // Two creatures, so the arrival trigger's choice is a real one rather than a foregone one.
+        { name: 'Grizzly Bears', count: 8 }, { name: 'Hill Giant', count: 4 },
+        { name: 'Forest', count: 16 }, { name: 'Plains', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Baseball Bat', 'Flayer Husk'].sort());
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[], mine: readonly string[]): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'living-weapon', 1: 'living-weapon' },
+      deckSpecs: { 'living-weapon': deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: ['Forest', 'Forest', 'Plains', ...mine] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  it('brings its own creature, and the creature survives because the bonus lands', () => {
+    let s = table(['Flayer Husk'], []);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flayer Husk'),
+    } as Action), 60);
+
+    // The token arrived and is still there: a 0/0 with no bonus would have been binned at once.
+    const germ = find(s, 0, 'battlefield', 'Phyrexian Germ');
+    expect(power(s, germ)).toBe(1);
+    expect(toughness(s, germ)).toBe(1);
+
+    // And the Equipment is on it, which is the half the keyword's name is about.
+    const husk = find(s, 0, 'battlefield', 'Flayer Husk');
+    expect(s.instances[husk]?.attachedTo).toBe(germ);
+  });
+
+  it('attaches to a creature you already have, when the card prints a target instead', () => {
+    let s = table(['Baseball Bat'], ['Grizzly Bears', 'Hill Giant']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    /*
+      The artifact has to **resolve** before its own arrival trigger can ask for anything, so the
+      cast is drained first. With two creatures on the board the choice is real and the trigger
+      stops for it — `pendingChoice` says who is being asked — and the target then comes through
+      `auto:choose`.
+
+      Two creatures rather than one deliberately: with a single legal target the engine chooses it
+      and this row would pass without ever proving that the trigger asks. The first draft had one,
+      and a `tsc` error on a field that does not exist (`pendingTargets`) is what exposed that the
+      branch meant to handle it had never run.
+    */
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Baseball Bat'),
+    } as Action), 60);
+    expect(s.pendingChoice?.seat).toBe(0);
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    const bat = find(s, 0, 'battlefield', 'Baseball Bat');
+    expect(s.instances[bat]?.attachedTo).toBe(bears);
+    expect(power(s, bears)).toBe(3);
+    expect(toughness(s, bears)).toBe(3);
+  });
+});
