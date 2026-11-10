@@ -37916,3 +37916,28 @@ the probe that proved it. Better than a test that passes for the wrong reason.
 script — the equip ability — so by every number this compiler reports, two of the three keywords
 were already "done". What changed is that 46 cards now do what they print. The +30 fully-read and
 +61 lines are the Job select printings, the only ones whose line was honest about being unread.
+
+### D547's pod sweep
+
+**40/40 pods finished** at SEED0=42001 on the clean commit (5471f5f), no engine throw and no stalled
+table, 59.2 turns and 312 moves a game. Per 100-card deck across 160 decks: 26.1 cards with a
+hand-written script, 46.6 with at least one unread line, 61.8 playable only from printed data, 0.5
+cardboard.
+
+This sweep is checking a path nothing else does: an ETB trigger that **creates a permanent and then
+attaches another permanent to it**, on cards the bot casts unprompted out of 160 random decks. Forty
+clean tables is the evidence that a 0/0 arriving and being saved by its own Equipment does not trip
+the state-based actions, the attachment rules (CR 704.5m) or the bot's search.
+
+### The stretch, in one table
+
+| | start | now |
+| --- | --- | --- |
+| printed legal lines read | 23,228 / 56,421 (41.2%) | **23,464 / 56,421 (41.6%)** |
+| cards with a compiled script | 11,875 | **12,003** |
+| cards with every printed line read | 7,620 | **7,783** |
+| engine tests | 3,321 | **3,390** |
+
+Six increments (D542–D547), six clean pod sweeps, gate green at every push. And one finding that is
+not in the table: **46 cards now do what they print**, where before their keyword line counted as
+read and the mechanic did nothing.
