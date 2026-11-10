@@ -38926,3 +38926,108 @@ print some "enters with N ... counters on it" line with a fixed N. How many of t
 compiler reads into `entersWith` today was not counted; every one that it does is covered.
 
 D559's pod sweep (SEED0=42901): 40 of 40 to a finish, no throw, no stall.
+
+## D561 — Kicker on a permanent: the declaration and its kicked line, read as one unit
+
+The keyword audit ranks rows by cards finished *by reading the keyword line*, and kicker never
+appeared near the top of it — because a kicker line is never the only thing unread. 247 legal
+cards print one, and the line that says what the kick buys was unread on almost all of them. The
+audit's ranking was hiding its largest row behind its own definition. Counted the other way, as
+"cards finished by reading the pair", it is the biggest single row left.
+
+**What was there.** Kicker has worked since task #45 for the pool's three instants and sorceries,
+which read `ctx.kicked` while they resolve, and D423's `kickerSpellFor` compiles the two-number
+damage family. Nothing read a kicker on a permanent.
+
+**What a permanent prints.** Of the 103 legal permanents with a plain `Kicker {cost}`:
+
+    When ~ enters, if it was kicked, <effect>.                                   59
+    If ~ was kicked, it enters with N +1/+1 counters on it[ and with <kw>].      34
+
+### The fact has to travel on the permanent
+
+A kicked instant knows it was kicked for as long as it matters. A kicked creature's ability
+resolves from the battlefield after the stack object is gone, so the kicked spell writes a
+`KICKED` marker on the permanent as it resolves — evoke's arrangement, for evoke's reason. Like
+any counter it goes when the permanent leaves, so a kicked creature that is blinked comes back
+unkicked, which is the rule: the new object was never cast.
+
+### The enters trigger is the existing reader's, with one clause taken out
+
+"When ~ enters, if it was kicked, destroy target land" is "When ~ enters, destroy target land"
+with an intervening-if in the middle. `kickerPermanentShapeFor` removes the clause, hands the
+shorter sentence to `lineScriptFor` exactly as a card that printed it would be read, and puts the
+kicked condition in front of whatever came back. So every effect the enters reader already knows
+is a kicked effect — 35 of the 59 on the day this was written — and every one it learns later
+becomes one with nothing to keep in step.
+
+It insists on getting back **one self-`etb` trigger and nothing else**. The first version of that
+check compared the event to `{ kind: 'etb' }` exactly and read none of the 59, because the enters
+reader spells a card's own arrival `{ kind: 'etb', who: 'self' }`; the measurement after the first
+build said "ETB 0, enters-with 29" and that was how it was found.
+
+The condition is asked as the ability triggers (CR 603.4), so an unkicked Heartstabber Mosquito
+puts nothing on the stack and **does not stop to ask for a target** — the test row that tells an
+intervening-if from an effect that checks late.
+
+### The counters are a second field, and D560 is why
+
+`kickedEntersWith` rather than a conditional `entersWith`: D560 made `entersWith` apply to every
+arrival, and only a spell can have been kicked. So this one is applied in the spell path beside
+the marker, and a Zombified Academy Drake is a 2/2. The "and with haste" tail is a permanent
+effect whose source is the creature, as riot's haste is.
+
+### The declaration is never read alone
+
+A `kicker` on a script is an offer: the table lists a second, dearer way to cast the card, and
+the bot may take it. If the line saying what the kick buys were unread, that would be a way to
+pay four extra mana for nothing — a card that reads one line short and plays as a trap. So the
+reader returns nothing unless it reads both lines, wants exactly one kicked line on the card, and
+on any refusal leaves the declaration reported as the unimplemented keyword it was (D362).
+
+### What is not read
+
+- the and/or family (`Kicker {2} and/or {1}{R}`, 18 cards), multikicker (19) and non-mana kickers
+  (`Kicker—Sacrifice a land.`, 18): a different declaration each;
+- 24 kicked enters effects the enters reader does not know yet;
+- kicked counters with an X, a "for each", or a quoted ability for a tail;
+- every kicked **spell** outside the two-number damage family (84 instants and sorceries,
+  "do X; if this spell was kicked, do Y instead"). That is the next row in this family and a
+  different shape: two effects in one resolution.
+
+### Tests
+
+Thirteen table rows on four printed cards, every effect run **kicked and unkicked**: three mana
+or six for the Woodreaders and the two cards only when kicked; the kicked ability visibly on the
+stack before the draw; a kick refused on three lands with the plain cast still offered; the
+unkicked Mosquito asking for no target; the kicked one asking, and destroying; a kicked creature
+blinked and not drawing again; the Drake a 2/2 or a 4/4; the Kavu with and without haste, and
+still hasty a turn later; a reanimated Drake with no counters.
+
+Eighteen compile rows, eleven of them refusals — and in each refusal **both** lines are asserted
+unread, since reading the declaration without its partner is the failure this reader exists to
+prevent.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,758 | **23,886** of 56,421 (42.3%) |
+| cards with a compiled script | 12,140 | **12,198** |
+| cards with every printed line read | 7,953 | **8,008** |
+
++55 fully read, the largest keyword increment since the audit began, and the 8,000th card. 64
+permanents now carry a kicker (35 by the trigger, 29 by the counters); the other nine have a third
+line something else has to read. The probe before the work predicted 49 without the "and with"
+tail and about 54 with it.
+
+D560's pod sweep (SEED0=43001): 40 of 40 to a finish, no throw, no stall.
+
+### Break harness for D559: 20 of 20
+
+Twenty breaks across the three keywords and the counter static, all caught on the first run: the
+fabricate answer ignored, counters put on a creature that has gone, one Servo for fabricate 2, a
+Servo that is white or not an artifact, riot's haste handed to unleash, haste that wears off at
+end of turn, a chosen counter that is two, the unleash static made unconditional or removed, and
+the counter static reading any counter name or swapping its captures. 35 minutes for twenty
+full-suite runs on two mirrors, with a gate and a pod sweep sharing the machine for part of it.

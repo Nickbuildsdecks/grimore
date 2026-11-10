@@ -752,6 +752,17 @@ export const EVOKED = 'evoked';
 export const DASHED = 'dashed';
 
 /**
+ * The marker a **kicked** permanent carries (CR 702.32, D561).
+ *
+ * Evoke's arrangement for evoke's reason: "when this enters, if it was kicked" is a triggered
+ * ability that resolves from the battlefield, after the stack object that knew how the spell was
+ * paid for has gone. Written as the kicked spell resolves and read by that trigger's
+ * intervening-if. Like every counter it goes when the permanent leaves, so a kicked creature that
+ * is blinked comes back unkicked — which is the rule: the new object was never cast.
+ */
+export const KICKED = 'kicked';
+
+/**
  * The marker on a **myriad** token, which is the thing that remembers to exile it (CR 702.111a).
  *
  * "Exile those tokens at end of combat" is a delayed consequence with no card to own it: myriad can

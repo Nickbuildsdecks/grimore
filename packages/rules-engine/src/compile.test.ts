@@ -17079,3 +17079,112 @@ describe('the Fabricate, Riot and Unleash keyword lines (D559)', () => {
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('kicker on a permanent: the declaration and its kicked line, as one unit (D561)', () => {
+  const creature = (text: string) => {
+    const got = compileCard({
+      name: 'Citanul Woodreaders', type_line: 'Creature — Human Druid', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], power: '1', toughness: '4', layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+  const KICKER = 'Kicker {2}{G} (You may pay an additional {2}{G} as you cast this spell.)';
+
+  it('reads the declaration and the kicked enters trigger together', () => {
+    const got = creature(`${KICKER}\nWhen Citanul Woodreaders enters, if it was kicked, draw two cards.`);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker).toEqual({ cost: '{2}{G}', description: 'Kicker {2}{G}' });
+    expect(got.script?.triggers).toHaveLength(1);
+    const trigger = got.script!.triggers![0]!;
+    expect(trigger.on).toEqual({ kind: 'etb', who: 'self' });
+    expect(trigger.description).toBe('if it was kicked, draw two cards');
+    // An intervening-if, so it is a condition on the trigger and not a branch inside the effect.
+    expect(typeof trigger.condition).toBe('function');
+    expect(got.script?.kickedEntersWith).toBeUndefined();
+  });
+
+  it('gives the kicked trigger the same targets the unkicked sentence would have', () => {
+    const kicked = creature(`${KICKER}\nWhen Citanul Woodreaders enters, if it was kicked, destroy target creature.`);
+    const plainly = creature('When Citanul Woodreaders enters, destroy target creature.');
+    expect(kicked.unread.map((u) => u.line)).toEqual([]);
+    expect(kicked.script!.triggers![0]!.targets).toHaveLength(1);
+    expect(kicked.script!.triggers![0]!.targets![0]!.description)
+      .toBe(plainly.script!.triggers![0]!.targets![0]!.description);
+    // And the plain sentence has no condition, which is what the kicked one adds.
+    expect(plainly.script!.triggers![0]!.condition).toBeUndefined();
+    expect(plainly.script?.kicker).toBeUndefined();
+  });
+
+  it.each([
+    ['If Citanul Woodreaders was kicked, it enters with two +1/+1 counters on it.', 2, undefined],
+    ['If Citanul Woodreaders was kicked, it enters with a +1/+1 counter on it.', 1, undefined],
+    ['If Citanul Woodreaders was kicked, it enters with five +1/+1 counters on it.', 5, undefined],
+    ['If Citanul Woodreaders was kicked, it enters with two +1/+1 counters on it and with haste.', 2, ['haste']],
+    ['If Citanul Woodreaders was kicked, it enters with three +1/+1 counters on it and with first strike.', 3, ['first strike']],
+  ])('reads %s', (line, amount, keywords) => {
+    const got = creature(`${KICKER}\n${line}`);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker?.cost).toBe('{2}{G}');
+    expect(got.script?.kickedEntersWith).toEqual({
+      counter: '+1/+1', amount, ...(keywords === undefined ? {} : { keywords }),
+    });
+    // Not `entersWith`: that one is unconditional and D560 applies it to every arrival.
+    expect(got.script?.entersWith).toBeUndefined();
+    expect(got.script?.triggers).toBeUndefined();
+  });
+
+  it('never reads the declaration alone', () => {
+    // A kick with nothing to buy is a way to pay extra for no effect. The card has no kicked line
+    // here, so the declaration stays the unimplemented keyword it was.
+    const got = creature(`${KICKER}\nFlying`);
+    expect(got.script?.kicker).toBeUndefined();
+    expect(got.unread).toEqual([{ line: 'Kicker {2}{G}', why: 'unimplemented-keyword' }]);
+  });
+
+  it.each([
+    ['a kicked effect the enters reader cannot read',
+      'When Citanul Woodreaders enters, if it was kicked, each player votes for wind or rain.'],
+    ['kicked counters whose number is not printed',
+      'If Citanul Woodreaders was kicked, it enters with X +1/+1 counters on it.'],
+    ['kicked counters with a tail that is not a keyword',
+      'If Citanul Woodreaders was kicked, it enters with a +1/+1 counter on it and with "This creature can attack as though it didn\'t have defender."'],
+    ['a kicked trigger on some other event',
+      'Whenever Citanul Woodreaders attacks, if it was kicked, draw a card.'],
+    ['a count that depends on the board',
+      'If Citanul Woodreaders was kicked, it enters with a +1/+1 counter on it for each nonbasic land your opponents control.'],
+  ])('leaves both lines unread for %s', (_what, line) => {
+    // Both, not just the one it could not read: the declaration goes with it (see above).
+    const got = creature(`${KICKER}\n${line}`);
+    expect(got.script?.kicker).toBeUndefined();
+    expect(got.script?.kickedEntersWith).toBeUndefined();
+    expect(got.unread.map((u) => u.line)).toEqual(['Kicker {2}{G}', line]);
+  });
+
+  it('refuses a card with two kicked lines rather than reading one of them', () => {
+    const first = 'When Citanul Woodreaders enters, if it was kicked, draw two cards.';
+    const second = 'If Citanul Woodreaders was kicked, it enters with two +1/+1 counters on it.';
+    const got = creature(`${KICKER}\n${first}\n${second}`);
+    expect(got.script?.kicker).toBeUndefined();
+    expect(got.unread.map((u) => u.line)).toEqual(['Kicker {2}{G}', first, second]);
+  });
+
+  it.each([
+    'Kicker {2} and/or {1}{R}',
+    'Kicker—Sacrifice a land.',
+    'Multikicker {1}{G}',
+  ])('does not take %s for the plain mana form', (declaration) => {
+    const line = 'When Citanul Woodreaders enters, if it was kicked, draw two cards.';
+    const got = creature(`${declaration}\n${line}`);
+    expect(got.script?.kicker).toBeUndefined();
+    expect(got.unread.map((u) => u.line)).toContain(line);
+  });
+
+  it('leaves the rest of the card to the ordinary readers', () => {
+    // Heartstabber Mosquito's three lines: the unit takes two, and `Flying` is read as it always was.
+    const got = creature(`${KICKER}\nFlying\nWhen Citanul Woodreaders enters, if it was kicked, destroy target creature.`);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.compiled).toHaveLength(3);
+  });
+});

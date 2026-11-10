@@ -7570,6 +7570,20 @@ describe('deck coverage', () => {
         counters instead of replacing them, an unleashed Cackler cannot block and a declined one
         can, and the restriction follows the counter rather than the answer.
 
+      **And what a kick buys a permanent** (D561):
+
+      - `script kickedEntersWith`: **29 legal cards** print "If ~ was kicked, it enters with N
+        +1/+1 counters on it" behind a plain `Kicker {cost}` (Academy Drake, Kavu Titan, Pouncing
+        Kavu, Gnarlid Colony and 25 more). The pool's three kicker cards are all instants and
+        sorceries, which read `ctx.kicked` as they resolve and have no use for the field, and D442
+        forbids putting a kicker creature into a measured deck to satisfy this check.
+
+        Driven at runtime by six tests in "kicker on a permanent: what the kick bought, asked after
+        the spell has gone (D561)", on printed Academy Drake and Pouncing Kavu cast through the
+        engine's own plays, **each both ways**: unkicked for three mana a 2/2 with no counters,
+        kicked for seven a 4/4; the Kavu a 1/1 without haste or a 3/3 with it, still hasty a turn
+        later; and a Drake returned by Zombify has no counters, because nobody kicked it.
+
       **And one payment flag** (D552):
 
       - `script improvise`: **23 legal printings** (Foundry Assembler, Sweatworks Brawler, Reverse
@@ -7593,6 +7607,7 @@ describe('deck coverage', () => {
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
       'script bloodthirst',
       'script entersChoice',
+      'script kickedEntersWith',
     ]);
 
     const declared = [
@@ -37044,5 +37059,222 @@ describe('enters with counters, however it arrived (D560)', () => {
     const { state, id } = zombify(s, 'Bloodrage Vampire');
     expect(state.instances[id]!.zone).toBe('battlefield');
     expect(state.instances[id]!.counters['+1/+1'] ?? 0).toBe(count);
+  });
+});
+
+describe('kicker on a permanent: what the kick bought, asked after the spell has gone (D561)', () => {
+  /*
+    A kicked instant reads `ctx.kicked` while it resolves. A kicked creature cannot: the ability
+    that says "if it was kicked" resolves from the battlefield, after the stack object that knew is
+    gone, so the fact has to travel on the permanent. Two printed shapes — an enters trigger with
+    an intervening-if, and counters it enters with — and every row is run **both ways**, because a
+    kicked effect that also happens unkicked is the failure that looks like success.
+
+    Four printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Citanul Woodreaders', type_line: 'Creature — Human Druid', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], power: '1', toughness: '4', layout: 'normal',
+      oracle_text: 'Kicker {2}{G} (You may pay an additional {2}{G} as you cast this spell.)\nWhen Citanul Woodreaders enters, if it was kicked, draw two cards.',
+    },
+    {
+      name: 'Heartstabber Mosquito', type_line: 'Creature — Insect', mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Kicker {2}{B} (You may pay an additional {2}{B} as you cast this spell.)\nFlying\nWhen Heartstabber Mosquito enters, if it was kicked, destroy target creature.',
+    },
+    {
+      name: 'Academy Drake', type_line: 'Creature — Drake', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Kicker {4} (You may pay an additional {4} as you cast this spell.)\nFlying\nIf Academy Drake was kicked, it enters with two +1/+1 counters on it.',
+    },
+    {
+      name: 'Pouncing Kavu', type_line: 'Creature — Kavu', mana_cost: '{1}{R}', cmc: 2,
+      colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Kicker {2}{R} (You may pay an additional {2}{R} as you cast this spell.)\nFirst strike\nIf Pouncing Kavu was kicked, it enters with two +1/+1 counters on it and with haste.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'kickers',
+      name: 'Kickers',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Zombify', count: 4 },
+        { name: 'Cloudshift', count: 4 },
+        { name: 'Forest', count: 8 }, { name: 'Swamp', count: 8 }, { name: 'Island', count: 6 },
+        { name: 'Mountain', count: 6 }, { name: 'Plains', count: 4 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = [
+    'Forest', 'Forest', 'Forest', 'Swamp', 'Swamp', 'Swamp', 'Island', 'Mountain', 'Mountain', 'Plains',
+  ];
+
+  const start = (
+    hand: readonly string[], opts: { lands?: readonly string[]; theirs?: readonly string[]; graveyard?: readonly string[] } = {},
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'kickers', 1: 'kickers' },
+    deckSpecs: { kickers: deck() },
+    hands: { 0: [...hand] },
+    graveyard: { 0: [...(opts.graveyard ?? [])] },
+    battlefield: { 0: [...(opts.lands ?? LANDS)], 1: [...(opts.theirs ?? [])] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  /** Cast it, kicked or not, and pass until the table is quiet or asking for something. */
+  const cast = (s: GameState, name: string, kicked: boolean) => {
+    const card = find(s, 0, 'hand', name);
+    const after = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card, ...(kicked ? { kicked: true } : {}),
+    })));
+    return { state: after, id: card };
+  };
+
+  const tappedLands = (s: GameState): number =>
+    ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+  const size = (s: GameState, id: string): string => {
+    const ch = characteristicsOf(s, s.instances[id]!);
+    return `${ch.power}/${ch.toughness}`;
+  };
+
+  describe('"when this enters, if it was kicked"', () => {
+    it('unkicked: three mana, a 1/4, and nothing goes on the stack', () => {
+      const before = start(['Citanul Woodreaders']);
+      const hand = ids(before, 0, 'hand').length;
+      const { state, id } = cast(before, 'Citanul Woodreaders', false);
+      expect(state.instances[id]!.zone).toBe('battlefield');
+      expect(tappedLands(state)).toBe(3);
+      // One card left the hand and none came back: no trigger, so no draw.
+      expect(ids(state, 0, 'hand').length).toBe(hand - 1);
+      expect(state.instances[id]!.counters['kicked'] ?? 0).toBe(0);
+    });
+
+    it('kicked: six mana, and the two cards', () => {
+      const before = start(['Citanul Woodreaders']);
+      const hand = ids(before, 0, 'hand').length;
+      const { state, id } = cast(before, 'Citanul Woodreaders', true);
+      expect(state.instances[id]!.zone).toBe('battlefield');
+      expect(tappedLands(state)).toBe(6);
+      expect(ids(state, 0, 'hand').length).toBe(hand - 1 + 2);
+    });
+
+    it('is an intervening-if: the kicked ability is on the stack before it does anything', () => {
+      // Resolved in two steps so the draw can be seen to wait for the ability, not for the spell.
+      let s = start(['Citanul Woodreaders']);
+      const hand = ids(s, 0, 'hand').length;
+      const card = find(s, 0, 'hand', 'Citanul Woodreaders');
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card, kicked: true }));
+      expect(s.instances[card]!.zone).toBe('battlefield');
+      expect(s.stackOrder).toHaveLength(1);
+      expect(s.stackObjects[s.stackOrder[0]!]!.kind).toBe('triggered');
+      expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+      s = drain(passBoth(s));
+      expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    });
+
+    it('cannot be kicked with only the printed cost available', () => {
+      const s = start(['Citanul Woodreaders'], { lands: ['Forest', 'Forest', 'Forest'] });
+      const card = find(s, 0, 'hand', 'Citanul Woodreaders');
+      expect(refusal(s, { type: 'auto:cast', by: 0, card, kicked: true })).toMatch(/pay/i);
+      // And the unkicked cast is still there.
+      expect(apply(s, { type: 'auto:cast', by: 0, card }).stackOrder).toHaveLength(1);
+    });
+
+    it('unkicked with a creature to point at: no target is asked for and nothing dies', () => {
+      // The row that tells an intervening-if from an effect that checks late. A trigger that went
+      // on the stack and then did nothing would still have stopped to ask for its target.
+      const { state, id } = cast(
+        start(['Heartstabber Mosquito'], { theirs: ['Grizzly Bears'] }), 'Heartstabber Mosquito', false,
+      );
+      expect(state.instances[id]!.zone).toBe('battlefield');
+      expect(state.pendingChoice).toBeNull();
+      expect(state.stackOrder).toEqual([]);
+      expect(namesIn(state, 1, 'battlefield')).toContain('Grizzly Bears');
+    });
+
+    it('kicked: it asks for the target once it is on the battlefield, and destroys it', () => {
+      let { state: s, id } = cast(
+        start(['Heartstabber Mosquito'], { theirs: ['Grizzly Bears'] }), 'Heartstabber Mosquito', true,
+      );
+      expect(s.instances[id]!.zone).toBe('battlefield');
+      expect(tappedLands(s)).toBe(7);
+      expect(s.pendingChoice).not.toBeNull();
+      const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+      s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }] })));
+      expect(namesIn(s, 1, 'battlefield')).not.toContain('Grizzly Bears');
+      expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    });
+
+    it('a kicked creature that is blinked comes back unkicked', () => {
+      // A new object that nobody cast (CR 400.7). Two cards for the kick, none for the Cloudshift.
+      let { state: s, id } = cast(start(['Citanul Woodreaders', 'Cloudshift']), 'Citanul Woodreaders', true);
+      const hand = ids(s, 0, 'hand').length;
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudshift'),
+        targets: [{ kind: 'card', id }],
+      })));
+      expect(s.instances[id]!.zone).toBe('battlefield');
+      expect(s.stackOrder).toEqual([]);
+      expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+      expect(s.instances[id]!.counters['kicked'] ?? 0).toBe(0);
+    });
+  });
+
+  describe('"if it was kicked, it enters with"', () => {
+    it.each([
+      [false, 3, 0, '2/2'],
+      [true, 7, 2, '4/4'],
+    ])('Academy Drake, kicked %s: %i mana, %i counters, a %s', (kicked, mana, count, body) => {
+      const { state, id } = cast(start(['Academy Drake']), 'Academy Drake', kicked);
+      expect(state.instances[id]!.zone).toBe('battlefield');
+      expect(tappedLands(state)).toBe(mana);
+      expect(state.instances[id]!.counters['+1/+1'] ?? 0).toBe(count);
+      expect(size(state, id)).toBe(body);
+      // Not a trigger: the counters are there with nothing having gone on the stack.
+      expect(state.stackOrder).toEqual([]);
+    });
+
+    it.each([
+      [false, '1/1', false],
+      [true, '3/3', true],
+    ])('Pouncing Kavu, kicked %s: a %s, haste %s', (kicked, body, hasty) => {
+      const { state, id } = cast(start(['Pouncing Kavu']), 'Pouncing Kavu', kicked);
+      const ch = characteristicsOf(state, state.instances[id]!);
+      expect(`${ch.power}/${ch.toughness}`).toBe(body);
+      expect(ch.keywords.has('haste')).toBe(hasty);
+      // First strike is printed and there either way; haste is the kick's.
+      expect(ch.keywords.has('first strike')).toBe(true);
+      expect(canAttack(state, id, 0) === null).toBe(hasty);
+    });
+
+    it('the kicked haste is the creature\'s to keep', () => {
+      let { state: s, id } = cast(start(['Pouncing Kavu']), 'Pouncing Kavu', true);
+      s = nextTurn(nextTurn(s));
+      expect(s.activeSeat).toBe(0);
+      expect(characteristicsOf(s, s.instances[id]!).keywords.has('haste')).toBe(true);
+      expect(s.instances[id]!.counters['+1/+1']).toBe(2);
+    });
+
+    it('a reanimated Drake was not kicked, and the arrival pass does not pretend it was', () => {
+      // D560 gives every arrival its printed `entersWith`. This is the other field for that
+      // reason: nobody paid a kicker for a card Zombify put there.
+      let s = start(['Zombify'], { graveyard: ['Academy Drake'] });
+      const drake = find(s, 0, 'graveyard', 'Academy Drake');
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Zombify'),
+        targets: [{ kind: 'card', id: drake }],
+      })));
+      expect(s.instances[drake]!.zone).toBe('battlefield');
+      expect(s.instances[drake]!.counters['+1/+1'] ?? 0).toBe(0);
+      expect(size(s, drake)).toBe('2/2');
+    });
   });
 });

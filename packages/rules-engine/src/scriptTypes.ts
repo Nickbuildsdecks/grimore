@@ -2218,6 +2218,22 @@ export interface CardScript {
     readonly description: string;
   };
   /**
+   * "If this was kicked, it enters with N +1/+1 counters on it [and with haste]" (D561).
+   *
+   * `entersWith` behind the kicker rather than a condition bolted onto it, for the reason
+   * `bloodthirst` is its own field: `entersWith` is unconditional and is applied to **every**
+   * arrival (D560), and this is applied only to a spell that was cast and kicked — the one place
+   * that knows. A creature put onto the battlefield any other way was not kicked.
+   *
+   * The keywords are the "and with flying" tail five legal cards print. They are the creature's
+   * for as long as it is this object, like riot's haste.
+   */
+  readonly kickedEntersWith?: {
+    readonly counter: string;
+    readonly amount: number;
+    readonly keywords?: readonly Keyword[];
+  };
+  /**
    * Buyback: an optional additional cost that changes where the card **goes** (CR 702.26).
    *
    * The kicker's twin and its opposite in the one way that matters. Both are extra mana announced

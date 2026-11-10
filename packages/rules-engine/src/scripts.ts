@@ -41,7 +41,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, recordExpiry, pairCreatures,
@@ -13599,13 +13599,118 @@ function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
   return null;
 }
 
+/**
+ * Kicker on a **permanent**: the declaration and its one kicked line, read as a unit (D561).
+ *
+ * `kickerSpellFor` does this for an instant or sorcery, where the kicked half is a second number in
+ * the same resolution. A permanent's kicked half is a different sentence, and 93 of the 103 legal
+ * permanents with a plain `Kicker {cost}` line print one of two:
+ *
+ *     When ~ enters, if it was kicked, <effect>.                       (59 cards)
+ *     If ~ was kicked, it enters with N +1/+1 counters on it[ and with <keywords>].   (34)
+ *
+ * ## Why the two lines are one unit
+ *
+ * **The declaration is never read alone.** A `kicker` on the script is an offer: the table shows a
+ * second, dearer way to cast the card, and the bot may take it. If the line saying what the kick
+ * buys went unread, that offer would be a way to pay four extra mana for nothing — a card that
+ * reads as one line short and plays as a trap. So this returns nothing unless it can read both, and
+ * the declaration then stays reported as the unimplemented keyword it was (D362).
+ *
+ * For the same reason it wants **exactly one** line that mentions being kicked. A card with two
+ * kicked lines, or with "kicked with its {1}{R} kicker" (the and/or family), is a different shape
+ * and reading half of it would be the same trap.
+ *
+ * ## The enters trigger is the existing reader's, with one clause taken out
+ *
+ * "When ~ enters, if it was kicked, destroy target land" is "When ~ enters, destroy target land"
+ * with an intervening-if in the middle. So the clause is removed, the line is handed to
+ * `lineScriptFor` exactly as a card that printed the shorter sentence would be, and the trigger
+ * that comes back has the kicked condition put in front of its own. Every effect the enters reader
+ * learns later is therefore a kicked effect too, with nothing to keep in step.
+ *
+ * It must come back as **one self-`etb` trigger and nothing else**. Anything more — a second field,
+ * a different event — means the shorter sentence was read as something this wrapper does not
+ * understand, and wrapping only part of it would lose the condition from the rest.
+ *
+ * The condition is a `KICKED` marker written as the kicked spell resolves (see `KICKED`), asked as
+ * the ability triggers: an unkicked creature puts nothing on the stack and asks nobody for a
+ * target, which is what an intervening-if means (CR 603.4).
+ */
+function kickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const declaring = /^kicker\s+((?:\{[^}]*\})+)$/i;
+  const declaration = lines.find((line) => declaring.test(plain(line).trim()));
+  if (declaration === undefined) return null;
+  const kickedLines = lines.filter((line) => line !== declaration && /\bkick(?:ed|er)\b/i.test(line));
+  if (kickedLines.length !== 1) return null;
+  const line = kickedLines[0]!;
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  const self = selfRef(def.name);
+  const kicker = {
+    cost: declaring.exec(plain(declaration).trim())![1]!,
+    description: plain(declaration).trim(),
+  };
+
+  const arrives = new RegExp(
+    `^if (?:${self}|it) was kicked, it enters with (\\w+) \\+1/\\+1 counters? on it(?: and with (.+))?$`, 'i',
+  ).exec(text);
+  if (arrives !== null) {
+    const word = arrives[1]!.toLowerCase();
+    const amount = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
+    if (amount === undefined || amount <= 0) return null;
+    const keywords = arrives[2] === undefined ? undefined : grantedKeywordList(arrives[2]);
+    if (keywords === null) return null;
+    return {
+      fragment: {
+        kicker,
+        kickedEntersWith: {
+          counter: '+1/+1', amount, ...(keywords === undefined ? {} : { keywords }),
+        },
+      },
+      claimed: [declaration, line],
+    };
+  }
+
+  const clause = new RegExp(`^(when ${self} enters), if it was kicked, `, 'i');
+  if (!clause.test(plain(line).trim())) return null;
+  const read = lineScriptFor(plain(line).trim().replace(clause, '$1, '), def.name);
+  if (read === null) return null;
+  const keys = Object.keys(read);
+  const inner = read.triggers?.[0];
+  if (keys.length !== 1 || keys[0] !== 'triggers' || read.triggers!.length !== 1 || inner === undefined) {
+    return null;
+  }
+  // Its own arrival and no other: `who: 'self'` is how the enters reader spells that, and a filter
+  // of any kind beside it would be a trigger about some other permanent.
+  const on = inner.on as { readonly kind: string; readonly who?: string };
+  if (on.kind !== 'etb' || Object.keys(on).some((key) => key !== 'kind' && key !== 'who')
+    || (on.who !== undefined && on.who !== 'self')) {
+    return null;
+  }
+  const wasKicked: NonNullable<TriggerDef['condition']> = (c) =>
+    (c.state.instances[c.source]?.counters[KICKED] ?? 0) > 0;
+  const own = inner.condition;
+  return {
+    fragment: {
+      kicker,
+      triggers: [{
+        ...inner,
+        description: `if it was kicked, ${inner.description}`,
+        condition: own === undefined ? wasKicked : (c) => wasKicked(c) && own(c),
+      }],
+    },
+    claimed: [declaration, line],
+  };
+}
+
 export function wholeCardShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
   return attachmentScriptFor(def, lines)
     ?? exileUntilLeavesShapeFor(def, lines)
     ?? soulbondShapeFor(def, lines)
-    ?? evokeShapeFor(lines);
+    ?? evokeShapeFor(lines)
+    ?? kickerPermanentShapeFor(def, lines);
 }
 
 /** One `etb` or `dies` trigger, which is all the parsed board prologue below builds. */

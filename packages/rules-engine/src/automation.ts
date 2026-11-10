@@ -37,7 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
+  DASHED, EVOKED, KICKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -4141,6 +4141,26 @@ function completeResolution(
         triggers (CR 603.4). A counter written afterwards would be a counter written too late.
       */
       if (object.evoked === true) next = addCounters(next, inst.id, EVOKED, 1);
+      /*
+        And kicked, which is the same record for the same reason (D561): the trigger that asks
+        "if it was kicked" resolves from the battlefield, after this stack object has gone.
+
+        The counters "it enters with if it was kicked" go on here too and not in
+        `arrivalReplacements`: that pass serves every arrival, and only a spell can have been
+        kicked. Additive with `entersWith`, which the arrival pass still applies.
+      */
+      if (object.kicked === true) {
+        next = addCounters(next, inst.id, KICKED, 1);
+        const kickedWith = script?.kickedEntersWith;
+        if (kickedWith !== undefined) {
+          next = addCounters(next, inst.id, kickedWith.counter, kickedWith.amount);
+          if (kickedWith.keywords !== undefined && kickedWith.keywords.length > 0) {
+            next = pump(next, [inst.id], inst.id, object.controller, {
+              keywords: [...kickedWith.keywords], duration: 'permanent',
+            });
+          }
+        }
+      }
       /*
         And dash, which is the same read with both consequences arranged on the spot (CR 702.109a).
 
