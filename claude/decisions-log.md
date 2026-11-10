@@ -37749,3 +37749,75 @@ What this sweep covers that the tests cannot: `counterSpell` and `settlePayment`
 every counterspell and every ward in every game, and this increment changed the signature of one and
 the state shape of the other. Forty tables with no throw is the evidence that the three places the
 flag is now read still agree with the thirty-odd callers that do not pass it.
+
+## D546 — Two clauses the engine already had the primitive for
+
+**35 cards finished**, and a defect caught by the break list before it shipped.
+
+Two readers, together because that is what they have in common: the engine could already do both,
+and only the sentence was missing. D528's shape.
+
+### The bounce, one zone further back
+
+"Put target creature on top of its owner's library" — Excommunicate's sentence, **23 legal
+printings** across seven target phrases (creature, you control, nonland permanent, attacking or
+blocking creature, land, permanent, and Jeskai Charm's mode). The bounce reader's mirror in every
+respect: an open phrase, `pointsAtAPermanent` as the guard, `foldCardTargets` so a quantifier that
+asks for two moves two.
+
+`putOnTopOfLibrary` is its own function rather than an option on `bounceToHand`, because the zone is
+the whole difference between the two cards. A Man-o'-War's bounce costs its target's controller a
+turn of mana; an Excommunicate costs them **their next draw** as well, and leaves the creature where
+a mill can take it away. The table test asserts `ids(state, seat, 'library')[0]` rather than only the
+zone, which is the position read the way the player feels it.
+
+### The bite pointed at itself
+
+"Target creature deals damage to itself equal to its power" — Inner Struggle, Kiku, Cut Propulsion:
+**7 printings**, the cheapest member of D542's family. Its own pattern rather than a widening of the
+bite's, because the bite has two target phrases and this has one: a reader that made the second
+optional would accept "target creature deals damage equal to its power to" with nothing after it.
+
+**The sweeper half is refused**, and it is the bigger half by printings — Solar Blaze and The Akroan
+War's third chapter say "**Each** creature deals damage to itself equal to its power", which is a
+destination with no target and belongs with the sweep readers. Reading it through a target phrase
+would ask for a choice the card does not offer.
+
+### The defect the break list found before it shipped
+
+Writing the break "the lifelink goes to the caster" is what exposed it: the reader passed
+`controller: c.controller` to `dealDamage`, and `dealDamage` credits lifelink to `opts.controller`
+(CR 702.15b, "that source's controller"). The source of a self-bite is the **target** — so an
+opponent's Healer's Hawk told to bite itself would have paid *the player who cast Inner Struggle*.
+On every printing, because nothing in this sentence filters the target to your own side.
+
+`fight` has read the seat off the instance since it was written — its second half passes
+`theirsInst.zoneSeat` — so the fix is that precedent applied rather than a new rule. D542's bite
+passes `c.controller` and is correct only because its first target is filtered to "you control"; a
+note now says so beside it.
+
+A 1/1 with lifelink biting itself is worth exactly 1 life to its own controller, so the row asserts
+both seats: theirs up by one, the caster's unchanged.
+
+### The break run: 9 of 10, then 10 of 10
+
+The miss was the `kind === 'creature'` guard, which had no row — and the failure it allows is the
+hardest kind to see: `firstCardTarget` returns nothing for a player target, so the line would
+**read** and the effect would silently do nothing, a card that appears to work. Two probe rows (a
+player and a land) close it; `pointsAtAPermanent` is not enough here, because a land passes that and
+has no power to deal.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,357 / 56,421 (41.4%) | **23,403 / 56,421 (41.5%)** |
+| cards with a compiled script | 11,971 | **12,003** |
+| cards with every printed line read | 7,718 | **7,753** |
+
+**Past twelve thousand cards.** The queue predicted 11 for the two rows (6 + 5) and the outturn is
+35 — under by 24, for D540's and D544's reason yet again: the library reader took an *open* phrase
+where the queue had measured one. Three of the last four increments have beaten the instrument by
+more than twice, and all three opened a phrase rather than adding a clause. That is now a reliable
+rule for reading the queue: **a row whose fix is a wider phrase is worth several times its printed
+count; a row whose fix is a new clause is worth about what it says.**

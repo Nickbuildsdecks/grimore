@@ -27,7 +27,8 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell,
+  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards,
+  counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
@@ -17059,6 +17060,33 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    **One zone further back than the bounce** (D546): "Put target creature on top of its owner's
+    library." Excommunicate's sentence, 23 legal printings across seven target phrases, and the
+    bounce reader's mirror in every respect — an open phrase, `pointsAtAPermanent` as the guard,
+    `foldCardTargets` so a quantifier that asks for two moves two.
+
+    A different card from the bounce rather than a variant of it, which is why the primitive is its
+    own function: this costs its target's controller their next *draw* as well as the mana, and
+    leaves the creature where a mill can take it away.
+
+    `removesACreature` is **not** set, and that is the bounce's settled reading rather than a new
+    judgement: nothing hand-written pairs the flag with a zone change that gives the card back, and
+    whether returning a creature answers a board is what the bot's search sees by playing it out.
+  */
+  const toLibraryTop = new RegExp(
+    `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on top of its owner's library$`, 'i',
+  ).exec(text);
+  if (toLibraryTop !== null) {
+    const spec = targetSpecFrom(toLibraryTop[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, putOnTopOfLibrary),
+      };
+    }
+  }
+
+  /*
     "If that creature would die this turn, exile it instead" (CR 614.1, D539).
 
     **A floating replacement effect**, and the first one in this compiler. The 26 printings of this
@@ -17482,6 +17510,58 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           return power > 0
             ? dealDamage(c.state, { kind: 'card', id: theirs }, power,
               { controller: c.controller, source: mine })
+            : c.state;
+        },
+      };
+    }
+  }
+
+  /*
+    **The bite pointed at itself** (D546): "Target creature deals damage to itself equal to its
+    power." Inner Struggle's sentence, 7 legal printings, and the cheapest member of D542's family —
+    one target where the bite has two, and the damage's source and destination are the same card.
+
+    Read here rather than folded into the bite's regex because the sentence has one target phrase and
+    the bite has two, and a reader that made the second optional would accept "target creature deals
+    damage equal to its power to" with nothing after it. One pattern, one shape.
+
+    The power is read **before** the damage, which matters for the same reason it matters in `fight`:
+    `dealDamage` can destroy the creature, and reading its power afterwards would read a card in a
+    graveyard. And `source: id` is the whole correctness of it, as D542 found the hard way — the
+    damage comes from the creature, so its own deathtouch and infect apply (CR 702.2b), and a 1/1
+    with deathtouch that bites itself dies either way while a 3/3 with infect gives itself three
+    -1/-1 counters rather than three damage.
+  */
+  const selfBite = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) deals damage to itself equal to its power$`,
+    'i',
+  ).exec(text);
+  if (selfBite !== null) {
+    const spec = targetSpecFrom(selfBite[1]!, false);
+    if (spec !== null && spec.kind === 'creature' && (spec.count ?? 1) === 1) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          if (id === null) return c.state;
+          const inst = c.state.instances[id];
+          if (inst === undefined) return c.state;
+          const power = characteristicsOf(c.state, inst).power;
+          /*
+            **`controller` is the creature's, not the caster's**, and that is a correction this
+            reader's own break list found before it shipped. `dealDamage` credits lifelink to
+            `opts.controller` (CR 702.15b: "that source's controller"), and the source here is the
+            *target* — so an opponent's Healer's Hawk told to bite itself gains **them** the life,
+            not the player who cast Inner Struggle.
+
+            `fight` has read it off the instance since it was written — its second half passes
+            `theirsInst.zoneSeat` — so this is that precedent applied rather than a new rule. D542's
+            bite passes `c.controller` and is correct only because its first target is filtered to
+            "you control"; here nothing filters, and the two seats come apart on every printing.
+          */
+          return power > 0
+            ? dealDamage(c.state, { kind: 'card', id }, power,
+              { controller: inst.zoneSeat, source: id })
             : c.state;
         },
       };

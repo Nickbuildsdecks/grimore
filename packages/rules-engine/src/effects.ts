@@ -988,6 +988,23 @@ export function bounceToHand(state: GameState, id: string): GameState {
   return relocate(state, inst, 'hand', inst.owner, 'bottom');
 }
 
+/**
+ * `bounceToHand`'s sibling, one zone further back: on **top** of its owner's library (D546).
+ *
+ * Its own function rather than an option on the bounce, because the zone is the whole difference
+ * between the two cards. A Man-o'-War's bounce gives the creature straight back and costs its
+ * controller a turn of mana; an Excommunicate costs them their next draw as well, and leaves the
+ * creature where an opponent who mills them can take it away. Same two lines, different card.
+ *
+ * `'top'` is the printed word, and the position is the point: on the bottom it would be a worse
+ * Oblivion Ring and would not stop the next draw.
+ */
+export function putOnTopOfLibrary(state: GameState, id: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined) return state;
+  return relocate(state, inst, 'library', inst.owner, 'top');
+}
+
 export function putOntoBattlefield(
   state: GameState, id: string, seat: SeatIndex, opts: { readonly tapped?: boolean } = {},
 ): GameState {

@@ -16125,3 +16125,90 @@ describe('the counter-exile rider (D545)', () => {
     if (read.ok) expect(read.unread.length).toBeGreaterThan(0);
   });
 });
+
+describe('two clauses the engine already had the primitive for (D546)', () => {
+  /*
+    The bounce one zone further back, and the bite pointed at itself. Neither is a new mechanic: one
+    is `relocate` to the top of a library, the other is D542's bite with a single target. They ship
+    together because that is what they have in common — the engine could already do both, and only
+    the sentence was missing.
+  */
+  const row = (text: string, type = 'Instant'): ReturnType<typeof compileCard> => compileCard({
+    name: 'Probe Rite', type_line: type, mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+    layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['a creature (Excommunicate)', "Put target creature on top of its owner's library."],
+    ['one you control (Civic Guildmage)',
+      "Put target creature you control on top of its owner's library."],
+    ['a nonland permanent (Set Adrift)',
+      "Put target nonland permanent on top of its owner's library."],
+    ['one read off combat (Aethertow)',
+      "Put target attacking or blocking creature on top of its owner's library."],
+    ['a land (Fallow Earth)', "Put target land on top of its owner's library."],
+    ['any permanent (Gone Missing)', "Put target permanent on top of its owner's library."],
+  ])('puts %s on top of its library', (_what, text) => {
+    const read = row(text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses a phrase that does not point at a permanent', () => {
+    // `pointsAtAPermanent`, the same guard the bounce uses and for the same reason: `targetSpecFrom`
+    // can build a player, and a player does not go on top of a library. A probe, because no printing
+    // says it.
+    const read = row("Put target player on top of its owner's library.");
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('reads the self-bite, and refuses the shapes beside it', () => {
+    /*
+      Inner Struggle's sentence (7 printings). One target where D542's bite has two, which is why it
+      is its own pattern: a reader that made the bite's second target optional would accept "target
+      creature deals damage equal to its power to" with nothing after it.
+    */
+    const read = row('Target creature deals damage to itself equal to its power.');
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      expect(read.script?.targets?.[0]?.description).toBe('target creature');
+      // No aim: the card is removal, and the hostile default is what no `friendly` means (D544).
+      expect(read.script?.targets?.[0]?.friendly).toBeUndefined();
+    }
+
+    /*
+      **The sweeper is refused**, and it is the bigger half of the family by printings — Solar Blaze
+      and The Akroan War's third chapter say "**Each** creature deals damage to itself equal to its
+      power", which is a destination with no target and belongs with the sweep readers rather than
+      here. Reading it through a target phrase would ask for a choice the card does not offer.
+    */
+    const sweeper = row('Each creature deals damage to itself equal to its power.');
+    expect(sweeper.ok).toBe(true);
+    if (sweeper.ok) expect(sweeper.unread.length).toBe(1);
+
+    // And a quantifier asking for two, which the effect cannot honour: `firstCardTarget` bites one
+    // of them (D469). A probe — the printed plural says "creatures deal", not "deals".
+    const two = row('Two target creatures deals damage to itself equal to its power.');
+    expect(two.ok).toBe(true);
+    if (two.ok) expect(two.unread.length).toBe(1);
+
+    /*
+      **And a subject that is not a creature**, which a break run asked for: the `kind` guard had no
+      row, so deleting it left the suite green. `firstCardTarget` returns nothing for a player
+      target, so the line would *read* and the effect would silently do nothing — the half-read line
+      D487 is about, in the form that is hardest to see because the card appears to work.
+
+      A probe, because no printing says it; `pointsAtAPermanent` is not enough here, since a land
+      passes that and has no power to deal.
+    */
+    const person = row('Target player deals damage to itself equal to its power.');
+    expect(person.ok).toBe(true);
+    if (person.ok) expect(person.unread.length).toBe(1);
+
+    const land = row('Target land deals damage to itself equal to its power.');
+    expect(land.ok).toBe(true);
+    if (land.ok) expect(land.unread.length).toBe(1);
+  });
+});

@@ -34805,3 +34805,123 @@ describe('the counter-exile rider, at the table (D545)', () => {
     expect(s.instances[bears]?.zone).toBe('exile');
   });
 });
+
+describe('two clauses the engine already had the primitive for, at the table (D546)', () => {
+  /*
+    Two runtime facts. **Where** the card goes — on *top* of the library, not the bottom, which is
+    the whole difference between this and a worse Oblivion Ring: it costs the owner their next draw.
+    And **whose power** the self-bite reads, which is the correctness D542 found the hard way.
+  */
+  const DATA = [
+    {
+      name: 'Excommunicate', type_line: 'Instant', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal',
+      oracle_text: "Put target creature on top of its owner's library.",
+    },
+    {
+      name: 'Inner Struggle', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], layout: 'normal',
+      oracle_text: 'Target creature deals damage to itself equal to its power.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'topdeck',
+      name: 'Topdeck',
+      entries: [
+        { name: 'Excommunicate', count: 4 }, { name: 'Inner Struggle', count: 4 },
+        { name: 'Grizzly Bears', count: 8 }, { name: 'Hill Giant', count: 4 },
+        // A 1/1 with lifelink, for the row that checks which seat the life goes to.
+        { name: "Healer's Hawk", count: 4 },
+        { name: 'Plains', count: 16 }, { name: 'Mountain', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Excommunicate', 'Inner Struggle'].sort());
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[], theirs: readonly string[]): GameState =>
+    tapAllLands(advanceTo(arena({
+      decks: { 0: 'topdeck', 1: 'topdeck' },
+      deckSpecs: { topdeck: deck() },
+      hands: { 0: [...hand] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Mountain', 'Mountain'],
+        1: [...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+
+  it('puts the creature on TOP of its library, so it is the next card its owner draws', () => {
+    let s = table(['Excommunicate'], ['Grizzly Bears']);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Excommunicate'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    expect(s.instances[bears]?.zone).toBe('library');
+    expect(s.instances[bears]?.zoneSeat).toBe(1);
+    /*
+      **The position, asserted as the player would feel it.** `ids(..., 'library')[0]` is the top,
+      and the reason to check it rather than the zone alone is that the bottom would be a different
+      card: on top it costs its owner their next draw, which is half of what Excommunicate buys.
+    */
+    expect(ids(s, 1, 'library')[0]).toBe(bears);
+  });
+
+  it('bites the creature with its own power, so a 2/2 dies', () => {
+    let s = table(['Inner Struggle'], ['Grizzly Bears']);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Inner Struggle'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('gives the lifelink to the creature\'s controller, not to the caster', () => {
+    /*
+      **The row that found a defect before this shipped.** `dealDamage` credits lifelink to
+      `opts.controller` (CR 702.15b: "that source's controller"), and the source of a self-bite is
+      the *target* — so an opponent's Healer's Hawk told to bite itself must gain **them** the life.
+      The first draft passed the caster's seat and would have handed it to the wrong player on every
+      printing; `fight` has read it off the instance since it was written, which is the precedent.
+
+      A 1/1 with lifelink bites itself for 1: lethal, and worth exactly 1 life to its own controller.
+    */
+    let s = table(['Inner Struggle'], ["Healer's Hawk"]);
+    const hawk = find(s, 1, 'battlefield', "Healer's Hawk");
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Inner Struggle'),
+      targets: [{ kind: 'card', id: hawk }],
+    } as Action), 60);
+
+    expect(namesIn(s, 1, 'graveyard')).toContain("Healer's Hawk");
+    expect(life(s, 1)).toBe(theirs + 1);
+    expect(life(s, 0)).toBe(mine);
+  });
+
+  it("reads the creature's own power, not the caster's board", () => {
+    /*
+      The discriminating row: a 3/3 Hill Giant takes **three**, which is its own power. Two damage —
+      what a Grizzly Bears would have dealt, or what a reader that took the amount off the wrong
+      creature would deal — leaves a 3/3 alive, so the graveyard is the assertion.
+    */
+    let s = table(['Inner Struggle'], ['Hill Giant']);
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    expect(power(s, giant)).toBe(3);
+    expect(toughness(s, giant)).toBe(3);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Inner Struggle'),
+      targets: [{ kind: 'card', id: giant }],
+    } as Action), 60);
+    // 3 damage on a 3/3 is lethal, so it is in the graveyard rather than carrying marked damage.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Hill Giant');
+  });
+});
