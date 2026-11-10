@@ -7512,11 +7512,26 @@ describe('deck coverage', () => {
         casts a printed uncounterable creature into a real Counterspell and checks it reaches the
         battlefield — with its own control in the next test, an ordinary creature from the same deck
         that *is* countered, because this increment edits `counterSpell` itself.
+
+      **And the two relational-clause keywords** (D551), which join fear, shadow and horsemanship
+      here for the same reason and with the same kind of evidence:
+
+      - `keyword intimidate`: **21 legal lines**. No pool card prints it, and adding one to a
+        measured deck to satisfy this check is what D442's rule above forbids.
+      - `keyword skulk`: **14 legal lines**, plus three more cards that print its rule in their own
+        words rather than the keyword.
+
+        Both are driven at runtime by "the relational blocker clause, at the table (D551)", which
+        asks `canBlock` about printed Dauthi Slayer and Cybermat compiled from corpus rows: a black
+        creature and an artifact creature may each block the intimidator while a white one may not,
+        a colourless one may not block it either, and a 1/1 skulker is blockable by a 1/1 and not
+        by a 3/3. Both verdicts on every row, because a test that only
+        ever expects a refusal passes against a clause that refuses everything.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
-      'keyword changeling',
+      'keyword changeling', 'keyword intimidate', 'keyword skulk',
       'script cantBeCountered', 'script grantedAbilities',
     ]);
 
@@ -35383,5 +35398,134 @@ describe('a free cast is not refused on a cost it never pays (D550)', () => {
     expect(s.instances[elf]?.zone).toBe('battlefield');
     // And it did what it prints: -5/-5 kills a 3/2, so the target is in its owner's graveyard.
     expect(namesIn(s, 1, 'graveyard')).toContain('Bloodbraid Elf');
+  });
+});
+
+describe('the relational blocker clause, at the table (D551)', () => {
+  /*
+    `canBlock` is where both rules actually live, so this is the block that matters: the compile
+    tests only say the keyword is recognised and which clauses carry it.
+
+    Six real cards, printed rows copied from the corpus unchanged. Hill Giant is the one blocker
+    that comes from the pool itself, so it needs no row.
+  */
+  const DATA = [
+    /*
+      A **vanilla** black creature, and the first draft of this block got it wrong in a way worth
+      recording: it used Nether Traitor, which carries shadow — so the block was refused for a
+      second reason and the row passed nothing about intimidate. A card that isolates the rule has
+      to carry no other restriction.
+    */
+    {
+      name: 'Walking Corpse', type_line: 'Creature — Zombie', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], power: '2', toughness: '2', layout: 'normal', oracle_text: '',
+    },
+    // A 1/1 so skulk has a legal blocker as well as an illegal one. Flying restricts who may block
+    // the Imp, not what the Imp may block, so it does not interfere.
+    {
+      name: 'Bog Imp', type_line: 'Creature — Imp', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], power: '1', toughness: '1', layout: 'normal', oracle_text: 'Flying',
+    },
+    {
+      name: 'Dauthi Slayer', type_line: 'Creature — Dauthi Soldier', mana_cost: '{B}{B}', cmc: 2,
+      colors: ['B'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Intimidate\nDauthi Slayer attacks each combat if able.',
+    },
+    {
+      name: 'Cybermat', type_line: 'Artifact Creature — Construct', mana_cost: '{1}', cmc: 1,
+      colors: [], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Skulk',
+    },
+    {
+      name: 'Silvercoat Lion', type_line: 'Creature — Cat', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: '',
+    },
+    /*
+      A **colourless, non-artifact** creature, which is the row that gives `shares-a-colour` its
+      teeth. It is here because a break harness found the earlier block had nothing that could tell
+      `some` from `every`: a blocker with no colours shares a colour with nothing and may not block
+      an intimidator, but a matcher written as "every colour it has is one the attacker has" lets it
+      through, because an empty list satisfies `every` vacuously.
+
+      The empty-colour case has to be asked of the **blocker**. Asked of the attacker it does not
+      discriminate at all — a white blocker against a colourless intimidator fails both readings —
+      which is what made the row that used to stand here worthless twice over: it also borrowed
+      Cybermat as the colourless attacker, and Cybermat carries skulk, so the block it asserted was
+      refused for the power comparison and not for anything about colour. No card in this pool or
+      the corpus prints intimidate on a colourless creature, and D259 forbids inventing one.
+    */
+    {
+      name: 'Kobolds of Kher Keep', type_line: 'Creature — Kobold', mana_cost: '{0}', cmc: 0,
+      colors: [], power: '0', toughness: '1', layout: 'normal', oracle_text: '',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'evasive',
+      name: 'Evasive',
+      entries: [
+        { name: 'Dauthi Slayer', count: 4 }, { name: 'Cybermat', count: 4 },
+        { name: 'Silvercoat Lion', count: 4 }, { name: 'Walking Corpse', count: 4 },
+        { name: 'Bog Imp', count: 4 }, { name: 'Kobolds of Kher Keep', count: 4 },
+        { name: 'Hill Giant', count: 4 },
+        { name: 'Swamp', count: 18 }, { name: 'Plains', count: 18 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    return list.deck;
+  };
+
+  const table = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'evasive', 1: 'evasive' },
+    deckSpecs: { evasive: deck() },
+    battlefield: { 0: ['Swamp', 'Swamp', ...mine], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'declare-attackers');
+
+  /** Whether seat 1's named creature may block seat 0's named attacker. */
+  const mayBlock = (s: GameState, attackerName: string, blockerName: string) => {
+    const attacker = find(s, 0, 'battlefield', attackerName);
+    const blocker = find(s, 1, 'battlefield', blockerName);
+    return canBlock(s, blocker, attacker, 1);
+  };
+
+  it.each([
+    ['a creature of its own colour', 'Walking Corpse', true],
+    ['an artifact creature', 'Cybermat', true],
+    ['a creature of another colour', 'Silvercoat Lion', false],
+    ['a colourless creature', 'Kobolds of Kher Keep', false],
+  ])('intimidate: %s may block it — %s', (_what, blockerName, allowed) => {
+    /*
+      Intimidate (CR 702.13a), which is the clause that needs **both** creatures: black shares a
+      colour with the black attacker, the artifact answers the other half of the allow list, and the
+      white Cat answers neither. A matcher reading one creature cannot tell the first from the third.
+
+      The fourth row is the colourless Kobolds, and it is the one that pins the quantifier down:
+      sharing a colour is "some colour in common", not "no colour not in common". See its row in
+      `DATA` for why the attacker's side cannot stand in for it.
+    */
+    const s = table(['Dauthi Slayer'], [blockerName]);
+    const issue = mayBlock(s, 'Dauthi Slayer', blockerName);
+    if (allowed) expect(issue).toBeNull();
+    else expect(issue?.reason).toContain('share a color with it');
+  });
+
+  it.each([
+    ['equal power', 'Bog Imp', true],
+    ['greater power', 'Hill Giant', false],
+  ])('skulk: a blocker with %s may block it — %s', (_what, blockerName, allowed) => {
+    /*
+      Skulk (CR 702.118a) on the 1/1 Cybermat. The comparison is against **the attacker's** power,
+      which is the whole of what makes it relational: 1 is at most 1 and the Imp may block, 3 is
+      not and the Giant may not. Both verdicts asserted, because a row that only ever expects a
+      refusal would pass against a clause that refuses everything.
+    */
+    const s = table(['Cybermat'], [blockerName]);
+    const issue = mayBlock(s, 'Cybermat', blockerName);
+    if (allowed) expect(issue).toBeNull();
+    else expect(issue?.reason).toContain('power no greater than its own');
   });
 });

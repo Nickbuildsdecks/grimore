@@ -188,6 +188,13 @@ function blockerClauseText(clause: BlockerClause): string {
     case 'type': return `${clause.type} creatures`;
     case 'subtype': return `${clause.subtype}s`;
     case 'keyword': return `creatures with ${clause.keyword}`;
+    // The two relational clauses (D551). Worded from the attacker's side, because that is the
+    // creature every message naming them is about: "it" is the one that prints the restriction.
+    case 'shares-a-colour': return 'creatures that share a color with it';
+    case 'power-vs':
+      return clause.cmp === 'at-most'
+        ? 'creatures with power no greater than its own'
+        : 'creatures with greater power';
     default: return 'those creatures';
   }
 }
@@ -234,7 +241,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     the more specific sentence.
   */
   const banned = attacker.ch.cantBeBlockedBy
-    .find((clause) => clauseMatches(clause, blocker.ch));
+    .find((clause) => clauseMatches(clause, blocker.ch, attacker.ch));
   if (banned !== undefined) {
     return {
       card: blockerId,
@@ -242,7 +249,8 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     };
   }
   const allowed = attacker.ch.blockableOnlyBy;
-  if (allowed !== null && !allowed.some((clause) => clauseMatches(clause, blocker.ch))) {
+  if (allowed !== null
+    && !allowed.some((clause) => clauseMatches(clause, blocker.ch, attacker.ch))) {
     return {
       card: blockerId,
       reason: `${attacker.ch.name} can't be blocked except by `
@@ -262,7 +270,8 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     refuse the block, and the player sees whichever reason comes first. The attacker's are the ones
     a player is more likely to have forgotten, so they speak first.
   */
-  const cannot = blocker.ch.cantBlockThese.find((clause) => clauseMatches(clause, attacker.ch));
+  const cannot = blocker.ch.cantBlockThese
+    .find((clause) => clauseMatches(clause, attacker.ch, blocker.ch));
   if (cannot !== undefined) {
     return {
       card: blockerId,
@@ -270,7 +279,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     };
   }
   const only = blocker.ch.blocksOnly;
-  if (only !== null && !only.some((clause) => clauseMatches(clause, attacker.ch))) {
+  if (only !== null && !only.some((clause) => clauseMatches(clause, attacker.ch, blocker.ch))) {
     return {
       card: blockerId,
       reason: `${blocker.ch.name} can block only ${only.map(blockerClauseText).join(' or ')}`,
@@ -281,7 +290,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   for (const rule of keywordBlockRules(blocker.ch)) {
     const clauses = rule.blocksOnly;
     if (clauses === undefined) continue;
-    if (!clauses.some((clause) => clauseMatches(clause, attacker.ch))) {
+    if (!clauses.some((clause) => clauseMatches(clause, attacker.ch, blocker.ch))) {
       return {
         card: blockerId,
         reason: `${blocker.ch.name} has ${rule.keyword}, so it can block only `
@@ -300,7 +309,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   for (const rule of keywordBlockRules(attacker.ch)) {
     const clauses = rule.blockedOnlyBy;
     if (clauses === undefined) continue;
-    if (!clauses.some((clause) => clauseMatches(clause, blocker.ch))) {
+    if (!clauses.some((clause) => clauseMatches(clause, blocker.ch, attacker.ch))) {
       return {
         card: blockerId,
         reason: `${attacker.ch.name} has ${rule.keyword}, so it can't be blocked except by `

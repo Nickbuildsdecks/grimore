@@ -70,12 +70,19 @@ export const KEYWORDS = [
     this engine that is an allow list on who may block the creature *and* an allow list on what the
     creature may block.
 
-    Intimidate (21 lines) and skulk (14) are deliberately absent. Each needs a clause whose answer
-    depends on both creatures — "creatures that share a color with it", "creatures with greater
-    power" — and `clauseMatches` sees one creature on purpose. They are #345's problem, with the
-    nine relative-power printings.
+    Intimidate (21 lines) and skulk (14) **were** deliberately absent, because each needs a clause
+    whose answer depends on both creatures — "creatures that share a color with it", "creatures with
+    greater power" — and `clauseMatches` read one creature. D551 hands it the other one as well and
+    both are in the table now, with the two relational clauses that carry them.
+
+    That also settles #345, and corrects its count while settling it: the row was recorded as "nine
+    relative-power printings", and measuring the corpus says **three** print "creatures with greater
+    power" (plus one "…this combat", whose duration this does not read). The forty-odd power
+    printings that row was sized from are the *absolute* comparisons — "creatures with power 2 or
+    less" — which the plain `power` clause has read since D498. So the value here is the two
+    keywords, not the printed cards.
   */
-  'fear', 'shadow', 'horsemanship',
+  'fear', 'shadow', 'horsemanship', 'intimidate', 'skulk',
   /*
     Wither (CR 702.78a), which is **infect's creature half and nothing else** (D504).
 
@@ -567,15 +574,46 @@ export type BlockerClause =
   | { readonly kind: 'colour'; readonly colour: Color }
   | { readonly kind: 'type'; readonly type: string }
   | { readonly kind: 'subtype'; readonly subtype: string }
-  | { readonly kind: 'keyword'; readonly keyword: Keyword };
+  | { readonly kind: 'keyword'; readonly keyword: Keyword }
+  /*
+    ── The two **relational** clauses (D551) ──────────────────────────────────────────────────────
+
+    Every clause above is a fact about one creature. These two are about **the pair**, and they are
+    why `clauseMatches` now takes the other creature as a second argument rather than reading one.
+    The docblock above this type used to say the matcher "sees one creature on purpose" and name
+    these as #345's problem; they are two rules of the game rather than a wider vocabulary, and both
+    are keyword reminder text, so writing them down invents nothing (D259).
+
+    `shares-a-colour` — intimidate (CR 702.13a): "can't be blocked except by artifact creatures
+    and/or creatures that share a color with it". A colourless creature shares a colour with
+    nothing, including another colourless creature, which is the rule and not an edge case.
+
+    `power-vs` — skulk (CR 702.118a): "can't be blocked by creatures with greater power", and the
+    three printed cards that say the same thing in their own words. Both forms are needed because
+    both occur: the printed cards state it as a **ban** on greater power, and the keyword table
+    states it as an **allow list** of power at most this creature's, which is the same rule read
+    from the other end.
+  */
+  | { readonly kind: 'shares-a-colour' }
+  | { readonly kind: 'power-vs'; readonly cmp: 'at-most' | 'greater' };
 
 /**
- * Whether a creature answers to this clause.
+ * Whether a creature answers to this clause, in a block where `other` is the creature facing it.
  *
- * The creature is the would-be blocker for D498's two lists and the attacker for D500's two. It
- * reads only the characteristics handed to it, which is what lets one matcher serve both ends.
+ * `creature` is the would-be blocker for D498's two lists and the attacker for D500's two; `other`
+ * is whichever of the pair `creature` is not. One matcher still serves both ends — the clause does
+ * not know which side it is being asked about — and that is exactly what makes the relational
+ * clauses work from either direction.
+ *
+ * **`other` is required rather than optional, and that is the whole safety argument.** An optional
+ * parameter would compile at all six call sites in `canBlock` and silently answer a relational
+ * clause against nothing; and because these clauses appear in *allow* lists, "no clause matched"
+ * means the block is refused — so a forgotten argument would make a skulk creature unblockable
+ * rather than failing loudly. Required, the compiler names every site that has not been told.
  */
-export function clauseMatches(clause: BlockerClause, creature: Characteristics): boolean {
+export function clauseMatches(
+  clause: BlockerClause, creature: Characteristics, other: Characteristics,
+): boolean {
   switch (clause.kind) {
     case 'power':
       return clause.cmp === 'at-most' ? creature.power <= clause.n : creature.power >= clause.n;
@@ -583,6 +621,18 @@ export function clauseMatches(clause: BlockerClause, creature: Characteristics):
     case 'type': return hasType(creature.typeLine, clause.type);
     case 'subtype': return hasSubtype(creature.typeLine, clause.subtype);
     case 'keyword': return creature.keywords.has(clause.keyword);
+    /*
+      Colourless shares a colour with nothing — not even with another colourless creature — because
+      "shares a color" is about colours held in common and neither of them holds any (CR 702.13a,
+      and the same reading protection has always had here). So an intimidating colourless creature
+      is blockable only by artifact creatures, which is what the card does.
+    */
+    case 'shares-a-colour':
+      return creature.colors.some((colour) => other.colors.includes(colour));
+    case 'power-vs':
+      return clause.cmp === 'at-most'
+        ? creature.power <= other.power
+        : creature.power > other.power;
     default: return false;
   }
 }
@@ -626,6 +676,28 @@ export const KEYWORD_BLOCK_RULES: readonly KeywordBlockRule[] = [
   {
     keyword: 'horsemanship',
     blockedOnlyBy: [{ kind: 'keyword', keyword: 'horsemanship' }],
+  },
+  /*
+    Intimidate (CR 702.13a), the first rule here that needs a **relational** clause: "can't be
+    blocked except by artifact creatures and/or creatures that share a color with it". Fear's
+    shape with the fixed colour replaced by a comparison — which is exactly why it had to wait for
+    `clauseMatches` to be handed both creatures (D551). 21 legal lines.
+  */
+  {
+    keyword: 'intimidate',
+    blockedOnlyBy: [{ kind: 'type', type: 'artifact' }, { kind: 'shares-a-colour' }],
+  },
+  /*
+    Skulk (CR 702.118a): "can't be blocked by creatures with greater power". 14 legal lines.
+
+    Written as an **allow list of power at most this creature's**, rather than as a ban on greater
+    power, because `KeywordBlockRule` has no ban field — and the two are exactly equivalent, since
+    "not greater" and "at most" are the same comparison. Stated once, in the form the table can
+    hold, rather than giving the table a second field for one keyword.
+  */
+  {
+    keyword: 'skulk',
+    blockedOnlyBy: [{ kind: 'power-vs', cmp: 'at-most' }],
   },
 ];
 
@@ -694,6 +766,12 @@ function oneBlockerClause(part: string): BlockerClause | null {
   if (power !== null) {
     return { kind: 'power', cmp: power[2] === 'less' ? 'at-most' : 'at-least', n: Number(power[1]) };
   }
+  /*
+    "creatures with greater power" (D551), which three legal cards print in their own words rather
+    than through skulk. Greater than *what* is the attacker, which is the creature printing the
+    line — the relational reading `clauseMatches` now supports.
+  */
+  if (/^creatures? with greater power$/.test(lower)) return { kind: 'power-vs', cmp: 'greater' };
   const keyword = /^creatures? with ([a-z][a-z' ]*)$/.exec(lower);
   if (keyword !== null) {
     const word = keyword[1]!.trim();

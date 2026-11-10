@@ -38203,3 +38203,104 @@ caught a defect that had been in the engine since cascade shipped and that the w
 never touched, because no test in it cascades into a card with an unreadable cost. The gate proves
 the engine does what its tests say; the sweep is what asks whether anything in 160 random real decks
 disagrees.
+
+---
+
+## D551 — The relational blocker clause, and #345 corrected while closing it
+
+`characteristics.ts` had recorded for two increments why intimidate and skulk were absent:
+
+> Intimidate (21 lines) and skulk (14) are deliberately absent. Each needs a clause whose answer
+> depends on both creatures — "creatures that share a color with it", "creatures with greater
+> power" — and `clauseMatches` sees one creature on purpose. They are #345's problem.
+
+So this is the note's own answer. `BlockerClause` gains two **relational** kinds and `clauseMatches`
+takes the facing creature:
+
+- `shares-a-colour` — intimidate (CR 702.13a). Fear's shape with the fixed colour replaced by a
+  comparison, which is exactly why it had to wait.
+- `power-vs` — skulk (CR 702.118a), in both directions, because both occur: the three printed cards
+  state it as a **ban** on greater power, and the keyword table as an **allow list** of power at
+  most this creature's. The same rule read from either end, and `KeywordBlockRule` has no ban field.
+
+### `other` is required, not optional, and that is the safety argument
+
+An optional parameter would have compiled at all six `canBlock` sites and silently answered a
+relational clause against nothing. Worse than silent: these clauses live in **allow** lists, so "no
+clause matched" refuses the block — a forgotten argument would make a skulk creature *unblockable*
+rather than failing loudly. Required, the compiler named all six, which is how they were found.
+
+### Measured — and the first row to beat its audit figure
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,514 / 56,421 (41.7%) | **23,560 / 56,421 (41.8%)** |
+| cards with a compiled script | 12,031 | **12,035** |
+| cards with every printed line read | 7,813 | **7,837** |
+
+The audit predicted 16 (intimidate 10 + skulk 6) and it delivered **24**. Evoke and renown each
+landed exactly on their figure; this one beat it, and the reason is the difference between the two
+kinds of change — a keyword row adds one reader, while this added two clauses to a **shared
+vocabulary** that the printed blocker-filter parser also draws on. So the calibration note needs
+one more line: the audit's column is exact for a keyword, and a **floor** for a change to the
+vocabulary underneath one.
+
+### #345, closed and corrected
+
+That row was recorded as "nine relative-power printings". Measuring the corpus says **three** cards
+print "creatures with greater power" (plus one "…this combat", whose duration this does not read).
+The forty-odd power printings the row was sized from — "creatures with power 2 or less" (33),
+"power 3 or greater" (9) — are **absolute** comparisons, which the plain `power` clause has read
+since D498. So the value here was always the two keywords and never the printed cards, and the file
+says so now rather than carrying the inflated figure forward.
+
+Two printed phrases in that family remain, one card each: "creatures with toughness 3 or greater"
+(needs a toughness clause beside `power`) and "monocolored creatures".
+
+### Two standing checks refused this before it passed, and both were right
+
+- **`scripts/guards.js`** demanded a player cheat-sheet row for skulk. That guard exists because a
+  mechanic the engine enforces and the player doc never mentions is a rule somebody meets at the
+  table with no explanation. Both keywords now have one, including the colourless-intimidate case.
+- **The "card behind every mechanic" test** flagged intimidate and skulk as pool orphans. No
+  hand-written deck prints either, and adding one to a measured deck to satisfy a test is what D442
+  forbids. They joined the documented `compilerOnly` set beside fear, shadow and horsemanship — and
+  that set's *second* assertion requires they stay orphans, so the exemption cannot outlive its
+  reason.
+
+### Two of my own test rows were wrong, and the suite said so (a third is below)
+
+- The intimidate colour-match row first used **Nether Traitor**, which carries shadow — so the block
+  was refused for a second reason and the row proved nothing about intimidate. A card that isolates
+  a rule has to carry no other restriction; it uses a vanilla black creature now.
+- The skulk rows both asserted a **refusal**, which would pass against a clause that refuses
+  everything. Both verdicts are asserted now: a 1/1 may block the 1/1 skulker and a 3/3 may not.
+
+### The break harness found a third bad row, and it is the most interesting of the three
+
+10 of 10 breaks caught — but only after a correction, because the first run came back **9/10** and
+the survivor was break 1: `shares-a-colour` written with `every` instead of `some`.
+
+Working out why nothing caught it is the whole lesson. Under `every`, a creature with an **empty**
+`colors` array is vacuously true, so a colourless creature "shares a colour" with anything. The case
+that discriminates the two readings is therefore a **colourless blocker**, not a colourless
+attacker: asked of the attacker, a white blocker against a colourless intimidator fails both
+readings (`['W'].some(c => [].includes(c))` and `['W'].every(...)` are both false), so that row
+cannot tell them apart no matter how it is written.
+
+The block had a row named *"intimidate on a colourless creature lets only artifact creatures
+block"*, and it was worthless twice over. It asked the colourless question of the attacker, which
+cannot discriminate; and it borrowed **Cybermat** as that attacker, which carries **skulk**, so the
+block it asserted was refused for the power comparison and not for anything about colour. A test
+that passes for a reason unrelated to its own name is worse than a missing test, because it reads
+like coverage.
+
+It is replaced by a fourth row in the intimidate table: **Kobolds of Kher Keep** (`{0}`, Kobold,
+colourless, 0/1, no printed text) may not block the black intimidator. No card in the pool or the
+corpus prints intimidate on a colourless creature and D259 forbids inventing one, so the
+empty-colour case is asked from the side where it has teeth. Break 1 is caught, and the gate is
+green at **3,424** engine tests.
+
+Three defective rows in one increment, all three found by the harness rather than by the suite
+passing, is the strongest argument yet for running it on every mechanic: a suite only ever reports
+that its own assertions held.

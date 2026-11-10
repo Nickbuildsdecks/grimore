@@ -16533,3 +16533,66 @@ describe('the Renown keyword line (D549)', () => {
     expect(read.unread.map((u) => u.line)).toEqual(['Renown 1 as long as you control a Knight']);
   });
 });
+
+/*
+  **The relational blocker clause** (D551): intimidate, skulk, and the printed phrase that says
+  skulk's rule in its own words.
+
+  `characteristics.ts` had recorded for two increments why these were absent: each needs a clause
+  whose answer depends on **both** creatures — "creatures that share a color with it", "creatures
+  with greater power" — and `clauseMatches` read one. It takes the facing creature now, and
+  `other` is **required** so the compiler names every call site rather than letting one answer a
+  relational clause against nothing.
+*/
+describe('the relational blocker clause (D551)', () => {
+  it.each([
+    ['intimidate', 'Intimidate'],
+    ['skulk', 'Skulk'],
+  ])('reads a bare %s line off the card definition', (word, line) => {
+    /*
+      Both are enforced from `KEYWORD_BLOCK_RULES` against the printed keyword, so the line emits
+      no script at all — like flying, the engine reads it off the definition. That is also what
+      makes them *counted* read, and why they had to be enforced before being listed: a word in
+      `KEYWORDS` that nothing applies is the D547 failure (D362 ranks a wrong reading below an
+      unread line).
+    */
+    const read = compileCard({
+      name: 'Probe Sneak', type_line: 'Creature — Human Rogue', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], power: '2', toughness: '1', layout: 'normal', oracle_text: line,
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script).toBeUndefined();
+    expect(printedKeywords(read.def.oracleText)).toEqual([word]);
+  });
+
+  it('puts both keywords in the rules table, with the clauses their rules name', () => {
+    const named = KEYWORD_BLOCK_RULES.filter((r) => r.keyword === 'intimidate' || r.keyword === 'skulk');
+    expect(named.map((r) => r.keyword).sort()).toEqual(['intimidate', 'skulk']);
+    // Intimidate is fear's shape with the fixed colour replaced by a comparison (CR 702.13a).
+    expect(named.find((r) => r.keyword === 'intimidate')?.blockedOnlyBy).toEqual([
+      { kind: 'type', type: 'artifact' }, { kind: 'shares-a-colour' },
+    ]);
+    /*
+      And skulk as an allow list of power at most this creature's, which is the same rule as
+      "can't be blocked by creatures with greater power" read from the other end (CR 702.118a).
+      `KeywordBlockRule` has no ban field, and "not greater" is "at most".
+    */
+    expect(named.find((r) => r.keyword === 'skulk')?.blockedOnlyBy).toEqual([
+      { kind: 'power-vs', cmp: 'at-most' },
+    ]);
+  });
+
+  it('reads the printed phrase that says skulk in its own words', () => {
+    // Three legal cards print this rather than carrying the keyword.
+    const read = compileCard({
+      name: 'Probe Lurker', type_line: 'Creature — Elf Scout', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: "Probe Lurker can't be blocked by creatures with greater power.",
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+});
