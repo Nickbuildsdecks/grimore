@@ -39031,3 +39031,76 @@ Servo that is white or not an artifact, riot's haste handed to unleash, haste th
 end of turn, a chosen counter that is two, the unleash static made unconditional or removed, and
 the counter static reading any counter name or swapping its captures. 35 minutes for twenty
 full-suite runs on two mirrors, with a gate and a pod sweep sharing the machine for part of it.
+
+## D562 — A kicked spell with a second clause: also, or instead
+
+D561's last "not read" item, taken next because it is the same family and the same rule: 84 legal
+kicker instants and sorceries were unread, and D423's `kickerSpellFor` covers only the ones whose
+kicked half is a second **number** ("deals 2 damage … it deals 4 damage instead").
+
+Most are a second **clause**. The body is one printed line whose last sentence begins "If this
+spell was kicked," and it is one of two things:
+
+| | printed | kicked, the spell does |
+| --- | --- | --- |
+| **also** | Return target nonland permanent to its owner's hand. If this spell was kicked, draw a card. | both, in printed order |
+| **instead** | Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +5/+5 until end of turn instead. | the second, in place of the first |
+
+The word "instead" is the whole difference and the reader takes it from the card and infers
+nothing. Each wrong reading has a number in the tests: an Explosive Growth read as "also" makes
+the Bears a 9/9, a Field Research read as "also" draws five.
+
+### Both halves are read by the reader that already exists
+
+`kickerClausePairFor` splits at the **last** "If this spell was kicked," and hands each half to
+`spellScriptFor` as the one-line spell it would be on its own. Nothing about clauses is restated.
+What it adds is three refusals, which are what make joining the halves sound:
+
+- **Also: the kicked half may only be an effect** — exactly `{ onResolve }`. A kicked half with a
+  target of its own (Jilt: "…kicked, it deals 2 damage to another target creature") is a target
+  chosen only when the spell is kicked, and a script has one list of targets either way; reading
+  it would ask for that target on every cast. A kicked half that asks a question (Runic Shot's
+  scry) is refused for the same reason.
+- **Instead: both halves must have the same shape apart from what they do**, compared as data —
+  same targets, same flags, no questions. Tear Asunder exiles an artifact or enchantment unkicked
+  and any nonland permanent kicked: two different things to point at, so it stays unread. So does
+  "Counter target spell with mana value 2 or less … counter target spell instead".
+- **Instead, with a referent.** "That creature gets +5/+5" is not a sentence a spell can open
+  with, so "that creature" is replaced by the base half's own target phrase and the result read as
+  usual. **The substitution is not trusted** — it is checked by the rule above, so a phrase lifted
+  wrongly either fails to read or reads with different targets and is refused either way.
+
+The base half keeps everything it read (targets, flags, questions) and only its effect is wrapped.
+
+### What is still not read in this family
+
+- kicked-dependent targets, both kinds above — this needs a second target list on `kicker`, which
+  is a change to casting and to what `legalActions` offers, not to the compiler;
+- "create four **of those tokens** instead", "search for **two** basic land cards instead of one":
+  a count, not a clause, and a third shape;
+- the kicked half that refers back without replacing ("that creature gets +7/+0", "those
+  creatures also gain trample");
+- and/or kickers, multikicker and non-mana kickers, as under D561.
+
+### Tests
+
+Seven table rows on printed Into the Roil, Explosive Growth and Field Research, each **kicked and
+unkicked**, asserting the mana tapped as well as the effect — two or four for the Roil, with the
+bounce happening both times and the card only when kicked; one or six for the Growth, a 4/4 or a
+7/7, back to a 2/2 next turn; three or six for the Research, two cards or three.
+
+Seventeen compile rows: six shapes read (including a three-sentence base and "instead" at the
+front of the clause), nine refusals with **both** lines asserted unread, the base's targets shown
+to be the unkicked spell's own, and D423's damage family shown to read as before.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,886 | **23,916** of 56,421 (42.4%) |
+| cards with a compiled script | 12,198 | **12,213** |
+| cards with every printed line read | 8,008 | **8,023** |
+
++15 fully read. Eighteen kicker instants and sorceries now compile, up from three.
+
+D561's pod sweep (SEED0=43101): 40 of 40 to a finish, no throw, no stall.

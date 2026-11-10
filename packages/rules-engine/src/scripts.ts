@@ -21093,6 +21093,122 @@ function kickerSpellFor(
   };
 }
 
+/** The nouns a kicked sentence refers back with: "that creature", "that player". */
+const KICKED_REFERENT = /\bthat (creature|player|permanent|artifact|enchantment|spell|land|card)\b/i;
+
+/**
+ * A kicked spell whose second sentence is a whole clause rather than a second number (D562).
+ *
+ * `kickerSpellFor` reads "deals 2 damage … if this spell was kicked, it deals 4 damage instead" —
+ * one effect, two numbers. Most kicker spells are not that. The body is one printed line whose
+ * **last** sentence begins "If this spell was kicked," and it is one of two things:
+ *
+ *     Return target nonland permanent to its owner's hand. If this spell was kicked, draw a card.
+ *     Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets
+ *       +5/+5 until end of turn instead.
+ *
+ * **Also** and **instead**, and the word "instead" is the whole difference: without it the kicked
+ * spell does both, in printed order; with it the kicked spell does the second *in place of* the
+ * first. Reading one as the other is a card that is wrong on every kicked cast, so the word decides
+ * and nothing is inferred from how the two halves look.
+ *
+ * Both halves are read by `spellScriptFor` itself, each as the one-line spell it would be on its
+ * own, so nothing about clauses is restated here. What this adds is the three refusals that make
+ * joining them sound:
+ *
+ * - **Also: the kicked half may only be an effect.** No targets, no questions, no flags — exactly
+ *   `{ onResolve }`. A kicked half with a target ("…kicked, it deals 2 damage to another target
+ *   creature") is a target chosen only when the spell is kicked, and a script has one list of
+ *   targets whether it was kicked or not. Reading it would ask for the target on every cast.
+ * - **Instead: both halves must want the same targets.** They are compared as data. Tear Asunder
+ *   exiles an artifact or enchantment unkicked and any nonland permanent kicked — two different
+ *   things to point at — and stays unread for the same reason.
+ * - **Instead, with a referent.** "That creature gets +5/+5" is not a sentence a spell can open
+ *   with, so "that creature" is replaced by the first half's own target phrase and the result read
+ *   as usual. The substitution is not trusted: it is checked by the rule above, so a phrase lifted
+ *   wrongly either fails to read or reads with different targets, and is refused either way.
+ *
+ * The base half keeps everything it read — targets, flags, questions — and only its effect is
+ * wrapped. A modal base is refused: its effect lives on its modes and there is nothing to wrap.
+ */
+function kickerClausePairFor(
+  lines: readonly string[], name: string,
+): { fragment: Partial<CardScript>; claimed: readonly string[] } | null {
+  if (lines.length !== 2) return null;
+  const declaring = /^kicker\s+((?:\{[^}]*\})+)$/i;
+  const declaration = lines.find((line) => declaring.test(plain(line).trim()));
+  const body = lines.find((line) => line !== declaration);
+  if (declaration === undefined || body === undefined) return null;
+
+  // Greedy, so this is the **last** "If this spell was kicked," and everything before it is base.
+  const split = /^(.*[.])\s+If this spell was kicked, (.+)$/s.exec(plain(body).trim());
+  if (split === null) return null;
+  const baseText = split[1]!.trim();
+  if (/\bkick/i.test(baseText)) return null;
+  const printed = split[2]!.trim();
+  const instead = /^instead\s+/i.test(printed) || /\s+instead\.?$/i.test(printed);
+  const tail = printed.replace(/^instead\s+/i, '').replace(/\s+instead(\.?)$/i, '$1');
+  if (tail === '' || /\binstead\b/i.test(tail)) return null;
+  const sentence = (text: string): string =>
+    `${text[0]!.toUpperCase()}${text.slice(1)}${/[.]$/.test(text) ? '' : '.'}`;
+
+  const base = spellScriptFor([baseText], name);
+  if (base.script === null || base.unread.length > 0 || base.script.modal !== undefined) return null;
+  const baseEffect = base.script.onResolve;
+  if (baseEffect === undefined) return null;
+  const kicker = {
+    cost: declaring.exec(plain(declaration).trim())![1]!,
+    description: plain(declaration).trim(),
+  };
+
+  if (!instead) {
+    const extra = spellScriptFor([sentence(tail)], name);
+    const keys = extra.script === null ? [] : Object.keys(extra.script);
+    const extraEffect = extra.script?.onResolve;
+    if (extra.unread.length > 0 || keys.length !== 1 || extraEffect === undefined) return null;
+    return {
+      fragment: {
+        ...base.script,
+        kicker,
+        onResolve: (c) => {
+          const state = baseEffect(c);
+          return c.kicked === true ? extraEffect({ ...c, state }) : state;
+        },
+      },
+      claimed: [...lines],
+    };
+  }
+
+  const referent = KICKED_REFERENT.exec(tail);
+  let altText = tail;
+  if (referent !== null) {
+    const noun = referent[1]!.toLowerCase();
+    const phrase = new RegExp(
+      `\\btarget (?:[\\w'-]+ )*?${noun}(?: card)?(?: you control| you don't control| an opponent controls)?`, 'i',
+    ).exec(baseText);
+    if (phrase === null) return null;
+    altText = tail.replace(KICKED_REFERENT, phrase[0].toLowerCase());
+  }
+  const alt = spellScriptFor([sentence(altText)], name);
+  const altEffect = alt.script?.onResolve;
+  if (alt.script === null || alt.unread.length > 0 || altEffect === undefined) return null;
+  // The same shape apart from what each does: same targets, same flags, and no questions on
+  // either side, since a question asked on one branch only cannot be listed once for both.
+  const shape = (script: Partial<CardScript>): string => JSON.stringify(
+    Object.fromEntries(Object.entries(script).filter(([key]) => key !== 'onResolve').sort()),
+  );
+  if (shape(base.script) !== shape(alt.script)) return null;
+  if (base.script.decisions !== undefined || base.script.beforeDecisions !== undefined) return null;
+  return {
+    fragment: {
+      ...base.script,
+      kicker,
+      onResolve: (c) => (c.kicked === true ? altEffect(c) : baseEffect(c)),
+    },
+    claimed: [...lines],
+  };
+}
+
 export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
   /*
     The kicker pair, before anything else, because the keyword loop below would split it: the
@@ -21100,7 +21216,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     be refused on its own, which is a card reported as two separate failures rather than read. See
     `kickerSpellFor` for why the two lines are one unit.
   */
-  const kicker = kickerSpellFor(lines, name);
+  const kicker = kickerSpellFor(lines, name) ?? kickerClausePairFor(lines, name);
   if (kicker !== null) {
     return { script: kicker.fragment, compiled: kicker.claimed, unread: [] };
   }

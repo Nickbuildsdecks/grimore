@@ -37278,3 +37278,115 @@ describe('kicker on a permanent: what the kick bought, asked after the spell has
     });
   });
 });
+
+describe('a kicked spell with a second clause: also, or instead (D562)', () => {
+  /*
+    "Return target nonland permanent to its owner's hand. If this spell was kicked, draw a card."
+    does both when kicked. "Target creature gets +2/+2 … If this spell was kicked, that creature
+    gets +5/+5 … instead" does one or the other. The word **instead** is the whole difference, and
+    each wrong reading has its own number here: an Explosive Growth read as "also" is a +7/+7, a
+    Field Research read as "also" draws five.
+
+    Three printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Into the Roil', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+      layout: 'normal',
+      oracle_text: "Kicker {1}{U} (You may pay an additional {1}{U} as you cast this spell.)\nReturn target nonland permanent to its owner's hand. If this spell was kicked, draw a card.",
+    },
+    {
+      name: 'Explosive Growth', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+      layout: 'normal',
+      oracle_text: 'Kicker {5} (You may pay an additional {5} as you cast this spell.)\nTarget creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +5/+5 until end of turn instead.',
+    },
+    {
+      name: 'Field Research', type_line: 'Sorcery', mana_cost: '{2}{U}', cmc: 3, colors: ['U'],
+      layout: 'normal',
+      oracle_text: 'Kicker {2}{U} (You may pay an additional {2}{U} as you cast this spell.)\nDraw two cards. If this spell was kicked, draw three cards instead.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'clauses',
+      name: 'Clauses',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 8 },
+        { name: 'Island', count: 20 }, { name: 'Forest', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = ['Island', 'Island', 'Island', 'Island', 'Forest', 'Forest', 'Forest'];
+
+  const start = (hand: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'clauses', 1: 'clauses' },
+    deckSpecs: { clauses: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...LANDS, 'Grizzly Bears'], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const cast = (s: GameState, name: string, kicked: boolean, target?: string): GameState =>
+    drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+      ...(kicked ? { kicked: true } : {}),
+      ...(target === undefined ? {} : { targets: [{ kind: 'card' as const, id: target }] }),
+    })));
+
+  const tappedLands = (s: GameState): number =>
+    ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+
+  it.each([
+    [false, 2, 0],
+    [true, 4, 1],
+  ])('also — Into the Roil kicked %s: %i mana, the bounce either way, %i card drawn', (kicked, mana, drawn) => {
+    const before = start(['Into the Roil'], ['Grizzly Bears']);
+    const hand = ids(before, 0, 'hand').length;
+    const theirs = find(before, 1, 'battlefield', 'Grizzly Bears');
+    const s = cast(before, 'Into the Roil', kicked, theirs);
+    expect(tappedLands(s)).toBe(mana);
+    // The first sentence happens kicked or not: "also" is in addition to it.
+    expect(s.instances[theirs]!.zone).toBe('hand');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + drawn);
+  });
+
+  it.each([
+    [false, 1, '4/4'],
+    [true, 6, '7/7'],
+  ])('instead — Explosive Growth kicked %s: %i mana, the Bears a %s', (kicked, mana, body) => {
+    // +2/+2 or +5/+5 on a 2/2. Read as "also", the kicked Bears would be a 9/9.
+    const before = start(['Explosive Growth']);
+    const bears = find(before, 0, 'battlefield', 'Grizzly Bears');
+    const s = cast(before, 'Explosive Growth', kicked, bears);
+    expect(tappedLands(s)).toBe(mana);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect(`${ch.power}/${ch.toughness}`).toBe(body);
+  });
+
+  it('and the kicked pump still wears off with the turn', () => {
+    let s = start(['Explosive Growth']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = nextTurn(cast(s, 'Explosive Growth', true, bears));
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect(`${ch.power}/${ch.toughness}`).toBe('2/2');
+  });
+
+  it.each([
+    [false, 3, 2],
+    [true, 6, 3],
+  ])('instead — Field Research kicked %s: %i mana, %i cards and not five', (kicked, mana, drawn) => {
+    const before = start(['Field Research']);
+    const hand = ids(before, 0, 'hand').length;
+    const s = cast(before, 'Field Research', kicked);
+    expect(tappedLands(s)).toBe(mana);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + drawn);
+  });
+});

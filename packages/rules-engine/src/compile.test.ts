@@ -17188,3 +17188,74 @@ describe('kicker on a permanent: the declaration and its kicked line, as one uni
     expect(got.compiled).toHaveLength(3);
   });
 });
+
+describe('a kicked spell with a second clause: also, or instead (D562)', () => {
+  const spell = (text: string) => {
+    const got = compileCard({
+      name: 'Into the Roil', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+      layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+  const KICKER = 'Kicker {1}{U} (You may pay an additional {1}{U} as you cast this spell.)';
+  const read = (body: string) => spell(`${KICKER}\n${body}`);
+
+  it.each([
+    ["Return target nonland permanent to its owner's hand. If this spell was kicked, draw a card.", 1],
+    ['Destroy target artifact or enchantment. If this spell was kicked, draw two cards.', 1],
+    // Three sentences: everything before the last is the base.
+    ["Return target creature to its owner's hand. Draw a card. If this spell was kicked, you gain 3 life.", 1],
+    ['Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +5/+5 until end of turn instead.', 1],
+    ['Draw two cards. If this spell was kicked, draw three cards instead.', 0],
+    ['Creatures you control get +1/+1 until end of turn. If this spell was kicked, instead creatures you control get +2/+2 and gain first strike until end of turn.', 0],
+  ])('reads %s', (body, targets) => {
+    const got = read(body);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker).toEqual({ cost: '{1}{U}', description: 'Kicker {1}{U}' });
+    expect(got.script?.targets ?? []).toHaveLength(targets);
+    expect(typeof got.script?.onResolve).toBe('function');
+  });
+
+  it('keeps the base spell\'s own targets, and adds none for the kicked half', () => {
+    const kicked = read("Return target nonland permanent to its owner's hand. If this spell was kicked, draw a card.");
+    const plainly = spell("Return target nonland permanent to its owner's hand.");
+    expect(kicked.script!.targets!.map((t) => t.description))
+      .toEqual(plainly.script!.targets!.map((t) => t.description));
+    expect(plainly.script?.kicker).toBeUndefined();
+  });
+
+  it.each([
+    ['a kicked half with a target of its own, chosen only when kicked',
+      "Return target creature to its owner's hand. If this spell was kicked, it deals 2 damage to another target creature."],
+    ['a kicked half that asks a question',
+      'Destroy target tapped creature. If this spell was kicked, scry 2.'],
+    ['an "instead" that points at something different',
+      'Exile target artifact or enchantment. If this spell was kicked, exile target nonland permanent instead.'],
+    ['an "instead" with a different restriction on the same kind of target',
+      'Counter target spell with mana value 2 or less. If this spell was kicked, counter target spell instead.'],
+    ['a referent the base never named',
+      'Draw two cards. If this spell was kicked, that creature gets +5/+5 until end of turn instead.'],
+    ['a kicked half that refers back without replacing',
+      'Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +7/+0 until end of turn.'],
+    ['a kicked half nothing can read',
+      'Draw a card. If this spell was kicked, each player votes for wind or rain.'],
+    ['a base nothing can read',
+      'Each player votes for wind or rain. If this spell was kicked, draw a card.'],
+    ['"of those tokens", which is a count and not a clause',
+      'Create two 1/1 green Saproling creature tokens. If this spell was kicked, create four of those tokens instead.'],
+  ])('leaves both lines unread for %s', (_what, body) => {
+    // Both: the declaration is never read alone, for the reason D561 gives.
+    const got = read(body);
+    expect(got.script?.kicker).toBeUndefined();
+    expect(got.unread.map((u) => u.line)).toEqual(['Kicker {1}{U}', body]);
+  });
+
+  it('still reads the two-number damage family the way D423 did', () => {
+    const got = read('Into the Roil deals 2 damage to any target. If this spell was kicked, it deals 4 damage instead.');
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker?.cost).toBe('{1}{U}');
+    expect(got.script?.targets).toHaveLength(1);
+  });
+});
