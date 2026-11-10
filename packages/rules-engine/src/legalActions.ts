@@ -398,6 +398,10 @@ export interface LegalActions {
      * light a card that does not exist.
      */
     readonly counters?: true;
+    /** The cards being looked at, when that is more than `candidates`. See `pendingDecision.looked`. */
+    readonly looked?: readonly string[];
+    /** Where the picked cards go, when it is not the bottom. See `pendingDecision.picksGoTo`. */
+    readonly picksGoTo?: 'graveyard' | 'hand';
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
@@ -2158,6 +2162,8 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
           ? {}
           : { targetChoices: [...decision.targetChoices] }),
         ...(decision.counters === true ? { counters: true as const } : {}),
+        ...(decision.looked === undefined ? {} : { looked: [...decision.looked] }),
+        ...(decision.picksGoTo === undefined ? {} : { picksGoTo: decision.picksGoTo }),
         candidates: decision.candidates, min: decision.min, max: decision.max,
       }
     : null;

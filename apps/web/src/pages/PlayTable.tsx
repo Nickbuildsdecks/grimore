@@ -2121,7 +2121,9 @@ function Board({ table }: { table: UseTable }) {
           label={`Top of your library — ${arenaMode.ask.prompt}`}
           testId={`zone-scry-${seat}`}
           size="pile"
-          cards={cardsIn(view, [...arenaMode.ask.candidates])}
+          // Every card being looked at, which for a dig with a filter is more than the ones that
+          // may be taken: the others are shown and do nothing when tapped.
+          cards={cardsIn(view, [...(arenaMode.ask.looked ?? arenaMode.ask.candidates)])}
           onSelect={onSelect}
           {...aiming}
         />

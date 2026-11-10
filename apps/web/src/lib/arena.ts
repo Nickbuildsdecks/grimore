@@ -132,6 +132,41 @@ export interface Attack {
 /** The engine's mid-resolution question, exactly as `legalActions` reports it. */
 export type Decision = NonNullable<LegalActions["mustDecide"]>
 
+/**
+ * The words for a question about the top of your own library: what a tap means, and what the
+ * button that ends it says.
+ *
+ * Three questions share that row and mean different things by a tap. A **scry** bottoms what is
+ * tapped and a **surveil** buries it, so tapping is giving a card up and tapping nothing is keeping
+ * them all. A **dig** is the reverse — "put one of them into your hand" — so tapping is taking,
+ * and the cards left alone are the ones that go away. The engine says which it is
+ * (`picksGoTo`), and words that guessed would tell a player to bottom the card they wanted.
+ *
+ * Here rather than in the bar that draws them so that they can be tested without a browser: the
+ * surveil button said "Bottom 2" for as long as these lived in the markup.
+ */
+export function libraryTopWords(
+  ask: Pick<Decision, "picksGoTo" | "max">, chosen: number,
+): { hint: string; confirm: string } {
+  if (ask.picksGoTo === "hand") {
+    return {
+      hint: ask.max === 0
+        ? "none of these can be taken"
+        : ask.max === 1 ? "tap the one to put into your hand" : `tap ${ask.max} to put into your hand`,
+      // With nothing takeable the button is how you say you have looked.
+      confirm: chosen === 0 ? (ask.max === 0 ? "Done looking" : "Take nothing") : `Take ${chosen}`,
+    }
+  }
+  const keep = `Keep ${ask.max === 1 ? "it" : "them"} on top`
+  if (ask.picksGoTo === "graveyard") {
+    return {
+      hint: "tap the ones to put into your graveyard",
+      confirm: chosen === 0 ? keep : `Graveyard ${chosen}`,
+    }
+  }
+  return { hint: "tap the ones to put on the bottom", confirm: chosen === 0 ? keep : `Bottom ${chosen}` }
+}
+
 export type ArenaEvent =
   | { kind: "cancel" }
   | { kind: "startBottoming" }

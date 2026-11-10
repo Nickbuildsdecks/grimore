@@ -230,6 +230,26 @@ function decideCards(
   // of them and keeps everything else, which is the one scry decision that is obviously right and
   // the one a player would make without thinking. Anything cleverer needs it to know what it is
   // holding and what it is playing against.
+  /*
+    A dig is the opposite question in the same zone (D584): "put one of them into your hand", so
+    the card picked is the card **kept**. The scry rule below would take a land exactly when the
+    bot has enough of them, and nothing at all when it has not — and "nothing" is not an answer to
+    a question that asks for one, so the table would stop.
+
+    A land while it is short of them, counting the ones already in hand; otherwise the dearest
+    card on offer, which is the same judgement a search of the library gets.
+  */
+  if (ask.from === 'library-top' && ask.picksGoTo === 'hand') {
+    const isLand = (id: string): boolean =>
+      /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? '');
+    const landsHeld = [...listAt(state, zoneKey(seat, 'battlefield')), ...listAt(state, zoneKey(seat, 'hand'))]
+      .filter(isLand).length;
+    const short = landsHeld < 5;
+    return [...ask.candidates]
+      .sort((a, b) => (Number(isLand(b) === short) - Number(isLand(a) === short))
+        || cardWorth(state, b) - cardWorth(state, a))
+      .slice(0, ask.max);
+  }
   if (ask.from === 'library-top') {
     const lands = listAt(state, zoneKey(seat, 'battlefield'))
       .filter((id) => /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? ''))

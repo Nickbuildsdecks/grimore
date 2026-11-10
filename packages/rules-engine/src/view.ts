@@ -515,9 +515,11 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
       // Scry. The authorisation is the engine's own candidate list — the same list `auto:decide`
       // checks an answer against — rather than a second rule about how many cards are readable,
       // which could disagree with it.
+      // The cards looked at where the question says which (D584), since a card that may not be
+      // picked is still one the chooser was told to look at.
       const ask = state.pendingDecision;
       return ask !== null && ask.from === 'library-top' && ask.seat === viewer
-        && ask.candidates.includes(inst.id);
+        && (ask.looked ?? ask.candidates).includes(inst.id);
     }
     case 'battlefield':
     case 'exile':
@@ -701,7 +703,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
   // the table learns is "these three cards", not "here is the order of your deck".
   const ask = state.pendingDecision;
   if (viewer !== null && ask !== null && ask.from === 'library-top' && ask.seat === viewer) {
-    for (const id of ask.candidates) {
+    for (const id of ask.looked ?? ask.candidates) {
       const inst = state.instances[id];
       if (inst !== undefined) cards[id] = redact(state, inst, viewer);
     }

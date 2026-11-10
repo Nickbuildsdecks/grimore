@@ -1326,6 +1326,25 @@ export interface AutomationState {
     readonly min: number;
     readonly max: number;
     /**
+     * Every card the chooser is **looking at**, when that is more than the ones they may pick
+     * (D584): "Look at the top five cards of your library. You may reveal a creature card from
+     * among them" shows five cards and lets one kind be taken.
+     *
+     * Present only on a `library-top` question whose spec says where the rest go
+     * (`CardsDecisionSpec.restGoTo`), and it is what authorises the chooser to read those cards —
+     * `canIdentify` reads this list where there is one and `candidates` where there is not. The
+     * answer is still checked against `candidates` alone.
+     */
+    readonly looked?: readonly string[];
+    /**
+     * Where the picked cards go, for a `library-top` question that is not a scry: the graveyard
+     * (surveil) or the chooser's hand (D584). Absent for scry, whose picks go to the bottom.
+     *
+     * What the card says, so nothing a seat should not know — and the table needs it to word the
+     * button, and the engine's opponent to know that picking here is taking rather than giving up.
+     */
+    readonly picksGoTo?: 'graveyard' | 'hand';
+    /**
      * Where they are being chosen from, which is what the table needs to draw the picker. Absent
      * for a question whose answer is a word rather than a card — see `options`.
      */

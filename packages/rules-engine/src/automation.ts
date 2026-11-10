@@ -41,7 +41,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, sacrifice, spendEnergy,
+  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
@@ -4061,8 +4061,35 @@ function askOrFinish(
         poolSeat !== undefined && poolSeat.kind === 'player' ? poolSeat.seat : undefined,
       )).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
-    if (max === 0 || (min === max && candidates.length === max)) {
-      answers = [...answers, { seat: entry.seat, ids: max === 0 ? [] : candidates }];
+    /*
+      The cards a dig is looking at (D584), which is the top of the library whether or not a
+      filter lets them be picked. Only for a spec that moves the rest: scry and surveil look at
+      exactly their candidates.
+    */
+    const looked = !isCountersDecision(spec) && spec.from === 'library-top' && spec.restGoTo !== undefined
+      ? listAt(state, zoneKey(entry.seat, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+      : undefined;
+    /*
+      **A dig with cards to show is asked even when none of them may be picked.** "You may reveal
+      an artifact card from among them" over five cards that are not artifacts has no candidates,
+      and the rule below would answer it without a word — but the player was told to *look* at
+      five cards, and what they are is the point of having looked. So it is asked with nothing to
+      pick, and the answer is the confirmation that they have seen them.
+    */
+    const showsOnly = looked !== undefined && looked.length > 0 && max === 0;
+    if (!showsOnly && (max === 0 || (min === max && candidates.length === max))) {
+      const ids = max === 0 ? [] : candidates;
+      answers = [...answers, { seat: entry.seat, ids }];
+      /*
+        And an answer the engine gave itself is still applied to the library. `answerDecision` is
+        where that happens for a question that was asked, and this path never reaches it — which
+        did not matter while the only `library-top` questions were scry and surveil (`min: 0`, so
+        only an empty library answers itself). "Put one of them into your hand" over a one-card
+        library is one candidate and one to take, and without this the card stays where it was.
+      */
+      if (!isCountersDecision(spec) && spec.from === 'library-top') {
+        state = applyLibraryTop(state, spec, entry.seat, ids);
+      }
       continue;
     }
     const asking: GameState = {
@@ -4076,6 +4103,11 @@ function askOrFinish(
       pendingDecision: {
         seat: entry.seat, stackId: object.id, prompt: spec.prompt,
         candidates, min, max, from: spec.from,
+        ...(looked === undefined ? {} : { looked }),
+        ...(!isCountersDecision(spec) && spec.from === 'library-top'
+          && (spec.chosenGoTo === 'graveyard' || spec.chosenGoTo === 'hand')
+          ? { picksGoTo: spec.chosenGoTo }
+          : {}),
         // Which shape this is, said rather than inferred: proliferate's candidates are sometimes
         // all cards (nobody has poison yet), and a reader guessing from the list would draw that
         // board's question as an ordinary one. See `pendingDecision.counters`.
@@ -4092,6 +4124,47 @@ function askOrFinish(
     };
   }
   return completeResolution(state, object, answers);
+}
+
+/**
+ * What a `library-top` answer does to the library: the picked cards go where the spec says, and so
+ * do the ones that were looked at and not picked, where it says that too (D584).
+ *
+ * One function for the answer a player gives and the answer the engine gives itself, because the
+ * second used to skip this entirely — see the caller in `askOrFinish`.
+ *
+ * With no spec the picks go to the bottom, which is what an answer whose resolution has gone could
+ * only have meant: scry is the default the field describes.
+ */
+function applyLibraryTop(
+  state: GameState, spec: CardsDecisionSpec | undefined, seat: SeatIndex, picked: readonly string[],
+): GameState {
+  const key = zoneKey(seat, 'library');
+  // Read before anything moves: the cards looked at are the top of the library *as it was asked*.
+  const looked = listAt(state, key).slice(0, Math.max(0, spec?.look ?? 1));
+  let next = state;
+  if (picked.length > 0 && spec?.chosenGoTo === 'graveyard') {
+    next = moveToGraveyard(next, picked);
+  } else if (picked.length > 0 && spec?.chosenGoTo === 'hand') {
+    // Put into the hand, not drawn: nothing that watches a draw sees this, and it is not one.
+    next = moveToHand(next, picked);
+    // And shown to the table where the card says so. After the move, which clears the flag.
+    if (spec.revealPicked === true) {
+      for (const id of picked) next = withInstance(next, id, { revealed: true });
+    }
+  } else if (picked.length > 0) {
+    const rest = listAt(next, key).filter((id) => !picked.includes(id));
+    next = withZones(next, { [key]: [...rest, ...picked] });
+  }
+  if (spec?.restGoTo === undefined) return next;
+  const rest = looked.filter((id) => !picked.includes(id));
+  if (rest.length === 0) return next;
+  if (spec.restGoTo === 'graveyard') return moveToGraveyard(next, rest);
+  const ordered = spec.restGoTo === 'bottom-random'
+    ? shuffled(rest, mulberry32(actionSeed(next.rngSeed, next.stateVersion + next.autoSeq)))
+    : rest;
+  const staying = listAt(next, key).filter((id) => !rest.includes(id));
+  return withZones(next, { [key]: [...staying, ...ordered] });
 }
 
 /**
@@ -4133,13 +4206,10 @@ export function answerDecision(
     const asked = object === undefined
       ? undefined
       : decisionSpecsFor(next, object)[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
-    const destination = asked !== undefined && 'chosenGoTo' in asked ? asked.chosenGoTo : undefined;
-    if (picked.length > 0 && destination === 'graveyard') {
-      next = moveToGraveyard(next, picked);
-    } else if (picked.length > 0) {
-      const rest = listAt(next, key).filter((id) => !picked.includes(id));
-      next = withZones(next, { [key]: [...rest, ...picked] });
-    }
+    next = applyLibraryTop(
+      next, asked !== undefined && !isCountersDecision(asked) && asked.from === 'library-top' ? asked : undefined,
+      pending.seat, picked,
+    );
   }
   // The object leaving the stack mid-resolution should not be possible — nothing else can happen
   // while a decision is outstanding — but a resolution with nothing to resolve is simply over.

@@ -18,7 +18,7 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, dividedAmount, manaPips, orderingDone, pactAsked, pactOffers,
+  attackRead, decisionLabel, dividedAmount, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
   playsForCard, primaryMove, specAt, specsRequired, specsWanted, targetKey, targetName,
   targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
@@ -367,22 +367,24 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {mode.ask.counters === true
               ? "tap the permanents and players to give another counter"
               : mode.ask.from === "library" ? "tap a card in your library below"
-                : mode.ask.from === "library-top" ? "tap the ones to put on the bottom"
+                : mode.ask.from === "library-top" ? libraryTopWords(mode.ask, mode.chosen.length).hint
                   : `tap a card in your ${mode.ask.from ?? "hand"}`}
           </span>
           )}
           <span className="ml-auto flex gap-1.5">
             {mode.ask.options === undefined && mode.ask.numbers === undefined
               && mode.ask.targetChoices === undefined
-              && mode.chosen.length >= mode.ask.min && mode.ask.min !== mode.ask.max ? (
+              // A range needs a button, because stopping early is an answer. So does a question
+              // with nothing to pick at all — a dig whose cards cannot be taken is answered by
+              // saying you have seen them, and with no button there would be no way to say it.
+              && mode.chosen.length >= mode.ask.min
+              && (mode.ask.min !== mode.ask.max || mode.ask.max === 0) ? (
               <Button size="sm" data-testid="confirm-decision" onClick={() => dispatch({ kind: "confirm" })}>
                 <Check className="size-3.5" />
                 {/* "Choose nothing" is the right words for a sacrifice and the wrong ones for a
                     scry, where choosing nothing is keeping what you were shown. */}
                 {mode.ask.from === "library-top"
-                  ? mode.chosen.length === 0
-                    ? `Keep ${mode.ask.max === 1 ? "it" : "them"} on top`
-                    : `Bottom ${mode.chosen.length}`
+                  ? libraryTopWords(mode.ask, mode.chosen.length).confirm
                   : mode.chosen.length === 0 ? "Choose nothing" : "Confirm"}
               </Button>
             ) : null}

@@ -19931,6 +19931,128 @@ function impulseDraw(first: string, second: string | undefined): ReadEffect | nu
   return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
 }
 
+/**
+ * Where a dig puts the cards it did not take, from the words after "the rest" (D584).
+ *
+ * "On the bottom of your library" with no order named is read as "in any order": it is printed
+ * that way where one card is left ("and the other on the bottom of your library") and on a few
+ * newer cards where several are, and in both the order is the player's to choose.
+ */
+function digRest(words: string): NonNullable<CardsDecisionSpec['restGoTo']> | null {
+  const text = words.trim().toLowerCase();
+  if (text === 'into your graveyard') return 'graveyard';
+  if (text === 'on the bottom of your library' || text === 'on the bottom of your library in any order') {
+    return 'bottom';
+  }
+  if (text === 'on the bottom of your library in a random order') return 'bottom-random';
+  return null;
+}
+
+/**
+ * The dig — "Look at the top three cards of your library. Put one of them into your hand and the
+ * rest on the bottom of your library in any order." — read as the one question it is (D584).
+ *
+ * **346 unread legal lines** contain "look at the top N cards of your library", and 232 of them
+ * are a card's last unread line. This reads the two largest shapes of that family:
+ *
+ *     Look at the top N cards of your library. Put K of them into your hand and the rest
+ *       on the bottom of your library [in any order | in a random order] | into your graveyard.
+ *
+ *     Look at the top N cards of your library. You may reveal a <type> card from among them
+ *       and put it into your hand. Put the rest on the bottom of your library in <an> order.
+ *
+ * `<type>` is one card type, or several joined by "or" or listed with commas.
+ *
+ * ## Why a group
+ *
+ * `stealPrefix`'s reason again (D516): several printed sentences and one play. The first sentence
+ * does nothing — looking is not an effect — and the last cannot be read alone, because "the rest"
+ * is the rest of a choice only the middle sentence makes. What all of it asks is one thing: which
+ * card do you take. That is a `library-top` question, the one scry asks, with the answer going to
+ * the hand (`chosenGoTo`) and the cards not chosen leaving the top (`restGoTo`); the engine
+ * applies the answer itself, so the reading's own effect is the identity and it composes the way
+ * a scry does.
+ *
+ * ## What the second shape adds
+ *
+ * A **filter** — only a card of the printed type may be taken, and taking none is allowed — and
+ * two things that follow from it. The cards that do not qualify were still looked at, so the
+ * question carries every card off the top and not only the ones on offer
+ * (`pendingDecision.looked`). And the card taken is revealed, which is how the table knows it was
+ * of the type (`revealPicked`).
+ *
+ * The type is whatever `graveyardTypeTest` reads — a card type, two joined by "or", "permanent",
+ * "nonland" — against the card's printed type line, for the reason that function gives: a card in
+ * a library has no effects on it.
+ *
+ * ## What is refused
+ *
+ * - "…then put them back in any order" — the answer is a sequence, not a set (20 lines).
+ * - "You may put a land card from among them **onto the battlefield**" — a different destination.
+ * - "a creature card **with power 2 or less**", "a historic card", "an Elf card" — filters
+ *   `graveyardTypeTest` does not read, refused there rather than widened here.
+ * - "reveal **up to two** creature cards" — a count on the filtered shape.
+ * - "the top **X** cards", "…where X is" — a number the sentence does not print.
+ * - K not smaller than N, which is not a choice.
+ */
+function digGroup(
+  clauses: readonly string[], at: number, name: string,
+): { readonly read: ReadEffect; readonly consumed: number } | null {
+  const looks = /^look at the top ([a-z]+) cards of your library$/i.exec(clauses[at]!.trim());
+  const second = clauses[at + 1]?.trim();
+  if (looks === null || second === undefined) return null;
+  const look = WORD_NUMBERS[looks[1]!.toLowerCase()];
+  if (look === undefined || look < 2) return null;
+  const asks = (spec: Partial<CardsDecisionSpec> & Pick<CardsDecisionSpec, 'prompt' | 'restGoTo'>, consumed: number) => ({
+    read: {
+      decisions: [{ who: 'controller', from: 'library-top', look, chosenGoTo: 'hand', ...spec } as CardsDecisionSpec],
+      effect: (c: EffectContext) => c.state,
+      appliesNothing: true as const,
+    },
+    consumed,
+  });
+
+  // "and rest" with no article is one printing's own wording (Experimental Augury), read as the
+  // sentence it plainly is.
+  const takes = /^put ([a-z]+) of (?:them|those cards) into your hand and (?:the )?(?:rest|other) (.+)$/i
+    .exec(second);
+  if (takes !== null) {
+    const count = WORD_NUMBERS[takes[1]!.toLowerCase()];
+    const restGoTo = digRest(takes[2]!);
+    if (count === undefined || count < 1 || count >= look || restGoTo === null) return null;
+    return asks({
+      prompt: `${name}: choose ${count === 1 ? 'a card' : `${count} cards`} to put into your hand`,
+      min: count, max: count, restGoTo,
+    }, 2);
+  }
+
+  const reveals = /^you may reveal an? (.+?) card from among them and put (?:it|that card) into your hand$/i
+    .exec(second);
+  // "Then put the rest…" on a few printings; the same sentence with a word in front of it.
+  const third = clauses[at + 2]?.trim().replace(/^then\s+/i, '');
+  const puts = third === undefined ? null : /^put the rest (.+)$/i.exec(third);
+  if (reveals === null || puts === null) return null;
+  const printed = reveals[1]!.trim();
+  /*
+    A list of three is printed with commas — "a creature, land, or planeswalker card" (Oath of
+    Nissa), "an artifact, creature, or land card" (Commune with Beavers) — and is the same "or" the
+    two-item form spells out. Rewritten to that form and handed to the one function that knows
+    which words are card types, so a list with a subtype in it ("an Aura, creature, or
+    planeswalker card") is still refused there.
+  */
+  const test = graveyardTypeTest(printed.replace(/,\s*(?:or\s+)?/g, ' or '));
+  const restGoTo = digRest(puts[1]!);
+  if (test === null || restGoTo === null) return null;
+  return asks({
+    prompt: `${name}: you may reveal ${/^[aeiou]/i.test(printed) ? 'an' : 'a'} ${printed} card and put it into your hand`,
+    min: 0, max: 1, restGoTo, revealPicked: true,
+    filter: (state, id) => {
+      const inst = state.instances[id];
+      return inst !== undefined && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+    },
+  }, 3);
+}
+
 function chosenDiscardPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
@@ -20179,6 +20301,9 @@ function composeEffects(
     // Two sentences that are one effect, wherever in the sequence they sit (D583).
     const impulse = impulseDraw(clause, rest[at + 1]);
     if (impulse !== null) { parts.push(impulse); at++; continue; }
+    // And the dig, which is two or three sentences that are one question (D584).
+    const dug = digGroup(rest, at, name);
+    if (dug !== null) { parts.push(dug.read); at += dug.consumed - 1; continue; }
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**
       (D530) — "Put a +1/+1 counter on target creature. That creature gains reach until end of

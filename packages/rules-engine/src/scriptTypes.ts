@@ -1349,7 +1349,37 @@ export interface CardsDecisionSpec {
    * prologue those lines hang off was already read, so this one field is what they were waiting
    * for.
    */
-  readonly chosenGoTo?: 'bottom' | 'graveyard';
+  readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand';
+  /**
+   * For `library-top`: where the cards that were looked at and **not** picked go (D584).
+   *
+   * Absent, they stay on top in the order they were in, which is scry and surveil. Present, they
+   * leave the top, which is the other thing a card does with the top of a library — "Look at the
+   * top three cards of your library. Put one of them into your hand and the rest on the bottom of
+   * your library in any order." Together with `chosenGoTo: 'hand'` that sentence is one question:
+   * which card do you take.
+   *
+   * - `'bottom'` is "in any order", and the engine keeps the order they were already in. That is
+   *   one of the orders the player could have chosen; choosing a different one needs a question
+   *   whose answer is a sequence, which is the same thing `look` says scry does without.
+   * - `'bottom-random'` is "in a random order", shuffled among themselves by the game's own RNG.
+   * - `'graveyard'` is "and the rest into your graveyard".
+   *
+   * It counts the cards **looked at**, not the candidates: with a `filter` ("you may reveal a
+   * creature card from among them") the cards that did not qualify were still looked at and still
+   * go wherever the rest goes. See `pendingDecision.looked`.
+   */
+  readonly restGoTo?: 'bottom' | 'bottom-random' | 'graveyard';
+  /**
+   * For `library-top` with `chosenGoTo: 'hand'`: the picked card is **revealed** on its way there
+   * — "you may reveal a creature card from among them and put it into your hand" (D584).
+   *
+   * The reveal is what lets the table check the card was one the filter allowed, so it is part of
+   * the sentence and not decoration. The engine marks the card revealed in the hand it arrives
+   * in, where it stays readable to every seat until it moves again; an unfiltered dig ("put one of
+   * them into your hand") reveals nothing and does not set this.
+   */
+  readonly revealPicked?: true;
   /** Shown to whoever is choosing, in their own words: "Search your library for a creature card". */
   readonly prompt: string;
   /** Both default to 1, and both are clamped to what the zone actually holds. */

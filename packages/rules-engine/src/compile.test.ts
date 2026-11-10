@@ -18069,3 +18069,69 @@ describe('playing a card out of exile: what the reader takes and what it leaves 
     }
   });
 });
+
+describe('the dig: what the reader takes and what it leaves (D584)', () => {
+  /*
+    The sentences are read as a group or not at all. `scripts.test.ts` plays the wordings that are
+    read; these are the neighbours that are not, each a printed shape, and each left as a whole
+    unread line rather than as a look with the choice dropped.
+  */
+  const spell = (text: string) => compileCard({
+    name: 'Probe Dig', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+
+  it.each([
+    ['putting them back in an order, whose answer is a sequence',
+      'Look at the top three cards of your library, then put them back in any order.'],
+    ['a land put onto the battlefield, which is another destination',
+      'Look at the top five cards of your library. You may put a land card from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'],
+    ['a filter with a number in it',
+      'Look at the top five cards of your library. You may reveal a creature card with power 2 or less from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
+    ['a filter that is not a card type',
+      'Look at the top five cards of your library. You may reveal a historic card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
+    ['a filter that is a creature type',
+      'Look at the top four cards of your library. You may reveal an Elf card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
+    ['a list with a subtype in it',
+      'Look at the top four cards of your library. You may reveal an Aura, creature, or planeswalker card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
+    ['two negations, which is not a list of types',
+      'Look at the top four cards of your library. You may reveal a noncreature, nonland card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
+    ['up to two revealed',
+      'Look at the top four cards of your library. You may reveal up to two creature cards from among them and put them into your hand. Put the rest on the bottom of your library in a random order.'],
+    ['a count the sentence does not print',
+      'Look at the top X cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order.'],
+    ['taking all of them, which is not a choice',
+      'Look at the top two cards of your library. Put two of them into your hand and the rest into your graveyard.'],
+    ['the rest going somewhere this does not read',
+      'Look at the top three cards of your library. Put one of them into your hand and the rest into exile.'],
+    ['the rest on top, which is an order to choose',
+      'Look at the top three cards of your library. Put one of them into your hand and the rest on top of your library in any order.'],
+    ['a free cast from among them',
+      'Look at the top five cards of your library. You may cast a spell from among them without paying its mana cost. Put the rest on the bottom of your library in a random order.'],
+    ['another player\'s library',
+      'Look at the top three cards of target opponent\'s library. Put one of them into your hand and the rest on the bottom of your library in any order.'],
+    ['the look on its own',
+      'Look at the top three cards of your library.'],
+    ['the reveal with nowhere said for the rest',
+      'Look at the top three cards of your library. You may reveal a creature card from among them and put it into your hand.'],
+    ['a sentence between the look and the choice',
+      'Look at the top three cards of your library. You gain 2 life. Put one of them into your hand and the rest into your graveyard.'],
+  ])('leaves %s unread', (_what, text) => {
+    const compiled = spell(text);
+    expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([text]);
+  });
+
+  it('reads the group as the effect of a trigger and of an activated ability', () => {
+    for (const [typeLine, text] of [
+      ['Creature — Merfolk', 'When Probe Dig enters, look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order.'],
+      ['Creature — Merfolk', 'Whenever Probe Dig attacks, look at the top two cards of your library. Put one of them into your hand and the other into your graveyard.'],
+      ['Artifact', '{2}, {T}: Look at the top four cards of your library. You may reveal an artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
+    ] as const) {
+      const compiled = compileCard({
+        name: 'Probe Dig', type_line: typeLine, mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+        power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+      } as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), text).toEqual([]);
+    }
+  });
+});

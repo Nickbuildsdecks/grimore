@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   KEYWORDS, STEPS,
-  SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
+  SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock, evaluate,
   destroy, forcedAttackers,
   characteristicsOf, customDeck,
   hasType,
@@ -41818,6 +41818,25 @@ describe('playing a card out of exile until a deadline (D583)', () => {
     expect(botAction(s, 0)).toMatchObject({ type: 'auto:cast', card: find(s, 0, 'hand', 'Reckless Impulse') });
   });
 
+  it('scores two cards it may play from exile as two cards, not as two cards lost', () => {
+    /*
+      The test above passes with or without the bot's valuation of an exiled card: with nothing
+      else to do it casts whatever it can. D583's break run found that, so the valuation is pinned
+      here on its own — the position after the spell against the same position with the two
+      permissions taken away, which is what the evaluation used to see.
+    */
+    let s = table({ hand: ['Reckless Impulse'], mine: LANDS, top: ['Hill Giant', 'Lightning Bolt'] });
+    const two = ids(s, 0, 'library').slice(0, 2);
+    s = cast(s, 'Reckless Impulse');
+    const blind = { ...s, instances: { ...s.instances } };
+    for (const id of two) blind.instances[id] = { ...s.instances[id]!, playFromExile: undefined };
+    expect(two.every((id) => s.instances[id]!.playFromExile?.by === 0)).toBe(true);
+    expect(evaluate(s, 0)).toBeGreaterThan(evaluate(blind, 0));
+    // And for that seat only: the opponent's view of the table moves by exactly the same amount
+    // the other way, so nothing was added to its own side.
+    expect(evaluate(s, 1) - evaluate(blind, 1)).toBe(evaluate(blind, 0) - evaluate(s, 0));
+  });
+
   it('the bot plays the land it exiled, and casts the spell', () => {
     let s = table({ hand: ['Reckless Impulse'], mine: ['Mountain', 'Mountain'], top: ['Mountain', 'Hill Giant'] });
     const land = ids(s, 0, 'library')[0]!;
@@ -41836,5 +41855,401 @@ describe('playing a card out of exile until a deadline (D583)', () => {
     }
     expect(seen).toContain(giant);
     expect(t.instances[giant]!.zone).toBe('battlefield');
+  });
+});
+
+describe('the dig: look at the top cards, take some, the rest leave the top (D584)', () => {
+  /*
+    "Look at the top three cards of your library. Put one of them into your hand and the rest on
+    the bottom of your library in any order." Two or three printed sentences and one question:
+    which card do you take. It is asked the way a scry is — the top of your own library, shown to
+    you and nobody else — with the answer going to your hand and everything else you looked at
+    leaving the top.
+  */
+  const ANTICIPATE = {
+    name: 'Anticipate', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal',
+    oracle_text: 'Look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order.',
+  };
+  const GLIMPSE = {
+    name: 'Glimpse the Future', type_line: 'Sorcery', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal',
+    oracle_text: 'Look at the top three cards of your library. Put one of them into your hand and the rest into your graveyard.',
+  };
+  const IMPULSE = {
+    name: 'Adventurous Impulse', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    oracle_text: 'Look at the top three cards of your library. You may reveal a creature or land card from among them and put it into your hand. Put the rest on the bottom of your library in any order.',
+  };
+  const AUGUR = {
+    name: 'Augur of Bolas', type_line: 'Creature — Merfolk Wizard', mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+    power: '1', toughness: '3', layout: 'normal',
+    oracle_text: 'When Augur of Bolas enters, look at the top three cards of your library. You may reveal an instant or sorcery card from among them and put it into your hand. Put the rest on the bottom of your library in any order.',
+  };
+  const PRICE = {
+    name: 'Blood Price', type_line: 'Sorcery', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal',
+    oracle_text: 'Look at the top four cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order. You lose 2 life.',
+  };
+  const TRACKER = {
+    name: 'Brightwood Tracker', type_line: 'Creature — Elf Scout', mana_cost: '{3}{G}', cmc: 4, colors: ['G'],
+    power: '2', toughness: '4', layout: 'normal',
+    oracle_text: '{5}{G}, {T}: Look at the top four cards of your library. You may reveal a creature card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.',
+  };
+  const ROWS = [ANTICIPATE, GLIMPSE, IMPULSE, AUGUR, PRICE, TRACKER];
+  const digList = customDeck({
+    id: 'dig',
+    name: 'Dig',
+    entries: [
+      ...ROWS.map((row) => ({ name: row.name, count: 2 })),
+      { name: 'Lightning Bolt', count: 6 },
+      { name: 'Hill Giant', count: 6 },
+      { name: 'Grizzly Bears', count: 6 },
+      { name: 'Island', count: 10 },
+      { name: 'Forest', count: 10 },
+      { name: 'Swamp', count: 10 },
+    ],
+    data: ROWS as never[],
+  }).deck;
+  const table = (opts: { hand?: readonly string[]; mine?: readonly string[]; top?: readonly string[] }): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dig', 1: 'tidal-mind' },
+      deckSpecs: { dig: digList },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: { 0: [...(opts.mine ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const taken = new Set<string>();
+    for (const name of [...(opts.top ?? [])].reverse()) {
+      const card = ids(s, 0, 'library').find((id) => !taken.has(id) && nameOf(s, id) === name)!;
+      taken.add(card);
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+    }
+    return s;
+  };
+  const ISLANDS = ['Island', 'Island', 'Island', 'Island'];
+  const FORESTS = ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest'];
+  const cast = (s: GameState, name: string): GameState => passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [],
+  }));
+  const decide = (s: GameState, cards: readonly string[]): GameState =>
+    drain(apply(s, { type: 'auto:decide', by: 0, cards: [...cards] } as Action), 40);
+  const top = (s: GameState, n: number): string[] => [...ids(s, 0, 'library')].slice(0, n);
+  const bottom = (s: GameState, n: number): string[] => [...ids(s, 0, 'library')].slice(-n);
+
+  it('reads all six cards with nothing left unread', () => {
+    for (const row of ROWS) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+  });
+
+  it('asks which of the top three to take, and shows them to the caster alone', () => {
+    let s = table({ hand: ['Anticipate'], mine: ISLANDS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+    const three = top(s, 3);
+    s = cast(s, 'Anticipate');
+    const ask = s.pendingDecision!;
+    expect(ask.from).toBe('library-top');
+    expect(ask.candidates).toEqual(three);
+    expect(ask.looked).toEqual(three);
+    // Exactly one: a dig is not a "may".
+    expect([ask.min, ask.max]).toEqual([1, 1]);
+    expect(ask.picksGoTo).toBe('hand');
+    expect(legalActions(s, 0).mustDecide).toMatchObject({ picksGoTo: 'hand', looked: three, min: 1, max: 1 });
+    const mine = viewFor(s, 0);
+    const theirs = viewFor(s, 1);
+    for (const id of three) {
+      expect(mine.cards[id]?.card).toBeDefined();
+      expect(theirs.cards[id]).toBeUndefined();
+    }
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] } as Action)).not.toBeNull();
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [ids(s, 0, 'library')[3]!] } as Action)).not.toBeNull();
+  });
+
+  it('puts the one taken into the hand without drawing it, and the rest on the bottom in order', () => {
+    let s = table({ hand: ['Anticipate'], mine: ISLANDS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+    const [bolt, giant, island] = top(s, 3) as [string, string, string];
+    const fourth = ids(s, 0, 'library')[3]!;
+    const size = ids(s, 0, 'library').length;
+    const drawn = JSON.stringify(s.cardsDrawnThisTurn);
+    s = decide(cast(s, 'Anticipate'), [giant]);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.instances[giant]!.zone).toBe('hand');
+    // Not shown to anybody: an unfiltered dig reveals nothing.
+    expect(s.instances[giant]!.revealed).toBe(false);
+    expect(viewFor(s, 1).cards[giant]?.card).toBeUndefined();
+    expect(JSON.stringify(s.cardsDrawnThisTurn)).toBe(drawn);
+    expect(bottom(s, 2)).toEqual([bolt, island]);
+    expect(ids(s, 0, 'library')[0]).toBe(fourth);
+    expect(ids(s, 0, 'library').length).toBe(size - 1);
+  });
+
+  it('puts the rest into the graveyard where the card says so', () => {
+    let s = table({ hand: ['Glimpse the Future'], mine: ISLANDS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+    const [bolt, giant, island] = top(s, 3) as [string, string, string];
+    s = decide(cast(s, 'Glimpse the Future'), [bolt]);
+    expect(s.instances[bolt]!.zone).toBe('hand');
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(s.instances[island]!.zone).toBe('graveyard');
+  });
+
+  it('takes two and loses the life, in that order on the card', () => {
+    let s = table({
+      hand: ['Blood Price'], mine: ['Swamp', 'Swamp', 'Swamp', 'Swamp'],
+      top: ['Lightning Bolt', 'Hill Giant', 'Island', 'Grizzly Bears'],
+    });
+    const [bolt, giant, island, bears] = top(s, 4) as [string, string, string, string];
+    const before = life(s, 0);
+    s = cast(s, 'Blood Price');
+    expect([s.pendingDecision!.min, s.pendingDecision!.max]).toEqual([2, 2]);
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [bolt] } as Action)).not.toBeNull();
+    s = decide(s, [bolt, bears]);
+    expect(s.instances[bolt]!.zone).toBe('hand');
+    expect(s.instances[bears]!.zone).toBe('hand');
+    expect(bottom(s, 2)).toEqual([giant, island]);
+    expect(life(s, 0)).toBe(before - 2);
+  });
+
+  describe('with a filter: "you may reveal a creature or land card from among them"', () => {
+    it('shows all three and offers only the ones of the printed type', () => {
+      let s = table({ hand: ['Adventurous Impulse'], mine: FORESTS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+      const [bolt, giant, island] = top(s, 3) as [string, string, string];
+      s = cast(s, 'Adventurous Impulse');
+      const ask = s.pendingDecision!;
+      expect(ask.candidates).toEqual([giant, island]);
+      expect(ask.looked).toEqual([bolt, giant, island]);
+      // "You may": taking nothing is an answer.
+      expect([ask.min, ask.max]).toEqual([0, 1]);
+      // The Bolt is looked at and readable, and not takeable.
+      expect(viewFor(s, 0).cards[bolt]?.card).toBeDefined();
+      expect(viewFor(s, 1).cards[bolt]).toBeUndefined();
+      expect(refusal(s, { type: 'auto:decide', by: 0, cards: [bolt] } as Action)).not.toBeNull();
+    });
+
+    it('reveals the card taken, and bottoms the two that were not', () => {
+      let s = table({ hand: ['Adventurous Impulse'], mine: FORESTS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+      const [bolt, giant, island] = top(s, 3) as [string, string, string];
+      s = decide(cast(s, 'Adventurous Impulse'), [giant]);
+      expect(s.instances[giant]!.zone).toBe('hand');
+      expect(s.instances[giant]!.revealed).toBe(true);
+      // Everybody saw which card it was, which is what "reveal" is for.
+      expect(viewFor(s, 1).cards[giant]?.card).toBeDefined();
+      expect(bottom(s, 2)).toEqual([bolt, island]);
+    });
+
+    it('bottoms all three when nothing is taken', () => {
+      let s = table({ hand: ['Adventurous Impulse'], mine: FORESTS, top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+      const three = top(s, 3);
+      const hand = ids(s, 0, 'hand').length;
+      s = decide(cast(s, 'Adventurous Impulse'), []);
+      expect(bottom(s, 3)).toEqual(three);
+      expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+    });
+
+    it('still asks when none of them may be taken, so that they are seen, and then bottoms them', () => {
+      let s = table({
+        hand: ['Adventurous Impulse'], mine: FORESTS,
+        top: ['Lightning Bolt', 'Lightning Bolt', 'Lightning Bolt'],
+      });
+      const three = top(s, 3);
+      s = cast(s, 'Adventurous Impulse');
+      const ask = s.pendingDecision!;
+      expect(ask.candidates).toEqual([]);
+      expect(ask.looked).toEqual(three);
+      expect([ask.min, ask.max]).toEqual([0, 0]);
+      for (const id of three) expect(viewFor(s, 0).cards[id]?.card).toBeDefined();
+      s = decide(s, []);
+      expect(s.pendingDecision).toBeNull();
+      expect(bottom(s, 3)).toEqual(three);
+    });
+
+    it('reads the same question behind an entry trigger and behind an ability', () => {
+      let s = table({ hand: ['Augur of Bolas'], mine: ISLANDS, top: ['Hill Giant', 'Lightning Bolt', 'Island'] });
+      const [giant, bolt, island] = top(s, 3) as [string, string, string];
+      s = drain(cast(s, 'Augur of Bolas'), 40);
+      if (s.pendingDecision === null) s = passBoth(s);
+      expect(s.pendingDecision!.candidates).toEqual([bolt]);
+      expect(s.pendingDecision!.looked).toEqual([giant, bolt, island]);
+      s = decide(s, [bolt]);
+      expect(s.instances[bolt]!.zone).toBe('hand');
+      expect(bottom(s, 2)).toEqual([giant, island]);
+
+      let t = table({ mine: ['Brightwood Tracker', ...FORESTS], top: ['Island', 'Hill Giant', 'Lightning Bolt', 'Grizzly Bears'] });
+      const four = top(t, 4);
+      t = passBoth(apply(t, {
+        type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Brightwood Tracker'), abilityIndex: 0, targets: [],
+      }));
+      expect(t.pendingDecision!.candidates).toEqual([four[1], four[3]]);
+      t = decide(t, [four[3]!]);
+      expect(t.instances[four[3]!]!.zone).toBe('hand');
+      // A random order: the same three cards at the bottom, in whatever order the game chose.
+      expect([...bottom(t, 3)].sort()).toEqual([four[0], four[1], four[2]].sort());
+    });
+  });
+
+  describe('a library shorter than the look', () => {
+    const shorten = (s: GameState, keep: number): GameState => {
+      let next = s;
+      for (const id of ids(s, 0, 'library').slice(keep)) {
+        next = apply(next, { type: 'card:move', by: 0, card: id, toZone: 'graveyard', position: 'bottom' });
+      }
+      return next;
+    };
+
+    it('asks about the two cards there are', () => {
+      let s = shorten(table({ hand: ['Anticipate'], mine: ISLANDS }), 2);
+      const two = top(s, 2);
+      s = cast(s, 'Anticipate');
+      expect(s.pendingDecision!.candidates).toEqual(two);
+      s = decide(s, [two[1]!]);
+      expect(s.instances[two[1]!]!.zone).toBe('hand');
+      expect(ids(s, 0, 'library')).toEqual([two[0]]);
+    });
+
+    it('takes the only card without asking — and does take it', () => {
+      let s = shorten(table({ hand: ['Anticipate'], mine: ISLANDS }), 1);
+      const [only] = top(s, 1) as [string];
+      s = drain(cast(s, 'Anticipate'), 40);
+      expect(s.pendingDecision).toBeNull();
+      expect(s.instances[only]!.zone).toBe('hand');
+      expect(ids(s, 0, 'library')).toEqual([]);
+    });
+
+    it('does nothing, and asks nothing, over an empty library', () => {
+      let s = shorten(table({ hand: ['Anticipate'], mine: ISLANDS }), 0);
+      const hand = ids(s, 0, 'hand').length;
+      s = drain(cast(s, 'Anticipate'), 40);
+      expect(s.pendingDecision).toBeNull();
+      expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+    });
+  });
+
+  describe('the bot', () => {
+    it('takes a land while it is short of them, and the dearest card once it is not', () => {
+      let short = table({ hand: ['Anticipate'], mine: ['Island', 'Island'], top: ['Lightning Bolt', 'Hill Giant', 'Island'] });
+      const land = top(short, 3)[2]!;
+      short = cast(short, 'Anticipate');
+      expect(botAction(short, 0)).toMatchObject({ type: 'auto:decide', cards: [land] });
+
+      let flush = table({
+        hand: ['Anticipate'], mine: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island'],
+        top: ['Lightning Bolt', 'Hill Giant', 'Island'],
+      });
+      const giant = top(flush, 3)[1]!;
+      flush = cast(flush, 'Anticipate');
+      expect(botAction(flush, 0)).toMatchObject({ type: 'auto:decide', cards: [giant] });
+    });
+
+    it('answers a question with nothing to take, rather than stopping the table', () => {
+      let s = table({
+        hand: ['Adventurous Impulse'], mine: FORESTS,
+        top: ['Lightning Bolt', 'Lightning Bolt', 'Lightning Bolt'],
+      });
+      s = cast(s, 'Adventurous Impulse');
+      const action = botAction(s, 0);
+      expect(action).toMatchObject({ type: 'auto:decide', cards: [] });
+      expect(refusal(s, action!)).toBeNull();
+    });
+
+    it('takes the card a filtered dig offers', () => {
+      let s = table({ hand: ['Adventurous Impulse'], mine: FORESTS, top: ['Lightning Bolt', 'Hill Giant', 'Lightning Bolt'] });
+      const giant = top(s, 3)[1]!;
+      s = cast(s, 'Adventurous Impulse');
+      expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', cards: [giant] });
+    });
+  });
+});
+
+describe('the dig, wording by wording (D584)', () => {
+  /*
+    Each printed shape the reader takes, cast as a sorcery of its own over a known top of the
+    library — Lightning Bolt, Hill Giant, Island, Grizzly Bears, Lightning Bolt — so that what is
+    checked is what the words became: how many cards are looked at, which may be taken and how
+    many, and where the rest end up. The wordings are the corpus's; the card is not a real one.
+  */
+  const TOP = ['Lightning Bolt', 'Hill Giant', 'Island', 'Grizzly Bears', 'Lightning Bolt'] as const;
+  it.each([
+    ['Look at the top three cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order.',
+      { look: 3, offered: [0, 1, 2], min: 1, max: 1, rest: 'bottom' }],
+    ['Look at the top two cards of your library. Put one of them into your hand and the other on the bottom of your library.',
+      { look: 2, offered: [0, 1], min: 1, max: 1, rest: 'bottom' }],
+    ['Look at the top five cards of your library. Put one of them into your hand and the rest on the bottom of your library in a random order.',
+      { look: 5, offered: [0, 1, 2, 3, 4], min: 1, max: 1, rest: 'bottom-random' }],
+    ['Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.',
+      { look: 4, offered: [0, 1, 2, 3], min: 1, max: 1, rest: 'graveyard' }],
+    ['Look at the top two cards of your library. Put one of them into your hand and the other into your graveyard.',
+      { look: 2, offered: [0, 1], min: 1, max: 1, rest: 'graveyard' }],
+    ['Look at the top three cards of your library. Put one of those cards into your hand and the rest into your graveyard.',
+      { look: 3, offered: [0, 1, 2], min: 1, max: 1, rest: 'graveyard' }],
+    ['Look at the top four cards of your library. Put two of them into your hand and the rest into your graveyard.',
+      { look: 4, offered: [0, 1, 2, 3], min: 2, max: 2, rest: 'graveyard' }],
+    ['Look at the top five cards of your library. Put two of them into your hand and the rest on the bottom of your library in any order.',
+      { look: 5, offered: [0, 1, 2, 3, 4], min: 2, max: 2, rest: 'bottom' }],
+    ['Look at the top five cards of your library. You may reveal a creature card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.',
+      { look: 5, offered: [1, 3], min: 0, max: 1, rest: 'bottom-random' }],
+    ['Look at the top four cards of your library. You may reveal an instant or sorcery card from among them and put it into your hand. Put the rest on the bottom of your library in any order.',
+      { look: 4, offered: [0], min: 0, max: 1, rest: 'bottom' }],
+    ['Look at the top three cards of your library. You may reveal a land card from among them and put that card into your hand. Put the rest on the bottom of your library in any order.',
+      { look: 3, offered: [2], min: 0, max: 1, rest: 'bottom' }],
+    ['Look at the top five cards of your library. You may reveal a permanent card from among them and put it into your hand. Then put the rest on the bottom of your library in any order.',
+      { look: 5, offered: [1, 2, 3], min: 0, max: 1, rest: 'bottom' }],
+    // A list of three types, printed with commas: Oath of Nissa's and Commune with Beavers's shape.
+    ['Look at the top five cards of your library. You may reveal an artifact, creature, or land card from among them and put it into your hand. Put the rest on the bottom of your library in any order.',
+      { look: 5, offered: [1, 2, 3], min: 0, max: 1, rest: 'bottom' }],
+    // "and rest", with no article: Experimental Augury's own wording.
+    ['Look at the top three cards of your library. Put one of them into your hand and rest on the bottom of your library in any order.',
+      { look: 3, offered: [0, 1, 2], min: 1, max: 1, rest: 'bottom' }],
+    // With a sentence in front of the group and one behind it.
+    ['You gain 2 life. Look at the top three cards of your library. Put one of them into your hand and the rest into your graveyard.',
+      { look: 3, offered: [0, 1, 2], min: 1, max: 1, rest: 'graveyard' }],
+    ['Look at the top three cards of your library. You may reveal a creature card from among them and put it into your hand. Put the rest on the bottom of your library in any order. You gain 2 life.',
+      { look: 3, offered: [1], min: 0, max: 1, rest: 'bottom' }],
+  ] as const)('%s', (text, want) => {
+    const row = {
+      name: 'Probe Dig', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+      oracle_text: text,
+    };
+    const compiled = compileCard(row as never);
+    expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([]);
+    const list = customDeck({
+      id: 'probe-dig', name: 'Probe Dig',
+      entries: [
+        { name: 'Probe Dig', count: 4 }, { name: 'Lightning Bolt', count: 10 }, { name: 'Hill Giant', count: 10 },
+        { name: 'Grizzly Bears', count: 10 }, { name: 'Island', count: 26 },
+      ],
+      data: [row] as never[],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'probe-dig', 1: 'tidal-mind' }, deckSpecs: { 'probe-dig': list },
+      hands: { 0: ['Probe Dig'] }, battlefield: { 0: ['Island'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const taken = new Set<string>();
+    for (const name of [...TOP].reverse()) {
+      const card = ids(s, 0, 'library').find((id) => !taken.has(id) && nameOf(s, id) === name)!;
+      taken.add(card);
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+    }
+    const five = [...ids(s, 0, 'library')].slice(0, 5);
+    const sixth = ids(s, 0, 'library')[5]!;
+    const before = life(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probe Dig'), targets: [] }));
+    const ask = s.pendingDecision!;
+    expect(ask.looked).toEqual(five.slice(0, want.look));
+    expect(ask.candidates).toEqual(want.offered.map((i) => five[i]));
+    expect([ask.min, ask.max]).toEqual([want.min, want.max]);
+    expect(ask.picksGoTo).toBe('hand');
+
+    const picked = ask.candidates.slice(0, want.max);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [...picked] } as Action), 40);
+    for (const id of picked) expect(s.instances[id]!.zone).toBe('hand');
+    const rest = five.slice(0, want.look).filter((id) => !picked.includes(id));
+    if (want.rest === 'graveyard') {
+      for (const id of rest) expect(s.instances[id]!.zone, nameOf(s, id)).toBe('graveyard');
+    } else {
+      const tail = [...ids(s, 0, 'library')].slice(-rest.length);
+      // "Any order" keeps the order they were in; a random order is the same cards in some order.
+      if (want.rest === 'bottom') expect(tail).toEqual(rest);
+      else expect([...tail].sort()).toEqual([...rest].sort());
+    }
+    // Whatever was under the cards looked at is on top now, untouched.
+    const under = want.look === 5 ? sixth : five[want.look]!;
+    expect(ids(s, 0, 'library')[0]).toBe(under);
+    expect(life(s, 0)).toBe(/You gain 2 life/.test(text) ? before + 2 : before);
   });
 });

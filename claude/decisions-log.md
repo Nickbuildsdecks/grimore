@@ -40847,3 +40847,101 @@ The two older break runs I had queued behind it (D578, 40 breaks; D574–D577, 3
 run: the machine this session runs on restarted at about 19:20Z, which stopped them and the
 local Postgres and Redis. I restarted the services, ran the gate again from the start on this
 build, and have queued both runs again behind this increment's.
+
+## D584 — The dig: look at the top cards, take some, the rest leave the top
+
+"Look at the top three cards of your library. Put one of them into your hand and the rest on the
+bottom of your library in any order." Blue's and green's card selection, and the largest family
+the last probe found: 346 legal lines contain "look at the top N cards of your library", none of
+them was read, and 232 of them were their card's only unread line.
+
+**What it is, to the engine.** The same question a scry asks — the top of your own library, shown
+to you and nobody else — with two things changed. The cards you pick go to your **hand** instead
+of the bottom, so picking is keeping. And the cards you looked at and did not pick **leave the
+top**: to the bottom of the library or to the graveyard, as the card says. Two new fields on the
+existing question say those two things, and the engine applies the answer itself, as it already
+did for scry.
+
+**What the compiler reads.** Two shapes, each several printed sentences read as one question:
+
+    Look at the top N cards of your library. Put K of them into your hand and the rest
+      on the bottom of your library [in any order | in a random order] | into your graveyard.
+
+    Look at the top N cards of your library. You may reveal a <type> card from among them
+      and put it into your hand. Put the rest on the bottom of your library in <an> order.
+
+The second shape adds a filter, and three things follow from it:
+
+- You are shown every card you looked at, but only the ones of the printed type can be taken.
+- The card you take is revealed to the table, which is how the others know it was of that type.
+  It stays readable to them while it is in your hand.
+- If none of them is of the type, you are still shown them and asked to confirm. The engine
+  used to answer a question with nothing to pick by itself, silently; here that would have
+  skipped the looking, which is information the card gives you.
+
+`<type>` is a card type, several joined by "or" or listed with commas, "permanent", or "nonland".
+
+    legal lines with "look at the top N cards of your library":   346, on 345 cards
+    read now:                                                      90
+    of those cards, every line now read:                           69
+
+(Counted by matching line text, as in D583; the totals under Measurements do not depend on it.)
+
+**Three engine faults this would have had, found before it shipped rather than after:**
+
+- *An answer the engine gives itself was never applied to the library.* When a question has
+  exactly as many candidates as it must take, the engine answers it without asking. That path
+  skipped the code that moves the cards. It never mattered for scry (you may always keep
+  everything, so it is always asked), but "put one of them into your hand" over a one-card
+  library is that case exactly, and the card would have stayed in the library. Both paths now go
+  through one function.
+- *The computer opponent would have stopped the table.* Its standing rule for the top of a
+  library is the scry rule: bottom a land once it has five. Applied to a dig it takes a land
+  when it has plenty and takes nothing when it has few, and "nothing" is not a legal answer to
+  "put one into your hand". It now knows a dig from a scry: a land while it holds fewer than
+  five lands, otherwise the most expensive card offered.
+- *The surveil button said "Bottom 2".* The table had one set of words for every question about
+  the top of a library. They are now chosen by where the picks go, in a function with tests:
+  bottom (scry), graveyard (surveil), or hand (a dig, where the button reads "Take 1").
+
+**Two simplifications, named.** "In any order" keeps the cards in the order they were already
+in; choosing another order needs a question whose answer is a sequence, which scry also does
+without. "In a random order" is shuffled by the game's own random numbers.
+
+**Not read, each on purpose:** "then put them back in any order" (20 lines, the sequence
+question again); a card put onto the battlefield from among them; a filter that is not a card
+type — a creature type ("a Dragon card", the commonest of these and the obvious next step), "historic",
+"with power 2 or less"; "up to two" or "any number of" on the filtered shape; "the top X
+cards"; and the rider "If you didn't put a card into your hand this way, …".
+
+**Tests.** 56 added. Engine: six real cards from their Oracle rows (Anticipate, Glimpse
+the Future, Adventurous Impulse, Augur of Bolas, Blood Price, Brightwood Tracker) for what is
+asked, who can see the cards, where each card ends up, a library shorter than the look in all
+three sizes, and the bot; and sixteen wordings each cast as a spell of its own. Compiler:
+seventeen neighbouring wordings left unread, and the group read behind a trigger and a cost.
+Web: six for the words on the row and the button, and for a card that is shown but not offered.
+
+    engine tests: 4,066, all passing
+    web tests: 259, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,637 → 8,706 of 30,710
+    printed legal lines read:            24,888 → 24,986 of 56,421 (44.3%)
+    cards with a compiled script:        12,892 → 12,967
+
+Pod sweep on D583's build (335d14f), seeds 45101–45140: 40 of 40 finished, no throw and no
+stall.
+
+Break run for D583, 37 breaks: 36 caught, 1 not. The miss was the bot's valuation of a card it
+may play from exile: with that set to nothing, my test still passed, because a bot with nothing
+else to do casts whatever it can. So the test proved the bot casts the spell and proved nothing
+about why. I added one that scores the position directly — the board after Reckless Impulse
+against the same board with the two permissions removed — and ran it with the fault in place:
+it fails there and passes without it.
+
+The two older break runs (D578, 40 breaks; D574–D577, 36 breaks) are still owed. I stopped the
+queue before they started so that this increment's gate would not share the machine with them,
+and they are queued again behind this increment's own break run.

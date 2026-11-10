@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
-  cardBadges, damageTakenFrom, decisionLabel, feedOptions, pactAsked, pactBadge, pactOffers, sparedYouBy,
+  cardBadges, damageTakenFrom, decisionLabel, feedOptions, libraryTopWords, pactAsked, pactBadge, pactOffers, sparedYouBy,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -2092,5 +2092,65 @@ describe("paying for an ability by returning an unblocked attacker", () => {
     expect(arenaReducer(mode, { kind: "feed", card: "fodder" }).action).toEqual({
       type: "auto:activate", card: "c1", abilityIndex: 0, sacrifice: "fodder",
     })
+  })
+})
+
+describe("the top of your library: what a tap means there (D584)", () => {
+  /*
+    A scry, a surveil and a dig are drawn in the same row and are three different questions. The
+    engine says which (`picksGoTo`), and these are the words that follow from it.
+  */
+  it("a scry bottoms what is tapped, and tapping nothing keeps them", () => {
+    expect(libraryTopWords({ max: 2 }, 0)).toEqual({
+      hint: "tap the ones to put on the bottom", confirm: "Keep them on top",
+    })
+    expect(libraryTopWords({ max: 2 }, 1).confirm).toBe("Bottom 1")
+    expect(libraryTopWords({ max: 1 }, 0).confirm).toBe("Keep it on top")
+  })
+
+  it("a surveil buries what is tapped, and says graveyard rather than bottom", () => {
+    expect(libraryTopWords({ max: 2, picksGoTo: "graveyard" }, 2)).toEqual({
+      hint: "tap the ones to put into your graveyard", confirm: "Graveyard 2",
+    })
+    expect(libraryTopWords({ max: 2, picksGoTo: "graveyard" }, 0).confirm).toBe("Keep them on top")
+  })
+
+  it("a dig keeps what is tapped, which is the opposite of the other two", () => {
+    expect(libraryTopWords({ max: 1, picksGoTo: "hand" }, 0)).toEqual({
+      hint: "tap the one to put into your hand", confirm: "Take nothing",
+    })
+    expect(libraryTopWords({ max: 1, picksGoTo: "hand" }, 1).confirm).toBe("Take 1")
+    expect(libraryTopWords({ max: 2, picksGoTo: "hand" }, 0).hint).toBe("tap 2 to put into your hand")
+  })
+
+  it("a dig with nothing takeable says so, and its button is how you say you have looked", () => {
+    expect(libraryTopWords({ max: 0, picksGoTo: "hand" }, 0)).toEqual({
+      hint: "none of these can be taken", confirm: "Done looking",
+    })
+  })
+
+  it("a card that is shown and not offered does nothing when tapped", () => {
+    // `looked` is what the row draws; `candidates` is what may be picked. The Bolt is in the
+    // first and not the second.
+    const ask: Decision = {
+      prompt: "You may reveal a creature card", from: "library-top", picksGoTo: "hand",
+      looked: ["bolt", "giant", "bears"], candidates: ["giant", "bears"], min: 0, max: 1,
+    }
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask }).mode
+    const ignored = arenaReducer(mode, { kind: "toggleDecision", card: "bolt" })
+    expect(ignored.action).toBeNull()
+    expect((ignored.mode as { chosen: unknown[] }).chosen).toEqual([])
+    mode = arenaReducer(mode, { kind: "toggleDecision", card: "giant" }).mode
+    expect((mode as { chosen: unknown[] }).chosen).toEqual(["giant"])
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:decide", cards: ["giant"] })
+  })
+
+  it("and with nothing to pick, confirming sends the empty answer", () => {
+    const ask: Decision = {
+      prompt: "You may reveal a creature card", from: "library-top", picksGoTo: "hand",
+      looked: ["a", "b", "c"], candidates: [], min: 0, max: 0,
+    }
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:decide", cards: [] })
   })
 })
