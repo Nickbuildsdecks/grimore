@@ -42497,3 +42497,62 @@ Each of the following was broken on purpose and its test failed:
 Pod sweep on D605's build (2c53ac8), seeds 47301–47340: 40 of 40 finished, no throw and no stall.
 
 Break run on D605's build: 7 deliberate faults, 3 caught; all 4 misses pinned here.
+
+## D607 — "If you cast it", every static condition on a trigger, and the D606 gaps
+
+The intervening "if" on a trigger had its own vocabulary (D563, D564), separate from the one D605
+built for statics. The two most-printed conditions that neither had were about **how a permanent
+arrived**: "if you cast it" (15 one-short lines) and "if you cast it from your hand" (12). The engine
+did not remember that at all.
+
+**How a permanent arrived.** Every spell's stack object now records the zone it was cast from
+(`StackObject.castFrom`). As a permanent spell resolves, `GameState.castPermanents` records it with
+that zone and the object's `objectSeq`. "If you cast it [from your hand]" asks whether there is a
+record whose sequence number is the permanent's current one. Any later zone change bumps the
+sequence, so a creature that is blinked, or bounced and put back by other means, reads as never
+cast (CR 400.7), and nothing has to clear the record.
+
+The obvious alternative was a marker counter, which is how kicked and evoked are recorded. It is
+wrong here, because every cast permanent would then carry a counter: proliferate would find it,
+and so would "a creature with a counter on it".
+
+**Every static condition, on a trigger.** `interveningConditionFor` keeps its own rows first, since
+they read the board live. When none of them reads a condition, it now falls back to D605's
+`staticCondition` and answers it with the same `conditionMet` a static uses, through a new export,
+`conditionHolds`. That brings "if ~ is untapped", "if you have no cards in hand", delirium,
+"if you control a Plains" and "if you have 30 or more life" to triggers at no new cost.
+
+**The D606 break run: 5 faults, 4 caught.** The miss was a guard of mine that refused a two-type
+list such as "an artifact or enchantment spell", on the belief that the rows above it covered such
+lists. Only "instant or sorcery" is covered, so the guard was turning away a correct reading. It is
+removed, and a test shows "an artifact or enchantment spell" fires on Bonesplitter and not on a
+Bears. D563's "how the card was cast" refusal row is removed with a note.
+
+**Tests.** 6 new engine tests:
+- Every row reads.
+- Cast from hand: both conditions hold.
+- Put onto the battlefield without being cast: no effect. A control row with no condition shows
+  the same move does announce an arrival.
+- Cast, then bounced and put back by other means: no effect a second time.
+- Hellbent on a trigger.
+- The D606 pin.
+
+Each of the following was broken on purpose and its test failed:
+- The sequence number ignored.
+- The cast zone always "graveyard".
+- The record never written.
+- The static fallback removed.
+
+    engine tests: 4,308, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,675 of 31,292 (was 9,660); lines read 27,500 of 58,524 (47.0%, was 27,472)
+
+Most "if you cast it" cards still stop on their effect: a mass bounce with an exception, an extra
+turn, a copy of a spell. The condition is no longer what stops them.
+
+Pod sweep on D606's build (bc7c13a), seeds 47401–47440: 40 of 40 finished, no throw and no stall.
+
+Break run on D606's build: 5 deliberate faults, 4 caught. The 1 miss was a wrong guard, now removed
+and pinned.

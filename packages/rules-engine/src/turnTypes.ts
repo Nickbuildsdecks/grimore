@@ -359,6 +359,8 @@ export interface StackObject {
    * be forgotten in another, and the number is one addition.
    */
   readonly castNumber?: number;
+  /** The zone this spell was cast from (D607), for "if you cast it from your hand". */
+  readonly castFrom?: ZoneId;
   /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Absent on everything that divides nothing, which is almost everything.
@@ -1150,6 +1152,14 @@ export interface AutomationState {
    * honest answer on the first turn of a game.
    */
   readonly spellsCastLastTurnBy: Readonly<Record<string, number>>;
+  /**
+   * The permanents that arrived by being **cast** (D607), and from which zone: "When ~ enters, if
+   * you cast it" and "… if you cast it from your hand". Written as a permanent spell resolves, with
+   * the object's `objectSeq` at that moment, so any later zone change (a blink, a bounce and replay
+   * by other means) makes the record stale without anything clearing it — the new object was never
+   * cast (CR 400.7). Optional so a game saved before it loads as "nothing was cast".
+   */
+  readonly castPermanents?: Readonly<Record<string, { readonly from: ZoneId; readonly seq: number }>>;
   /**
    * Whether it is day or night (CR 726), or neither — `null`, which is how every game starts.
    *

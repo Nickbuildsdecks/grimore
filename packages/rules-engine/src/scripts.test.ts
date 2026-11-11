@@ -45579,14 +45579,15 @@ describe('the duration printed first, and three more spell descriptors (D606)', 
   const HISTORIC = watcher('Test Historian', 'a historic');
   const COLORLESS = watcher('Test Prism', 'a colorless');
   const MIXED = watcher('Test Spellbook', 'an instant, sorcery, or Wizard');
+  const PAIR = watcher('Test Workshop', 'an artifact or enchantment');
   const LEGEND = {"name":"Test Legend","type_line":"Legendary Creature — Human","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
   const WIZARD = {"name":"Test Apprentice","type_line":"Creature — Human Wizard","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
   const ARMOR = {"name":"Armor of Shadows","type_line":"Instant","mana_cost":"{B}","cmc":1,"colors":["B"],"power":null,"toughness":null,"oracle_text":"Until end of turn, target creature gets +1/+0 and gains indestructible.","layout":"normal"};
-  const ROWS = [HISTORIC, COLORLESS, MIXED, LEGEND, WIZARD, ARMOR];
+  const ROWS = [HISTORIC, COLORLESS, MIXED, LEGEND, WIZARD, ARMOR, PAIR];
   const deck = customDeck({
     id: 'casts', name: 'Casts',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Bonesplitter', count: 2 }, { name: 'Grizzly Bears', count: 2 },
-      { name: 'Lightning Bolt', count: 2 }, { name: 'Mountain', count: 14 }, { name: 'Forest', count: 14 }, { name: 'Swamp', count: 14 }],
+      { name: 'Lightning Bolt', count: 2 }, { name: 'Mountain', count: 13 }, { name: 'Forest', count: 13 }, { name: 'Swamp', count: 14 }],
     data: ROWS as never[],
   });
   /** `watching` on the battlefield, `spell` cast and resolved; seat 0's life gained by it. */
@@ -45627,6 +45628,13 @@ describe('the duration printed first, and three more spell descriptors (D606)', 
     expect(gained('Test Spellbook', 'Grizzly Bears')).toBe(0);
   });
 
+  it('"an artifact or enchantment spell": two card types, either of them (D606 break run)', () => {
+    const read = compileCard(PAIR as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(gained('Test Workshop', 'Bonesplitter')).toBe(1);
+    expect(gained('Test Workshop', 'Grizzly Bears')).toBe(0);
+  });
+
   it('Armor of Shadows: +1/+0 and indestructible until end of turn, printed duration first', () => {
     let s = advanceTo(arena({
       decks: { 0: 'casts', 1: 'casts' }, deckSpecs: { casts: deck.deck },
@@ -45641,5 +45649,81 @@ describe('the duration printed first, and three more spell descriptors (D606)', 
     expect(ch.keywords.has('indestructible')).toBe(true);
     s = advanceTo(nextTurn(s), 'precombat-main');
     expect(characteristicsOf(s, s.instances[bears]!).power).toBe(2);
+  });
+});
+
+describe('"if you cast it", and every static condition on a trigger (D607)', () => {
+  /*
+    `GameState.castPermanents` records a permanent spell as it resolves, stamped with the object's
+    sequence number; "if you cast it [from your hand]" reads it. And the intervening "if" falls back
+    to `staticCondition`, answered by `conditionHolds`.
+  */
+  const row = (name: string, condition: string) => ({
+    name, type_line: 'Creature — Human', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: `When ${name} enters, if ${condition}, you gain 3 life.`,
+  });
+  const HERALD = row('Test Herald', 'you cast it');
+  const COURIER = row('Test Courier', 'you cast it from your hand');
+  const HERMIT = row('Test Hermit', 'you have no cards in hand');
+  // The control: an entry trigger with no condition, so a move that raised none would show here.
+  const PLAIN = { ...HERALD, name: 'Test Greeter', oracle_text: 'When Test Greeter enters, you gain 3 life.' };
+  const ROWS = [HERALD, COURIER, HERMIT, PLAIN];
+  const deck = customDeck({
+    id: 'casted', name: 'Casted',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'casted', 1: 'casted' }, deckSpecs: { casted: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Mountain'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const cast = (s: GameState, name: string) => drain(passBoth(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 20)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('cast from hand: both conditions hold', () => {
+    for (const name of ['Test Herald', 'Test Courier']) {
+      const s = table([name]);
+      expect(life(cast(s, name), 0)).toBe(life(s, 0) + 3);
+    }
+  });
+
+  it('put onto the battlefield without being cast: no life', () => {
+    // The control first: the same move does announce an arrival.
+    let control = table(['Test Greeter']);
+    const was = life(control, 0);
+    control = drain(passBoth(apply(control, { type: 'card:move', by: 0, card: find(control, 0, 'hand', 'Test Greeter'), toZone: 'battlefield' } as Action)), 20);
+    expect(life(control, 0)).toBe(was + 3);
+    let s = table(['Test Herald']);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Test Herald'), toZone: 'battlefield' } as Action)), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Herald');
+    expect(life(s, 0)).toBe(before);
+  });
+
+  it('the record is the object\'s: bounced and put back by other means, it was not cast', () => {
+    let s = cast(table(['Test Herald']), 'Test Herald');
+    const after = life(s, 0);
+    const herald = find(s, 0, 'battlefield', 'Test Herald');
+    s = apply(s, { type: 'card:move', by: 0, card: herald, toZone: 'hand' } as Action);
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: herald, toZone: 'battlefield' } as Action)), 20);
+    expect(life(s, 0)).toBe(after);
+  });
+
+  it('a static condition on a trigger: "if you have no cards in hand"', () => {
+    let empty = table(['Test Hermit']);
+    // The draw step's card goes back, so the Hermit is the only card in hand as it is cast.
+    for (const id of ids(empty, 0, 'hand').filter((card) => nameOf(empty, card) !== 'Test Hermit')) {
+      empty = apply(empty, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' } as Action);
+    }
+    expect(life(cast(empty, 'Test Hermit'), 0)).toBe(life(empty, 0) + 3);
+    const holding = table(['Test Hermit', 'Mountain']);
+    expect(life(cast(holding, 'Test Hermit'), 0)).toBe(life(holding, 0));
   });
 });

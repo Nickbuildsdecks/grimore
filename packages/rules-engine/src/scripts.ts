@@ -18,7 +18,7 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
+  cardHasSubtype, characteristicsOf, conditionHolds, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
   isLegendary,
   parseTypeLine,
   printedKeywords,
@@ -14883,15 +14883,16 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
   if (lower === 'historic') return { historic: true };
   if (lower === 'colorless' || lower === 'colourless') return { colorless: true };
   /*
-    "An instant, sorcery, or Wizard spell" (Rockslide Sorcerer, Master of Winds): a list mixing card
-    types and capitalised subtypes, any of them. Only when it is a real mix of three or more, or a
-    type and a subtype; two lower-case types are the cases above, and two subtypes the row below.
+    "An instant, sorcery, or Wizard spell" (Rockslide Sorcerer, Master of Winds), and "an artifact or
+    enchantment spell": a list of card types and capitalised subtypes, any of them. Two subtypes
+    alone are the row below. (The first version also refused two lower-case types, on the belief
+    the rows above covered them; only "instant or sorcery" is, and the D606 break run showed the
+    refusal was turning away a correct reading.)
   */
   const mixed = text.split(/,\s*(?:or\s+)?|\s+or\s+/).map((word) => word.trim()).filter(Boolean);
   if (mixed.length >= 2
     && mixed.some((word) => SEARCHABLE_TYPES.includes(word))
-    && mixed.every((word) => SEARCHABLE_TYPES.includes(word) || /^[A-Z][A-Za-z'-]*$/.test(word))
-    && !(mixed.length === 2 && mixed.every((word) => SEARCHABLE_TYPES.includes(word)))) {
+    && mixed.every((word) => SEARCHABLE_TYPES.includes(word) || /^[A-Z][A-Za-z'-]*$/.test(word))) {
     return { ofTypesOrSubtypes: mixed };
   }
   const words = text.split(/ or /i);
@@ -23177,7 +23178,38 @@ function untappedCondition(
 function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
+  /*
+    The rows below first, which read the board live; then any condition a static can ask (D607),
+    answered by `conditionHolds` exactly as the static would be: "if ~ is untapped", "if you have no
+    cards in hand", "if there are four or more card types among cards in your graveyard", "if you
+    control a Plains", "if you have 30 or more life".
+  */
+  const rows = interveningConditionRows(printed, name);
+  if (rows !== null) return rows;
+  const asStatic = staticCondition(printed, name);
+  return asStatic === null ? null : (c) => conditionHolds(c.state, asStatic, c.controller, c.source);
+}
+
+function interveningConditionRows(
+  printed: string, name: string,
+): NonNullable<TriggerDef['condition']> | null {
   const text = plain(printed).trim();
+  /*
+    "If you cast it" and "if you cast it from your hand" (D607): read off `GameState.castPermanents`,
+    which the resolving spell writes with the object's sequence number. A permanent that arrived any
+    other way — reanimated, blinked, put onto the battlefield — has no current record and the
+    condition is false, which is what the 27 cards that print it are written around.
+  */
+  const castIt = /^you cast it( from your hand)?$/i.exec(text);
+  if (castIt !== null) {
+    const fromHand = castIt[1] !== undefined;
+    return (c) => {
+      const record = c.state.castPermanents?.[c.source];
+      const inst = c.state.instances[c.source];
+      if (record === undefined || inst === undefined || record.seq !== (inst.objectSeq ?? 0)) return false;
+      return !fromHand || record.from === 'hand';
+    };
+  }
   if (/^an opponent lost life this turn$/i.test(text)) {
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller
       && (c.state.lifeLostThisTurn[String(seat.index)] ?? 0) > 0);

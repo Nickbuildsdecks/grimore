@@ -4717,6 +4717,18 @@ function completeResolution(
     if (isPermanent && inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
       /*
+        And that it was cast, and from where (D607): see `GameState.castPermanents`. Before the
+        arrival is announced, for the evoke marker's reason below — the intervening "if you cast it"
+        is asked as the entry trigger triggers.
+      */
+      next = {
+        ...next,
+        castPermanents: {
+          ...(next.castPermanents ?? {}),
+          [inst.id]: { from: object.castFrom ?? 'hand', seq: next.instances[inst.id]?.objectSeq ?? 0 },
+        },
+      };
+      /*
         "Enters the battlefield with N +1/+1 counters on it" (CR 614.1c), applied here because
         this is the only place the X it was cast for is known: a creature put onto the battlefield
         by something else — reanimated, or made as a token — enters with X of zero, which is what

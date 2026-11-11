@@ -17790,8 +17790,8 @@ describe('an intervening-if in a trigger (D563)', () => {
       'When this creature enters, if you control X or more lands, draw a card.'],
     ['an irregular plural, which would count a subtype nothing has',
       'When this creature enters, if you control two or more Fungi, draw a card.'],
-    ['a condition about how the card was cast',
-      'When this creature enters, if you cast it from your hand, draw a card.'],
+    // "If you cast it from your hand" was a row here until D607 recorded how a permanent arrived
+    // (`GameState.castPermanents`); its test is in scripts.test.ts.
     ['a readable condition in front of an unreadable effect',
       'When this creature enters, if you control an artifact, each player votes for wind or rain.'],
     ['an "if" that is not the first clause after the event',

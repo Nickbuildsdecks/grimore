@@ -1772,6 +1772,18 @@ const numeric = (value: string | undefined): number => {
  * printed line and the current one are the same answer for every board that exists — and a card
  * that changed that would need this count to be computed in a pass of its own, like layer 4 is.
  */
+/**
+ * A static's condition asked on its own (D607), for a trigger's intervening "if": the same answer
+ * `conditionMet` gives a continuous effect with this source and controller.
+ */
+export function conditionHolds(
+  state: GameState, cond: NonNullable<ContinuousEffect['while']>, controller: SeatIndex, source: string,
+): boolean {
+  return conditionMet(state, {
+    id: '', source, controller, scope: { kind: 'cards', ids: [] }, while: cond,
+  } as unknown as ContinuousEffect);
+}
+
 function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   const cond = effect.while;
   if (cond === undefined) return true;

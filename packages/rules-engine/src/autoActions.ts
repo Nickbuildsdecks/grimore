@@ -994,6 +994,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // How many spells came before this one this turn, which is storm's whole number and has to be
     // read now rather than when the trigger resolves. See `StackObject.castNumber`.
     castNumber: state.spellsCastThisTurn,
+    // And where it was cast from (D607): `inst` is the card before it moved to the stack.
+    castFrom: inst.zone,
     ...(action.x === undefined ? {} : { x: action.x }),
     /*
       "This spell can't be countered", settled now rather than when something tries to counter it.
@@ -1174,6 +1176,7 @@ function castFaceDown(
     // A face-down spell counts towards the turn's tally like any other, and carries its own
     // snapshot of it — a morph is a cast (CR 702.37a), whatever the card underneath says.
     castNumber: next.spellsCastThisTurn,
+    castFrom: inst.zone,
     description: `${anonymous.name} (2/2)`,
   };
   next = {
