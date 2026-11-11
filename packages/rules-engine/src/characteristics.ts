@@ -307,7 +307,7 @@ type PrintedPart =
   /** `Devoid` — the card has no colour (CR 702.114a). See `printedColors` (D515). */
   | { readonly kind: 'devoid' }
   | { readonly kind: 'landwalk'; readonly type: string }
-  | { readonly kind: 'protection'; readonly colours: readonly Color[] }
+  | { readonly kind: 'protection'; readonly colours: readonly Color[]; readonly qualities: readonly string[] }
   /** `Toxic N` — a number, so not a `Keyword`. See `printedToxic` (D556). */
   | { readonly kind: 'toxic'; readonly amount: number }
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
@@ -358,12 +358,43 @@ function printedPart(part: string): PrintedPart | null {
   if (protection !== null) {
     // "black and from red" and "black and red" are both printed; neither is a third rule.
     const words = protection[1]!.split(/\s+and\s+(?:from\s+)?/).map((word) => word.trim());
-    const colours = words.map((word) => COLOUR_WORDS[word]);
-    if (words.length > 0 && colours.every((colour) => colour !== undefined)) {
-      return { kind: 'protection', colours: colours as Color[] };
+    const colours: Color[] = [];
+    const qualities: string[] = [];
+    for (const word of words) {
+      const colour = COLOUR_WORDS[word];
+      if (colour !== undefined) { colours.push(colour); continue; }
+      // Anything else must be a quality the engine can test (D596), or the line is refused.
+      const quality = protectionQuality(word);
+      if (quality === null) return null;
+      qualities.push(quality);
     }
+    if (words.length > 0) return { kind: 'protection', colours, qualities };
   }
   return null;
+}
+
+/**
+ * A protection quality that is not a colour (D596), as a tag `protectionApplies` tests against the
+ * source: a card type ("from artifacts", "from creatures", "from instants"), a creature type
+ * ("from Goblins", "from Werewolves"), the snow supertype, "multicolored", "monocolored" and
+ * "everything" (CR 702.16). The word arrives lower-cased and plural; `null` is a quality nothing
+ * here can test — "non-Spirit creatures", "permanents with corruption counters on them" — and
+ * refuses the line.
+ */
+function protectionQuality(word: string): string | null {
+  if (word === 'everything' || word === 'multicolored' || word === 'monocolored') return word;
+  if (word === 'snow') return 'super:snow';
+  const CARD_TYPES: Readonly<Record<string, string>> = {
+    artifacts: 'artifact', creatures: 'creature', enchantments: 'enchantment', instants: 'instant',
+    sorceries: 'sorcery', planeswalkers: 'planeswalker', lands: 'land',
+  };
+  if (CARD_TYPES[word] !== undefined) return `type:${CARD_TYPES[word]}`;
+  if (!/^[a-z][a-z'-]*$/.test(word)) return null;
+  // A creature type in its plural, or Arcane, the one spell subtype a protection line names.
+  const singulars = [word, word.replace(/s$/, ''), word.replace(/ves$/, 'f'), word.replace(/ves$/, 'fe')];
+  if (word === 'arcane') return 'subtype:arcane';
+  const known = singulars.find((one) => CREATURE_TYPES.some((type) => type.toLowerCase() === one));
+  return known === undefined ? null : `subtype:${known}`;
 }
 
 /**
@@ -487,7 +518,12 @@ function printedParts(
       line carrying a semicolon and anything unreadable (the banding lines, which this engine has no
       keyword for) is refused exactly as before.
     */
-    const parts = line.split(/[,;]\s*/).map((part) => part.trim()).filter(Boolean)
+    /*
+      A protection list printed with commas — "Protection from Vampires, from Werewolves, and from
+      Zombies" — is one part, not three: joined back into the "and from" form the part reads (D596).
+    */
+    const joined = line.replace(/,\s*(?:and\s+)?(?=from\s)/gi, ' and ');
+    const parts = joined.split(/[,;]\s*/).map((part) => part.trim()).filter(Boolean)
       .map((part) => printedPart(part));
     if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
     for (const part of parts) found.push(part!);
@@ -553,6 +589,16 @@ export function printedToxic(oracleText: string | null | undefined): number {
     if (part.kind === 'toxic') total += part.amount;
   }
   return total;
+}
+
+/** Printed protection from qualities that are not colours (D596). See `protectionQuality`. */
+export function printedProtectionQualities(oracleText: string | null | undefined): string[] {
+  const found: string[] = [];
+  for (const part of printedParts(oracleText)) {
+    if (part.kind !== 'protection') continue;
+    for (const quality of part.qualities) if (!found.includes(quality)) found.push(quality);
+  }
+  return found;
 }
 
 export function printedProtection(oracleText: string | null | undefined): Color[] {
@@ -1660,6 +1706,8 @@ export interface Characteristics {
   readonly landwalk: readonly string[];
   /** Protection from these colours (CR 702.16). Empty for almost everything. */
   readonly protectionFrom: readonly Color[];
+  /** And from these qualities that are not colours (D596). See `protectionQuality`. */
+  readonly protectionQualities: readonly string[];
   /**
    * Total toxic value (CR 702.164b): the poison counters a player gets, on top of the damage, for
    * being dealt combat damage by this creature. 0 for almost everything. See `printedToxic`.
@@ -2290,6 +2338,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const printedProt = printedProtection(def?.oracleText);
   let protectionFrom: Color[] | null = printedProt.length === 0 ? null : [...printedProt];
+  // And the printed qualities, a base characteristic cleared with the colours (D596).
+  let protectionQualities: readonly string[] = printedProtectionQualities(def?.oracleText);
   // Printed toxic, a base characteristic like the two above and cleared with them (CR 613.1f).
   let toxic = printedToxic(def?.oracleText);
   let setColors: readonly Color[] | null = null;
@@ -2321,6 +2371,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       landwalk = null;
       goadedBy = null;
       protectionFrom = null;
+      protectionQualities = NO_SUBTYPES;
       toxic = 0;
     }
     // Layer 7a before 7b, which is the whole of the ordering: a defined size is a *base*, and a
@@ -2414,6 +2465,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     landwalk: landwalk ?? NO_SUBTYPES,
     goadedBy: goadedBy ?? NO_SEATS,
     protectionFrom: protectionFrom ?? NO_COLORS,
+    protectionQualities,
     toxic,
   };
 }
@@ -2603,7 +2655,8 @@ export function protectedFrom(state: GameState, targetId: string, source: string
   if (source === null) return false;
   const target = state.instances[targetId];
   if (target === undefined) return false;
-  return protectionApplies(state, characteristicsOf(state, target).protectionFrom, source);
+  const ch = characteristicsOf(state, target);
+  return protectionApplies(state, ch.protectionFrom, source, ch.protectionQualities);
 }
 
 /**
@@ -2617,10 +2670,28 @@ export function protectedFrom(state: GameState, targetId: string, source: string
  */
 export function protectionApplies(
   state: GameState, protection: readonly Color[], source: string | null,
+  /** The qualities that are not colours (D596), tested against the source's live characteristics. */
+  qualities: readonly string[] = [],
 ): boolean {
-  if (protection.length === 0 || source === null) return false;
+  if ((protection.length === 0 && qualities.length === 0) || source === null) return false;
   const inst = state.instances[source];
   if (inst === undefined) return false;
+  if (qualities.length > 0) {
+    const from = characteristicsOf(state, inst);
+    const hit = qualities.some((quality) => {
+      if (quality === 'everything') return true;
+      if (quality === 'multicolored') return from.colors.length > 1;
+      if (quality === 'monocolored') return from.colors.length === 1;
+      if (quality.startsWith('type:')) return hasType(from.typeLine, quality.slice(5));
+      if (quality.startsWith('subtype:')) return hasSubtype(from.typeLine, quality.slice(8));
+      if (quality.startsWith('super:')) {
+        return from.typeLine.supertypes.some((s) => s.toLowerCase() === quality.slice(6));
+      }
+      return false;
+    });
+    if (hit) return true;
+    if (protection.length === 0) return false;
+  }
   /*
     The source's *current* colours, not its printed ones — which is what layer 5 is for and what
     this read got wrong until a card could change a colour. A creature made red is red to

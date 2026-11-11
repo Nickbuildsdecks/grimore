@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
-import { becomeCopyOf } from './effects.js';
+import { becomeCopyOf, dealDamage, equipTo } from './effects.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -44336,6 +44336,24 @@ describe('restricted mana: "Spend this mana only to …" (D595)', () => {
     expect(legalActions(s, 0).plays.some((p) => p.kind !== 'cast' && p.card === splitter)).toBe(true);
   });
 
+  it('"a noncreature spell" pays for an instant and not for a creature (D595\'s break run)', () => {
+    const STONE = {
+      name: 'Probe Stone', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], power: null, toughness: null,
+      oracle_text: '{T}: Add {R}. Spend this mana only to cast a noncreature spell.', layout: 'normal',
+    };
+    const stones = customDeck({
+      id: 'stones', name: 'Stones',
+      entries: [{ name: 'Probe Stone', count: 4 }, { name: 'Lightning Bolt', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Mountain', count: 40 }],
+      data: [STONE as never],
+    });
+    const s = advanceTo(arena({
+      decks: { 0: 'stones', 1: 'ember-rush' }, deckSpecs: { stones: stones.deck },
+      hands: { 0: ['Lightning Bolt', 'Raging Goblin'] }, battlefield: { 0: ['Probe Stone'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    expect(castable(s, 'Lightning Bolt')).toBe(true);
+    expect(castable(s, 'Raging Goblin')).toBe(false);
+  });
+
   it('a land with a free row and a bigger restricted one offers the bigger one only where it may be spent', () => {
     const s = table(['Probe Temple'], []);
     const temple = find(s, 0, 'battlefield', 'Probe Temple');
@@ -44344,5 +44362,83 @@ describe('restricted mana: "Spend this mana only to …" (D595)', () => {
     expect(produced()).toEqual(['C']);
     expect(produced({ spell: parseTypeLine('Creature — Bear') })).toEqual(['C', 'C']);
     expect(produced({ spell: parseTypeLine('Instant') })).toEqual(['C']);
+  });
+});
+
+describe('protection from more than colours (D596)', () => {
+  /*
+    Protection from card types, creature types, multicolored, monocolored, snow and everything,
+    beside the colours it has always read. One list of qualities on the characteristics, tested in
+    `protectionApplies`, so damage, enchanting and equipping, blocking and targeting all ask it. Corpus
+    rows, and one probe for protection from artifacts.
+  */
+  const CHAPLAIN = {"name": "Beloved Chaplain", "type_line": "Creature — Human Cleric", "mana_cost": "{1}{W}", "cmc": 2, "colors": ["W"], "power": "1", "toughness": "1", "oracle_text": "Protection from creatures", "layout": "normal"};
+  const GUIDE = {"name": "Foothill Guide", "type_line": "Creature — Human Cleric", "mana_cost": "{W}", "cmc": 1, "colors": ["W"], "power": "1", "toughness": "1", "oracle_text": "Protection from Goblins\nMorph {W} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.)", "layout": "normal"};
+  const ENEMY = {"name": "Enemy of the Guildpact", "type_line": "Creature — Spirit", "mana_cost": "{4}{B}", "cmc": 5, "colors": ["B"], "power": "4", "toughness": "2", "oracle_text": "Protection from multicolored", "layout": "normal"};
+  const INQUISITOR = {"name": "Elite Inquisitor", "type_line": "Creature — Human Soldier", "mana_cost": "{W}{W}", "cmc": 2, "colors": ["W"], "power": "2", "toughness": "2", "oracle_text": "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies", "layout": "normal"};
+  const WARDEN = {
+    name: 'Probe Warden', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
+    power: '2', toughness: '2', oracle_text: 'Protection from artifacts', layout: 'normal',
+  };
+  const ROWS = [CHAPLAIN, GUIDE, ENEMY, INQUISITOR, WARDEN];
+  const list = customDeck({
+    id: 'wardens', name: 'Wardens',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 2 },
+      { name: 'Bonesplitter', count: 2 }, { name: 'Selesnya Charm', count: 2 }, { name: 'Plains', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'wardens', 1: 'ember-rush' }, deckSpecs: { wardens: list.deck },
+    hands: { 0: ['Selesnya Charm'] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const shielded = (s: GameState, from: string, who: string) =>
+    protectedFrom(s, find(s, 0, 'battlefield', who), from);
+
+  it('reads each quality, the comma list as one ability, and refuses one it cannot test', () => {
+    expect(list.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const s = table(['Elite Inquisitor']);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Elite Inquisitor')]!).protectionQualities)
+      .toEqual(['subtype:vampire', 'subtype:werewolf', 'subtype:zombie']);
+    const odd = compileCard({ ...CHAPLAIN, oracle_text: 'Protection from non-Spirit creatures' } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('protection from creatures: no creature may block it or damage it, and a spell still may', () => {
+    let s = table(['Beloved Chaplain'], ['Raging Goblin']);
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    const chaplain = find(s, 0, 'battlefield', 'Beloved Chaplain');
+    expect(shielded(s, goblin, 'Beloved Chaplain')).toBe(true);
+    s = dealDamage(s, { kind: 'card', id: chaplain }, 3, { controller: 1, source: goblin });
+    expect(damageOn(s, chaplain)).toBe(0);
+    // A spell is not a creature: damage from one is dealt (the charm is only a source here).
+    const charm = find(s, 0, 'hand', 'Selesnya Charm');
+    expect(shielded(s, charm, 'Beloved Chaplain')).toBe(false);
+    expect(damageOn(dealDamage(s, { kind: 'card', id: chaplain }, 1, { controller: 0, source: charm }), chaplain)).toBe(1);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: chaplain, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    expect(() => apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: goblin, attacker: chaplain }] })).toThrow();
+  });
+
+  it('protection from a creature type, from multicolored, and from artifacts', () => {
+    const s = table(['Foothill Guide', 'Enemy of the Guildpact', 'Probe Warden', 'Grizzly Bears', 'Bonesplitter'], ['Raging Goblin']);
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(shielded(s, goblin, 'Foothill Guide')).toBe(true);
+    expect(shielded(s, bears, 'Foothill Guide')).toBe(false);
+    const charm = find(s, 0, 'hand', 'Selesnya Charm');
+    expect(shielded(s, charm, 'Enemy of the Guildpact')).toBe(true);
+    expect(shielded(s, goblin, 'Enemy of the Guildpact')).toBe(false);
+    const splitter = find(s, 0, 'battlefield', 'Bonesplitter');
+    expect(shielded(s, splitter, 'Probe Warden')).toBe(true);
+    expect(shielded(s, splitter, 'Grizzly Bears')).toBe(false);
+    // And so the Equipment cannot be attached to it (CR 702.16c).
+    const warden = find(s, 0, 'battlefield', 'Probe Warden');
+    expect(equipTo(s, splitter, warden, 0, { power: 2 }).instances[splitter]!.attachedTo ?? null).toBeNull();
+    expect(equipTo(s, splitter, bears, 0, { power: 2 }).instances[splitter]!.attachedTo).toBe(bears);
   });
 });

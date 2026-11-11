@@ -24355,3 +24355,51 @@ were each put in by hand: the first failed one test, the second three.
 Pod sweep on D594's build (0b9bb15), seeds 46201–46240: 40 of 40 finished, no throw and no stall.
 
 Break run on D594's build: 9 deliberate faults, 9 caught.
+
+## D596 — Protection from more than colours
+
+Protection was modelled as a list of colours, and `printedPart` refused any other quality on
+purpose: a card promising more than the engine could check was left to a human. 37 legal lines
+promised more, and 27 cards were one line short of it — Beloved Chaplain, Foothill Guide, Baneslayer
+Angel, Progenitus, Elite Inquisitor, Enemy of the Guildpact.
+
+**One list beside the colours.** `Characteristics.protectionQualities` holds the qualities that are
+not colours, as tags: a card type ("from artifacts", "from creatures", "from instants"), a creature
+type ("from Goblins", "from Demons and from Dragons", read against the corpus-derived creature-type
+list in its plural), the snow supertype, "multicolored", "monocolored" and "everything". It is a
+printed, base characteristic like the colours and cleared with them when a permanent loses all its
+abilities.
+
+**One test for all four rules.** `protectionApplies` already answered DEBT (CR 702.16) — damage,
+enchanting and equipping, blocking and targeting all call it, directly or through `protectedFrom` —
+so the qualities are checked there, against the **live** characteristics of the other object: a
+land animated into a creature is a creature to protection from creatures, a spell on the stack is
+an instant to protection from instants, a gold card is multicoloured. Nothing else had to change.
+
+**A list printed with commas is one ability.** "Protection from Vampires, from Werewolves, and from
+Zombies" split on its commas was three parts, two of them nonsense; the line is joined back into
+the "and from" form the part reader already takes before it is split.
+
+**Still refused, each a quality with a condition the tag cannot hold:** "from non-Spirit
+creatures", "from permanents with corruption counters on them", and the chosen-colour and
+chosen-player forms.
+
+**D595's break run** caught 9 of 10. The miss was "a noncreature spell" read as its opposite, which
+no test had asked; a probe land restricted to noncreature spells now casts a Lightning Bolt and not
+a Raging Goblin, and fails with the fault in.
+
+**Tests.** 3 engine tests on corpus rows (Beloved Chaplain, Foothill Guide, Enemy of the Guildpact,
+Elite Inquisitor) and a probe for protection from artifacts: every row reads, the comma list is
+three subtypes, a conditional quality stays unread; a creature cannot damage or block the Chaplain
+and a spell can still damage it; Foothill Guide is protected from a Goblin and not from Bears, Enemy
+of the Guildpact from Selesnya Charm and not from a mono-red Goblin, and the probe from Bonesplitter,
+which then cannot be equipped to it while it still equips Grizzly Bears. The qualities ignored, and
+the comma join removed, were each put in by hand and failed.
+
+    engine tests: 4,228, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,169 of 31,292 (was 9,136); lines read 26,645 of 58,524 (45.5%, was 26,598)
+
+Pod sweep on D595's build (04ddb67), seeds 46301–46340: 40 of 40 finished, no throw and no stall.
