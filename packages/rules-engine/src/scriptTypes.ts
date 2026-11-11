@@ -3261,7 +3261,14 @@ export interface CardScript {
    */
   readonly selfCostChange?: {
     readonly generic: number;
-    readonly when: (state: GameState, caster: SeatIndex) => boolean;
+    /** `card` is the instance being cast, when the caller has one. */
+    readonly when: (state: GameState, caster: SeatIndex, card?: string) => boolean;
+    /**
+     * "for each …" (D601): `generic` is the rate and this the count, so "{1} less for each creature
+     * card in your graveyard" is `generic: -1` times however many there are as the cost is computed.
+     * Absent means once.
+     */
+    readonly per?: (state: GameState, caster: SeatIndex, card?: string) => number;
     /** Shown on the play when it applies: "costs {1} less". */
     readonly description: string;
   };

@@ -3433,6 +3433,8 @@ const HARNESSED_LIGHTNING: CardScript = {
 
 const MIZZIUM_MORTARS: CardScript = {
   name: 'Mizzium Mortars',
+  // See `CardScript.removesACreature`; the compiled reading carries it, and both halves remove (D601).
+  removesACreature: true,
   targets: [{ ...TARGET_CREATURE, description: "target creature you don't control", filter: creatureYouDontControl }],
   onResolve: (c) => damageFirstTarget(c, 4),
   overload: {
@@ -11049,6 +11051,58 @@ function spellStaticFromLine(line: string): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * "This spell costs {2} less to cast if a creature died this turn", "… for each creature card in
+ * your graveyard", "… costs {X} less to cast, where X is the number of …" (D601).
+ *
+ * `CardScript.selfCostChange` already existed for one hand-written card (Hagra Mauling, D578); this
+ * is its reader. The condition is `interveningConditionFor`'s and the count `forEachCount`'s or
+ * `countOfThing`'s, so a phrase reads here exactly when it reads on a trigger or a pump. Each runs
+ * against a context whose controller is the caster and whose source is the card being cast.
+ *
+ * Refused: "if it targets …" (the cost is computed before this engine knows the targets, so the
+ * reduction could not be honest), any phrase naming the card itself, a coloured reduction ("{U}
+ * less", which `selfCostChange` cannot express since only generic moves), and "more" (a cost
+ * increase dropped is a card better than printed, and one read is a different family).
+ */
+function selfCostChangeFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.$/, '');
+  const self = selfRef(name);
+  const head = new RegExp(`^(?:This spell|${self}) costs \\{(\\d+|X)\\} less to cast(?:,? (if|for each|where X is) (.+))?$`, 'i')
+    .exec(text);
+  if (head === null || head[2] === undefined) return null;
+  const [, amount, how, rest] = head as unknown as [string, string, string, string];
+  if (/\b(?:it|this spell|this creature)\b/i.test(rest) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
+  const ctx = (state: GameState, caster: SeatIndex, card?: string): EffectContext => ({
+    state, controller: caster, source: card ?? '', targets: [], x: 0, decisions: [], kicked: false,
+  });
+  const description = `${amount === 'X' ? '{X}' : `{${amount}}`} less ${how} ${rest}`;
+  if (how.toLowerCase() === 'if') {
+    if (amount === 'X') return null;
+    const condition = interveningConditionFor(rest, name);
+    if (condition === null) return null;
+    return { selfCostChange: {
+      generic: -Number(amount), description,
+      when: (state, caster, card) => condition(ctx(state, caster, card)),
+    } };
+  }
+  const count = how.toLowerCase() === 'for each'
+    ? (amount === 'X' ? null : forEachCount(rest, name))
+    : (amount === 'X' ? whereXCount(rest, name) : null);
+  if (count === null) return null;
+  return { selfCostChange: {
+    generic: amount === 'X' ? -1 : -Number(amount), description,
+    when: () => true,
+    per: (state, caster, card) => count(ctx(state, caster, card)),
+  } };
+}
+
+/** "the number of …" after "where X is", read in the plural as every such count is. */
+function whereXCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  const the = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
+  return the === null ? null : countOfThing(the[1]!, name, 'plural');
+}
+
 export function isKeywordDeclaration(line: string): boolean {
   const text = plain(line).trim();
   if (text === '') return false;
@@ -16029,7 +16083,48 @@ function countOfThing(
     */
     return (c) => permanentsOfSubtype(c.state, c.controller, subtype);
   }
+  // "creature in your party" (CR 700.8): see `partySize`.
+  if (/^creatures? in your party$/i.test(text)) return (c) => partySize(c.state, c.controller);
+  /*
+    And any scope `massScope` reads (D601), counted: "creature on the battlefield", "creature your
+    opponents control", "nonland permanent you control". After every row above, so a phrase that
+    already had a reading keeps it; `massScope` refuses any word it cannot classify, so this widens
+    the vocabulary without widening a set.
+  */
+  const scope = massScope(text);
+  if (scope !== null) return (c) => scope(c).length;
   return null;
+}
+
+/**
+ * Your party (CR 700.8): up to one each of Cleric, Rogue, Warrior and Wizard among the creatures you
+ * control, so at most four — and a creature with two of the types fills only one slot. That is a
+ * matching rather than four counts, and with four slots it is small enough to try every assignment.
+ */
+function partySize(state: GameState, seat: SeatIndex): number {
+  const ROLES = ['cleric', 'rogue', 'warrior', 'wizard'] as const;
+  const masks: number[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const { typeLine, isCreature } = characteristicsOf(state, inst);
+    if (!isCreature) continue;
+    const mask = ROLES.reduce((m, role, i) => (hasSubtype(typeLine, role) ? m | (1 << i) : m), 0);
+    if (mask !== 0) masks.push(mask);
+  }
+  // Which sets of filled roles are reachable, one creature at a time: sixteen states at most.
+  let reachable = new Set<number>([0]);
+  for (const mask of masks) {
+    const next = new Set(reachable);
+    for (const used of reachable) {
+      for (let i = 0; i < 4; i++) {
+        if ((mask & (1 << i)) !== 0 && (used & (1 << i)) === 0) next.add(used | (1 << i));
+      }
+    }
+    reachable = next;
+  }
+  const bits = (n: number): number => (n & 1) + ((n >> 1) & 1) + ((n >> 2) & 1) + ((n >> 3) & 1);
+  return Math.max(...[...reachable].map(bits));
 }
 
 /**
@@ -18230,7 +18325,32 @@ function sweepDestination(
 ): ((c: EffectContext, amount: number) => GameState) | null {
   const matched = /^each creature(?: (with|without) ([a-z]+))?( and each player)?$/i
     .exec(where.trim());
-  if (matched === null) return null;
+  if (matched === null) {
+    /*
+      Any other scope `massScope` reads (D601): "each creature you don't control" (Electrickery's
+      overload), "each creature your opponents control", "each non-Dragon creature", and the same
+      with "and each player" or "and each opponent" after it. A scope it cannot read stays refused,
+      and so does one that names nothing damage can be dealt to (CR 120.3): "each artifact" would
+      read as a scope and deal nothing.
+    */
+    const wider = /^each (.+?)( and each (?:player|opponent))?$/i.exec(where.trim());
+    const scope = wider === null || !/\b(?:creatures?|planeswalkers?)\b/i.test(wider[1]!)
+      ? null : massScope(wider[1]!);
+    if (wider === null || scope === null) return null;
+    const players = wider[2] === undefined ? null : /opponent/i.test(wider[2]) ? 'opponents' : 'all';
+    return (c, amount) => {
+      let state = c.state;
+      for (const id of scope(c)) {
+        state = dealDamage(state, { kind: 'card', id }, amount, { controller: c.controller, source: c.source });
+      }
+      if (players === null) return state;
+      for (const seat of state.seats) {
+        if (seat.eliminated || (players === 'opponents' && seat.index === c.controller)) continue;
+        state = dealDamage(state, { kind: 'player', seat: seat.index }, amount, { controller: c.controller, source: c.source });
+      }
+      return state;
+    };
+  }
   let keyword: Keyword | null = null;
   if (matched[2] !== undefined) {
     const word = matched[2].toLowerCase();
@@ -22912,6 +23032,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
       every creature in the family unread (D493).
     */
     ?? spellStaticFromLine(line)
+    ?? selfCostChangeFromLine(line, name)
     // Before the statics: "enters tapped" is a fact about arriving, not a continuous effect.
     ?? entersTappedFromLine(line, name)
     ?? becomesDayFromLine(line, name)
@@ -23271,7 +23392,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       sacrifice on resolution at worst.
     */
     const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line)
-      ?? spellStaticFromLine(line);
+      ?? spellStaticFromLine(line) ?? selfCostChangeFromLine(line, name);
     if (keyword === null) {
       /*
         A keyword nothing here can build is still not part of the resolution. Putting it there is

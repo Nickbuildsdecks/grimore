@@ -1487,7 +1487,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         }]),
       ];
     for (const alternative of alternatives) {
-      const altChange = costChangeFor(state, seat, def);
+      const altChange = costChangeFor(state, seat, def, id);
       const altCost = withCostChange(parseManaCost(alternative.cost), altChange.generic);
       const altTargets = playableTargets(state, alternative.specs, seat, id);
       if (altCost.unsupported !== undefined || !altTargets.ok
@@ -1605,7 +1605,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       putting {1} on. Applied here, where affordability is judged, and again in `castSpell`, where
       the mana is actually taken — through the same function, so the two cannot drift apart.
     */
-    const change = costChangeFor(state, seat, def);
+    const change = costChangeFor(state, seat, def, id);
     const cost: ManaCost = withCostChange(taxed, change.generic);
     /*
       Delve, which takes generic mana off the cost and pays for it out of the graveyard
@@ -2170,7 +2170,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
  * needs it, and the offer and the payment would both have to learn it in the same commit.
  */
 export function costChangeFor(
-  state: GameState, seat: SeatIndex, def: CardDef | undefined,
+  state: GameState, seat: SeatIndex, def: CardDef | undefined, card?: string,
 ): { readonly generic: number; readonly notes: readonly string[] } {
   if (def === undefined) return { generic: 0, notes: [] };
   let up = 0;
@@ -2224,10 +2224,12 @@ export function costChangeFor(
   }
   // And a conditional change printed on the spell: "costs {1} less to cast if …" (D578).
   const conditional = scriptForCard(def)?.selfCostChange;
-  if (conditional !== undefined && conditional.generic !== 0 && conditional.when(state, seat)) {
-    if (conditional.generic > 0) up += conditional.generic;
-    else down -= conditional.generic;
-    notes.push(conditional.description);
+  if (conditional !== undefined && conditional.generic !== 0 && conditional.when(state, seat, card)) {
+    // Times the count when it is "for each …" (D601); a count of nought changes nothing.
+    const amount = conditional.generic * (conditional.per === undefined ? 1 : conditional.per(state, seat, card));
+    if (amount > 0) up += amount;
+    else down -= amount;
+    if (amount !== 0) notes.push(conditional.per === undefined ? conditional.description : `${conditional.description}: {${Math.abs(amount)}} ${amount < 0 ? 'less' : 'more'}`);
   }
   if (up === 0 && down === 0) return { generic: 0, notes: [] };
   return { generic: up - down, notes };

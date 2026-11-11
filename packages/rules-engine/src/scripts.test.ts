@@ -39,6 +39,7 @@ import {
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
+import { costChangeFor } from './legalActions.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -25381,9 +25382,9 @@ describe('an activated ability that divides a quantity (D463)', () => {
     } as never);
     expect(ral.ok).toBe(true);
     const abilities = ral.ok ? (ral.script?.abilities ?? []) : [];
-    // The +1 still reads — the refusal is per line, not per card.
-    expect(abilities).toHaveLength(1);
-    expect(abilities[0]?.cost.loyalty).toBe(1);
+    // The +1 still reads — the refusal is per line, not per card — and since D601 so does the -7,
+    // whose sweep over "each creature your opponents control" divides nothing. Only the -2 is out.
+    expect(abilities.map((a) => a.cost.loyalty)).toEqual([1, -7]);
     // And nothing left on the card divides anything.
     expect(abilities.flatMap((a) => (a.targets ?? []).filter((t) => t.divided !== undefined)))
       .toEqual([]);
@@ -44693,6 +44694,45 @@ describe('retrace (D599)', () => {
     expect(s.instances[land]!.zone).toBe('graveyard');
     expect(s.instances[jab]!.zone).toBe('graveyard');
   });
+
+  it('the bot says retrace when it casts from the graveyard (sweep 46821, D601)', () => {
+    // Its land for the turn already played, so the Mountain in hand is only good for discarding.
+    let s = table(['Mountain', 'Mountain']);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mountain') } as Action);
+    const jab = find(s, 0, 'graveyard', 'Flame Jab');
+    const before = life(s, 1);
+    let cast: Action | undefined;
+    for (let i = 0; i < 6 && cast === undefined; i++) {
+      const action = botAction(s, 0);
+      if (action === null || action === undefined) break;
+      if (action.type === 'auto:cast' && action.card === jab) cast = action;
+      s = apply(s, action);
+    }
+    expect(cast).toMatchObject({ retrace: true });
+    s = drain(passBoth(s), 20);
+    expect(life(s, 1)).toBe(before - 1);
+  });
+
+  it('every field a cast play and a cast action share is one the bot passes on', () => {
+    /*
+      The class of bug behind sweep 46821, checked in source because the next flag will be added
+      to \`LegalPlay\` and \`AutoCastAction\` together and forgotten in the bot the same way: kicker,
+      replicate, flashback, escape, morph, foretell, offer, evoke, dash, bestow, spectacle,
+      overload and retrace each needed the line. A field both interfaces declare is a choice the
+      play made, and the action that does not say it casts something else.
+    */
+    const fields = (file: string, from: string): Set<string> => {
+      const src = readFileSync(join(__dirname, file), 'utf8');
+      const body = src.slice(src.indexOf(from), src.indexOf('\n}', src.indexOf(from)));
+      return new Set([...body.matchAll(/^\s+readonly (\w+)\??:/gm)].map((m) => m[1]!));
+    };
+    const play = fields('legalActions.ts', 'export interface LegalPlay {');
+    const action = fields('turnTypes.ts', 'export interface AutoCastAction {');
+    const shared = [...play].filter((f) => action.has(f) && f !== 'card');
+    expect(shared.length).toBeGreaterThan(10);
+    const bot = readFileSync(join(__dirname, 'bot.ts'), 'utf8');
+    expect(shared.filter((f) => !new RegExp(`play\\.${f}\\b`).test(bot))).toEqual([]);
+  });
 });
 
 describe('mass effects over a scope, and overload from its rewrite (D600)', () => {
@@ -44787,8 +44827,247 @@ describe('mass effects over a scope, and overload from its rewrite (D600)', () =
     expect(count(s, 1, 'battlefield', 'Bonesplitter')).toBe(2);
   });
 
+  it('"you control" spares every other seat (D600 break run)', () => {
+    // Evacuation's row with the clause, cast at a table where both seats have Grizzly Bears.
+    const ROW = { ...EVAC, oracle_text: "Return all creatures you control to their owners' hands." };
+    const read = compileCard(ROW as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const deck = customDeck({
+      id: 'sweeps', name: 'Sweeps',
+      entries: [{ name: 'Evacuation', count: 1 }, { name: 'Grizzly Bears', count: 2 },
+        { name: 'Mountain', count: 15 }, { name: 'Island', count: 15 }, { name: 'Plains', count: 15 }],
+      data: [...ROWS.filter((r) => r !== EVAC), ROW] as never[],
+    }).deck;
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'sweeps', 1: 'targets' }, deckSpecs: { sweeps: deck, targets: theirs },
+      hands: { 0: ['Evacuation'] },
+      battlefield: { 0: [...LANDS, 'Grizzly Bears'], 1: ['Forest', 'Grizzly Bears'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Evacuation') }));
+    expect(count(s, 0, 'hand', 'Grizzly Bears')).toBe(1);
+    expect(count(s, 1, 'battlefield', 'Grizzly Bears')).toBe(1);
+  });
+
+  /** One custom row in seat 0's hand, the usual board, and the spell cast and resolved. */
+  const castRow = (row: typeof GEDDON, extraMine: readonly string[] = []): GameState => {
+    const deck = customDeck({
+      id: 'sweeps', name: 'Sweeps',
+      entries: [{ name: row.name, count: 1 }, { name: 'Bonesplitter', count: 2 }, { name: 'Grizzly Bears', count: 2 },
+        { name: 'Mountain', count: 15 }, { name: 'Island', count: 15 }, { name: 'Plains', count: 15 }],
+      data: [row] as never[],
+    }).deck;
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'sweeps', 1: 'targets' }, deckSpecs: { sweeps: deck, targets: theirs },
+      hands: { 0: [row.name] },
+      battlefield: { 0: [...LANDS, 'Bonesplitter', 'Grizzly Bears', ...extraMine], 1: ['Forest', 'Bonesplitter', 'Bonesplitter', 'Grizzly Bears'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', row.name) });
+    return drain(passBoth(drain(passBoth(s), 30)), 30);
+  };
+
+  it('"other" spares the permanent whose ability it is (D600 break run)', () => {
+    const LEVIATHAN = { ...EVAC, name: 'Test Leviathan', type_line: 'Creature — Leviathan', mana_cost: '{3}{U}{U}', power: '5', toughness: '5',
+      oracle_text: "When this creature enters, return all other nonland permanents to their owners' hands." };
+    const read = compileCard(LEVIATHAN as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const s = castRow(LEVIATHAN as never);
+    expect(count(s, 0, 'battlefield', 'Test Leviathan')).toBe(1);
+    expect(count(s, 0, 'hand', 'Grizzly Bears')).toBe(1);
+    expect(count(s, 1, 'hand', 'Bonesplitter')).toBe(2);
+  });
+
+  it('exile puts them in exile, not the graveyard (D600 break run)', () => {
+    const s = castRow({ ...GEDDON, name: 'Test Purge', oracle_text: 'Exile all artifacts.' });
+    expect(count(s, 1, 'graveyard', 'Bonesplitter')).toBe(0);
+    expect(namesIn(s, 1, 'exile').filter((n) => n === 'Bonesplitter').length).toBe(2);
+    expect(count(s, 1, 'battlefield', 'Grizzly Bears')).toBe(1);
+  });
+
+  it('untap untaps, and only what it names (D600 break run)', () => {
+    // Every land of seat 0's is tapped to pay; the spell untaps them all.
+    const s = castRow({ ...GEDDON, name: 'Test Harvest', mana_cost: '{W}', oracle_text: 'Untap all lands you control.' });
+    const mine = ids(s, 0, 'battlefield').filter((id) => ['Mountain', 'Island', 'Plains'].includes(nameOf(s, id)));
+    expect(mine.length).toBe(LANDS.length);
+    expect(mine.every((id) => s.instances[id]!.tapped === false)).toBe(true);
+  });
+
   it('refuses a scope it cannot test rather than widening it', () => {
     const read = compileCard({ ...GEDDON, oracle_text: 'Destroy all white permanents.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe('damage to each creature in a scope (D601)', () => {
+  /*
+    `sweepDestination` read only "each creature [with/without K] [and each player]". It now falls
+    back to `massScope` for any other creature scope, which is what Electrickery's overload rewrite
+    produces ("each creature you don't control"), plus an "and each opponent" tail. A scope naming
+    nothing damage can be dealt to stays refused.
+  */
+  const ELECTRICKERY = {"name": "Electrickery", "type_line": "Instant", "mana_cost": "{R}", "cmc": 1, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Electrickery deals 1 damage to target creature you don't control.\nOverload {1}{R} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")", "layout": "normal"};
+  const VOLLEY = {"name": "Blazing Volley", "type_line": "Sorcery", "mana_cost": "{R}", "cmc": 1, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Blazing Volley deals 1 damage to each creature your opponents control.", "layout": "normal"};
+  const WHIPFLARE = {"name": "Whipflare", "type_line": "Sorcery", "mana_cost": "{3}{R}", "cmc": 4, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Whipflare deals 2 damage to each nonartifact creature.", "layout": "normal"};
+  const SCORCH = {"name": "Scorching Test Row", "type_line": "Sorcery", "mana_cost": "{2}{R}", "cmc": 3, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Scorching Test Row deals 1 damage to each creature your opponents control and each opponent.", "layout": "normal"};
+  const THOPTER = {"name": "Ornithopter", "type_line": "Artifact Creature — Thopter", "mana_cost": "{0}", "cmc": 0, "colors": [], "power": "0", "toughness": "2", "oracle_text": "Flying", "layout": "normal"};
+  const ROWS = [ELECTRICKERY, VOLLEY, WHIPFLARE, SCORCH];
+  const mine = customDeck({
+    id: 'burns', name: 'Burns',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Grizzly Bears', count: 2 }, { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  }).deck;
+  const theirs = customDeck({
+    id: 'burned', name: 'Burned',
+    entries: [{ name: 'Grizzly Bears', count: 4 }, { name: 'Ornithopter', count: 4 }, { name: 'Forest', count: 52 }],
+    data: [THOPTER] as never[],
+  }).deck;
+  const table = (hand: string): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'burns', 1: 'burned' }, deckSpecs: { burns: mine, burned: theirs },
+    hands: { 0: [hand] },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Grizzly Bears'], 1: ['Forest', 'Grizzly Bears', 'Grizzly Bears', 'Ornithopter'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const resolve = (s: GameState): GameState => drain(passBoth(s), 30);
+  const marked = (s: GameState, seat: SeatIndex, name: string): number[] =>
+    ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === name).map((id) => damageOn(s, id));
+  const cast = (hand: string, extra: Record<string, unknown> = {}): GameState => {
+    const s = table(hand);
+    return resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', hand), ...extra } as Action));
+  };
+
+  it('reads every row whole', () => {
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const electrickery = compileCard(ELECTRICKERY as never);
+    expect(electrickery.ok && electrickery.script?.overload?.cost).toBe('{1}{R}');
+  });
+
+  it('Electrickery overloaded deals 1 to every creature you do not control, and none of yours', () => {
+    const s = cast('Electrickery', { overloaded: true });
+    expect(marked(s, 1, 'Grizzly Bears')).toEqual([1, 1]);
+    expect(marked(s, 1, 'Ornithopter')).toEqual([1]);
+    expect(marked(s, 0, 'Grizzly Bears')).toEqual([0]);
+  });
+
+  it('Blazing Volley hits their creatures and not the players', () => {
+    const s = cast('Blazing Volley');
+    expect(marked(s, 1, 'Grizzly Bears')).toEqual([1, 1]);
+    expect(marked(s, 0, 'Grizzly Bears')).toEqual([0]);
+    expect(s.seats[1]!.life).toBe(s.seats[0]!.life);
+  });
+
+  it('Whipflare kills every nonartifact creature on both sides and spares the artifact one', () => {
+    const s = cast('Whipflare');
+    expect(namesIn(s, 1, 'graveyard').filter((n) => n === 'Grizzly Bears').length).toBe(2);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+    expect(marked(s, 1, 'Ornithopter')).toEqual([0]);
+  });
+
+  it('"and each opponent" burns each opponent, never its controller', () => {
+    const before = table('Scorching Test Row');
+    const s = cast('Scorching Test Row');
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life - 1);
+    expect(s.seats[0]!.life).toBe(before.seats[0]!.life);
+    expect(marked(s, 1, 'Grizzly Bears')).toEqual([1, 1]);
+    expect(marked(s, 0, 'Grizzly Bears')).toEqual([0]);
+  });
+
+  it('refuses a scope that names nothing damage can be dealt to', () => {
+    const read = compileCard({ ...VOLLEY, oracle_text: 'Blazing Volley deals 1 damage to each artifact your opponents control.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe('a spell that costs less for what the board holds (D601)', () => {
+  /*
+    "This spell costs {N} less to cast if <condition>" and "… for each <count>" read into
+    `selfCostChange`, which until now only Hagra Mauling's hand-written script set. The count reader
+    also learned the party (CR 700.8) and every `massScope` scope, which is what Blasphemous Act's
+    "creature on the battlefield" needed.
+  */
+  const BONE_PICKER = {"name":"Bone Picker","type_line":"Creature — Bird","mana_cost":"{3}{B}","cmc":4,"colors":["B"],"power":"3","toughness":"2","oracle_text":"This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch","layout":"normal"};
+  const GHOULTREE = {"name":"Ghoultree","type_line":"Creature — Zombie Treefolk","mana_cost":"{7}{G}","cmc":8,"colors":["G"],"power":"10","toughness":"10","oracle_text":"This spell costs {1} less to cast for each creature card in your graveyard.","layout":"normal"};
+  const ACT = {"name":"Blasphemous Act","type_line":"Sorcery","mana_cost":"{8}{R}","cmc":9,"colors":["R"],"power":null,"toughness":null,"oracle_text":"This spell costs {1} less to cast for each creature on the battlefield.\nBlasphemous Act deals 13 damage to each creature.","layout":"normal"};
+  const ALLIANCE = {"name":"Deadly Alliance","type_line":"Instant","mana_cost":"{4}{B}","cmc":5,"colors":["B"],"power":null,"toughness":null,"oracle_text":"This spell costs {1} less to cast for each creature in your party. (Your party consists of up to one each of Cleric, Rogue, Warrior, and Wizard.)\nDestroy target creature or planeswalker.","layout":"normal"};
+  const SAGE = {"name":"Test Cleric Sage","type_line":"Creature — Human Cleric Wizard","mana_cost":"{1}{U}","cmc":2,"colors":["U"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+  const ADEPT = {"name":"Test Adept","type_line":"Creature — Human Wizard","mana_cost":"{1}{U}","cmc":2,"colors":["U"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+  const ROWS = [BONE_PICKER, GHOULTREE, ACT, ALLIANCE, SAGE, ADEPT];
+  const deck = customDeck({
+    id: 'cheaper', name: 'Cheaper',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 32 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: readonly string[] = [], graveyard: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'cheaper', 1: 'ember-rush' }, deckSpecs: { cheaper: deck.deck },
+      hands: { 0: [hand, ...graveyard] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', ...mine] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of graveyard) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' });
+    return s;
+  };
+  const change = (s: GameState, name: string): number => {
+    const id = find(s, 0, 'hand', name);
+    return costChangeFor(s, 0, s.cardDefs[s.instances[id]!.defKey], id).generic;
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [BONE_PICKER, GHOULTREE, ACT, ALLIANCE]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+      expect(read.ok && read.script?.selfCostChange).toBeDefined();
+    }
+  });
+
+  it('Bone Picker: {3} less only once a creature has died this turn', () => {
+    let s = table('Bone Picker', ['Grizzly Bears']);
+    expect(change(s, 'Bone Picker')).toBe(0);
+    s = destroy(s, find(s, 0, 'battlefield', 'Grizzly Bears'), {});
+    expect(change(s, 'Bone Picker')).toBe(-3);
+  });
+
+  it('Ghoultree: {1} less for each creature card in your graveyard, and only creature cards', () => {
+    expect(change(table('Ghoultree'), 'Ghoultree')).toBe(0);
+    expect(change(table('Ghoultree', [], ['Grizzly Bears', 'Grizzly Bears', 'Bone Picker']), 'Ghoultree')).toBe(-3);
+    expect(change(table('Ghoultree', [], ['Grizzly Bears', 'Mountain']), 'Ghoultree')).toBe(-1);
+  });
+
+  it('Blasphemous Act: {1} less for each creature on either side, and cast for that', () => {
+    let s = table('Blasphemous Act', ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']);
+    expect(change(s, 'Blasphemous Act')).toBe(-4);
+    // {4}{R} for five Mountains: offered, paid, and every creature dies.
+    const act = find(s, 0, 'hand', 'Blasphemous Act');
+    expect(legalActions(s, 0).plays.some((p) => p.card === act)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: act })), 30);
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Grizzly Bears').length).toBe(4);
+  });
+
+  it('Deadly Alliance: the party is a matching, not a headcount', () => {
+    // One Cleric Wizard fills one slot, not two.
+    expect(change(table('Deadly Alliance', ['Test Cleric Sage']), 'Deadly Alliance')).toBe(-1);
+    // With a Wizard beside it, the Sage takes Cleric and the Adept Wizard.
+    expect(change(table('Deadly Alliance', ['Test Cleric Sage', 'Test Adept']), 'Deadly Alliance')).toBe(-2);
+    // Three Wizards are one Wizard.
+    expect(change(table('Deadly Alliance', ['Test Adept', 'Test Adept', 'Test Adept']), 'Deadly Alliance')).toBe(-1);
+    expect(change(table('Deadly Alliance', ['Grizzly Bears']), 'Deadly Alliance')).toBe(0);
+  });
+
+  it('leaves unread what it cannot price honestly', () => {
+    for (const text of [
+      // The cost is computed before this engine knows the targets.
+      'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.',
+      // Only generic mana moves.
+      'This spell costs {U} less to cast if an opponent cast two or more spells this turn.\nDraw a card.',
+      // A cost increase dropped would be a card better than printed.
+      'This spell costs {1} more to cast for each creature on the battlefield.\nDraw a card.',
+    ]) {
+      const read = compileCard({ ...GHOULTREE, type_line: 'Sorcery', oracle_text: text } as never);
+      expect(read.ok && read.script?.selfCostChange).toBeFalsy();
+    }
   });
 });

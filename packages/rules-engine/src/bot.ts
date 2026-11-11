@@ -2510,6 +2510,10 @@ function candidateActions(
             // And overload, the fifth: a cast sent without the flag is the printed spell, which
             // targets one thing — and the bot had just decided it wanted all of them.
             ...(play.overloaded === true ? { overloaded: true } : {}),
+            // And retrace, flashback's zone again (D601): sent without it, the land the bot chose
+            // to discard rides along on what the engine reads as a cast from hand, and the card
+            // is in a graveyard. Sweep 46821 threw on exactly that, with Glamerdye.
+            ...(play.retrace === true ? { retrace: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.

@@ -741,7 +741,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     printed cost first would floor at nought and then have the tax added on top, so a taxed
     commander would come out cheaper than an untaxed one is dear.
   */
-  const change = costChangeFor(state, action.by, def);
+  const change = costChangeFor(state, action.by, def, action.card);
 
   /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).

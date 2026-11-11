@@ -1186,14 +1186,15 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('counts a keyword with no builder apart from a sentence with no reader', () => {
       /*
-        Mizzium Mortars is the pool's clearest case: its printed half compiles, so the card plays,
-        and `Overload {6}{R}{R}` is the option it is missing. A badge built on `unread` alone would
-        say "move this card by hand" about a card the engine is running.
+        Angel of Sanctions is the pool's clearest case: its printed body and trigger compile, so
+        the card plays, and `Embalm {5}{W}` is the option it is missing. A badge built on `unread`
+        alone would say "move this card by hand" about a card the engine is running. (Mizzium
+        Mortars was this case until D600 and D601 read its overload.)
       */
-      const mortars = compiledScript('Mizzium Mortars');
-      expect(mortars.script).toBeDefined();
-      expect(mortars.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
-      expect(mortars.unread[0]?.line).toBe('Overload {3}{R}{R}{R}');
+      const angel = compiledScript('Angel of Sanctions');
+      expect(angel.script).toBeDefined();
+      expect(angel.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
+      expect(angel.unread[0]?.line).toBe('Embalm {5}{W}');
     });
   });
   /*
@@ -12822,8 +12823,9 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
       'Whenever this creature deals combat damage to a player, put that many +1/+1 counters on it.'],
     ['Withercrown: an "unless" clause on a step trigger',
       'At the beginning of your upkeep, you lose 1 life unless you sacrifice this creature.'],
+    // Idolized's own count ("nonland permanents you control") reads since D601; the colour count does not.
     ['Idolized: a bonus whose X is a count of the board',
-      'Whenever this creature attacks alone, it gets +X/+X until end of turn, where X is the number of nonland permanents you control.'],
+      'Whenever this creature attacks alone, it gets +X/+X until end of turn, where X is the number of colors among permanents you control.'],
   ])('refuses the whole line when the quoted text does not read: %s', (_why, inner) => {
     /*
       **This is where the real bottleneck turned out to be, and the measurement corrected my own
@@ -13677,7 +13679,8 @@ describe('a quantity read off the board (D520)', () => {
   });
 
   it.each([
-    ['a countable nothing can count', 'Draw a card for each Bird on the battlefield.'],
+    // "each Bird on the battlefield" was this row until D601 taught the count every `massScope` scope.
+    ['a countable nothing can count', 'Draw a card for each color among permanents you control.'],
     ['a count qualified past the vocabulary',
       'Draw a card for each creature you control with a +1/+1 counter on it.'],
     ['a quantity that is not a count of the board at all',

@@ -24572,3 +24572,100 @@ The largest single increment since the two-faced cards.
 Pod sweep on D599's build (145f971), seeds 46701–46740: 40 of 40 finished, no throw and no stall.
 
 Break run on D599's build: 5 deliberate faults, 5 caught.
+
+## D601 — Damage to every creature of a kind, spells that cost less, and the D600 gaps
+
+The unread dump after D600 ranked "~ deals N damage to each …" first among the one-short shapes. The
+reason was narrow: `sweepDestination`, the reader for where a damage sweep lands, matched only "each
+creature [with/without K] [and each player]". D600 had just written `massScope`, which reads a
+scope's type words, controller clause and "non-". So the first half of this increment connects the
+two.
+
+**Damage over a scope.** When the fixed shape fails, `sweepDestination` now reads "each <scope>
+[and each player | and each opponent]" through `massScope`. That reads "each creature your opponents
+control" (Blazing Volley, Cosmotronic Wave), "each nonartifact creature" (Whipflare), "each non-Pirate
+creature" (Fiery Cannonade), and overloaded Electrickery. Electrickery's rewrite reads "each creature
+you don't control", which D600 had to leave unread. "And each opponent" skips the caster. A scope must
+name a creature or a planeswalker: "each artifact your opponents control" would read as a scope and
+deal damage to nothing (CR 120.3), so it is refused.
+
+**Spells that cost less.** `CardScript.selfCostChange` had one user, Hagra Mauling, written by hand
+(D578). It now has a reader for three shapes:
+- "This spell costs {N} less to cast if <condition>": the condition is `interveningConditionFor`'s.
+- "… for each <count>": the count is `forEachCount`'s.
+- "{X} less …, where X is the number of <count>".
+
+A new optional `per` field multiplies the rate by the count. Both the condition and the count run
+against a context whose controller is the caster and whose source is the card being cast.
+`costChangeFor` now takes the card's id, so the offer in `legalActions` and the payment in
+`castSpell` see the same number.
+
+Four shapes are refused:
+- "If it targets …": this engine prices a spell before its targets are chosen.
+- A phrase naming the card itself.
+- A coloured discount: only generic mana moves.
+- "More": dropping a cost increase would make a card better than printed.
+
+**The count learned two things.** First, the party (CR 700.8): one each of Cleric, Rogue, Warrior
+and Wizard, where a creature with two of those types fills one slot. That makes it a matching. It
+is computed over the sixteen sets of filled roles, so the cost is linear in the number of creatures.
+Second, any `massScope` scope, as a last row after every existing one, so a phrase that already
+read keeps its reading. "Creature on the battlefield" (Blasphemous Act) and "creature your opponents
+control" (Primeval Protector) now count, and so does every "for each" and "where X is" elsewhere in
+the compiler. That widened three readings that tests had pinned as refusals:
+- Idolized's "nonland permanents you control".
+- "Each Bird on the battlefield", which the D520 comment said the vocabulary "could be taught".
+- Ral, Caller of Storms's −7.
+
+Each test now uses a count that still has no reader (colours among permanents). Ral's test expects
+the +1 and the −7, with the divided −2 still refused. Mizzium Mortars now compiles whole too. The
+keyword-without-builder test moves to Angel of Sanctions (Embalm), and the hand-written Mortars gains
+the `removesACreature` hint the compiled reading carries, which is what
+compiled-vs-written flagged.
+
+**Sweep 46801 threw, and the bot was why.** The game threw at seed 46821 with "that card is not in
+your hand". The bot had cast Glamerdye from its graveyard with the land to discard but without
+`retrace: true`, because the bot's cast action carries every alternative-cast flag by hand and
+retrace (D599) was missing from the list. The line is added. Two tests now pin it:
+- The bot, with its land drop spent, retraces Flame Jab and says so.
+- A source check: every field that `LegalPlay` and `AutoCastAction` both declare must appear as
+  `play.<field>` in `bot.ts`. Thirteen flags have needed that line one by one, and the fourteenth
+  will fail this test rather than a sweep.
+
+**The D600 break run: 10 faults, 5 caught.** Four of the five misses are pinned:
+- "You control" ignored: Evacuation's row with the clause returns only your creature.
+- "Other" ignored: a creature whose enters trigger returns all other nonland permanents stays on the battlefield.
+- Exile read as destroy: "Exile all artifacts" puts them in exile.
+- Untap read as tap: "Untap all lands you control" untaps them.
+
+The fifth, the overload guard against a rewritten reading that still has targets, is **vacuous**.
+The rewrite replaces every "target" with "each", so no reading can still come back with targets. The
+guard stays as a check that costs nothing.
+
+**Tests.** 18 new engine tests:
+- 6 on damage sweeps, using corpus rows plus one custom row for "and each opponent".
+- 6 on cost reductions: Bone Picker, Ghoultree, Blasphemous Act (cast for {4}{R} with four creatures
+  out, and resolved), Deadly Alliance with three party shapes, and three refusals.
+- 2 on the bot's retrace.
+- 4 pinning the D600 break-run gaps.
+- 3 existing tests updated for the wider reading.
+
+Every new reader was broken on purpose and its test failed:
+- The "and each opponent" seat filter.
+- The creature guard on a damage scope.
+- The `massScope` fallback in `sweepDestination` and in the count.
+- The bot's retrace line, caught by both tests.
+- `per` ignored.
+- `when` ignored.
+- Party as a headcount.
+
+    engine tests: 4,267, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,396 of 31,292 (was 9,296); lines read 27,017 of 58,524 (46.2%, was 26,871)
+
+Pod sweep on D600's build (3fd56ff), seeds 46801–46840: 39 of 40 finished. The one throw is seed
+46821, the bot's retrace cast, fixed above.
+
+Break run on D600's build: 10 deliberate faults, 5 caught; 4 misses pinned here and 1 vacuous.
