@@ -2005,6 +2005,16 @@ export interface AbilityCost {
 }
 
 /**
+ * Affinity for anything but artifacts (D597): "affinity for creatures", "for Equipment", "for
+ * Islands", "for Cats", "for historic permanents", "for outlaws", "for tokens". `counts` asks one
+ * permanent the caster controls, live; `words` is the printed phrase, for the cost note.
+ */
+export interface AffinityFor {
+  readonly words: string;
+  readonly counts: (state: GameState, id: string) => boolean;
+}
+
+/**
  * What a payment is for, as a restriction on mana asks it (D595): a spell being cast, by its type
  * line, or an activated ability, by the type line of its source. Read live — an animated land's
  * ability is a creature's.
@@ -3225,7 +3235,7 @@ export interface CardScript {
    * artifacts, for Plains, for Slivers — and `artifacts` is the one the pool has cards for. The day
    * another arrives it is a second member of this union rather than a second field.
    */
-  readonly affinity?: 'artifacts';
+  readonly affinity?: 'artifacts' | AffinityFor;
   /**
    * A change to **this spell's own** cost that the board decides: "This spell costs {1} less to
    * cast if an opponent controls no basic lands" (D578).

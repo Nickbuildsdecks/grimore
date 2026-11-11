@@ -10712,6 +10712,18 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'delve') return { delve: true };
   if (word === 'affinity for artifacts') return { affinity: 'artifacts' };
   /*
+    And affinity for anything else (D597): a card type in the plural, a subtype in the plural (land
+    types, Equipment, Gates, Foods and every creature type the corpus knows), "historic permanents"
+    (legendary, artifact or Saga, CR 700.6), "outlaws" (CR 700.12) and "tokens". Counted live, as
+    the artifact form is; anything else is left unread.
+  */
+  const affinityFor = /^affinity for (.+)$/.exec(word);
+  if (affinityFor !== null) {
+    const phrase = affinityFor[1]!.trim();
+    const counts = affinityCount(phrase);
+    if (counts !== null) return { affinity: { words: phrase, counts } };
+  }
+  /*
     Rebound is the word alone **plus** the trigger that casts the card again, because the keyword is
     two halves: `rebound` is the replacement that exiles it on resolution and `reboundCast` is the
     upkeep trigger that offers the second cast. Staggershock and Distortion Strike both set both.
@@ -21054,6 +21066,33 @@ function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
   ).exec(plain(clause).trim());
   if (matched === null) return null;
   return { effect: (c) => bounceToHand(c.state, c.source) };
+}
+
+/** What "affinity for <phrase>" counts, as a test of one permanent, or `null` (D597). */
+function affinityCount(phrase: string): ((state: GameState, id: string) => boolean) | null {
+  const live = (state: GameState, id: string) => characteristicsOf(state, state.instances[id]!).typeLine;
+  const TYPES: Readonly<Record<string, string>> = {
+    creatures: 'creature', artifacts: 'artifact', enchantments: 'enchantment', lands: 'land', planeswalkers: 'planeswalker',
+  };
+  if (TYPES[phrase] !== undefined) return (state, id) => hasType(live(state, id), TYPES[phrase]!);
+  if (phrase === 'tokens') return (state, id) => state.instances[id]?.isToken === true;
+  if (phrase === 'historic permanents') {
+    return (state, id) => {
+      const line = live(state, id);
+      return hasType(line, 'artifact') || hasSubtype(line, 'saga')
+        || line.supertypes.some((s) => s.toLowerCase() === 'legendary');
+    };
+  }
+  if (phrase === 'outlaws') {
+    const OUTLAWS = ['assassin', 'mercenary', 'pirate', 'rogue', 'warlock'];
+    return (state, id) => OUTLAWS.some((type) => hasSubtype(live(state, id), type));
+  }
+  if (!/^[a-z][a-z'-]*$/.test(phrase)) return null;
+  const OTHER_SUBTYPES = ['plains', 'island', 'swamp', 'mountain', 'forest', 'equipment', 'gate', 'food', 'vehicle'];
+  const singulars = [phrase, phrase.replace(/s$/, ''), phrase.replace(/ves$/, 'f'), phrase.replace(/ves$/, 'fe')];
+  const known = singulars.find((one) => OTHER_SUBTYPES.includes(one)
+    || isCreatureType(one));
+  return known === undefined ? null : (state, id) => hasSubtype(live(state, id), known);
 }
 
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {

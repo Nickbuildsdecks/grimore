@@ -44380,11 +44380,17 @@ describe('protection from more than colours (D596)', () => {
     name: 'Probe Warden', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
     power: '2', toughness: '2', oracle_text: 'Protection from artifacts', layout: 'normal',
   };
-  const ROWS = [CHAPLAIN, GUIDE, ENEMY, INQUISITOR, WARDEN];
+  // Three more probes, for D596's break run: the qualities nothing printed had been tested against.
+  const probe = (name: string, text: string) => ({ ...WARDEN, name, oracle_text: text });
+  const MONK = probe('Probe Monk', 'Protection from monocolored');
+  const TITAN = probe('Probe Titan', 'Protection from everything');
+  const SAGE = probe('Probe Sage', 'Protection from instants');
+  const ROWS = [CHAPLAIN, GUIDE, ENEMY, INQUISITOR, WARDEN, MONK, TITAN, SAGE];
   const list = customDeck({
     id: 'wardens', name: 'Wardens',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 2 },
-      { name: 'Bonesplitter', count: 2 }, { name: 'Selesnya Charm', count: 2 }, { name: 'Plains', count: 40 }],
+      { name: 'Bonesplitter', count: 2 }, { name: 'Selesnya Charm', count: 2 }, { name: 'Lightning Bolt', count: 2 },
+      { name: 'Plains', count: 40 }],
     data: ROWS as never[],
   });
   const table = (mine: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
@@ -44440,5 +44446,83 @@ describe('protection from more than colours (D596)', () => {
     const warden = find(s, 0, 'battlefield', 'Probe Warden');
     expect(equipTo(s, splitter, warden, 0, { power: 2 }).instances[splitter]!.attachedTo ?? null).toBeNull();
     expect(equipTo(s, splitter, bears, 0, { power: 2 }).instances[splitter]!.attachedTo).toBe(bears);
+  });
+
+  it('monocolored, everything, and both gone when it loses all abilities (D596\'s break run)', () => {
+    const s = table(['Probe Monk', 'Probe Titan', 'Beloved Chaplain', 'Grizzly Bears'], ['Raging Goblin']);
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    const charm = find(s, 0, 'hand', 'Selesnya Charm');
+    expect(shielded(s, goblin, 'Probe Monk')).toBe(true);
+    expect(shielded(s, charm, 'Probe Monk')).toBe(false);
+    expect(shielded(s, goblin, 'Probe Titan')).toBe(true);
+    expect(shielded(s, charm, 'Probe Titan')).toBe(true);
+    const chaplain = find(s, 0, 'battlefield', 'Beloved Chaplain');
+    const frogged = pump(s, [chaplain], find(s, 0, 'battlefield', 'Grizzly Bears'), 0, { losesAllAbilities: true });
+    expect(protectedFrom(frogged, chaplain, goblin)).toBe(false);
+  });
+
+  it('protection from instants keeps Lightning Bolt from targeting it (D596\'s break run)', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'wardens', 1: 'ember-rush' }, deckSpecs: { wardens: list.deck },
+      hands: { 1: ['Lightning Bolt'] }, battlefield: { 0: ['Probe Sage', 'Grizzly Bears'], 1: ['Mountain'] },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    const bolt = legalActions(s, 1).plays.find((p) => p.kind === 'cast' && p.card === find(s, 1, 'hand', 'Lightning Bolt'));
+    const offered = JSON.stringify(bolt?.candidates ?? []);
+    expect(offered).toContain(find(s, 0, 'battlefield', 'Grizzly Bears'));
+    expect(offered).not.toContain(find(s, 0, 'battlefield', 'Probe Sage'));
+  });
+});
+
+describe('affinity for anything (D597)', () => {
+  /*
+    "Affinity for <X>": the spell costs {1} less for each X its caster controls, counted live as the
+    cost is computed. Artifacts were the only X the engine knew; now a card type, a land or creature
+    type, historic permanents, outlaws and tokens. Razor Golem is the corpus's row; a probe covers
+    affinity for creatures.
+  */
+  const GOLEM = {"name": "Razor Golem", "type_line": "Artifact Creature — Golem", "mana_cost": "{6}", "cmc": 6, "colors": [], "power": "3", "toughness": "4", "oracle_text": "Affinity for Plains (This spell costs {1} less to cast for each Plains you control.)\nVigilance", "layout": "normal"};
+  const HERDER = {
+    name: 'Probe Herder', type_line: 'Creature — Elf', mana_cost: '{5}{G}', cmc: 6, colors: ['G'],
+    power: '4', toughness: '4', oracle_text: 'Affinity for creatures', layout: 'normal',
+  };
+  const list = customDeck({
+    id: 'affinity', name: 'Affinity',
+    entries: [{ name: 'Razor Golem', count: 2 }, { name: 'Probe Herder', count: 2 }, { name: 'Grizzly Bears', count: 4 },
+      { name: 'Plains', count: 25 }, { name: 'Forest', count: 25 }],
+    data: [GOLEM, HERDER] as never[],
+  });
+  const playFor = (mine: readonly string[], card: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'affinity', 1: 'ember-rush' }, deckSpecs: { affinity: list.deck },
+      hands: { 0: [card] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const actions = legalActions(s, 0);
+    const id = find(s, 0, 'hand', card);
+    return { cast: actions.plays.find((p) => p.kind === 'cast' && p.card === id), why: actions };
+  };
+
+  it('reads the phrase and leaves one it cannot count unread', () => {
+    expect(list.unknown).toEqual([]);
+    for (const row of [GOLEM, HERDER]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const odd = compileCard({ ...HERDER, oracle_text: 'Affinity for blue permanents' } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('Razor Golem costs one less for each Plains, and Forests do not count', () => {
+    // Six Plains pay for it alone: {6} less six is nothing.
+    expect(playFor(Array.from({ length: 6 }, () => 'Plains'), 'Razor Golem').cast?.costNote).toContain('affinity for plains: {6} less');
+    // Five Forests: nothing off, and five mana is one short of {6}.
+    expect(playFor(Array.from({ length: 5 }, () => 'Forest'), 'Razor Golem').cast).toBeUndefined();
+    // Three Plains and two Forests: {3} off, and five lands pay the {3} left.
+    expect(playFor(['Plains', 'Plains', 'Plains', 'Forest', 'Forest'], 'Razor Golem').cast?.costNote).toContain('{3} less');
+  });
+
+  it('affinity for creatures counts creatures, not lands', () => {
+    const cast = playFor(['Grizzly Bears', 'Grizzly Bears', 'Forest', 'Forest', 'Forest', 'Forest'], 'Probe Herder').cast;
+    expect(cast?.costNote).toContain('affinity for creatures: {2} less');
   });
 });

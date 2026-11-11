@@ -41869,3 +41869,39 @@ the comma join removed, were each put in by hand and failed.
     cards fully read 9,169 of 31,292 (was 9,136); lines read 26,645 of 58,524 (45.5%, was 26,598)
 
 Pod sweep on D595's build (04ddb67), seeds 46301–46340: 40 of 40 finished, no throw and no stall.
+
+## D597 — Affinity for anything
+
+Affinity was `'artifacts'` and nothing else, and the type's own docblock said so: "`artifacts` is
+the one the pool has cards for. The day another arrives it is a second member of this union rather
+than a second field." 38 legal lines print another, and 17 cards were one line short of it.
+
+`CardScript.affinity` is now `'artifacts'` or an `AffinityFor` — the printed phrase and a test of
+one permanent — and `costChangeFor` counts the caster's permanents with whichever it has, live, as
+the cost is computed. The keyword reader reads "affinity for <phrase>": a card type in the plural,
+a subtype in the plural (the basic land types, Equipment, Gates, Foods, Vehicles and every creature
+type the corpus knows, through `isCreatureType`), "historic permanents" (legendary, artifact or Saga,
+CR 700.6), "outlaws" (Assassin, Mercenary, Pirate, Rogue, Warlock, CR 700.12) and "tokens". A
+phrase it cannot count ("blue permanents") stays unread. Only generic mana moves, as before.
+
+**Tests.** 3 engine tests on Razor Golem's corpus row and a probe with affinity for creatures: both
+read and an uncountable phrase stays unread; six Plains pay for the Golem entirely, five Forests
+take nothing off, three Plains and two Forests take {3}; two Grizzly Bears take {2} off the probe and
+the lands do not count. The phrase's test replaced by the artifact count was put in by hand and
+failed two of them. Plus the two D596 tests above.
+
+    engine tests: 4,233, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,185 of 31,292 (was 9,169); lines read 26,677 of 58,524 (45.6%, was 26,645)
+
+Pod sweep on D596's build (07a1022), seeds 46401–46440: 40 of 40 finished, no throw and no stall.
+
+Break run on D596's build: 8 deliberate faults, 4 caught. The four misses were each a quality or a
+rule no test had asked about, and each now has one that fails with the fault in: protection from
+everything (a probe protected from a Goblin and from a Charm alike), from monocolored (protected
+from the mono-red Goblin and not from the two-colour Charm), the qualities cleared when the
+creature loses all its abilities (a frogged Beloved Chaplain is no longer protected from the
+Goblin), and targeting (Lightning Bolt is offered Grizzly Bears and not a creature with protection
+from instants).

@@ -2181,14 +2181,18 @@ export function costChangeFor(
   */
   const own = scriptForCard(def)?.affinity;
   if (own !== undefined) {
+    // Artifacts, or whatever else the card prints (D597): the test is the keyword's own.
+    const counts = own === 'artifacts'
+      ? (id: string) => hasType(characteristicsOf(state, state.instances[id]!).typeLine, 'artifact')
+      : (id: string) => own.counts(state, id);
     const n = listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
       const inst = state.instances[id];
       if (inst === undefined || isFaceDownPermanent(inst)) return false;
-      return hasType(characteristicsOf(state, inst).typeLine, 'artifact');
+      return counts(id);
     }).length;
     if (n > 0) {
       down += n;
-      notes.push(`affinity for artifacts: {${n}} less`);
+      notes.push(`affinity for ${own === 'artifacts' ? 'artifacts' : own.words}: {${n}} less`);
     }
   }
   // And a conditional change printed on the spell: "costs {1} less to cast if …" (D578).
