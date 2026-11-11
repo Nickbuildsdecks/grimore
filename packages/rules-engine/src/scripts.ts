@@ -6987,6 +6987,22 @@ const KAMBAL: CardScript = {
  * should say which creature did this, and by the time the ward resolves the only thing that knows
  * is the ability itself.
  */
+/**
+ * What a **disguised** face-down permanent has: ward {2} and nothing else (CR 702.168a, D598).
+ *
+ * A face-down permanent has no script — that is the rule for morph, and the engine keeps it by
+ * asking a face-down permanent for no triggers at all. The ward a disguised one has is the rules'
+ * gift rather than the card's text, so it travels the way any other ability a permanent was
+ * *given* does: as a granted trigger, referenced by `DISGUISE_GRANT` and looked up by its reserved
+ * name through `scriptFor`, which is the one lookup every site that fires, aims or resolves a
+ * granted trigger already uses. No card is named with a `#`, so the name cannot collide.
+ */
+export const DISGUISED_FACE_DOWN: CardScript = {
+  name: '#disguised',
+  grantedTriggers: [ward('a face-down creature', '{2}')],
+};
+export const DISGUISE_GRANT = { card: '#disguised', index: 0 } as const;
+
 function ward(name: string, cost: string, life = 0): TriggerDef {
   return {
     on: { kind: 'targeted', by: 'opponent' },
@@ -10438,7 +10454,10 @@ export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
 
 /** The script for a card, or undefined when it is not automated. */
 export const scriptFor = (name: string | undefined): CardScript | undefined =>
-  name === undefined ? undefined : CARD_SCRIPTS.get(name.trim().toLowerCase());
+  name === undefined ? undefined
+    // A disguised face-down creature's ward (D598): see `DISGUISED_FACE_DOWN`.
+    : name === DISGUISE_GRANT.card ? DISGUISED_FACE_DOWN
+      : CARD_SCRIPTS.get(name.trim().toLowerCase());
 
 export const scriptedCardNames = (): string[] => [...CARD_SCRIPTS.values()].map((s) => s.name).sort();
 
@@ -10689,6 +10708,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       morph: {
         cost: { mana: costed.mana },
         ...(costed.mega === true ? { mega: true as const } : {}),
+        ...(costed.disguise === true ? { disguise: true as const } : {}),
       },
     };
   }

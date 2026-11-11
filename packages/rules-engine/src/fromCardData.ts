@@ -718,8 +718,8 @@ function manaMismatch(
  */
 export function keywordWithCost(
   line: string,
-): { field: 'morph' | 'echo'; mana: string; mega?: true } | null {
-  const match = /^(Morph|Megamorph|Echo)\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
+): { field: 'morph' | 'echo'; mana: string; mega?: true; disguise?: true } | null {
+  const match = /^(Morph|Megamorph|Disguise|Echo)\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
   if (match === null) return null;
   const word = match[1]!.toLowerCase();
   const mana = match[2]!;
@@ -729,6 +729,8 @@ export function keywordWithCost(
     parse is a cost it must not guess at. The regex requires mana symbols and nothing else.
   */
   if (word === 'echo') return { field: 'echo', mana };
+  // Disguise is morph whose face-down creature has ward {2} (CR 702.168, D598).
+  if (word === 'disguise') return { field: 'morph', mana, disguise: true };
   return word === 'megamorph' ? { field: 'morph', mana, mega: true } : { field: 'morph', mana };
 }
 
@@ -960,9 +962,11 @@ export function cardFromData(row: CardDataRow): Derivation {
       */
       const costed = keywordWithCost(line);
       if (costed !== null && costed.field === 'morph' && landMorph === undefined) {
-        landMorph = costed.mega === true
-          ? { cost: { mana: costed.mana }, mega: true }
-          : { cost: { mana: costed.mana } };
+        landMorph = {
+          cost: { mana: costed.mana },
+          ...(costed.mega === true ? { mega: true as const } : {}),
+          ...(costed.disguise === true ? { disguise: true as const } : {}),
+        };
         continue;
       }
       const mana = parseManaLine(line, name);
@@ -1051,9 +1055,11 @@ export function cardFromData(row: CardDataRow): Derivation {
         echo = { cost: costed.mana };
       } else {
         if (morph !== undefined) { unread.push(line); continue; }
-        morph = costed.mega === true
-          ? { cost: { mana: costed.mana }, mega: true }
-          : { cost: { mana: costed.mana } };
+        morph = {
+          cost: { mana: costed.mana },
+          ...(costed.mega === true ? { mega: true as const } : {}),
+          ...(costed.disguise === true ? { disguise: true as const } : {}),
+        };
       }
     }
     if (unread.length > 0) {

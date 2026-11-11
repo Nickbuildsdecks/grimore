@@ -3013,6 +3013,11 @@ export interface CardScript {
      * turning a permanent face up is specifically the thing nobody may respond to.
      */
     readonly mega?: true;
+    /**
+     * Disguise: the face-down creature also has ward {2} (CR 702.168a, D598). See
+     * `DISGUISED_FACE_DOWN`. The turn-up is the same special action as morph's.
+     */
+    readonly disguise?: true;
   };
   /**
    * An additional cost that is not optional: "As an additional cost to cast this spell, sacrifice

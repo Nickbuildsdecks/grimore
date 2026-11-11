@@ -56,7 +56,7 @@ import {
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
-import { scriptFor, soleTargetSpecOf } from './scripts.js';
+import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, scriptFor, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
@@ -2013,6 +2013,16 @@ function raise(
         ?? scriptFor(ref.card)?.grantedTriggers?.[ref.index];
       if (granted === undefined) continue;
       next = fireTrigger(next, granted, id, inst, ref.index, event, actor, subject, fromStack, ref);
+    }
+    /*
+      And a disguised face-down creature's ward {2} (CR 702.168a, D598), which the rules give it
+      rather than its card — so it is fired as a granted trigger, from the reserved reference every
+      granted lookup already resolves. Not while it has lost all its abilities, like anything else.
+    */
+    if (isFaceDownPermanent(inst) && !allAbilitiesLost(next, inst)
+      && scriptForCard(next.cardDefs[inst.defKey])?.morph?.disguise === true) {
+      const ward = DISGUISED_FACE_DOWN.grantedTriggers![DISGUISE_GRANT.index]!;
+      next = fireTrigger(next, ward, id, inst, DISGUISE_GRANT.index, event, actor, subject, fromStack, DISGUISE_GRANT);
     }
   }
   return next;

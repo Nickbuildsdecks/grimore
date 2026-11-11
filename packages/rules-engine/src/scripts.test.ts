@@ -37,8 +37,8 @@ import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
-import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
-import { becomeCopyOf, dealDamage, equipTo } from './effects.js';
+import { CARD_SCRIPTS, PEST_TOKEN, soleTargetSpecOf } from './scripts.js';
+import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -44510,6 +44510,24 @@ describe('affinity for anything (D597)', () => {
     }
     const odd = compileCard({ ...HERDER, oracle_text: 'Affinity for blue permanents' } as never);
     expect(odd.ok && odd.unread.length).toBe(1);
+    // And a one-word phrase that names no type (D597's break run): unread, not "counts nothing".
+    const nonsense = compileCard({ ...HERDER, oracle_text: 'Affinity for widgets' } as never);
+    expect(nonsense.ok && nonsense.unread.length).toBe(1);
+  });
+
+  it('affinity for tokens counts tokens (D597\'s break run)', () => {
+    const TOKENS = { ...HERDER, name: 'Probe Swarmer', oracle_text: 'Affinity for tokens' };
+    const deck = customDeck({
+      id: 'swarm', name: 'Swarm', entries: [{ name: 'Probe Swarmer', count: 2 }, { name: 'Forest', count: 40 }],
+      data: [TOKENS as never],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'swarm', 1: 'ember-rush' }, deckSpecs: { swarm: deck },
+      hands: { 0: ['Probe Swarmer'] }, battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = createToken(s, 0, PEST_TOKEN, 2);
+    const cast = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Probe Swarmer'));
+    expect(cast?.costNote).toContain('affinity for tokens: {2} less');
   });
 
   it('Razor Golem costs one less for each Plains, and Forests do not count', () => {
@@ -44524,5 +44542,58 @@ describe('affinity for anything (D597)', () => {
   it('affinity for creatures counts creatures, not lands', () => {
     const cast = playFor(['Grizzly Bears', 'Grizzly Bears', 'Forest', 'Forest', 'Forest', 'Forest'], 'Probe Herder').cast;
     expect(cast?.costNote).toContain('affinity for creatures: {2} less');
+  });
+});
+
+describe('disguise (D598)', () => {
+  /*
+    Disguise is morph whose face-down 2/2 has ward {2} (CR 702.168a). Riftburst Hellion is the
+    corpus's row; the pool's Battering Craghorn is the morph it is compared with.
+  */
+  const HELLION = {"name": "Riftburst Hellion", "type_line": "Creature — Hellion", "mana_cost": "{5}{R}{G}", "cmc": 7, "colors": ["R", "G"], "power": "6", "toughness": "7", "oracle_text": "Reach\nDisguise {4}{R/G}{R/G} (You may cast this card face down for {3} as a 2/2 creature with ward {2}. Turn it face up any time for its disguise cost.)", "layout": "normal"};
+  const list = customDeck({
+    id: 'disguise', name: 'Disguise',
+    entries: [{ name: 'Riftburst Hellion', count: 2 }, { name: 'Battering Craghorn', count: 2 },
+      { name: 'Mountain', count: 28 }, { name: 'Forest', count: 28 }],
+    data: [HELLION] as never[],
+  });
+  /** Seat 0 casts `card` face down; seat 1, with one Mountain, Bolts it. */
+  const boltTheFaceDown = (card: string): { s: GameState; id: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'disguise', 1: 'ember-rush' }, deckSpecs: { disguise: list.deck },
+      hands: { 0: [card], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Mountain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'hand', card);
+    s = passBoth(apply(tapAllLands(s, 0), { type: 'auto:cast', by: 0, card: id, faceDown: true }));
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'), targets: [{ kind: 'card', id }] });
+    for (let i = 0; i < 20 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i += 1) {
+      const asked = s.pendingDecision;
+      s = asked !== null
+        ? apply(s, { type: 'auto:decide', by: asked.seat, ...(asked.options !== undefined ? { option: asked.options[0]! } : { cards: [] }) } as Action)
+        : apply(s, { type: 'auto:pass', by: s.priority! });
+    }
+    return { s, id };
+  };
+
+  it('reads Disguise as a morph that is disguised', () => {
+    expect(list.unknown).toEqual([]);
+    const read = compileCard(HELLION as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.morph).toMatchObject({ cost: { mana: '{4}{R/G}{R/G}' }, disguise: true });
+  });
+
+  it('the face-down disguised creature has ward {2}: a Bolt its caster cannot pay for is countered', () => {
+    const { s, id } = boltTheFaceDown('Riftburst Hellion');
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    expect(s.instances[id]!.faceDown).toBe(true);
+    expect(damageOn(s, id)).toBe(0);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Lightning Bolt');
+  });
+
+  it('a face-down morph has no ward, and the same Bolt kills it', () => {
+    const { s, id } = boltTheFaceDown('Battering Craghorn');
+    expect(s.instances[id]!.zone).toBe('graveyard');
   });
 });

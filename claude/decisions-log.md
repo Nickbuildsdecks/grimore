@@ -41905,3 +41905,44 @@ from the mono-red Goblin and not from the two-colour Charm), the qualities clear
 creature loses all its abilities (a frogged Beloved Chaplain is no longer protected from the
 Goblin), and targeting (Lightning Bolt is offered Grizzly Bears and not a creature with protection
 from instants).
+
+## D598 — Disguise
+
+Murders at Karlov Manor's morph: cast face down for {3} as a 2/2 with **ward {2}**, turned face up
+for the disguise cost (CR 702.168). 46 legal lines print a bare "Disguise {cost}", and 12 cards were
+one line short of it.
+
+**Read as morph with one flag.** `keywordWithCost` reads Disguise beside Morph and Megamorph and
+returns `disguise: true`; `morph.disguise` carries it on the script, in all three places a costed
+keyword becomes a morph. The face-down cast and the turn-up are morph's own, unchanged.
+
+**The ward is a granted trigger, and that is the whole design.** A face-down permanent has no
+script, which is how the engine keeps morph's rule, and both the place triggers are collected and
+the place a trigger is resolved ask the face-down card for nothing. The ward a disguised one has is
+the rules' gift rather than the card's text — exactly what a granted trigger is. So `raise` fires
+it from a reserved reference, `DISGUISE_GRANT`, and `scriptFor` answers that reserved name with
+`DISGUISED_FACE_DOWN`, whose one granted trigger is the pool's `ward(…, '{2}')`. Every site that
+fires, aims or resolves a granted trigger already goes through that lookup, so nothing else had to
+learn about disguise. The first attempt gave the face-down permanent a script instead; the trigger
+fired and then resolved as the card's own first trigger, because the stack looks a trigger up by
+the card and its index. Not while it has lost all its abilities.
+
+**Tests.** 3 engine tests on Riftburst Hellion's corpus row and the pool's Battering Craghorn: the
+keyword reads as a disguised morph with its cost; face down, the Hellion's ward counters a Lightning
+Bolt whose caster has no mana left, and it survives undamaged; a face-down Craghorn has no ward and
+the same Bolt kills it. The ward's firing removed was put in by hand and failed. Plus the two D597
+tests above.
+
+    engine tests: 4,237, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,197 of 31,292 (was 9,185); lines read 26,719 of 58,524 (45.7%, was 26,677)
+
+Pod sweep on D597's build (f9a71be), seeds 46501–46540: 40 of 40 finished, no throw and no stall.
+
+Break run on D597's build: 4 deliberate faults, 2 caught. Affinity for tokens had no test; a probe
+with it now costs {2} less beside two Pest tokens. And the refusal of an uncountable phrase was
+tested only with "blue permanents", which the reader refuses earlier for its space, so the branch
+that returns "nothing to count" for a one-word phrase was never reached; "affinity for widgets"
+now reaches it. Both fail with their fault in.
