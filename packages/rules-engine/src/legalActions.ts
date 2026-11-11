@@ -162,6 +162,12 @@ export interface LegalPlay {
    */
   readonly escape?: boolean;
   /**
+   * Set on a play that casts the card out of its owner's graveyard by **retrace** (CR 702.81, D599):
+   * its printed cost, and a land card discarded from hand as an additional cost — whose candidates
+   * travel as `discardOptions`. It goes back to the graveyard when it resolves, as escape's does.
+   */
+  readonly retrace?: boolean;
+  /**
    * How many cards this play would exile from your graveyard to pay for itself: escape's fixed
    * count, or the number delve worked out (CR 702.112, CR 702.139).
    *
@@ -1149,6 +1155,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
         fromAdventure: false, impulse: false, offered: false,
       })),
+    // And the third: retrace (D599), the printed cost and a land card from hand.
+    ...listAt(state, zoneKey(seat, 'graveyard'))
+      .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.retrace === true)
+      .map((id) => ({
+        id, fromCommand: false, flashback: false, escape: false, foretold: false,
+        fromAdventure: false, impulse: false, offered: false, retrace: true,
+      })),
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => {
         const inst = state.instances[id];
@@ -1214,7 +1227,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
   });
 
-  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } of castable) {
+  for (const entry of castable) {
+    const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } = entry;
+    const retrace = 'retrace' in entry && entry.retrace === true;
     const inst = state.instances[id];
     if (inst === undefined) continue;
     /*
@@ -1228,7 +1243,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     if (splitSecond) {
       // Only the hand is worth explaining: a card in a graveyard or in exile is not drawn with a
       // reason beside it, for the same reason none of those zones goes through `why` at all.
-      if (!fromCommand && !flashback && !escape && !foretold && !fromAdventure && !offered) {
+      if (!fromCommand && !flashback && !escape && !retrace && !foretold && !fromAdventure && !offered) {
         why(id, 'a spell with split second is on the stack');
       }
       continue;
@@ -1255,7 +1270,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       From hand only, and never with the flashback or commander-zone pass: morph is about the card
       in your hand, and nothing in this pool has both.
     */
-    if (script?.morph !== undefined && !flashback && !escape && !fromCommand && !fromAdventure
+    if (script?.morph !== undefined && !flashback && !escape && !retrace && !fromCommand && !fromAdventure
       && sorcerySpeed) {
       const faceDownCost = parseManaCost(MORPH_COST);
       if (canAfford(poolOf(state, seat), faceDownCost, sources)) {
@@ -1334,7 +1349,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       casting it and often because you cannot cast it. During your own turn only (CR 702.143a),
       which in this engine is the window a sorcery gets.
     */
-    if (script?.foretell !== undefined && !flashback && !escape && !fromCommand && !foretold
+    if (script?.foretell !== undefined && !flashback && !escape && !retrace && !fromCommand && !foretold
       && !fromAdventure && sorcerySpeed) {
       const cost = parseManaCost(FORETELL_COST);
       if (canAfford(poolOf(state, seat), cost, sources)) {
@@ -1357,7 +1372,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       {2}, and what it buys is public. "Three time counters" is the whole of what the other player
       needs to plan around, so the row says it.
     */
-    if (script?.suspend !== undefined && !flashback && !escape && !fromCommand && !foretold
+    if (script?.suspend !== undefined && !flashback && !escape && !retrace && !fromCommand && !foretold
       && !fromAdventure && sorcerySpeed) {
       const cost = parseManaCost(script.suspend.cost);
       if (cost.unsupported === undefined && canAfford(poolOf(state, seat), cost, sources)) {
@@ -1396,7 +1411,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       be being cast for two costs at once. A card with evoke *and* dash would be offered twice
       here, which is also what the rules say happens.
     */
-    const alternatives = flashback || escape || foretold || fromCommand || fromAdventure || offered
+    const alternatives = flashback || escape || retrace || foretold || fromCommand || fromAdventure || offered
       ? []
       : [
         /*
@@ -1536,7 +1551,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       costs, which is the line every life cost here draws.
     */
     const discardAsked = script?.additionalCost !== undefined && 'discard' in script.additionalCost;
-    const pitches = discardAsked ? discardOptions(state, seat, id) : [];
+    // Retrace's discard is a land card (D599); with a printed discard as well it would be two, which
+    // nothing prints and nothing here can ask.
+    if (retrace && discardAsked) continue;
+    const pitches = retrace
+      ? listAt(state, zoneKey(seat, 'hand')).filter((card) =>
+        hasType(parseTypeLine(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine), 'land'))
+      : discardAsked ? discardOptions(state, seat, id) : [];
+    if (retrace && pitches.length === 0) continue;
     if (discardAsked && pitches.length === 0) {
       why(id, 'it asks you to discard a card, and you have no other card in hand');
       continue;
@@ -1546,7 +1568,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const eats = sacrificeAsked?.sacrifice === 'artifact' || sacrificeAsked?.sacrifice === 'artifact-or-creature'
       ? { sacrificeKind: sacrificeAsked.sacrifice }
       : {};
-    const pitchOn = { ...(pitches.length === 0 ? {} : { discardOptions: pitches }), ...eats };
+    const pitchOn = {
+      ...(pitches.length === 0 ? {} : { discardOptions: pitches }), ...eats,
+      ...(retrace ? { retrace: true as const } : {}),
+    };
     const lifeAsked = script?.additionalCost !== undefined && 'life' in script.additionalCost
       ? script.additionalCost.life
       : 0;
@@ -1737,6 +1762,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           // The cards as well as the mana, because the mana is the cheap half: a player reading
           // "escape {2}{R}{R}" and nothing else would not know the graveyard is about to empty.
           ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${script?.escape?.exile ?? 0})`
+          : retrace
+            ? `Cast ${ch.name} from your graveyard (retrace ${costShown}, discarding a land card)`
           : foretold
             ? `Cast ${ch.name} from exile (foretold ${costShown})`
             : impulse

@@ -10730,6 +10730,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'battle cry') return { triggers: [battleCryTrigger()] };
 
   if (word === 'delve') return { delve: true };
+  // Retrace (D599): the cast from the graveyard is `legalActions`' and `castSpell`'s.
+  if (word === 'retrace') return { retrace: true };
   if (word === 'affinity for artifacts') return { affinity: 'artifacts' };
   /*
     And affinity for anything else (D597): a card type in the plural, a subtype in the plural (land

@@ -2777,6 +2777,12 @@ export interface CardScript {
    * Which cards go is the engine's to decide, the way convoke's taps are — see `graveyardFodder`
    * for the order and why it prefers cards nothing else in the deck can use.
    */
+  /**
+   * **Retrace** (CR 702.81, D599): "You may cast this card from your graveyard by discarding a land
+   * card in addition to paying its other costs." Flashback's zone, the printed cost, and D585's
+   * discard as the additional cost, narrowed to land cards.
+   */
+  readonly retrace?: true;
   readonly escape?: {
     /** The mana half, in the printed `{2}{R}{R}` form. */
     readonly cost: string;

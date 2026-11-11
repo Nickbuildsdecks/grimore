@@ -13,7 +13,7 @@ import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import {
-  characteristicsOf, grantedAbilitiesOn, hasType, type GrantedTriggerRef,
+  characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
@@ -177,6 +177,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const script = scriptForCard(def);
   const flashback = action.flashback === true;
   const escape = action.escape === true;
+  // Retrace (D599): from the graveyard, for the printed cost and a land card discarded.
+  const retrace = action.retrace === true;
   /*
     An adventurer being cast as its creature half, out of exile, because its adventure resolved.
 
@@ -288,6 +290,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (graveyardFodder(state, action.by, inst.id, script.escape.exile).length < script.escape.exile) {
       throw new EngineError('RULE_NOT_APPLICABLE',
         `escape asks for ${script.escape.exile} other cards in your graveyard`);
+    }
+  } else if (retrace) {
+    if (script?.retrace !== true) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no retrace`);
+    }
+    if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
   } else if (!foretold && !fromCommand && !fromAdventure && !offered
     && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
@@ -508,7 +517,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       not that one — and a card that has dash and not evoke would otherwise be refused for the
       keyword it does not have rather than for the two it was sent.
     */
-    if (flashback || escape || foretold || offered || kicked || boughtBack
+    if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
       || [evoked, dashed, bestowed, spectacled, overloaded].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
@@ -594,7 +603,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     the hand as this runs and on the stack by the time anything is paid.
   */
   let discardedForCost: string | null = null;
-  if (script?.additionalCost !== undefined && 'discard' in script.additionalCost) {
+  if (retrace) {
+    // A land card, and only a land card (CR 702.81a) — the offer listed exactly these.
+    const lands = listAt(state, zoneKey(action.by, 'hand')).filter((card) =>
+      hasType(parseTypeLine(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine), 'land'));
+    if (action.discarded === undefined || !lands.includes(action.discarded)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `retrace asks you to discard a land card from your hand`);
+    }
+    discardedForCost = action.discarded;
+  } else if (script?.additionalCost !== undefined && 'discard' in script.additionalCost) {
     const options = discardOptions(state, action.by, inst.id);
     if (options.length === 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', `you have no card to discard for ${characteristics.name}`);

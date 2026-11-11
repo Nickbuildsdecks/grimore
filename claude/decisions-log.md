@@ -41946,3 +41946,42 @@ with it now costs {2} less beside two Pest tokens. And the refusal of an uncount
 tested only with "blue permanents", which the reader refuses earlier for its space, so the branch
 that returns "nothing to count" for a one-word phrase was never reached; "affinity for widgets"
 now reaches it. Both fail with their fault in.
+
+## D599 — Retrace
+
+"You may cast this card from your graveyard by discarding a land card in addition to paying its
+other costs" (CR 702.81). 18 legal lines, 10 cards one line short: Flame Jab, Raven's Crime and the
+rest of Shadowmoor and Eventide's cycle.
+
+**Flashback's zone, the printed cost, and D585's discard narrowed to land cards.** `CardScript.
+retrace` from the keyword; `castablePlays` lists a retrace card in the graveyard beside the
+flashback and escape lists, offers it for its printed cost with the hand's **land cards** as the
+play's `discardOptions`, and does not offer it at all with no land in hand. It is kept out of the
+paths a hand cast takes (morph, foretell, suspend, the alternative costs) exactly as escape is.
+`castSpell` checks the card is in its caster's graveyard and that the discard named is one of
+those land cards, and pays the discard through the same field D585's additional cost uses. A card
+that prints both retrace and a discard cost would be two discards, which nothing prints; it is not
+offered. The spell goes back to the graveyard as it resolves, which is the rule.
+
+**On the table** the play travels a `retrace` flag the web sends with the cast, beside flashback
+and escape; the land is chosen with the table's existing discard picker.
+
+**Tests.** 3 engine tests on Flame Jab's corpus row: it reads; it is offered from the graveyard with
+only land cards to discard and not at all with none in hand; a non-land discard is refused, and a
+land discard casts it, deals its damage, and leaves both the land and the Jab in the graveyard. The
+land check removed was put in by hand and failed. The pool's mechanic check names `script retrace`
+as compiler-only, with this evidence. Plus the two D598 tests below.
+
+    engine tests: 4,242, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,207 of 31,292 (was 9,197); lines read 26,736 of 58,524 (45.7%, was 26,719)
+
+Pod sweep on D598's build (f0086ff), seeds 46601–46640: 40 of 40 finished, no throw and no stall.
+
+Break run on D598's build: 6 deliberate faults, 4 caught. Disguise read by the **line** reader had
+no test — Riftburst Hellion is keywords only and is read whole — so a probe with a sentence beside
+its "Disguise {1}{U}" now reads as a disguised morph. And the ward while the creature has lost all
+its abilities had none: a face-down Hellion made abilityless is now killed by the Bolt its ward
+would have countered. Both fail with their fault in.

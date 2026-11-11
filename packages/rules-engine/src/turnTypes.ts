@@ -1594,6 +1594,8 @@ export interface AutoCastAction {
    * used to decide this play was offerable.
    */
   readonly escape?: boolean;
+  /** Cast from the graveyard by retrace (D599), discarding the land card named in `discarded`. */
+  readonly retrace?: boolean;
   /** The permanent sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
   /** The card discarded for an additional cost, when the spell asks for one (D585). */

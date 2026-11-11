@@ -459,13 +459,15 @@ function playAction(
     - `overloaded` — the one that is dearer, and the one that changes what the spell does.
     - `buyback` — the kicker's twin at a different price: without the flag the card goes to the
       graveyard instead of back to the hand the player paid to keep it in (CR 702.26a).
+    - `retrace` — flashback's zone again (D599), with a land card discarded as the extra cost; the
+      land is the play's `discardOptions`, chosen the way any discard cost is.
 
     One loop rather than eleven conditional spreads, and not only for the length: eleven spreads of
     `{} | { flag: true }` is a union of two thousand object types, which TypeScript refuses to
     represent at all ("union type that is too complex") — overload was the one that tipped it over.
   */
   const COST_FLAGS = [
-    "kicked", "buyback", "flashback", "escape", "faceDown", "foretold", "offered",
+    "kicked", "buyback", "flashback", "escape", "retrace", "faceDown", "foretold", "offered",
     "evoked", "dashed", "bestowed", "spectacled", "overloaded",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}

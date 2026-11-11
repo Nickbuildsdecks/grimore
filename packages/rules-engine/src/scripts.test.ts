@@ -7741,6 +7741,14 @@ describe('deck coverage', () => {
         making it day, the change both ways from the previous active player's spells only, a
         daybound card entering at night transformed without a transform trigger and turning over
         by day with one, and the Sage making it day without a change and drawing on the next one.
+
+      **And retrace** (D599):
+
+      - `script retrace`: 18 legal lines, 10 cards one line short (Flame Jab, Raven's Crime and the
+        rest of the Shadowmoor and Eventide cycle). No pool deck has one, and D442 forbids adding
+        one. Driven at runtime by "retrace (D599)" on Flame Jab's corpus row: offered from the
+        graveyard with only the hand's land cards to discard, refused a non-land, and cast for its
+        cost and a land.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7755,6 +7763,7 @@ describe('deck coverage', () => {
       'trigger sacrifices',
       'script entersUntappedIf', 'script payLifeToEnterUntapped',
       'keyword daybound', 'keyword nightbound', 'trigger day-night', 'script becomesDayAsItEnters',
+      'script retrace',
     ]);
 
     const declared = [
@@ -44595,5 +44604,93 @@ describe('disguise (D598)', () => {
   it('a face-down morph has no ward, and the same Bolt kills it', () => {
     const { s, id } = boltTheFaceDown('Battering Craghorn');
     expect(s.instances[id]!.zone).toBe('graveyard');
+  });
+
+  it('reads disguise through the line reader too, on a card with text beside it (D598\'s break run)', () => {
+    // The Hellion is keywords only, so it is read whole; a card with a sentence is read line by line.
+    const read = compileCard({
+      ...HELLION, name: 'Probe Informant',
+      oracle_text: 'When Probe Informant is turned face up, draw a card.\nDisguise {1}{U}',
+    } as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.morph).toMatchObject({ disguise: true });
+  });
+
+  it('a disguised creature that has lost all its abilities has no ward (D598\'s break run)', () => {
+    // Face down, then made a creature with no abilities, then Bolted.
+    let s = advanceTo(arena({
+      decks: { 0: 'disguise', 1: 'ember-rush' }, deckSpecs: { disguise: list.deck },
+      hands: { 0: ['Riftburst Hellion'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Mountain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'hand', 'Riftburst Hellion');
+    s = passBoth(apply(tapAllLands(s, 0), { type: 'auto:cast', by: 0, card: id, faceDown: true }));
+    s = pump(s, [id], id, 0, { losesAllAbilities: true });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lightning Bolt'), targets: [{ kind: 'card', id }] });
+    expect(namesIn(drain(s, 20), 0, 'graveyard')).toContain('Riftburst Hellion');
+  });
+});
+
+describe('retrace (D599)', () => {
+  /*
+    "You may cast this card from your graveyard by discarding a land card in addition to paying its
+    other costs" (CR 702.81). Flame Jab is the corpus's row.
+  */
+  const JAB = {"name": "Flame Jab", "type_line": "Sorcery", "mana_cost": "{R}", "cmc": 1, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Flame Jab deals 1 damage to any target.\nRetrace (You may cast this card from your graveyard by discarding a land card in addition to paying its other costs.)", "layout": "normal"};
+  const list = customDeck({
+    id: 'retrace', name: 'Retrace',
+    entries: [{ name: 'Flame Jab', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 52 }],
+    data: [JAB] as never[],
+  });
+  /** Flame Jab in seat 0's graveyard, `hand` in hand, one Mountain to pay with. */
+  const table = (hand: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'retrace', 1: 'ember-rush' }, deckSpecs: { retrace: list.deck },
+      hands: { 0: ['Flame Jab', ...hand] }, battlefield: { 0: ['Mountain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Flame Jab'), toZone: 'graveyard' });
+  };
+  const retraced = (s: GameState) => legalActions(s, 0).plays.find((p) => p.retrace === true);
+
+  it('reads Retrace', () => {
+    expect(list.unknown).toEqual([]);
+    const read = compileCard(JAB as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.retrace).toBe(true);
+  });
+
+  it('is offered from the graveyard with the land cards in hand to discard, and only them', () => {
+    const s = table(['Mountain', 'Grizzly Bears']);
+    const play = retraced(s);
+    expect(play?.card).toBe(find(s, 0, 'graveyard', 'Flame Jab'));
+    // Every land card in the hand (the draw step may have added one), and nothing else.
+    expect(play?.discardOptions).toContain(find(s, 0, 'hand', 'Mountain'));
+    expect((play?.discardOptions ?? []).map((id) => nameOf(s, id)).every((n) => n === 'Mountain')).toBe(true);
+    expect(play?.discardOptions).not.toContain(find(s, 0, 'hand', 'Grizzly Bears'));
+    // No land in hand, no retrace — including whatever the draw step brought.
+    let landless = table(['Grizzly Bears']);
+    for (const id of ids(landless, 0, 'hand').filter((card) => nameOf(landless, card) === 'Mountain')) {
+      landless = apply(landless, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    expect(retraced(landless)).toBeUndefined();
+  });
+
+  it('casts it for its cost and a land, deals its damage, and it goes back to the graveyard', () => {
+    let s = table(['Mountain', 'Grizzly Bears']);
+    const jab = find(s, 0, 'graveyard', 'Flame Jab');
+    const land = find(s, 0, 'hand', 'Mountain');
+    // A land card, and only a land card.
+    expect(() => apply(s, {
+      type: 'auto:cast', by: 0, card: jab, retrace: true, discarded: find(s, 0, 'hand', 'Grizzly Bears'),
+      targets: [{ kind: 'player', seat: 1 }],
+    } as Action)).toThrow(/land card/);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: jab, retrace: true, discarded: land, targets: [{ kind: 'player', seat: 1 }],
+    } as Action)), 20);
+    expect(life(s, 1)).toBe(before - 1);
+    expect(s.instances[land]!.zone).toBe('graveyard');
+    expect(s.instances[jab]!.zone).toBe('graveyard');
   });
 });
