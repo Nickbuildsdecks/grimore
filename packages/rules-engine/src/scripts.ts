@@ -10536,12 +10536,53 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     the argument, and it is D364's rule: "Cycling {2}" with no ability is a card that cannot be
     cycled, and an ability with no declaration has no cost to charge.
 
-    Only plain cycling. "Landcycling {1}{G}", "Basic landcycling" and the typed cyclings search a
-    library for a card of a kind this reader would have to invent a filter for, so they are left to
-    be reported (D362) rather than read as a draw, which is a different card.
+    Plain cycling here; the typed cyclings are the branch below (D588), which reads them as the
+    search they are rather than as a draw, which would be a different card (D362).
   */
   const cycling = /^cycling\s+((?:\{[^}]*\})+)$/i.exec(text);
   if (cycling !== null) return { abilities: [cyclingAbility(cycling[1]!)] };
+  /*
+    **Typecycling** (D588): "Plainscycling {2}", "Basic landcycling {1}", "Wizardcycling {3}". The
+    same ability with a search where the draw was — "<cost>, Discard this card: Search your library
+    for a <type> card, reveal it, put it into your hand, then shuffle" (CR 702.29e) — and still
+    cycling, so anything that watches a card being cycled sees it (CR 702.29f).
+
+    The search is `searchClause`'s, asked the sentence the reminder text prints, so the filter is
+    the one a printed search with the same words already gets: a subtype is matched on the parsed
+    type line, and "basic land" needs the supertype. The type word is case-sensitive on purpose:
+    Magic capitalises a subtype ("Plainscycling", "Slivercycling") and the two card-type phrases
+    are the only lowercase ones, which is what keeps plain "Cycling {2}" out of this branch.
+  */
+  const typedCycling = /^(Basic land|Artifact land|[A-Z][a-z]+)cycling\s+((?:\{[^}]*\})+)$/.exec(text);
+  if (typedCycling !== null) {
+    const kind = typedCycling[1]!;
+    const mana = typedCycling[2]!;
+    /*
+      The word in front names a card type phrase or a **subtype**, and only a real subtype is
+      read: "Landcycling" is "a land card", a card type, and taken as a capitalised word it would be
+      a search for the subtype Land, which no card has — a search that always finds nothing, the
+      failure D362 is about. So the three type phrases are named, and anything else has to be a
+      basic land type or a creature type.
+    */
+    const TYPE_PHRASES: Readonly<Record<string, string>> = {
+      'Basic land': 'a basic land card', 'Artifact land': 'an artifact land card', Land: 'a land card',
+    };
+    const subtype = TYPE_PHRASES[kind] === undefined
+      && (['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'].includes(kind) || isCreatureType(kind));
+    if (TYPE_PHRASES[kind] === undefined && !subtype) return null;
+    const noun = TYPE_PHRASES[kind] ?? `a ${kind} card`;
+    const search = searchClause(`Search your library for ${noun}, reveal it, put it into your hand`, name);
+    if (search === null || search.decisions === undefined) return null;
+    return {
+      abilities: [{
+        cost: { mana, discardSelf: true },
+        cycling: true,
+        description: `${kind}cycling ${mana} (${mana}, Discard this card: Search your library for ${noun}, reveal it, put it into your hand, then shuffle.)`,
+        decisions: search.decisions,
+        effect: search.effect,
+      } as AbilityDef],
+    };
+  }
 
   /*
     Unearth, the same arrangement one zone along (D517): a declaration that *is* an ability, so the

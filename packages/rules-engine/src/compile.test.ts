@@ -7041,14 +7041,34 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine[0]!.cost).toEqual({ mana: '{U}', discardSelf: true });
     });
 
-    it.each([['Landcycling {1}{G}'], ['Basic landcycling {2}'], ['Swampcycling {2}']])(
-      'leaves %s unread, because it searches a library rather than drawing',
-      (text) => {
+    it.each([
+      ['Landcycling {1}{G}', 'a land card'],
+      ['Basic landcycling {2}', 'a basic land card'],
+      ['Swampcycling {2}', 'a Swamp card'],
+      ['Wizardcycling {3}', 'a Wizard card'],
+    ])(
+      'reads %s as a cycling that searches for %s, never as a draw',
+      (text, noun) => {
         /*
-          The typed cyclings put a card of a named kind into your hand out of your **library**, which
-          needs a filter this reader would have to invent (D259). Reading one as a draw would be a
-          card that does something else entirely, so it is reported instead (D362).
+          The typed cyclings put a card of a named kind into your hand out of your **library**. Until
+          D588 these rows asserted the line was left unread, because the filter did not exist; the
+          search reader now supplies it (D449), so the rows assert the reading instead — and what
+          mattered about the old test still holds: none of them is read as a draw.
         */
+        const read = card(text as string, 'Sorcery');
+        expect(read.ok).toBe(true);
+        if (!read.ok) return;
+        expect(read.unread).toEqual([]);
+        const ability = (field(read.script, 'abilities') as readonly AbilityDef[])[0]!;
+        expect(ability.cycling).toBe(true);
+        expect(ability.decisions?.[0]).toMatchObject({ from: 'library', prompt: `Search your library for ${noun}` });
+        expect(ability.description).not.toMatch(/Draw a card/);
+      },
+    );
+
+    it.each([['Lancecycling {2}'], ['Stormcycling {2}']])(
+      'leaves %s unread: the word in front is not a subtype, so the search would find nothing',
+      (text) => {
         const read = card(text as string, 'Sorcery');
         expect(read.ok).toBe(true);
         if (read.ok) expect(read.unread.map((entry) => entry.line)).toEqual([text]);

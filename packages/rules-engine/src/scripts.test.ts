@@ -43006,6 +43006,9 @@ describe('lands that enter tapped unless… (D587)', () => {
     expect(madeBy(VISTA)).toEqual(['G', 'W']);
     expect(madeBy(SANCTUARY)).toEqual(['U']);
     expect(madeBy(CLIFFTOP)).toEqual(['R', 'W']);
+    // A typed land that also prints its type's ability outside the reminder text taps for it
+    // once, not twice (the D587 break run). Not a real card: the shape is the guard's.
+    expect(madeBy(land('Probe Bog', 'Land — Swamp', '{T}: Add {B}.\nProbe Bog enters tapped unless you control a basic land.'))).toEqual(['B']);
   });
 
   it('a check land: untapped beside a Mountain, tapped beside only a Swamp, and the row says which', () => {
@@ -43058,6 +43061,18 @@ describe('lands that enter tapped unless… (D587)', () => {
     };
     expect(at(2)).toBe(true);
     expect(at(3)).toBe(false);
+    // And it counts Islands, not lands: two Islands and a Mountain are not three Islands.
+    const mixed = customDeck({
+      id: 'sanctuary-mixed', name: 'Sanctuary mixed',
+      entries: [{ name: 'Mystic Sanctuary', count: 4 }, { name: 'Island', count: 30 }, { name: 'Mountain', count: 10 }, { name: 'Lightning Bolt', count: 16 }],
+      data: [SANCTUARY] as never[],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'sanctuary-mixed', 1: 'ember-rush' }, deckSpecs: { 'sanctuary-mixed': mixed },
+      hands: { 0: ['Mystic Sanctuary'] }, battlefield: { 0: ['Island', 'Island', 'Mountain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mystic Sanctuary') });
+    expect(s.instances[find(s, 0, 'battlefield', 'Mystic Sanctuary')]!.tapped).toBe(true);
   });
 
   it('reads the table, not only your side of it: a low life total, and the lands your opponents have', () => {
@@ -43117,6 +43132,15 @@ describe('lands that enter tapped unless… (D587)', () => {
       const s = table(['Clifftop Retreat', 'Deathcap Glade'], ['Mountain']);
       const action = botAction(s, 0);
       expect(action).toMatchObject({ type: 'auto:playLand', card: find(s, 0, 'hand', 'Clifftop Retreat') });
+    });
+
+    it('and a basic over a check land whose condition fails, in either order (the D587 break run)', () => {
+      // Beside only a Swamp the Retreat would come in tapped, so the Mountain is the land to play.
+      // Both hand orders, so the answer cannot come from whichever was offered first.
+      for (const hand of [['Clifftop Retreat', 'Mountain'], ['Mountain', 'Clifftop Retreat']]) {
+        const s = table(hand, ['Swamp']);
+        expect(botAction(s, 0), hand.join(', ')).toMatchObject({ type: 'auto:playLand', card: find(s, 0, 'hand', 'Mountain') });
+      }
     });
 
     it('pays for a shock land when the mana casts something this turn, and not otherwise', () => {
@@ -43282,5 +43306,147 @@ describe('six faults the D574–D577 break run could not see, each now pinned (D
     expect(doubles(on(s, ['Pacifism', 'Angelic Gift']))).toBe(false);
     expect(doubles(on(s, ['Bonesplitter', 'Pacifism']))).toBe(false);
     expect(doubles(on(s, ['Bonesplitter', 'Loxodon Warhammer']))).toBe(true);
+  });
+});
+
+describe('typecycling: a cycling that searches instead of drawing (D588)', () => {
+  /*
+    "Mountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal
+    it, put it into your hand, then shuffle.)" — and basic landcycling, Plainscycling, Wizardcycling
+    and the rest (CR 702.29e). Still cycling, so anything that watches a cycle sees it (CR 702.29f).
+    Every card here is from its Oracle row.
+  */
+  const GIGAS = {
+    name: 'Hill Gigas', type_line: 'Creature — Giant', mana_cost: '{4}{R}{R}', cmc: 6, colors: ['R'], layout: 'normal',
+    power: '5', toughness: '4',
+    oracle_text: 'Trample, haste\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)',
+  };
+  const BARRENS = {
+    name: 'Ash Barrens', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    oracle_text: '{T}: Add {C}.\nBasic landcycling {1} ({1}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)',
+  };
+  const FALL = {
+    name: 'Fiery Fall', type_line: 'Instant', mana_cost: '{5}{R}', cmc: 6, colors: ['R'], layout: 'normal',
+    oracle_text: 'Fiery Fall deals 5 damage to target creature.\nBasic landcycling {1}{R} ({1}{R}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)',
+  };
+  const COMPANION = {
+    name: "Sojourner's Companion", type_line: 'Artifact Creature — Salamander', mana_cost: '{7}', cmc: 7, colors: [], layout: 'normal',
+    power: '4', toughness: '4',
+    oracle_text: 'Affinity for artifacts\nArtifact landcycling {2} ({2}, Discard this card: Search your library for an artifact land card, reveal it, put it into your hand, then shuffle.)',
+  };
+  const HEALER = {
+    name: 'Drannith Healer', type_line: 'Creature — Human Cleric', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal',
+    power: '2', toughness: '2',
+    oracle_text: 'Whenever you cycle another card, you gain 1 life.\nCycling {1} ({1}, Discard this card: Draw a card.)',
+  };
+  const ROWS = [GIGAS, BARRENS, FALL, COMPANION, HEALER];
+  const list = customDeck({
+    id: 'cyclers', name: 'Cyclers',
+    entries: [
+      ...ROWS.map((r) => ({ name: r.name, count: 2 })),
+      { name: 'Mountain', count: 12 }, { name: 'Forest', count: 12 }, { name: 'Barren Moor', count: 8 },
+      { name: 'Hill Giant', count: 16 },
+    ],
+    data: ROWS as never[],
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'cyclers', 1: 'ember-rush' }, deckSpecs: { cyclers: list },
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const named = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const cycleOf = (s: GameState, name: string) => legalActions(s, 0).plays
+    .find((p) => p.kind === 'activate' && p.card === find(s, 0, 'hand', name));
+  const cycle = (s: GameState, name: string): GameState => {
+    const play = cycleOf(s, name)!;
+    return passBoth(apply(s, { type: 'auto:activate', by: 0, card: play.card, abilityIndex: play.abilityIndex! }));
+  };
+
+  it('reads all four, and the cycling as cycling', () => {
+    for (const r of ROWS) {
+      const compiled = compileCard(r as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
+    }
+    const gigas = compileCard(GIGAS as never);
+    const ability = gigas.ok ? gigas.script?.abilities?.[0] : undefined;
+    expect(ability).toMatchObject({ cost: { mana: '{2}', discardSelf: true }, cycling: true });
+  });
+
+  it('Mountaincycling offers only Mountains, and the one taken goes to hand', () => {
+    let s = table(['Hill Gigas'], ['Forest', 'Forest']);
+    expect(cycleOf(s, 'Hill Gigas')?.manaCost).toBe('{2}');
+    const gigas = find(s, 0, 'hand', 'Hill Gigas');
+    const library = ids(s, 0, 'library').length;
+    s = cycle(s, 'Hill Gigas');
+    // Discarded as the cost, before anybody could answer it.
+    expect(s.instances[gigas]!.zone).toBe('graveyard');
+    const ask = s.pendingDecision!;
+    expect(ask).toMatchObject({ seat: 0, from: 'library', min: 0, max: 1 });
+    expect(ask.candidates.length).toBeGreaterThan(0);
+    expect(ask.candidates.every((id) => nameOf(s, id) === 'Mountain')).toBe(true);
+    const taken = ask.candidates[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [taken] } as Action), 20);
+    expect(s.instances[taken]!.zone).toBe('hand');
+    expect(ids(s, 0, 'library').length).toBe(library - 1);
+  });
+
+  it('basic landcycling finds a basic land and not a Barren Moor, on a land and on an instant', () => {
+    let s = table(['Ash Barrens'], ['Mountain']);
+    s = cycle(s, 'Ash Barrens');
+    const offered = new Set(s.pendingDecision!.candidates.map((id) => nameOf(s, id)));
+    expect([...offered].sort()).toEqual(['Forest', 'Mountain']);
+
+    // Fiery Fall is offered both ways from the hand: cast at six, cycled at two.
+    s = table(['Fiery Fall'], ['Mountain', 'Mountain']);
+    expect(cycleOf(s, 'Fiery Fall')?.manaCost).toBe('{1}{R}');
+    s = cycle(s, 'Fiery Fall');
+    expect(s.pendingDecision?.from).toBe('library');
+  });
+
+  it('finding nothing is a legal answer', () => {
+    let s = table(['Hill Gigas'], ['Forest', 'Forest']);
+    const library = ids(s, 0, 'library').length;
+    s = drain(apply(cycle(s, 'Hill Gigas'), { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(ids(s, 0, 'library').length).toBe(library);
+    expect(ids(s, 0, 'hand').length).toBe(0);
+  });
+
+  it('is a cycle to anything that watches one: Drannith Healer gains a life', () => {
+    let s = table(['Hill Gigas'], ['Forest', 'Forest', 'Drannith Healer']);
+    const before = life(s, 0);
+    // The Healer's trigger goes on the stack above the cycling ability and resolves first; the
+    // search is asked when the ability under it resolves.
+    s = cycle(s, 'Hill Gigas');
+    expect(life(s, 0)).toBe(before + 1);
+    if (s.pendingDecision === null) s = passBoth(s);
+    expect(s.pendingDecision?.from).toBe('library');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(life(s, 0)).toBe(before + 1);
+  });
+
+  it('the computer opponent can cycle one, and whatever it does is a move the engine takes', () => {
+    let s = table(['Hill Gigas'], ['Forest', 'Forest']);
+    for (let i = 0; i < 8; i += 1) {
+      const action = botAction(s, 0);
+      if (action === null || action.type === 'turn:pass' || action.type === 'auto:pass') break;
+      s = apply(s, action);
+    }
+    expect(s.pendingDecision === null || s.pendingDecision.seat === 0).toBe(true);
+  });
+
+  it('a card granting cycling to others is not this, and stays unread', () => {
+    const grant = {
+      name: 'Probe Reformation', type_line: 'Enchantment', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal',
+      oracle_text: 'Each land card in your hand has cycling {R}.',
+    };
+    const compiled = compileCard(grant as never);
+    expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([grant.oracle_text]);
   });
 });

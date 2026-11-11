@@ -23805,3 +23805,69 @@ Break run on D586's build: 37 deliberate faults, 36 caught. The miss was the com
 before it could matter, because every one of them compiled a card with a cost in between. A test
 now compiles a permanent straight after a Fling, on a trigger whose only obstacle is the measure,
 and it fails with the fault in.
+
+## D588 — Typecycling: a cycling that searches instead of drawing
+
+"Mountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal
+it, put it into your hand, then shuffle.)" Basic landcycling, the five basic-type cyclings,
+artifact landcycling and the creature-type ones (Wizardcycling, Slivercycling, Halflingcycling).
+103 legal cards print one; for 58 of them it was the only line the compiler could not read.
+
+**What it is.** The cycling ability the engine already had (D567: a cost paid from the hand,
+the card discarded, and an event that cards watching for a cycle hear), with the search the
+reminder text prints in place of the draw (CR 702.29e). The search is the one the compiler
+already reads for any printed library search (D449), asked the reminder text's own sentence, so
+the filter is that reader's: a subtype is matched on the type line, "basic land" needs the
+supertype, and finding nothing is a legal answer.
+
+**A guard the old test made me add.** The compile test written when these lines were refused
+included plain "Landcycling {1}{G}". The first version of this reader took the capitalised word
+in front as a subtype and so read "Landcycling" as a search for the subtype *Land*, which no card
+has: a search that always finds nothing, silently. Now only three type phrases are named (basic
+land, artifact land, land) and anything else must be a basic land type or a creature type; a
+word that is neither ("Lancecycling") stays unread, with a test.
+
+    legal cards printing a typecycling line:   103
+    lines read:                                 102
+    cards now read whole:                       61
+
+The one left is Tectonic Reformation, "Each land card in your hand has cycling {R}", which
+grants cycling to other cards and is a different shape.
+
+**The table and the computer opponent** need nothing new: a cycling ability is offered from the
+hand beside the cast, and the search is the question every library search asks.
+
+**Tests.** 11 engine tests added. Four real cards and Drannith Healer from their Oracle
+rows (Hill Gigas, Ash Barrens, Fiery Fall, Sojourner's Companion): only cards of the kind are
+offered, the one taken goes to hand and the library is one smaller, a nonbasic land is not a
+basic land, an instant offers both its cast and its cycling, nothing is a legal answer, the
+Healer gains a life, and the computer opponent's moves are ones the engine takes. The compile
+test that asserted these lines are refused now asserts they are read as a search and never as
+a draw, with a note; two words that are not subtypes are asserted unread. Three more are for
+D587's break run, below.
+
+    engine tests: 4,169, all passing
+    web tests: 264, all passing (no web change)
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,857 → 8,918 of 30,710
+    printed legal lines read:            25,207 → 25,312 of 56,421 (44.9%)
+    cards with a compiled script:        13,055 → 13,115
+
+Pod sweep on D587's build (ddacb20), seeds 45501–45540: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D587's build: 34 deliberate faults, 31 caught (30 by a failing test, 1 by the
+typecheck). Three were not, and each now has a test that fails with it in:
+
+- *The computer opponent never asking a check land's condition.* Its test offered the land that
+  happened to be ready first in hand order, so a bot that called every land ready picked the
+  same one. It now chooses between a check land that would enter tapped and a basic, in both
+  hand orders.
+- *"Three or more other Islands" counting any land.* Its test had only Islands. It now has two
+  Islands and a Mountain, which is not enough.
+- *A typed land's own mana added a second time.* No test had a typed land that also prints its
+  type's ability. A made-up one now does, and taps for it once.
