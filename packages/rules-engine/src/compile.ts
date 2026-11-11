@@ -338,6 +338,12 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
   const frontValue = card.def.cmc;
   const backs: CardDef[] = [];
   const unread = [...card.unread];
+  /*
+    And every face's read lines with its unread ones (D592). D591 kept the back faces' unread lines
+    and dropped their read ones, so a back-face line that became readable left the count instead of
+    moving across it — the line total fell as coverage rose.
+  */
+  const readLines = [...card.compiled];
   for (const face of faces.slice(1)) {
     const faceRow: CardDataRow = {
       name: face.name ?? null,
@@ -355,6 +361,7 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
     if (compiled.ok) {
       backs.push(compiled.def);
       unread.push(...compiled.unread);
+      readLines.push(...compiled.compiled);
       continue;
     }
     const printed = printedDef(faceRow);
@@ -365,6 +372,7 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
   return {
     ...card,
     def: { ...card.def, faces: { kind, cards: backs } },
+    compiled: readLines,
     unread,
   };
 }

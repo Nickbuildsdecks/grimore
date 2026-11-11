@@ -41555,3 +41555,91 @@ Bears, and fails with the fault in. The other miss — a skipped question droppi
 of leaving an empty answer — cannot be seen by any card the compiler reads today, because nothing
 asks a second question after explore's. It is the rule every skipped question already follows,
 and the test belongs with the first card that asks one.
+
+## D592 — Transforming cards turn themselves over from printed text
+
+D591 compiled 350 transforming cards and not one of them read whole: the line that says **when**
+the card transforms was unread on every one, so a pasted Huntmaster or Gatstaf Shepherd played as
+its front face for the whole game. This reads the commonest of those lines.
+
+**"Transform ~" and "transform it."** An effect clause, through the same `transformPermanent` that
+Delver of Secrets and Thing in the Ice use. The name is whichever face the line is printed on,
+because each face is compiled under its own name — the front says "transform Gatstaf Shepherd" and
+the back "transform Gatstaf Howler", and both mean this permanent. "It" is what the trigger is about
+and falls back to the card, explore's rule: on Vildin-Pack Alpha, "Whenever a Werewolf you control
+enters, you may transform it", the Werewolf that entered turns over, not the Alpha. The first draft
+read "it" as the card, and the corpus listing of every printed "transform it" is what showed the
+one card where that is wrong.
+
+**Only if it has not transformed since (CR 701.28f).** The resolving ability carries the face its
+source showed when it went on the stack (`EffectContext.sourceFace`, from the stack object's
+`cardKey`). Showing another face means something turned it over in between, and the ability does
+nothing: "{4}{G}: Transform Kessig Prowler" activated twice in response to itself turns it over
+once. A permanent turned over **twice** in between shows the same face again and is not caught;
+nothing in the corpus can do that with one ability waiting, and the gap is written beside the code.
+
+**The werewolves' clock.** "At the beginning of each upkeep, if no spells were cast last turn,
+transform ~" and the back face's "if a player cast two or more spells last turn". Neither can be
+answered from the turn's own tally, which the cleanup step empties before the upkeep, so the
+cleanup step now copies it first: `GameState.spellsCastLastTurnBy`, per seat, because "a player
+cast two or more" is one seat's count — one spell each from two players keeps the back face up.
+Empty before any turn has ended, which reads as no spells, the honest answer on turn one. Plus
+"if ~ is equipped" (Avacynian Missionaries), read live off the board.
+
+**"When this creature transforms into <this face>".** The `transformed` event Awoken Horror
+already used, now read: alone, as "enters or transforms into" (two events, one effect — Huntmaster,
+Brigid, Ashling and eight more), and as "transforms into ~ or dies". The name after "into" has to be
+the face the line is printed on; a line naming the other face is left unread rather than looked up.
+And "When ~ deals combat damage to a player" now reads with "When" as well as "Whenever" (Uninvited
+Geist): the same event.
+
+**An engine bug the tests found.** `settle` only starts a pass when one of its event lists is
+non-empty, and the guard listing them had never included `transformed` or `copied`, though the
+pass drains both. So a transform **on its own** was never announced until some unrelated event
+carried it: Brigid turning back to her front made no Kithkin. Thing in the Ice hid this for every
+test since #217 — its trigger is a spell cast, and the instant reaching a graveyard starts the pass
+in the same action. The same was true of a copy made by a trigger, which is storm and replicate:
+magecraft saw the copy late. Both are in the guard now, each with a test that fails without it.
+
+**Still unread on transforming cards:** daybound/nightbound (36 cards — day and night is a rule of
+its own, CR 726), Sagas whose last chapter returns them transformed (28), disturb (24), "More Than
+Meets the Eye" and living metal (13), craft (9), and the transform abilities paid with Phyrexian
+mana (17). Most "transforms into" lines that remain are blocked by their effect, not the event.
+
+**Tests.** 12 engine tests on corpus rows (Gatstaf Shepherd, Kessig Prowler, Geier Reach Bandit,
+Avacynian Missionaries, Uninvited Geist, Huntmaster of the Fells, Brigid): a werewolf turns over
+after a turn with no spells and back after one player casts two; one spell keeps the front, one
+each from two players keeps the back; the cleanup step keeps the tally and a new game has none;
+the double activation turns over once; "it" is the trigger's subject; "if ~ is equipped"; "When"
+combat damage; the two-event and one-event "transforms into" shapes and the wrong-face refusal;
+Brigid pays to turn over and turning back makes a Kithkin; a storm copy is announced in the action
+that made it; and a pasted list finds a card whose data is named "Front // Back" (D591's break-run
+miss, below), and every face's read lines are counted. Each of the two guards and CR 701.28f was
+removed by hand and its test failed.
+
+    engine tests: 4,204, all passing
+    web 264, realtime 60, api 326, all passing (no change there)
+
+### Measurements
+
+    cards fully read 9,070 of 31,292 (was 9,033); lines read 26,427 of 58,524 (45.2%)
+
+37 cards newly read whole, 31 of them werewolves.
+
+**D591's line figure was low, and this corrects it.** Measured first, the line total *fell* by 50
+while coverage rose, which cannot happen if every line is counted once. `compileFaces` kept each
+back face's unread lines but dropped its read ones, so a back-face line that became readable left
+the count instead of moving across it, and the back faces' read lines were never in D591's 25,795
+at all. The compiler now returns every face's read lines; the measure is the only consumer. Cards
+read whole are unaffected — that count never looked at read lines. On the same build before the
+fix the figure was 25,884 of 57,981 (44.6%): under the old count D592's readers added 89 lines to
+D591's 25,795, and the 543 between the two counts are back-face lines that were already read and
+never counted.
+
+Pod sweep on D591's build (c8a25c0), seeds 45901–45940, corpus with faces: 40 of 40 finished, no
+throw and no stall.
+
+Break run on D591's build: 9 deliberate faults, 8 caught. The miss — a pasted name not finding a
+row named "A // B" under its front face — was covered only by the realtime package's live test,
+which the engine's break harness does not run; the engine now has its own test, which fails with
+the fault in.

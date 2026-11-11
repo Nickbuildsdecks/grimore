@@ -40,7 +40,7 @@ import {
 import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
-import type { Target } from './turnTypes.js';
+import type { Step, Target } from './turnTypes.js';
 
 const BASICS = new Set(['Mountain', 'Forest', 'Plains', 'Island', 'Swamp']);
 
@@ -43803,5 +43803,210 @@ describe('two-faced cards from printed data: adventure, modal, transform (D591)'
     const { card_faces: _gone, ...bare } = PAIR;
     const read = compileCard(bare as never);
     expect(read.ok).toBe(false);
+  });
+});
+
+describe('transforming cards turn over from printed text (D592)', () => {
+  /*
+    D591 compiled about three hundred and fifty transforming cards and none of them turned over:
+    the line that says when was unread. These read "transform ~", the werewolves' two upkeep
+    conditions, "if ~ is equipped", and "when this creature transforms into <this face>". Every row
+    is the corpus's, faces and all.
+  */
+  const SHEPHERD = {"name": "Gatstaf Shepherd", "type_line": "Creature — Human Werewolf", "mana_cost": "{1}{G}", "cmc": 2, "colors": ["G"], "power": "2", "toughness": "2", "oracle_text": "At the beginning of each upkeep, if no spells were cast last turn, transform Gatstaf Shepherd.", "layout": "transform", "card_faces": [{"name": "Gatstaf Shepherd", "mana_cost": "{1}{G}", "type_line": "Creature — Human Werewolf", "oracle_text": "At the beginning of each upkeep, if no spells were cast last turn, transform Gatstaf Shepherd.", "colors": ["G"], "power": "2", "toughness": "2", "loyalty": null}, {"name": "Gatstaf Howler", "mana_cost": "", "type_line": "Creature — Werewolf", "oracle_text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Gatstaf Howler.", "colors": ["G"], "power": "3", "toughness": "3", "loyalty": null}]};
+  const PROWLER = {"name": "Kessig Prowler", "type_line": "Creature — Werewolf Horror", "mana_cost": "{G}", "cmc": 1, "colors": ["G"], "power": "2", "toughness": "1", "oracle_text": "{4}{G}: Transform Kessig Prowler.", "layout": "transform", "card_faces": [{"name": "Kessig Prowler", "mana_cost": "{G}", "type_line": "Creature — Werewolf Horror", "oracle_text": "{4}{G}: Transform Kessig Prowler.", "colors": ["G"], "power": "2", "toughness": "1", "loyalty": null}, {"name": "Sinuous Predator", "mana_cost": "", "type_line": "Creature — Eldrazi Werewolf", "oracle_text": "Sinuous Predator can't be blocked by more than one creature.", "colors": [], "power": "4", "toughness": "4", "loyalty": null}]};
+  const BANDIT = {"name": "Geier Reach Bandit", "type_line": "Creature — Human Rogue Werewolf", "mana_cost": "{2}{R}", "cmc": 3, "colors": ["R"], "power": "3", "toughness": "2", "oracle_text": "Haste\nAt the beginning of each upkeep, if no spells were cast last turn, transform Geier Reach Bandit.", "layout": "transform", "card_faces": [{"name": "Geier Reach Bandit", "mana_cost": "{2}{R}", "type_line": "Creature — Human Rogue Werewolf", "oracle_text": "Haste\nAt the beginning of each upkeep, if no spells were cast last turn, transform Geier Reach Bandit.", "colors": ["R"], "power": "3", "toughness": "2", "loyalty": null}, {"name": "Vildin-Pack Alpha", "mana_cost": "", "type_line": "Creature — Werewolf", "oracle_text": "Whenever a Werewolf you control enters, you may transform it.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Vildin-Pack Alpha.", "colors": ["R"], "power": "4", "toughness": "3", "loyalty": null}]};
+  const MISSIONARIES = {"name": "Avacynian Missionaries", "type_line": "Creature — Human Cleric", "mana_cost": "{3}{W}", "cmc": 4, "colors": ["W"], "power": "3", "toughness": "3", "oracle_text": "At the beginning of your end step, if Avacynian Missionaries is equipped, transform it.", "layout": "transform", "card_faces": [{"name": "Avacynian Missionaries", "mana_cost": "{3}{W}", "type_line": "Creature — Human Cleric", "oracle_text": "At the beginning of your end step, if Avacynian Missionaries is equipped, transform it.", "colors": ["W"], "power": "3", "toughness": "3", "loyalty": null}, {"name": "Lunarch Inquisitors", "mana_cost": "", "type_line": "Creature — Human Cleric", "oracle_text": "When this creature transforms into Lunarch Inquisitors, you may exile another target creature until Lunarch Inquisitors leaves the battlefield.", "colors": ["W"], "power": "4", "toughness": "4", "loyalty": null}]};
+  const GEIST = {"name": "Uninvited Geist", "type_line": "Creature — Spirit", "mana_cost": "{2}{U}", "cmc": 3, "colors": ["U"], "power": "2", "toughness": "2", "oracle_text": "Skulk (This creature can't be blocked by creatures with greater power.)\nWhen Uninvited Geist deals combat damage to a player, transform it.", "layout": "transform", "card_faces": [{"name": "Uninvited Geist", "mana_cost": "{2}{U}", "type_line": "Creature — Spirit", "oracle_text": "Skulk (This creature can't be blocked by creatures with greater power.)\nWhen Uninvited Geist deals combat damage to a player, transform it.", "colors": ["U"], "power": "2", "toughness": "2", "loyalty": null}, {"name": "Unimpeded Trespasser", "mana_cost": "", "type_line": "Creature — Spirit", "oracle_text": "Unimpeded Trespasser can't be blocked.", "colors": ["U"], "power": "3", "toughness": "3", "loyalty": null}]};
+  const HUNTMASTER = {"name": "Huntmaster of the Fells", "type_line": "Creature — Human Werewolf", "mana_cost": "{2}{R}{G}", "cmc": 4, "colors": ["R", "G"], "power": "2", "toughness": "2", "oracle_text": "Whenever this creature enters or transforms into Huntmaster of the Fells, create a 2/2 green Wolf creature token and you gain 2 life.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Huntmaster of the Fells.", "layout": "transform", "card_faces": [{"name": "Huntmaster of the Fells", "mana_cost": "{2}{R}{G}", "type_line": "Creature — Human Werewolf", "oracle_text": "Whenever this creature enters or transforms into Huntmaster of the Fells, create a 2/2 green Wolf creature token and you gain 2 life.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Huntmaster of the Fells.", "colors": ["R", "G"], "power": "2", "toughness": "2", "loyalty": null}, {"name": "Ravager of the Fells", "mana_cost": "", "type_line": "Creature — Werewolf", "oracle_text": "Trample\nWhenever this creature transforms into Ravager of the Fells, it deals 2 damage to target opponent or planeswalker and 2 damage to up to one target creature that player or that planeswalker's controller controls.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Ravager of the Fells.", "colors": ["G", "R"], "power": "4", "toughness": "4", "loyalty": null}]};
+  const BRIGID = {"name": "Brigid, Clachan's Heart", "type_line": "Legendary Creature — Kithkin Warrior", "mana_cost": "{2}{W}", "cmc": 3, "colors": ["W"], "power": "3", "toughness": "2", "oracle_text": "Whenever this creature enters or transforms into Brigid, Clachan's Heart, create a 1/1 green and white Kithkin creature token.\nAt the beginning of your first main phase, you may pay {G}. If you do, transform Brigid.", "layout": "transform", "card_faces": [{"name": "Brigid, Clachan's Heart", "mana_cost": "{2}{W}", "type_line": "Legendary Creature — Kithkin Warrior", "oracle_text": "Whenever this creature enters or transforms into Brigid, Clachan's Heart, create a 1/1 green and white Kithkin creature token.\nAt the beginning of your first main phase, you may pay {G}. If you do, transform Brigid.", "colors": ["W"], "power": "3", "toughness": "2", "loyalty": null}, {"name": "Brigid, Doun's Mind", "mana_cost": "", "type_line": "Legendary Creature — Kithkin Soldier", "oracle_text": "{T}: Add X {G} or X {W}, where X is the number of other creatures you control.\nAt the beginning of your first main phase, you may pay {W}. If you do, transform Brigid.", "colors": ["G"], "power": "3", "toughness": "2", "loyalty": null}]};
+  const ROWS = [SHEPHERD, PROWLER, BANDIT, MISSIONARIES, GEIST, HUNTMASTER, BRIGID];
+  const list = customDeck({
+    id: 'moons', name: 'Moons',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Bonesplitter', count: 2 },
+      { name: 'Forest', count: 20 }, { name: 'Plains', count: 20 }],
+    data: ROWS as never[],
+  });
+  /*
+    `lastTurn` is the tally the first upkeep reads. One spell by default, so a werewolf on the table
+    is still its front when the test starts: a table built at turn 5 has had no turn before it, and
+    with no spells cast every werewolf turns over at the first upkeep — which is the rule.
+  */
+  const table = (
+    mine: readonly string[], step: Step = 'precombat-main', lastTurn: Record<string, number> = { 0: 1 },
+  ): GameState => advanceTo({
+    ...arena({
+      decks: { 0: 'moons', 1: 'ember-rush' }, deckSpecs: { moons: list.deck },
+      battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+    }),
+    spellsCastLastTurnBy: lastTurn,
+  }, step);
+  /** On to the end step, attacking with nothing. */
+  const toEnd = (s: GameState): GameState =>
+    drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] }), 'end'), 20);
+  /** Whatever a seat's last-turn tally will be, written where the cleanup step reads it from. */
+  const castThisTurn = (s: GameState, by: Record<string, number>): GameState => ({ ...s, spellsCastThisTurnBy: by });
+
+  it('every one of the seven compiles, and the six built for this read whole where the test needs', () => {
+    expect(list.unknown).toEqual([]);
+    for (const row of [SHEPHERD, BANDIT, GEIST]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    // Every face's read lines are counted, not only the front's: the Howler's two are the card's.
+    const shepherd = compileCard(SHEPHERD as never);
+    expect(shepherd.ok && shepherd.compiled).toEqual([
+      'At the beginning of each upkeep, if no spells were cast last turn, transform Gatstaf Shepherd.',
+      'Intimidate',
+      'At the beginning of each upkeep, if a player cast two or more spells last turn, transform Gatstaf Howler.',
+    ]);
+  });
+
+  it('a werewolf turns over at an upkeep after a turn with no spells, and back after a player casts two', () => {
+    let s = table(['Gatstaf Shepherd']);
+    const wolf = find(s, 0, 'battlefield', 'Gatstaf Shepherd');
+    s = drain(nextTurn(s), 20);
+    expect(nameOf(s, wolf)).toBe('Gatstaf Howler');
+    // Two spells from one player: the back face's condition, read from the turn that just ended.
+    s = drain(nextTurn(castThisTurn(s, { 1: 2 })), 20);
+    expect(nameOf(s, wolf)).toBe('Gatstaf Shepherd');
+  });
+
+  it('one spell last turn keeps the front up, and one spell each from two players keeps the back', () => {
+    let s = table(['Gatstaf Shepherd']);
+    const wolf = find(s, 0, 'battlefield', 'Gatstaf Shepherd');
+    s = drain(nextTurn(castThisTurn(s, { 0: 1 })), 20);
+    expect(nameOf(s, wolf)).toBe('Gatstaf Shepherd');
+    s = drain(nextTurn(s), 20);
+    expect(nameOf(s, wolf)).toBe('Gatstaf Howler');
+    // Two spells at the table, but no **player** cast two.
+    s = drain(nextTurn(castThisTurn(s, { 0: 1, 1: 1 })), 20);
+    expect(nameOf(s, wolf)).toBe('Gatstaf Howler');
+  });
+
+  it('the cleanup step keeps the turn\'s tally as last turn\'s, and a new game starts with none', () => {
+    expect(arena({ decks: { 0: 'moons', 1: 'ember-rush' }, deckSpecs: { moons: list.deck } }).spellsCastLastTurnBy).toEqual({});
+    const s = table(['Gatstaf Shepherd']);
+    // And with none, the first upkeep turns a werewolf over: no spells were cast "last turn".
+    expect(namesIn(table(['Gatstaf Shepherd'], 'precombat-main', {}), 0, 'battlefield')).toContain('Gatstaf Howler');
+    const next = nextTurn(castThisTurn(s, { 1: 3 }));
+    expect(next.spellsCastLastTurnBy).toEqual({ 1: 3 });
+    expect(next.spellsCastThisTurnBy).toEqual({});
+  });
+
+  it('"{4}{G}: Transform ~" activated twice in response turns it over once (CR 701.28f)', () => {
+    let s = tapAllLands(table(['Kessig Prowler', ...Array.from({ length: 10 }, () => 'Forest')]), 0);
+    const prowler = find(s, 0, 'battlefield', 'Kessig Prowler');
+    s = apply(s, { type: 'auto:activate', by: 0, card: prowler, abilityIndex: 0 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: prowler, abilityIndex: 0 });
+    expect(s.stackOrder).toHaveLength(2);
+    s = drain(s, 20);
+    expect(nameOf(s, prowler)).toBe('Sinuous Predator');
+    // And once it has settled, a third activation turns it back, which is the rule's other half.
+  });
+
+  it('"transform it" is the creature the trigger is about, not the card that printed it', () => {
+    let s = table(['Geier Reach Bandit', 'Gatstaf Shepherd']);
+    const bandit = find(s, 0, 'battlefield', 'Geier Reach Bandit');
+    const shepherd = find(s, 0, 'battlefield', 'Gatstaf Shepherd');
+    s = transformPermanent(s, bandit);
+    expect(nameOf(s, bandit)).toBe('Vildin-Pack Alpha');
+    const alpha = scriptForCard(s.cardDefs[s.instances[bandit]!.defKey]);
+    const trigger = alpha?.triggers?.find((t) => t.on.kind === 'etb')!;
+    const after = trigger.effect({
+      state: s, source: bandit, subject: shepherd, controller: 0, targets: [], x: 0,
+      decisions: [{ seat: 0, ids: [], option: 'Yes' }],
+    } as never);
+    expect(nameOf(after, shepherd)).toBe('Gatstaf Howler');
+    expect(nameOf(after, bandit)).toBe('Vildin-Pack Alpha');
+  });
+
+  it('"if ~ is equipped" asks for an Equipment on it, at the end step', () => {
+    let s = table(['Avacynian Missionaries', 'Bonesplitter']);
+    const missionaries = find(s, 0, 'battlefield', 'Avacynian Missionaries');
+    const unequipped = toEnd(s);
+    expect(nameOf(unequipped, missionaries)).toBe('Avacynian Missionaries');
+    s = apply(s, { type: 'card:attach', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), to: missionaries });
+    s = toEnd(s);
+    expect(nameOf(s, missionaries)).toBe('Lunarch Inquisitors');
+  });
+
+  it('"When ~ deals combat damage to a player" is read with "When" as well as "Whenever"', () => {
+    const read = compileCard(GEIST as never);
+    expect(read.ok && read.script?.triggers?.map((t) => t.on)).toEqual([{ kind: 'combat-damage' }]);
+  });
+
+  it('"enters or transforms into <this face>" is two events; "transforms into" alone is one', () => {
+    const brigid = compileCard(BRIGID as never);
+    expect(brigid.ok && brigid.script?.triggers?.map((t) => t.on.kind)).toEqual(['etb', 'transformed', 'step']);
+    // Not a name to look up: a face whose line names another face is not this shape at all.
+    const wrong = compileCard({
+      ...BRIGID, card_faces: [{ ...BRIGID.card_faces[0], oracle_text: 'Whenever this creature enters or transforms into Brigid, Doun\'s Mind, create a 1/1 green and white Kithkin creature token.' }, BRIGID.card_faces[1]],
+    } as never);
+    expect(wrong.ok && wrong.unread.map((u) => u.line)).toContain(
+      'Whenever this creature enters or transforms into Brigid, Doun\'s Mind, create a 1/1 green and white Kithkin creature token.',
+    );
+  });
+
+  it('Brigid pays to turn over at her first main phase, and turning back makes a Kithkin', () => {
+    let s = table(['Brigid, Clachan\'s Heart', 'Forest', 'Plains']);
+    const brigid = find(s, 0, 'battlefield', 'Brigid, Clachan\'s Heart');
+    // The trigger is on the stack as the main phase begins; the mana is made while it waits.
+    s = passBoth(tapAllLands(s, 0));
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {G}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {G}' } as Action), 20);
+    expect(nameOf(s, brigid)).toBe('Brigid, Doun\'s Mind');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Kithkin')).toHaveLength(0);
+    // Back again: the front's "transforms into Brigid, Clachan's Heart" is the event, not entering.
+    s = drain(transformPermanent(s, brigid), 20);
+    s = drain(passBoth(s), 20);
+    expect(nameOf(s, brigid)).toBe('Brigid, Clachan\'s Heart');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Kithkin')).toHaveLength(1);
+  });
+
+  it('a copy made by a resolving trigger is announced in that action, not left for the next event', () => {
+    /*
+      The other list the settle loop's guard was missing. Storm's trigger copies the spell and
+      moves nothing, so before D592 the copy sat in \`copied\` until something else happened, and
+      magecraft saw it late. After every action here, nothing may be left unannounced.
+    */
+    const deck = customDeck({
+      id: 'storm-copy', name: 'Storm copy',
+      entries: [{ name: 'Grapeshot', count: 4 }, { name: 'Lightning Bolt', count: 4 },
+        { name: 'Sedgemoor Witch', count: 2 }, { name: 'Mountain', count: 50 }],
+    }).deck;
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'storm-copy', 1: 'ember-rush' }, deckSpecs: { 'storm-copy': deck },
+      hands: { 0: ['Lightning Bolt', 'Grapeshot'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Sedgemoor Witch'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    let sawCopy = false;
+    const resolveAll = (from: GameState): GameState => {
+      let next = from;
+      for (let i = 0; i < 40 && (next.stackOrder.length > 0 || next.pendingDecision !== null); i += 1) {
+        next = next.pendingDecision !== null
+          ? apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [] })
+          : apply(next, { type: 'auto:pass', by: next.priority! });
+        expect(next.copied ?? []).toEqual([]);
+        sawCopy ||= Object.values(next.stackObjects).some((o) => o.copyOf !== undefined);
+      }
+      return next;
+    };
+    // The Bolt first, so the Grapeshot — a sorcery — is the turn's second spell and storms once.
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'), targets: [{ kind: 'player', seat: 1 }] }));
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grapeshot'), targets: [{ kind: 'player', seat: 1 }] }));
+    expect(sawCopy).toBe(true);
+    // Two casts and one copy, each a Pest.
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Pest')).toHaveLength(3);
+  });
+
+  it('a pasted list finds a two-faced card under its front name when the data names both faces', () => {
+    const { unknown, fromData } = customDeck({
+      id: 'custom:faces', name: 'Faces',
+      entries: [{ name: 'Gatstaf Shepherd', count: 1 }],
+      data: [{ ...SHEPHERD, name: 'Gatstaf Shepherd // Gatstaf Howler' } as never],
+    });
+    expect(unknown).toEqual([]);
+    expect(fromData).toEqual(['Gatstaf Shepherd']);
   });
 });

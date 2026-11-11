@@ -1137,6 +1137,20 @@ export interface AutomationState {
    */
   readonly spellsCastThisTurnBy: Readonly<Record<string, number>>;
   /**
+   * `spellsCastThisTurnBy` as it stood when the **previous** turn ended (D592).
+   *
+   * The werewolves' clock: "At the beginning of each upkeep, if no spells were cast last turn,
+   * transform ~" and its back face's "if a player cast two or more spells last turn". Neither can
+   * be answered from this turn's tally, which is empty by the upkeep, so the cleanup step that
+   * clears it copies it here first.
+   *
+   * Per seat rather than a total because the back face asks whether **a player** cast two or more,
+   * which a total cannot say — one spell each from two players is two spells and no player who
+   * cast two. Empty before the first turn has ended, which reads as "no spells were cast", the
+   * honest answer on the first turn of a game.
+   */
+  readonly spellsCastLastTurnBy: Readonly<Record<string, number>>;
+  /**
    * How much life each seat has **lost this turn**, keyed by seat index as a string.
    *
    * The second thing this engine remembers about a turn rather than about a permanent or a seat,

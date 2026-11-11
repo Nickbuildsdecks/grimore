@@ -949,6 +949,8 @@ export function endTurnCleanup(state: GameState): GameState {
     spellsCastThisTurn: 0,
     // And the per-seat half of the same tally, which is what "your second spell each turn" counts.
     spellsCastThisTurnBy: {},
+    // But kept as last turn's first, for the werewolves' "if no spells were cast last turn" (D592).
+    spellsCastLastTurnBy: next.spellsCastThisTurnBy,
     // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
     // was lost *this* turn, so a spectacle cost is payable until the turn is actually over.
     lifeLostThisTurn: {},
@@ -2893,7 +2895,15 @@ function settle(state: GameState, before: GameState): GameState {
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
       || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0
-      || (next.sacrificed ?? []).length > 0);
+      || (next.sacrificed ?? []).length > 0
+      /*
+        And the two lists drained below that were missing from this guard until D592: a transform
+        or a copy **on its own** never started a pass, so it waited for some other event to carry
+        it. Thing in the Ice hid it — its instant reaches a graveyard in the same action — and a
+        werewolf turning over at an upkeep, with nothing else happening, never fired its
+        "transforms into" trigger at all.
+      */
+      || (next.transformed ?? []).length > 0 || (next.copied ?? []).length > 0);
     pass++
   ) {
     /*
@@ -4595,6 +4605,8 @@ function completeResolution(
     actor: object.actor,
     // And what was sacrificed to pay for it, for one that measures the thing given up.
     sacrificed: object.sacrificedStats,
+    // And the face its source showed when it was put on the stack, for CR 701.28f (D592).
+    ...(object.kind === 'spell' ? {} : { sourceFace: object.cardKey }),
     // And how a divided quantity was split, for the one card shape that announces numbers with
     // its targets. Filtered to match `targets` above.
     ...(object.division === undefined ? {} : { division: object.division }),

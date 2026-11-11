@@ -11609,6 +11609,39 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
 
 function untargetedEffect(clause: string, name: string): ReadEffect | null {
   /*
+    **Transform** (D592): "Transform ~", "transform it" — the card turning itself over (CR
+    701.28), through the same `transformPermanent` Delver and Thing in the Ice use. The name is
+    whichever face the line is printed on, because each face is compiled under its own name: a
+    werewolf's front says "transform Gatstaf Shepherd" and its back "transform Gatstaf Howler", and
+    both mean this permanent.
+
+    "It" is what the trigger is about, falling back to the card — explore's rule. On "if ~ is
+    equipped, transform it" there is no other subject and it is the card; on Geier Reach Bandit's
+    "Whenever a Werewolf you control enters, you may transform it" it is the Werewolf, and a reading
+    that took "it" as the card would turn the Bandit over instead.
+
+    **Only if it has not transformed since** (CR 701.28f). `sourceFace` is the face it showed when
+    the ability went on the stack; showing another one now means something turned it over in
+    between, and the ability does nothing — "{2}: Transform ~" activated twice in response to itself
+    turns it over once, not back again. A permanent turned over **twice** in between shows the same
+    face and would be turned again, which is the one case the face cannot tell; nothing in the
+    corpus transforms a permanent twice at instant speed with one ability waiting.
+  */
+  const transforming = new RegExp(`^transform (${selfRef(name)}|it)$`, 'i').exec(clause.trim());
+  if (transforming !== null) {
+    const byPronoun = /^it$/i.test(transforming[1]!);
+    return {
+      effect: (c) => {
+        const which = byPronoun ? c.subject ?? c.source : c.source;
+        const now = c.state.instances[which];
+        if (now === undefined || now.zone !== 'battlefield') return c.state;
+        // CR 701.28f is about the ability's own source; a subject was not on the stack with it.
+        if (which === c.source && c.sourceFace !== undefined && now.defKey !== c.sourceFace) return c.state;
+        return transformPermanent(c.state, which);
+      },
+    };
+  }
+  /*
     **Explore** (D590): "When ~ enters, it explores." CR 701.44a: reveal the top card of your
     library; a land goes into your hand; anything else puts a +1/+1 counter on the creature, and
     you may put the card into your graveyard.
@@ -14661,6 +14694,27 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever (?:equipped|enchanted) creature deals combat damage to a player, (.+)$/i,
     on: [{ kind: 'combat-damage', who: 'attached' }],
   },
+  /*
+    "When this creature transforms into <this face>" (D592) — `transformed`, Awoken Horror's event.
+
+    The name after "into" is the face the line is printed on, which is the face the permanent now
+    shows when the event is raised, so it is `self` again and not a second name to look up: each
+    face is compiled under its own name. The paired forms are the same table rule as the rows
+    below — "enters or transforms into" (Huntmaster of the Fells and ten others) is two events and
+    one effect, and so is Blightreaper Thallid's "transforms into ~ or dies".
+  */
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} ${ENTERS} or transforms into ${self}, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'transformed' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} transforms into ${self} or dies, (.+)$`, 'i'),
+    on: [{ kind: 'transformed' }, { kind: 'dies' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} transforms into ${self}, (.+)$`, 'i'),
+    on: [{ kind: 'transformed' }],
+  },
   // Kitchen Finks, Gravedigger, and thirty others.
   {
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or dies, (.+)$`, 'i'),
@@ -14754,10 +14808,10 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} attacks, (.+)$`, 'i'),
     on: [{ kind: 'attacks' }],
   },
-  // Thieving Magpie.
+  // Thieving Magpie. "When" too (D592): Uninvited Geist's spelling, the same event (CR 603.2).
   {
     prologue: (self) =>
-      new RegExp(`^Whenever ${self} deals combat damage to a player, (.+)$`, 'i'),
+      new RegExp(`^When(?:ever)? ${self} deals combat damage to a player, (.+)$`, 'i'),
     on: [{ kind: 'combat-damage' }],
   },
   // City of Brass.
@@ -22387,6 +22441,23 @@ function interveningConditionFor(
   if (/^an opponent lost life this turn$/i.test(text)) {
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller
       && (c.state.lifeLostThisTurn[String(seat.index)] ?? 0) > 0);
+  }
+  /*
+    The werewolves' two (D592), read off the tally the cleanup step keeps from the turn before.
+    `?? {}` because a game saved before the field existed has none, and "no spells were cast" is
+    then the answer it can give. "A player cast two or more" is one seat's count, not the table's.
+  */
+  // Avacynian Missionaries: an Equipment attached to it. Read live, as every condition here is.
+  if (new RegExp(`^${selfRef(name)} is equipped$`, 'i').test(text)) {
+    return (c) => Object.values(c.state.instances).some((inst) => inst.zone === 'battlefield'
+      && inst.attachedTo === c.source
+      && hasSubtype(characteristicsOf(c.state, inst).typeLine, 'Equipment'));
+  }
+  if (/^no spells were cast last turn$/i.test(text)) {
+    return (c) => Object.values(c.state.spellsCastLastTurnBy ?? {}).every((n) => n === 0);
+  }
+  if (/^a player cast two or more spells last turn$/i.test(text)) {
+    return (c) => Object.values(c.state.spellsCastLastTurnBy ?? {}).some((n) => n >= 2);
   }
   const number = (word: string): number | undefined =>
     (/^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word.toLowerCase()]);

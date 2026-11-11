@@ -154,6 +154,15 @@ export interface EffectContext {
    */
   readonly sacrificed?: SacrificedStats;
   /**
+   * The face the source showed when this ability was put on the stack — its `defKey` then (D592).
+   *
+   * For one rule: a permanent's own ability that transforms it does so only if it has not
+   * transformed since the ability was put on the stack (CR 701.28f). Activate "{2}: Transform ~"
+   * twice in response to itself and the second resolution must not turn it back. Undefined for
+   * everything but an activated or triggered ability's resolution.
+   */
+  readonly sourceFace?: string;
+  /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Undefined for everything that divides nothing.
    *
