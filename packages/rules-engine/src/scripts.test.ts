@@ -45413,6 +45413,22 @@ describe('an attachment rider beyond a size and a keyword (D604)', () => {
     expect(worn('Test Glitter').power).toBe(4);
   });
 
+  it('a rider printed alone reads, and a harmful rider makes the Aura removal (D604 break run)', () => {
+    // "Equipped creature can't block." with no size in front of it.
+    const hobble = compileCard({ ...gear('Test Hobble', ''), oracle_text: "Equipped creature can't block.\nEquip {1}" } as never);
+    expect(hobble.ok && hobble.unread).toEqual([]);
+    // An Aura whose bonus is +1/+1 is only removal because of its rider, which is what the bot reads.
+    const aura = (rider: string) => compileCard({
+      name: 'Test Yoke', type_line: 'Enchantment — Aura', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+      power: null, toughness: null, oracle_text: `Enchant creature\nEnchanted creature gets +1/+1 and ${rider}.`,
+    } as never);
+    const yoke = aura("can't block");
+    expect(yoke.ok && yoke.unread).toEqual([]);
+    expect(yoke.ok && yoke.script?.removesACreature).toBe(true);
+    const cloak = aura("can't be blocked");
+    expect(cloak.ok && cloak.script?.removesACreature).toBeFalsy();
+  });
+
   it('a creature with nothing attached has none of them', () => {
     const s = advanceTo(arena({
       decks: { 0: 'gear', 1: 'verdant-guard' }, deckSpecs: { gear: deck.deck },
@@ -45426,6 +45442,86 @@ describe('an attachment rider beyond a size and a keyword (D604)', () => {
   it('"loses all abilities" takes the keyword it printed, and a rider it cannot read stays unread', () => {
     expect(worn('Test Muffle', 'Test Wing').keywords.has('flying')).toBe(false);
     const read = compileCard(gear('Test Odd', 'has protection from creatures') as never);
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe('a static with any condition it can answer (D605)', () => {
+  /*
+    "As long as <condition>, ~ <predicate>" and "~ <predicate> as long as <condition>" over the
+    conditions `staticCondition` reads, each answered by `conditionMet` without a live
+    characteristic. Corpus rows plus one custom hellbent row.
+  */
+  const KIRD = {"name":"Kird Ape","type_line":"Creature — Ape","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"Kird Ape gets +1/+2 as long as you control a Forest.","layout":"normal"};
+  const RAPTORS = {"name":"Castle Raptors","type_line":"Creature — Bird Soldier","mana_cost":"{4}{W}","cmc":5,"colors":["W"],"power":"3","toughness":"3","oracle_text":"Flying\nAs long as Castle Raptors is untapped, it gets +0/+2.","layout":"normal"};
+  const SURVIVALISTS = {"name":"Backwoods Survivalists","type_line":"Creature — Human Warrior","mana_cost":"{3}{G}","cmc":4,"colors":["G"],"power":"4","toughness":"3","oracle_text":"Delirium — Backwoods Survivalists gets +1/+1 and has trample as long as there are four or more card types among cards in your graveyard.","layout":"normal"};
+  const LYNX = {"name":"Mesa Lynx","type_line":"Creature — Cat","mana_cost":"{1}{W}","cmc":2,"colors":["W"],"power":"2","toughness":"1","oracle_text":"As long as it's not your turn, Mesa Lynx gets +0/+2.","layout":"normal"};
+  const HELLION = {"name":"Test Hellion","type_line":"Creature — Devil","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"1","toughness":"1","oracle_text":"Hellbent — Test Hellion gets +2/+0 as long as you have no cards in hand.","layout":"normal"};
+  const ROWS = [KIRD, RAPTORS, SURVIVALISTS, LYNX, HELLION];
+  const deck = customDeck({
+    id: 'whiles', name: 'Whiles',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Lightning Bolt', count: 2 }, { name: 'Bonesplitter', count: 2 },
+      { name: 'Grizzly Bears', count: 2 }, { name: 'Forest', count: 22 }, { name: 'Mountain', count: 22 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], opts: { hand?: readonly string[]; graveyard?: readonly string[]; firstSeat?: SeatIndex } = {}): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'whiles', 1: 'whiles' }, deckSpecs: { whiles: deck.deck },
+      hands: { 0: [...(opts.hand ?? []), ...(opts.graveyard ?? [])] },
+      battlefield: { 0: [...mine] }, turn: 3, firstSeat: opts.firstSeat ?? 0,
+    }), 'precombat-main');
+    for (const name of opts.graveyard ?? []) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' });
+    return s;
+  };
+  const size = (s: GameState, name: string) => {
+    const ch = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+    return [ch.power, ch.toughness];
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('Kird Ape is a 2/3 with a Forest and a 1/1 without', () => {
+    expect(size(table(['Kird Ape', 'Forest']), 'Kird Ape')).toEqual([2, 3]);
+    expect(size(table(['Kird Ape', 'Mountain']), 'Kird Ape')).toEqual([1, 1]);
+  });
+
+  it('Castle Raptors has +0/+2 untapped and loses it tapped', () => {
+    let s = table(['Castle Raptors']);
+    expect(size(s, 'Castle Raptors')).toEqual([3, 5]);
+    s = apply(s, { type: 'card:tap', by: 0, card: find(s, 0, 'battlefield', 'Castle Raptors') } as Action);
+    expect(size(s, 'Castle Raptors')).toEqual([3, 3]);
+  });
+
+  it('Backwoods Survivalists turns on at four card types in the graveyard, not three', () => {
+    // Four cards of three types (creature, instant, artifact): not delirium, which counts types.
+    const three = table(['Backwoods Survivalists'], { graveyard: ['Grizzly Bears', 'Grizzly Bears', 'Lightning Bolt', 'Bonesplitter'] });
+    expect(size(three, 'Backwoods Survivalists')).toEqual([4, 3]);
+    // And a land: four.
+    const four = table(['Backwoods Survivalists'], { graveyard: ['Grizzly Bears', 'Lightning Bolt', 'Bonesplitter', 'Forest'] });
+    expect(size(four, 'Backwoods Survivalists')).toEqual([5, 4]);
+    expect(characteristicsOf(four, four.instances[find(four, 0, 'battlefield', 'Backwoods Survivalists')]!).keywords.has('trample')).toBe(true);
+  });
+
+  it('Mesa Lynx is bigger on the opponent\'s turn', () => {
+    expect(size(table(['Mesa Lynx']), 'Mesa Lynx')).toEqual([2, 1]);
+    expect(size(table(['Mesa Lynx'], { firstSeat: 1 }), 'Mesa Lynx')).toEqual([2, 3]);
+  });
+
+  it('hellbent: +2/+0 with an empty hand only', () => {
+    let s = table(['Test Hellion']);
+    for (const id of ids(s, 0, 'hand')) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    expect(size(s, 'Test Hellion')).toEqual([3, 1]);
+    expect(size(table(['Test Hellion'], { hand: ['Grizzly Bears'] }), 'Test Hellion')).toEqual([1, 1]);
+  });
+
+  it('refuses a condition it cannot answer', () => {
+    const read = compileCard({ ...KIRD, oracle_text: 'Kird Ape gets +1/+2 as long as an opponent controls a Forest.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
   });
 });

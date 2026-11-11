@@ -4094,20 +4094,19 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(statics[0]!.effect.while).toBeDefined();
     });
 
-    it('reads the metalcraft threshold as three, and refuses any other number', () => {
+    it('reads another artifact count as that count, never as metalcraft\'s three', () => {
       /*
-        The threshold is the card. Every metalcraft card printed says "three or more", so the
-        reader takes that phrase and nothing else — a sentence with a different number is a
-        different card, and reading it as metalcraft would be a static that turns on at the wrong
-        time, with nothing flagged.
+        The threshold is the card. This was a refusal while the only reader was metalcraft's, so a
+        different number could only have been misread as three. Since D605 the general "as long
+        as" reader takes the printed number, so the static turns on at two, which is what it says.
       */
-      const wrong = compileCard({
+      const two = compileCard({
         name: 'Nearly Metalcraft', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
         colors: [], power: '2', toughness: '2',
         oracle_text: 'Nearly Metalcraft gets +2/+2 as long as you control two or more artifacts.',
       });
-      expect(wrong.ok).toBe(true);
-      if (wrong.ok) expect(wrong.script).toBeUndefined();
+      expect(two.ok && two.unread).toEqual([]);
+      expect(two.ok && two.script?.statics?.[0]?.effect.while).toEqual({ kind: 'controller-artifacts', atLeast: 2 });
     });
 
     it('refuses a conditional grant whose keyword the engine would ignore', () => {
@@ -4122,20 +4121,20 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (odd.ok) expect(odd.script).toBeUndefined();
     });
 
-    it('refuses a conditional protection that is not from every colour', () => {
+    it('reads a conditional single-colour protection as that colour', () => {
       /*
-        Coverage rather than correctness, and said so: `protectionFrom` is a list, so one colour is
-        expressible — but no card in the pool prints a conditional single-colour protection, and a
-        reader with no card behind it is a reader nothing has ever run (D57). The phrase this
-        accepts is the one Etched Champion prints.
+        This was refused as coverage rather than correctness (D57: no card behind the reader). The
+        general "as long as" reader (D605) reads its predicate with threshold's grammar, which has
+        read "has protection from <colour>" since D513, so the phrase is now read for what it says:
+        protection from red, and only while the artifacts are there.
       */
       const narrow = compileCard({
         name: 'Narrow Champion', type_line: 'Creature — Soldier', mana_cost: '{2}', cmc: 2,
         colors: [], power: '1', toughness: '1',
         oracle_text: 'Narrow Champion has protection from red as long as you control three or more artifacts.',
       });
-      expect(narrow.ok).toBe(true);
-      if (narrow.ok) expect(narrow.script).toBeUndefined();
+      expect(narrow.ok && narrow.unread).toEqual([]);
+      expect(narrow.ok && narrow.script?.statics?.[0]?.effect.protectionFrom).toEqual(['R']);
     });
 
     /*
@@ -10892,7 +10891,8 @@ describe('the three one-line combat statics (D495)', () => {
       the seventh stale refusal row in this series.
     */
     ['a pump on the same line', "Aesthir Glider gets +2/+2 and can't block."],
-    ['a condition', "As long as you control a Forest, Aesthir Glider can't block."],
+    // "As long as you control a Forest, ~ can't block" was a row here until D605's general
+    // condition reader read it (a can't-block static while you control a Forest).
     ['an ability word', "Wraith Form — Aesthir Glider can't be blocked."],
     /*
       And the fourth shape the corpus printed next to these three, refused because

@@ -42353,3 +42353,92 @@ Each of the following was broken on purpose and its test failed:
 Pod sweep on D603's build (8bea217), seeds 47101–47140: 40 of 40 finished, no throw and no stall.
 
 Break run on D603's build: 6 deliberate faults, 3 caught; all 3 misses pinned here.
+
+## D605 — A static with any condition it can answer, and the D604 gaps
+
+The unread dump holds 603 one-short cards with "as long as" on the line that stops them. Until now
+three readers covered that phrase, each for one condition:
+- metalcraft: "three or more artifacts"
+- threshold: "seven or more cards in your graveyard"
+- monstrous / a +1/+1 counter on it
+
+Most of what remains needs no new effect, only a condition:
+- delirium (23)
+- "~ is untapped" (13)
+- "you control N or more artifacts" (12) and "an artifact" (11)
+- "it's attacking" (12)
+- "~ is equipped" (11)
+- hellbent (8)
+- "you control a Plains/Island/Swamp/Mountain/Forest/Gate" (~20)
+- "~ is enchanted" (6)
+- "it's not your turn" (5)
+- "you have N or more life"
+
+**The conditions are data.** `ContinuousEffect.while` gains eight kinds, each answered by
+`conditionMet` without reading any permanent's live characteristics. That is the constraint every
+condition here lives under: `conditionMet` runs inside `characteristicsOf`. The new kinds read:
+- a zone's printed cards: `graveyard-card-types`, delirium's count of *types* (CR 207.2c);
+- the source instance: `source-tapped`, and `source-auras` beside the existing `source-equipment`;
+- the combat record: `source-attacking`;
+- a hand's size: `controller-hand`, with at-least and at-most;
+- a life total: `controller-life`;
+- whose turn it is: `turn`;
+- a printed subtype on your battlefield: `controller-subtype`, metalcraft's compromise.
+
+`controller-artifacts` takes any number.
+
+**One reader for both word orders.** "As long as <condition>, ~ <predicate>" and "~ <predicate> as
+long as <condition>" now read through `staticCondition`, with the predicate read by threshold's own
+`thresholdEffect` (a pump, keywords, can't block, a colour, protection from a colour, a quoted
+ability). The branch sits after the three specific readers, so every card they read keeps its
+reading. A condition `staticCondition` does not know refuses the line rather than applying the
+effect always.
+
+**Three refusal tests that the reader has outgrown, rewritten as readings:**
+- "Nearly Metalcraft … as long as you control two or more artifacts." This was refused because the
+  only reader was metalcraft's, so a two could only have been misread as three. It now reads as two.
+- "Narrow Champion has protection from red as long as …" was refused as coverage with no card
+  behind it (D57). Threshold's grammar has read "protection from <colour>" since D513, so it now
+  reads as exactly that.
+- D495's "As long as you control a Forest, Aesthir Glider can't block." was a refusal row; it reads
+  now, and the row is removed with a note.
+
+**The D604 break run: 6 faults, 4 caught. Both misses are pinned:**
+- A rider printed alone: "Equipped creature can't block." reads.
+- The rider's harmful flag ignored: an Aura of "+1/+1 and can't block" is removal
+  (`removesACreature`), and one of "+1/+1 and can't be blocked" is not.
+
+**Tests.** 8 new engine tests, all with corpus rows except a custom hellbent row:
+- Every row reads.
+- Kird Ape is 2/3 with a Forest and 1/1 without.
+- Castle Raptors is 3/5 untapped and 3/3 tapped.
+- Backwoods Survivalists stays 4/3 with four cards of three types in the graveyard and becomes a
+  5/4 with trample at four types.
+- Mesa Lynx is 2/3 on the opponent's turn only.
+- Hellbent applies only with an empty hand.
+- A condition it cannot answer stays unread.
+- One D604 pin.
+
+Also 2 compile tests rewritten and 1 refusal row removed.
+
+Each of the following was broken on purpose and its test failed:
+- Delirium counting cards instead of types. The first version of the test missed this, because its
+  three-type graveyard was also three cards; it now holds four cards of three types.
+- Tapped inverted.
+- Whose turn inverted.
+- Hellbent's at-most ignored.
+- The subtype ignored.
+- The lead word order removed.
+- Both D604 misses.
+
+    engine tests: 4,296, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,638 of 31,292 (was 9,529); lines read 27,440 of 58,524 (46.9%, was 27,314)
+
+The largest increment since D601.
+
+Pod sweep on D604's build (80397a0), seeds 47201–47240: 40 of 40 finished, no throw and no stall.
+
+Break run on D604's build: 6 deliberate faults, 4 caught; both misses pinned here.

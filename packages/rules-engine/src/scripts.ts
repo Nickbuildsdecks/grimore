@@ -22613,6 +22613,83 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
     };
   }
 
+  /*
+    **The general form** (D605): "As long as <condition>, ~ <predicate>" and "~ <predicate> as long
+    as <condition>", for any condition `staticCondition` reads, with the predicate read exactly as
+    threshold's is (`thresholdEffect`: a pump, keywords, can't block, a quoted ability). Last, so
+    every shape above keeps the reading it had.
+  */
+  const lead = new RegExp(`^as long as (.+?), (?:${self}|it) (.+)$`, 'i').exec(text);
+  const trail = lead !== null ? null : new RegExp(`^(?:${self}|it) (.+?) as long as (.+)$`, 'i').exec(text);
+  if (lead !== null || trail !== null) {
+    const condition = staticCondition(lead !== null ? lead[1]! : trail![2]!, name);
+    const read = condition === null ? null : thresholdEffect(lead !== null ? lead[2]! : trail![1]!, name);
+    if (condition === null || read === null) return null;
+    return {
+      statics: [{
+        scope: 'self',
+        effect: {
+          ...read.effect,
+          while: condition,
+          ...(read.grantedTriggers === undefined ? {} : { grants: read.grantedTriggers.map((_, i) => i) }),
+          ...(read.grantedAbilities === undefined ? {} : { grantsAbilities: read.grantedAbilities.map((_, i) => i) }),
+        },
+      }],
+      ...(read.grantedTriggers === undefined ? {} : { grantedTriggers: read.grantedTriggers }),
+      ...(read.grantedAbilities === undefined ? {} : { grantedAbilities: read.grantedAbilities }),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * A static's printed condition as `ContinuousEffect.while` data (D605), or `null` for one this does
+ * not read. Each row is a question `conditionMet` can answer without a live characteristic — see the
+ * union's own note — and anything else refuses the line rather than applying the effect always.
+ */
+function staticCondition(printed: string, name: string): NonNullable<PumpOptions['while']> | null {
+  const text = plain(printed).trim();
+  const self = `(?:${selfRef(name)}|it)`;
+  const n = (word: string): number | null => (/^an?$/i.test(word) ? 1 : countFrom(word));
+
+  const threshold = /^there are (\S+) or more cards in your graveyard$/i.exec(text);
+  if (threshold !== null) {
+    const atLeast = n(threshold[1]!);
+    return atLeast === null ? null : { kind: 'controller-graveyard', atLeast };
+  }
+  const delirium = /^there are (\S+) or more card types among cards in your graveyard$/i.exec(text);
+  if (delirium !== null) {
+    const atLeast = n(delirium[1]!);
+    return atLeast === null ? null : { kind: 'graveyard-card-types', atLeast };
+  }
+  const artifacts = /^you control (an|\S+ or more) artifacts?$/i.exec(text);
+  if (artifacts !== null) {
+    const atLeast = n(artifacts[1]!.replace(/ or more$/i, ''));
+    return atLeast === null ? null : { kind: 'controller-artifacts', atLeast };
+  }
+  const tapped = new RegExp(`^(?:${self} is|it's) (untapped|tapped)$`, 'i').exec(text);
+  if (tapped !== null) return { kind: 'source-tapped', tapped: tapped[1]!.toLowerCase() === 'tapped' };
+  if (new RegExp(`^(?:${self} is|it's) attacking$`, 'i').test(text)) return { kind: 'source-attacking' };
+  if (new RegExp(`^${self} is equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
+  if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
+  if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
+  const hand = /^you have (\S+) or more cards in hand$/i.exec(text);
+  if (hand !== null) {
+    const atLeast = n(hand[1]!);
+    return atLeast === null ? null : { kind: 'controller-hand', atLeast };
+  }
+  const life = /^you have (\S+) or more life$/i.exec(text);
+  if (life !== null) {
+    const atLeast = n(life[1]!);
+    return atLeast === null ? null : { kind: 'controller-life', atLeast };
+  }
+  // A capitalised subtype only: "you control a Plains", "… a Gate". A lower-case word is a type or a
+  // quality this does not count.
+  const subtype = /^you control an? ([A-Z][A-Za-z'-]*)$/.exec(text);
+  if (subtype !== null) return { kind: 'controller-subtype', subtype: subtype[1]!, atLeast: 1 };
+  if (/^it's not your turn$/i.test(text)) return { kind: 'turn', yours: false };
+  if (/^it's your turn$/i.test(text)) return { kind: 'turn', yours: true };
   return null;
 }
 

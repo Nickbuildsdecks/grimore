@@ -1576,7 +1576,28 @@ export interface ContinuousEffect {
         readonly kind: 'controller-graveyard';
         /** "seven or more", which is what every threshold card printed says. */
         readonly atLeast: number;
-      };
+      }
+    /*
+      The general "as long as" family (D604/D605), each answered without a live characteristic: a
+      zone's printed cards, the source instance's own facts, the combat record, a life total, a hand,
+      whose turn it is, or a printed type line on the battlefield (metalcraft's compromise).
+    */
+    /** Delirium: "N or more card types among cards in your graveyard" (CR 207.2c types only). */
+    | { readonly kind: 'graveyard-card-types'; readonly atLeast: number }
+    /** "As long as ~ is untapped / tapped". */
+    | { readonly kind: 'source-tapped'; readonly tapped: boolean }
+    /** "As long as it's attacking". */
+    | { readonly kind: 'source-attacking' }
+    /** "As long as ~ is enchanted": Auras attached to the source. */
+    | { readonly kind: 'source-auras'; readonly atLeast: number }
+    /** Hellbent and its cousins: "you have no cards in hand", "N or more cards in hand". */
+    | { readonly kind: 'controller-hand'; readonly atLeast?: number; readonly atMost?: number }
+    /** "You control a Plains", "… a Gate": a printed subtype among your permanents. */
+    | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
+    /** "You have N or more life". */
+    | { readonly kind: 'controller-life'; readonly atLeast: number }
+    /** "It's your turn" / "it's not your turn". */
+    | { readonly kind: 'turn'; readonly yours: boolean };
   /**
    * A size that is a **count times a rate**: layer 7c, `~ gets +1/+1 for each Equipment you
    * control` (D523).
@@ -1785,6 +1806,50 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   */
   if (cond.kind === 'controller-graveyard') {
     return (state.zones[zoneKey(effect.controller, 'graveyard')] ?? []).length >= cond.atLeast;
+  }
+  // The general family (D605): see the union.
+  if (cond.kind === 'graveyard-card-types') {
+    const seen = new Set<string>();
+    for (const id of state.zones[zoneKey(effect.controller, 'graveyard')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      for (const type of parseTypeLine(state.cardDefs[inst.defKey]?.typeLine).types) seen.add(type.toLowerCase());
+    }
+    return seen.size >= cond.atLeast;
+  }
+  if (cond.kind === 'source-tapped') {
+    const source = state.instances[effect.source];
+    return source !== undefined && source.zone === 'battlefield' && source.tapped === cond.tapped;
+  }
+  if (cond.kind === 'source-attacking') {
+    return state.combat.attacks.some(({ attacker }) => attacker === effect.source);
+  }
+  if (cond.kind === 'source-auras') {
+    let attached = 0;
+    for (const inst of Object.values(state.instances)) {
+      if (inst.attachedTo !== effect.source || inst.zone !== 'battlefield') continue;
+      if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'Aura')) attached += 1;
+    }
+    return attached >= cond.atLeast;
+  }
+  if (cond.kind === 'controller-hand') {
+    const held = (state.zones[zoneKey(effect.controller, 'hand')] ?? []).length;
+    return held >= (cond.atLeast ?? 0) && held <= (cond.atMost ?? Infinity);
+  }
+  if (cond.kind === 'controller-subtype') {
+    let n = 0;
+    for (const id of state.zones[zoneKey(effect.controller, 'battlefield')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst)) continue;
+      if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), cond.subtype)) n += 1;
+    }
+    return n >= cond.atLeast;
+  }
+  if (cond.kind === 'controller-life') {
+    return (state.seats[effect.controller]?.life ?? 0) >= cond.atLeast;
+  }
+  if (cond.kind === 'turn') {
+    return (state.activeSeat === effect.controller) === cond.yours;
   }
   // Equipment attached to the source, whoever controls it: the sentence says "attached to it".
   if (cond.kind === 'source-equipment') {
