@@ -253,6 +253,11 @@ export interface LegalPlay {
    */
   readonly half?: number;
   /**
+   * On a shock land's play: this row pays the life, and the land enters untapped (D587). The same
+   * land is offered again without it, entering tapped. See `CardScript.payLifeToEnterUntapped`.
+   */
+  readonly payLife?: true;
+  /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
    * One play per legal combination, which is why the table needed no new interface for modal
@@ -1227,18 +1232,39 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       // offer it is better than offering a land drop out of the command zone.
       if (fromCommand) continue;
       if (sorcerySpeed && landsPlayed < landsAllowed) {
-        out.push({
-          kind: 'land', card: id, name: ch.name,
-          // Named as the back of the card when that is what it is, because the player is looking at
-          // a Hagra Mauling in their hand and "Play Hagra Broodpit" would otherwise read as a bug.
-          description: half === undefined
-            ? `Play ${ch.name}${impulse
-              ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
-              : ''}`
-            : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`,
+        /*
+          Whether it will arrive tapped, said on the row (D587): a check land with no Mountain or
+          Plains out is a different play from one with, and the player should not have to find out
+          after. A shock land is offered twice, once paying its life and once not.
+        */
+        const landScript = scriptForCard(half === undefined
+          ? state.cardDefs[inst.defKey]
+          : state.cardDefs[inst.defKey]?.faces?.cards[half]);
+        const unless = landScript?.entersUntappedIf;
+        const tappedNote = unless !== undefined && !unless.test(state, seat, id)
+          ? ` (enters tapped: ${unless.words})`
+          : '';
+        const shock = landScript?.payLifeToEnterUntapped;
+        const base = {
+          kind: 'land' as const, card: id, name: ch.name,
           manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
           ...(half === undefined ? {} : { half }),
-        });
+        };
+        // Named as the back of the card when that is what it is, because the player is looking at
+        // a Hagra Mauling in their hand and "Play Hagra Broodpit" would otherwise read as a bug.
+        const named = half === undefined
+          ? `Play ${ch.name}${impulse
+            ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
+            : ''}`
+          : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`;
+        if (shock !== undefined) {
+          if ((state.seats[seat]?.life ?? 0) > shock) {
+            out.push({ ...base, description: `${named} untapped (pay ${shock} life)`, payLife: true });
+          }
+          out.push({ ...base, description: `${named} tapped` });
+        } else {
+          out.push({ ...base, description: `${named}${tappedNote}` });
+        }
       } else if (!sorcerySpeed) {
         why(id, 'a land is played in your own main phase, with nothing on the stack');
       } else {

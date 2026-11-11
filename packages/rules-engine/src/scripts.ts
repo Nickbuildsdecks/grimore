@@ -22113,9 +22113,145 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
  */
 function entersTappedFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
-  return new RegExp(`^${selfRef(name)} ${ENTERS} tapped$`, 'i').test(text)
-    ? { entersTapped: true }
-    : null;
+  if (new RegExp(`^${selfRef(name)} ${ENTERS} tapped$`, 'i').test(text)) return { entersTapped: true };
+  /*
+    "~ enters tapped unless <condition>" (D587), with the condition from a short table of the
+    printings the corpus actually has. A condition not in the table refuses the line, which leaves
+    the land reported rather than arriving untapped when it should not.
+  */
+  const unless = new RegExp(`^${selfRef(name)} ${ENTERS} tapped unless (.+)$`, 'i').exec(text);
+  if (unless !== null) {
+    const test = untappedCondition(unless[1]!);
+    return test === null ? null : { entersUntappedIf: { test, words: unless[1]!.trim() } };
+  }
+  /*
+    The shock lands: "As ~ enters, you may pay 2 life. If you don't, it enters tapped." Two
+    sentences on one line, read as one choice.
+  */
+  const shock = new RegExp(
+    `^As ${selfRef(name)} ${ENTERS}, you may pay (\\w+) life\\. If you don't, it ${ENTERS} tapped$`, 'i',
+  ).exec(text);
+  if (shock !== null) {
+    const n = /^\d+$/.test(shock[1]!) ? Number(shock[1]) : WORD_NUMBERS[shock[1]!.toLowerCase()];
+    return n === undefined || n < 1 ? null : { payLifeToEnterUntapped: n };
+  }
+  return null;
+}
+
+/** The basic land types, which are what a check land asks about. */
+const BASIC_LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
+/** The plural each type is printed in: "two or more other Mountains". */
+const BASIC_LAND_PLURALS: Readonly<Record<string, string>> = {
+  plains: 'Plains', islands: 'Island', swamps: 'Swamp', mountains: 'Mountain', forests: 'Forest',
+};
+
+/**
+ * The condition after "enters tapped unless", as a question asked of the board the land is
+ * arriving on (D587). True means it enters **untapped**.
+ *
+ * `self` is never counted: the rules ask about the board the land enters, so "two or fewer other
+ * lands" and "you control a Mountain" are about what was already there. The table is the
+ * printings the corpus has, each counted before it was written down:
+ *
+ *     you control a <type> [or a <type>]          check lands                 25
+ *     you control N or fewer other lands          fast lands                  11
+ *     a player has N or less life                 Abandoned Campground        10
+ *     you have N or more opponents                bond lands                  10
+ *     you control N or more basic lands           Canopy Vista                10
+ *     you control N or more other lands           slow lands                  10
+ *     you control a planeswalker                                               10
+ *     your opponents control N or more lands      Turbulent Crater             8
+ *     you control a legendary creature            Barad-dûr                    6
+ *     you control a basic land                                                 5
+ *     you control N or more other <type>s         Mystic Sanctuary             5
+ *
+ * Read live through `characteristicsOf`, so a land that a continuous effect has given a type counts
+ * as one, which is the rule.
+ */
+function untappedCondition(
+  printed: string,
+): ((state: GameState, controller: SeatIndex, self: string) => boolean) | null {
+  const text = plain(printed).trim().replace(/\.\s*$/, '');
+  const number = (word: string): number | undefined =>
+    (/^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word.toLowerCase()]);
+  const mine = (state: GameState, seat: SeatIndex, self: string) => (state.zones[zoneKey(seat, 'battlefield')] ?? [])
+    .filter((id) => id !== self)
+    .map((id) => state.instances[id])
+    .filter((inst): inst is NonNullable<typeof inst> => inst !== undefined)
+    .map((inst) => characteristicsOf(state, inst));
+  const countMine = (pick: (ch: ReturnType<typeof characteristicsOf>) => boolean) =>
+    (state: GameState, seat: SeatIndex, self: string) => mine(state, seat, self).filter(pick).length;
+
+  const typed = /^you control an? (\w+)(?: or an? (\w+))?$/i.exec(text);
+  if (typed !== null) {
+    const wanted = [typed[1]!, typed[2]].filter((w): w is string => w !== undefined);
+    const basic = wanted.map((w) => BASIC_LAND_TYPES.find((t) => t.toLowerCase() === w.toLowerCase()));
+    if (basic.every((t) => t !== undefined)) {
+      const has = countMine((ch) => ch.isLand && basic.some((t) => hasSubtype(ch.typeLine, t!)));
+      return (state, seat, self) => has(state, seat, self) >= 1;
+    }
+    if (wanted.length === 1 && /^planeswalker$/i.test(wanted[0]!)) {
+      const has = countMine((ch) => hasType(ch.typeLine, 'planeswalker'));
+      return (state, seat, self) => has(state, seat, self) >= 1;
+    }
+  }
+  if (/^you control a legendary creature$/i.test(text)) {
+    const has = countMine((ch) => ch.isCreature && ch.typeLine.supertypes.some((s) => /^legendary$/i.test(s)));
+    return (state, seat, self) => has(state, seat, self) >= 1;
+  }
+  if (/^you control a basic land$/i.test(text)) {
+    const has = countMine((ch) => ch.isLand && ch.typeLine.supertypes.some((s) => /^basic$/i.test(s)));
+    return (state, seat, self) => has(state, seat, self) >= 1;
+  }
+
+  const lands = /^you control (\w+) or (fewer|more) other lands$/i.exec(text);
+  if (lands !== null) {
+    const bound = number(lands[1]!);
+    if (bound === undefined) return null;
+    const count = countMine((ch) => ch.isLand);
+    return lands[2]!.toLowerCase() === 'fewer'
+      ? (state, seat, self) => count(state, seat, self) <= bound
+      : (state, seat, self) => count(state, seat, self) >= bound;
+  }
+  const basics = /^you control (\w+) or more basic lands$/i.exec(text);
+  if (basics !== null) {
+    const bound = number(basics[1]!);
+    if (bound === undefined) return null;
+    const count = countMine((ch) => ch.isLand && ch.typeLine.supertypes.some((s) => /^basic$/i.test(s)));
+    return (state, seat, self) => count(state, seat, self) >= bound;
+  }
+  const ofType = /^you control (\w+) or more other (\w+)$/i.exec(text);
+  if (ofType !== null) {
+    const bound = number(ofType[1]!);
+    const type = BASIC_LAND_PLURALS[ofType[2]!.toLowerCase()];
+    if (bound === undefined || type === undefined) return null;
+    const count = countMine((ch) => ch.isLand && hasSubtype(ch.typeLine, type));
+    return (state, seat, self) => count(state, seat, self) >= bound;
+  }
+
+  const life = /^a player has (\w+) or less life$/i.exec(text);
+  if (life !== null) {
+    const bound = number(life[1]!);
+    if (bound === undefined) return null;
+    return (state) => state.seats.some((s) => !s.eliminated && s.life <= bound);
+  }
+  const opponents = /^you have (\w+) or more opponents$/i.exec(text);
+  if (opponents !== null) {
+    const bound = number(opponents[1]!);
+    if (bound === undefined) return null;
+    return (state, seat) => opponentsOf(state, seat).length >= bound;
+  }
+  const theirLands = /^your opponents control (\w+) or more lands$/i.exec(text);
+  if (theirLands !== null) {
+    const bound = number(theirLands[1]!);
+    if (bound === undefined) return null;
+    return (state, seat) => opponentsOf(state, seat).reduce((n, other) => n
+      + (state.zones[zoneKey(other, 'battlefield')] ?? []).filter((id) => {
+        const inst = state.instances[id];
+        return inst !== undefined && characteristicsOf(state, inst).isLand;
+      }).length, 0) >= bound;
+  }
+  return null;
 }
 
 /**

@@ -2246,6 +2246,30 @@ export interface CardScript {
    */
   readonly entersTapped?: boolean;
   /**
+   * "~ enters tapped **unless** <condition>" (D587): the check lands, fast lands, slow lands, bond
+   * lands and their cousins — the dual lands every Commander deck plays.
+   *
+   * The same replacement as `entersTapped` (CR 614.1c), with the condition asked as the permanent
+   * arrives. `test` answers true when it enters **untapped**; it is given the seat that will control
+   * the permanent and the permanent's own id, and it does not count the permanent itself, because
+   * the rule asks about the board it is entering — "two or fewer other lands" is about the lands
+   * that were already there. `words` is the printed condition, for the table and the log.
+   */
+  readonly entersUntappedIf?: {
+    readonly test: (state: GameState, controller: SeatIndex, self: string) => boolean;
+    readonly words: string;
+  };
+  /**
+   * "As ~ enters, you may pay N life. If you don't, it enters tapped." (D587) — the shock lands.
+   *
+   * A choice made as the land is played, so it is offered as two land plays, one paying and one
+   * not, and the answer travels on the action (`AutoPlayLandAction.payLife`). A shock land that
+   * arrives any other way — fetched, or put onto the battlefield by an effect — enters **tapped**:
+   * the rules give its controller the same choice then, and this engine has no question to ask it
+   * with yet, so it takes the answer that costs nothing. Named in the player guide.
+   */
+  readonly payLifeToEnterUntapped?: number;
+  /**
    * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
    *
    * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other

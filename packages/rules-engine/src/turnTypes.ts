@@ -1517,6 +1517,11 @@ export interface AutoPlayLandAction {
    * the kind of mistake a player cannot undo.
    */
   readonly half?: number;
+  /**
+   * Pay the life a shock land asks for, so it enters untapped (D587). Refused on a land that asks
+   * for none, and when the player has no more life than the price. Absent means it enters tapped.
+   */
+  readonly payLife?: boolean;
 }
 export interface AutoCastAction {
   readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;

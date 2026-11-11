@@ -410,7 +410,10 @@ function playAction(
     modal double-faced card is a land you *play* rather than a spell you cast (CR 712).
   */
   const withHalf = play.half === undefined ? {} : { half: play.half }
-  if (play.kind === "land") return { type: "auto:playLand", card: play.card, ...withHalf }
+  // A shock land's choice was made by choosing the row (D587): the paying row says so, and a
+  // play without it enters tapped — the engine never pays life a client did not ask it to.
+  const withLife = play.payLife === true ? { payLife: true } : {}
+  if (play.kind === "land") return { type: "auto:playLand", card: play.card, ...withHalf, ...withLife }
   // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
   // legal combination, so picking a mode and picking a spell are the same gesture.
   const withModes = play.modes === undefined ? {} : { modes: [...play.modes] }

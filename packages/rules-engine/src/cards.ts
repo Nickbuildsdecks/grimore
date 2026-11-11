@@ -263,6 +263,12 @@ export interface CardInstance {
     readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step';
   };
   /**
+   * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the
+   * land play just before the arrival is settled, and cleared by the arrival as it reads it — it
+   * lives for exactly the one step between. See `CardScript.payLifeToEnterUntapped`.
+   */
+  readonly paidToEnterUntapped?: true;
+  /**
    * Set while this card is being cast — and then while it is on the battlefield — **as an Aura
    * rather than as a creature**, because its bestow cost was paid (CR 702.103b).
    *

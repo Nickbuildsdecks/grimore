@@ -6951,15 +6951,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(field(read.script, 'triggers')).toHaveLength(1);
     });
 
-    it('refuses a conditional arrival, which is a different card', () => {
+    it('reads a conditional arrival as its condition, never as the plain field', () => {
       // "enters tapped unless you control two or more lands" is a replacement with a condition on
       // it, and `entersTapped` is unconditional — reading it as the plain field would be a land
-      // that always arrives tapped, which is strictly worse than the printed card.
+      // that always arrives tapped, which is strictly worse than the printed card. Until D587 the
+      // line was refused; it now has a field of its own, and this is the half of the old test
+      // that still matters.
       const read = card('Joined Up enters tapped unless you control two or more other lands.');
       expect(read.ok).toBe(true);
       if (!read.ok) return;
       expect(field(read.script, 'entersTapped')).toBeUndefined();
-      expect(read.unread).toHaveLength(1);
+      expect(field(read.script, 'entersUntappedIf')).toBeDefined();
+      expect(read.unread).toHaveLength(0);
     });
 
     it.each([

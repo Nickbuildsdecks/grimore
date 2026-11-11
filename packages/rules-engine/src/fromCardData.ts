@@ -151,6 +151,22 @@ const BASIC_LAND_MANA: Readonly<Record<string, ManaType>> = {
   plains: 'W', island: 'U', swamp: 'B', mountain: 'R', forest: 'G', wastes: 'C',
 };
 
+/**
+ * The mana abilities a land's basic land types give it, printed nowhere (CR 305.6) — one `{T}: Add`
+ * per type, in type-line order (D587).
+ *
+ * `cardFromData` folds these into the abilities it reads off a whole card. The line-by-line
+ * compiler needs them too, for a typed land with a line `cardFromData` cannot take: until D587 a
+ * Blood Crypt or a Canopy Vista whose enters-tapped clause went unread compiled to a land with no
+ * mana ability at all, because its only mana is the kind nothing prints.
+ */
+export function intrinsicManaAbilities(subtypes: readonly string[]): readonly AbilityDef[] {
+  const kinds = [...new Set(subtypes
+    .map((s) => BASIC_LAND_MANA[s.toLowerCase()])
+    .filter((t): t is ManaType => t !== undefined && t !== 'C'))];
+  return kinds.map((t) => ({ cost: { tap: true }, description: `{T}: Add {${t}}.`, produces: [t] }));
+}
+
 const MANA_SYMBOLS: Readonly<Record<string, ManaType>> = {
   W: 'W', U: 'U', B: 'B', R: 'R', G: 'G', C: 'C',
 };

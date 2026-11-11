@@ -2182,3 +2182,25 @@ describe("what to tap for a cost that is a card (D585)", () => {
       .toEqual({ type: "auto:cast", card: "score", discarded: "giant" })
   })
 })
+
+describe("a shock land's two rows (D587)", () => {
+  /*
+    The engine offers a shock land twice, once paying its life and once not, and the choice is made
+    by choosing the row. So the row the player picked is the only place the answer lives, and the
+    action has to carry it — or the land would enter tapped after the player chose to pay.
+  */
+  const land = (over: Partial<LegalPlay> = {}) =>
+    play({ kind: "land", card: "crypt", name: "Blood Crypt", manaCost: "", targetSpecs: [], candidates: [], ...over })
+
+  it("sends the life payment with the row that pays it", () => {
+    const paying = land({ description: "Play Blood Crypt untapped (pay 2 life)", payLife: true })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: paying }).action)
+      .toEqual({ type: "auto:playLand", card: "crypt", payLife: true })
+  })
+
+  it("and nothing with the row that does not, so the land enters tapped", () => {
+    const tapped = land({ description: "Play Blood Crypt tapped" })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: tapped }).action)
+      .toEqual({ type: "auto:playLand", card: "crypt" })
+  })
+})

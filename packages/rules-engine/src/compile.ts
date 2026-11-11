@@ -41,7 +41,7 @@
 import type { CardDef } from './cards.js';
 import { hasType, isPrintedAbilityLine, parseTypeLine, LEVEL_BAND_HEADER } from './characteristics.js';
 import {
-  cardFromData, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
+  cardFromData, intrinsicManaAbilities, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
   printedLoyalty, printedRulesLines,
   type CardDataRow, type DerivedKind,
 } from './fromCardData.js';
@@ -436,6 +436,21 @@ function compileUncached(row: CardDataRow): Compilation {
   if (hasType(typeLine, 'creature')) {
     const refusal = unsizeable(def.name, row, built.statics);
     if (refusal !== null) return { ok: false, why: refusal };
+  }
+
+  /*
+    A land's basic land types tap for mana with nothing printed (CR 305.6), so nothing in the loop
+    above reads that mana — `cardFromData` does, and only for a card it reads whole (D587). Added
+    first, as `cardFromData` orders them, and only for a colour no free `{T}: Add` above already
+    makes, so a land that prints its type's ability as well does not tap for it twice.
+  */
+  if (hasType(typeLine, 'land')) {
+    const existing = (built['abilities'] ?? []) as readonly { cost?: { tap?: boolean }; produces?: readonly string[] }[];
+    const free = new Set(existing
+      .filter((a) => a.produces !== undefined && a.produces.length === 1 && JSON.stringify(a.cost) === '{"tap":true}')
+      .map((a) => a.produces![0]));
+    const intrinsic = intrinsicManaAbilities(typeLine.subtypes).filter((a) => !free.has(a.produces![0]!));
+    if (intrinsic.length > 0) built['abilities'] = [...intrinsic, ...existing];
   }
 
   const anything = Object.keys(built).length > 0;

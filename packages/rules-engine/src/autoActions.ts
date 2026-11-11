@@ -1376,7 +1376,7 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
 }
 
 function playLand(
-  state: GameState, action: { by: SeatIndex; card: string; half?: number },
+  state: GameState, action: { by: SeatIndex; card: string; half?: number; payLife?: boolean },
 ): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
@@ -1418,6 +1418,15 @@ function playLand(
       ? `you have already played ${played} lands this turn`
       : 'you have already played a land this turn');
   }
+  // The shock land's price, refused before anything moves (D587). See `CardScript.payLifeToEnterUntapped`.
+  const asked = scriptForCard(state.cardDefs[faceKey ?? inst.defKey])?.payLifeToEnterUntapped;
+  const shockPrice = action.payLife === true ? asked ?? 0 : 0;
+  if (action.payLife === true && asked === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} does not ask for life to enter untapped`);
+  }
+  if (shockPrice > 0 && (state.seats[action.by]?.life ?? 0) <= shockPrice) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${shockPrice} life to pay for ${ch.name}`);
+  }
 
   let next = relocate(state, inst, 'battlefield', action.by, 'bottom');
   /*
@@ -1436,6 +1445,15 @@ function playLand(
   if (faceKey !== undefined) {
     next = withInstance(next, inst.id, { defKey: faceKey, printedDefKey: inst.defKey });
   }
+  /*
+    A shock land's life, paid as it is played and before it arrives (D587). The arrival reads the
+    mark and leaves the land untapped; without it the land enters tapped. Checked against the land's
+    own script — the face being played — so a client cannot pay life for a land that asks none.
+  */
+  if (shockPrice > 0) {
+    next = loseLife(next, action.by, shockPrice);
+    next = withInstance(next, inst.id, { paidToEnterUntapped: true });
+  }
   next = { ...next, landsPlayed: { ...next.landsPlayed, [String(action.by)]: played + 1 } };
   /*
     No entry trigger raised here, and that is a fix rather than an omission.
@@ -1449,8 +1467,10 @@ function playLand(
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
-    message: `${seatName(state, action.by)} plays ${ch.name}`,
-    data: { card: inst.id, name: ch.name },
+    message: shockPrice > 0
+      ? `${seatName(state, action.by)} pays ${shockPrice} life and plays ${ch.name} untapped`
+      : `${seatName(state, action.by)} plays ${ch.name}${next.instances[inst.id]?.tapped === true ? ' tapped' : ''}`,
+    data: { card: inst.id, name: ch.name, ...(shockPrice > 0 ? { lifePaid: shockPrice } : {}) },
   };
 }
 

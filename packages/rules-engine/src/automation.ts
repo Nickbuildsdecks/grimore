@@ -3260,6 +3260,28 @@ function settle(state: GameState, before: GameState): GameState {
         next = withInstance(next, id, { tapped: true });
       }
       /*
+        The conditional form (D587): "enters tapped unless you control a Mountain or a Plains".
+        Asked here, of the board it is arriving on, by the same replacement and at the same moment.
+      */
+      const unless = arrivalScript?.entersUntappedIf;
+      if (unless !== undefined && next.instances[id]?.tapped !== true
+        && !unless.test(next, arrival.zoneSeat, id)) {
+        next = withInstance(next, id, { tapped: true });
+      }
+      /*
+        A shock land: untapped only if its life was paid as it was played, which the land play marks
+        and this clears. Any other arrival was not a land play and enters tapped — see the field.
+      */
+      if (arrivalScript?.payLifeToEnterUntapped !== undefined) {
+        const paid = next.instances[id]?.paidToEnterUntapped === true;
+        if (paid) {
+          const { paidToEnterUntapped: _read, ...rest } = next.instances[id]!;
+          next = { ...next, instances: { ...next.instances, [id]: rest } };
+        } else if (next.instances[id]?.tapped !== true) {
+          next = withInstance(next, id, { tapped: true });
+        }
+      }
+      /*
         And its own static abilities, here rather than where the spell resolved.
 
         This used to live in the resolution of a permanent *spell*, which meant a permanent that

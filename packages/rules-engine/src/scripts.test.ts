@@ -37,7 +37,7 @@ import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
-import { CARD_SCRIPTS } from './scripts.js';
+import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -7711,6 +7711,20 @@ describe('deck coverage', () => {
         an edict, a Clue cracked and a Treasure spent each raise it; a Shock does not; each filter
         (creature, artifact, token, Clue, Treasure, another) both ways; and a Korvold sacrificed
         still sees its own.
+
+      **And two for the dual lands** (D587):
+
+      - `script entersUntappedIf`: "~ enters tapped unless <condition>" — check lands, fast lands,
+        slow lands, bond lands, battle lands and their cousins, **120 legal lands** printing it,
+        110 of them read now. Every pool land is a basic, a cycling land or one that is always
+        tapped, and D442 forbids adding a Clifftop Retreat to a measured deck's mana base.
+      - `script payLifeToEnterUntapped`: the shock lands, **12 legal lands**, 11 read (Multiversal
+        Passage also chooses a land type, and is not). The same absence.
+
+        Both driven at runtime by "lands that enter tapped unless… (D587)", on nine printed lands
+        and Mystic Sanctuary compiled from corpus rows: each condition both ways, that a land never
+        counts itself, the shock land's two rows and its refusals, and the computer opponent's
+        choice between a ready land and a tapped one.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7723,6 +7737,7 @@ describe('deck coverage', () => {
       'trigger damaged',
       'trigger discards', 'trigger cycles',
       'trigger sacrifices',
+      'script entersUntappedIf', 'script payLifeToEnterUntapped',
     ]);
 
     const declared = [
@@ -42867,6 +42882,22 @@ describe('what was sacrificed to pay for it: "the sacrificed creature\'s power" 
       expect(unreadOf(FEED)).toEqual([FEED.oracle_text]);
     });
 
+    it('and a spell read just before does not leave the words switched on (the D586 break run)', () => {
+      /*
+        Each card is compiled once and cached, so the card here is named afresh: what is asked is
+        the reader's state straight after a Fling, with nothing in between to reset it. A trigger
+        is read outside any cost, so if the Fling's scope were left open this one would gain life
+        off a sacrifice nobody recorded. The trigger is otherwise a plain one, so the measure is the
+        only thing that can keep it unread.
+      */
+      const text = "When Probe Pack enters, you gain life equal to the sacrificed creature's toughness.";
+      const probe = row('Probe Pack', 'Creature — Wolf', '{2}{G}', 3, ['G'], text);
+      compileCard({ ...FLING, name: 'Probe Fling' } as never);
+      expect(unreadOf({ ...probe, power: '2', toughness: '2' })).toEqual([text]);
+      // The same sentence with a number in it reads, so it is the measure that is refused.
+      expect(unreadOf({ ...probe, name: 'Probe Pup', power: '2', toughness: '2', oracle_text: 'When Probe Pup enters, you gain 2 life.' })).toEqual([]);
+    });
+
     it('a spell that sacrificed nothing to be cast', () => {
       expect(unreadOf(row('Probe Toss', 'Instant', '{R}', 1, ['R'], NO_COST))).toEqual([NO_COST]);
       // And not because of what was compiled just before it: the Fling above it turns nothing on.
@@ -42895,5 +42926,361 @@ describe('what was sacrificed to pay for it: "the sacrificed creature\'s power" 
       expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], `${paid}\n${tap}`))).toEqual([tap]);
       expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], `${tap}\n${paid}`))).toEqual([tap]);
     });
+  });
+});
+
+describe('lands that enter tapped unless… (D587)', () => {
+  /*
+    The dual lands every Commander deck plays: check lands, fast lands, slow lands, bond lands, the
+    battle lands, and the shock lands, which ask for 2 life instead. Each is a replacement on the
+    land's own arrival (CR 614.1c), asked of the board it arrives on and never counting itself.
+    Every card here is from its Oracle row.
+  */
+  const land = (name: string, type: string, text: string) => ({
+    name, type_line: type, mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: text,
+  });
+  const CLIFFTOP = land('Clifftop Retreat', 'Land', 'Clifftop Retreat enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}.');
+  const CLIFFS = land('Blackcleave Cliffs', 'Land', 'Blackcleave Cliffs enters tapped unless you control two or fewer other lands.\n{T}: Add {B} or {R}.');
+  const GLADE = land('Deathcap Glade', 'Land', 'Deathcap Glade enters tapped unless you control two or more other lands.\n{T}: Add {B} or {G}.');
+  const PROMENADE = land('Bountiful Promenade', 'Land', 'Bountiful Promenade enters tapped unless you have two or more opponents.\n{T}: Add {G} or {W}.');
+  const VISTA = land('Canopy Vista', 'Land — Forest Plains', '({T}: Add {G} or {W}.)\nCanopy Vista enters tapped unless you control two or more basic lands.');
+  const CRYPT = land('Blood Crypt', 'Land — Swamp Mountain', "({T}: Add {B} or {R}.)\nAs Blood Crypt enters, you may pay 2 life. If you don't, it enters tapped.");
+  const CAMPGROUND = land('Abandoned Campground', 'Land', 'Abandoned Campground enters tapped unless a player has 13 or less life.\n{T}: Add {W} or {U}.');
+  const CRATER = land('Turbulent Crater', 'Land — Swamp Mountain', '({T}: Add {B} or {R}.)\nThis land enters tapped unless your opponents control eight or more lands.');
+  const COMMONS = land('Dedicated Commons', 'Land', 'This land enters tapped unless you control a planeswalker.\n{T}: Add {R} or {W}.');
+  const SANCTUARY = land('Mystic Sanctuary', 'Land — Island',
+    '({T}: Add {U}.)\nMystic Sanctuary enters tapped unless you control three or more other Islands.\n'
+    + 'When Mystic Sanctuary enters untapped, you may put target instant or sorcery card from your graveyard on top of your library.');
+  const ROWS = [CLIFFTOP, CLIFFS, GLADE, PROMENADE, VISTA, CRYPT, CAMPGROUND, CRATER, COMMONS];
+  const list = customDeck({
+    id: 'duals',
+    name: 'Duals',
+    entries: [
+      ...ROWS.map((r) => ({ name: r.name, count: 2 })),
+      { name: 'Mountain', count: 6 }, { name: 'Swamp', count: 6 }, { name: 'Island', count: 4 },
+      { name: 'Hill Giant', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Grizzly Bears', count: 4 },
+      { name: 'Raging Goblin', count: 2 }, { name: 'Shivan Dragon', count: 2 },
+    ],
+    data: ROWS as never[],
+  }).deck;
+  const table = (
+    hand: readonly string[], mine: readonly string[], opts: { seats?: number; theirs?: readonly string[] } = {},
+  ): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'duals', 1: 'ember-rush', 2: 'ember-rush', 3: 'ember-rush' },
+      deckSpecs: { duals: list },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...mine], 1: [...(opts.theirs ?? [])] },
+      turn: 5, firstSeat: 0, ...(opts.seats === undefined ? {} : { seats: opts.seats, format: 'pod' }),
+    }), 'precombat-main');
+    const named = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const playIt = (s: GameState, name: string, payLife?: boolean): GameState => apply(s, {
+    type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', name), ...(payLife === undefined ? {} : { payLife }),
+  });
+  const tapped = (s: GameState, name: string): boolean => s.instances[find(s, 0, 'battlefield', name)]!.tapped;
+  const rows = (s: GameState, name: string) => legalActions(s, 0).plays
+    .filter((p) => p.kind === 'land' && p.card === find(s, 0, 'hand', name));
+
+  it('reads every one of them whole, and the typed ones tap for their types', () => {
+    for (const r of ROWS) {
+      const compiled = compileCard(r as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
+    }
+    // Mystic Sanctuary's tapped clause reads; its "enters untapped" trigger is a reader of its own
+    // and is not one yet, so that line — and only that line — is left for a person.
+    const sanctuary = compileCard(SANCTUARY as never);
+    expect(sanctuary.ok && sanctuary.unread.map((u) => u.line)).toEqual([SANCTUARY.oracle_text.split('\n')[2]]);
+    const madeBy = (r: object) => {
+      const compiled = compileCard(r as never);
+      return (compiled.ok ? compiled.script?.abilities ?? [] : []).flatMap((a) => a.produces ?? []).sort();
+    };
+    // No mana is printed on these three outside the reminder text: it is their land types'.
+    expect(madeBy(CRYPT)).toEqual(['B', 'R']);
+    expect(madeBy(VISTA)).toEqual(['G', 'W']);
+    expect(madeBy(SANCTUARY)).toEqual(['U']);
+    expect(madeBy(CLIFFTOP)).toEqual(['R', 'W']);
+  });
+
+  it('a check land: untapped beside a Mountain, tapped beside only a Swamp, and the row says which', () => {
+    let s = table(['Clifftop Retreat'], ['Mountain']);
+    expect(rows(s, 'Clifftop Retreat').map((p) => p.description)).toEqual(['Play Clifftop Retreat']);
+    expect(tapped(playIt(s, 'Clifftop Retreat'), 'Clifftop Retreat')).toBe(false);
+
+    s = table(['Clifftop Retreat'], ['Swamp']);
+    expect(rows(s, 'Clifftop Retreat').map((p) => p.description))
+      .toEqual(['Play Clifftop Retreat (enters tapped: you control a Mountain or a Plains)']);
+    s = playIt(s, 'Clifftop Retreat');
+    expect(tapped(s, 'Clifftop Retreat')).toBe(true);
+    expect(s.log[s.log.length - 1]?.message ?? '').toContain('tapped');
+  });
+
+  it('a fast land counts the other lands: two is fast, three is not', () => {
+    expect(tapped(playIt(table(['Blackcleave Cliffs'], ['Swamp', 'Mountain']), 'Blackcleave Cliffs'), 'Blackcleave Cliffs')).toBe(false);
+    expect(tapped(playIt(table(['Blackcleave Cliffs'], ['Swamp', 'Mountain', 'Island']), 'Blackcleave Cliffs'), 'Blackcleave Cliffs')).toBe(true);
+  });
+
+  it('a slow land is the other way round: one other land is slow, two is not', () => {
+    expect(tapped(playIt(table(['Deathcap Glade'], ['Swamp']), 'Deathcap Glade'), 'Deathcap Glade')).toBe(true);
+    expect(tapped(playIt(table(['Deathcap Glade'], ['Swamp', 'Mountain']), 'Deathcap Glade'), 'Deathcap Glade')).toBe(false);
+  });
+
+  it('a bond land is tapped in a duel and untapped in a pod', () => {
+    expect(tapped(playIt(table(['Bountiful Promenade'], []), 'Bountiful Promenade'), 'Bountiful Promenade')).toBe(true);
+    expect(tapped(playIt(table(['Bountiful Promenade'], [], { seats: 3 }), 'Bountiful Promenade'), 'Bountiful Promenade')).toBe(false);
+  });
+
+  it('a battle land counts basic lands, and a typed land that is not basic is not one', () => {
+    expect(tapped(playIt(table(['Canopy Vista'], ['Swamp', 'Mountain']), 'Canopy Vista'), 'Canopy Vista')).toBe(false);
+    // One basic and a Blood Crypt, which is a Swamp and a Mountain but not a basic land.
+    expect(tapped(playIt(table(['Canopy Vista'], ['Swamp', 'Blood Crypt']), 'Canopy Vista'), 'Canopy Vista')).toBe(true);
+  });
+
+  it('does not count itself: Mystic Sanctuary is an Island and still wants three others', () => {
+    const sanctuary = customDeck({
+      id: 'sanctuary', name: 'Sanctuary',
+      entries: [{ name: 'Mystic Sanctuary', count: 4 }, { name: 'Island', count: 40 }, { name: 'Lightning Bolt', count: 16 }],
+      data: [SANCTUARY] as never[],
+    }).deck;
+    const at = (islands: number) => {
+      const s = advanceTo(arena({
+        decks: { 0: 'sanctuary', 1: 'ember-rush' }, deckSpecs: { sanctuary },
+        hands: { 0: ['Mystic Sanctuary'] }, battlefield: { 0: Array(islands).fill('Island') }, turn: 5, firstSeat: 0,
+      }), 'precombat-main');
+      const next = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mystic Sanctuary') });
+      return next.instances[find(next, 0, 'battlefield', 'Mystic Sanctuary')]!.tapped;
+    };
+    expect(at(2)).toBe(true);
+    expect(at(3)).toBe(false);
+  });
+
+  it('reads the table, not only your side of it: a low life total, and the lands your opponents have', () => {
+    let s = table(['Abandoned Campground'], []);
+    expect(tapped(playIt(s, 'Abandoned Campground'), 'Abandoned Campground')).toBe(true);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 13 } : seat)) };
+    expect(tapped(playIt(s, 'Abandoned Campground'), 'Abandoned Campground')).toBe(false);
+
+    expect(tapped(playIt(table(['Turbulent Crater'], [], { theirs: Array(7).fill('Mountain') }), 'Turbulent Crater'), 'Turbulent Crater')).toBe(true);
+    expect(tapped(playIt(table(['Turbulent Crater'], [], { theirs: Array(8).fill('Mountain') }), 'Turbulent Crater'), 'Turbulent Crater')).toBe(false);
+    expect(tapped(playIt(table(['Dedicated Commons'], ['Mountain']), 'Dedicated Commons'), 'Dedicated Commons')).toBe(true);
+  });
+
+  describe('a shock land', () => {
+    it('is offered twice, and paying puts it in untapped for 2 life', () => {
+      let s = table(['Blood Crypt'], []);
+      expect(rows(s, 'Blood Crypt').map((p) => [p.description, p.payLife ?? false])).toEqual([
+        ['Play Blood Crypt untapped (pay 2 life)', true],
+        ['Play Blood Crypt tapped', false],
+      ]);
+      const before = life(s, 0);
+      s = playIt(s, 'Blood Crypt', true);
+      expect(life(s, 0)).toBe(before - 2);
+      expect(tapped(s, 'Blood Crypt')).toBe(false);
+      // The mark that said it was paid for is gone once it has arrived.
+      expect(s.instances[find(s, 0, 'battlefield', 'Blood Crypt')]!.paidToEnterUntapped).toBeUndefined();
+      // And it taps for its types, there and then.
+      const crypt = find(s, 0, 'battlefield', 'Blood Crypt');
+      expect(manaSources(s, 0).filter((m) => m.key === crypt).flatMap((m) => [...m.produces]).sort()).toEqual(['B', 'R']);
+    });
+
+    it('not paying puts it in tapped, and costs nothing', () => {
+      let s = table(['Blood Crypt'], []);
+      const before = life(s, 0);
+      s = playIt(s, 'Blood Crypt');
+      expect(life(s, 0)).toBe(before);
+      expect(tapped(s, 'Blood Crypt')).toBe(true);
+    });
+
+    it('is offered only tapped at 2 life, and the payment is refused then', () => {
+      let s = table(['Blood Crypt'], []);
+      s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 2 } : seat)) };
+      expect(rows(s, 'Blood Crypt').map((p) => p.description)).toEqual(['Play Blood Crypt tapped']);
+      expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Blood Crypt'), payLife: true }))
+        .toMatch(/do not have 2 life/);
+    });
+
+    it('a land that asks for no life cannot be paid for', () => {
+      const s = table(['Clifftop Retreat'], ['Mountain']);
+      expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Clifftop Retreat'), payLife: true }))
+        .toMatch(/does not ask for life/);
+    });
+  });
+
+  describe('the computer opponent', () => {
+    it('plays the check land that is untapped now over one that is not', () => {
+      const s = table(['Clifftop Retreat', 'Deathcap Glade'], ['Mountain']);
+      const action = botAction(s, 0);
+      expect(action).toMatchObject({ type: 'auto:playLand', card: find(s, 0, 'hand', 'Clifftop Retreat') });
+    });
+
+    it('pays for a shock land when the mana casts something this turn, and not otherwise', () => {
+      // Three lands out, a four-drop in hand: the Crypt untapped is the fourth mana.
+      const paying = table(['Blood Crypt', 'Hill Giant'], ['Mountain', 'Mountain', 'Swamp']);
+      expect(botAction(paying, 0)).toMatchObject({ type: 'auto:playLand', payLife: true });
+      // Nothing that costs four: the life buys nothing.
+      const idle = table(['Blood Crypt', 'Lightning Bolt'], ['Mountain', 'Mountain', 'Swamp']);
+      const action = botAction(idle, 0);
+      expect(action?.type).toBe('auto:playLand');
+      expect(action?.type === 'auto:playLand' ? action.payLife : undefined).toBeUndefined();
+    });
+
+    it('and never at 10 life or less', () => {
+      let s = table(['Blood Crypt', 'Hill Giant'], ['Mountain', 'Mountain', 'Swamp']);
+      s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 10 } : seat)) };
+      const action = botAction(s, 0);
+      expect(action?.type === 'auto:playLand' ? action.payLife : 'not a land').toBeUndefined();
+    });
+  });
+
+  describe('and the printings it does not read stay unread', () => {
+    const unreadOf = (r: object): readonly string[] => {
+      const compiled = compileCard(r as never);
+      return compiled.ok ? compiled.unread.map((u) => u.line) : ['(not compiled)'];
+    };
+    it.each([
+      'Probe Roads enters tapped unless you control a Mount or Vehicle.',
+      "Probe Roads enters tapped unless it's your first, second, or third turn of the game.",
+      'Probe Roads enters tapped unless you control an Equipment.',
+      'Probe Roads enters tapped unless you control a Goblin.',
+      'Probe Roads enters tapped unless you control two or more other Goblins.',
+      "As Probe Roads enters, you may pay 0 life. If you don't, it enters tapped.",
+    ])('%s', (text) => {
+      expect(unreadOf(land('Probe Roads', 'Land', `${text}\n{T}: Add {R}.`))).toEqual([text]);
+    });
+  });
+});
+
+describe('six faults the D574–D577 break run could not see, each now pinned (D587)', () => {
+  /*
+    The break run on D579's build left six deliberate faults uncaught, and re-running them on D586's
+    tree left all six uncaught still: the code was right and nothing said so. One test each, every
+    one proved to fail with its fault in.
+  */
+  it('"you may exile … until it leaves" stays a choice when it is compiled: Angel of Sanctions', () => {
+    const angel = {
+      name: 'Angel of Sanctions', type_line: 'Creature — Angel', mana_cost: '{3}{W}{W}', cmc: 5, colors: ['W'],
+      layout: 'normal', power: '3', toughness: '4',
+      oracle_text: 'Flying\nWhen Angel of Sanctions enters, you may exile target nonland permanent an opponent controls until Angel of Sanctions leaves the battlefield.\nEmbalm {5}{W} ({5}{W}, Exile this card from your graveyard: Create a token that\'s a copy of it, except it\'s a white Zombie Angel with no mana cost. Embalm only as a sorcery.)',
+    };
+    const compiled = compileCard(angel as never);
+    const exile = compiled.ok ? compiled.script?.triggers?.find((t) => t.on.kind === 'etb') : undefined;
+    expect(exile?.description).toMatch(/^you may exile/);
+    // A "you may" is a question, asked before the exile happens.
+    expect(exile?.decisions?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('a replacement that only names cards does not swallow a token: Kalitas', () => {
+    // Kalitas exiles an opponent's nontoken creature. My own token dying is just a death, and the
+    // Zulaport Cutthroat beside it drains for it.
+    const list = customDeck({
+      id: 'traitor', name: 'Traitor',
+      entries: [
+        { name: 'Kalitas, Traitor of Ghet', count: 1 }, { name: 'Zulaport Cutthroat', count: 4 },
+        { name: 'Raise the Alarm', count: 4 }, { name: 'Plains', count: 26 }, { name: 'Swamp', count: 25 },
+      ],
+    }).deck;
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'traitor', 1: 'ember-rush' }, deckSpecs: { traitor: list },
+      hands: { 0: ['Raise the Alarm'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Zulaport Cutthroat', 'Kalitas, Traitor of Ghet'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Raise the Alarm') })), 40);
+    const before = life(s, 1);
+    s = drain(destroy(s, ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!), 40);
+    expect(life(s, 1)).toBe(before - 1);
+    expect(s.replacements.some((line) => /exiled instead/.test(line))).toBe(false);
+  });
+
+  it('a spell is redirectable only when it has exactly one target spec, not just one target', () => {
+    // Swerve has two specs. Asked about a Swerve that somehow holds one target, the answer is
+    // still "no single spec", because which of the two the target belongs to is not knowable.
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'arc-tempest' },
+      hands: { 0: ['Pacifism'], 1: ['Swerve'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Impassioned Orator'], 1: ['Island', 'Island', 'Mountain', 'Monastery Swiftspear'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const aura = find(s, 0, 'hand', 'Pacifism');
+    s = apply(s, { type: 'auto:cast', by: 0, card: aura, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Monastery Swiftspear') }] });
+    s = tapAllLands(apply(s, { type: 'auto:pass', by: 0 }), 1);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Swerve'),
+      targets: [{ kind: 'card', id: aura }, { kind: 'card', id: find(s, 0, 'battlefield', 'Impassioned Orator') }],
+    });
+    const swerve = s.stackOrder[s.stackOrder.length - 1]!;
+    const object = s.stackObjects[swerve]!;
+    const thinned = { ...s, stackObjects: { ...s.stackObjects, [swerve]: { ...object, targets: object.targets.slice(0, 1) } } };
+    expect(soleTargetSpecOf(thinned, swerve)).toBeNull();
+    // And the Pacifism, which has one, is redirectable.
+    expect(soleTargetSpecOf(s, aura)).not.toBeNull();
+  });
+
+  it('"target player draws" is help and "target opponent draws" is not, and N is N', () => {
+    const spec = (text: string) => {
+      const compiled = compileCard({
+        name: 'Probe Gift', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: text,
+      } as never);
+      return compiled.ok ? compiled.script?.targets?.[0] : undefined;
+    };
+    expect(spec('Target player draws two cards.')?.friendly).toBe(true);
+    expect(spec('Target opponent draws a card.')?.friendly ?? false).toBe(false);
+
+    const gift = {
+      name: 'Probe Gift', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+      oracle_text: 'Target player draws two cards.',
+    };
+    const list = customDeck({
+      id: 'gift', name: 'Gift', entries: [{ name: 'Probe Gift', count: 4 }, { name: 'Island', count: 56 }], data: [gift] as never[],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'gift', 1: 'ember-rush' }, deckSpecs: { gift: list },
+      hands: { 0: ['Probe Gift'] }, battlefield: { 0: ['Island'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const before = ids(s, 1, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probe Gift'), targets: [{ kind: 'player', seat: 1 }],
+    })), 20);
+    expect(ids(s, 1, 'hand').length).toBe(before + 2);
+  });
+
+  it('Balan counts Equipment attached to it, and an Aura is not one', () => {
+    const list = customDeck({
+      id: 'balan', name: 'Balan',
+      entries: [
+        { name: 'Balan, Wandering Knight', count: 1 }, { name: 'Bonesplitter', count: 2 }, { name: 'Loxodon Warhammer', count: 1 },
+        { name: 'Pacifism', count: 2 }, { name: 'Angelic Gift', count: 2 }, { name: 'Plains', count: 52 },
+      ],
+    }).deck;
+    // The Auras start in hand: one with no host on the battlefield would go to the graveyard.
+    const s = arena({
+      decks: { 0: 'balan', 1: 'ember-rush' }, deckSpecs: { balan: list },
+      hands: { 0: ['Pacifism', 'Angelic Gift'] },
+      battlefield: { 0: ['Balan, Wandering Knight', 'Bonesplitter', 'Loxodon Warhammer'] }, turn: 3,
+    });
+    const balan = find(s, 0, 'battlefield', 'Balan, Wandering Knight');
+    // Attached by hand, so the test is about the count and not about how each got there.
+    const on = (state: GameState, names: readonly string[]): GameState => names.reduce((next, name) => {
+      const zone = next.instances[find(next, 0, ids(next, 0, 'hand').some((id) => nameOf(next, id) === name) ? 'hand' : 'battlefield', name)]!;
+      const field = '0:battlefield';
+      return {
+        ...next,
+        zones: zone.zone === 'hand'
+          ? { ...next.zones, ['0:hand']: ids(next, 0, 'hand').filter((id) => id !== zone.id), [field]: [...ids(next, 0, 'battlefield'), zone.id] }
+          : next.zones,
+        instances: { ...next.instances, [zone.id]: { ...zone, zone: 'battlefield', zoneSeat: 0, attachedTo: balan } },
+      };
+    }, state);
+    const doubles = (state: GameState) => characteristicsOf(state, state.instances[balan]!).keywords.has('double strike');
+    expect(doubles(on(s, ['Pacifism', 'Angelic Gift']))).toBe(false);
+    expect(doubles(on(s, ['Bonesplitter', 'Pacifism']))).toBe(false);
+    expect(doubles(on(s, ['Bonesplitter', 'Loxodon Warhammer']))).toBe(true);
   });
 });

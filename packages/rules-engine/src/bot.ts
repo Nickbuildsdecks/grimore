@@ -3904,6 +3904,30 @@ function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
  *
  * The card says which question to ask; see `AbilityDef.buysNothingIf`.
  */
+/**
+ * Whether a shock land's life is worth paying this turn (D587).
+ *
+ * Paying two life for a land that would be untapped a turn later anyway is a common mistake, and
+ * the rule here is the one a careful player uses: pay only when the extra mana can be spent now —
+ * a card in hand that this turn's untapped lands **plus the shock land** can pay for and the lands
+ * alone cannot — and only with life to spare. The second half is a plain floor rather than a
+ * judgement about the race, which is what the search is for and which a land drop never reaches
+ * (see the land rule in `botAction`).
+ */
+function worthTheShock(state: GameState, seat: SeatIndex): boolean {
+  if ((state.seats[seat]?.life ?? 0) <= 10) return false;
+  let untapped = 0;
+  for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst !== undefined && !inst.tapped && characteristicsOf(state, inst).isLand) untapped += 1;
+  }
+  return (state.zones[zoneKey(seat, 'hand')] ?? []).some((id) => {
+    const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+    if (def === undefined || /\bLand\b/.test(def.typeLine)) return false;
+    return def.cmc === untapped + 1;
+  });
+}
+
 function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
@@ -5186,13 +5210,27 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       const card = state.cardDefs[state.instances[p.card]!.defKey];
       return p.half === undefined ? card : card?.faces?.cards[p.half];
     };
-    const ready = lands.find((p) => scriptForCard(landDef(p))?.entersTapped !== true);
-    const chosen = ready ?? lands[0]!;
+    /*
+      "Ready now" includes the conditional lands (D587): a check land is ready when its condition
+      holds, asked of the board it would arrive on. A shock land's paying row is ready and its other
+      row is not — and the paying row is only kept when the life buys something (`worthTheShock`).
+    */
+    const shockWorthIt = worthTheShock(state, seat);
+    const offered = lands.filter((p) => p.payLife !== true || shockWorthIt);
+    const readyNow = (p: LegalPlay): boolean => {
+      const script = scriptForCard(landDef(p));
+      if (script?.entersTapped === true) return false;
+      if (script?.payLifeToEnterUntapped !== undefined) return p.payLife === true;
+      return script?.entersUntappedIf === undefined || script.entersUntappedIf.test(state, seat, p.card);
+    };
+    const ready = offered.find(readyNow);
+    const chosen = ready ?? offered[0] ?? lands.find((p) => p.payLife !== true) ?? lands[0]!;
     return {
       type: 'auto:playLand', by: seat, card: chosen.card,
       // Which face, for the reason every other half-carrying action says so: without it the engine
       // is told to play the *front* of the card as a land, and refuses the play it just offered.
       ...(chosen.half === undefined ? {} : { half: chosen.half }),
+      ...(chosen.payLife === true ? { payLife: true } : {}),
     };
   }
 

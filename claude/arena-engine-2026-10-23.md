@@ -23699,3 +23699,109 @@ The two older break runs, owed since D579, have now run.
   "target player draws N" drawing one; and an Equipment count that also counts Auras. None is
   resolved in this commit. Each gets a test or a stated reason in the next one, before any new
   reading.
+
+## D587 — Lands that enter tapped unless…, and the shock lands
+
+"Clifftop Retreat enters tapped unless you control a Mountain or a Plains." The dual lands that
+every Commander mana base is built from: check lands, fast lands, slow lands, bond lands, battle
+lands and the shock lands. 132 legal lands print one of these lines; for 100 of them it was the
+only line the compiler could not read, so one sentence was all that stood between a deck's mana
+base and the automated table.
+
+**What the engine does.** The same replacement as "enters tapped" (CR 614.1c), with a condition
+asked as the land arrives, of the board it arrives on. The land never counts itself: "two or
+fewer other lands" and "you control a Mountain" are about what was already there. The
+conditions read, each counted in the corpus first:
+
+    you control a <basic type> [or a <basic type>]   check lands                 25
+    you control N or fewer other lands              fast lands                  11
+    a player has N or less life                     Abandoned Campground        10
+    you have N or more opponents                    bond lands                  10
+    you control N or more basic lands               battle lands                10
+    you control N or more other lands               slow lands                  10
+    you control a planeswalker                                                  10
+    your opponents control N or more lands          Turbulent Crater             8
+    you control a legendary creature                Barad-dûr                    6
+    you control a basic land                                                     5
+    you control N or more other <basic type>s       Mystic Sanctuary             5
+
+**The shock lands** ("As Blood Crypt enters, you may pay 2 life. If you don't, it enters
+tapped.") are a choice, so the table offers the land twice — *untapped (pay 2 life)* and
+*tapped* — and the answer travels on the land play. The life is paid before the land arrives.
+The paying row is not offered at 2 life or less, and the engine refuses it there as it refuses
+a life payment for a land that asks none. A shock land that arrives any other way (fetched, or
+put onto the battlefield by an effect) enters tapped: the rules give the same choice then, and
+the table has no question to ask it with yet. Named in the player guide.
+
+**A fault this found.** A land with basic land types — Blood Crypt is a Swamp Mountain — taps
+for those colours with nothing printed (CR 305.6). Only the whole-card reader added that mana.
+So a typed land with any line the compiler could not read compiled to a land with **no mana
+ability at all**. Probed on D586's build, Blood Crypt and Canopy Vista both compiled to no
+script whatever: their enters-tapped line was the line nothing could read, and their only mana
+is the kind nothing prints. The line-by-line compiler now adds the
+mana of the land's types too, skipping any colour the card already taps for, and 51 typed
+lands compile that way. A test asserts the mana on Blood Crypt, Canopy Vista and Mystic
+Sanctuary.
+
+**The table.** A land that would come in tapped says so on its row before the player picks it:
+"Play Clifftop Retreat (enters tapped: you control a Mountain or a Plains)". The log says
+"plays Clifftop Retreat tapped", or "pays 2 life and plays Blood Crypt untapped". The client
+carries the shock land's choice on the play it sends, with a test that it does.
+
+**The computer opponent.** It already played the land that comes in untapped before one that
+does not; that rule now knows about the conditions, asked of the board as it stands. It pays
+for a shock land only when the extra mana casts something that turn — a card in hand that costs
+exactly one more than its untapped lands — and only above 10 life. Otherwise it plays the shock
+land tapped.
+
+**Not read, each on purpose:** "unless you control a Mount or Vehicle" (5 lands), the two that
+reveal a card from hand, Starting Town (a turn count), Multiversal Passage (chooses a land type
+first), and "When ~ enters untapped, …" on Mystic Sanctuary and three others, which is a
+trigger of its own.
+
+    lands printing "enters tapped unless":      120, 110 read
+    shock lands:                                 12, 11 read
+    lands in the family now read whole:          96 of 132
+
+**Six old faults, now pinned.** D586's entry said the six faults the D574–D577 break run missed
+would get a test or a reason before anything new. They were re-run against D586's tree first and
+all six were still uncaught, so the code was right and nothing said so. Each now has a test:
+
+- an optional "you may exile … until it leaves" compiled as mandatory (Angel of Sanctions);
+- a replacement that names only cards swallowing a token (Kalitas, with Zulaport Cutthroat
+  watching the token die);
+- a spell with two target specs treated as redirectable when it holds one target (Swerve);
+- "target opponent draws" aimed as help, and "target player draws two cards" drawing one;
+- Balan counting an Aura as an Equipment.
+
+Re-run with these tests in: 6 of 6 caught. (The harness's "for example" label named the wrong
+test on all six, because the mirror it ran in was snapshotted a step early; the counts were
+confirmed by re-running on a fresh snapshot and one fault by hand.)
+
+**Tests.** 27 engine tests and 2 web tests added. Engine: nine real lands and Mystic
+Sanctuary from their Oracle rows, each condition both ways, a land not counting itself, the
+shock land's two rows, its payment, its refusals and the mark it leaves cleared, the bot's
+choices, and six printings left unread; plus the six above, and the one for D586's break run below. Two older tests changed, each with
+a note: the compile test that asserted a conditional arrival is refused now asserts it is read
+as its condition and never as the plain field; and the mechanic-coverage list names the two new
+fields as compiler-only, with their evidence, because no measured deck plays a dual land.
+
+    engine tests: 4,158, all passing
+    web tests: 264, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,761 → 8,857 of 30,710
+    printed legal lines read:            25,086 → 25,207 of 56,421 (44.7%)
+    cards with a compiled script:        13,018 → 13,055
+
+Pod sweep on D586's build (31ceb5b), seeds 45401–45440: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D586's build: 37 deliberate faults, 36 caught. The miss was the compiler's
+"sacrificed creature" switch being left on after a spell's text is read. The tests reset it
+before it could matter, because every one of them compiled a card with a cost in between. A test
+now compiles a permanent straight after a Fling, on a trigger whose only obstacle is the measure,
+and it fails with the fault in.
