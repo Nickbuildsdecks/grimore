@@ -86,7 +86,8 @@ import {
   parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
 } from './characteristics.js';
 import { dealDamage, drawLater } from './effects.js';
-import type { AbilityDef, CardScript } from './scriptTypes.js';
+import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
+import { spendRestriction } from './spending.js';
 import type { ManaType } from './mana.js';
 
 /**
@@ -278,6 +279,11 @@ interface ManaLine {
    * Grim Monolith's family (D497).
    */
   readonly damage?: number;
+  /**
+   * "Spend this mana only to …" — the other second sentence a mana line prints (D595). See
+   * `AbilityDef.spendOnly` and `spending.ts`.
+   */
+  readonly spendOnly?: SpendRestriction;
 }
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
@@ -418,8 +424,12 @@ function parseManaLine(line: string, name: string): ManaLine | null {
   const printed = match[1]!.trim();
   const body = match[2]!.trim();
   const rest = (match[3] ?? '').trim();
-  const damage = rest === '' ? undefined : selfDamageSentence(rest, name);
-  if (rest !== '' && damage === undefined) return null;
+  // The tail is a pain land's damage or a spending restriction (D595); anything else refuses.
+  const restriction = /^Spend this mana only (.+)$/i.exec(rest);
+  const spendOnly = restriction === null ? undefined : spendRestriction(restriction[1]!);
+  if (spendOnly === null) return null;
+  const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
+  if (rest !== '' && damage === undefined && spendOnly === undefined) return null;
 
   const clauses = printed.split(/\s*,\s*/).slice(1).map((c) => c.trim()).filter((c) => c !== '');
   if (clauses.length > 1) return null;
@@ -431,7 +441,7 @@ function parseManaLine(line: string, name: string): ManaLine | null {
   }
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
 
   /*
     A choice of one of several. The separators are tried longest-first, because the printed list is
@@ -454,10 +464,10 @@ function parseManaLine(line: string, name: string): ManaLine | null {
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   if (runs.some((r) => r.length !== 1)) return null;
-  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -486,12 +496,17 @@ function tapAbilities(
     const damage = damageFor === undefined ? line?.damage : damageFor.get(type);
     return {
       cost,
-      description: `${printed}: Add {${type}}.${hurtsYou(damage)}`,
+      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${spentOn(line?.spendOnly)}`,
       produces: [type],
       ...painEffect(damage),
+      ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
     };
   });
 }
+
+/** A restriction's sentence, for the ability's own `description` (D595). */
+const spentOn = (only?: SpendRestriction): string =>
+  only === undefined ? '' : ` Spend this mana only ${only.words}.`;
 
 /** The pain land's second sentence, for the ability's own `description`. */
 const hurtsYou = (damage?: number): string =>
@@ -518,9 +533,10 @@ const painEffect = (damage?: number): Pick<AbilityDef, 'effect'> => (
 function sumAbility(line: ManaLine): AbilityDef {
   return {
     cost: line.cost,
-    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}`,
+    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`,
     produces: [...line.produces],
     ...painEffect(line.damage),
+    ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
   };
 }
 

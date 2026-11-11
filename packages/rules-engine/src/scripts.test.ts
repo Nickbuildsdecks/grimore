@@ -44260,3 +44260,89 @@ describe('the Clone family from printed text (D594)', () => {
     expect(read.ok && read.unread.length).toBe(1);
   });
 });
+
+describe('restricted mana: "Spend this mana only to …" (D595)', () => {
+  /*
+    A mana ability with a restriction on what its mana may pay for. The mana never floats: the
+    ability is not a button, and the engine taps it while paying for something the restriction
+    allows, throwing away whatever of it the payment did not use. Ancient Ziggurat and Mishra's
+    Workshop are the corpus's rows; two probes cover "to activate abilities" and a land with a free
+    row beside a restricted one.
+  */
+  const ZIGGURAT = {"name": "Ancient Ziggurat", "type_line": "Land", "mana_cost": "", "cmc": 0, "colors": [], "power": null, "toughness": null, "oracle_text": "{T}: Add one mana of any color. Spend this mana only to cast a creature spell.", "layout": "normal"};
+  const WORKSHOP = {"name": "Mishra's Workshop", "type_line": "Land", "mana_cost": "", "cmc": 0, "colors": [], "power": null, "toughness": null, "oracle_text": "{T}: Add {C}{C}{C}. Spend this mana only to cast artifact spells.", "layout": "normal"};
+  const BATTERY = {
+    name: 'Probe Battery', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], power: null, toughness: null,
+    oracle_text: '{T}: Add {C}. Spend this mana only to activate abilities.', layout: 'normal',
+  };
+  const TEMPLE = {
+    name: 'Probe Temple', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], power: null, toughness: null,
+    oracle_text: '{T}: Add {C}.\n{T}: Add {C}{C}. Spend this mana only to cast creature spells.', layout: 'normal',
+  };
+  const ROWS = [ZIGGURAT, WORKSHOP, BATTERY, TEMPLE];
+  const list = customDeck({
+    id: 'restricted', name: 'Restricted',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 },
+      { name: 'Lightning Bolt', count: 4 }, { name: 'Bonesplitter', count: 4 }, { name: 'Forest', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'restricted', 1: 'ember-rush' }, deckSpecs: { restricted: list.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const castable = (s: GameState, name: string): boolean =>
+    legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+
+  it('reads the restriction onto the mana ability, and leaves an unknown one unread', () => {
+    expect(list.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const workshop = compileCard(WORKSHOP as never);
+    expect(workshop.ok && workshop.script?.abilities?.[0]).toMatchObject({
+      produces: ['C', 'C', 'C'], spendOnly: { words: 'to cast artifact spells' },
+    });
+    const multicoloured = compileCard({ ...ZIGGURAT, oracle_text: '{T}: Add one mana of any color. Spend this mana only to cast a multicolored spell.' } as never);
+    expect(multicoloured.ok && multicoloured.unread.length).toBe(1);
+  });
+
+  it('Ancient Ziggurat pays for a creature spell and not for an instant, and is not a button', () => {
+    let s = table(['Ancient Ziggurat', 'Ancient Ziggurat'], ['Grizzly Bears', 'Lightning Bolt']);
+    expect(castable(s, 'Grizzly Bears')).toBe(true);
+    expect(castable(s, 'Lightning Bolt')).toBe(false);
+    const ziggurat = find(s, 0, 'battlefield', 'Ancient Ziggurat');
+    expect(legalActions(s, 0).plays.some((p) => p.card === ziggurat)).toBe(false);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: ziggurat, abilityIndex: 0 })).toThrow(/only be spent/);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') });
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Ancient Ziggurat')
+      .every((id) => s.instances[id]!.tapped)).toBe(true);
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Grizzly Bears');
+  });
+
+  it('Mishra\'s Workshop pays for an artifact, and the two mana it did not need are lost', () => {
+    let s = table(["Mishra's Workshop"], ['Bonesplitter']);
+    expect(castable(s, 'Bonesplitter')).toBe(true);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bonesplitter') });
+    expect(s.instances[find(s, 0, 'battlefield', "Mishra's Workshop")]!.tapped).toBe(true);
+    expect(s.pools['0']?.C ?? 0).toBe(0);
+  });
+
+  it('"to activate abilities" pays for an equip and not for a spell', () => {
+    const s = table(['Probe Battery', 'Bonesplitter', 'Grizzly Bears'], ['Bonesplitter']);
+    expect(castable(s, 'Bonesplitter')).toBe(false);
+    const splitter = find(s, 0, 'battlefield', 'Bonesplitter');
+    expect(legalActions(s, 0).plays.some((p) => p.kind !== 'cast' && p.card === splitter)).toBe(true);
+  });
+
+  it('a land with a free row and a bigger restricted one offers the bigger one only where it may be spent', () => {
+    const s = table(['Probe Temple'], []);
+    const temple = find(s, 0, 'battlefield', 'Probe Temple');
+    const produced = (paying?: Parameters<typeof manaSources>[2]) =>
+      manaSources(s, 0, paying).find((source) => source.key === temple)?.produces;
+    expect(produced()).toEqual(['C']);
+    expect(produced({ spell: parseTypeLine('Creature — Bear') })).toEqual(['C', 'C']);
+    expect(produced({ spell: parseTypeLine('Instant') })).toEqual(['C']);
+  });
+});

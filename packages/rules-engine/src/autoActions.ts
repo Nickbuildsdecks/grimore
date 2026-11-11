@@ -812,7 +812,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     toPay = parseManaCost(state.pendingOfferedCast?.cost ?? '');
     taxToPay = 0;
   }
-  const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay);
+  // A spell, by its live type line, so a restricted mana source may pay for it (D595).
+  const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
+    { spell: characteristics.typeLine });
   let next = paid.state;
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
@@ -1529,6 +1531,11 @@ function activate(
           : 'you do not control that permanent');
   }
   if (ability === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no such ability');
+  // Restricted mana is made while paying for what it may pay for, never on its own (D595).
+  if (ability.produces !== undefined && ability.spendOnly !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `that mana can only be spent ${ability.spendOnly.words}, so it is made while you pay for one`);
+  }
   const ch = characteristicsOf(state, inst);
 
   if (ability.sorcerySpeed && !atSorcerySpeed(state, action.by)) {
@@ -1728,7 +1735,7 @@ function activate(
   }
 
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
-  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card);
+  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card, { abilityOf: ch.typeLine });
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.

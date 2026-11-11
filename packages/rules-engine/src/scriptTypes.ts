@@ -15,7 +15,7 @@
  * something you did not expect".
  */
 import type { CardDef, ZoneId } from './cards.js';
-import type { Keyword } from './characteristics.js';
+import type { Keyword, TypeLine } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { Color, ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -2004,6 +2004,22 @@ export interface AbilityCost {
   readonly crew?: number;
 }
 
+/**
+ * What a payment is for, as a restriction on mana asks it (D595): a spell being cast, by its type
+ * line, or an activated ability, by the type line of its source. Read live — an animated land's
+ * ability is a creature's.
+ */
+export interface PaymentFor {
+  readonly spell?: TypeLine;
+  readonly abilityOf?: TypeLine;
+}
+
+/** "Spend this mana only to …", as a test of a payment, and the words, for the table. */
+export interface SpendRestriction {
+  readonly words: string;
+  readonly allows: (paying: PaymentFor) => boolean;
+}
+
 export interface AbilityDef {
   readonly cost: AbilityCost;
   readonly description: string;
@@ -2022,6 +2038,15 @@ export interface AbilityDef {
    * (CR 605.3a) — which is what makes tapping a land for mana in response to something work.
    */
   readonly produces?: readonly ManaType[];
+  /**
+   * "Spend this mana only to …" (CR 106.6, D595): what the mana this ability makes may pay for.
+   *
+   * The mana never floats. A restricted mana ability is not offered as a button — the engine taps
+   * it **while paying** for something it is allowed to pay for, the only moment the restriction
+   * can be checked — and a mana it made beyond the cost is lost rather than left in the pool,
+   * where nothing could tell it from mana that may be spent on anything.
+   */
+  readonly spendOnly?: SpendRestriction;
   /** Questions asked while it resolves. See `DecisionSpec`. */
   readonly decisions?: readonly DecisionSpecOf[];
   /** What it does before those questions are asked. See `CardScript.beforeDecisions`. */

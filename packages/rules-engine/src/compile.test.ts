@@ -8396,9 +8396,14 @@ describe('a mana ability that is a choice of colours', () => {
       Each refusal is a restriction this shape cannot express, and each is refused by the anchors
       rather than by a list — a second sentence or an extra word simply does not match.
     */
-    // 37 legal lines. Reading it would make a Ziggurat tap for any spell.
-    ['Ancient Ziggurat', 'Land',
-      '{T}: Add one mana of any color. Spend this mana only to cast a creature spell.'],
+    /*
+      Ancient Ziggurat was here and is read (D595): a restriction made of type words is checked as
+      the mana is spent (`AbilityDef.spendOnly`). One the engine cannot check — a multicolored
+      spell, Pillar of the Paruns — is still refused, and reading it would make the land tap for
+      any spell.
+    */
+    ['Pillar of the Paruns', 'Land',
+      '{T}: Add one mana of any color. Spend this mana only to cast a multicolored spell.'],
     // 20 legal lines, and there is no chosen colour until an "As ~ enters, choose a colour" reader
     // exists to make one.
     ['Colour Thing', 'Land', '{T}: Add one mana of the chosen color.'],
@@ -11186,7 +11191,8 @@ describe('a mana ability that deals you damage (D497)', () => {
       activation condition. Reading any of them as nothing at all would be a land that does strictly
       more than it prints.
     */
-    ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast a creature spell.'],
+    // A spend restriction made of type words is read since D595; one that is not stays refused.
+    ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast a multicolored spell.'],
     ["doesn't untap", "{T}: Add {U} or {B}. Probe Land doesn't untap during your next untap step."],
     ['a depletion counter', '{T}: Add {W} or {U}. Put a depletion counter on Probe Land.'],
     ['an activation condition', '{T}: Add {R} or {G}. Activate only if you control a Swamp.'],

@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasType, type GrantedTriggerRef,
+  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -31,7 +31,7 @@ import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
-  type AbilityDef, type CardScript, type TargetSpec,
+  type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
 import { BESTOW_TARGET, legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
@@ -564,6 +564,8 @@ interface ManaSourceEntry {
   readonly life?: number;
   /** Using it sacrifices it: a Treasure, which makes one mana once. See `ManaSource.sacrifices`. */
   readonly sacrifices?: boolean;
+  /** Its mana may only pay for what it was listed for. See `ManaSource.restricted` (D595). */
+  readonly restricted?: true;
 }
 
 /**
@@ -800,7 +802,16 @@ export function delvePlan(
  * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
  * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
  */
-export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
+export function manaSources(
+  state: GameState, seat: SeatIndex,
+  /**
+   * What is being paid for (D595). A restricted mana ability ("Spend this mana only to cast a
+   * creature spell") is a source only for a payment its restriction allows, and **never** when
+   * this is absent — every caller that does not say what it is paying for gets the unrestricted
+   * sources, which can under-offer but never over-offer.
+   */
+  paying?: PaymentFor,
+): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
   /*
     Sources that are **spent** rather than tapped, queued between the free ones and the painful
@@ -843,10 +854,11 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     ];
     let usable: {
       index: number; produces: readonly ManaType[]; life: number; energy: number; sacrifices: boolean;
-      grantedBy?: GrantedTriggerRef;
+      grantedBy?: GrantedTriggerRef; restricted?: true;
     }[] = [];
     for (const { ability, index: i, grantedBy } of abilities) {
       if (ability.produces === undefined || ability.produces.length === 0) continue;
+      if (ability.spendOnly !== undefined && (paying === undefined || !ability.spendOnly.allows(paying))) continue;
       if (ability.cost.mana !== undefined) continue;
       /*
         `{T}` **or** a sacrifice of itself, where it used to be `{T}` and never a sacrifice.
@@ -903,7 +915,24 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
         // Which card defines it, so `index` is never an ambiguous number: a granted ability's
         // index is a position in the grantor's table. See `ManaSourceEntry.grantedBy`.
         ...(grantedBy === undefined ? {} : { grantedBy }),
+        ...(ability.spendOnly === undefined ? {} : { restricted: true as const }),
       });
+    }
+    /*
+      A permanent with a restricted row and a free one is still one tap (D595). When the restricted
+      row makes **more** — Eldrazi Temple's {C}{C} for an Eldrazi beside its {C} — it is the only
+      row, because the solver sizes a choice at one mana and would throw the second {C} away. When
+      every row makes one mana they are simply more choices, which is what a land that taps for {C}
+      or for a colour its restriction allows is. Otherwise the free rows win.
+    */
+    const most = (rows: typeof usable): number => Math.max(0, ...rows.map((u) => u.produces.length));
+    const open = usable.filter((u) => u.restricted !== true);
+    const bound = usable.filter((u) => u.restricted === true);
+    if (bound.length > 0 && most(bound) > most(open)) {
+      // Every restricted row of that size: Ancient Ziggurat's five colours are still five choices.
+      usable = bound.filter((u) => u.produces.length === most(bound));
+    } else if (bound.length > 0 && !(most(bound) === 1 && most(open) <= 1)) {
+      usable = open;
     }
     /*
       A permanent with both an offered tap and a paid one keeps only the offered ones, since
@@ -941,6 +970,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       bucket.push({
         key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index,
         ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
+        ...(usable[0]!.restricted === true ? { restricted: true as const } : {}),
         ...(cost > 0 ? { life: cost } : {}),
         ...(eats ? { sacrifices: true } : {}),
       });
@@ -1044,7 +1074,20 @@ function splitSecondHeld(state: GameState): boolean {
   });
 }
 
+/**
+ * Whether this seat controls a restricted mana source at all (D595), so the cast and ability loops
+ * only rebuild the source list per payment when there is something a payment could add to it.
+ */
+function hasRestrictedMana(state: GameState, seat: SeatIndex): boolean {
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && (scriptForCard(state.cardDefs[inst.defKey])?.abilities ?? [])
+      .some((ability) => ability.spendOnly !== undefined && ability.produces !== undefined);
+  });
+}
+
 function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): Castable {
+  const restrictedMana = hasRestrictedMana(state, seat);
   const out: LegalPlay[] = [];
   const blocked: { card: string; reason: string }[] = [];
   /** Records the first reason a card gave, so a later one does not overwrite the real cause. */
@@ -1579,7 +1622,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       card goes to the graveyard instead (CR 601.2h).
     */
     if ((!offered || costShown !== '') && convoked === null
-      && !canAfford(poolOf(state, seat), payable, sources)) {
+      && !canAfford(poolOf(state, seat), payable, restrictedMana
+        // A restricted mana source counts for a spell its restriction allows (D595).
+        ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) })
+        : sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
     }
@@ -1817,6 +1863,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 }
 
 function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSources): LegalPlay[] {
+  const restrictedMana = hasRestrictedMana(state, seat);
   const splitSecond = splitSecondHeld(state);
   const out: LegalPlay[] = [];
   const sorcerySpeed = atSorcerySpeed(state, seat);
@@ -1892,6 +1939,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
 
     for (const { ability, index: i, grantedBy } of offered) {
       /*
+        A restricted mana ability is not a button (D595): the mana could only float, and floating
+        mana does not remember what it may pay for. The engine taps it while paying for something
+        its restriction allows — see `AbilityDef.spendOnly`.
+      */
+      if (ability.produces !== undefined && ability.spendOnly !== undefined) continue;
+      /*
         Which zone this ability is used from, read off its cost.
 
         Cycling discards the card, so it is used from the hand; unearth and embalm are paid out of
@@ -1949,7 +2002,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // growth ability at all instead of one that would be refused.
       if (ability.cost.energy !== undefined && energyOf(state, seat) < ability.cost.energy) continue;
       if (ability.cost.mana
-        && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), sources)) continue;
+        && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), restrictedMana
+          ? manaSources(state, seat, { abilityOf: ch.typeLine })
+          : sources)) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
       if (ability.cost.life !== undefined && (state.seats[seat]?.life ?? 0) <= ability.cost.life) continue;

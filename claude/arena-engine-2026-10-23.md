@@ -24294,3 +24294,64 @@ nothing entered — a Grizzly Bears becoming a copy of a Bird Admirer where it s
 the second call to `establishDayNight` inside the arrivals loop had been hiding the first. The
 third was vacuous: the turn-change raise guarded against "neither becoming day", which
 `dayNightAfter` can never do, so the guard is gone rather than kept as a lever nothing can move.
+
+## D595 — Restricted mana: "Spend this mana only to …"
+
+179 legal lines print a restriction on what a mana ability's mana may pay for, and the engine had
+no way to say it, so every one was unread — and an unread mana line is a land that taps for
+nothing. Ancient Ziggurat, Mishra's Workshop, Haven of the Spirit Dragon and the rest arrived in a
+pasted deck as dead lands.
+
+**The model: the mana never floats.** A pool cannot tell restricted mana from free mana, and giving
+it a second bucket would mean teaching every payment in the engine which bucket it may draw on. So
+the restricted mana is made only **while paying** for something it may pay for:
+
+- `AbilityDef.spendOnly` — the restriction, as a test of a `PaymentFor` (a spell's live type line,
+  or the live type line of an ability's source) and the printed words.
+- `manaSources(state, seat, paying?)` lists a restricted source only for a payment it allows, and
+  never when the caller does not say what it is paying for — so every caller that has not been
+  taught about it under-offers rather than over-offers. A land with a free row and a bigger
+  restricted one (Eldrazi Temple's shape) offers the bigger row where it may be spent and the free
+  one elsewhere; one-mana rows are simply more choices.
+- `payFrom` takes `paying`; casting a spell passes the spell's type line, activating an ability
+  passes its source's. Mana a restricted source made beyond the cost is **lost** rather than left
+  in the pool, where it could pay for anything: Mishra's Workshop's three for a one-mana artifact
+  leaves nothing floating.
+- `legalActions` asks the same question when it offers a cast or an ability, and does not offer a
+  restricted mana ability as a button at all; activating one by hand is refused with the reason.
+
+**The vocabulary** (`spending.ts`, shared by the land mana-line parser and the line reader): a
+casting half — "to cast creature spells", "an instant or sorcery spell", "a noncreature spell",
+"artifact spells", "Dragon spells", "spells" — and an activating half — "to activate abilities",
+"of artifacts", "of an artifact source" — either or both. Type words only, read live: lowercase is
+a card type, "noncreature" or "legendary"; capitalised is a subtype. Anything else is refused and
+the line stays unread: "a multicolored spell", "colorless Eldrazi spells", "the chosen type",
+"kicked spells", "costs that contain {X}", and every rider ("and that spell can't be countered").
+
+**Two older tests pinned the old refusal** on purpose — Ancient Ziggurat's line and a land probe
+with a creature-spell restriction. Both now pin a restriction that is still refused (a multicolored
+spell), with a note that the type-word ones are read since this entry.
+
+**Not built:** the bot's own planning counts mana without restricted sources (it plays what
+`legalActions` offers, which does count them, so it casts with them — it just does not plan around
+them); the faint "mana you could make" pips count them as if free, which is the optimistic display
+they have always been; and convoke, delve and the special payments (morph, foretell, suspend) do
+not draw on them.
+
+**Tests.** 5 engine tests on corpus rows (Ancient Ziggurat, Mishra's Workshop) and two probes: the
+restriction is read onto the ability and an unknown one leaves the line unread; Ziggurats pay for
+Grizzly Bears and not for Lightning Bolt, are not a button, refuse a hand-pressed activation and
+are tapped by the cast; Mishra's Workshop casts Bonesplitter and leaves no {C} floating; "to
+activate abilities" offers an equip and not a spell; the two-row land offers {C}{C} for a creature
+and {C} otherwise. Unused restricted mana kept, and restricted sources counted for any payment,
+were each put in by hand: the first failed one test, the second three.
+
+    engine tests: 4,224, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,136 of 31,292 (was 9,106); lines read 26,598 of 58,524 (45.4%, was 26,531)
+
+Pod sweep on D594's build (0b9bb15), seeds 46201–46240: 40 of 40 finished, no throw and no stall.
+
+Break run on D594's build: 9 deliberate faults, 9 caught.

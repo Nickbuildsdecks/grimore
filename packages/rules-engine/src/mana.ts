@@ -306,6 +306,11 @@ export interface ManaSource {
    * does the rest.
    */
   readonly sacrifices?: boolean;
+  /**
+   * Its mana may only be spent on the payment it was listed for (D595), so `payFrom` throws away
+   * whatever of it the payment did not use. Carried rather than weighed, like `life`.
+   */
+  readonly restricted?: true;
 }
 
 /** What tapping one source actually added, which a choice source only settles when it is tapped. */

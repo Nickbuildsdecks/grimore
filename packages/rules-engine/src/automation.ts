@@ -60,7 +60,7 @@ import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
-  DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,
+  DecisionSpec, DecisionSpecOf, ModeDef, PaymentFor, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,
 } from './scriptTypes.js';
 import {
   isCardsDecision, isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision,
@@ -3610,6 +3610,8 @@ function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[
 function payFrom(
   state: GameState, seat: SeatIndex, costText: string | ManaCost | undefined, x: number,
   extraGeneric = 0, avoid?: string,
+  /** What this pays for, so a restricted mana source may help when its restriction allows (D595). */
+  paying?: PaymentFor,
 ): { state: GameState; tapped: readonly string[] } {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
@@ -3621,8 +3623,11 @@ function payFrom(
   const cost = extraGeneric > 0 ? { ...printed, generic: printed.generic + extraGeneric } : printed;
   let next = state;
   let tapped: readonly string[] = [];
+  const floating = poolOf(state, seat);
+  /** What the restricted sources tapped here made, by type — see the end of this function. */
+  const boundMade: Partial<Record<ManaType, number>> = {};
   if (!canPay(poolOf(next, seat), cost, x)) {
-    const sources = manaSources(next, seat);
+    const sources = manaSources(next, seat, paying);
     /*
       `avoid` is the permanent whose own ability is being paid for, kept out of the sources unless
       nothing else can cover the cost.
@@ -3639,6 +3644,10 @@ function payFrom(
     if (plan !== null) {
       next = tapSources(next, seat, plan);
       tapped = plan.map((pick) => pick.key);
+      for (const pick of plan) {
+        if (sources.find((source) => source.key === pick.key)?.restricted !== true) continue;
+        for (const type of pick.types) boundMade[type] = (boundMade[type] ?? 0) + 1;
+      }
     }
   }
   const result = payCost(poolOf(next, seat), cost, x);
@@ -3649,7 +3658,19 @@ function payFrom(
       : extraGeneric > 0 ? `${asText ?? '{0}'} +{${extraGeneric}}` : asText ?? '{0}';
     throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay ${shown}: ${result.shortfall}`);
   }
-  return { state: setPool(next, seat, result.pool as ManaPool), tapped };
+  /*
+    Restricted mana the payment did not use is **lost**, not left floating (D595). Anything left
+    above what was floating before is mana tapped here, and up to what the restricted sources made
+    of each type is theirs: a pool cannot tell restricted mana from free mana, so leaving it would
+    let an Eldrazi Temple's second {C} pay for a Lightning Bolt.
+  */
+  let left = result.pool as ManaPool;
+  for (const [type, made] of Object.entries(boundMade) as [ManaType, number][]) {
+    const excess = Math.max(0, (left[type] ?? 0) - (floating[type] ?? 0));
+    const lost = Math.min(excess, made);
+    if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
+  }
+  return { state: setPool(next, seat, left), tapped };
 }
 
 // ── Modal spells ─────────────────────────────────────────────────────────────────────────────────

@@ -48,10 +48,11 @@ import {
   transformPermanent, recordExpiry, pairCreatures,
   type EffectContext, type PumpOptions,
 } from './effects.js';
+import { spendRestriction } from './spending.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ChoiceDecisionSpec,
   CountersDecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
-  TargetSpec, TriggerDef,
+  SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
@@ -21389,12 +21390,24 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     A mana ability, which is `produces` and no effect at all. `Add {R}{G}` is two symbols and one
     ability.
   */
-  const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(clause);
+  /*
+    "Spend this mana only to …" (D595), taken off the end of a mana ability and kept on it as
+    `spendOnly`. The mana half is read by the two readers below exactly as it would be without it;
+    a restriction the engine cannot check leaves the whole line unread rather than making mana
+    that may pay for anything.
+  */
+  const restrictedTo = /^(add .+?)\.\s*Spend this mana only (.+)$/i.exec(clause);
+  const spendOnly = restrictedTo === null ? undefined : spendRestriction(restrictedTo[2]!);
+  if (restrictedTo !== null && spendOnly === null) return null;
+  const manaClause = restrictedTo === null ? clause : restrictedTo[1]!;
+  const only = spendOnly === undefined || spendOnly === null ? {} : { spendOnly };
+
+  const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
       .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
     if (produces.length === 0) return null;
-    return { abilities: [{ ...timing, cost, description: text, produces }] };
+    return { abilities: [{ ...timing, cost, description: text, produces, ...only }] };
   }
 
   /*
@@ -21426,8 +21439,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     combination of colors" (10), "Add {c} or one mana of the chosen color" (10). They are refused by
     the anchors rather than by a list: a second sentence or an extra word simply does not match.
   */
-  const choice = /^add ((?:\{[WUBRGC]\}, )*\{[WUBRGC]\},? or \{[WUBRGC]\})$/i.exec(clause);
-  const anyColour = /^add one mana of any colou?r$/i.test(clause);
+  const choice = /^add ((?:\{[WUBRGC]\}, )*\{[WUBRGC]\},? or \{[WUBRGC]\})$/i.exec(manaClause);
+  const anyColour = /^add one mana of any colou?r$/i.test(manaClause);
   if (choice !== null || anyColour) {
     const options: readonly ManaType[] = choice === null
       ? COLOURS
@@ -21437,7 +21450,10 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     return {
       abilities: options.map((colour) => ({
         ...timing,
-        cost, description: `${split[1]!.trim()}: Add {${colour}}.`, produces: [colour],
+        cost,
+        description: `${split[1]!.trim()}: Add {${colour}}.${spendOnly ? ` Spend this mana only ${spendOnly.words}.` : ''}`,
+        produces: [colour],
+        ...only,
       })),
     };
   }
