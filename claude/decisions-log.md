@@ -41702,3 +41702,61 @@ Pod sweep on D592's build (2c7e9f5), seeds 46001–46040: 40 of 40 finished, no 
 Break run on D592's build: 11 deliberate faults, 10 caught. The miss: "if ~ is equipped" counted
 any attached permanent, and the test only ever attached an Equipment. It now casts an Aura onto
 Avacynian Missionaries first and asserts the card stays its front, and fails with the fault in.
+
+## D594 — The Clone family from printed text
+
+"You may have ~ enter as a copy of …" was the commonest one-line-short shape left in the corpus,
+and it is a Commander staple: Clone, Stunt Double, Phyrexian Metamorph, Sculpting Steel, Copy
+Enchantment. The pool has had a hand-written Clone since the layers work; nothing could read one.
+
+**Read into exactly the hand-written Clone's shape**: a "you may" question over the whole
+battlefield as the spell resolves (`min: 0`, so declining is legal) and `becomeCopyOf` on the
+answer, which points the arriving permanent at the copied card — so its abilities, its statics and
+its entry trigger are the copied card's, as the printed card says. What is new is the noun and the
+exceptions.
+
+**The noun** is a disjunction of type runs, each word read by `permanentWordMatch` against the
+**live** type line: "any creature", "any artifact or creature", "any nonland permanent", "any Ally
+creature", "any Equipment", "any land". And the side: "on the battlefield" is anybody's, "you
+control" yours, "an opponent controls" theirs. A clone whose noun is creatures only also sets
+`copiesACreature`, the hand-written Clone's hint to the computer player.
+
+**The exceptions** are three printed forms joined by commas and "and": "it's a <types> in addition
+to its other types" (card types and subtypes both — Synth Infiltrator's "Synth artifact creature"),
+"it isn't legendary", and "it has <keywords>". They become a derived definition through
+`TokenCopyProfile`, the one embalm and eternalize already use, registered under the copied card's
+key plus a suffix so the copied card itself is untouched; a keyword is a line appended to the text,
+which `printedKeywords` reads back. Because the exceptions live in the definition, a Clone of the
+clone copies them too, which is the rule (CR 707.9b). Anything else after "except" — a quoted
+ability, a changed name, counters, "with power 4 or greater", Dack's Duplicate's dethrone (not a
+keyword the engine has) — refuses the line rather than copying without it.
+
+**Not built, and the same as the pool's own Clone:** the question is asked when the spell resolves,
+so a clone put onto the battlefield another way — reanimated, blinked — arrives as itself. "Enter as
+a copy" is a replacement on any entry (CR 707.5); that wants the arrival replacements to be able to
+ask a question, which they cannot yet.
+
+**Tests.** 7 engine tests on corpus rows (Stunt Double, Mirror Image, Malleable Impostor, Glasspool
+Mimic's front face) and one probe for "isn't legendary", which no card prints alone: all read
+whole; "any creature" offers both sides and arrives as the copy with its haste; "you control"
+offers only yours; "an opponent controls" with two added subtypes and flying, and the copied card's
+own definition unchanged; a Stunt Double copying a Glasspool Mimic is a Shapeshifter Rogue too; a
+non-legendary copy of Krenko leaves two Krenkos; an exception it cannot build leaves the line
+unread. The exceptions dropped, and the derived definition written over the original's key, were
+each put in by hand and failed. Plus the two D593 tests below.
+
+    engine tests: 4,219, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,106 of 31,292 (was 9,089); lines read 26,531 of 58,524 (45.3%, was 26,511)
+
+Pod sweep on D593's build (bda8158), seeds 46101–46140: 40 of 40 finished, no throw and no stall.
+
+Break run on D593's build: 10 deliberate faults, 7 caught. Two were gaps and now have tests that
+fail with the fault in: a **nightbound** permanent alone must make it night, and nothing put one on
+the table first (a probe with only "Nightbound"); and day must arrive at the next action even when
+nothing entered — a Grizzly Bears becoming a copy of a Bird Admirer where it stands is the case, and
+the second call to `establishDayNight` inside the arrivals loop had been hiding the first. The
+third was vacuous: the turn-change raise guarded against "neither becoming day", which
+`dayNightAfter` can never do, so the guard is gone rather than kept as a lever nothing can move.

@@ -38,6 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
+import { becomeCopyOf } from './effects.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -44052,10 +44053,16 @@ describe('day and night: daybound and nightbound (D593)', () => {
       { ...ADMIRER.card_faces[1], name: 'Probe Shredder', oracle_text: 'Nightbound\nWhen this creature transforms into Probe Shredder, you gain 2 life.' },
     ],
   };
-  const ROWS = [ADMIRER, SAGE, PROBE];
+  // A nightbound permanent with no daybound face, to see which time of day it starts (D593's break run).
+  const OWL = {
+    name: 'Probe Owl', type_line: 'Creature — Bird', mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+    power: '1', toughness: '1', oracle_text: 'Flying\nNightbound', layout: 'normal',
+  };
+  const ROWS = [ADMIRER, SAGE, PROBE, OWL];
   const list = customDeck({
     id: 'moons', name: 'Moons',
-    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 25 }, { name: 'Island', count: 25 }],
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 2 },
+      { name: 'Forest', count: 25 }, { name: 'Island', count: 25 }],
     data: ROWS as never[],
   });
   const table = (mine: readonly string[], hand: readonly string[] = []): GameState => advanceTo(arena({
@@ -44079,6 +44086,21 @@ describe('day and night: daybound and nightbound (D593)', () => {
     expect(s.dayNight).toBe('day');
     expect(viewFor(s, 0).dayNight).toBe('day');
     expect(namesIn(s, 0, 'battlefield')).toContain('Bird Admirer');
+  });
+
+  it('a nightbound permanent alone makes it night, not day', () => {
+    expect(table(['Probe Owl']).dayNight).toBe('night');
+  });
+
+  it('a permanent that becomes daybound without entering makes it day at the next action', () => {
+    let s = table(['Grizzly Bears']);
+    expect(s.dayNight).toBeNull();
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const admirer = ids(s, 0, 'library').find((id) => nameOf(s, id) === 'Bird Admirer')!;
+    // Nothing enters: the Bears become a copy of the Bird Admirer card where they stand.
+    s = passBoth(becomeCopyOf(s, bears, admirer));
+    expect(nameOf(s, bears)).toBe('Bird Admirer');
+    expect(s.dayNight).toBe('day');
   });
 
   it('a turn with no spells makes it night and turns the daybound card over; two make it day again', () => {
@@ -44139,5 +44161,102 @@ describe('day and night: daybound and nightbound (D593)', () => {
     const hand = ids(s, 0, 'hand').length;
     s = drain(s, 20);
     expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
+describe('the Clone family from printed text (D594)', () => {
+  /*
+    "You may have ~ enter as a copy of …", read into what the pool's hand-written Clone is: a
+    question over the battlefield as the spell resolves, and `becomeCopyOf` on the answer. The noun
+    and the side decide what is offered; the exceptions become a derived definition. Corpus rows,
+    plus one probe for "isn't legendary", which no card prints alone.
+  */
+  const STUNT = {"name": "Stunt Double", "type_line": "Creature — Shapeshifter", "mana_cost": "{3}{U}", "cmc": 4, "colors": ["U"], "power": "0", "toughness": "0", "oracle_text": "Flash\nYou may have Stunt Double enter as a copy of any creature on the battlefield.", "layout": "normal"};
+  const MIRROR = {"name": "Mirror Image", "type_line": "Creature — Shapeshifter", "mana_cost": "{2}{U}", "cmc": 3, "colors": ["U"], "power": "0", "toughness": "0", "oracle_text": "You may have Mirror Image enter as a copy of a creature you control.", "layout": "normal"};
+  const IMPOSTOR = {"name": "Malleable Impostor", "type_line": "Creature — Faerie Shapeshifter", "mana_cost": "{3}{U}", "cmc": 4, "colors": ["U"], "power": "0", "toughness": "0", "oracle_text": "Flash\nFlying\nYou may have Malleable Impostor enter as a copy of a creature an opponent controls, except it's a Faerie Shapeshifter in addition to its other types and it has flying.", "layout": "normal"};
+  // Its front face alone: the land on its back (Glasspool Lair) is not what this tests.
+  const MIMIC = {"name": "Glasspool Mimic", "type_line": "Creature — Shapeshifter Rogue", "mana_cost": "{2}{U}", "cmc": 3, "colors": ["U"], "power": "0", "toughness": "0", "oracle_text": "You may have Glasspool Mimic enter as a copy of a creature you control, except it's a Shapeshifter Rogue in addition to its other types.", "layout": "normal"};
+  const PROBE = {
+    ...STUNT, name: 'Probe Mimic', oracle_text: 'You may have Probe Mimic enter as a copy of any creature on the battlefield, except it isn\'t legendary.',
+  };
+  const ROWS = [STUNT, MIRROR, IMPOSTOR, MIMIC, PROBE];
+  const list = customDeck({
+    id: 'clones', name: 'Clones',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Krenko, Mob Boss', count: 1 },
+      { name: 'Grizzly Bears', count: 2 }, { name: 'Island', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'clones', 1: 'ember-rush' }, deckSpecs: { clones: list.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Island', 'Island', 'Island', 'Island', ...mine], 1: ['Raging Goblin'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  /** Casts the named card and stops at its question. */
+  const cast = (s: GameState, name: string): GameState =>
+    passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) }));
+  const keywordsOf = (s: GameState, id: string) => [...characteristicsOf(s, s.instances[id]!).keywords];
+  const typeLineOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.typeLine;
+
+  it('reads every one whole, and the creature-only ones tell the computer player so', () => {
+    expect(list.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const stunt = compileCard(STUNT as never);
+    expect(stunt.ok && stunt.script).toMatchObject({ copiesACreature: true });
+  });
+
+  it('"any creature on the battlefield" offers both sides and arrives as the copy', () => {
+    let s = cast(table(['Stunt Double'], ['Grizzly Bears']), 'Stunt Double');
+    expect(choices(s)).toEqual(['Grizzly Bears', 'Raging Goblin']);
+    const double = s.stackObjects[s.stackOrder[0]!]!.source;
+    s = drain(decide(s, ['Raging Goblin']), 20);
+    expect(nameOf(s, double)).toBe('Raging Goblin');
+    expect(s.instances[double]!.zone).toBe('battlefield');
+    expect(keywordsOf(s, double)).toContain('haste');
+  });
+
+  it('"a creature you control" offers only yours', () => {
+    const s = cast(table(['Mirror Image'], ['Grizzly Bears']), 'Mirror Image');
+    expect(choices(s)).toEqual(['Grizzly Bears']);
+  });
+
+  it('"an opponent controls", with added types and a keyword, and the original card is untouched', () => {
+    let s = cast(table(['Malleable Impostor'], ['Grizzly Bears']), 'Malleable Impostor');
+    expect(choices(s)).toEqual(['Raging Goblin']);
+    const impostor = s.stackObjects[s.stackOrder[0]!]!.source;
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = drain(decide(s, ['Raging Goblin']), 20);
+    expect(nameOf(s, impostor)).toBe('Raging Goblin');
+    expect(typeLineOf(s, impostor)).toBe('Creature — Goblin Berserker Faerie Shapeshifter');
+    expect(keywordsOf(s, impostor)).toEqual(expect.arrayContaining(['haste', 'flying']));
+    // The copied card keeps its own definition: the exceptions are the copy's alone.
+    expect(typeLineOf(s, goblin)).toBe('Creature — Goblin Berserker');
+    expect(keywordsOf(s, goblin)).not.toContain('flying');
+  });
+
+  it('a copy of a copy copies its exceptions too (CR 707.9b)', () => {
+    let s = cast(table(['Glasspool Mimic', 'Stunt Double'], ['Grizzly Bears', 'Island', 'Island', 'Island', 'Island']), 'Glasspool Mimic');
+    const mimic = s.stackObjects[s.stackOrder[0]!]!.source;
+    s = drain(decide(s, ['Grizzly Bears']), 20);
+    expect(typeLineOf(s, mimic)).toBe('Creature — Bear Shapeshifter Rogue');
+    s = cast(s, 'Stunt Double');
+    const double = s.stackObjects[s.stackOrder[0]!]!.source;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [mimic] }), 20);
+    expect(typeLineOf(s, double)).toBe('Creature — Bear Shapeshifter Rogue');
+  });
+
+  it('"except it isn\'t legendary" leaves both on the battlefield', () => {
+    let s = cast(table(['Probe Mimic'], ['Krenko, Mob Boss']), 'Probe Mimic');
+    const probe = s.stackObjects[s.stackOrder[0]!]!.source;
+    s = drain(decide(s, ['Krenko, Mob Boss']), 20);
+    expect(typeLineOf(s, probe)).toBe('Creature — Goblin Warrior');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Krenko, Mob Boss')).toHaveLength(2);
+  });
+
+  it('refuses an exception it cannot build, rather than copying without it', () => {
+    const read = compileCard({ ...STUNT, oracle_text: 'You may have Stunt Double enter as a copy of any creature on the battlefield, except its name is Bob.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
   });
 });

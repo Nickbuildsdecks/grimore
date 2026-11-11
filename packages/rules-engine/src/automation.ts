@@ -554,9 +554,10 @@ function advanceStep(state: GameState): GameState {
         combat: EMPTY_COMBAT,
       };
       // And day or night may change, from what the turn that just ended cast (CR 726.3a, D593).
+      // Neither stays neither here, so a change is always day to night or night to day.
       const was = next.dayNight ?? null;
       next = dayNightAfter(next, previous);
-      if (was !== null && next.dayNight !== was) next = raise(next, { kind: 'day-night' }, next.activeSeat);
+      if (next.dayNight !== was) next = raise(next, { kind: 'day-night' }, next.activeSeat);
     }
 
     // Steps that exist only to hold a decision nobody can make are skipped rather than walked

@@ -22270,6 +22270,118 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
  * string after the name, so it reads the first and not the second.
  */
 /**
+ * "You may have ~ enter as a copy of any creature on the battlefield" — the Clone family (D594).
+ *
+ * Read into exactly what the pool's hand-written Clone is: a "you may" question over the whole
+ * battlefield as the spell resolves, and `becomeCopyOf` on the answer, which points the arriving
+ * permanent at the copied card so its abilities, its statics and its entry trigger are the copied
+ * card's. What this adds is the **noun** and the **exceptions**.
+ *
+ * **The noun** is a disjunction of type runs — "creature", "artifact or creature", "nonland
+ * permanent", "Ally creature", "Equipment" — each word read by `permanentWordMatch`, live; and where
+ * it is: "on the battlefield" is anybody's, "you control" and "an opponent controls" are sides.
+ *
+ * **The exceptions** are three printed forms, joined by commas and "and": "it's a <types> in
+ * addition to its other types", "it isn't legendary" and "it has <keywords>". They become a
+ * derived definition (`TokenCopyProfile`), registered beside the copied card's, so the copy really
+ * is a Shapeshifter Rogue, really is not legendary and really has flying — and a Clone of it copies
+ * that too (CR 707.9b). Any other exception — a quoted ability, a changed name, "with power 4 or
+ * greater", counters — refuses the line.
+ *
+ * **What is not built**: like the hand-written Clone, the question is asked when the spell
+ * resolves, so a Clone put onto the battlefield some other way (reanimated, blinked) arrives as
+ * itself — a 0/0, as the pool's own Clone does today.
+ */
+function entersAsCopyFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim();
+  const read = new RegExp(
+    `^You may have ${selfRef(name)} enter(?: the battlefield)? as a copy of (?:any|an?) (.+?)`
+    + '( on the battlefield| you control| an opponent controls)(?:, except (.+?))?\\.$',
+    'i',
+  ).exec(text);
+  if (read === null) return null;
+  // The noun: alternatives of type words, each alternative every one of its words.
+  const alternatives = read[1]!.split(/,\s*or\s+|\s+or\s+|,\s*/).map((part) => part.trim().split(/\s+/));
+  const tests: ((typeLine: TypeLine) => boolean)[] = [];
+  for (const words of alternatives) {
+    const parts: ((typeLine: TypeLine) => boolean)[] = [];
+    for (const word of words) {
+      if (/^permanent$/i.test(word)) continue;
+      if (/^nonland$/i.test(word)) { parts.push((t) => !hasType(t, 'land')); continue; }
+      const match = permanentWordMatch(word);
+      if (match === null) return null;
+      parts.push(match);
+    }
+    tests.push((t) => parts.every((part) => part(t)));
+  }
+  const side = read[2]!.trim().toLowerCase();
+  // The exceptions, each one of three shapes or the line is refused.
+  const addTypes: string[] = [];
+  const addSubtypes: string[] = [];
+  let notLegendary = false;
+  const keywordLines: string[] = [];
+  const exceptions = read[3] === undefined ? [] : read[3].split(/,?\s*(?:and\s+)?(?=it(?:'s| is| isn't| has)\s)/i)
+    .map((part) => part.replace(/,\s*$/, '').trim()).filter((part) => part !== '');
+  for (const exception of exceptions) {
+    const typed = /^it's an? (.+) in addition to its other types$/i.exec(exception);
+    if (typed !== null) {
+      for (const word of typed[1]!.split(/\s+/)) {
+        if (permanentWordMatch(word) === null) return null;
+        (/^[A-Z]/.test(word) ? addSubtypes : addTypes).push(word);
+      }
+      continue;
+    }
+    if (/^it isn't legendary$/i.test(exception)) { notLegendary = true; continue; }
+    const has = /^it has (.+)$/i.exec(exception);
+    if (has !== null) {
+      const keywords = grantedKeywords(has[1]!);
+      if (keywords === null) return null;
+      keywordLines.push(...keywords.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`));
+      continue;
+    }
+    return null;
+  }
+  const except = exceptions.length === 0 ? undefined : (copied: CardDef) => {
+    const [front = '', back] = copied.typeLine.split(/\s+—\s+/);
+    const words = front.split(/\s+/).filter((w) => w !== '' && !(notLegendary && /^legendary$/i.test(w)));
+    const capital = (w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).toLowerCase()}`;
+    const supers = words.filter((w) => SUPERTYPES.includes(w.toLowerCase()));
+    const types = words.filter((w) => !SUPERTYPES.includes(w.toLowerCase()));
+    const added = addTypes.map(capital).filter((t) => !types.some((w) => w.toLowerCase() === t.toLowerCase()));
+    const subs = [...(back === undefined ? [] : back.split(/\s+/)), ...addSubtypes
+      .filter((s) => !(back ?? '').split(/\s+/).includes(s))];
+    return {
+      as: `copy-${exceptions.join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      typeLine: `${[...supers, ...added, ...types].join(' ')}${subs.length === 0 ? '' : ` — ${subs.join(' ')}`}`,
+      ...(keywordLines.length === 0 ? {} : { extraText: keywordLines.join(', ') }),
+    };
+  };
+  const creaturesOnly = alternatives.every((words) => words.some((w) => /^creature$/i.test(w)));
+  return {
+    ...(creaturesOnly ? { copiesACreature: true } : {}),
+    decisions: [{
+      who: 'controller',
+      from: 'any-battlefield',
+      prompt: `Choose ${/^[aeiou]/i.test(read[1]!) ? 'an' : 'a'} ${read[1]!} to enter as a copy of`,
+      min: 0,
+      max: 1,
+      filter: (state, id, chooser) => {
+        const inst = state.instances[id];
+        if (inst === undefined || inst.zone !== 'battlefield') return false;
+        if (side === 'you control' && inst.zoneSeat !== chooser) return false;
+        if (side === 'an opponent controls' && inst.zoneSeat === chooser) return false;
+        const live = characteristicsOf(state, inst).typeLine;
+        return tests.some((test) => test(live));
+      },
+    }],
+    onResolve: (c) => {
+      const chosen = c.decisions[0]?.ids[0];
+      return chosen === undefined ? c.state : becomeCopyOf(c.state, c.source, chosen, except);
+    },
+  };
+}
+
+/**
  * "If it's neither day nor night, it becomes day as ~ enters." (D593) Ten legal cards, every one
  * a card that also watches day and night change, so the line is there to start the clock.
  */
@@ -22636,6 +22748,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     // Before the statics: "enters tapped" is a fact about arriving, not a continuous effect.
     ?? entersTappedFromLine(line, name)
     ?? becomesDayFromLine(line, name)
+    ?? entersAsCopyFromLine(line, name)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
     /*

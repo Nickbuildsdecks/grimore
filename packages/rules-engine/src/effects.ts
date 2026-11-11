@@ -1933,6 +1933,11 @@ export interface TokenCopyProfile {
   /** Eternalize's "base power and toughness 4/4", which is a printed value and not a pump. */
   readonly power?: string;
   readonly toughness?: string;
+  /**
+   * Lines added to the copied card's text — "except it has flying" (D594). A keyword line, which
+   * `printedKeywords` reads back as the keyword; nothing else is written here.
+   */
+  readonly extraText?: string;
 }
 
 const profileKey = (def: CardDef, profile: TokenCopyProfile): string =>
@@ -1946,6 +1951,9 @@ const withProfile = (def: CardDef, profile: TokenCopyProfile): CardDef => ({
   ...(profile.colors === undefined ? {} : { colors: [...profile.colors] }),
   ...(profile.power === undefined ? {} : { power: profile.power }),
   ...(profile.toughness === undefined ? {} : { toughness: profile.toughness }),
+  ...(profile.extraText === undefined ? {} : {
+    oracleText: def.oracleText === '' ? profile.extraText : `${def.oracleText}\n${profile.extraText}`,
+  }),
   /*
     And no other faces. A token copy of a card is a copy of the card, not of a half of it — and a
     token that offered "cast the other half" would be offering a cast of something that is not a
@@ -1969,13 +1977,33 @@ const withProfile = (def: CardDef, profile: TokenCopyProfile): CardDef => ({
  * before it moves the permanent, so the copy is what arrives, and the arrivals pass installs the
  * copied card's statics and raises the copied card's entry trigger.
  */
-export function becomeCopyOf(state: GameState, id: string, copying: string): GameState {
+export function becomeCopyOf(
+  state: GameState, id: string, copying: string,
+  /**
+   * The copy's exceptions (D594): "except it's a Shapeshifter Rogue in addition to its other types",
+   * "except it isn't legendary", "except it has flying". Built from the copied card's definition, so
+   * it is a function of it rather than a fixed profile. The exceptions are part of the copy's
+   * copiable values (CR 707.9b), which is what registering them as a definition makes them: a Clone
+   * of this permanent copies the exceptions too.
+   */
+  except?: (copied: CardDef) => TokenCopyProfile,
+): GameState {
   const self = state.instances[id];
   const other = state.instances[copying];
   if (self === undefined || other === undefined) return state;
-  if (state.cardDefs[other.defKey] === undefined) return state;
-  return withInstance(state, id, {
-    defKey: other.defKey,
+  const copied = state.cardDefs[other.defKey];
+  if (copied === undefined) return state;
+  let next = state;
+  let key = other.defKey;
+  if (except !== undefined) {
+    const profile = except(copied);
+    key = profileKey(copied, profile);
+    if (next.cardDefs[key] === undefined) {
+      next = { ...next, cardDefs: { ...next.cardDefs, [key]: withProfile(copied, profile) } };
+    }
+  }
+  return withInstance(next, id, {
+    defKey: key,
     printedDefKey: self.printedDefKey ?? self.defKey,
   });
 }
