@@ -1288,7 +1288,11 @@ function triggerMatches(
         anything that is not a creature — cannot be "a creature with power 3 or greater", so the
         `?? -Infinity` reading would be wrong in the lenient direction; `undefined` is refused.
       */
-      if (want.kind === 'etb' || want.kind === 'dies') {
+      // "An artifact creature you control deals combat damage" (D602), off the creature's live types.
+      if (want.kind === 'combat-damage' && want.what === 'artifact'
+        && !(e.subjectTypes ?? []).includes('artifact')) return false;
+      // The same characteristic filters on the creature that hit (D602) as on the board events.
+      if (want.kind === 'etb' || want.kind === 'dies' || want.kind === 'combat-damage') {
         if (want.powerAtLeast !== undefined
           && !(e.subjectPower !== undefined && e.subjectPower >= want.powerAtLeast)) return false;
         if (want.powerAtMost !== undefined
@@ -1735,6 +1739,25 @@ function raise(
         subjectIsToken: inst.isToken,
         subjectTypes: was.typeLine.types.map((t) => t.toLowerCase()),
         subjectSubtypes: was.typeLine.subtypes,
+      };
+    }
+  }
+  /*
+    The creature that dealt combat damage, for the subject filters on "whenever a Ninja you control
+    deals combat damage to a player" (D602). Live: it is still on the battlefield as the hit lands.
+  */
+  if (subject !== undefined && event.kind === 'combat-damage') {
+    const inst = next.instances[subject];
+    if (inst !== undefined) {
+      const live = characteristicsOf(next, inst);
+      event = {
+        ...event,
+        subjectTypes: live.typeLine.types.map((t) => t.toLowerCase()),
+        subjectSubtypes: live.typeLine.subtypes,
+        subjectKeywords: [...live.keywords],
+        subjectPower: live.power,
+        subjectToughness: live.toughness,
+        ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       };
     }
   }

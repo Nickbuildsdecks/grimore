@@ -757,6 +757,26 @@ export type TriggerEvent =
        * before this changes meaning.
        */
       readonly of?: 'you' | 'opponent' | 'any';
+      /**
+       * The board events' subject filters on the creature that dealt it (D602): "whenever a
+       * **Ninja** you control", "an **artifact** creature you control", "a creature you control
+       * **with deathtouch**". Asked of what the event carries, read off the creature as it hit.
+       */
+      readonly ofSubtypes?: readonly string[];
+      readonly what?: 'artifact';
+      readonly withKeyword?: Keyword;
+      readonly withCounter?: string;
+      readonly powerAtLeast?: number;
+      readonly powerAtMost?: number;
+      readonly toughnessAtLeast?: number;
+      readonly toughnessAtMost?: number;
+      /** Set by the engine when it raises the event: the creature's live facts, for the filters. */
+      readonly subjectSubtypes?: readonly string[];
+      readonly subjectTypes?: readonly string[];
+      readonly subjectKeywords?: readonly string[];
+      readonly subjectPower?: number;
+      readonly subjectToughness?: number;
+      readonly subjectCounters?: Readonly<Record<string, number>>;
     }
   /**
    * "Whenever **one or more** creatures you control deal combat damage to a player."

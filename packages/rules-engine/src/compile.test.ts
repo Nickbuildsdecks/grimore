@@ -9127,10 +9127,9 @@ describe('a library search, generalised (D449)', () => {
     ['two zones',
       'Search your library and/or graveyard for a creature card, reveal it, put it into your hand,'
         + ' then shuffle.'],
-    // The top of the library is a fourth destination, and `searchYourLibrary`'s own shuffle would
-    // undo it — so this one is not merely unread, it is a reading that could not be correct.
-    ['the top of the library as a destination',
-      'Search your library for a basic land card, reveal it, then shuffle and put that card on top.'],
+    // "…then shuffle and put that card on top" was a refusal here on the argument that the search's
+    // own shuffle would undo it. It does not: `answerDecision` shuffles as the search is answered and
+    // the effect runs after, so the card lands on top. Read since D602 (Elvish Harbinger's test).
   ])('refuses %s', (_label, text) => {
     const compiled = spell(text as string);
     expect(compiled.ok).toBe(true);
@@ -9716,8 +9715,7 @@ describe('the library search as a product, widened (D455)', () => {
     */
     // Two zones.
     ['two zones', 'Search your library and/or graveyard for a creature card, reveal it, put it into your hand.'],
-    // The top of the library, which `searchYourLibrary`'s own shuffle would undo.
-    ['the top of the library', 'Search your library for a basic land card, reveal it, then shuffle and put that card on top.'],
+    // The top of the library was a row here until D602: see the note in the D449 block.
     // Cultivate: one card to one place and the other to another.
     ['a split destination', 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand.'],
     // Shefet Monitor: two filters rather than two words of one.

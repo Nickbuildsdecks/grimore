@@ -44994,7 +44994,12 @@ describe('a spell that costs less for what the board holds (D601)', () => {
   const ALLIANCE = {"name":"Deadly Alliance","type_line":"Instant","mana_cost":"{4}{B}","cmc":5,"colors":["B"],"power":null,"toughness":null,"oracle_text":"This spell costs {1} less to cast for each creature in your party. (Your party consists of up to one each of Cleric, Rogue, Warrior, and Wizard.)\nDestroy target creature or planeswalker.","layout":"normal"};
   const SAGE = {"name":"Test Cleric Sage","type_line":"Creature — Human Cleric Wizard","mana_cost":"{1}{U}","cmc":2,"colors":["U"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
   const ADEPT = {"name":"Test Adept","type_line":"Creature — Human Wizard","mana_cost":"{1}{U}","cmc":2,"colors":["U"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
-  const ROWS = [BONE_PICKER, GHOULTREE, ACT, ALLIANCE, SAGE, ADEPT];
+  // Two rows the corpus prints in shapes these do not test (D601 break run): a rate above {1}, and
+  // the "where X is" count.
+  const RATE = { ...GHOULTREE, name: 'Test Ossuary', oracle_text: 'This spell costs {2} less to cast for each creature card in your graveyard.' };
+  const WHERE = { ...GHOULTREE, name: 'Test Muster', oracle_text: 'This spell costs {X} less to cast, where X is the number of creatures you control.' };
+  const TOME = {"name":"Test Tome","type_line":"Kindred Artifact — Wizard","mana_cost":"{1}","cmc":1,"colors":[],"power":null,"toughness":null,"oracle_text":"","layout":"normal"};
+  const ROWS = [BONE_PICKER, GHOULTREE, ACT, ALLIANCE, SAGE, ADEPT, RATE, WHERE, TOME];
   const deck = customDeck({
     id: 'cheaper', name: 'Cheaper',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 32 }],
@@ -45057,8 +45062,22 @@ describe('a spell that costs less for what the board holds (D601)', () => {
     expect(change(table('Deadly Alliance', ['Grizzly Bears']), 'Deadly Alliance')).toBe(0);
   });
 
+  it('a rate above {1} is that much per card, and "where X is" is the count itself (D601 break run)', () => {
+    expect(change(table('Test Ossuary', [], ['Grizzly Bears', 'Grizzly Bears']), 'Test Ossuary')).toBe(-4);
+    expect(change(table('Test Muster', ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']), 'Test Muster')).toBe(-3);
+    expect(change(table('Test Muster'), 'Test Muster')).toBe(0);
+  });
+
+  it('a Kindred noncreature with a party type fills no slot (D601 break run)', () => {
+    // A party is creatures (CR 700.8); a Wizard artifact is not one.
+    expect(change(table('Deadly Alliance', ['Test Tome']), 'Deadly Alliance')).toBe(0);
+    expect(change(table('Deadly Alliance', ['Test Tome', 'Test Adept']), 'Deadly Alliance')).toBe(-1);
+  });
+
   it('leaves unread what it cannot price honestly', () => {
     for (const text of [
+      // A count that names the card itself: on a card in hand there is nothing to count (D601 break run).
+      'This spell costs {1} less to cast for each +1/+1 counter on it.\nDraw a card.',
       // The cost is computed before this engine knows the targets.
       'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.',
       // Only generic mana moves.
@@ -45069,5 +45088,145 @@ describe('a spell that costs less for what the board holds (D601)', () => {
       const read = compileCard({ ...GHOULTREE, type_line: 'Sorcery', oracle_text: text } as never);
       expect(read.ok && read.script?.selfCostChange).toBeFalsy();
     }
+  });
+});
+
+describe('combat-damage triggers with a subject filter (D602)', () => {
+  /*
+    "Whenever a <tribe> / an artifact creature / a creature with <keyword> you control deals combat
+    damage to a player", and "a Goblin" with no controller named. The engine event carries the
+    creature's live facts, and the board events' filters are asked of them.
+  */
+  const HEIR = {"name":"Rakish Heir","type_line":"Creature — Vampire","mana_cost":"{2}{R}","cmc":3,"colors":["R"],"power":"2","toughness":"2","oracle_text":"Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.","layout":"normal"};
+  const ALTISAUR = {"name":"Curious Altisaur","type_line":"Creature — Dinosaur","mana_cost":"{3}{G}","cmc":4,"colors":["G"],"power":"2","toughness":"5","oracle_text":"Vigilance, reach\nWhenever a Dinosaur you control deals combat damage to a player, draw a card.","layout":"normal"};
+  const THIEF = {"name":"Research Thief","type_line":"Artifact Creature — Moonfolk Wizard","mana_cost":"{4}{U}","cmc":5,"colors":["U"],"power":"3","toughness":"3","oracle_text":"Flash\nFlying\nWhenever an artifact creature you control deals combat damage to a player, draw a card.","layout":"normal"};
+  const WIDOW = {"name":"White Widow, Yelena Belova","type_line":"Legendary Creature — Human Assassin Villain","mana_cost":"{1}{B}","cmc":2,"colors":["B"],"power":"1","toughness":"2","oracle_text":"Deathtouch\nWhenever a creature you control with deathtouch deals combat damage to a player, put a +1/+1 counter on it.","layout":"normal"};
+  const SLAVER = {"name":"Cabal Slaver","type_line":"Creature — Human Cleric","mana_cost":"{2}{B}","cmc":3,"colors":["B"],"power":"2","toughness":"1","oracle_text":"Whenever a Goblin deals combat damage to a player, that player discards a card.","layout":"normal"};
+  const VAMP = {"name":"Test Fledgling","type_line":"Creature — Vampire","mana_cost":"{1}{B}","cmc":2,"colors":["B"],"power":"2","toughness":"1","oracle_text":"","layout":"normal"};
+  const GOBLIN = {"name":"Test Goblin","type_line":"Creature — Goblin","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+  const EXECUTIONER = {"name":"Cabal Executioner","type_line":"Creature — Human Cleric","mana_cost":"{2}{B}{B}","cmc":4,"colors":["B"],"power":"2","toughness":"2","oracle_text":"Whenever Cabal Executioner deals combat damage to a player, that player sacrifices a creature.\nMorph {3}{B}{B} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.)","layout":"normal"};
+  const PILEDRIVER = {"name":"Goblin Piledriver","type_line":"Creature — Goblin Warrior","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"1","toughness":"2","oracle_text":"Protection from blue (This creature can't be blocked, targeted, dealt damage, or enchanted by anything blue.)\nWhenever Goblin Piledriver attacks, it gets +2/+0 until end of turn for each other attacking Goblin.","layout":"normal"};
+  const ROWS = [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER, VAMP, GOBLIN, EXECUTIONER, PILEDRIVER];
+  const deck = customDeck({
+    id: 'hits', name: 'Hits',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 42 }],
+    data: ROWS as never[],
+  });
+  /** `mine` on seat 0's battlefield since last turn; `attackers` swing at seat 1; returns after combat. */
+  const swing = (mine: readonly string[], attackers: readonly string[], theirs: readonly string[] = [], theirHand: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hits', 1: 'hits' }, deckSpecs: { hits: deck.deck },
+      hands: { 1: [...theirHand] },
+      battlefield: { 0: [...mine], 1: [...theirs] }, turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const taken = new Set<string>();
+    const ids0 = attackers.map((name) => {
+      const id = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === name && !taken.has(i))!;
+      taken.add(id);
+      return id;
+    });
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: ids0.map((attacker) => ({ attacker, defender: 1 })) } as Action));
+    // Seat 1's creatures stay home: the block declaration is owed, and it is empty.
+    if (theirs.length > 0) s = drain(apply(drain(s, 40), { type: 'auto:block', by: 1, blocks: [] } as Action), 40);
+    // Cabal Slaver's discard asks the player who was hit; they give up a Mountain.
+    for (let i = 0; i < 40 && s.step !== 'postcombat-main'; i++) {
+      s = drain(s, 40);
+      if (s.pendingDecision !== null) s = decide(s, [choices(s)[0]!]);
+      else if (s.step !== 'postcombat-main') s = passBoth(s);
+    }
+    return s;
+  };
+  const counters = (s: GameState, name: string) =>
+    ids(s, 0, 'battlefield').filter((i) => nameOf(s, i) === name).map((i) => s.instances[i]!.counters['+1/+1'] ?? 0);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('Rakish Heir: a Vampire that connects gets the counter, and a Bear does not trigger it', () => {
+    const s = swing(['Rakish Heir', 'Test Fledgling', 'Grizzly Bears'], ['Test Fledgling', 'Grizzly Bears']);
+    expect(counters(s, 'Test Fledgling')).toEqual([1]);
+    expect(counters(s, 'Rakish Heir')).toEqual([0]);
+    expect(counters(s, 'Grizzly Bears')).toEqual([0]);
+  });
+
+  it('Curious Altisaur draws for a Dinosaur, not for a Bear', () => {
+    const hand = (s: GameState) => ids(s, 0, 'hand').length;
+    const bears = swing(['Curious Altisaur', 'Grizzly Bears'], ['Grizzly Bears']);
+    const dino = swing(['Curious Altisaur', 'Grizzly Bears'], ['Curious Altisaur']);
+    expect(hand(dino) - hand(bears)).toBe(1);
+  });
+
+  it('Research Thief draws for an artifact creature only', () => {
+    const hand = (s: GameState) => ids(s, 0, 'hand').length;
+    const bears = swing(['Research Thief', 'Grizzly Bears'], ['Grizzly Bears']);
+    const thief = swing(['Research Thief', 'Grizzly Bears'], ['Research Thief']);
+    expect(hand(thief) - hand(bears)).toBe(1);
+  });
+
+  it('White Widow: only a creature with deathtouch gets the counter', () => {
+    const s = swing(['White Widow, Yelena Belova', 'Grizzly Bears'], ['White Widow, Yelena Belova', 'Grizzly Bears']);
+    expect(counters(s, 'White Widow, Yelena Belova')).toEqual([1]);
+    expect(counters(s, 'Grizzly Bears')).toEqual([0]);
+  });
+
+  it('Cabal Slaver: anybody\'s Goblin, and the player it hit discards', () => {
+    const goblin = swing(['Test Goblin'], ['Test Goblin'], ['Cabal Slaver'], ['Mountain', 'Mountain']);
+    expect(ids(goblin, 1, 'hand').length).toBe(1);
+    const bears = swing(['Grizzly Bears'], ['Grizzly Bears'], ['Cabal Slaver'], ['Mountain', 'Mountain']);
+    expect(ids(bears, 1, 'hand').length).toBe(2);
+  });
+
+  it('Cabal Executioner: the player it hit sacrifices one of their own creatures', () => {
+    const readEXECUTIONER = compileCard(EXECUTIONER as never);
+    expect(readEXECUTIONER.ok && readEXECUTIONER.unread).toEqual([]);
+    // Seat 1's Bears stay home; when the Executioner connects they are the only creature to give up.
+    const s = swing(['Cabal Executioner', 'Grizzly Bears'], ['Cabal Executioner'], ['Grizzly Bears']);
+    expect(ids(s, 1, 'battlefield').filter((i) => nameOf(s, i) === 'Grizzly Bears')).toEqual([]);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Grizzly Bears');
+  });
+
+  it('Elvish Harbinger: finds an Elf, shuffles, and puts it on top', () => {
+    const HARBINGER = {"name":"Elvish Harbinger","type_line":"Creature — Elf Druid","mana_cost":"{2}{G}","cmc":3,"colors":["G"],"power":"1","toughness":"2","oracle_text":"When Elvish Harbinger enters, you may search your library for an Elf card, reveal it, then shuffle and put that card on top.\n{T}: Add one mana of any color.","layout":"normal"};
+    const ELF = {"name":"Test Elf","type_line":"Creature — Elf Warrior","mana_cost":"{G}","cmc":1,"colors":["G"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+    const readHARBINGER = compileCard(HARBINGER as never);
+    expect(readHARBINGER.ok && readHARBINGER.unread).toEqual([]);
+    const built = customDeck({
+      id: 'elves', name: 'Elves',
+      entries: [{ name: 'Elvish Harbinger', count: 1 }, { name: 'Test Elf', count: 1 }, { name: 'Forest', count: 58 }],
+      data: [HARBINGER, ELF] as never[],
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'elves', 1: 'verdant-guard' }, deckSpecs: { elves: built.deck },
+      hands: { 0: ['Elvish Harbinger'] }, battlefield: { 0: ['Forest', 'Forest', 'Forest'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Elvish Harbinger') } as Action)), 40);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Yes' } as Action), 40);
+    // Only the Elf is offered: the Forests are not Elves.
+    expect(choices(s)).toEqual(['Test Elf']);
+    s = drain(decide(s, ['Test Elf']), 40);
+    const library = ids(s, 0, 'library');
+    expect(nameOf(s, library[0]!)).toBe('Test Elf');
+  });
+
+  it('Goblin Piledriver: +2/+0 for each other attacking Goblin, not itself and not a Bear', () => {
+    const readPILEDRIVER = compileCard(PILEDRIVER as never);
+    expect(readPILEDRIVER.ok && readPILEDRIVER.unread).toEqual([]);
+    const s = swing(['Goblin Piledriver', 'Test Goblin', 'Test Goblin', 'Grizzly Bears'],
+      ['Goblin Piledriver', 'Test Goblin', 'Test Goblin', 'Grizzly Bears']);
+    const driver = find(s, 0, 'battlefield', 'Goblin Piledriver');
+    // 1 printed, plus 2 for each of the two other Goblins.
+    expect(characteristicsOf(s, s.instances[driver]!).power).toBe(5);
+  });
+
+  it('refuses a subject word it cannot filter on', () => {
+    const read = compileCard({ ...WIDOW, oracle_text: 'Whenever a modified creature you control deals combat damage to a player, draw a card.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
   });
 });

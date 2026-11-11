@@ -24669,3 +24669,84 @@ Pod sweep on D600's build (3fd56ff), seeds 46801–46840: 39 of 40 finished. The
 46821, the bot's retrace cast, fixed above.
 
 Break run on D600's build: 10 deliberate faults, 5 caught; 4 misses pinned here and 1 vacuous.
+
+## D602 — Combat-damage triggers with a subject, an aimed edict, a tutor to the top, and attacking counts
+
+The unread dump ranked "Whenever … deals combat damage to a player" third among the one-short
+families. What blocked its readable part was the subject, not the effect: "whenever a **Ninja** you
+control", "an **artifact creature** you control", "a creature you control **with deathtouch**",
+"whenever a **Goblin** deals combat damage". `combat-damage` had `who` and `of` and no filter at
+all.
+
+**The event carries the creature, and the board filters ask it.** `raise` now enriches a
+`combat-damage` event with the live facts of the creature that hit: types, subtypes, keywords, power,
+toughness and counters. That is what D478/D479 gave `etb` and `dies`. The matcher asks the same
+filters of it (`ofSubtypes`, `withKeyword`, `withCounter`, the size bounds) and adds
+`what: 'artifact'`.
+
+A new prologue row reads three subject shapes, with the filter from `boardFilter`:
+- A tribe ("Ninja", "Dinosaur creature").
+- "Artifact creature".
+- "Creature" with a filter.
+
+"You control" is `of: 'you'`. Without it, the trigger is about anybody's creature, which is
+Cabal Slaver's "a Goblin". A lower-case word it cannot filter on ("modified", "nontoken", a colour)
+refuses the line. "It" in the effect is the creature that hit: Rakish Heir's counter goes on the
+Vampire that connected, as printed.
+
+**"That player sacrifices a creature."** "Target player/opponent sacrifices a creature" now reads.
+It is the each-player edict aimed at one player, who chooses from their own creatures. Through
+`referentEffect`'s "that player" swap, it is also Cabal Executioner's and Demon of Loathing's line on
+the hit player.
+
+**A tutor to the top.** "…, reveal it, then shuffle and put that card on top" covers the Harbingers,
+the Forerunners and Campus Guide. Two compile tests refused it on the argument that the search's own
+shuffle would undo it. It does not: `answerDecision` shuffles as the search is answered and the
+effect runs after, so the card lands on top. Both refusal rows are removed with a note. `clausesOf`
+cut the line at its ", then ", so the phrase is now held together past the split.
+
+**Attacking counts.** "for each [other] attacking <creature | Tribe>" (Goblin Piledriver, Aurochs,
+Dire Fleet Captain, Rampaging Classmate) is read off the live attack declaration. "Other" is the
+creature whose ability it is.
+
+**The D601 break run: 8 runnable faults, 4 caught. All 4 misses are pinned here:**
+- A {2}-per rate and a "where X is" discount, on custom rows.
+- The guard that keeps a cost phrase from naming the card itself ("for each +1/+1 counter on it",
+  which would read with the guard removed).
+- Party counting noncreatures (a Kindred Wizard artifact fills no slot).
+
+Two of my D601 faults did not typecheck, so they tested nothing; the harness reports 6 of 10. Both
+were rewritten type-safely (the "and each opponent" seat rule, and the players tail skipped), and the
+D601 test failed on each.
+
+**Tests.** 10 new engine tests on corpus rows, plus custom Vampire, Goblin and Elf rows:
+- Rakish Heir: the Vampire gets the counter, the Heir and a Bear do not.
+- Curious Altisaur draws for a Dinosaur only.
+- Research Thief draws for an artifact creature only.
+- White Widow: only a creature with deathtouch gets the counter.
+- Cabal Slaver: an opponent's Goblin makes them discard, a Bear does not.
+- Cabal Executioner: the player hit sacrifices their own creature.
+- Elvish Harbinger: only the Elf is offered, and it ends on top.
+- Goblin Piledriver is a 5/2 attacking beside two Goblins and a Bear.
+- A subject word it cannot filter on stays unread.
+
+Also 2 new D601 pins, and 2 compile refusal rows removed.
+
+Each of the following was broken on purpose and its test failed:
+- The filters not asked of `combat-damage`.
+- The artifact test.
+- "Anybody's" read as yours.
+- The edict asking its controller.
+- The tutor leaving the card where it was.
+- "Other" ignored.
+- The tribe ignored.
+
+    engine tests: 4,277, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,452 of 31,292 (was 9,396); lines read 27,085 of 58,524 (46.3%, was 27,017)
+
+Pod sweep on D601's build (c01e1d8), seeds 46901–46940: 40 of 40 finished, no throw and no stall.
+
+Break run on D601's build: 8 runnable faults, 4 caught. All 4 misses are pinned here, and the 2 faults that did not typecheck were rerun by hand and caught.

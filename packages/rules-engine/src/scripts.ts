@@ -2015,6 +2015,20 @@ function searchQuantity(
 }
 
 function searchClause(text: string, name: string): ReadEffect | null {
+  /*
+    "…, reveal it, then shuffle and put that card on top" (D602): the Harbingers, the Forerunners,
+    Campus Guide. The search shuffles as it is answered (`answerDecision`, CR 701.19e) and the effect
+    runs after, so moving the card to the top here is the printed order: shuffle, then on top.
+  */
+  const onTop = /^search your library for (an? .+?), reveal it, then shuffle and put that card on top$/i.exec(text.trim());
+  if (onTop !== null) {
+    const filter = libraryFilter(onTop[1]!.trim(), name);
+    if (filter === null) return null;
+    return {
+      decisions: [searchYourLibrary(`Search your library for ${onTop[1]!.trim()}`, filter.filter === null ? undefined : filter.filter, 1)],
+      effect: (c) => chosenCards(c).reduce((state, id) => putOnTopOfLibrary(state, id), c.state),
+    };
+  }
   const parsed =
     /^search your library for (.+?)(?:, reveal (?:it|that card|them|those cards))?, (?:and )?(put (?:it|that card|them|those cards) (?:into your hand|onto the battlefield tapped|onto the battlefield|into your graveyard)|exile (?:it|that card|them|those cards))$/i
       .exec(text.trim());
@@ -14612,6 +14626,32 @@ function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | n
   return null;
 }
 
+/**
+ * "Whenever a <subject> [you control] [with …] deals combat damage to a player" (D602).
+ *
+ * The subject is a tribe ("Ninja", "Dinosaur", also "Ninja creature"), "artifact creature", or
+ * "creature" with a filter; the filter is `boardFilter`'s. A bare "creature you control" is the row
+ * above this one and is left to it. A lower-case word that is not one of those — "modified",
+ * "nontoken", a colour — refuses the line rather than widening the trigger (D362).
+ */
+function combatSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
+  const groups = matched.groups ?? {};
+  const what = (groups.what ?? '').trim();
+  const of = groups.of === undefined ? 'any' as const : 'you' as const;
+  const filter = boardFilter(groups.filter ?? '');
+  if (filter === null) return null;
+  const base = { kind: 'combat-damage' as const, who: 'any' as const, of };
+  const tribe = /^([A-Z][A-Za-z'-]*)(?: creature)?$/.exec(what);
+  if (tribe !== null) return [{ ...base, ofSubtypes: [tribe[1]!], ...filter } as TriggerDef['on']];
+  if (/^artifact creature$/i.test(what)) return [{ ...base, what: 'artifact', ...filter } as TriggerDef['on']];
+  // "a creature" with a filter; without one it is the plain row's, and "a creature" of anybody's
+  // is not printed in this family.
+  if (/^creature$/i.test(what) && of === 'you' && Object.keys(filter).length > 0) {
+    return [{ ...base, ...filter } as TriggerDef['on']];
+  }
+  return null;
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -15635,6 +15675,19 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever a creature you control deals combat damage to a player, (.+)$/i,
     on: [{ kind: 'combat-damage', who: 'any', of: 'you' }],
   },
+  /*
+    And the same sentence with a subject filter (D602): "whenever a **Ninja** you control", "an
+    **artifact creature** you control", "a creature you control **with deathtouch**", and "whenever
+    a **Goblin** deals combat damage" with nobody's control named, which is anybody's Goblin. See
+    `combatSubjectTrigger` for the words it reads and refuses.
+  */
+  {
+    prologue: () => new RegExp(
+      `^Whenever (?:a|an) (?<what>[A-Za-z'-]+(?: creature)?)(?<of> you control)?(?<filter> with [^,]+?)?`
+      + ` deals combat damage to a player, (?<clause>.+)$`,
+    ),
+    from: combatSubjectTrigger,
+  },
   // And the batched one, on the event D443 added. The singular row above and this one differ by one
   // word of English and by how many times they fire.
   {
@@ -16061,6 +16114,26 @@ function countOfThing(
   }
   if (/^attacking creatures?$/i.test(text)) {
     return (c) => attackingCreatures(c.state);
+  }
+  /*
+    "for each **other** attacking creature", "… other attacking Goblin", "… attacking Ally" (D602):
+    the attack declaration, read live, with `other` the creature whose ability it is and a tribe in
+    the creature's place a subtype test. The Goblin Piledriver family. A plural tribe word is the
+    singular's job ("for each" is singular), so only the printed word is tried.
+  */
+  const attacking = /^(other )?attacking ([A-Za-z'-]+)$/.exec(text);
+  if (attacking !== null && number === 'singular') {
+    const other = attacking[1] !== undefined;
+    const word = attacking[2]!;
+    const tribe = /^creature$/i.test(word) ? null : /^[A-Z]/.test(word) ? word.toLowerCase() : undefined;
+    if (tribe !== undefined) {
+      return (c) => c.state.combat.attacks.filter(({ attacker }) => {
+        if (other && attacker === c.source) return false;
+        if (tribe === null) return true;
+        const inst = c.state.instances[attacker];
+        return inst !== undefined && hasSubtype(characteristicsOf(c.state, inst).typeLine, tribe);
+      }).length;
+    }
   }
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it)$`, 'i').test(text)) {
     return (c) => {
@@ -19375,6 +19448,33 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     its noun — "Discard two cards", "Discard a card" — rather than being built from the number,
     which keeps the singular right and matches the prompt the hand-written card stores.
   */
+  /*
+    And the edict aimed at one player (D602): "target player sacrifices a creature", which is also
+    what "that player sacrifices a creature" becomes when `referentEffect` swaps the pronoun on a
+    combat-damage trigger (Cabal Executioner, Demon of Loathing). The player sacrificing chooses,
+    from their own creatures, as the each-player edict asks.
+  */
+  const aimedEdict = /^(target player|target opponent) sacrifices a creature$/i.exec(text);
+  if (aimedEdict !== null) {
+    const spec = targetSpecFrom(aimedEdict[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        decisions: [{
+          who: 'target-player',
+          from: 'battlefield',
+          prompt: 'Sacrifice a creature',
+          min: 1,
+          max: 1,
+          filter: (state: GameState, id: string) => {
+            const inst = state.instances[id];
+            return inst !== undefined && characteristicsOf(state, inst).isCreature;
+          },
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
+    }
+  }
   const discarded = /^(target player|target opponent) discards ([\w]+) (cards?)$/i.exec(text);
   if (discarded !== null) {
     const n = countFrom(discarded[2]!);
@@ -20247,10 +20347,17 @@ function readEffect(
  * The apostrophes are flattened here, at the one door every clause comes through — see `plain`.
  */
 function clausesOf(line: string): readonly string[] {
+  /*
+    "…, reveal it, then shuffle and put that card on top" is one step and not two (D602): cut at its
+    ", then ", the search loses its destination and "shuffle and put that card on top" has no card.
+    Held together past the split and handed whole to `searchClause`.
+  */
+  const ON_TOP = ', then shuffle and put that card on top';
   return plain(line)
+    .replace(/,\s+then shuffle and put that card on top/gi, '\u0001')
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
-    .map((clause) => clause.replace(/\.\s*$/, '').trim())
+    .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }
 
