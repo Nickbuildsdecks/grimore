@@ -14879,6 +14879,21 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
   if (lower === 'instant or sorcery') return { spell: 'instant-or-sorcery' };
   if (lower === 'artifact' || lower === 'enchantment') return { ofType: lower };
   if (lower === 'multicolored' || lower === 'multicoloured') return { multicoloured: true };
+  // D606: see the event's own fields.
+  if (lower === 'historic') return { historic: true };
+  if (lower === 'colorless' || lower === 'colourless') return { colorless: true };
+  /*
+    "An instant, sorcery, or Wizard spell" (Rockslide Sorcerer, Master of Winds): a list mixing card
+    types and capitalised subtypes, any of them. Only when it is a real mix of three or more, or a
+    type and a subtype; two lower-case types are the cases above, and two subtypes the row below.
+  */
+  const mixed = text.split(/,\s*(?:or\s+)?|\s+or\s+/).map((word) => word.trim()).filter(Boolean);
+  if (mixed.length >= 2
+    && mixed.some((word) => SEARCHABLE_TYPES.includes(word))
+    && mixed.every((word) => SEARCHABLE_TYPES.includes(word) || /^[A-Z][A-Za-z'-]*$/.test(word))
+    && !(mixed.length === 2 && mixed.every((word) => SEARCHABLE_TYPES.includes(word)))) {
+    return { ofTypesOrSubtypes: mixed };
+  }
   const words = text.split(/ or /i);
   const colours = words.map((word) => CAST_COLOURS[word.toLowerCase() as keyof typeof CAST_COLOURS]);
   if (colours.every((colour) => colour !== undefined)) return { ofColours: colours as Color[] };
@@ -15335,7 +15350,9 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => new RegExp(
       '^Whenever (?<who>you|a player|an opponent) (?:cast|casts)'
-      + '(?<copy> or (?:copy|copies))? an? (?<what>[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$',
+      // A list with commas is taken only in its printed shape, "x, y, or z " (D606), so a comma after
+      // "spell" that ends the prologue is never swallowed into the descriptor.
+      + "(?<copy> or (?:copy|copies))? an? (?<what>(?:[A-Za-z'-]+, )+or [A-Za-z'-]+ |[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$",
       'i',
     ),
     from: castTrigger,
@@ -20425,6 +20442,16 @@ function preventionEffect(clause: string, name: string): ReadEffect | null {
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  /*
+    "Until end of turn, target creature gets +1/+0 and gains indestructible" (D606): the same
+    sentence as "… until end of turn" with the duration printed first, which is how 99 legal lines
+    put it. Read as the trailing form, which every pump and grant reader already handles; a clause
+    the trailing form does not read stays unread.
+  */
+  const leading = /^until end of turn, (.+)$/i.exec(clause.trim());
+  if (leading !== null && !/ until end of turn$/i.test(leading[1]!)) {
+    return readEffect(`${leading[1]!.replace(/\.$/, '')} until end of turn`, name, where);
+  }
   return preventionEffect(clause, name)
     ?? untargetedEffect(clause, name)
     ?? damageEffect(clause, name)

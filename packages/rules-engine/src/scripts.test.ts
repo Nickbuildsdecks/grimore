@@ -45457,11 +45457,14 @@ describe('a static with any condition it can answer (D605)', () => {
   const SURVIVALISTS = {"name":"Backwoods Survivalists","type_line":"Creature — Human Warrior","mana_cost":"{3}{G}","cmc":4,"colors":["G"],"power":"4","toughness":"3","oracle_text":"Delirium — Backwoods Survivalists gets +1/+1 and has trample as long as there are four or more card types among cards in your graveyard.","layout":"normal"};
   const LYNX = {"name":"Mesa Lynx","type_line":"Creature — Cat","mana_cost":"{1}{W}","cmc":2,"colors":["W"],"power":"2","toughness":"1","oracle_text":"As long as it's not your turn, Mesa Lynx gets +0/+2.","layout":"normal"};
   const HELLION = {"name":"Test Hellion","type_line":"Creature — Devil","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"1","toughness":"1","oracle_text":"Hellbent — Test Hellion gets +2/+0 as long as you have no cards in hand.","layout":"normal"};
-  const ROWS = [KIRD, RAPTORS, SURVIVALISTS, LYNX, HELLION];
+  const RAIDER = {"name":"Test Raider","type_line":"Creature — Human Warrior","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"2","toughness":"2","oracle_text":"Test Raider gets +2/+0 as long as it's attacking.","layout":"normal"};
+  const PALADIN = {"name":"Test Paladin","type_line":"Creature — Human Knight","mana_cost":"{1}{W}","cmc":2,"colors":["W"],"power":"2","toughness":"2","oracle_text":"As long as Test Paladin is enchanted, it gets +1/+1.","layout":"normal"};
+  const BLESSING = {"name":"Test Blessing","type_line":"Enchantment — Aura","mana_cost":"{R}","cmc":1,"colors":["R"],"power":null,"toughness":null,"oracle_text":"Enchant creature\nEnchanted creature has vigilance.","layout":"normal"};
+  const ROWS = [KIRD, RAPTORS, SURVIVALISTS, LYNX, HELLION, RAIDER, PALADIN, BLESSING];
   const deck = customDeck({
     id: 'whiles', name: 'Whiles',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Lightning Bolt', count: 2 }, { name: 'Bonesplitter', count: 2 },
-      { name: 'Grizzly Bears', count: 2 }, { name: 'Forest', count: 22 }, { name: 'Mountain', count: 22 }],
+      { name: 'Grizzly Bears', count: 2 }, { name: 'Forest', count: 19 }, { name: 'Mountain', count: 19 }],
     data: ROWS as never[],
   });
   const table = (mine: readonly string[], opts: { hand?: readonly string[]; graveyard?: readonly string[]; firstSeat?: SeatIndex } = {}): GameState => {
@@ -45520,8 +45523,123 @@ describe('a static with any condition it can answer (D605)', () => {
     expect(size(table(['Test Hellion'], { hand: ['Grizzly Bears'] }), 'Test Hellion')).toEqual([1, 1]);
   });
 
+  it('"N or more life" includes N, and a quoted grant rides the general reading (D605 break run)', () => {
+    const STEWARD = { ...KIRD, name: 'Test Steward', oracle_text: 'Test Steward gets +1/+1 as long as you have 20 or more life.' };
+    const read = compileCard(STEWARD as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const steward = customDeck({ id: 'steward', name: 'Steward', entries: [{ name: 'Test Steward', count: 2 }, { name: 'Forest', count: 58 }], data: [STEWARD] as never[] });
+    let s = advanceTo(arena({ decks: { 0: 'steward', 1: 'steward' }, deckSpecs: { steward: steward.deck }, battlefield: { 0: ['Test Steward'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: 20 - life(s, 0) } as Action);
+    expect(size(s, 'Test Steward')).toEqual([2, 2]);
+    s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: -1 } as Action);
+    expect(size(s, 'Test Steward')).toEqual([1, 1]);
+    // A quoted ability granted while the condition holds keeps its grant through the general reader.
+    const druid = compileCard({ ...KIRD, name: 'Test Druid', oracle_text: 'As long as Test Druid is untapped, it has "{T}: You gain 1 life."' } as never);
+    expect(druid.ok && druid.unread).toEqual([]);
+    expect(druid.ok && druid.script?.grantedAbilities?.length).toBe(1);
+    expect(druid.ok && druid.script?.statics?.[0]?.effect.grantsAbilities).toEqual([0]);
+  });
+
+  it('"it\'s attacking" is this creature in the attack, not any attacker (D605 break run)', () => {
+    let s = advanceTo(table(['Test Raider', 'Grizzly Bears']), 'declare-attackers');
+    const raider = find(s, 0, 'battlefield', 'Test Raider');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const bearsOnly = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }] } as Action));
+    expect(characteristicsOf(bearsOnly, bearsOnly.instances[raider]!).power).toBe(2);
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: raider, defender: 1 }] } as Action));
+    expect(characteristicsOf(s, s.instances[raider]!).power).toBe(4);
+  });
+
+  it('"is enchanted" counts an Aura and not an Equipment (D605 break run)', () => {
+    let s = tapAllLands(table(['Test Paladin', 'Bonesplitter', 'Mountain', 'Mountain'], { hand: ['Test Blessing'] }), 0);
+    const paladin = find(s, 0, 'battlefield', 'Test Paladin');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), abilityIndex: 0, targets: [{ kind: 'card', id: paladin }] } as Action));
+    // Bonesplitter's +2/+0 and nothing from the Paladin's own line.
+    expect(size(s, 'Test Paladin')).toEqual([4, 2]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blessing'), targets: [{ kind: 'card', id: paladin }] } as Action)), 20);
+    expect(size(s, 'Test Paladin')).toEqual([5, 3]);
+  });
+
   it('refuses a condition it cannot answer', () => {
     const read = compileCard({ ...KIRD, oracle_text: 'Kird Ape gets +1/+2 as long as an opponent controls a Forest.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe('the duration printed first, and three more spell descriptors (D606)', () => {
+  /*
+    "Until end of turn, <clause>" read as "<clause> until end of turn"; and "whenever you cast a
+    historic / colorless / instant, sorcery, or Wizard spell". Each watcher gains 1 life so the cast
+    that fires it is visible in the life total.
+  */
+  const watcher = (name: string, what: string) => ({
+    name, type_line: 'Enchantment', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: null, toughness: null,
+    oracle_text: `Whenever you cast ${what} spell, you gain 1 life.`,
+  });
+  const HISTORIC = watcher('Test Historian', 'a historic');
+  const COLORLESS = watcher('Test Prism', 'a colorless');
+  const MIXED = watcher('Test Spellbook', 'an instant, sorcery, or Wizard');
+  const LEGEND = {"name":"Test Legend","type_line":"Legendary Creature — Human","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+  const WIZARD = {"name":"Test Apprentice","type_line":"Creature — Human Wizard","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
+  const ARMOR = {"name":"Armor of Shadows","type_line":"Instant","mana_cost":"{B}","cmc":1,"colors":["B"],"power":null,"toughness":null,"oracle_text":"Until end of turn, target creature gets +1/+0 and gains indestructible.","layout":"normal"};
+  const ROWS = [HISTORIC, COLORLESS, MIXED, LEGEND, WIZARD, ARMOR];
+  const deck = customDeck({
+    id: 'casts', name: 'Casts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Bonesplitter', count: 2 }, { name: 'Grizzly Bears', count: 2 },
+      { name: 'Lightning Bolt', count: 2 }, { name: 'Mountain', count: 14 }, { name: 'Forest', count: 14 }, { name: 'Swamp', count: 14 }],
+    data: ROWS as never[],
+  });
+  /** `watching` on the battlefield, `spell` cast and resolved; seat 0's life gained by it. */
+  const gained = (watching: string, spell: string): number => {
+    let s = advanceTo(arena({
+      decks: { 0: 'casts', 1: 'casts' }, deckSpecs: { casts: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: [watching, 'Mountain', 'Forest', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 0);
+    const card = find(s, 0, 'hand', spell);
+    const targets = spell === 'Lightning Bolt' ? [{ kind: 'player', seat: 1 }] : undefined;
+    s = drain(passBoth(drain(passBoth(apply(tapAllLands(s, 0), { type: 'auto:cast', by: 0, card, ...(targets ? { targets } : {}) } as Action)), 20)), 20);
+    return life(s, 0) - before;
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [HISTORIC, COLORLESS, MIXED, ARMOR]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('historic: an artifact or a legendary spell, not a plain creature', () => {
+    expect(gained('Test Historian', 'Bonesplitter')).toBe(1);
+    expect(gained('Test Historian', 'Test Legend')).toBe(1);
+    expect(gained('Test Historian', 'Grizzly Bears')).toBe(0);
+  });
+
+  it('colorless: a colourless spell only', () => {
+    expect(gained('Test Prism', 'Bonesplitter')).toBe(1);
+    expect(gained('Test Prism', 'Grizzly Bears')).toBe(0);
+  });
+
+  it('"an instant, sorcery, or Wizard spell": an instant and a Wizard, not a Bear', () => {
+    expect(gained('Test Spellbook', 'Lightning Bolt')).toBe(1);
+    expect(gained('Test Spellbook', 'Test Apprentice')).toBe(1);
+    expect(gained('Test Spellbook', 'Grizzly Bears')).toBe(0);
+  });
+
+  it('Armor of Shadows: +1/+0 and indestructible until end of turn, printed duration first', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'casts', 1: 'casts' }, deckSpecs: { casts: deck.deck },
+      hands: { 0: ['Armor of Shadows'] }, battlefield: { 0: ['Grizzly Bears', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(tapAllLands(s, 0), {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Armor of Shadows'), targets: [{ kind: 'card', id: bears }],
+    } as Action)), 20);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect(ch.power).toBe(3);
+    expect(ch.keywords.has('indestructible')).toBe(true);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(characteristicsOf(s, s.instances[bears]!).power).toBe(2);
   });
 });

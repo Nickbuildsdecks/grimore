@@ -1036,6 +1036,15 @@ function triggerMatches(
       if (want.ofColours !== undefined
         && !want.ofColours.some((colour) => (e.colors ?? []).includes(colour))) return false;
       if (want.multicoloured === true && (e.colors ?? []).length < 2) return false;
+      // D606: historic, colorless, and a list of card types or subtypes, any of them.
+      if (want.colorless === true && (e.colors ?? []).length > 0) return false;
+      if (want.historic === true && !((e.types ?? []).includes('artifact')
+        || (e.supertypes ?? []).some((s) => s.toLowerCase() === 'legendary')
+        || (e.subtypes ?? []).some((s) => s.toLowerCase() === 'saga'))) return false;
+      if (want.ofTypesOrSubtypes !== undefined && !want.ofTypesOrSubtypes.some((word) => (
+        (e.types ?? []).includes(word.toLowerCase())
+        || (e.subtypes ?? []).some((printed) => printed.toLowerCase() === word.toLowerCase())
+      ))) return false;
       if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
         (e.subtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
       ))) return false;

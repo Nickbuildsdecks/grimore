@@ -1081,6 +1081,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     colors: characteristics.colors,
     manaValue: (next.cardDefs[inst.defKey]?.cmc ?? 0) + (object.x ?? 0),
     subtypes: characteristics.typeLine.subtypes,
+    // For "a historic spell" (D606): legendary is a supertype.
+    supertypes: characteristics.typeLine.supertypes,
     /*
       And what it was pointed at, for heroic (D476). Card targets only, because that is the whole
       of what the printed sentence asks — "a spell that targets **this creature**" — and a seat in

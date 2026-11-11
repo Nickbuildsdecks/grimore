@@ -42442,3 +42442,58 @@ The largest increment since D601.
 Pod sweep on D604's build (80397a0), seeds 47201–47240: 40 of 40 finished, no throw and no stall.
 
 Break run on D604's build: 6 deliberate faults, 4 caught; both misses pinned here.
+
+## D606 — The duration printed first, three more spell descriptors, and the D605 gaps
+
+Two small families, each a reading the engine could already execute:
+
+**"Until end of turn, <clause>."** Ninety-nine legal lines put the duration first: "Until end of
+turn, target creature gets +1/+0 and gains indestructible" (Armor of Shadows). Every pump and grant
+reader already read "<clause> until end of turn". `readEffect` now rewrites the leading form into
+the trailing one and reads that, so a clause the trailing form does not read stays unread. Most of
+the 99 carry a quoted grant or a base-size change behind the duration, which is other readers'
+work; the plain ones finish.
+
+**Three spell descriptors on the cast trigger:**
+- **historic**: artifact, legendary or Saga (CR 700.6). D435 refused it as "not one field", and it
+  now is one. The cast event carries the spell's supertypes, so "legendary" can be asked.
+- **colorless**: no colours (CR 105.2c), asked of the event's colours, so a face-down spell counts.
+- **"an instant, sorcery, or Wizard spell"**: any of a list of card types and subtypes (Rockslide
+  Sorcerer, Umara Mystic, Master of Winds, Windrider Wizard). The cast prologue's descriptor could
+  not contain a comma. It now accepts one in exactly the printed list shape, "x, y, or z", so a
+  comma that ends the prologue is never taken into the descriptor.
+
+The refusal row for "historic" is removed with a note. "A legendary spell" stays refused: no field
+asks for a supertype alone.
+
+**The D605 break run: 7 faults, 3 caught. All 4 misses are pinned here:**
+- "It's attacking" true while any creature attacks: a Raider is 2/2 while only the Bears attack and
+  4/2 when it does.
+- "Is enchanted" counting Equipment: a Paladin wearing a Bonesplitter has only the Bonesplitter's
+  +2/+0, and gets its own +1/+1 when an Aura goes on.
+- "N or more life" read as more than N: a Steward is 2/2 at exactly 20 life and 1/1 at 19.
+- The general reader dropping a quoted grant: a creature that has "{T}: You gain 1 life" while
+  untapped compiles with the grant and its index.
+
+**Tests.** 7 new engine tests:
+- 5 for D606: every row reads; historic fires for an artifact and a legendary spell and not a
+  Bears; colorless fires for an artifact only; the mixed list fires for an instant and a Wizard and
+  not a Bears; Armor of Shadows makes a 3/2 indestructible that is 2/2 again next turn.
+- 3 D605 pins.
+
+Each of the following was broken on purpose and its test failed:
+- Legendary ignored.
+- Colorless ignored.
+- The mixed list's subtypes ignored.
+- The leading-duration rewrite removed.
+- The four D605 faults.
+
+    engine tests: 4,303, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,660 of 31,292 (was 9,638); lines read 27,472 of 58,524 (46.9%, was 27,440)
+
+Pod sweep on D605's build (2c53ac8), seeds 47301–47340: 40 of 40 finished, no throw and no stall.
+
+Break run on D605's build: 7 deliberate faults, 3 caught; all 4 misses pinned here.

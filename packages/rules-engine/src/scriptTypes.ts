@@ -899,6 +899,16 @@ export type TriggerEvent =
        * multicoloured by an effect counts and a face-down one — colourless, CR 708.2 — does not.
        */
       readonly multicoloured?: true;
+      /**
+       * "A **historic** spell" (D606): artifact, legendary or Saga (CR 700.6), answered from the
+       * event's types, supertypes and subtypes. "A **colorless** spell": no colours (CR 105.2c).
+       * "An instant, sorcery, or **Wizard** spell": any of these card types or subtypes.
+       */
+      readonly historic?: true;
+      readonly colorless?: true;
+      readonly ofTypesOrSubtypes?: readonly string[];
+      /** Set by the engine when it raises the event: the spell's supertypes, as printed. */
+      readonly supertypes?: readonly string[];
       /** Set by the engine when it raises the event: the spell's colours (CR 202.2). */
       readonly colors?: readonly Color[];
       /**

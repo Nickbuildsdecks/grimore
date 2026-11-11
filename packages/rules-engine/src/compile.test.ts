@@ -7584,8 +7584,9 @@ describe('the cast trigger, read off the prologue', () => {
       "An opponent casts a creature spell" was refused on the count alone, and the parse reads it
       for free whether or not a card exercises it.
     */
-    ['Whenever you cast a historic spell', 'artifact or legendary or Saga, not one field'],
-    ['Whenever you cast a legendary spell', 'a supertype, which the event does not carry'],
+    // "A historic spell" was a row here ("artifact or legendary or Saga, not one field"); D606 gave
+    // it that one field, answered from the event's types, supertypes and subtypes.
+    ['Whenever you cast a legendary spell', 'a supertype alone, which no cast field asks for (historic does, with the rest)'],
     ['Whenever an opponent casts a white or blue instant or sorcery spell',
       'a colour and a type in one descriptor: read as neither, not as half of each'],
     ['Whenever an opponent casts a spell that targets you or a creature you control',
