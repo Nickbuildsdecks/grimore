@@ -41643,3 +41643,62 @@ Break run on D591's build: 9 deliberate faults, 8 caught. The miss — a pasted 
 row named "A // B" under its front face — was covered only by the realtime package's live test,
 which the engine's break harness does not run; the engine now has its own test, which fails with
 the fault in.
+
+## D593 — Day and night: daybound and nightbound
+
+The second werewolf rule, Innistrad: Midnight Hunt's (CR 726, CR 702.145), and the one 36 legal
+transforming cards print instead of D592's upkeep sentence. It is a fact about the **game**, not a
+card: `GameState.dayNight` is `day`, `night` or `null`, and every game starts `null`.
+
+**Three rules, three functions** (`effects.ts`):
+
+- `establishDayNight` — the first time a permanent with daybound is on the battlefield and it is
+  neither, it becomes day (night for nightbound). Asked in every `settle`, after arrivals.
+- `dayNightAfter` — as a turn begins, day becomes night if the **previous turn's active player**
+  cast no spells during it, and night becomes day if they cast two or more. That player's count
+  only, from D592's per-seat last-turn tally: two instant-speed spells from somebody else do not
+  keep it day. Called where `advanceStep` hands the turn on.
+- `matchDayNight` — every daybound permanent shows its back by night and every nightbound one its
+  front by day. Read off live characteristics, so a werewolf that has lost all abilities stays as it
+  is. Turning over because the time changed **is** a transform, and "transforms into" sees it; a
+  card that arrives already matching the time of day enters transformed and does not (CR 712.14) —
+  `transformPermanent` takes a `record` flag for that one case, and `arrivalReplacements` uses it.
+
+**Daybound and nightbound are keywords**, changeling's reason: the rule asks a permanent whether it
+has one. **"Whenever day becomes night or night becomes day"** is a new event, `day-night`, raised
+at the change and not when a game that was neither first becomes day. **"If it's neither day nor
+night, it becomes day as ~ enters"** is `becomesDayAsItEnters`, applied on arrival. The ten cards
+that print the trigger print that line too.
+
+**On the table:** a Day or Night pill in the top bar once it is either, with the rule in its
+tooltip, and the same word in the watchers' header. `GameView.dayNight` is optional, so a view
+from an older server reads as neither.
+
+**Not read yet:** "it becomes night/day" as an effect (Into the Night, Unnatural Moonrise, The
+Celestus's ability, Tovolar's upkeep), "if it's night" conditions (Olivia's Midnight Ambush, Wolf
+Strike, Moonrager's Slash), Angel of Eternal Dawn's "it can't become night", and Sunstreak
+Phoenix's trigger, which fires from a graveyard and stays unread rather than read as a battlefield
+one. CR 702.145b's restriction — a daybound permanent cannot be transformed by anything else — is
+not enforced; nothing the compiler reads tries.
+
+**Tests.** 6 engine tests on corpus rows (Bird Admirer, Firmament Sage) and a probe built on Bird
+Admirer's shape with a "transforms into" line on each face: the keywords, the line and the trigger
+read; a game starts neither and a daybound card makes it day, in the view too; no spells makes it
+night and turns the card over, two make it day and turn it back; only the previous active player
+counts, and one spell changes nothing either way; a daybound card cast at night enters on its back
+face without its trigger, and becoming day turns it over with its front's; the Sage makes it day
+without a change and draws on the next one. Three faults were put in by hand — the arrival recorded
+as a transform, the change not raised, the wrong seat counted — and each failed its test. The pool's
+mechanic check names all four new mechanics as compiler-only, with this evidence.
+
+    engine tests: 4,210, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,089 of 31,292 (was 9,070); lines read 26,511 of 58,524 (45.3%, was 26,427)
+
+Pod sweep on D592's build (2c7e9f5), seeds 46001–46040: 40 of 40 finished, no throw and no stall.
+
+Break run on D592's build: 11 deliberate faults, 10 caught. The miss: "if ~ is equipped" counted
+any attached permanent, and the test only ever attached an Equipment. It now casts an Aura onto
+Avacynian Missionaries first and asserts the card stays its front, and fails with the fault in.

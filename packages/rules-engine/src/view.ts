@@ -266,6 +266,11 @@ export interface GameView {
   readonly monarch: SeatIndex | null;
   readonly initiative: SeatIndex | null;
   /**
+   * Day, night, or neither (CR 726, D593). Optional because a view packed by an older server has
+   * none, which a client reads as neither — the honest answer for a game with no daybound card.
+   */
+  readonly dayNight?: 'day' | 'night' | null;
+  /**
    * Every deal offered at this table, live, answered, expired or broken.
    *
    * Unredacted, all of it, to everybody — the only part of the state that is. A deal struck at a
@@ -742,6 +747,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     activeSeat: state.activeSeat,
     monarch: state.monarch,
     initiative: state.initiative,
+    dayNight: state.dayNight ?? null,
     started: state.started,
     finished: state.finished,
     winnerSeat: state.winnerSeat,

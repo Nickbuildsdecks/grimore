@@ -707,6 +707,14 @@ export type TriggerEvent =
    */
   | { readonly kind: 'transformed' }
   /**
+   * "Whenever day becomes night or night becomes day" (CR 726, D593).
+   *
+   * The change itself, not the time of day: raised when one becomes the other as a turn begins,
+   * and **not** when a game that was neither first becomes day — "day becomes night" needs a day
+   * to have been. Watched from the battlefield, like a step.
+   */
+  | { readonly kind: 'day-night' }
+  /**
    * "Whenever ~ deals combat damage to a player."
    *
    * To a *player*, always: that is the half of the templating the cards in this pool use and the
@@ -2452,6 +2460,11 @@ export interface CardScript {
    * record for the reason that field's docblock gives.
    */
   readonly bloodthirst?: number;
+  /**
+   * "If it's neither day nor night, it becomes day as ~ enters" (D593) — a replacement on the
+   * arrival, so it is day before anything that watches the entry looks.
+   */
+  readonly becomesDayAsItEnters?: true;
   /**
    * **Riot** and **unleash** (CR 702.136a, 702.98a): a choice made as the permanent enters.
    *

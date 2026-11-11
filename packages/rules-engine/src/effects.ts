@@ -2009,22 +2009,95 @@ export function becomeCopyOf(state: GameState, id: string, copying: string): Gam
  * of a Delver could not go back to being a Clone. Nothing in the pool is one; a card that needs it
  * should give the instance a second field with a test, rather than find out.
  */
-export function transformPermanent(state: GameState, id: string): GameState {
+export function transformPermanent(
+  state: GameState, id: string,
+  /**
+   * False for a permanent that **enters** transformed (D593): a daybound card arriving at night
+   * shows its back face from the start and never transformed (CR 712.14), so nothing that watches
+   * "transforms into" may see it.
+   */
+  record = true,
+): GameState {
   const self = state.instances[id];
   if (self === undefined || self.zone !== 'battlefield') return state;
+  const noted = record ? recordTransform(state, id) : state;
   const printed = self.printedDefKey;
   /*
     Already turned over, so this turns it back: the front face is in `printedDefKey` and clearing
     the field is what says "this permanent is the card it is printed as" again.
   */
   if (printed !== undefined) {
-    return withInstance(recordTransform(state, id), id, { defKey: printed, printedDefKey: undefined });
+    return withInstance(noted, id, { defKey: printed, printedDefKey: undefined });
   }
   const back = facesOf(state.cardDefs[self.defKey])[0];
   if (back === undefined) return state;
   const backKey = defKeyFor(back);
   if (state.cardDefs[backKey] === undefined) return state;
-  return withInstance(recordTransform(state, id), id, { defKey: backKey, printedDefKey: self.defKey });
+  return withInstance(noted, id, { defKey: backKey, printedDefKey: self.defKey });
+}
+
+/*
+  ── Day and night (D593) ──────────────────────────────────────────────────────────────────────
+
+  CR 726 and the two keywords that read it, daybound and nightbound (CR 702.145). Three rules, and
+  each is one function here:
+
+  - **It becomes day** the first time a permanent with daybound is on the battlefield and it is
+    neither, and **night** for a nightbound one (CR 702.145d, 702.145g): `establishDayNight`.
+  - **It changes as a turn begins** (CR 726.3a): day becomes night if the previous turn's active
+    player cast no spells that turn, and night becomes day if they cast two or more. The active
+    player's count only — not the table's, which is the werewolves' older rule and a different one.
+    `dayNightAfter`.
+  - **Permanents follow it** (CR 702.145c, 702.145f): at night a daybound permanent shows its back
+    face, by day a nightbound one shows its front. Turning one over this way **is** a transform, so
+    "transforms into" sees it — but a permanent that arrives already matching the time of day enters
+    transformed and does not (CR 712.14), which is `record` on `transformPermanent`.
+    `matchDayNight`.
+
+  Read off live characteristics, as every keyword is: a daybound creature that has lost all its
+  abilities does not turn over, which is the rule.
+*/
+
+/** Whether this permanent has the keyword, as it is now. */
+const bound = (state: GameState, id: string, keyword: 'daybound' | 'nightbound'): boolean => {
+  const inst = state.instances[id];
+  return inst !== undefined && inst.zone === 'battlefield'
+    && characteristicsOf(state, inst).keywords.has(keyword);
+};
+
+/** Turns every permanent on the battlefield (or only `only`) to the face the time of day wants. */
+export function matchDayNight(state: GameState, record: boolean, only?: readonly string[]): GameState {
+  const time = state.dayNight ?? null;
+  if (time === null) return state;
+  const wrong = time === 'night' ? 'daybound' : 'nightbound';
+  let next = state;
+  for (const id of only ?? Object.keys(state.instances)) {
+    if (bound(next, id, wrong)) next = transformPermanent(next, id, record);
+  }
+  return next;
+}
+
+/** CR 702.145d/g: neither day nor night, and a bound permanent appears. */
+export function establishDayNight(state: GameState): GameState {
+  if ((state.dayNight ?? null) !== null) return state;
+  const ids = Object.keys(state.instances);
+  const time = ids.some((id) => bound(state, id, 'daybound')) ? 'day'
+    : ids.some((id) => bound(state, id, 'nightbound')) ? 'night' : null;
+  return time === null ? state : matchDayNight({ ...state, dayNight: time }, true);
+}
+
+/**
+ * CR 726.3a, as a turn begins: what the time of day becomes, given the turn that just ended.
+ *
+ * `previous` is that turn's active player; `spellsCastLastTurnBy` is already that turn's tally,
+ * because the cleanup step that ends a turn keeps it (D592). Neither stays neither.
+ */
+export function dayNightAfter(state: GameState, previous: SeatIndex): GameState {
+  const time = state.dayNight ?? null;
+  if (time === null) return state;
+  const cast = (state.spellsCastLastTurnBy ?? {})[String(previous)] ?? 0;
+  const now = time === 'day' && cast === 0 ? 'night' : time === 'night' && cast >= 2 ? 'day' : time;
+  return now === time ? state : matchDayNight({ ...state, dayNight: now }, true);
 }
 
 /**

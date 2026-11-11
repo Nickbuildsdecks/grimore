@@ -15211,6 +15211,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^At the beginning of your first main phase, (.+)$/i,
     on: [{ kind: 'step', step: 'precombat-main', of: 'you' }],
   },
+  // Day and night changing (D593): Firmament Sage, Brimstone Vandal and eight more.
+  {
+    prologue: () => /^Whenever day becomes night or night becomes day, (.+)$/i,
+    on: [{ kind: 'day-night' }],
+  },
 
   /*
     ── The same two events, watching somebody else's permanent ─────────────────────────────
@@ -22264,6 +22269,17 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
  * "This land enters tapped" about equally, and `fromCardData`'s own check compares the rest of the
  * string after the name, so it reads the first and not the second.
  */
+/**
+ * "If it's neither day nor night, it becomes day as ~ enters." (D593) Ten legal cards, every one
+ * a card that also watches day and night change, so the line is there to start the clock.
+ */
+function becomesDayFromLine(line: string, name: string): Partial<CardScript> | null {
+  return new RegExp(`^If it's neither day nor night, it becomes day as ${selfRef(name)} ${ENTERS}\\.$`, 'i')
+    .test(plain(line).trim())
+    ? { becomesDayAsItEnters: true }
+    : null;
+}
+
 function entersTappedFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
   if (new RegExp(`^${selfRef(name)} ${ENTERS} tapped$`, 'i').test(text)) return { entersTapped: true };
@@ -22619,6 +22635,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? spellStaticFromLine(line)
     // Before the statics: "enters tapped" is a fact about arriving, not a continuous effect.
     ?? entersTappedFromLine(line, name)
+    ?? becomesDayFromLine(line, name)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
     /*

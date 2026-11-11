@@ -1151,6 +1151,15 @@ export interface AutomationState {
    */
   readonly spellsCastLastTurnBy: Readonly<Record<string, number>>;
   /**
+   * Whether it is day or night (CR 726), or neither — `null`, which is how every game starts.
+   *
+   * A designation of the **game**, not of a seat or a permanent (CR 726.1): it becomes day the
+   * first time a permanent with daybound is on the battlefield (night for nightbound), and from
+   * then on it changes only as a turn begins, from what the previous turn's active player cast —
+   * see `dayNightAfter`. Once it is day or night it never goes back to neither.
+   */
+  readonly dayNight: 'day' | 'night' | null;
+  /**
    * How much life each seat has **lost this turn**, keyed by seat index as a string.
    *
    * The second thing this engine remembers about a turn rather than about a permanent or a seat,

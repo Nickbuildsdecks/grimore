@@ -47,7 +47,7 @@ import {
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
-  chosenOption, ENTERS_COUNTER_OPTION,
+  chosenOption, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -546,12 +546,17 @@ function advanceStep(state: GameState): GameState {
 
     if (isLast) {
       // Cleanup has finished: the turn ends and the next player's begins.
+      const previous = next.activeSeat;
       next = {
         ...next,
         turn: next.turn + 1,
         activeSeat: nextAlive(next, next.activeSeat),
         combat: EMPTY_COMBAT,
       };
+      // And day or night may change, from what the turn that just ended cast (CR 726.3a, D593).
+      const was = next.dayNight ?? null;
+      next = dayNightAfter(next, previous);
+      if (was !== null && next.dayNight !== was) next = raise(next, { kind: 'day-night' }, next.activeSeat);
     }
 
     // Steps that exist only to hold a decision nobody can make are skipped rather than walked
@@ -1345,6 +1350,8 @@ function triggerMatches(
     case 'turned-face-up':
     // And a transform, for exactly the same reason.
     case 'transformed':
+    // And day becoming night or night becoming day, which every permanent sees (D593).
+    case 'day-night':
       return true;
     default:
       return false;
@@ -2876,13 +2883,23 @@ function arrivalReplacements(state: GameState, done: Set<string>): GameState {
         && damagedThisTurn(next, seat.index) > 0)) {
       next = addCounters(next, id, '+1/+1', script.bloodthirst);
     }
+    /*
+      A daybound permanent arriving at night, or a nightbound one by day, enters showing the face
+      the time of day wants (CR 702.145e, 702.145h) — and enters transformed rather than
+      transforming, so nothing that watches "transforms into" sees it (D593).
+    */
+    if (script?.becomesDayAsItEnters === true && (next.dayNight ?? null) === null) {
+      next = matchDayNight({ ...next, dayNight: 'day' }, true);
+    }
+    next = matchDayNight(next, false, [id]);
   }
   return next;
 }
 
 function settle(state: GameState, before: GameState): GameState {
   const arrivedWith = new Set<string>();
-  let next = drainOwedDraws(stateBasedActions(arrivalReplacements(state, arrivedWith)));
+  // And day or night, the first time a bound permanent is on the battlefield (D593).
+  let next = drainOwedDraws(stateBasedActions(establishDayNight(arrivalReplacements(state, arrivedWith))));
   // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
   // makes a token, and every one of those has to reach its own trigger. `relocate` and
   // `createToken` record them wherever they happen — lethal damage, a destroy spell, a sacrifice,
@@ -2916,7 +2933,7 @@ function settle(state: GameState, before: GameState): GameState {
       arbitrary script. A card that returns to the battlefield *instead of* dying would arrive
       here, and should have its counters. Recorded as kept-and-unreached rather than as tested.
     */
-    next = arrivalReplacements(next, arrivedWith);
+    next = establishDayNight(arrivalReplacements(next, arrivedWith));
     /*
       Replacements, widest wording first, before anything is announced.
 

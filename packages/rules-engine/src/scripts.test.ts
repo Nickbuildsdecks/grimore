@@ -7725,6 +7725,21 @@ describe('deck coverage', () => {
         and Mystic Sanctuary compiled from corpus rows: each condition both ways, that a land never
         counts itself, the shock land's two rows and its refusals, and the computer opponent's
         choice between a ready land and a tapped one.
+
+      **And day and night** (D593):
+
+      - `keyword daybound`, `keyword nightbound`: **36 legal cards** print each (every daybound
+        card's back face is nightbound), 16 of them read whole by the keywords alone. No pool deck
+        has a Midnight Hunt werewolf, and D442 forbids adding one.
+      - `trigger day-night`: "Whenever day becomes night or night becomes day", **10 legal cards**.
+      - `script becomesDayAsItEnters`: the same ten cards' "If it's neither day nor night, it
+        becomes day as ~ enters".
+
+        All four driven at runtime by "day and night: daybound and nightbound (D593)", on printed
+        Bird Admirer and Firmament Sage compiled from corpus rows: the first daybound permanent
+        making it day, the change both ways from the previous active player's spells only, a
+        daybound card entering at night transformed without a transform trigger and turning over
+        by day with one, and the Sage making it day without a change and drawing on the next one.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7738,6 +7753,7 @@ describe('deck coverage', () => {
       'trigger discards', 'trigger cycles',
       'trigger sacrifices',
       'script entersUntappedIf', 'script payLifeToEnterUntapped',
+      'keyword daybound', 'keyword nightbound', 'trigger day-night', 'script becomesDayAsItEnters',
     ]);
 
     const declared = [
@@ -43824,7 +43840,7 @@ describe('transforming cards turn over from printed text (D592)', () => {
   const list = customDeck({
     id: 'moons', name: 'Moons',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Bonesplitter', count: 2 },
-      { name: 'Forest', count: 20 }, { name: 'Plains', count: 20 }],
+      { name: 'Angelic Gift', count: 2 }, { name: 'Forest', count: 20 }, { name: 'Plains', count: 20 }],
     data: ROWS as never[],
   });
   /*
@@ -43834,10 +43850,11 @@ describe('transforming cards turn over from printed text (D592)', () => {
   */
   const table = (
     mine: readonly string[], step: Step = 'precombat-main', lastTurn: Record<string, number> = { 0: 1 },
+    hand: readonly string[] = [],
   ): GameState => advanceTo({
     ...arena({
       decks: { 0: 'moons', 1: 'ember-rush' }, deckSpecs: { moons: list.deck },
-      battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
     }),
     spellsCastLastTurnBy: lastTurn,
   }, step);
@@ -43922,10 +43939,16 @@ describe('transforming cards turn over from printed text (D592)', () => {
   });
 
   it('"if ~ is equipped" asks for an Equipment on it, at the end step', () => {
-    let s = table(['Avacynian Missionaries', 'Bonesplitter']);
+    let s = table(['Avacynian Missionaries', 'Bonesplitter', 'Plains', 'Plains'], 'precombat-main', { 0: 1 }, ['Angelic Gift']);
     const missionaries = find(s, 0, 'battlefield', 'Avacynian Missionaries');
     const unequipped = toEnd(s);
     expect(nameOf(unequipped, missionaries)).toBe('Avacynian Missionaries');
+    // An Aura is attached, not equipped: still the front (D592's break run).
+    const gift = find(s, 0, 'hand', 'Angelic Gift');
+    const cast = apply(tapAllLands(s, 0), { type: 'auto:cast', by: 0, card: gift, targets: [{ kind: 'card', id: missionaries }] });
+    const enchanted = toEnd(drain(passBoth(cast), 20));
+    expect(enchanted.instances[gift]?.attachedTo).toBe(missionaries);
+    expect(nameOf(enchanted, missionaries)).toBe('Avacynian Missionaries');
     s = apply(s, { type: 'card:attach', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), to: missionaries });
     s = toEnd(s);
     expect(nameOf(s, missionaries)).toBe('Lunarch Inquisitors');
@@ -44008,5 +44031,113 @@ describe('transforming cards turn over from printed text (D592)', () => {
     });
     expect(unknown).toEqual([]);
     expect(fromData).toEqual(['Gatstaf Shepherd']);
+  });
+});
+
+describe('day and night: daybound and nightbound (D593)', () => {
+  /*
+    CR 726 and CR 702.145. The first daybound permanent makes it day; as each turn begins, day
+    becomes night if the previous turn's active player cast no spells, and night becomes day if they
+    cast two or more; daybound permanents show their back by night and nightbound ones their front
+    by day. Bird Admirer and Firmament Sage are the corpus's rows. The probe card is Bird Admirer's
+    shape with a "transforms into" line on each face, to see which turn-overs count as transforming.
+  */
+  const ADMIRER = {"name": "Bird Admirer", "type_line": "Creature — Human Archer Werewolf", "mana_cost": "{2}{G}", "cmc": 3, "colors": ["G"], "power": "1", "toughness": "4", "oracle_text": "Reach\nDaybound (If a player casts no spells during their own turn, it becomes night next turn.)", "layout": "transform", "card_faces": [{"name": "Bird Admirer", "mana_cost": "{2}{G}", "type_line": "Creature — Human Archer Werewolf", "oracle_text": "Reach\nDaybound (If a player casts no spells during their own turn, it becomes night next turn.)", "colors": ["G"], "power": "1", "toughness": "4", "loyalty": null}, {"name": "Wing Shredder", "mana_cost": "", "type_line": "Creature — Werewolf", "oracle_text": "Reach\nNightbound (If a player casts at least two spells during their own turn, it becomes day next turn.)", "colors": ["G"], "power": "3", "toughness": "5", "loyalty": null}]};
+  const SAGE = {"name": "Firmament Sage", "type_line": "Creature — Human Wizard", "mana_cost": "{3}{U}", "cmc": 4, "colors": ["U"], "power": "2", "toughness": "3", "oracle_text": "If it's neither day nor night, it becomes day as Firmament Sage enters.\nWhenever day becomes night or night becomes day, draw a card.", "layout": "normal", "card_faces": null};
+  const PROBE = {
+    ...ADMIRER, name: 'Probe Admirer',
+    oracle_text: 'Daybound\nWhen this creature transforms into Probe Admirer, you gain 3 life.',
+    card_faces: [
+      { ...ADMIRER.card_faces[0], name: 'Probe Admirer', oracle_text: 'Daybound\nWhen this creature transforms into Probe Admirer, you gain 3 life.' },
+      { ...ADMIRER.card_faces[1], name: 'Probe Shredder', oracle_text: 'Nightbound\nWhen this creature transforms into Probe Shredder, you gain 2 life.' },
+    ],
+  };
+  const ROWS = [ADMIRER, SAGE, PROBE];
+  const list = customDeck({
+    id: 'moons', name: 'Moons',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 25 }, { name: 'Island', count: 25 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'moons', 1: 'ember-rush' }, deckSpecs: { moons: list.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const castThisTurn = (s: GameState, by: Record<string, number>): GameState => ({ ...s, spellsCastThisTurnBy: by });
+
+  it('reads Daybound and Nightbound as keywords, and the becomes-day line and the change trigger', () => {
+    expect(list.unknown).toEqual([]);
+    const admirer = compileCard(ADMIRER as never);
+    expect(admirer.ok && admirer.unread).toEqual([]);
+    const sage = compileCard(SAGE as never);
+    expect(sage.ok && sage.unread).toEqual([]);
+    expect(sage.ok && sage.script).toMatchObject({ becomesDayAsItEnters: true, triggers: [{ on: { kind: 'day-night' } }] });
+  });
+
+  it('a game starts neither; a daybound permanent makes it day, and the view says so', () => {
+    expect(table([]).dayNight).toBeNull();
+    const s = table(['Bird Admirer']);
+    expect(s.dayNight).toBe('day');
+    expect(viewFor(s, 0).dayNight).toBe('day');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Bird Admirer');
+  });
+
+  it('a turn with no spells makes it night and turns the daybound card over; two make it day again', () => {
+    let s = table(['Bird Admirer']);
+    const admirer = find(s, 0, 'battlefield', 'Bird Admirer');
+    s = nextTurn(s);
+    expect(s.dayNight).toBe('night');
+    expect(nameOf(s, admirer)).toBe('Wing Shredder');
+    s = nextTurn(castThisTurn(s, { 1: 2 }));
+    expect(s.dayNight).toBe('day');
+    expect(nameOf(s, admirer)).toBe('Bird Admirer');
+  });
+
+  it('only the previous turn\'s active player counts, and one spell changes nothing either way', () => {
+    // Seat 1 cast two at instant speed on seat 0's turn; seat 0 cast none. It becomes night.
+    let s = nextTurn(castThisTurn(table(['Bird Admirer']), { 1: 2 }));
+    expect(s.dayNight).toBe('night');
+    // One spell by night is not two: it stays night.
+    s = nextTurn(castThisTurn(s, { 1: 1 }));
+    expect(s.dayNight).toBe('night');
+    // And one by day keeps it day.
+    s = nextTurn(castThisTurn(s, { 0: 2 }));
+    expect(s.dayNight).toBe('day');
+    s = nextTurn(castThisTurn(s, { 1: 1 }));
+    expect(s.dayNight).toBe('day');
+  });
+
+  it('a daybound card arriving at night enters transformed, and only a real change counts as transforming', () => {
+    let s = nextTurn(table(['Bird Admirer', 'Forest', 'Forest', 'Forest'], ['Probe Admirer']));
+    expect(s.dayNight).toBe('night');
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(s.dayNight).toBe('night');
+    const before = life(s, 0);
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probe Admirer') })), 20);
+    const probe = find(s, 0, 'battlefield', 'Probe Shredder');
+    // Entered as its back face, and the back face's "transforms into" did not fire.
+    expect(life(s, 0)).toBe(before);
+    s = drain(nextTurn(castThisTurn(s, { 0: 2 })), 20);
+    expect(s.dayNight).toBe('day');
+    expect(nameOf(s, probe)).toBe('Probe Admirer');
+    // Turning over because it became day is a transform: the front's trigger fired.
+    expect(life(s, 0)).toBe(before + 3);
+  });
+
+  it('Firmament Sage makes it day as it enters without a change; a change draws a card', () => {
+    let s = tapAllLands(table(['Island', 'Island', 'Island', 'Island'], ['Firmament Sage']), 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Firmament Sage') })), 20);
+    expect(s.dayNight).toBe('day');
+    // Neither becoming day is not "day becomes night or night becomes day": nothing was drawn.
+    expect(s.stackOrder).toEqual([]);
+    // The Sage was this turn's one spell, so it stays day into seat 1's turn, which casts none.
+    s = nextTurn(s);
+    expect(s.dayNight).toBe('day');
+    s = nextTurn(s);
+    expect(s.dayNight).toBe('night');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(s, 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
   });
 });

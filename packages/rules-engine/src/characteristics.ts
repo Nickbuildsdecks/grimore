@@ -142,6 +142,14 @@ export const KEYWORDS = [
     call site changing. See `CREATURE_TYPES`.
   */
   'changeling',
+  /*
+    Daybound and nightbound (CR 702.145), D593. Keywords for changeling's reason — the rule asks a
+    permanent whether it **has** one, live, so a creature that loses all abilities stops turning
+    over with the time of day — and the enforcement is the engine's, in `matchDayNight`, rather
+    than a trigger: turning over for day or night does not use the stack.
+  */
+  'daybound',
+  'nightbound',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 

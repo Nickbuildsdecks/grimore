@@ -1801,6 +1801,24 @@ function Board({ table }: { table: UseTable }) {
         <span className="font-semibold text-[var(--g-text-high)]">
           Turn <span data-testid="turn">{view.turn}</span>
         </span>
+        {/*
+          Day or night (D593), once a daybound card has made it either: it decides which face every
+          daybound and nightbound permanent shows, and it changes at the start of a turn from what
+          the previous player cast, so it has to be visible before anybody plans a turn around it.
+        */}
+        {view.dayNight === "day" || view.dayNight === "night" ? (
+          <span
+            data-testid="day-night"
+            title={view.dayNight === "day"
+              ? "Day: it becomes night next turn if the active player casts no spells this turn"
+              : "Night: it becomes day next turn if the active player casts two or more spells this turn"}
+            className={cn("rounded px-1.5 py-0.5", view.dayNight === "day"
+              ? "bg-[var(--g-gold-400)]/20 text-[var(--g-gold-400)]"
+              : "bg-indigo-500/20 text-indigo-200")}
+          >
+            {view.dayNight === "day" ? "Day" : "Night"}
+          </span>
+        ) : null}
         {automated ? null : (
           <span data-testid="whose-turn" className={cn("rounded px-1.5 py-0.5", isMyTurn ? "bg-[var(--g-gold-400)] text-black" : "bg-white/10 text-[var(--g-text-muted)]")}>
             {isMyTurn ? "your turn" : `${view.seats[view.activeSeat]?.name ?? "opponent"}'s turn`}
@@ -2401,6 +2419,7 @@ function Watching({ table }: { table: UseTable }) {
         <span className="text-xs text-[var(--g-text-muted)]">
           turn <span data-testid="turn">{view.turn}</span>
           {view.automation === null ? "" : ` · ${view.automation.stepLabel}`}
+          {view.dayNight === "day" ? " · Day" : view.dayNight === "night" ? " · Night" : ""}
         </span>
         {/*
           And at a board that has stopped updating. A watcher has no connection pill — nothing on
