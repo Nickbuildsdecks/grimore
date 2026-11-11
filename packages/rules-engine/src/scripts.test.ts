@@ -43450,3 +43450,118 @@ describe('typecycling: a cycling that searches instead of drawing (D588)', () =>
     expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([grant.oracle_text]);
   });
 });
+
+describe('"doesn\'t untap during its untap step" (D589)', () => {
+  /*
+    A drawback a permanent carries for as long as the effect lasts: an Aura on somebody else's
+    creature, or a card's own line about itself. Not the one-shot "next untap step", which is
+    `frozen` and is spent by the step happening (D538). Every card here is from its Oracle row.
+  */
+  const GRASP = {
+    name: 'Paralyzing Grasp', type_line: 'Enchantment — Aura', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal',
+    oracle_text: "Enchant creature\nEnchanted creature doesn't untap during its controller's untap step.",
+  };
+  const MONOLITH = {
+    name: 'Basalt Monolith', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal',
+    oracle_text: "This artifact doesn't untap during your untap step.\n{T}: Add {C}{C}{C}.\n{3}: Untap this artifact.",
+  };
+  const BRASS = {
+    name: 'Brass Man', type_line: 'Artifact Creature — Construct', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    power: '1', toughness: '3',
+    oracle_text: "This creature doesn't untap during your untap step.\nAt the beginning of your upkeep, you may pay {1}. If you do, untap this creature.",
+  };
+  const ROWS = [GRASP, MONOLITH, BRASS];
+  const list = customDeck({
+    id: 'held', name: 'Held',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 24 }, { name: 'Turn to Frog', count: 4 }, { name: 'Hill Giant', count: 20 }],
+    data: ROWS as never[],
+  }).deck;
+  const board = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'held', 1: 'held' }, deckSpecs: { held: list },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const tap = (s: GameState, id: string): GameState => ({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } } });
+  /** To the same seat's next main phase, through the opponent's turn and both untap steps. */
+  const roundTrip = (s: GameState): GameState => advanceTo(nextTurn(advanceTo(nextTurn(s), 'precombat-main')), 'precombat-main');
+
+  it('reads all three whole', () => {
+    for (const r of ROWS) {
+      const compiled = compileCard(r as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
+    }
+  });
+
+  it('Paralyzing Grasp holds a tapped creature down through its controller\'s untap step', () => {
+    let s = board(['Island', 'Island', 'Island'], ['Hill Giant'], ['Paralyzing Grasp']);
+    const giant = find(s, 1, 'battlefield', 'Hill Giant');
+    s = tap(s, giant);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Paralyzing Grasp'), targets: [{ kind: 'card', id: giant }] })), 20);
+    expect(s.instances[find(s, 0, 'battlefield', 'Paralyzing Grasp')]!.attachedTo).toBe(giant);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[giant]!.tapped).toBe(true);
+    // And an untapped one is not tapped by it: the Aura stops an untap, it does not tap.
+    let fresh = board(['Island', 'Island', 'Island'], ['Hill Giant'], ['Paralyzing Grasp']);
+    const other = find(fresh, 1, 'battlefield', 'Hill Giant');
+    fresh = drain(passBoth(apply(fresh, { type: 'auto:cast', by: 0, card: find(fresh, 0, 'hand', 'Paralyzing Grasp'), targets: [{ kind: 'card', id: other }] })), 20);
+    expect(fresh.instances[other]!.tapped).toBe(false);
+  });
+
+  it('and is aimed at somebody else\'s creature by the computer opponent', () => {
+    const s = board(['Island', 'Island', 'Island', 'Hill Giant'], ['Hill Giant'], ['Paralyzing Grasp']);
+    const action = botAction(s, 0);
+    if (action?.type === 'auto:cast' && action.card === find(s, 0, 'hand', 'Paralyzing Grasp')) {
+      expect(action.targets).toEqual([{ kind: 'card', id: find(s, 1, 'battlefield', 'Hill Giant') }]);
+    }
+  });
+
+  it('Basalt Monolith stays tapped through its own untap step, and its {3} still untaps it', () => {
+    let s = board(['Basalt Monolith', 'Island', 'Island', 'Island']);
+    const monolith = find(s, 0, 'battlefield', 'Basalt Monolith');
+    s = tap(s, monolith);
+    s = roundTrip(s);
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[monolith]!.tapped).toBe(true);
+    const untap = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === monolith && p.manaCost === '{3}');
+    expect(untap).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: monolith, abilityIndex: untap!.abilityIndex! })), 20);
+    expect(s.instances[monolith]!.tapped).toBe(false);
+  });
+
+  /** Brass Man put onto the battlefield once the main phase is reached, so its upkeep has gone. */
+  const withBrass = (s: GameState): GameState =>
+    apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Brass Man'), toZone: 'battlefield' });
+
+  it('Brass Man is still tapped after its untap step, when its upkeep asks to pay', () => {
+    let s = withBrass(board(['Island', 'Island']));
+    const brass = find(s, 0, 'battlefield', 'Brass Man');
+    s = tap(s, brass);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = nextTurn(s);
+    let guard = 0;
+    while (s.pendingDecision === null && guard++ < 10) s = passBoth(s);
+    // Its controller's untap step has passed, and the upkeep is asking whether to pay {1}.
+    expect(s.activeSeat).toBe(0);
+    expect(s.pendingDecision?.prompt ?? '').toMatch(/Untap this creature/);
+    expect(s.instances[brass]!.tapped).toBe(true);
+  });
+
+  it('a creature that loses all abilities loses the drawback too: Turn to Frog on Brass Man', () => {
+    let s = withBrass(board(['Island', 'Island'], [], ['Turn to Frog']));
+    const brass = find(s, 0, 'battlefield', 'Brass Man');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'), targets: [{ kind: 'card', id: brass }] })), 20);
+    expect(characteristicsOf(s, s.instances[brass]!).doesntUntap).toBe(false);
+    // Without the Frog it has the drawback, read off its printed line.
+    const plain = withBrass(board([]));
+    expect(characteristicsOf(plain, plain.instances[find(plain, 0, 'battlefield', 'Brass Man')]!).doesntUntap).toBe(true);
+  });
+
+  it('the line about "its controller\'s next untap step" is still the one-shot, not this', () => {
+    // A creature frozen once untaps the turn after; one under the Grasp does not.
+    expect(compileCard({ ...GRASP, name: 'Probe Grasp' } as never).ok).toBe(true);
+    const text = "Enchanted creature doesn't untap during its controller's next untap step.";
+    const once = compileCard({ ...GRASP, name: 'Probe Grasp Once', oracle_text: `Enchant creature\n${text}` } as never);
+    expect(once.ok && once.unread.map((u) => u.line)).toEqual([text]);
+  });
+});

@@ -267,7 +267,7 @@ export function shortName(name: string): string | null {
 }
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
-type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack';
+type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -288,6 +288,9 @@ const COMBAT_STATICS: Readonly<Record<string, CombatStatic>> = Object.freeze({
   "can't block": 'cantBlock',
   "can't be blocked": 'cantBeBlocked',
   'attacks each combat if able': 'mustAttack',
+  // Not a combat rule, but the same kind of sentence: the card's own drawback, stated of itself
+  // (D589). "This artifact doesn't untap during your untap step" is Basalt Monolith.
+  "doesn't untap during your untap step": 'doesntUntap',
 });
 
 /** One comma-part of a printed ability line, once it is known to be something the engine has. */
@@ -567,8 +570,8 @@ export function printedProtection(oracleText: string | null | undefined): Color[
 export function printedCombatStatics(
   oracleText: string | null | undefined,
   name?: string,
-): { cantBlock: boolean; cantBeBlocked: boolean; mustAttack: boolean } {
-  const found = { cantBlock: false, cantBeBlocked: false, mustAttack: false };
+): { cantBlock: boolean; cantBeBlocked: boolean; mustAttack: boolean; doesntUntap: boolean } {
+  const found = { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false };
   for (const part of printedParts(oracleText, name)) {
     if (part.kind !== 'combat-static') continue;
     for (const one of part.statics) found[one] = true;
@@ -1209,6 +1212,13 @@ export interface ContinuousEffect {
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
   /**
+   * "Doesn't untap during its controller's untap step" (D589) — Apathy's Aura, Basalt Monolith's
+   * own drawback, a Cement Shoes. Read by the untap step (`untapAll`), which leaves the permanent
+   * as it is. Not the one-shot "next untap step", which is `CardInstance.frozen` and is spent by
+   * the step happening; this lasts as long as the effect does.
+   */
+  readonly doesntUntap?: boolean;
+  /**
    * "Attacks each combat if able" (CR 508.1d). The opposite of `cantAttack`, and the harder of the
    * two: a restriction is checked against one creature, a *requirement* is checked against the
    * whole declaration — a creature that could have attacked and did not makes the declaration
@@ -1595,6 +1605,8 @@ export interface Characteristics {
   readonly isLand: boolean;
   readonly cantAttack: boolean;
   readonly cantBlock: boolean;
+  /** "Doesn't untap during its controller's untap step". See `ContinuousEffect.doesntUntap`. */
+  readonly doesntUntap: boolean;
   /** "Attacks each combat if able" (CR 508.1d). Checked against the whole declaration. */
   readonly mustAttack: boolean;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
@@ -2222,6 +2234,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const printedCombat = printedCombatStatics(def?.oracleText, def?.name);
   let cantBlock = printedCombat.cantBlock;
+  let doesntUntap = printedCombat.doesntUntap;
   let mustAttack = printedCombat.mustAttack;
   let cantBeBlockedByWalls = false;
   let cantBeBlocked = printedCombat.cantBeBlocked;
@@ -2288,6 +2301,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.losesAllAbilities === true) {
       keywords.clear();
       cantAttack = false;
+      doesntUntap = false;
       cantBlock = false;
       mustAttack = false;
       cantBeBlockedByWalls = false;
@@ -2327,6 +2341,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     for (const k of effect.keywords ?? []) keywords.add(k);
     for (const k of effect.removeKeywords ?? []) keywords.delete(k);
     if (effect.cantAttack) cantAttack = true;
+    if (effect.doesntUntap) doesntUntap = true;
     if (effect.cantBlock) cantBlock = true;
     if (effect.mustAttack) mustAttack = true;
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
@@ -2378,6 +2393,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     isLand: hasType(typeLine, 'land'),
     cantAttack,
     cantBlock,
+    doesntUntap,
     // A creature that cannot attack at all is not required to: a restriction beats a requirement
     // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
     mustAttack: mustAttack && !cantAttack,

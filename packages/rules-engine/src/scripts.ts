@@ -13446,6 +13446,14 @@ function attachmentBonus(
   if (/^can't attack or block$/i.test(tail)) {
     return { bonus: { cantAttack: true, cantBlock: true }, harmful: true };
   }
+  /*
+    "Enchanted creature doesn't untap during its controller's untap step" (D589) — Apathy's and
+    Claustrophobia's line, and "Equipped creature …" on an Equipment. Harmful, so the computer
+    opponent aims an Aura of it at somebody else's creature, as it does a Pacifism.
+  */
+  if (/^doesn't untap during its controller's untap step$/i.test(tail)) {
+    return { bonus: { doesntUntap: true }, harmful: true };
+  }
   if (/^is indestructible$/i.test(tail)) {
     return { bonus: { keywords: ['indestructible'] }, harmful: false };
   }

@@ -9812,8 +9812,12 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
       Now the attachment ships with **no effect at all** — nothing is invented — and the line keeps
       its badge, which is the hybrid reading D362 gives every other card type.
     */
-    const text = 'Enchant creature\nEnchanted creature doesn’t untap during its controller’s'
-      + ' untap step.';
+    /*
+      **Since D589 that line reads**, so the example is now a line that still does not: an Aura that
+      stops its host's activated abilities, which `attachmentBonus` has no field for. The rule
+      under test is unchanged — the attachment ships with nothing invented and the line is flagged.
+    */
+    const text = 'Enchant creature\nEnchanted creature’s activated abilities can’t be activated.';
     const compiled = aura(text);
     expect(attachment(compiled)?.target?.description).toBe('enchant creature');
     expect(attachment(compiled)?.effect).toEqual({});
@@ -9825,7 +9829,7 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
     expect((attachment(compiled)?.target as { friendly?: boolean } | undefined)?.friendly)
       .toBeUndefined();
     expect(unreadLines(compiled))
-      .toEqual(['Enchanted creature doesn’t untap during its controller’s untap step.']);
+      .toEqual(['Enchanted creature’s activated abilities can’t be activated.']);
   });
 
   it('still reads the bonus when it can, and claims the line', () => {
@@ -10901,17 +10905,22 @@ describe('the three one-line combat statics (D495)', () => {
   });
 
   it.each([
-    ["Aesthir Glider can't block.", 'Aesthir Glider', { cantBlock: true, cantBeBlocked: false, mustAttack: false }],
-    ["Aether Figment can't be blocked.", 'Aether Figment', { cantBlock: false, cantBeBlocked: true, mustAttack: false }],
-    ['Akoum Firebird attacks each combat if able.', 'Akoum Firebird', { cantBlock: false, cantBeBlocked: false, mustAttack: true }],
+    ["Aesthir Glider can't block.", 'Aesthir Glider', { cantBlock: true, cantBeBlocked: false, mustAttack: false, doesntUntap: false }],
+    ["Aether Figment can't be blocked.", 'Aether Figment', { cantBlock: false, cantBeBlocked: true, mustAttack: false, doesntUntap: false }],
+    ['Akoum Firebird attacks each combat if able.', 'Akoum Firebird', { cantBlock: false, cantBeBlocked: false, mustAttack: true, doesntUntap: false }],
     ["Changeling Outcast can't block and can't be blocked.", 'Changeling Outcast',
-      { cantBlock: true, cantBeBlocked: true, mustAttack: false }],
-    ["This creature can't block.", 'Cantor of the Refrain', { cantBlock: true, cantBeBlocked: false, mustAttack: false }],
-    ["Bilbo can't be blocked.", 'Bilbo, Luckwearer', { cantBlock: false, cantBeBlocked: true, mustAttack: false }],
+      { cantBlock: true, cantBeBlocked: true, mustAttack: false, doesntUntap: false }],
+    ["This creature can't block.", 'Cantor of the Refrain', { cantBlock: true, cantBeBlocked: false, mustAttack: false, doesntUntap: false }],
+    ["Bilbo can't be blocked.", 'Bilbo, Luckwearer', { cantBlock: false, cantBeBlocked: true, mustAttack: false, doesntUntap: false }],
     // Nothing at all for a line that is somebody else's, read with the Aura's own name.
-    ["Enchanted creature can't block.", 'Bloodshed Fever', { cantBlock: false, cantBeBlocked: false, mustAttack: false }],
+    ["Enchanted creature can't block.", 'Bloodshed Fever', { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false }],
     // And nothing for a card with no name to match against.
-    ["Aesthir Glider can't block.", undefined, { cantBlock: false, cantBeBlocked: false, mustAttack: false }],
+    ["Aesthir Glider can't block.", undefined, { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false }],
+    // The card's own drawback (D589), and the same words granted to somebody else, which are not.
+    ["This artifact doesn't untap during your untap step.", 'Basalt Monolith',
+      { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: true }],
+    ["Enchanted creature doesn't untap during its controller's untap step.", 'Paralyzing Grasp',
+      { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false }],
   ])('reads "%s" on %s as its flags', (text, name, flags) => {
     expect(printedCombatStatics(text as string, name as string | undefined)).toEqual(flags);
   });
@@ -10924,7 +10933,7 @@ describe('the three one-line combat statics (D495)', () => {
       than leaving the line to a human.
     */
     expect(printedCombatStatics("Aesthir Glider gets +2/+2 and can't block.", 'Aesthir Glider'))
-      .toEqual({ cantBlock: false, cantBeBlocked: false, mustAttack: false });
+      .toEqual({ cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false });
   });
 });
 
@@ -11505,7 +11514,7 @@ describe('printed restrictions on what this creature may block (D500)', () => {
     expect(read("Probe Beast can't block and can't be blocked."))
       .toEqual({ ban: [], only: null });
     expect(printedCombatStatics("Probe Beast can't block and can't be blocked.", 'Probe Beast'))
-      .toEqual({ cantBlock: true, cantBeBlocked: true, mustAttack: false });
+      .toEqual({ cantBlock: true, cantBeBlocked: true, mustAttack: false, doesntUntap: false });
   });
 
   it('refuses a card printing both a ban and an allow list rather than merging them', () => {
@@ -12194,9 +12203,9 @@ describe('a self-untap carries untapsOnly (D505)', () => {
     // the bot the one thing this card is for buys nothing.
     expect(abilities[0]?.untapsOnly).toBeUndefined();
     expect(abilities[1]?.untapsOnly).toBe(true);
-    // And the line that is still unread is the untap-step static, not either ability.
-    expect(monolith.unread.map((u) => u.line))
-      .toEqual(["This artifact doesn't untap during your untap step."]);
+    // The untap-step static was the one line left unread until D589; it is now read off the
+    // printed line itself (`printedCombatStatics`), so the card reads whole.
+    expect(monolith.unread.map((u) => u.line)).toEqual([]);
   });
 
   it('and on a creature that untaps itself by name', () => {
@@ -15601,8 +15610,17 @@ describe('the freeze: "doesn\'t untap during its controller\'s next untap step" 
       { mana_cost: '{1}{U}{U}' });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
+    /*
+      **Since D589 the Aura static reads, and as what it is**: a continuous effect on the host, not
+      this file's one-shot freeze. So the point of this test now holds the other way round — the
+      line is no longer unread, and it is not a freeze: the Aura's bonus says "doesn't untap", and
+      nothing on the card is a trigger that freezes once.
+    */
     expect(read.unread.map((u) => u.line))
-      .toContain("Enchanted creature doesn't untap during its controller's untap step.");
+      .not.toContain("Enchanted creature doesn't untap during its controller's untap step.");
+    const aura = (read.script as unknown as { aura?: { effect?: Record<string, unknown> } }).aura;
+    expect(aura?.effect).toMatchObject({ doesntUntap: true });
+    expect(JSON.stringify(read.script?.triggers ?? [])).not.toMatch(/next untap step/);
   });
 
   it('refuses Dungeon Geists, whose freeze lasts as long as it is on the table', () => {

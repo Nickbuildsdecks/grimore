@@ -1761,6 +1761,8 @@ export function untapAll(state: GameState, seat: SeatIndex): GameState {
       next = withInstance(next, id, { frozen: false });
       continue;
     }
+    // And one held down for as long as an effect says so (D589): Apathy, a Basalt Monolith.
+    if (inst.tapped && characteristicsOf(next, inst).doesntUntap) continue;
     if (inst.tapped) next = withInstance(next, id, { tapped: false });
   }
   return next;
@@ -2253,6 +2255,8 @@ export interface PumpOptions {
   readonly removeKeywords?: readonly Keyword[];
   readonly cantAttack?: boolean;
   readonly cantBlock?: boolean;
+  /** See `ContinuousEffect.doesntUntap` (D589). */
+  readonly doesntUntap?: boolean;
   /** See `ContinuousEffect.preventsCombatDamage`. A Fog Bank is this, printed on a 0/2. */
   readonly preventsCombatDamage?: boolean;
   /** See `ContinuousEffect.assignsNoCombatDamage`: the creature deals none, and may still be hit. */
@@ -2337,6 +2341,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.removeKeywords ? { removeKeywords: opts.removeKeywords } : {}),
     ...(opts.cantAttack ? { cantAttack: true } : {}),
     ...(opts.cantBlock ? { cantBlock: true } : {}),
+    ...(opts.doesntUntap ? { doesntUntap: true } : {}),
     ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
     ...(opts.assignsNoCombatDamage ? { assignsNoCombatDamage: true } : {}),
     ...(opts.exiledInsteadOfDying ? { exiledInsteadOfDying: true } : {}),

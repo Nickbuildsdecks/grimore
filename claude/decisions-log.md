@@ -41337,3 +41337,68 @@ typecheck). Three were not, and each now has a test that fails with it in:
   Islands and a Mountain, which is not enough.
 - *A typed land's own mana added a second time.* No test had a typed land that also prints its
   type's ability. A made-up one now does, and taps for it once.
+
+## D589 — "Doesn't untap during its untap step"
+
+"Enchanted creature doesn't untap during its controller's untap step." (Paralyzing Grasp,
+Dehydration, Claustrophobia.) "This artifact doesn't untap during your untap step." (Basalt
+Monolith, Grim Monolith.) A drawback that lasts as long as the effect does — not the one-shot
+"next untap step" that D538 read, which the engine keeps as `frozen` and spends when the step
+happens.
+
+**What the engine does.** A continuous-effect flag, `doesntUntap`, read by the untap step: a
+tapped permanent with it stays tapped. "Loses all abilities" clears it when the drawback is the
+permanent's own, as it clears "can't block" (CR 613.1f); an Aura's or Equipment's grant is the
+Aura's, and a Turn to Frog does not take it away.
+
+**What the compiler reads.**
+
+- On an Aura or Equipment: "Enchanted creature …" / "Equipped creature …" with this tail, as a
+  harmful bonus, so the computer opponent aims the Aura at somebody else's creature as it does a
+  Pacifism. 41 of the 70 Aura lines; the rest say "Enchanted permanent", which the Aura reader
+  does not take yet, or pair it with something else ("loses all abilities and …").
+- On the card itself: "This creature / This artifact / <its name> doesn't untap during your
+  untap step." Read the way the engine already reads "can't block" and "can't be blocked" off
+  the printed line (D495) — a base characteristic of the card, with no script involved. 35 of 39.
+
+**A fault this fixed in passing.** A compiled Basalt Monolith untapped every turn. The card's
+own drawback was the one line left unread on it (a test said so), and the engine was playing it
+as a strictly better card: tap for three, untap for free next turn, and never pay the {3}. The
+same was true of every card in this family that printed its own drawback.
+
+    legal lines printing "doesn't untap during":    245
+    of them, the lasting kind read now:             77 (41 Aura, 35 self, 1 Equipment)
+    the one-shot "next untap step" (D538):          37 of 91, unchanged
+
+**Not read, each on purpose:** "Enchanted permanent …" (the Aura reader takes creatures only);
+"…if it has a depletion counter on it" and the other conditional forms; "for as long as ~
+remains tapped" (Amber Prison, Mana Leech); Claustrophobia's "When ~ enters, tap enchanted
+creature", which is its own line and still unread — so a Claustrophobia on an untapped creature
+leaves it untapped until it taps of its own accord.
+
+**Tests.** 9 engine tests added, on Paralyzing Grasp, Basalt Monolith and Brass Man from
+their Oracle rows: the Aura holds a tapped creature down and does not tap an untapped one, the bot
+aims it at the opponent, the Monolith stays tapped through its own untap step and its {3} still
+untaps it, Brass Man is still tapped when its upkeep asks to pay, a Turn to Frog takes the
+drawback away, and the "next untap step" Aura printing is left unread. Four older tests changed,
+each with a note: the printed-statics table has a fourth field and two new rows; the D456 test
+that used Apathy's line as its example of an unreadable Aura line now uses one that still is;
+the D505 test that said Basalt Monolith's drawback was its one unread line now says it reads
+whole; and the D538 test that kept the Aura printing unread now asserts it reads as a lasting
+effect and not as a freeze.
+
+    engine tests: 4,178, all passing
+    web tests: 264, all passing (no web change)
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,918 → 8,940 of 30,710
+    printed legal lines read:            25,312 → 25,389 of 56,421 (45.0%)
+    cards with a compiled script:        13,115 → 13,115
+
+Pod sweep on D588's build (9c7df13), seeds 45601–45640: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D588's build: 9 deliberate faults, 9 caught.
