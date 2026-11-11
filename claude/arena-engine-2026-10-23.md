@@ -25090,3 +25090,52 @@ Pod sweep on D606's build (bc7c13a), seeds 47401–47440: 40 of 40 finished, no 
 
 Break run on D606's build: 5 deliberate faults, 4 caught. The 1 miss was a wrong guard, now removed
 and pinned.
+
+## D608 — Pump, then it fights or bites; and the D607 gaps
+
+D542's bite-and-fight reader named the half it left: the **referent** forms. "Target creature you
+control gets +1/+2 until end of turn. **It** fights target creature you don't control." The second
+sentence's "it" is the first sentence's target, and it declares a target of its own. The composer
+refuses two clauses with two target choices, and `referentEffect` supplies exactly one object.
+
+**One shape, both targets.** `pumpThenBiteResolution` reads the line whole, before clause
+composition: "Target creature you control gets +A/+B until end of turn. [Then] it fights | deals
+damage equal to its power to <target>". It declares both targets once, in printed order, and the
+effect pumps the first, then fights or bites with it, so the pump is in the numbers. That is the
+whole point of these cards: Epic Confrontation's Bears win a fight they would otherwise trade in.
+
+"Up to one" target may choose nothing, and then the pump still happens. The bitten target must be a
+permanent, and for a fight a creature. "Then that creature …" and other spellings stay unread.
+
+The cards finished include Ambuscade, Assert Perfection, Bridgeworks Battle, Clear Shot, Epic
+Confrontation, Huatli's Final Strike and Rabid Gnaw. D542's refusal test is rewritten as the
+reading, with "Then that creature fights …" still pinned as unread.
+
+**The D607 break run: 4 faults, 2 caught.**
+- **"From your hand" ignored**: pinned. A creature given retrace and cast from the graveyard
+  triggers "if you cast it" and not "… from your hand".
+- **The face-down cast's zone not recorded**: **vacuous**, and recorded as such. A face-down
+  permanent has no abilities, so no enters trigger of its own can ask how it arrived, and the
+  default zone makes the record identical either way.
+
+**Tests.** 4 new engine tests:
+- Both rows read whole, with two targets.
+- Epic Confrontation's 3/4 Bears kill the opposing Bears and survive with 2 damage.
+- Clear Shot kills a 3/3 with three damage, and the biter takes none.
+- The D607 graveyard-cast pin.
+
+Each of the following was broken on purpose and its test failed:
+- The pump dropped.
+- The fight read as a bite.
+- The bite read as a fight.
+- "From your hand" ignored.
+
+    engine tests: 4,312, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,687 of 31,292 (was 9,675); lines read 27,515 of 58,524 (47.0%, was 27,500)
+
+Pod sweep on D607's build (4eee472), seeds 47501–47540: 40 of 40 finished, no throw and no stall.
+
+Break run on D607's build: 4 deliberate faults, 2 caught. 1 miss is pinned here and 1 is vacuous.

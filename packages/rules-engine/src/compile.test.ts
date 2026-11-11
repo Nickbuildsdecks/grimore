@@ -16239,16 +16239,12 @@ describe('the bite and the fight: two targets pointed at each other (D542)', () 
     }
   });
 
-  it('refuses the referent forms, which declare two targets and borrow one', () => {
+  it('reads the pump-then-fight referent form whole, as one shape with both targets (D608)', () => {
     /*
-      The bigger half of the family, and refused on purpose. "It fights target creature you don't
-      control" (Epic Confrontation's second sentence) borrows its first target from the clause
-      before it — and `referentEffect` turns down any reading that declares more than one target,
-      because it supplies exactly one object. Supplying one of two is a real extension to the
-      borrow, so these wait for it rather than being half-read now.
-
-      Asserted on the real printing, with the sentence that reads shown beside the one that does
-      not: Epic Confrontation's pump is read and its fight is not.
+      This was the refusal: "It fights target creature you don't control" borrows its first target
+      from the sentence before, and `referentEffect` supplies exactly one object. D608 reads the
+      pump-then-fight and pump-then-bite lines as one shape instead (`pumpThenBiteResolution`),
+      declaring both targets once. Other referent spellings ("Then that creature …") stay unread.
     */
     const read = row('Epic Confrontation', 'Sorcery',
       'Target creature you control gets +1/+2 until end of turn. '
@@ -16256,7 +16252,10 @@ describe('the bite and the fight: two targets pointed at each other (D542)', () 
       + '(Each deals damage equal to its power to the other.)');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.length).toBe(1);
+    expect(read.unread).toEqual([]);
+    const other = row('Other Confrontation', 'Sorcery',
+      "Target creature you control gets +1/+2 until end of turn. Then that creature fights target creature you don't control.");
+    expect(other.ok && other.unread.length).toBe(1);
   });
 
   it('refuses a bite whose subject is not a creature', () => {

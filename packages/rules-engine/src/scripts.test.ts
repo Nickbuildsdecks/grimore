@@ -45716,6 +45716,28 @@ describe('"if you cast it", and every static condition on a trigger (D607)', () 
     expect(life(s, 0)).toBe(after);
   });
 
+  it('cast from the graveyard: "if you cast it" holds and "from your hand" does not (D607 break run)', () => {
+    // Retrace casts a card from the graveyard; on a creature that is a cast that is not from hand.
+    const fromYard = (name: string) => {
+      const base = name === 'Test Phoenix' ? HERALD : COURIER;
+      const ROW = { ...base, name, oracle_text: `${base.oracle_text.split(base.name).join(name)}\nRetrace` };
+      const yard = customDeck({ id: 'yard', name: 'Yard', entries: [{ name, count: 2 }, { name: 'Mountain', count: 58 }], data: [ROW] as never[] });
+      let s = advanceTo(arena({
+        decks: { 0: 'yard', 1: 'yard' }, deckSpecs: { yard: yard.deck },
+        hands: { 0: [name, 'Mountain'] }, battlefield: { 0: ['Mountain'] }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' } as Action);
+      const before = life(s, 0);
+      s = drain(passBoth(drain(passBoth(apply(tapAllLands(s, 0), {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', name), retrace: true, discarded: find(s, 0, 'hand', 'Mountain'),
+      } as Action)), 20)), 20);
+      expect(namesIn(s, 0, 'battlefield')).toContain(name);
+      return life(s, 0) - before;
+    };
+    expect(fromYard('Test Phoenix')).toBe(3);
+    expect(fromYard('Test Revenant')).toBe(0);
+  });
+
   it('a static condition on a trigger: "if you have no cards in hand"', () => {
     let empty = table(['Test Hermit']);
     // The draw step's card goes back, so the Hermit is the only card in hand as it is cast.
@@ -45725,5 +45747,52 @@ describe('"if you cast it", and every static condition on a trigger (D607)', () 
     expect(life(cast(empty, 'Test Hermit'), 0)).toBe(life(empty, 0) + 3);
     const holding = table(['Test Hermit', 'Mountain']);
     expect(life(cast(holding, 'Test Hermit'), 0)).toBe(life(holding, 0));
+  });
+});
+
+describe('pump, then it fights or bites (D608)', () => {
+  /*
+    "Target creature you control gets +A/+B until end of turn. It fights / deals damage equal to its
+    power to target creature you don't control." Both targets declared once, the pump applied first,
+    so it counts in the fight or the bite.
+  */
+  const EPIC = {"name":"Epic Confrontation","type_line":"Sorcery","mana_cost":"{1}{G}","cmc":2,"colors":["G"],"power":null,"toughness":null,"oracle_text":"Target creature you control gets +1/+2 until end of turn. It fights target creature you don't control. (Each deals damage equal to its power to the other.)","layout":"normal"};
+  const SHOT = {"name":"Clear Shot","type_line":"Instant","mana_cost":"{2}{G}","cmc":3,"colors":["G"],"power":null,"toughness":null,"oracle_text":"Target creature you control gets +1/+1 until end of turn. It deals damage equal to its power to target creature you don't control.","layout":"normal"};
+  const OGRE = {"name":"Test Ogre","type_line":"Creature — Ogre","mana_cost":"{2}{R}","cmc":3,"colors":["R"],"power":"3","toughness":"3","oracle_text":"","layout":"normal"};
+  const ROWS = [EPIC, SHOT, OGRE];
+  const deck = customDeck({
+    id: 'bites', name: 'Bites',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 50 }],
+    data: ROWS as never[],
+  });
+  const table = (spell: string, theirs: string): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'bites', 1: 'bites' }, deckSpecs: { bites: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: ['Grizzly Bears', 'Forest', 'Forest', 'Forest'], 1: [theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const cast = (s: GameState, spell: string, theirs: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell),
+    targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }, { kind: 'card', id: find(s, 1, 'battlefield', theirs) }],
+  } as Action)), 20);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [EPIC, SHOT]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+      expect(read.ok && read.script?.targets?.length).toBe(2);
+    }
+  });
+
+  it('Epic Confrontation: the 3/4 Bears win the fight they would have traded in', () => {
+    const s = cast(table('Epic Confrontation', 'Grizzly Bears'), 'Epic Confrontation', 'Grizzly Bears');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Grizzly Bears');
+    expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.damage).toBe(2);
+  });
+
+  it('Clear Shot: three damage with the +1, one way, kills a 3/3', () => {
+    const s = cast(table('Clear Shot', 'Test Ogre'), 'Clear Shot', 'Test Ogre');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Ogre');
+    expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.damage).toBe(0);
   });
 });

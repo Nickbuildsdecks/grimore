@@ -24129,6 +24129,50 @@ function optionalResolution(lines: readonly string[], name: string): ReadEffect 
     composeEffects(clausesOf(text), name, null));
 }
 
+/**
+ * "Target creature you control gets +1/+1 until end of turn. **It** fights / deals damage equal to
+ * its power to target creature you don't control" (D608) — the pump-then-bite family, which D542's
+ * docblock names as the referent half it left unread.
+ *
+ * Read as one shape rather than two composed clauses because the second sentence's "it" is the
+ * first sentence's target and it declares a target of its own, which the composer refuses (two
+ * clauses, two target choices). Here both targets are declared once, in printed order, and the
+ * effect pumps the first, then fights or bites with it — so the pump counts, which is the card.
+ */
+function pumpThenBiteResolution(lines: readonly string[]): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  const matched = new RegExp(
+    `^target creature you control gets ([+-]\\d+)\\/([+-]\\d+) until end of turn\\. (?:then )?it `
+    + `(fights|deals damage equal to its power to) (${TARGET_QUANTIFIER_PREFIX}target .+?)\\.?$`,
+    'i',
+  ).exec(plain(lines[0]!).trim());
+  if (matched === null) return null;
+  const size = sizeBonus(Number(matched[1]), Number(matched[2]));
+  const biter = targetSpecFrom('target creature you control', true);
+  const bitten = targetSpecFrom(matched[4]!, false);
+  if (size === null || biter === null || bitten === null || !pointsAtAPermanent(bitten)
+    || (bitten.count ?? 1) !== 1) return null;
+  const fights = matched[3]!.toLowerCase() === 'fights';
+  if (fights && bitten.kind !== 'creature') return null;
+  return {
+    targets: [biter, bitten],
+    effect: (c) => {
+      const [mine, theirs] = cardTargets(c);
+      if (mine === undefined) return c.state;
+      let state = pump(c.state, [mine], c.source, c.controller, { ...size, duration: 'end-of-turn' });
+      // "Up to one" may have chosen nothing: the pump still happened.
+      if (theirs === undefined || state.instances[theirs]?.zone !== 'battlefield') return state;
+      if (fights) return fight(state, mine, theirs, c.controller);
+      const inst = state.instances[mine];
+      if (inst === undefined || inst.zone !== 'battlefield') return state;
+      const power = characteristicsOf(state, inst).power;
+      return power > 0
+        ? dealDamage(state, { kind: 'card', id: theirs }, power, { controller: c.controller, source: mine })
+        : state;
+    },
+  };
+}
+
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
     The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
@@ -24143,6 +24187,7 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
   return xSpellResolution(lines, name)
     ?? lootResolution(lines, name)
     ?? exileForLifeResolution(lines, name)
+    ?? pumpThenBiteResolution(lines)
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
     ?? composeEffects(lines.flatMap(clausesOf), name, null)
     /*
