@@ -44694,3 +44694,101 @@ describe('retrace (D599)', () => {
     expect(s.instances[jab]!.zone).toBe('graveyard');
   });
 });
+
+describe('mass effects over a scope, and overload from its rewrite (D600)', () => {
+  /*
+    "Destroy/exile/tap/untap/return all <scope>" over type words, lists, "nonland permanents" and the
+    controller clauses; and overload read by rewriting "target" to "each" (CR 702.96b) and reading
+    the result. Corpus rows; a second custom deck gives the opponent artifacts and creatures.
+  */
+  const VANDAL = {"name": "Vandalblast", "type_line": "Sorcery", "mana_cost": "{R}", "cmc": 1, "colors": ["R"], "power": null, "toughness": null, "oracle_text": "Destroy target artifact you don't control.\nOverload {4}{R} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")", "layout": "normal"};
+  const RIFT = {"name": "Cyclonic Rift", "type_line": "Instant", "mana_cost": "{1}{U}", "cmc": 2, "colors": ["U"], "power": null, "toughness": null, "oracle_text": "Return target nonland permanent you don't control to its owner's hand.\nOverload {6}{U} (You may cast this spell for its overload cost. If you do, change \"target\" in its text to \"each.\")", "layout": "normal"};
+  const GEDDON = {"name": "Armageddon", "type_line": "Sorcery", "mana_cost": "{3}{W}", "cmc": 4, "colors": ["W"], "power": null, "toughness": null, "oracle_text": "Destroy all lands.", "layout": "normal"};
+  const EVAC = {"name": "Evacuation", "type_line": "Instant", "mana_cost": "{3}{U}{U}", "cmc": 5, "colors": ["U"], "power": null, "toughness": null, "oracle_text": "Return all creatures to their owners' hands.", "layout": "normal"};
+  const VENGEANCE = {"name": "Akroma's Vengeance", "type_line": "Sorcery", "mana_cost": "{4}{W}{W}", "cmc": 6, "colors": ["W"], "power": null, "toughness": null, "oracle_text": "Destroy all artifacts, creatures, and enchantments.\nCycling {3} ({3}, Discard this card: Draw a card.)", "layout": "normal"};
+  const CLEANSING = {"name": "Planar Cleansing", "type_line": "Sorcery", "mana_cost": "{3}{W}{W}{W}", "cmc": 6, "colors": ["W"], "power": null, "toughness": null, "oracle_text": "Destroy all nonland permanents.", "layout": "normal"};
+  const ROWS = [VANDAL, RIFT, GEDDON, EVAC, VENGEANCE, CLEANSING];
+  const mine = customDeck({
+    id: 'sweeps', name: 'Sweeps',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Bonesplitter', count: 2 },
+      { name: 'Grizzly Bears', count: 2 }, { name: 'Mountain', count: 15 }, { name: 'Island', count: 15 }, { name: 'Plains', count: 15 }],
+    data: ROWS as never[],
+  }).deck;
+  const theirs = customDeck({
+    id: 'targets', name: 'Targets',
+    entries: [{ name: 'Bonesplitter', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 52 }],
+  }).deck;
+  const LANDS = ['Mountain', 'Mountain', 'Island', 'Island', 'Island', 'Island', 'Plains', 'Plains', 'Plains', 'Plains'];
+  const table = (hand: string, extraMine: readonly string[] = []): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'sweeps', 1: 'targets' }, deckSpecs: { sweeps: mine, targets: theirs },
+    hands: { 0: [hand] },
+    battlefield: { 0: [...LANDS, 'Bonesplitter', 'Grizzly Bears', ...extraMine], 1: ['Forest', 'Bonesplitter', 'Bonesplitter', 'Grizzly Bears'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const resolve = (s: GameState): GameState => drain(passBoth(s), 30);
+  const count = (s: GameState, seat: SeatIndex, zone: 'battlefield' | 'graveyard' | 'hand', name: string) =>
+    namesIn(s, seat, zone).filter((n) => n === name).length;
+
+  it('reads every row whole, overloads included', () => {
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const vandal = compileCard(VANDAL as never);
+    expect(vandal.ok && vandal.script?.overload?.cost).toBe('{4}{R}');
+  });
+
+  it('Vandalblast: one of theirs printed, every one of theirs overloaded, never yours', () => {
+    let s = table('Vandalblast');
+    const card = find(s, 0, 'hand', 'Vandalblast');
+    const plays = legalActions(s, 0).plays.filter((p) => p.card === card);
+    expect(plays.some((p) => p.overloaded === true)).toBe(true);
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card, overloaded: true }));
+    expect(count(s, 1, 'battlefield', 'Bonesplitter')).toBe(0);
+    expect(count(s, 1, 'graveyard', 'Bonesplitter')).toBe(2);
+    expect(count(s, 0, 'battlefield', 'Bonesplitter')).toBe(1);
+  });
+
+  it('Cyclonic Rift overloaded returns every nonland permanent they control, and nothing of yours', () => {
+    let s = table('Cyclonic Rift');
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cyclonic Rift'), overloaded: true }));
+    expect(count(s, 1, 'hand', 'Bonesplitter')).toBe(2);
+    expect(count(s, 1, 'hand', 'Grizzly Bears')).toBe(1);
+    expect(count(s, 1, 'battlefield', 'Forest')).toBe(1);
+    expect(count(s, 0, 'battlefield', 'Grizzly Bears')).toBe(1);
+  });
+
+  it('Cyclonic Rift printed targets a nonland permanent you do not control, and only that', () => {
+    const s = table('Cyclonic Rift');
+    const printed = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Cyclonic Rift') && p.overloaded !== true);
+    const offered = (printed?.candidates[0] ?? []).map((t) => (t.kind === 'card' ? nameOf(s, t.id) : ''));
+    expect(offered.sort()).toEqual(['Bonesplitter', 'Bonesplitter', 'Grizzly Bears']);
+  });
+
+  it('a list is any of its types, and "nonland permanents" spares lands', () => {
+    let s = resolve(apply(table("Akroma's Vengeance"), { type: 'auto:cast', by: 0, card: find(table("Akroma's Vengeance"), 0, 'hand', "Akroma's Vengeance") }));
+    expect(count(s, 1, 'battlefield', 'Bonesplitter') + count(s, 1, 'battlefield', 'Grizzly Bears')).toBe(0);
+    expect(count(s, 0, 'battlefield', 'Grizzly Bears')).toBe(0);
+    expect(count(s, 1, 'battlefield', 'Forest')).toBe(1);
+    s = table('Planar Cleansing');
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Planar Cleansing') }));
+    expect(count(s, 1, 'battlefield', 'Grizzly Bears') + count(s, 0, 'battlefield', 'Bonesplitter')).toBe(0);
+    expect(count(s, 1, 'battlefield', 'Forest')).toBe(1);
+  });
+
+  it('Armageddon destroys every land, and Evacuation returns every creature to its owner', () => {
+    let s = table('Armageddon');
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Armageddon') }));
+    expect(count(s, 1, 'battlefield', 'Forest') + namesIn(s, 0, 'battlefield').filter((n) => ['Mountain', 'Island', 'Plains'].includes(n)).length).toBe(0);
+    s = table('Evacuation');
+    s = resolve(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Evacuation') }));
+    expect(count(s, 0, 'hand', 'Grizzly Bears')).toBe(1);
+    expect(count(s, 1, 'hand', 'Grizzly Bears')).toBe(1);
+    expect(count(s, 1, 'battlefield', 'Bonesplitter')).toBe(2);
+  });
+
+  it('refuses a scope it cannot test rather than widening it', () => {
+    const read = compileCard({ ...GEDDON, oracle_text: 'Destroy all white permanents.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+});

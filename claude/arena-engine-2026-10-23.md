@@ -24519,3 +24519,56 @@ no test — Riftburst Hellion is keywords only and is read whole — so a probe 
 its "Disguise {1}{U}" now reads as a disguised morph. And the ward while the creature has lost all
 its abilities had none: a face-down Hellion made abilityless is now killed by the Bolt its ward
 would have countered. Both fail with their fault in.
+
+## D600 — Mass effects over a scope, and overload by its own rewrite
+
+Overload was the plan: 28 legal lines, 11 cards one line short. CR 702.96b says what paying it does —
+"change its text by replacing all instances of the word 'target' with the word 'each'" — and that is
+a rewrite the compiler can do literally and then read. Doing it showed the bigger gap underneath: the
+rewritten sentences did not read because **no mass effect but "destroy all creatures" did**. "Destroy
+all artifacts." was unread. So was "Destroy all lands", "Destroy all enchantments", "Return all
+creatures to their owners' hands", "Tap all creatures your opponents control" — 150 legal lines,
+118 cards one line short.
+
+**One mass reader.** "Destroy / exile / tap / untap / return … all or each <scope> [to their owners'
+hands]", with the scope read by `massScope`: `boardScope`'s controller clause ("you control", "you
+don't control", "your opponents control", "each opponent controls") and "other", over a wider noun —
+type words plural or singular, "permanent(s)", "non-" plus a type or subtype, and a list of
+alternatives joined by commas and "and" ("artifacts, creatures, and enchantments" is any of the
+three). Every word has to classify, read live off `characteristicsOf`, so a colour, a size, "with
+flying" or "attacking" refuses the line rather than widening it. The board is read once, before
+anything moves, as the wrath does; destroy honours "can't be regenerated".
+
+**Overload, by the rewrite.** `spellScriptFor` holds an "Overload {cost}" line back, reads the
+resolution as printed, then reads it again with "target" replaced by "each". If that reading comes
+back **with no targets** it is `overload.onResolve`, the field the hand-written Mizzium Mortars
+already uses, and the line is read; otherwise it is reported unread and the spell plays at its
+printed cost. The first version lost the held line on the paths that never read it — the modal
+shape and an unread resolution — and the measured line total fell by 15 for it; every path now
+reports it.
+
+**And Cyclonic Rift's target.** "Target nonland permanent you don't control" is the same set as
+"… an opponent controls", which the target reader already had; it now reads both, as `boardScope`
+always has.
+
+**Tests.** 7 engine tests on corpus rows (Vandalblast, Cyclonic Rift, Armageddon, Evacuation,
+Akroma's Vengeance, Planar Cleansing) with a second custom deck giving the opponent artifacts and
+creatures: every row reads, overloads included; overloaded Vandalblast destroys both of theirs and
+not yours; overloaded Rift returns every nonland permanent they control and leaves their land and
+your creature; the printed Rift offers only their nonland permanents; Akroma's Vengeance takes every
+listed type on both sides and spares lands, and Planar Cleansing spares lands; Armageddon takes
+every land; Evacuation returns every creature to its owner's hand and leaves the Equipment; a colour
+in the scope stays unread. The controller clause ignored, "non-" read as its opposite, and the
+overload rewrite removed were each put in by hand and failed.
+
+    engine tests: 4,249, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,296 of 31,292 (was 9,207); lines read 26,871 of 58,524 (45.9%, was 26,736)
+
+The largest single increment since the two-faced cards.
+
+Pod sweep on D599's build (145f971), seeds 46701–46740: 40 of 40 finished, no throw and no stall.
+
+Break run on D599's build: 5 deliberate faults, 5 caught.

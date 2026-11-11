@@ -12197,6 +12197,42 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    **Mass effects over a printed scope** (D600): destroy, exile, tap, untap, or return to its
+    owner's hand every permanent a phrase names — "Destroy all enchantments", "Destroy all nonland
+    permanents", "Exile all artifacts, creatures, and enchantments", "Tap all creatures your
+    opponents control", "Return all nonland permanents you don't control to their owners' hands",
+    and the "each" spelling overload's rewrite produces ("Destroy each artifact you don't control").
+    150 legal lines of this shape were unread; `destroy all creatures` above was the only one.
+
+    The scope is `massScope`: type words in the plural or singular, "permanent", "non-" a type, a
+    list joined by commas and "and" (any of them), and the controller clause. Anything else — a
+    colour, "with toughness 4 or greater", "attacking", "without flying" — refuses the line. The
+    list is built once, from the board as it stands, before anything moves, for the reason the
+    wrath gives.
+  */
+  const mass = /^(destroy|exile|tap|untap|return) (?:all|each) (.+?)( to (?:their|its) owners?'s? hands?)?$/i.exec(text);
+  if (mass !== null) {
+    const verb = mass[1]!.toLowerCase();
+    const toHand = mass[3] !== undefined;
+    const scope = massScope(mass[2]!);
+    if (scope !== null && (verb === 'return') === toHand) {
+      return {
+        effect: (c) => {
+          let state = c.state;
+          for (const id of scope(c)) {
+            if (verb === 'destroy') state = destroy(state, id, { regenerates: c.noRegeneration !== true });
+            else if (verb === 'exile') state = exileCard(state, id);
+            else if (verb === 'tap') state = tap(state, id, true);
+            else if (verb === 'untap') state = tap(state, id, false);
+            else state = bounceToHand(state, id);
+          }
+          return state;
+        },
+      };
+    }
+  }
+
+  /*
     A counter on every permanent a printed **scope** names: "Put a +1/+1 counter on each other
     Dragon creature you control", and the same sentence with `-1/-1` pointed across the table.
 
@@ -12599,6 +12635,58 @@ function permanentWordMatch(word: string): ((line: TypeLine) => boolean) | null 
  * `permanentFilter`'s `another` flag uses, and the reason the two words can share one meaning here:
  * on every card of this shape the scope is printed on the permanent it excludes.
  */
+/**
+ * A mass effect's scope (D600) — the permanents "all <phrase>" or "each <phrase>" names, as of now.
+ *
+ * `boardScope`'s controller clause and `other`, with a wider noun: plural or singular type words,
+ * "permanent", "non-" plus a type or subtype ("nonland", "nonartifact", "non-Zombie"), and a list of
+ * alternatives joined by commas and "and" — "artifacts, creatures, and enchantments" is any of the
+ * three, which is how the sentence is read (CR 608.2c). Every word must classify, so a scope with a
+ * colour or a qualifier is refused rather than widened.
+ */
+function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | null {
+  let rest = plain(phrase).trim().replace(/\.$/, '').replace(/\s+on the battlefield$/i, '');
+  let who: 'you' | 'opponents' | 'any' = 'any';
+  for (const [pattern, seatRule] of [
+    [/\s+you control$/i, 'you'], [/\s+you don't control$/i, 'opponents'],
+    [/\s+your opponents control$/i, 'opponents'], [/\s+each opponent controls$/i, 'opponents'],
+  ] as const) {
+    if (!pattern.test(rest)) continue;
+    who = seatRule;
+    rest = rest.replace(pattern, '');
+    break;
+  }
+  const other = /^other\s+/i.test(rest);
+  if (other) rest = rest.replace(/^other\s+/i, '');
+  const singular = (word: string): string => (/ves$/.test(word) ? word.replace(/ves$/, 'f')
+    : /ies$/.test(word) ? word.replace(/ies$/, 'y') : word.replace(/s$/, ''));
+  const wordTest = (raw: string): ((line: TypeLine) => boolean) | null => {
+    const negated = /^non-?/i.test(raw);
+    const word = negated ? raw.replace(/^non-?/i, '') : raw;
+    const base = /^permanents?$/i.test(word) ? () => true
+      : permanentWordMatch(word) ?? permanentWordMatch(singular(word));
+    if (base === null) return null;
+    return negated ? (line) => !base(line) : base;
+  };
+  const alternatives = rest.split(/,\s*(?:and\s+|or\s+)?|\s+and\s+/).map((part) => part.trim()).filter(Boolean);
+  if (alternatives.length === 0) return null;
+  const tests: ((line: TypeLine) => boolean)[] = [];
+  for (const alternative of alternatives) {
+    const parts = alternative.split(/\s+/).map(wordTest);
+    if (parts.length === 0 || parts.some((part) => part === null)) return null;
+    tests.push((line) => parts.every((part) => part!(line)));
+  }
+  return (c) => battlefield(c.state, (id) => {
+    const inst = c.state.instances[id];
+    if (inst === undefined) return false;
+    if (other && id === c.source) return false;
+    if (who === 'you' && inst.zoneSeat !== c.controller) return false;
+    if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
+    const { typeLine } = characteristicsOf(c.state, inst);
+    return tests.some((test) => test(typeLine));
+  });
+}
+
 function boardScope(phrase: string): {
   readonly ids: (c: EffectContext) => readonly string[];
 } | null {
@@ -17477,6 +17565,8 @@ function targetSpecFrom(
     case 'another target nonland permanent':
       return spec({ kind: 'permanent', filter: permanentFilter({ another: true, nonland: true }) });
     case 'target nonland permanent an opponent controls':
+    // "You don't control" is the same set (D600), as `boardScope` reads it: Cyclonic Rift's target.
+    case "target nonland permanent you don't control":
       return spec({ kind: 'permanent', filter: permanentFilter({ nonland: true, opponents: true }) });
     case 'another target nonland permanent an opponent controls':
       return spec({
@@ -23168,8 +23258,12 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const resolution: string[] = [];
 
   const declared: string[] = [];
+  /** "Overload {cost}" (D600), held until the resolution has been read — see below. */
+  let overload: { line: string; cost: string } | null = null;
 
   for (const line of lines) {
+    const overloaded = /^Overload ((?:\{[^}]+\})+)$/i.exec(line.replace(/\s*\([^)]*\)\s*$/, '').trim());
+    if (overloaded !== null && overload === null) { overload = { line, cost: overloaded[1]! }; continue; }
     /*
       The additional cost is read here beside the keywords, and for the same reason: it is not part
       of the resolution, so it must come out of `resolution` before `readResolution` sees it — a
@@ -23215,6 +23309,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     compose: `readResolution` would hand "Choose one —" to `readEffect` as a clause, get null, and
     refuse the card without ever seeing that the bullets under it are three readable modes.
   */
+  // An Overload line held above is reported unread on every path that does not read it (D600).
+  if (overload !== null) declared.push(overload.line);
   const modal = modalScriptFor(resolution, name);
   if (modal !== null) {
     Object.assign(built, modal);
@@ -23251,6 +23347,25 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     function that cannot be told from its absence, which this file deletes rather than keeps.
   */
   if (read.appliesNothing !== true) built['onResolve'] = read.effect;
+  /*
+    **Overload** (CR 702.96, D600): paying the overload cost "change[s] its text by replacing all
+    instances of the word 'target' with the word 'each'" (CR 702.96b). That is a rewrite the
+    compiler can do literally — and then read the rewritten resolution with the same readers, so
+    "Destroy target artifact you don't control" overloaded is "Destroy each artifact you don't
+    control" and reads as the sweeper it is. The reading has to come back with **no targets**,
+    which is the point of the rewrite; one that does not, or does not read at all, leaves the
+    Overload line unread and the spell playable at its printed cost.
+  */
+  if (overload !== null) {
+    const rewritten = resolution.map((line) => line.replace(/\btarget\b/g, 'each').replace(/\bTarget\b/g, 'Each'));
+    const swept = withSacrificeInCost(paidBySacrifice, () => readResolution(rewritten, name));
+    if (swept !== null && (swept.targets ?? []).length === 0 && swept.appliesNothing !== true) {
+      built['overload'] = { cost: overload.cost, onResolve: swept.effect };
+      // Read after all: out of `declared`, where every path put it, and into `compiled`.
+      declared.splice(declared.indexOf(overload.line), 1);
+      compiled.push(overload.line);
+    }
+  }
   return {
     script: built as Partial<CardScript>,
     compiled: [...compiled, ...resolution],
