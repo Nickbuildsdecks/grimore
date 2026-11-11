@@ -45108,7 +45108,8 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
   const PILEDRIVER = {"name":"Goblin Piledriver","type_line":"Creature — Goblin Warrior","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"1","toughness":"2","oracle_text":"Protection from blue (This creature can't be blocked, targeted, dealt damage, or enchanted by anything blue.)\nWhenever Goblin Piledriver attacks, it gets +2/+0 until end of turn for each other attacking Goblin.","layout":"normal"};
   // A noncreature whose name sorts before the Bears, so a sacrifice that offered it would take it first.
   const ANVIL = {"name":"Anvil of Tests","type_line":"Artifact","mana_cost":"{1}","cmc":1,"colors":[],"power":null,"toughness":null,"oracle_text":"","layout":"normal"};
-  const ROWS = [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER, VAMP, GOBLIN, EXECUTIONER, PILEDRIVER, ANVIL];
+  const WATCHER = {"name":"Test Watcher","type_line":"Creature — Human","mana_cost":"{1}{W}","cmc":2,"colors":["W"],"power":"0","toughness":"1","oracle_text":"Whenever a creature deals combat damage to a player, you gain 1 life.","layout":"normal"};
+  const ROWS = [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER, VAMP, GOBLIN, EXECUTIONER, PILEDRIVER, ANVIL, WATCHER];
   const deck = customDeck({
     id: 'hits', name: 'Hits',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 42 }],
@@ -45229,6 +45230,13 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
     expect(characteristicsOf(s, s.instances[driver]!).power).toBe(5);
   });
 
+  it('"a creature" with nobody named is the opponent\'s creature too (D603 break run)', () => {
+    // Seat 1 watches; seat 0's Bears connect; seat 1 loses 2 and gains 1.
+    const before = advanceTo(arena({ decks: { 0: 'hits', 1: 'hits' }, deckSpecs: { hits: deck.deck }, turn: 5, firstSeat: 0 }), 'precombat-main');
+    const s = swing(['Grizzly Bears'], ['Grizzly Bears'], ['Test Watcher']);
+    expect(life(s, 1)).toBe(life(before, 1) - 1);
+  });
+
   it('reads "a <Tribe> creature you control", and "a creature" of anybody\'s (D602 break run)', () => {
     for (const text of [
       'Whenever a Vampire creature you control deals combat damage to a player, draw a card.',
@@ -45303,10 +45311,121 @@ describe('a counter whose meaning is another line of the card (D603)', () => {
     expect(life(s, 1)).toBe(theirs - 1);
   });
 
+  it('"it" is the creature the trigger is about, and the number is the printed one (D603 break run)', () => {
+    // A Thallid that marks each other creature you control as it enters, two charge counters at a time.
+    const MARKER = { ...THALLID, oracle_text: 'Whenever another creature you control enters, put two charge counters on it.' };
+    const marked = customDeck({ id: 'marks', name: 'Marks', entries: [{ name: 'Thallid', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 52 }], data: [MARKER] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'marks', 1: 'verdant-guard' }, deckSpecs: { marks: marked.deck },
+      hands: { 0: ['Grizzly Bears'] }, battlefield: { 0: ['Thallid', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(drain(passBoth(apply(tapAllLands(s, 0), { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action)), 20)), 20);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(s.instances[bears]!.counters['charge']).toBe(2);
+    expect(s.instances[find(s, 0, 'battlefield', 'Thallid')]!.counters['charge'] ?? 0).toBe(0);
+  });
+
   it('refuses a kind with a meaning of its own, and a keyword counter', () => {
     for (const kind of ['lore', 'stun', 'time', 'flying']) {
       const read = compileCard({ ...THALLID, oracle_text: `At the beginning of your upkeep, put a ${kind} counter on Thallid.` } as never);
       expect(read.ok && read.unread.length).toBe(1);
     }
+  });
+});
+
+describe('an attachment rider beyond a size and a keyword (D604)', () => {
+  /*
+    "Equipped/Enchanted creature [gets +N/+N and] can't block | attacks each combat if able | can't
+    be blocked | loses <keyword> | loses all abilities | is every creature type | has <land>walk".
+    Each is a field the layer system already applies; one Equipment row per rider, each on Grizzly
+    Bears, with the characteristic it sets read back.
+  */
+  const gear = (name: string, rider: string) => ({
+    name, type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    power: null, toughness: null, oracle_text: `Equipped creature gets +1/+1 and ${rider}.\nEquip {1}`,
+  });
+  const ROWS = [
+    gear('Test Shackle', "can't block"),
+    gear('Test Spur', 'attacks each combat if able'),
+    gear('Test Cloak', "can't be blocked"),
+    gear('Test Anchor', 'loses flying'),
+    gear('Test Muffle', 'loses all abilities'),
+    gear('Test Mask', 'is every creature type'),
+    gear('Test Compass', 'has forestwalk'),
+  ];
+  const BANNER = { ...gear('Test Banner', ''), oracle_text: 'Equipped creature gets +1/+1 for each enchantment you control.\nEquip {1}' };
+  const GLITTER = { ...gear('Test Glitter', ''), oracle_text: 'Equipped creature gets +1/+0 for each artifact and/or enchantment you control.\nEquip {1}' };
+  const CHARM = {"name":"Test Charm","type_line":"Enchantment","mana_cost":"{1}","cmc":1,"colors":[],"power":null,"toughness":null,"oracle_text":"","layout":"normal"};
+  const FLYER = {"name":"Test Wing","type_line":"Creature — Bird","mana_cost":"{1}{U}","cmc":2,"colors":["U"],"power":"1","toughness":"1","oracle_text":"Flying","layout":"normal"};
+  const deck = customDeck({
+    id: 'gear', name: 'Gear',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Test Banner', count: 1 }, { name: 'Test Glitter', count: 1 },
+      { name: 'Test Wing', count: 2 }, { name: 'Test Charm', count: 1 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 44 }],
+    data: [...ROWS, BANNER, GLITTER, CHARM, FLYER] as never[],
+  });
+  /** `equipment` on the battlefield, equipped to `wearer`; the wearer's characteristics after. */
+  const worn = (equipment: string, wearer = 'Grizzly Bears') => {
+    // Seat 1 holds an enchantment too, so a count that read everybody's board would be one higher.
+    let s = advanceTo(arena({
+      decks: { 0: 'gear', 1: 'gear' }, deckSpecs: { gear: deck.deck },
+      battlefield: { 0: [equipment, wearer, 'Forest', ...(equipment === 'Test Banner' ? ['Test Charm'] : []), ...(equipment === 'Test Glitter' ? ['Test Charm'] : [])], 1: ['Grizzly Bears', 'Test Charm'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'battlefield', wearer);
+    s = passBoth(apply(tapAllLands(s, 0), {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', equipment), abilityIndex: 0,
+      targets: [{ kind: 'card', id }],
+    } as Action));
+    return characteristicsOf(s, s.instances[id]!);
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('each rider lands on the creature it is attached to, with the size', () => {
+    const shackled = worn('Test Shackle');
+    expect(shackled.power).toBe(3);
+    expect(shackled.cantBlock).toBe(true);
+    expect(worn('Test Spur').mustAttack).toBe(true);
+    expect(worn('Test Cloak').cantBeBlocked).toBe(true);
+    expect(worn('Test Anchor', 'Test Wing').keywords.has('flying')).toBe(false);
+    expect(worn('Test Compass').landwalk).toEqual(['Forest']);
+    expect(worn('Test Mask').typeLine.subtypes.length).toBeGreaterThan(1);
+  });
+
+  it('counts a card type on the battlefield: enchantments you control, and artifacts and/or enchantments', () => {
+    for (const row of [BANNER, GLITTER]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    // One enchantment of yours, so +1/+1 on a 2/2; the opponent's board does not count.
+    const bannered = worn('Test Banner');
+    expect([bannered.power, bannered.toughness]).toEqual([3, 3]);
+    // And a creature count stays refused on a static size (D523).
+    const creatures = compileCard({ ...BANNER, oracle_text: 'Equipped creature gets +1/+1 for each creature you control.\nEquip {1}' } as never);
+    expect(creatures.ok && creatures.unread.length).toBe(1);
+    // One artifact (the Glitter itself) and one enchantment: +2/+0.
+    expect(worn('Test Glitter').power).toBe(4);
+  });
+
+  it('a creature with nothing attached has none of them', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'gear', 1: 'verdant-guard' }, deckSpecs: { gear: deck.deck },
+      battlefield: { 0: ['Grizzly Bears', 'Test Wing'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!);
+    expect([bears.cantBlock, bears.mustAttack, bears.cantBeBlocked]).toEqual([false, false, false]);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Wing')]!).keywords.has('flying')).toBe(true);
+  });
+
+  it('"loses all abilities" takes the keyword it printed, and a rider it cannot read stays unread', () => {
+    expect(worn('Test Muffle', 'Test Wing').keywords.has('flying')).toBe(false);
+    const read = compileCard(gear('Test Odd', 'has protection from creatures') as never);
+    expect(read.ok && read.unread.length).toBe(1);
   });
 });

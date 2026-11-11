@@ -13764,7 +13764,29 @@ function attachmentBonus(
     return { bonus: { keywords: ['indestructible'] }, harmful: false };
   }
 
+  /*
+    A rider the attachment prints on its own: "Enchanted creature can't block", "… attacks each
+    combat if able", "… can't be blocked", "… loses all abilities" (D604). See `attachmentRider`.
+  */
+  const alone = attachmentRider(tail);
+  if (alone !== null) return alone;
+
   const got = /^gets ([+-]\d+)\/([+-]\d+)(?: and has (.+))?$/i.exec(tail);
+  /*
+    And the same rider after a size: "gets +1/+1 and can't block" (Copper Carapace), "gets +2/+2 and
+    attacks each combat if able" (Furor of the Bitten), "gets +2/+0 and loses flying" (Colossus
+    Hammer), "gets +1/+0 and has mountainwalk" (Cave Sense). Tried only when the keyword reading
+    below would fail, so every line that read before reads the same way.
+  */
+  const sized = /^gets ([+-]\d+)\/([+-]\d+) and (.+)$/i.exec(tail);
+  if (sized !== null && (got?.[3] === undefined || grantedKeywords(got[3]) === null)) {
+    const size = sizeBonus(Number(sized[1]), Number(sized[2]));
+    const rider = attachmentRider(sized[3]!);
+    if (size !== null && rider !== null) {
+      const shrinks = Number(sized[1]) < 0 || Number(sized[2]) < 0;
+      return { bonus: { ...size, ...rider.bonus }, harmful: shrinks || rider.harmful };
+    }
+  }
   if (got !== null) {
     const power = Number(got[1]);
     const toughness = Number(got[2]);
@@ -13795,6 +13817,38 @@ function attachmentBonus(
     return { bonus: { keywords }, harmful: false };
   }
 
+  return null;
+}
+
+/**
+ * One rider an attachment puts on its creature, beyond a size and a keyword (D604): each is a field
+ * `PumpOptions` already carries and the layer system already applies, so this is a reading and
+ * nothing new underneath.
+ *
+ * `harmful` is what the computer opponent aims with: a creature that cannot block, must attack, will
+ * not untap or loses its abilities is one an Aura of this is cast on *somebody else's* creature for.
+ * "Can't be blocked", landwalk and "every creature type" are for your own.
+ */
+function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean } | null {
+  const rider = text.trim().replace(/\.$/, '');
+  if (/^can't block$/i.test(rider)) return { bonus: { cantBlock: true }, harmful: true };
+  if (/^attacks each combat if able$/i.test(rider)) return { bonus: { mustAttack: true }, harmful: true };
+  if (/^can't be blocked$/i.test(rider)) return { bonus: { cantBeBlocked: true }, harmful: false };
+  if (/^loses all abilities$/i.test(rider)) return { bonus: { losesAllAbilities: true }, harmful: true };
+  if (/^is every creature type$/i.test(rider)) return { bonus: { allCreatureTypes: true }, harmful: false };
+  if (/^doesn't untap during its controller's untap step$/i.test(rider)) {
+    return { bonus: { doesntUntap: true }, harmful: true };
+  }
+  const loses = /^loses ([a-z ]+)$/i.exec(rider);
+  if (loses !== null) {
+    const keywords = grantedKeywords(loses[1]!);
+    if (keywords !== null) return { bonus: { removeKeywords: keywords }, harmful: true };
+  }
+  const walk = /^has (plains|island|swamp|mountain|forest)walk$/i.exec(rider);
+  if (walk !== null) {
+    const land = walk[1]!.charAt(0).toUpperCase() + walk[1]!.slice(1).toLowerCase();
+    return { bonus: { landwalk: [land] }, harmful: false };
+  }
   return null;
 }
 
@@ -22104,6 +22158,19 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
     return { kind: 'instants-and-sorceries-in-graveyard' };
   }
   if (/^artifacts? you control$/i.test(text)) return { kind: 'artifacts-you-control' };
+  /*
+    Card types on the battlefield (D604): "artifact and/or enchantment you control" (All That
+    Glitters), "enchantment you control" (Helm of the Gods), "land on the battlefield". Read off the
+    printed type line, metalcraft's compromise. **Not "creature"**: D523 refuses that count here,
+    because whether a permanent is a creature *now* is exactly what a printed line cannot say (a
+    crewed Vehicle, an animated land), and that refusal stands. "Other" is refused too: on an
+    attachment it means other than the creature it is attached to.
+  */
+  const typed = /^((?:artifact|enchantment|land|planeswalker)(?: and\/or (?:artifact|enchantment|land|planeswalker))*)s? (you control|on the battlefield)$/i.exec(text);
+  if (typed !== null) {
+    const types = typed[1]!.toLowerCase().split(/ and\/or /);
+    return { kind: 'permanents-of-type', types, whose: /you control/i.test(typed[2]!) ? 'you' : 'all' };
+  }
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it|this creature)$`, 'i').test(text)) {
     return { kind: 'counters-on-self', counter: '+1/+1' };
   }

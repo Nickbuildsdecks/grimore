@@ -1875,7 +1875,14 @@ export type StaticCountable =
   | { readonly kind: 'instants-and-sorceries-in-graveyard' }
   | { readonly kind: 'artifacts-you-control' }
   | { readonly kind: 'counters-on-self'; readonly counter: string }
-  | { readonly kind: 'permanents-of-subtype'; readonly subtype: string };
+  | { readonly kind: 'permanents-of-subtype'; readonly subtype: string }
+  /**
+   * "for each enchantment you control", "… artifact and/or enchantment you control", "… land on the
+   * battlefield" (D604): permanents with any of `types` on their printed type line, yours or
+   * everybody's. Printed for the reason `artifacts-you-control` is (see `sizePerCount`), and never
+   * "creature", which D523 refuses for the reason given there.
+   */
+  | { readonly kind: 'permanents-of-type'; readonly types: readonly string[]; readonly whose: 'you' | 'all' };
 
 /**
  * A static counted size's count, answered without reading any permanent's live characteristics.
@@ -1932,6 +1939,19 @@ function staticCount(
         const inst = state.instances[id];
         if (inst === undefined) continue;
         if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'artifact')) n += 1;
+      }
+      return n;
+    }
+    case 'permanents-of-type': {
+      let n = 0;
+      const seats = of.whose === 'you' ? [controller] : state.seats.map((seat) => seat.index);
+      for (const seat of seats) {
+        for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
+          const inst = state.instances[id];
+          if (inst === undefined) continue;
+          const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+          if (of.types.some((type) => hasType(line, type))) n += 1;
+        }
       }
       return n;
     }

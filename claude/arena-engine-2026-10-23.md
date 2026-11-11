@@ -24820,3 +24820,70 @@ Pod sweep on D602's build (085dcba), seeds 47001–47040: 40 of 40 finished, no 
 
 Break run on D602's build: 8 deliberate faults, 5 caught. The 3 misses are resolved above: 2 pinned,
 and 1 was a wrong guard that is now removed.
+
+## D604 — Attachment riders, counted card types, and the D603 gaps
+
+After the step triggers, the next one-short families in the dump are the attachments: 177 cards stop
+at "Enchanted creature gets …" or "Equipped creature gets …". The common reason is a rider after the
+size that `attachmentBonus` had no row for:
+- "and can't block" (Copper Carapace, Cast into Darkness)
+- "and attacks each combat if able" (Furor of the Bitten, Tormentor's Trident)
+- "and can't be blocked"
+- "and loses flying" (Colossus Hammer)
+- "and loses all abilities" (Mystic Subdual)
+- "and is every creature type" (Amorphous Axe)
+- "and has mountainwalk" (Cave Sense)
+- "and doesn't untap during its controller's untap step" (Leaden Fists)
+
+**One rider reader.** `attachmentRider` maps each of those onto the `PumpOptions` field the layer
+system already applies (`cantBlock`, `mustAttack`, `cantBeBlocked`, `removeKeywords`,
+`losesAllAbilities`, `allCreatureTypes`, `doesntUntap`, `landwalk`). It reads the rider alone ("Enchanted
+creature can't block") and after a size. The size form is tried only when the existing keyword
+reading would fail, so every line that read before reads the same. `harmful` follows the rider:
+a creature that cannot block, must attack, will not untap or loses its abilities is one the
+computer opponent aims the Aura at somebody else's creature for.
+
+**Counted card types.** `StaticCountable` gains `permanents-of-type`:
+- "for each enchantment you control" (Helm of the Gods, Tempest Technique)
+- "… artifact and/or enchantment you control" (All That Glitters)
+- "… land on the battlefield"
+
+It reads the printed type line, which is metalcraft's compromise and the reason `artifacts-you-control`
+gave. The first version counted creatures too, and two D523 tests refused it. They were right: D523
+refuses a creature count on a static size because whether a permanent is a creature *now* is
+exactly what a printed line cannot say (a crewed Vehicle, an animated land). "Creature" is taken out,
+and a test pins that the creature count stays refused.
+
+**The D603 break run: 6 faults, 3 caught. All 3 misses are pinned:**
+- "It" read as the source: a Thallid row that marks each other creature you control as it enters
+  puts the counters on the Bears, not on itself.
+- The amount read as one: the same row puts two charge counters.
+- "A creature" with nobody named read as yours: a seat-1 watcher gains life when seat 0's Bears
+  connect.
+
+**Tests.** 8 new engine tests:
+- 4 on riders: every row reads; each rider lands on its creature with the size; a bare creature has
+  none of them; "loses all abilities" takes the printed flying, and an unread rider stays unread.
+- 1 on counted types: an enchantment of yours, an artifact and an enchantment, the opponent's
+  enchantment not counted, and the creature count refused.
+- 3 D603 pins.
+
+Each of the following was broken on purpose and its test failed:
+- The size dropped from a rider line.
+- "Can't block" read as "can't attack".
+- "Loses" read as "has".
+- Landwalk lower-cased.
+- "Loses all abilities" dropped.
+- The count read over everybody's board.
+- A list of types read as its first type.
+- The three D603 faults.
+
+    engine tests: 4,289, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,529 of 31,292 (was 9,494); lines read 27,314 of 58,524 (46.7%, was 27,262)
+
+Pod sweep on D603's build (8bea217), seeds 47101–47140: 40 of 40 finished, no throw and no stall.
+
+Break run on D603's build: 6 deliberate faults, 3 caught; all 3 misses pinned here.
