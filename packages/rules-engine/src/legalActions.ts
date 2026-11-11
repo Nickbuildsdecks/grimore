@@ -301,6 +301,12 @@ export interface LegalPlay {
    */
   readonly sacrificeKind?: 'artifact' | 'artifact-or-creature';
   /**
+   * What the sacrifice cost eats, in words (D609): "land", "token", "artifact or land", "Forest".
+   * Set on every play whose cost sacrifices something, so the table can ask in the cost's own words
+   * rather than assume a creature; `sacrificeKind` above stays the bot's narrower signal.
+   */
+  readonly sacrificeWords?: string;
+  /**
    * Unblocked attackers that could be **returned to hand** to pay for this, when its cost asks for
    * one — ninjutsu, and nothing else so far (CR 702.49a).
    *
@@ -1565,9 +1571,11 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
     // And which half of the board a sacrifice eats, where it is not simply creatures — the same
     // field an ability's cost sets, for the same two readers. See `LegalPlay.sacrificeKind`.
-    const eats = sacrificeAsked?.sacrifice === 'artifact' || sacrificeAsked?.sacrifice === 'artifact-or-creature'
-      ? { sacrificeKind: sacrificeAsked.sacrifice }
-      : {};
+    const eats = {
+      ...(sacrificeAsked?.sacrifice === 'artifact' || sacrificeAsked?.sacrifice === 'artifact-or-creature'
+        ? { sacrificeKind: sacrificeAsked.sacrifice } : {}),
+      ...(sacrificeAsked === undefined || sacrificeAsked === null ? {} : { sacrificeWords: sacrificeWords(sacrificeAsked) }),
+    };
     const pitchOn = {
       ...(pitches.length === 0 ? {} : { discardOptions: pitches }), ...eats,
       ...(retrace ? { retrace: true as const } : {}),
@@ -2088,6 +2096,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         sacrificeOptions: victims,
         // Which kind of cost that list is for, read off the cost rather than guessed from the list.
         ...(ability.cost.sacrifice === 'artifact' ? { sacrificeKind: 'artifact' as const } : {}),
+        ...(ability.cost.sacrifice === undefined ? {} : { sacrificeWords: sacrificeWords(ability.cost) }),
         ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
         ...(pitches.length === 0 ? {} : { discardOptions: pitches }),
       });

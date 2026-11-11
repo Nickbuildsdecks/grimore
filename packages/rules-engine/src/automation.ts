@@ -129,8 +129,9 @@ export function sacrificeOptions(
   state: GameState, seat: SeatIndex, source: string, cost: AbilityCost,
 ): string[] {
   if (cost.sacrifice === undefined) return [];
+  const kind = cost.sacrifice;
   return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
-    if (cost.sacrifice === 'another-creature' && id === source) return false;
+    if (kind.startsWith('another-') && id === source) return false;
     const inst = state.instances[id];
     if (inst === undefined) return false;
     const ch = characteristicsOf(state, inst);
@@ -146,9 +147,17 @@ export function sacrificeOptions(
       never the cheapest creature it could feed.
     */
     // "An artifact or creature" is either, and a card that is both is still one sacrifice.
-    const rightKind = cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact')
-      : cost.sacrifice === 'artifact-or-creature' ? hasType(ch.typeLine, 'artifact') || ch.isCreature
-        : ch.isCreature;
+    const artifact = hasType(ch.typeLine, 'artifact');
+    const land = hasType(ch.typeLine, 'land');
+    const rightKind = kind === 'artifact' || kind === 'another-artifact' ? artifact
+      : kind === 'artifact-or-creature' || kind === 'another-creature-or-artifact' ? artifact || ch.isCreature
+        : kind === 'land' ? land
+          : kind === 'artifact-or-land' || kind === 'another-artifact-or-land' ? artifact || land
+            : kind === 'token' ? inst.isToken
+              : kind === 'permanent' ? true
+                : kind === 'nontoken-permanent' ? !inst.isToken
+                  : kind === 'enchantment' ? hasType(ch.typeLine, 'enchantment')
+                    : ch.isCreature;
     if (!rightKind) return false;
     // "Sacrifice another Vampire or Zombie": one of the named subtypes, read where the kind was.
     return cost.sacrificeSubtypes === undefined
@@ -166,9 +175,17 @@ export function sacrificeWords(
   if (cost.sacrificeSubtypes !== undefined && cost.sacrificeSubtypes.length > 0) {
     return cost.sacrificeSubtypes.join(' or ');
   }
-  return cost.sacrifice === 'artifact' ? 'artifact'
-    : cost.sacrifice === 'artifact-or-creature' ? 'artifact or creature'
-      : 'creature';
+  switch (cost.sacrifice) {
+    case 'artifact': case 'another-artifact': return 'artifact';
+    case 'artifact-or-creature': case 'another-creature-or-artifact': return 'artifact or creature';
+    case 'land': return 'land';
+    case 'artifact-or-land': case 'another-artifact-or-land': return 'artifact or land';
+    case 'token': return 'token';
+    case 'permanent': return 'permanent';
+    case 'nontoken-permanent': return 'nontoken permanent';
+    case 'enchantment': return 'enchantment';
+    default: return 'creature';
+  }
 }
 
 /**

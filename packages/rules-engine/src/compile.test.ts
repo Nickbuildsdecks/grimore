@@ -8592,12 +8592,12 @@ describe('an ability cost that is not mana, a tap or life', () => {
       does not charge, which is an ability that activates for free. Each is a printed shape with its
       corpus count.
     */
-    ['a land, which has no field', '{1}{B}, Sacrifice a land: Draw a card.'],            // 27 lines
+    // "Sacrifice a land" and "Sacrifice a Forest" were rows here ("no field", "not a creature or an
+    // artifact"); D609 gave the cost its wider kinds, and their test is in scripts.test.ts.
     ['tapping somebody else, which has no field',
       'Tap an untapped creature you control: Draw a card.'],                             // 18
     // Three rows left here for D581, which took "a creature type", "taking a counter off" and
     // "exiling from a graveyard" to the table above: what is still refused next to each.
-    ['a land type, which is not a creature or an artifact', 'Sacrifice a Forest: Draw a card.'],
     ['another Food, which the artifact sacrifice cannot say', 'Sacrifice another Food: Draw a card.'],
     ['a number of counters chosen as it is paid',
       'Remove X charge counters from Probe Thing: Draw a card.'],

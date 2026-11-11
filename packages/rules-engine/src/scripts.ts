@@ -21690,7 +21690,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesFromGraveyard = false;
   let energy = 0;
   let removes: { counter: string; amount: number } | null = null;
-  let sacrifices: 'creature' | 'another-creature' | 'artifact' | null = null;
+  let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -21828,10 +21828,48 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         sacrifices = another ? 'another-creature' : 'creature';
       } else if (!another && SACRIFICED_ARTIFACT_TYPES.includes(typed[2]!)) {
         sacrifices = 'artifact';
+      } else if (!another && typed[3] === undefined
+        && ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Desert', 'Gate'].includes(typed[2]!)) {
+        // A land narrowed by its subtype (D609): "Sacrifice a Forest".
+        sacrifices = 'land';
       } else {
         return null;
       }
       sacrificedSubtype = typed[2]!;
+      continue;
+    }
+    /*
+      The wider kinds (D609): a land, an artifact or land, a token, a permanent, a nontoken
+      permanent, an enchantment, another artifact, another creature or artifact — and a basic land
+      type or Desert/Gate as a land narrowed by its subtype ("Sacrifice a Forest").
+    */
+    const wider = /^Sacrifice (an?|another) (land|artifact or land|token|permanent|nontoken permanent|enchantment|artifact|creature or artifact|artifact or creature|Plains|Island|Swamp|Mountain|Forest|Desert|Gate)$/.exec(component);
+    // "An artifact" alone is the older row below and keeps its reading.
+    if (wider !== null && !(wider[1] !== 'another' && wider[2] === 'artifact')) {
+      if (sacrifices !== null) return null;
+      const another = wider[1] === 'another';
+      const what = wider[2]!;
+      const KINDS: Readonly<Record<string, readonly [NonNullable<AbilityCost['sacrifice']>, NonNullable<AbilityCost['sacrifice']> | null]>> = {
+        land: ['land', null],
+        'artifact or land': ['artifact-or-land', 'another-artifact-or-land'],
+        token: ['token', null],
+        permanent: ['permanent', null],
+        'nontoken permanent': ['nontoken-permanent', null],
+        enchantment: ['enchantment', null],
+        artifact: ['artifact', 'another-artifact'],
+        'creature or artifact': ['artifact-or-creature', 'another-creature-or-artifact'],
+        'artifact or creature': ['artifact-or-creature', 'another-creature-or-artifact'],
+      };
+      if (/^[A-Z]/.test(what)) {
+        if (another) return null;
+        sacrifices = 'land';
+        sacrificedSubtype = what;
+        continue;
+      }
+      const pair = KINDS[what];
+      const chosen = pair === undefined ? null : another ? pair[1] : pair[0];
+      if (chosen === null || chosen === undefined) return null;
+      sacrifices = chosen;
       continue;
     }
     const sacrificed = /^Sacrifice (a creature|another creature|an artifact)$/i.exec(component);

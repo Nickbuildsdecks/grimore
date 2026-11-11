@@ -1862,7 +1862,15 @@ export interface AbilityCost {
    * creature in reply. Modelling it as a target would be close enough to look right and wrong
    * exactly where it matters.
    */
-  readonly sacrifice?: 'creature' | 'another-creature' | 'artifact' | 'artifact-or-creature';
+  readonly sacrifice?: 'creature' | 'another-creature' | 'artifact' | 'artifact-or-creature'
+    /*
+      The wider kinds (D609): "Sacrifice a land", "… an artifact or land", "… a token", "… a
+      permanent", "… a nontoken permanent", "… an enchantment", "… another artifact", "… another
+      creature or artifact". `sacrificeOptions` answers each off the live characteristics; the bot
+      offers only creatures and spent artifacts as fodder, so it leaves the rest to a person.
+    */
+    | 'land' | 'artifact-or-land' | 'another-artifact-or-land' | 'token' | 'permanent'
+    | 'nontoken-permanent' | 'enchantment' | 'another-artifact' | 'another-creature-or-artifact';
   /**
    * Narrows `sacrifice` to permanents with **one of** these subtypes: "Sacrifice another Vampire
    * or Zombie" (D578).

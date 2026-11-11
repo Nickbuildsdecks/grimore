@@ -25139,3 +25139,70 @@ Each of the following was broken on purpose and its test failed:
 Pod sweep on D607's build (4eee472), seeds 47501–47540: 40 of 40 finished, no throw and no stall.
 
 Break run on D607's build: 4 deliberate faults, 2 caught. 1 miss is pinned here and 1 is vacuous.
+
+## D609 — A sacrifice cost of any permanent kind, and the D608 gaps
+
+Ranking the one-short activated abilities turned up a pattern. Of the 362 lines with a sacrifice in
+the cost, the bodies were mostly readable ("Draw a card", "You gain 3 life", "Add {C}"), and what
+refused them was the **cost**. `AbilityCost.sacrifice` knew four kinds: a creature, another
+creature, an artifact, and an artifact or creature. The cards print:
+- a land (Cephalid Scout, Overgrown Estate, Ripchain Razorkin)
+- an artifact or land (Akki Scrapchomper, Destructive Digger)
+- a token (Hardened Tactician, Fountainport)
+- a permanent (Claws of Gix)
+- a nontoken permanent (Infernal Tribute)
+- an enchantment
+- another artifact (Chronomancer)
+- another creature or artifact (Ahriman)
+- a Forest (Dark Heart of the Wood)
+
+**Nine more kinds.** The union gains each of those. `sacrificeOptions` answers every kind from the
+live characteristics, and "another" in any kind excludes the source. A land subtype ("a Forest", "a
+Desert", "a Gate") is a land narrowed by `sacrificeSubtypes`, the D578 mechanism. The cost parser
+reads the phrases. Plain "an artifact" keeps its older row, and capitalised land types are added to
+the typed-sacrifice branch that already caught "a Goblin" and "a Food".
+
+**The table asks in the cost's own words.** `LegalPlay.sacrificeWords` is now set on every play
+whose cost sacrifices something, and the web bar's `feedWords` prefers it, so a land cost says "tap
+a land to sacrifice" rather than "tap a creature". The engine's refusals use the same words.
+
+The bot is deliberately left where it was. Outside artifact costs it offers only creatures as
+fodder, so it does not use a land, token or permanent sacrifice. That is a choice it would get
+wrong by spending its lands, and a person at the table makes it instead.
+
+Two compile refusal rows ("a land, which has no field", "a land type, which is not a creature or
+an artifact") are removed with a note.
+
+**The D608 break run: 4 faults, 1 caught. All 3 misses are pinned here:**
+- The bite's damage source read as the spell: a deathtouch 1/1 pumped by Clear Shot kills a 6/6,
+  which it can only do if the damage is the creature's.
+- "Up to one" choosing nothing and skipping the pump: Assert Perfection with one target still makes
+  the Bears 3/2.
+- A fight aimed at a noncreature: "It fights target artifact" stays unread.
+
+**Tests.** 6 new engine tests:
+- 3 for D609: every row reads; each cost is offered exactly the permanents it names, and the play
+  says "land"; the land is paid and the effect resolves, and a creature offered for a land cost is
+  refused in the cost's words.
+- 3 D608 pins.
+
+Plus 2 web assertions on `feedWords` with the cost's words.
+
+Each of the following was broken on purpose and its test failed:
+- "Another" keeping the source.
+- Token read as nontoken.
+- The land subtype ignored.
+- "Artifact or land" dropping land.
+- The three D608 faults.
+
+    engine tests: 4,316, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,773 of 31,292 (was 9,687); lines read 27,624 of 58,524 (47.2%, was 27,515)
+
+The cost was the whole blocker on most of these, so 86 cards finished.
+
+Pod sweep on D608's build (b78a5bc), seeds 47601–47640: 40 of 40 finished, no throw and no stall.
+
+Break run on D608's build: 4 deliberate faults, 1 caught; all 3 misses pinned here.

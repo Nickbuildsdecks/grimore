@@ -2160,6 +2160,9 @@ describe("what to tap for a cost that is a card (D585)", () => {
     expect(feedWords("sacrifice")).toBe("tap a creature to sacrifice")
     expect(feedWords("sacrifice", "artifact")).toBe("tap an artifact to sacrifice")
     expect(feedWords("sacrifice", "artifact-or-creature")).toBe("tap an artifact or creature to sacrifice")
+    // The cost's own words win where the engine sent them (D609).
+    expect(feedWords("sacrifice", undefined, "land")).toBe("tap a land to sacrifice")
+    expect(feedWords("sacrifice", undefined, "artifact or land")).toBe("tap an artifact or land to sacrifice")
   })
 
   it("and says discard or return where that is what happens to the card", () => {

@@ -45759,7 +45759,10 @@ describe('pump, then it fights or bites (D608)', () => {
   const EPIC = {"name":"Epic Confrontation","type_line":"Sorcery","mana_cost":"{1}{G}","cmc":2,"colors":["G"],"power":null,"toughness":null,"oracle_text":"Target creature you control gets +1/+2 until end of turn. It fights target creature you don't control. (Each deals damage equal to its power to the other.)","layout":"normal"};
   const SHOT = {"name":"Clear Shot","type_line":"Instant","mana_cost":"{2}{G}","cmc":3,"colors":["G"],"power":null,"toughness":null,"oracle_text":"Target creature you control gets +1/+1 until end of turn. It deals damage equal to its power to target creature you don't control.","layout":"normal"};
   const OGRE = {"name":"Test Ogre","type_line":"Creature — Ogre","mana_cost":"{2}{R}","cmc":3,"colors":["R"],"power":"3","toughness":"3","oracle_text":"","layout":"normal"};
-  const ROWS = [EPIC, SHOT, OGRE];
+  const ASSERT = {"name":"Assert Perfection","type_line":"Sorcery","mana_cost":"{1}{G}","cmc":2,"colors":["G"],"power":null,"toughness":null,"oracle_text":"Target creature you control gets +1/+0 until end of turn. It deals damage equal to its power to up to one target creature an opponent controls.","layout":"normal"};
+  const VIPER = {"name":"Test Viper","type_line":"Creature — Snake","mana_cost":"{G}","cmc":1,"colors":["G"],"power":"1","toughness":"1","oracle_text":"Deathtouch","layout":"normal"};
+  const GIANT = {"name":"Test Giant","type_line":"Creature — Giant","mana_cost":"{4}{G}","cmc":5,"colors":["G"],"power":"6","toughness":"6","oracle_text":"","layout":"normal"};
+  const ROWS = [EPIC, SHOT, OGRE, ASSERT, VIPER, GIANT];
   const deck = customDeck({
     id: 'bites', name: 'Bites',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 50 }],
@@ -45790,9 +45793,103 @@ describe('pump, then it fights or bites (D608)', () => {
     expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.damage).toBe(2);
   });
 
+  it('the bite is the creature\'s damage, so its deathtouch applies (D608 break run)', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'bites', 1: 'bites' }, deckSpecs: { bites: deck.deck },
+      hands: { 0: ['Clear Shot'] }, battlefield: { 0: ['Test Viper', 'Forest', 'Forest', 'Forest'], 1: ['Test Giant'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Clear Shot'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Viper') }, { kind: 'card', id: find(s, 1, 'battlefield', 'Test Giant') }],
+    } as Action)), 20);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Giant');
+  });
+
+  it('"up to one" with nothing chosen still pumps (D608 break run)', () => {
+    let s = table('Assert Perfection', 'Test Ogre');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Assert Perfection'), targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    expect(characteristicsOf(s, s.instances[bears]!).power).toBe(3);
+  });
+
+  it('a fight aimed at something that cannot fight stays unread (D608 break run)', () => {
+    const read = compileCard({ ...EPIC, oracle_text: 'Target creature you control gets +1/+1 until end of turn. It fights target artifact.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+
   it('Clear Shot: three damage with the +1, one way, kills a 3/3', () => {
     const s = cast(table('Clear Shot', 'Test Ogre'), 'Clear Shot', 'Test Ogre');
     expect(namesIn(s, 1, 'graveyard')).toContain('Test Ogre');
     expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.damage).toBe(0);
+  });
+});
+
+describe('a sacrifice cost of any permanent kind (D609)', () => {
+  /*
+    "Sacrifice a land / a Forest / a token / a permanent / a nontoken permanent / an enchantment /
+    another artifact / an artifact or land / another creature or artifact:" — each a kind of
+    `AbilityCost.sacrifice`, answered by `sacrificeOptions` off the live characteristics.
+  */
+  const gauge = (name: string, what: string) => ({
+    name, type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: null, toughness: null,
+    oracle_text: `Sacrifice ${what}: You gain 1 life.`,
+  });
+  const ROWS = [
+    gauge('Test Quarry', 'a land'),
+    gauge('Test Grove', 'a Forest'),
+    gauge('Test Mill', 'a token'),
+    gauge('Test Pyre', 'a nontoken permanent'),
+    gauge('Test Forge', 'another artifact'),
+    gauge('Test Yard', 'an artifact or land'),
+  ];
+  const deck = customDeck({
+    id: 'altars', name: 'Altars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Bonesplitter', count: 2 }, { name: 'Grizzly Bears', count: 2 },
+      { name: 'Forest', count: 25 }, { name: 'Mountain', count: 26 }],
+    data: ROWS as never[],
+  });
+  /** The altar, Forest, Mountain, Bonesplitter, Bears and a Pest token; the names it may sacrifice. */
+  const offered = (altar: string): { s: GameState; names: string[] } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'altars', 1: 'altars' }, deckSpecs: { altars: deck.deck },
+      battlefield: { 0: [altar, 'Forest', 'Mountain', 'Bonesplitter', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = createToken(s, 0, PEST_TOKEN, 1);
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'battlefield', altar));
+    return { s, names: (play?.sacrificeOptions ?? []).map((id) => nameOf(s, id)).sort() };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('offers exactly the permanents of the kind it names', () => {
+    expect(offered('Test Quarry').names).toEqual(['Forest', 'Mountain']);
+    expect(offered('Test Grove').names).toEqual(['Forest']);
+    expect(offered('Test Mill').names).toEqual(['Pest']);
+    expect(offered('Test Pyre').names).toEqual(['Bonesplitter', 'Forest', 'Grizzly Bears', 'Mountain', 'Test Pyre']);
+    // "Another" artifact: the Bonesplitter, not the Forge itself.
+    expect(offered('Test Forge').names).toEqual(['Bonesplitter']);
+    expect(offered('Test Yard').names).toEqual(['Bonesplitter', 'Forest', 'Mountain', 'Test Yard']);
+    // And the play says what it eats, for the table to ask in the cost's words.
+    const { s } = offered('Test Quarry');
+    expect(legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'battlefield', 'Test Quarry'))?.sacrificeWords).toBe('land');
+  });
+
+  it('pays with the land chosen and resolves', () => {
+    let { s } = offered('Test Quarry');
+    const before = life(s, 0);
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Quarry'), abilityIndex: 0, sacrifice: forest } as Action)), 20);
+    expect(s.instances[forest]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 1);
+    // And a creature is not a land.
+    const second = offered('Test Quarry').s;
+    expect(() => apply(second, { type: 'auto:activate', by: 0, card: find(second, 0, 'battlefield', 'Test Quarry'), abilityIndex: 0,
+      sacrifice: find(second, 0, 'battlefield', 'Grizzly Bears') } as Action)).toThrow(/land cannot be sacrificed/);
   });
 });

@@ -141,10 +141,12 @@ export type Decision = NonNullable<LegalActions["mustDecide"]>
  * it would name the wrong half.
  */
 export function feedWords(
-  cost: "sacrifice" | "returned" | "discarded", sacrificeKind?: LegalPlay["sacrificeKind"],
+  cost: "sacrifice" | "returned" | "discarded", sacrificeKind?: LegalPlay["sacrificeKind"], words?: string,
 ): string {
   if (cost === "returned") return "tap an unblocked attacker to return to your hand"
   if (cost === "discarded") return "tap a card in your hand to discard"
+  // The cost's own words where the engine sent them (D609): "a land", "a token", "a Forest".
+  if (words !== undefined && words !== "") return `tap ${/^[aeiou]/i.test(words) ? "an" : "a"} ${words} to sacrifice`
   if (sacrificeKind === "artifact") return "tap an artifact to sacrifice"
   if (sacrificeKind === "artifact-or-creature") return "tap an artifact or creature to sacrifice"
   return "tap a creature to sacrifice"
