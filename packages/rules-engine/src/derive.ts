@@ -74,6 +74,31 @@ function compilationFor(def: CardDef): Compilation {
     toughness: def.toughness ?? null,
     loyalty: def.loyalty ?? null,
     layout: def.faces === undefined ? 'normal' : def.faces.kind,
+    /*
+      And the faces, so a two-faced definition compiles as one (D591): the front is this
+      definition's own text, the rest are its `faces`. Without them a modal or transforming card
+      built from data would be refused here as "more than one face" at play time, although the
+      compiler that built it read every face.
+    */
+    ...(def.faces === undefined ? {} : {
+      card_faces: [def, ...def.faces.cards].map((face, at) => ({
+        name: face.name, type_line: face.typeLine,
+        /*
+          An adventurer's front, without the line that **quotes** its Adventure. The pool writes
+          "Venture Deeper {U} (Sorcery) — Target player mills four cards…" on the creature so a
+          card in hand shows both halves (`poolOracle.test.ts` lists it as a deliberate
+          difference); that line is the face's rules, which the face carries itself, and read as
+          the creature's it would be an unread line on a creature that has no text at all.
+        */
+        oracle_text: at === 0 && def.faces?.kind === 'adventure'
+          ? face.oracleText.split('\n').filter((line) => !def.faces!.cards
+            .some((adventure) => line.startsWith(`${adventure.name} {`))).join('\n')
+          : face.oracleText,
+        mana_cost: face.manaCost,
+        colors: face.colors, power: face.power ?? null, toughness: face.toughness ?? null,
+        loyalty: face.loyalty ?? null,
+      })),
+    }),
   });
   COMPILED.set(def, result);
   return result;

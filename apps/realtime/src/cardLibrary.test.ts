@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import pg from 'pg';
 import pino from 'pino';
 import { createCardLibrary } from './cardLibrary.js';
+import { customDeck } from '@grimore/rules-engine';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -189,6 +190,49 @@ describe.skipIf(!DATABASE_URL)('the card lookup (requires DATABASE_URL)', () => 
       }
     } finally {
       await pool.query("DELETE FROM scryfall_cards WHERE name = 'Reprinted Wall'");
+      await pool.end();
+    }
+  });
+
+  it('finds a two-faced card by its front face, with its faces (D591)', async () => {
+    /*
+      Scryfall names a two-faced card with both faces, "Akoum Warrior // Akoum Teeth", and a player
+      pastes the front. The row has to be found by that, and has to bring \`card_faces\` with it,
+      or the compiler has only the front face and refuses the card. The faces here are the corpus's.
+    */
+    const faces = [
+      { name: 'Akoum Warrior', mana_cost: '{5}{R}', type_line: 'Creature — Minotaur Warrior', oracle_text: 'Trample',
+        colors: ['R'], power: '4', toughness: '5', loyalty: null },
+      { name: 'Akoum Teeth', mana_cost: '', type_line: 'Land', oracle_text: 'Akoum Teeth enters tapped.\n{T}: Add {R}.',
+        colors: [], power: null, toughness: null, loyalty: null },
+    ];
+    const pool = new pg.Pool({ connectionString: url, max: 1 });
+    try {
+      await pool.query(
+        `INSERT INTO scryfall_cards (id, name, card_name, set_code, type_line, oracle_text,
+           mana_cost, cmc, layout, card_faces, last_updated)
+         VALUES ('dddddddd-0000-4000-8000-000000000004', 'Akoum Warrior // Akoum Teeth',
+                 'Akoum Warrior // Akoum Teeth', 'ZNR', 'Creature — Minotaur Warrior // Land', NULL,
+                 '{5}{R} // ', 6, 'modal_dfc', $1, CURRENT_TIMESTAMP)`,
+        [JSON.stringify(faces)],
+      );
+      const cards = library();
+      try {
+        await cards.warm(['Akoum Warrior']);
+        const row = cards.rowFor('akoum warrior');
+        expect(row?.name).toBe('Akoum Warrior // Akoum Teeth');
+        expect(row?.card_faces).toBeTruthy();
+        // And a pasted list built from that row has the card with both faces, as a table would.
+        const built = customDeck({
+          id: 'pasted', name: 'Pasted', entries: [{ name: 'Akoum Warrior', count: 1 }], data: [row!],
+        });
+        const def = built.deck.cards.find((entry) => entry.card.name === 'Akoum Warrior')?.card;
+        expect(def?.faces).toMatchObject({ kind: 'modal', cards: [{ name: 'Akoum Teeth' }] });
+      } finally {
+        await cards.close();
+      }
+    } finally {
+      await pool.query("DELETE FROM scryfall_cards WHERE name = 'Akoum Warrior // Akoum Teeth'");
       await pool.end();
     }
   });

@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, soleTargetSpecOf } from './scripts.js';
-import { scriptForCard } from './derive.js';
+import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
@@ -43640,8 +43640,15 @@ describe('explore (D590)', () => {
   });
 
   it('a nonland card puts a counter on it, and asks whether to keep the card on top', () => {
-    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Grizzly Bears');
+    // A Forest directly under the Bears, so "the card under a binned one is not taken" is asked of
+    // a land — the only card that could be taken by mistake (the D590 break run).
+    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Forest');
+    s = apply(s, {
+      type: 'card:move', by: 0, card: ids(s, 0, 'library').find((id) => nameOf(s, id) === 'Grizzly Bears')!,
+      toZone: 'library', position: 'top',
+    });
     const bears = ids(s, 0, 'library')[0]!;
+    expect(nameOf(s, ids(s, 0, 'library')[1]!)).toBe('Forest');
     s = castIt(s, 'Merfolk Branchwalker');
     const walker = find(s, 0, 'battlefield', 'Merfolk Branchwalker');
     expect(counters(s, walker)).toBe(1);
@@ -43688,5 +43695,113 @@ describe('explore (D590)', () => {
     const action = botAction(s, 0);
     expect(action?.type).toBe('auto:decide');
     expect(() => apply(s, action!)).not.toThrow();
+  });
+});
+
+describe('two-faced cards from printed data: adventure, modal, transform (D591)', () => {
+  /*
+    A card with two faces used to be refused outright by the compiler ("more than one face"), which
+    left about six hundred legal cards as cardboard. It is now compiled as its front face, with the
+    other face built from `card_faces` and put where the engine already looks for it. Every row
+    here is the corpus's, faces and all.
+  */
+  const PAIR = {"name": "Curious Pair", "type_line": "Creature — Human Peasant", "mana_cost": "{1}{G}", "cmc": 2, "colors": ["G"], "power": "1", "toughness": "3", "oracle_text": "", "layout": "adventure", "card_faces": [{"name": "Curious Pair", "mana_cost": "{1}{G}", "type_line": "Creature — Human Peasant", "oracle_text": "", "colors": ["G"], "power": "1", "toughness": "3", "loyalty": null}, {"name": "Treats to Share", "mana_cost": "{G}", "type_line": "Sorcery — Adventure", "oracle_text": "Create a Food token. (Then exile this card. You may cast the creature later from exile. A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\")", "colors": ["G"], "power": null, "toughness": null, "loyalty": null}]};
+  const AKOUM = {"name": "Akoum Warrior", "type_line": "Creature — Minotaur Warrior", "mana_cost": "{5}{R}", "cmc": 6, "colors": ["R"], "power": "4", "toughness": "5", "oracle_text": "Trample", "layout": "modal", "card_faces": [{"name": "Akoum Warrior", "mana_cost": "{5}{R}", "type_line": "Creature — Minotaur Warrior", "oracle_text": "Trample", "colors": ["R"], "power": "4", "toughness": "5", "loyalty": null}, {"name": "Akoum Teeth", "mana_cost": "", "type_line": "Land", "oracle_text": "Akoum Teeth enters tapped.\n{T}: Add {R}.", "colors": [], "power": null, "toughness": null, "loyalty": null}]};
+  const PATHWAY = {"name": "Barkchannel Pathway", "type_line": "Land", "mana_cost": "", "cmc": 0, "colors": [], "power": null, "toughness": null, "oracle_text": "{T}: Add {G}.", "layout": "modal", "card_faces": [{"name": "Barkchannel Pathway", "mana_cost": "", "type_line": "Land", "oracle_text": "{T}: Add {G}.", "colors": [], "power": null, "toughness": null, "loyalty": null}, {"name": "Tidechannel Pathway", "mana_cost": "", "type_line": "Land", "oracle_text": "{T}: Add {U}.", "colors": [], "power": null, "toughness": null, "loyalty": null}]};
+  const DELVER = {"name": "Delver of Secrets", "type_line": "Creature — Human Wizard", "mana_cost": "{U}", "cmc": 1, "colors": ["U"], "power": "1", "toughness": "1", "oracle_text": "At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.", "layout": "transform", "card_faces": [{"name": "Delver of Secrets", "mana_cost": "{U}", "type_line": "Creature — Human Wizard", "oracle_text": "At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.", "colors": ["U"], "power": "1", "toughness": "1", "loyalty": null}, {"name": "Insectile Aberration", "mana_cost": "", "type_line": "Creature — Human Insect", "oracle_text": "Flying", "colors": ["U"], "power": "3", "toughness": "2", "loyalty": null}]};
+  const BELENON = {"name": "Invasion of Belenon", "type_line": "Battle — Siege", "mana_cost": "{2}{W}", "cmc": 3, "colors": ["W"], "power": null, "toughness": null, "oracle_text": "(As a Siege enters, choose an opponent to protect it. You and others can attack it. When it's defeated, exile it, then cast it transformed.)\nWhen Invasion of Belenon enters, create a 2/2 white and blue Knight creature token with vigilance.", "layout": "transform", "card_faces": [{"name": "Invasion of Belenon", "mana_cost": "{2}{W}", "type_line": "Battle — Siege", "oracle_text": "(As a Siege enters, choose an opponent to protect it. You and others can attack it. When it's defeated, exile it, then cast it transformed.)\nWhen Invasion of Belenon enters, create a 2/2 white and blue Knight creature token with vigilance.", "colors": ["W"], "power": null, "toughness": null, "loyalty": null}, {"name": "Belenon War Anthem", "mana_cost": "", "type_line": "Enchantment", "oracle_text": "Creatures you control get +1/+1.", "colors": ["W"], "power": null, "toughness": null, "loyalty": null}]};
+  const ROWS = [PAIR, AKOUM, PATHWAY, DELVER];
+  const list = customDeck({
+    id: 'faces', name: 'Faces',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 20 }, { name: 'Mountain', count: 20 }],
+    data: ROWS as never[],
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'faces', 1: 'ember-rush' }, deckSpecs: { faces: list },
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const named = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const playsOf = (s: GameState, name: string) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', name));
+
+  it('compiles each with its faces, and counts every face\'s lines', () => {
+    const pair = compileCard(PAIR as never);
+    expect(pair.ok).toBe(true);
+    if (!pair.ok) return;
+    expect(pair.def.faces?.kind).toBe('adventure');
+    expect(pair.def.faces?.cards.map((f) => f.name)).toEqual(['Treats to Share']);
+    expect(pair.unread).toEqual([]);
+    const akoum = compileCard(AKOUM as never);
+    expect(akoum.ok && akoum.def.faces).toMatchObject({ kind: 'modal', cards: [{ name: 'Akoum Teeth', typeLine: 'Land' }] });
+    const delver = compileCard(DELVER as never);
+    expect(delver.ok && delver.def.faces).toMatchObject({
+      kind: 'transform', cards: [{ name: 'Insectile Aberration', power: '3', toughness: '2', cmc: 1 }],
+    });
+    // A back face's unread line is the card's: an adventure whose spell does not read is not whole.
+    const probe = {
+      ...PAIR, name: 'Probe Pair',
+      card_faces: [{ ...PAIR.card_faces[0], name: 'Probe Pair' }, { ...PAIR.card_faces[1], name: 'Probe Treat', oracle_text: 'Probe Treat does something nobody reads.' }],
+    };
+    const half = compileCard(probe as never);
+    expect(half.ok && half.unread.map((u) => u.line)).toEqual(['Probe Treat does something nobody reads.']);
+  });
+
+  it('an adventurer is offered as its creature and as its adventure, and the adventure resolves', () => {
+    let s = table(['Curious Pair'], ['Forest', 'Forest', 'Forest']);
+    const plays = playsOf(s, 'Curious Pair').filter((p) => p.kind === 'cast');
+    expect(plays.map((p) => p.manaCost).sort()).toEqual(['{1}{G}', '{G}']);
+    const adventure = plays.find((p) => p.half !== undefined)!;
+    const card = find(s, 0, 'hand', 'Curious Pair');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: adventure.half } as Action)), 20);
+    // A Food, and the card in exile, castable as the creature from there.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Food');
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === card && p.half === undefined)).toBe(true);
+  });
+
+  it('a modal card is offered as its spell and as its land, and the land is the back face', () => {
+    let s = table(['Akoum Warrior'], ['Mountain']);
+    const plays = playsOf(s, 'Akoum Warrior');
+    const land = plays.find((p) => p.kind === 'land')!;
+    expect(land.description).toContain('Akoum Teeth');
+    const card = find(s, 0, 'hand', 'Akoum Warrior');
+    s = apply(s, { type: 'auto:playLand', by: 0, card, half: land.half } as Action);
+    expect(nameOf(s, card)).toBe('Akoum Teeth');
+    // "Akoum Teeth enters tapped", read off the back face's own text.
+    expect(s.instances[card]!.tapped).toBe(true);
+  });
+
+  it('a pathway is a land either way up', () => {
+    const s = table(['Barkchannel Pathway'], []);
+    const lands = playsOf(s, 'Barkchannel Pathway').filter((p) => p.kind === 'land');
+    expect(lands.map((p) => p.description).join(' | ')).toMatch(/Barkchannel Pathway.*Tidechannel Pathway|Tidechannel Pathway.*Barkchannel Pathway/);
+  });
+
+  it('the derived definition compiles again at play time with its faces, not as a refusal', () => {
+    const def = list.cards.find((e) => e.card.name === 'Akoum Warrior')!.card;
+    expect(def.faces?.kind).toBe('modal');
+    // The front is "Trample" alone, read off the printed line with no script; what matters is that
+    // the definition is not refused as two faces and that the back face has its own script.
+    expect(unreadLines(def)).toEqual([]);
+    expect(scriptForCard(def.faces!.cards[0])).toMatchObject({ entersTapped: true });
+  });
+
+  it('a battle is refused: the engine has no defense, protector or attack on one', () => {
+    const battle = compileCard(BELENON as never);
+    expect(battle.ok).toBe(false);
+    if (!battle.ok) expect(battle.why).toMatch(/battle/);
+  });
+
+  it('a row with no faces in it is still refused, rather than read as its front alone', () => {
+    const { card_faces: _gone, ...bare } = PAIR;
+    const read = compileCard(bare as never);
+    expect(read.ok).toBe(false);
   });
 });

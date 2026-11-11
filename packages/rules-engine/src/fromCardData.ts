@@ -114,6 +114,24 @@ export interface CardDataRow {
   readonly image_uri?: string | null;
   readonly id?: string | null;
   readonly oracle_id?: string | null;
+  /**
+   * Every face of a multi-face card, the first included, in Scryfall's shape (D591). Scryfall's
+   * bulk file writes it, the Forge converter writes it, and the database keeps it as JSON text —
+   * so it is read from either an array or the string. See `compile.ts` for what is done with it.
+   */
+  readonly card_faces?: readonly CardFaceRow[] | string | null;
+}
+
+/** One face of a multi-face card, as `CardDataRow.card_faces` lists it. */
+export interface CardFaceRow {
+  readonly name?: string | null;
+  readonly mana_cost?: string | null;
+  readonly type_line?: string | null;
+  readonly oracle_text?: string | null;
+  readonly colors?: readonly string[] | null;
+  readonly power?: string | null;
+  readonly toughness?: string | null;
+  readonly loyalty?: string | null;
 }
 
 /** Which shape of card the data turned out to be. Reported so a caller can say what it got. */

@@ -29,6 +29,25 @@ const rows = JSON.parse(readFileSync(args[fileAt + 1], 'utf8'));
 const byName = new Map();
 for (const row of rows) if (!byName.has(row.name)) byName.set(row.name, row);
 
+/*
+  And every face of a two-faced card, from \`card_faces\` (D591). Until the corpus carried faces, the
+  back of a split card, an Adventure and the back of a transforming or modal card had no row and
+  were listed as unverified. A face's mana value is its own cost's, except a transforming card's
+  back face, which has no cost and the front's mana value (CR 712.4c).
+*/
+const costValue = (cost) => [...(cost ?? '').matchAll(/\{([^}]*)\}/g)]
+  .reduce((n, [, sym]) => n + (/^\d+$/.test(sym) ? Number(sym) : /^[XYZ]$/.test(sym) ? 0 : 1), 0);
+for (const row of rows) {
+  const faces = Array.isArray(row.card_faces) ? row.card_faces : [];
+  for (const face of faces.slice(1)) {
+    if (byName.has(face.name)) continue;
+    byName.set(face.name, {
+      ...face,
+      cmc: row.layout === 'transform' ? row.cmc : costValue(face.mana_cost),
+    });
+  }
+}
+
 const fixturePath = fileURLToPath(new URL('../../packages/rules-engine/src/poolOracle.fixture.json', import.meta.url));
 
 /** Every definition a deck can put on the table: its cards, its commander, and each nested face. */

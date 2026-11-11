@@ -75,10 +75,19 @@ export interface CardLibrary {
 const LOOKUP = `
   SELECT DISTINCT ON (LOWER(name))
     name, type_line, oracle_text, mana_cost, cmc, colors, color_identity, keywords,
-    power, toughness, loyalty, layout, produced_mana, image_uri, id, oracle_id
+    power, toughness, loyalty, layout, produced_mana, image_uri, id, oracle_id, card_faces
   FROM scryfall_cards
   WHERE LOWER(name) = ANY($1::text[])
+     OR LOWER(split_part(name, ' // ', 1)) = ANY($1::text[])
   ORDER BY LOWER(name), id`;
+
+/*
+  **Two-faced cards (D591).** Scryfall names one "Delver of Secrets // Insectile Aberration", and a
+  player pastes "Delver of Secrets", so the lookup also matches the part before " // " and the row
+  is remembered under both. `card_faces` comes with it, which is what lets the compiler build the
+  other face; without it a two-faced card is refused as cardboard, as before.
+*/
+const frontNameOf = (name: string): string => name.split(' // ')[0] ?? name;
 
 /**
  * How many names to remember.
@@ -123,6 +132,8 @@ export function createCardLibrary(opts: {
       for (const row of rows) {
         const key = keyFor(row.name ?? '');
         if (key !== '') known.set(key, row);
+        const front = keyFor(frontNameOf(row.name ?? ''));
+        if (front !== '' && front !== key && wanted.includes(front)) known.set(front, row);
       }
     },
     rowFor(name: string): CardDataRow | undefined {

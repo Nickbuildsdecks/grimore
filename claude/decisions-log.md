@@ -41465,3 +41465,93 @@ Break run on D589's build: 10 deliberate faults, 9 caught. The miss was the "doe
 being marked as help rather than removal. Its test only checked the computer opponent's aim when
 it chose to cast the Aura, which it did not on that board. The Aura's own target and removal flag
 are now asserted directly, and fail with the fault in.
+
+## D591 — Two-faced cards from printed data: adventure, modal double-faced, transform
+
+The largest single gap left was not a sentence but a shape. **622 legal cards were refused
+outright** as "layout … has more than one face" — 388 transforming, 136 adventurers, 98 modal
+double-faced — so a pasted deck with a Bonecrusher Giant, a Pathway or a Delver got cardboard. The
+engine has played all three kinds since #140, #141 and #217, for hand-written cards; nothing could
+build one from data.
+
+**Where the faces come from.** The corpus is built from Forge's card files, which keep every face
+in one file after an `ALTERNATE` line. The converter (`scripts/corpus/from-forge.mjs`) threw
+everything after the first face away. It now writes `card_faces`, Scryfall's own field in
+Scryfall's shape, so the same code reads a real Scryfall import when one lands; the regenerated
+corpus is identical to the old one in every other field, row for row. The corpus loader writes the
+faces to `scryfall_cards.card_faces`, a column that has always been there and always been null.
+
+**What the compiler does with them.** The front face is compiled as the card; every other face is
+compiled on its own and put on the definition (`CardDef.faces`), where the engine already looks.
+Each face's unread lines are the card's, so an adventurer whose creature reads and whose adventure
+does not is not counted as read whole. A transforming card's back face has no cost and the front's
+mana value (CR 712.4c); an adventure and a modal back face are cast for their own. A row with
+faces missing is still refused, rather than read as its front alone.
+
+**Battles are refused**, and that is new. Five Invasions read whole the moment faces were built —
+their text is one enter trigger — but the engine has no defense counters, no protector and no way
+to attack a battle, so a compiled one would sit on the board for ever and never turn over. A
+reading with nothing left unread to flag it is the worst kind (D362); 36 battles are now refused
+with that reason instead.
+
+**And in production.** The realtime card lookup selects `card_faces` and matches a pasted name
+against the part of Scryfall's "Akoum Warrior // Akoum Teeth" before the slashes; the pasted-deck
+builder indexes such a row under its front face too. A live-Postgres test inserts a Scryfall-shaped
+row and builds a deck from "Akoum Warrior".
+
+    two-faced legal cards:                  622
+    now compiled:                           582  (transform 350, adventure 134, modal 98)
+    still refused:                          40   (36 battles, 4 whose size is a */* nothing reads)
+    newly read whole, every face:           72   (adventure 40, modal 32, transform 0)
+
+No transforming card reads whole yet: the line that says *when* it transforms is almost always
+unread, so at the table these play as their front face and are turned over by hand. That family
+("transform ~" in triggers, daybound and nightbound) is the next lever here.
+
+**The pool's own faces, checked for the first time.** The standing check of every built-in card
+against its Oracle row (D571) could not see a back face, because the corpus had none, and listed
+nine faces as unverified. With faces in the corpus all nine have rows, and five facts were wrong:
+**Venture Deeper costs {U}**, not {1}{U}; **Shield's Might gives +2/+2**, not +3/+3 (its script
+pumped +3/+3 too); and Hagra Broodpit and Vastwood Thicket carried the older "enters the
+battlefield tapped" wording. All corrected, and the unverified list is down to the three whole
+split cards, whose halves are each checked under their own names.
+
+**One convention kept, and kept out of the rules.** The pool writes an adventurer's Adventure on
+the creature too ("Venture Deeper {U} (Sorcery) — …"), so a card in hand shows both halves; the
+Oracle check already lists it as deliberate. Compiled as the creature's own text that quote became
+an unread line on Merfolk Secretkeeper, and the gate's coverage test caught it. At play time the
+quote is now left out of the front face, since the face carries those rules itself.
+
+**Not built:** split cards (126 rows; the pool's two are hand-written), flip, meld, prepare,
+specialize and omen. Each has its own rules.
+
+**Tests.** 8 engine tests on corpus rows (Curious Pair, Akoum Warrior, Barkchannel
+Pathway, Delver of Secrets, Invasion of Belenon): faces built and counted; a back face's unread
+line is the card's; an adventurer offers both casts and its adventure resolves and exiles it; a
+modal card plays its land back face, which enters tapped from its own text; a pathway is a land
+either way; the derived definition compiles again at play time; a battle is refused; a row
+without faces is still refused. Plus a live-Postgres test of the lookup and a loader test that
+the faces reach the table.
+
+    engine tests: 4,192, all passing
+    web tests: 264, all passing (no web change)
+
+### Measurements
+
+Measured from here on with the corpus that carries faces (`corpus3.json`; same rows, same text,
+plus `card_faces`). Against the last build, on the old corpus and then on the new one:
+
+    old corpus:  cards fully read 8,961 of 30,710; lines read 25,410 of 56,421 (45.0%)
+    new corpus:  cards fully read 9,033 of 31,292; lines read 25,795 of 58,031 (44.5%)
+
+The line share falls because 1,610 printed lines on back faces are visible for the first time,
+and most of them are not read yet; 385 more lines are read than before.
+
+Pod sweep on D590's build (82c807a), seeds 45801–45840: 40 of 40 finished, no throw and no stall.
+
+Break run on D590's build: 9 deliberate faults, 7 caught. The test for "the card under a binned
+one is not taken" did not guarantee a land was there to be taken; it now puts a Forest under the
+Bears, and fails with the fault in. The other miss — a skipped question dropping its place instead
+of leaving an empty answer — cannot be seen by any card the compiler reads today, because nothing
+asks a second question after explore's. It is the rule every skipped question already follows,
+and the test belongs with the first card that asks one.

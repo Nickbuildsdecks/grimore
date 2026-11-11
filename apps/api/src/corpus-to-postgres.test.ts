@@ -236,6 +236,25 @@ describe.skipIf(!DATABASE_URL)('the corpus loader writes scryfall_cards (require
     expect((left.rows[0] as { n: number }).n).toBe(0);
   });
 
+  it('writes a two-faced card\'s faces, which the corpus now carries (D591)', async () => {
+    // Forge keeps every face in one card file; the converter emits them in Scryfall's shape, and
+    // the loader writes them where a real import would, so the engine can build the other face.
+    const faces = [
+      { name: 'Akoum Warrior', mana_cost: '{5}{R}', type_line: 'Creature — Minotaur Warrior',
+        oracle_text: 'Trample', colors: ['R'], power: '4', toughness: '5', loyalty: null },
+      { name: 'Akoum Teeth', mana_cost: '', type_line: 'Land',
+        oracle_text: 'Akoum Teeth enters tapped.\n{T}: Add {R}.', colors: [], power: null, toughness: null, loyalty: null },
+    ];
+    await loader.loadRows(client, [{
+      name: 'Akoum Warrior', type_line: 'Creature — Minotaur Warrior', oracle_text: 'Trample',
+      mana_cost: '{5}{R}', cmc: 6, colors: ['R'], power: '4', toughness: '5', loyalty: null,
+      layout: 'modal', card_faces: faces,
+    }]);
+    const row = await rowFor('Akoum Warrior');
+    expect(JSON.parse(row.card_faces as string)).toEqual(faces);
+    await client.query("DELETE FROM scryfall_cards WHERE name = 'Akoum Warrior'");
+  });
+
   it('leaves the columns Forge has no data for null, rather than filled with a guess', async () => {
     /*
       Asserted rather than assumed, because the tempting thing to do with each of these is invent

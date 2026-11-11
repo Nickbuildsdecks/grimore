@@ -137,6 +137,14 @@ export function customDeck(input: CustomDeckInput): CustomDeckResult {
   for (const row of input.data ?? []) {
     const key = (row.name ?? '').trim().toLowerCase();
     if (key !== '') rows.set(key, row);
+    /*
+      And under its front face, for a two-faced card (D591): Scryfall names it "Akoum Warrior //
+      Akoum Teeth" and a list says "Akoum Warrior". The full name keeps its own entry, so a list
+      that writes both faces finds it too; a name already taken by a card of its own is not
+      overwritten.
+    */
+    const front = key.split(' // ')[0]!.trim();
+    if (front !== key && front !== '' && !rows.has(front)) rows.set(front, row);
   }
 
   /**

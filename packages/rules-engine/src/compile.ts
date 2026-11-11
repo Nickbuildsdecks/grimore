@@ -38,12 +38,13 @@
  * hand-written card in the pool already uses, with arguments read off the printed line. Inventing
  * the text of a real card is worse than leaving the mechanic out (D259).
  */
-import type { CardDef } from './cards.js';
+import type { CardDef, CardFaces } from './cards.js';
+import { costValue, parseManaCost } from './mana.js';
 import { hasType, isPrintedAbilityLine, parseTypeLine, LEVEL_BAND_HEADER } from './characteristics.js';
 import {
   cardFromData, intrinsicManaAbilities, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
   printedLoyalty, printedRulesLines,
-  type CardDataRow, type DerivedKind,
+  type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
   isKeywordDeclaration, lineScriptFor, spellScriptFor, wholeCardShapeFor,
@@ -274,8 +275,111 @@ export function compileCard(row: CardDataRow): Compilation {
   return built;
 }
 
+/**
+ * The layouts whose faces this module can build, in `CardFaces.kind`'s words (D591).
+ *
+ * The three the engine already plays: an **adventurer** (a creature with an instant or sorcery on
+ * it, CR 715), a **modal double-faced** card (either face may be played, CR 712), and a
+ * **transforming** one (cast as its front, turned over by an effect, CR 712). Split, flip, meld,
+ * prepare and the rest are each their own rules and are still refused as more than one face.
+ */
+const FACE_LAYOUTS: Readonly<Record<string, CardFaces['kind']>> = {
+  adventure: 'adventure', modal: 'modal', modal_dfc: 'modal', transform: 'transform',
+};
+
+/** `card_faces` as a list, from the array Scryfall writes or the JSON text the database holds. */
+function faceRowsOf(row: CardDataRow): readonly CardFaceRow[] {
+  const raw = row.card_faces;
+  if (raw === undefined || raw === null) return [];
+  if (typeof raw !== 'string') return raw;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as CardFaceRow[] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A multi-face card: its front face compiled as the card, every other face compiled on its own, and
+ * the faces put on the definition where the engine already looks for them (D591).
+ *
+ * **Why each face is compiled separately.** The engine asks for a face's script by the face's own
+ * definition (`scriptForCard(faceDef)`), exactly as it does for the pool's hand-written Merfolk
+ * Secretkeeper and Delver of Secrets, so the faces need nothing from this function but their
+ * printed data. What this function adds is the **honest count**: a face's unread lines are the
+ * card's unread lines, so an adventurer whose creature reads and whose adventure does not is not
+ * reported as read whole. A face this module refuses outright is reported as one unread line
+ * naming it; a face with no printed definition at all refuses the card, because the engine would
+ * have nothing to turn over to.
+ *
+ * **Which numbers each face takes.** The front's are the card's in every zone but the stack and the
+ * battlefield (CR 712.4, CR 715.4). A transforming card's back face has no cost and the front's
+ * mana value (CR 712.4c). An adventure and a modal back face are cast for their own cost, so their
+ * mana value is their own.
+ */
+function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly CardFaceRow[]): Compilation {
+  const front = faces[0]!;
+  const frontRow: CardDataRow = {
+    ...row,
+    name: front.name ?? row.name,
+    type_line: front.type_line ?? row.type_line,
+    oracle_text: front.oracle_text ?? row.oracle_text,
+    mana_cost: front.mana_cost ?? row.mana_cost,
+    colors: front.colors ?? row.colors,
+    power: front.power ?? row.power ?? null,
+    toughness: front.toughness ?? row.toughness ?? null,
+    loyalty: front.loyalty ?? row.loyalty ?? null,
+    layout: 'normal',
+    card_faces: null,
+  };
+  const card = compileCard(frontRow);
+  if (!card.ok) return card;
+  const frontValue = card.def.cmc;
+  const backs: CardDef[] = [];
+  const unread = [...card.unread];
+  for (const face of faces.slice(1)) {
+    const faceRow: CardDataRow = {
+      name: face.name ?? null,
+      type_line: face.type_line ?? null,
+      oracle_text: face.oracle_text ?? null,
+      mana_cost: face.mana_cost ?? '',
+      cmc: kind === 'transform' ? frontValue : costValue(parseManaCost(face.mana_cost ?? '')),
+      colors: face.colors ?? [],
+      power: face.power ?? null,
+      toughness: face.toughness ?? null,
+      loyalty: face.loyalty ?? null,
+      layout: 'normal',
+    };
+    const compiled = compileCard(faceRow);
+    if (compiled.ok) {
+      backs.push(compiled.def);
+      unread.push(...compiled.unread);
+      continue;
+    }
+    const printed = printedDef(faceRow);
+    if ('why' in printed) return { ok: false, why: `${card.def.name}: its face ${face.name ?? '(unnamed)'} — ${printed.why}` };
+    backs.push(printed.def);
+    unread.push({ line: `(${printed.def.name}) ${compiled.why}`, why: 'no-reader' });
+  }
+  return {
+    ...card,
+    def: { ...card.def, faces: { kind, cards: backs } },
+    unread,
+  };
+}
+
 /** The compilation itself. Called only by `compileCard`, which caches it. */
 function compileUncached(row: CardDataRow): Compilation {
+  const layout = (row.layout ?? 'normal').trim().toLowerCase();
+  const faceKind = FACE_LAYOUTS[layout];
+  const faces = faceKind === undefined ? [] : faceRowsOf(row);
+  if (faceKind !== undefined && faces.length >= 2) return compileFaces(row, faceKind, faces);
+  return compileSingle(row);
+}
+
+/** One face, or a card with only one. */
+function compileSingle(row: CardDataRow): Compilation {
   const printed = printedDef(row);
   if ('why' in printed) return { ok: false, why: printed.why };
   const def = printed.def;
@@ -293,6 +397,17 @@ function compileUncached(row: CardDataRow): Compilation {
   if (hasType(typeLine, 'planeswalker')) {
     const loyalty = printedLoyalty(def.name, row);
     if ('why' in loyalty) return { ok: false, why: loyalty.why };
+  }
+  /*
+    A **battle** is refused for the same reason, and more firmly (D591): its defense counters, the
+    opponent who protects it, attacking it and defeating it are rules (CR 310), not text, and this
+    engine has none of them. Compiled, an Invasion would arrive, do its enter trigger and then sit
+    there for ever — nobody could attack it, so it could never be defeated and turn over. Its text
+    reads perfectly well, which is exactly why it has to be refused here rather than left to an
+    unread line: there would be no unread line to flag it.
+  */
+  if (hasType(typeLine, 'battle')) {
+    return { ok: false, why: `${def.name}: a battle's defense and protector are rules this engine does not have yet` };
   }
 
   /*

@@ -25,10 +25,11 @@
  *
  * ## What is not compared
  *
- * The corpus carries the front face of a two-faced card only. The back of a split card, the
- * Adventure half of an adventurer and the back face of a transforming or modal card have no row,
- * and `NO_ORACLE_ROW` names each one — unverified is a fact about the card, and it is said here
- * rather than left to look like a pass.
+ * The whole of a split card, whose two halves are each checked under their own names. Until D591
+ * the corpus carried front faces only, and the back of a split card, the Adventure half of an
+ * adventurer and the back face of a transforming or modal card were listed here as unverified;
+ * the corpus now carries every face, all nine have rows, and checking them found five of the
+ * pool's facts wrong (Venture Deeper's cost, Shield's Might's size, two lands' older wording).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -105,15 +106,6 @@ const NO_ORACLE_ROW: Readonly<Record<string, string>> = {
   'Fire // Ice': 'the whole split card; its front half is checked as Fire',
   'Wax // Wane': 'the whole split card; its front half is checked as Wax',
   'Assault // Battery': 'the whole split card; its front half is checked as Assault',
-  Ice: 'back half of a split card: the corpus carries front faces only',
-  Wane: 'back half of a split card: the corpus carries front faces only',
-  Battery: 'back half of a split card: the corpus carries front faces only',
-  'Venture Deeper': 'Adventure half: the corpus carries front faces only',
-  "Shield's Might": 'Adventure half: the corpus carries front faces only',
-  'Awoken Horror': 'back face of a transforming card: the corpus carries front faces only',
-  'Insectile Aberration': 'back face of a transforming card: the corpus carries front faces only',
-  'Hagra Broodpit': 'back face of a modal double-faced card: the corpus carries front faces only',
-  'Vastwood Thicket': 'back face of a modal double-faced card: the corpus carries front faces only',
 };
 
 /**

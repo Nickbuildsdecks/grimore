@@ -179,12 +179,43 @@ function fieldsOf(text) {
   return single;
 }
 
+/** Forge's colour words, for a face with no mana cost to read them from (a transform back face). */
+const COLOUR_WORDS = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+
+/**
+ * One face of a multi-face card, in the shape of a Scryfall `card_faces` entry (D591).
+ *
+ * The colours come from the cost where there is one and from Forge's `Colors:` line where there is
+ * not: a transform card's back face has no cost and is still blue (Insectile Aberration).
+ */
+function faceFor(text) {
+  const fields = fieldsOf(text);
+  const name = (fields.get('Name') ?? '').trim();
+  if (name === '') return null;
+  const pt = /^([^/]+)\/(.+)$/.exec(fields.get('PT') ?? '');
+  const cost = costOf(fields.get('ManaCost'));
+  const colourWords = (fields.get('Colors') ?? '').split(',').map((w) => COLOUR_WORDS[w.trim().toLowerCase()])
+    .filter((c) => c !== undefined);
+  return {
+    name,
+    mana_cost: cost.mana_cost,
+    type_line: typeLineOf(fields.get('Types')),
+    oracle_text: (fields.get('Oracle') ?? '').replaceAll('\\n', '\n')
+      .replace(/^\[([+-]?\d+|0)\]:/gm, '$1:').trim(),
+    colors: cost.colors.length > 0 ? cost.colors : colourWords,
+    power: pt === null ? null : pt[1].trim(),
+    toughness: pt === null ? null : pt[2].trim(),
+    loyalty: fields.has('Loyalty') ? fields.get('Loyalty').trim() : null,
+  };
+}
+
 /**
  * One card file as one row.
  *
  * The first face is the card: a split card, a transforming creature and an adventurer are all one
- * object in a library, and `printedDef` refuses a multi-face layout by name rather than guessing
- * which half to run — which is what the `layout` field is for.
+ * object in a library, and the row's own fields are that first face's. Every face, the first
+ * included, is also written to `card_faces` (D591) — Scryfall's field and Scryfall's shape — which
+ * is what lets `printedDef` build the card's other faces instead of refusing it.
  */
 function rowFor(text) {
   const faces = text.split(/^ALTERNATE$/m);
@@ -207,6 +238,7 @@ function rowFor(text) {
     toughness: pt === null ? null : pt[2].trim(),
     loyalty: fields.has('Loyalty') ? fields.get('Loyalty').trim() : null,
     layout: mode === '' ? 'normal' : (LAYOUTS[mode] ?? mode.toLowerCase()),
+    ...(faces.length > 1 ? { card_faces: faces.map(faceFor).filter((f) => f !== null) } : {}),
     /*
       Scryfall's own field, in Scryfall's own vocabulary, so a consumer written against the bulk
       file reads this without a change. A name the legality map has never heard of gets no field

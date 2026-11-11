@@ -9536,7 +9536,8 @@ const SHIELDS_MIGHT: CardScript = {
   targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
-    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 3, toughness: 3 });
+    // +2/+2, as printed (corrected in D591, when the corpus first carried the Adventure's own row).
+    return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 2, toughness: 2 });
   },
 };
 

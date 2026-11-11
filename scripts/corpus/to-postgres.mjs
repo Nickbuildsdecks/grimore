@@ -37,9 +37,9 @@
  *  * `keywords` — Scryfall's own parsed keyword list. The engine has `printedKeywords`, but that is
  *    *this* compiler's vocabulary, and writing it into a column named for Scryfall's would make a
  *    later real import look like a change in the data rather than in the source.
- *  * `card_faces` — Forge keeps each face as its own card file, so a split or modal card arrives
- *    here as two rows and the join between them is not in the data. `layout` is written, so the
- *    rows say what they are; reconstructing the pairing belongs with the real import.
+ *  * `card_faces` — written since D591 when the corpus row carries it. Forge keeps every face in
+ *    the one card file, after an `ALTERNATE` line, and `from-forge.mjs` now emits them in
+ *    Scryfall's shape; a corpus built before that has none, and the column stays null for it.
  *
  * ## The id, which is the one real design decision
  *
@@ -92,7 +92,7 @@ import { isLegal } from '../lib/legal.mjs';
  *
  * Colour *indicators* (a card whose colour is printed as a dot rather than as a symbol) are not in
  * Forge's data, so a handful of those — the back faces of some transform cards — will read narrower
- * than they are. Stated rather than hidden, and it is the same gap `card_faces` has.
+ * than they are. Stated rather than hidden.
  */
 export const colorIdentityOf = (row) => {
   const seen = new Set();
@@ -150,7 +150,9 @@ export const paramsFor = (row) => {
     JSON.stringify(row.colors ?? []), null, null, null,
     JSON.stringify(colorIdentityOf(row)),
     row.legalities === undefined ? null : JSON.stringify(row.legalities),
-    null, null, null, null, null,
+    // $16 keywords, then $17 card_faces: the faces `from-forge.mjs` writes for a two-faced card
+    // (D591), in Scryfall's shape, so the engine can build the card's other face from the table.
+    null, row.card_faces === undefined ? null : JSON.stringify(row.card_faces), null, null, null,
     row.power ?? null, row.toughness ?? null, row.loyalty ?? null,
     row.layout ?? null, id, null,
   ];
