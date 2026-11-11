@@ -45106,7 +45106,9 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
   const GOBLIN = {"name":"Test Goblin","type_line":"Creature — Goblin","mana_cost":"{R}","cmc":1,"colors":["R"],"power":"1","toughness":"1","oracle_text":"","layout":"normal"};
   const EXECUTIONER = {"name":"Cabal Executioner","type_line":"Creature — Human Cleric","mana_cost":"{2}{B}{B}","cmc":4,"colors":["B"],"power":"2","toughness":"2","oracle_text":"Whenever Cabal Executioner deals combat damage to a player, that player sacrifices a creature.\nMorph {3}{B}{B} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.)","layout":"normal"};
   const PILEDRIVER = {"name":"Goblin Piledriver","type_line":"Creature — Goblin Warrior","mana_cost":"{1}{R}","cmc":2,"colors":["R"],"power":"1","toughness":"2","oracle_text":"Protection from blue (This creature can't be blocked, targeted, dealt damage, or enchanted by anything blue.)\nWhenever Goblin Piledriver attacks, it gets +2/+0 until end of turn for each other attacking Goblin.","layout":"normal"};
-  const ROWS = [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER, VAMP, GOBLIN, EXECUTIONER, PILEDRIVER];
+  // A noncreature whose name sorts before the Bears, so a sacrifice that offered it would take it first.
+  const ANVIL = {"name":"Anvil of Tests","type_line":"Artifact","mana_cost":"{1}","cmc":1,"colors":[],"power":null,"toughness":null,"oracle_text":"","layout":"normal"};
+  const ROWS = [HEIR, ALTISAUR, THIEF, WIDOW, SLAVER, VAMP, GOBLIN, EXECUTIONER, PILEDRIVER, ANVIL];
   const deck = customDeck({
     id: 'hits', name: 'Hits',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 42 }],
@@ -45184,9 +45186,11 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
   it('Cabal Executioner: the player it hit sacrifices one of their own creatures', () => {
     const readEXECUTIONER = compileCard(EXECUTIONER as never);
     expect(readEXECUTIONER.ok && readEXECUTIONER.unread).toEqual([]);
-    // Seat 1's Bears stay home; when the Executioner connects they are the only creature to give up.
-    const s = swing(['Cabal Executioner', 'Grizzly Bears'], ['Cabal Executioner'], ['Grizzly Bears']);
+    // Seat 1's Bears stay home; when the Executioner connects they are the only creature to give up,
+    // and the artifact beside them is not offered (D602 break run: the helper takes the first choice).
+    const s = swing(['Cabal Executioner', 'Grizzly Bears'], ['Cabal Executioner'], ['Anvil of Tests', 'Grizzly Bears']);
     expect(ids(s, 1, 'battlefield').filter((i) => nameOf(s, i) === 'Grizzly Bears')).toEqual([]);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Anvil of Tests');
     expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
     expect(namesIn(s, 0, 'battlefield')).toContain('Grizzly Bears');
   });
@@ -45225,8 +45229,84 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
     expect(characteristicsOf(s, s.instances[driver]!).power).toBe(5);
   });
 
+  it('reads "a <Tribe> creature you control", and "a creature" of anybody\'s (D602 break run)', () => {
+    for (const text of [
+      'Whenever a Vampire creature you control deals combat damage to a player, draw a card.',
+      'Whenever a creature deals combat damage to a player, you gain 1 life.',
+    ]) {
+      const read = compileCard({ ...WIDOW, oracle_text: text } as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
   it('refuses a subject word it cannot filter on', () => {
     const read = compileCard({ ...WIDOW, oracle_text: 'Whenever a modified creature you control deals combat damage to a player, draw a card.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe('a counter whose meaning is another line of the card (D603)', () => {
+  /*
+    "Put a spore counter on ~" and every other kind whose meaning is printed elsewhere on the card,
+    keyed by the printed word. Refused: the kinds with a meaning of their own in the rules (lore,
+    stun, time, loyalty, …) and the keyword counters (CR 122.1b), which nothing here applies.
+  */
+  const THALLID = {"name":"Thallid","type_line":"Creature — Fungus","mana_cost":"{G}","cmc":1,"colors":["G"],"power":"1","toughness":"1","oracle_text":"At the beginning of your upkeep, put a spore counter on Thallid.\nRemove three spore counters from Thallid: Create a 1/1 green Saproling creature token.","layout":"normal"};
+  const deck = customDeck({
+    id: 'spores', name: 'Spores',
+    entries: [{ name: 'Thallid', count: 4 }, { name: 'Forest', count: 56 }],
+    data: [THALLID] as never[],
+  });
+
+  it('reads Thallid whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(THALLID as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('a spore counter each of your upkeeps, and three of them make a Saproling', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'spores', 1: 'verdant-guard' }, deckSpecs: { spores: deck.deck },
+      battlefield: { 0: ['Thallid', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const thallid = find(s, 0, 'battlefield', 'Thallid');
+    const spores = (t: GameState) => t.instances[thallid]!.counters['spore'] ?? 0;
+    const first = spores(s);
+    expect(first).toBeGreaterThanOrEqual(1);
+    // Two more of your own upkeeps; the opponent's in between adds none.
+    for (let i = 0; i < 4; i++) s = nextTurn(s);
+    s = advanceTo(s, 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(spores(s)).toBe(first + 2);
+    expect(spores(s)).toBeGreaterThanOrEqual(3);
+    const before = namesIn(s, 0, 'battlefield').filter((n) => n === 'Saproling').length;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: thallid, abilityIndex: 0 } as Action)), 20);
+    expect(spores(s)).toBe(first - 1);
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Saproling').length).toBe(before + 1);
+  });
+
+  it('Rumbling Slum deals 1 to each player at your upkeep, you included', () => {
+    const SLUM = {"name":"Rumbling Slum","type_line":"Creature — Elemental","mana_cost":"{1}{R}{G}{G}","cmc":4,"colors":["R","G"],"power":"5","toughness":"5","oracle_text":"At the beginning of your upkeep, Rumbling Slum deals 1 damage to each player.","layout":"normal"};
+    const read = compileCard(SLUM as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const slumDeck = customDeck({ id: 'slum', name: 'Slum', entries: [{ name: 'Rumbling Slum', count: 4 }, { name: 'Forest', count: 56 }], data: [SLUM] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'slum', 1: 'verdant-guard' }, deckSpecs: { slum: slumDeck.deck },
+      battlefield: { 0: ['Rumbling Slum'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+    // Round to seat 0's next upkeep: one more hit each, and none on seat 1's turn.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(life(s, 0)).toBe(mine - 1);
+    expect(life(s, 1)).toBe(theirs - 1);
+  });
+
+  it('refuses a kind with a meaning of its own, and a keyword counter', () => {
+    for (const kind of ['lore', 'stun', 'time', 'flying']) {
+      const read = compileCard({ ...THALLID, oracle_text: `At the beginning of your upkeep, put a ${kind} counter on Thallid.` } as never);
+      expect(read.ok && read.unread.length).toBe(1);
+    }
   });
 });

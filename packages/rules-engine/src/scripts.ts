@@ -13424,8 +13424,40 @@ function selfEffect(
     }
   }
 
+  /*
+    "Put a spore counter on ~" (D603): a counter of a kind whose meaning is entirely another line of
+    the same card — the Thallids' "Remove three spore counters from ~: …", Mind Unbound's lore-free
+    cousin, Cephalid Vandal's shred. Keyed by the printed word, as every counter here is.
+
+    Refused: the kinds the rules or the engine give a meaning of their own (`RULES_COUNTERS`), where
+    laying one on with no other machinery would be a wrong reading — a lore counter is a Saga's
+    chapter, a stun counter stops an untap, a time counter is a suspend or vanishing countdown.
+  */
+  const kinded = new RegExp(`^put (an?|[\\w]+) ([a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
+  // A keyword counter ("a flying counter", CR 122.1b) grants its keyword, which nothing here applies
+  // from a counter — so it is refused rather than placed as a name that does nothing.
+  if (kinded !== null && !RULES_COUNTERS.includes(kinded[2]!.toLowerCase()) && !isKeyword(kinded[2]!.toLowerCase())) {
+    const n = /^an?$/i.test(kinded[1]!) ? 1 : countFrom(kinded[1]!);
+    if (n !== null && n > 0) {
+      const kind = kinded[2]!.toLowerCase();
+      const named = kinded[3];
+      return { effect: (c) => addCounters(c.state, itMeans(named, c), kind, n) };
+    }
+  }
+
   return null;
 }
+
+/**
+ * Counter kinds with a meaning of their own in the rules or in this engine (D603), so a sentence that
+ * merely places one is not the whole of what it does: loyalty and defense (CR 306.5b, CR 310.4),
+ * lore (CR 714.2), time and fade (suspend, vanishing, fading), stun (CR 122.1d), shield (CR 122.1c),
+ * finality, and the player counters. Everything else is a name another line of the card reads.
+ */
+const RULES_COUNTERS: readonly string[] = [
+  'loyalty', 'defense', 'lore', 'time', 'fade', 'stun', 'shield', 'finality', 'poison', 'energy',
+  'experience', 'rad', 'ticket', 'age', 'level',
+];
 
 /**
  * An Aura or an Equipment, read from **two lines at once**.
@@ -14644,11 +14676,13 @@ function combatSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on
   const tribe = /^([A-Z][A-Za-z'-]*)(?: creature)?$/.exec(what);
   if (tribe !== null) return [{ ...base, ofSubtypes: [tribe[1]!], ...filter } as TriggerDef['on']];
   if (/^artifact creature$/i.test(what)) return [{ ...base, what: 'artifact', ...filter } as TriggerDef['on']];
-  // "a creature" with a filter; without one it is the plain row's, and "a creature" of anybody's
-  // is not printed in this family.
-  if (/^creature$/i.test(what) && of === 'you' && Object.keys(filter).length > 0) {
-    return [{ ...base, ...filter } as TriggerDef['on']];
-  }
+  /*
+    "A creature" with a filter, or with none: "you control" and no filter is the row above's and never
+    reaches here, and "whenever **a creature** deals combat damage to a player" with nobody's control
+    named is anybody's creature, as Cabal Slaver's Goblin is (D602 break run: the guard that refused
+    it was refusing a correct reading).
+  */
+  if (/^creature$/i.test(what)) return [{ ...base, ...filter } as TriggerDef['on']];
   return null;
 }
 
@@ -18700,6 +18734,19 @@ function damageDestination(where: string): {
     };
   }
 
+  // "Each player" (D603): every seat still in the game, its controller included — Rumbling Slum,
+  // Spawn of Mayhem, Pestilence-style upkeeps.
+  if (/^each player$/i.test(text)) {
+    return {
+      apply: (c, n) => (n <= 0 ? c.state : c.state.seats.filter((seat) => !seat.eliminated).reduce(
+        (state, seat) => dealDamage(
+          state, { kind: 'player', seat: seat.index }, n,
+          { controller: c.controller, source: c.source },
+        ),
+        c.state,
+      )),
+    };
+  }
   // The sweep, which is also nobody's choice — see `sweepDestination` for why it is not a spec.
   const sweep = sweepDestination(text);
   if (sweep !== null) return { apply: (c, n) => sweep(c, n) };

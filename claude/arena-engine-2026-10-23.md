@@ -24750,3 +24750,73 @@ Each of the following was broken on purpose and its test failed:
 Pod sweep on D601's build (c01e1d8), seeds 46901–46940: 40 of 40 finished, no throw and no stall.
 
 Break run on D601's build: 8 runnable faults, 4 caught. All 4 misses are pinned here, and the 2 faults that did not typecheck were rerun by hand and caught.
+
+## D603 — Counters a card names for itself, damage to each player, and the D602 gaps
+
+Ranked by the unread dump, the largest one-short family is the step trigger, "At the beginning of
+…" (785 cards), and its largest single shape was the Thallids: "At the beginning of your upkeep,
+put a spore counter on ~". Fourteen cards print exactly that, and every one already read its other
+line, "Remove three spore counters from ~: Create a 1/1 green Saproling".
+
+**Any counter whose meaning is another line of the card.** "Put a/N <kind> counter(s) on ~ | it"
+now reads for any lower-case kind, keyed by the printed word, as every counter here is. That is
+177 lines across 60 kinds:
+- charge (Aether Vial, the Mana Batteries)
+- spore
+- quest (the Ascensions)
+- oil
+- storage (the storage lands)
+- verse, ki, page, growth, and a tail of single-card kinds
+
+Two groups are refused:
+- **`RULES_COUNTERS`**, the kinds the rules or the engine give a meaning of their own: loyalty,
+  defense, lore (a Saga chapter), time and fade (suspend, vanishing, fading), stun, shield,
+  finality, age (cumulative upkeep), level, and the player counters. Placing one with no other
+  machinery would be a wrong reading.
+- **The keyword counters** (CR 122.1b), any kind that is a keyword name. The first measurement read
+  Spontaneous Flight's "Put a flying counter on it" as a counter called "flying", which grants
+  nothing here. Fully Grown, Wing It and Sudden Spinnerets were the same. All four are unread again.
+
+**Damage to each player.** `damageEffect` read "each opponent" and not "each player". It now reads
+every seat still in the game, its controller included (Rumbling Slum).
+
+**The D602 break run: 8 faults, 5 caught. All 3 misses are resolved here:**
+- **"A <Tribe> creature you control"** losing its "creature" word: pinned by a reading test.
+- **The edict offering any permanent**: Cabal Executioner's hit player now holds an artifact that
+  sorts before their Bears. The test helper takes the first choice, so the artifact would be the
+  one sacrificed.
+- **The guard that refused "a creature deals combat damage" with nobody's control named.** This
+  was the fault that changed nothing because the guard was wrong: that sentence is anybody's
+  creature, exactly as Cabal Slaver's Goblin is. The guard is removed, and a reading test pins the
+  sentence.
+
+**Tests.** 6 new engine tests:
+- Thallid reads whole.
+- A spore counter at each of your upkeeps and none at the opponent's, and three of them remove
+  for a Saproling.
+- Rumbling Slum takes a life from each player at your upkeep, you included.
+- Lore, stun, time and flying counters are refused.
+- 2 D602 pins.
+
+Each of the following was broken on purpose and its test failed:
+- The kind ignored (every counter a +1/+1).
+- The rules kinds allowed.
+- The keyword kinds allowed.
+- The reader removed.
+- "Each player" leaving out its controller.
+- The tribe's "creature" word dropped.
+- The edict's creature filter.
+
+    engine tests: 4,282, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,494 of 31,292 (was 9,452); lines read 27,262 of 58,524 (46.6%, was 27,085)
+
+The line count moved by 177, more than four times the card count. Most of the kinds are on cards
+with other lines still unread.
+
+Pod sweep on D602's build (085dcba), seeds 47001–47040: 40 of 40 finished, no throw and no stall.
+
+Break run on D602's build: 8 deliberate faults, 5 caught. The 3 misses are resolved above: 2 pinned,
+and 1 was a wrong guard that is now removed.
