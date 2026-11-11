@@ -3954,6 +3954,12 @@ function askOrFinish(
         continue;
       }
     }
+    // And one asked only if the board says so (D590): explore's question about a nonland card.
+    const askOnlyIf = 'askOnlyIf' in spec ? spec.askOnlyIf : undefined;
+    if (askOnlyIf !== undefined && !askOnlyIf(state, object.controller, object.source)) {
+      answers = [...answers, { seat: entry.seat, ids: [] }];
+      continue;
+    }
     // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
     // the effect at the end, not as the questions are asked — which is right, because "each player
     // sacrifices a creature" is simultaneous and the second player must not see the first's

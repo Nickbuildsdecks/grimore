@@ -1262,6 +1262,16 @@ export interface CardsDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   /**
+   * Ask this question **only if** the board says so, as the question comes up (D590).
+   *
+   * `askOnlyIfChosen`'s sibling, for a condition that is a fact rather than an earlier answer:
+   * explore's "you may put that card into your graveyard" is asked only when the card it revealed
+   * is **not** a land. Asked of the state as it stands when the question is reached — after the
+   * resolution's `beforeDecisions` — with the controller and the source. Skipped the same way, as
+   * an empty answer, so the positions effects index by do not move.
+   */
+  readonly askOnlyIf?: (state: GameState, controller: SeatIndex, source: string) => boolean;
+  /**
    * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
    * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
    * `each-opponent` expand into one question each, asked in turn order starting from the active

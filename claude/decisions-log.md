@@ -41402,3 +41402,66 @@ Pod sweep on D588's build (9c7df13), seeds 45601–45640: 40 of 40 finished, no 
 stall.
 
 Break run on D588's build: 9 deliberate faults, 9 caught.
+
+## D590 — Explore
+
+"When Merfolk Branchwalker enters, it explores." CR 701.44a: reveal the top card of your
+library; a land goes into your hand; anything else puts a +1/+1 counter on the creature, and you
+may put the card into your graveyard. 46 legal lines print the word outside reminder text; for
+35 of them it was the card's only unread line.
+
+**One engine addition: a question asked only if the board says so.** The engine could already
+skip a question on an earlier *answer* ("you may search …", D450). Explore's question depends on
+a *fact*: whether the revealed card is a land. `askOnlyIf` is that — asked of the board as the
+question comes up, and skipped as an empty answer like every other unasked question, so the
+positions effects read by do not move.
+
+**How the three pieces are ordered,** which is where explore is easy to get wrong:
+
+- the counter goes on before the question, and only for a nonland card;
+- the question (surveil 1 over the top card) is asked only for a nonland card;
+- the land goes to hand in the effect, after the answers. Nothing has moved the top card by then,
+  so an empty answer with a land on top can only mean the question was skipped for a land. When
+  the card was not a land, it is either in the graveyard (an answer with a card in it) or still on
+  top and not a land — so the card under a binned one is never taken by mistake, which a test
+  checks.
+
+**Who explores.** "<Name> explores" is the card. "It explores" is the trigger's subject, falling
+back to the card when there is none. The first draft read "it" as the card everywhere, and a probe
+of Path of Discovery ("Whenever a creature you control enters, it explores") put the +1/+1
+counter on the enchantment. The probe is now a test.
+
+    legal lines with "explore" outside reminder text:   46
+    read now:                                            21 (all new)
+    cards newly read whole:                              21
+
+**Not read, each on purpose:** "explores, then it explores again" (Jadelight Ranger) and "explores
+X times", which ask twice; "target creature you control explores" and "each Merfolk creature you
+control explores"; the cards that watch a creature explore (Wildgrowth Walker, Lurking
+Chupacabra, Shadowed Caravel); and Topography Tracker's replacement.
+
+**Tests.** 7 engine tests added, on Merfolk Branchwalker, Seeker of Sunlight and Path of
+Discovery from their Oracle rows: a land goes to hand with no counter and no question; a nonland
+card puts a counter on and asks; kept stays on top, binned goes to the graveyard and the card
+under it is not taken; an empty library does nothing; the activated form; Path of Discovery's
+counter on the creature; the computer opponent's answer is one the engine takes; and Jadelight
+Ranger's double explore left unread. One more closes D589's break run, below.
+
+    engine tests: 4,185, all passing
+    web tests: 264, all passing (no web change)
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,940 → 8,961 of 30,710
+    printed legal lines read:            25,389 → 25,410 of 56,421 (45.0%)
+    cards with a compiled script:        13,115 → 13,136
+
+Pod sweep on D589's build (f2a49fc), seeds 45701–45740: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D589's build: 10 deliberate faults, 9 caught. The miss was the "doesn't untap" Aura
+being marked as help rather than removal. Its test only checked the computer opponent's aim when
+it chose to cast the Aura, which it did not on that board. The Aura's own target and removal flag
+are now asserted directly, and fail with the fault in.

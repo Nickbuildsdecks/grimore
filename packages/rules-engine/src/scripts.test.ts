@@ -43513,6 +43513,18 @@ describe('"doesn\'t untap during its untap step" (D589)', () => {
     if (action?.type === 'auto:cast' && action.card === find(s, 0, 'hand', 'Paralyzing Grasp')) {
       expect(action.targets).toEqual([{ kind: 'card', id: find(s, 1, 'battlefield', 'Hill Giant') }]);
     }
+    /*
+      And what tells it so, asked directly (the D589 break run): the check above is conditional on
+      the bot choosing to cast it at all, so it could not see the Aura being marked as help. The
+      Aura is removal, so its target is not a friendly one and the card is flagged as removing a
+      creature.
+    */
+    const compiled = compileCard(GRASP as never);
+    const aura = (compiled.ok ? compiled.script : undefined) as unknown as {
+      aura?: { target?: { friendly?: boolean } }; removesACreature?: boolean;
+    } | undefined;
+    expect(aura?.aura?.target?.friendly ?? false).toBe(false);
+    expect(aura?.removesACreature).toBe(true);
   });
 
   it('Basalt Monolith stays tapped through its own untap step, and its {3} still untaps it', () => {
@@ -43563,5 +43575,118 @@ describe('"doesn\'t untap during its untap step" (D589)', () => {
     const text = "Enchanted creature doesn't untap during its controller's next untap step.";
     const once = compileCard({ ...GRASP, name: 'Probe Grasp Once', oracle_text: `Enchant creature\n${text}` } as never);
     expect(once.ok && once.unread.map((u) => u.line)).toEqual([text]);
+  });
+});
+
+describe('explore (D590)', () => {
+  /*
+    CR 701.44a: reveal the top card of your library; a land goes into your hand; anything else puts
+    a +1/+1 counter on the creature and you may put the card into your graveyard. The question is
+    asked only when there is a nonland card to ask about. Every card here is from its Oracle row.
+  */
+  const reminder = " (Reveal the top card of your library. Put that card into your hand if it's a land. Otherwise, put a +1/+1 counter on this creature, then put the card back or put it into your graveyard.)";
+  const BRANCHWALKER = {
+    name: 'Merfolk Branchwalker', type_line: 'Creature — Merfolk Scout', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal',
+    power: '2', toughness: '1', oracle_text: `When Merfolk Branchwalker enters, it explores.${reminder}`,
+  };
+  const SEEKER = {
+    name: 'Seeker of Sunlight', type_line: 'Creature — Merfolk Scout', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: `{2}{G}: Seeker of Sunlight explores. Activate only as a sorcery.${reminder}`,
+  };
+  const PATH = {
+    name: 'Path of Discovery', type_line: 'Enchantment', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal',
+    oracle_text: `Whenever a creature you control enters, it explores.${reminder}`,
+  };
+  const ROWS = [BRANCHWALKER, SEEKER, PATH];
+  const list = customDeck({
+    id: 'explorers', name: 'Explorers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Grizzly Bears', count: 16 }, { name: 'Forest', count: 32 }],
+    data: ROWS as never[],
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], top: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'explorers', 1: 'ember-rush' }, deckSpecs: { explorers: list },
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const named = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const card = ids(s, 0, 'library').find((id) => nameOf(s, id) === top)!;
+    return apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+  };
+  const castIt = (s: GameState, name: string): GameState =>
+    passBoth(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+  const counters = (s: GameState, id: string): number => s.instances[id]!.counters['+1/+1'] ?? 0;
+
+  it('reads all three whole, and leaves "explores, then it explores again" unread', () => {
+    for (const r of ROWS) {
+      const compiled = compileCard(r as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
+    }
+    const ranger = compileCard({ ...BRANCHWALKER, name: 'Jadelight Ranger', oracle_text: 'When Jadelight Ranger enters, it explores, then it explores again.' } as never);
+    expect(ranger.ok && ranger.unread.length).toBe(1);
+  });
+
+  it('a land on top goes to hand, with no counter and no question', () => {
+    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Forest');
+    const forest = ids(s, 0, 'library')[0]!;
+    s = castIt(s, 'Merfolk Branchwalker');
+    expect(s.pendingDecision).toBeNull();
+    expect(s.instances[forest]!.zone).toBe('hand');
+    expect(counters(s, find(s, 0, 'battlefield', 'Merfolk Branchwalker'))).toBe(0);
+  });
+
+  it('a nonland card puts a counter on it, and asks whether to keep the card on top', () => {
+    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Grizzly Bears');
+    const bears = ids(s, 0, 'library')[0]!;
+    s = castIt(s, 'Merfolk Branchwalker');
+    const walker = find(s, 0, 'battlefield', 'Merfolk Branchwalker');
+    expect(counters(s, walker)).toBe(1);
+    expect(s.pendingDecision).toMatchObject({ seat: 0, from: 'library-top', min: 0, max: 1 });
+    expect(s.pendingDecision!.candidates).toEqual([bears]);
+    // Kept: still on top, and not in hand.
+    const kept = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(ids(kept, 0, 'library')[0]).toBe(bears);
+    expect(kept.instances[bears]!.zone).toBe('library');
+    // Binned: in the graveyard, and the card under it is not taken even if it is a land.
+    const binned = drain(apply(s, { type: 'auto:decide', by: 0, cards: [bears] } as Action), 20);
+    expect(binned.instances[bears]!.zone).toBe('graveyard');
+    expect(ids(binned, 0, 'hand')).toEqual([]);
+  });
+
+  it('an empty library is nothing at all', () => {
+    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Forest');
+    s = { ...s, zones: { ...s.zones, '0:library': [] } };
+    s = castIt(s, 'Merfolk Branchwalker');
+    expect(s.pendingDecision).toBeNull();
+    expect(counters(s, find(s, 0, 'battlefield', 'Merfolk Branchwalker'))).toBe(0);
+  });
+
+  it('as an activated ability: Seeker of Sunlight', () => {
+    let s = table([], ['Seeker of Sunlight', 'Forest', 'Forest', 'Forest'], 'Grizzly Bears');
+    const seeker = find(s, 0, 'battlefield', 'Seeker of Sunlight');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: seeker, abilityIndex: 0 }));
+    expect(counters(s, seeker)).toBe(1);
+    expect(s.pendingDecision?.from).toBe('library-top');
+  });
+
+  it('"it" on Path of Discovery is the creature that entered, not the enchantment', () => {
+    let s = table(['Grizzly Bears'], ['Path of Discovery', 'Forest', 'Forest'], 'Grizzly Bears');
+    s = castIt(s, 'Grizzly Bears');
+    const path = find(s, 0, 'battlefield', 'Path of Discovery');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(counters(s, bears)).toBe(1);
+    expect(counters(s, path)).toBe(0);
+  });
+
+  it('the computer opponent answers the question with a move the engine takes', () => {
+    let s = table(['Merfolk Branchwalker'], ['Forest', 'Forest'], 'Grizzly Bears');
+    s = castIt(s, 'Merfolk Branchwalker');
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:decide');
+    expect(() => apply(s, action!)).not.toThrow();
   });
 });

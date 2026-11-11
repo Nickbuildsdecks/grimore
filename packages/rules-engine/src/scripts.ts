@@ -11608,6 +11608,55 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
 
 function untargetedEffect(clause: string, name: string): ReadEffect | null {
   /*
+    **Explore** (D590): "When ~ enters, it explores." CR 701.44a: reveal the top card of your
+    library; a land goes into your hand; anything else puts a +1/+1 counter on the creature, and
+    you may put the card into your graveyard.
+
+    Three pieces, in the order the rule takes them. The **counter** is put on before the question
+    (`beforeDecisions`), and only for a nonland card. The **question** — surveil 1 over the top card
+    — is asked only when that card is not a land (`askOnlyIf`), so a land never prompts. The
+    **land** goes to hand in the effect, after the answers: nothing moved the top card before
+    then, and an empty answer with a land on top can only mean the question was skipped for it —
+    when the revealed card was not a land, either it was put into the graveyard (an answer with a
+    card in it) or it is still on top and is not a land. If the creature has left the battlefield
+    it still explores (CR 701.44c); `addCounters` puts no counter on a card that is not a
+    permanent, which is the rule.
+
+    "Explores, then it explores again" and "explores X times" ask the question twice, and stay
+    unread until a card in the pool wants them.
+
+    **Who explores.** "<name> explores" is the card itself. "It explores" is whatever the trigger is
+    about — its subject — and only falls back to the card when the trigger has none: on Path of
+    Discovery, "Whenever a creature you control enters, it explores", the counter belongs on the
+    creature that entered, and the first draft of this reader put it on the enchantment. On "When
+    ~ enters, it explores" the subject is the card, so both readings agree there.
+  */
+  const exploring = new RegExp(`^(${selfRef(name)}|it) explores$`, 'i').exec(clause.trim());
+  if (exploring !== null) {
+    const byPronoun = /^it$/i.test(exploring[1]!);
+    const explorer = (c: EffectContext): string => (byPronoun ? c.subject ?? c.source : c.source);
+    const topOf = (state: GameState, seat: SeatIndex): string | undefined => listAt(state, zoneKey(seat, 'library'))[0];
+    const landOnTop = (state: GameState, seat: SeatIndex): boolean => {
+      const top = topOf(state, seat);
+      const def = top === undefined ? undefined : state.cardDefs[state.instances[top]?.defKey ?? ''];
+      return def !== undefined && hasType(parseTypeLine(def.typeLine), 'land');
+    };
+    return {
+      beforeDecisions: (c) => (topOf(c.state, c.controller) === undefined || landOnTop(c.state, c.controller)
+        ? c.state
+        : addCounters(c.state, explorer(c), '+1/+1', 1)),
+      decisions: [{
+        ...surveil(1),
+        prompt: 'Explore — put the revealed card into your graveyard?',
+        askOnlyIf: (state, controller) => topOf(state, controller) !== undefined && !landOnTop(state, controller),
+      }],
+      effect: (c) => {
+        if (chosenCards(c).length > 0 || !landOnTop(c.state, c.controller)) return c.state;
+        return moveToHand(c.state, [topOf(c.state, c.controller)!]);
+      },
+    };
+  }
+  /*
     **Proliferate** (D528) — one printed word, 37 legal sightings, and the engine has had it since
     #195. The gap was never the mechanic: `proliferate` and the `counters: true` question have been
     in `effects.ts` and in two hand-written cards (Contagion Clasp, Steady Progress) all along, and
