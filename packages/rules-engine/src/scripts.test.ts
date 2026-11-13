@@ -46051,6 +46051,16 @@ describe('a spell that costs less for what it targets (D611)', () => {
     expect(play(table('Test Response', 2), 'Test Response')).toBeUndefined();
   });
 
+  it('asked with no targets at all, the change does not apply (D611 break run)', () => {
+    // An alternative cost is offered with no `aimedAt`, and must be offered at the full price.
+    const s = table('Test Response', 5, ['Centaur Courser']);
+    const id = find(s, 0, 'hand', 'Test Response');
+    const def = s.cardDefs[s.instances[id]!.defKey];
+    expect(costChangeFor(s, 0, def, id).generic).toBe(0);
+    expect(costChangeFor(s, 0, def, id, []).generic).toBe(0);
+    expect(costChangeFor(s, 0, def, id, [{ kind: 'card', id: find(s, 1, 'battlefield', 'Centaur Courser') }]).generic).toBe(-3);
+  });
+
   it('the spec that can earn it is the one narrowed, not every spec', () => {
     // Test Might with three lands: the legendary creature is its first target; the second is free.
     const s = table('Test Might', 3, [], ['Test Hero', 'Grizzly Bears']);
@@ -46133,5 +46143,72 @@ describe('a permanent a cost spends cannot also pay its mana (sweep 47815)', () 
     expect(() => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Feast'), sacrifice: treasure(s) } as Action)).toThrow(/cannot pay/);
     s = table(['Mountain', 'Mountain'], 1, ['Test Feast']);
     expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Feast'))).toBe(false);
+  });
+});
+
+describe('descend (D612)', () => {
+  /*
+    "If you descended this turn" is `GameState.descendedThisTurn`: a permanent card — not a token —
+    put into its owner's graveyard from anywhere, written by `relocate`. "Descend 4 —" is an ability
+    word and comes off, and "four or more permanent cards in your graveyard" is threshold's
+    condition counting only permanent cards.
+  */
+  const creature = (name: string, text: string, pt: [string, string] = ['1', '1']) => ({
+    name, type_line: 'Creature — Goblin', mana_cost: '{1}', cmc: 1, colors: ['R'], layout: 'normal',
+    power: pt[0], toughness: pt[1], oracle_text: text,
+  });
+  const CHILD = creature('Test Child', 'At the beginning of your end step, if you descended this turn, put a +1/+1 counter on Test Child.');
+  const CAPY = creature('Test Capybara', 'Descend 4 — Test Capybara gets +3/+0 as long as there are four or more permanent cards in your graveyard.');
+  const ROWS = [CHILD, CAPY];
+  const deck = customDeck({
+    id: 'descend', name: 'Descend',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Mountain', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'descend', 1: 'descend' }, deckSpecs: { descend: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bury = (s: GameState, name: string) => apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' } as Action);
+  const counters = (s: GameState) => s.instances[find(s, 0, 'battlefield', 'Test Child')]!.counters['+1/+1'] ?? 0;
+  const toEnd = (s: GameState) => drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action), 'end'));
+
+  it('reads both rows whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('a permanent card put into your graveyard is descending; an instant and a token are not', () => {
+    let s = table(['Test Child'], ['Lightning Bolt']);
+    s = bury(s, 'Lightning Bolt');
+    s = createToken(s, 0, PEST_TOKEN, 1);
+    s = destroy(s, ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Pest')!, {});
+    expect(s.descendedThisTurn?.['0'] ?? 0).toBe(0);
+    s = toEnd(s);
+    expect(counters(s)).toBe(0);
+    s = table(['Test Child'], ['Grizzly Bears']);
+    s = bury(s, 'Grizzly Bears');
+    expect(s.descendedThisTurn?.['0']).toBe(1);
+    s = toEnd(s);
+    expect(counters(s)).toBe(1);
+  });
+
+  it('it is this turn only, and the owner\'s', () => {
+    let s = table(['Test Child'], ['Grizzly Bears']);
+    s = bury(s, 'Grizzly Bears');
+    s = drain(nextTurn(s));
+    expect(s.descendedThisTurn?.['0'] ?? 0).toBe(0);
+  });
+
+  it('descend 4 counts permanent cards, not cards', () => {
+    let s = table(['Test Capybara'], ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Lightning Bolt', 'Lightning Bolt']);
+    for (const name of ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Lightning Bolt', 'Lightning Bolt']) s = bury(s, name);
+    const capy = () => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Capybara')]!).power;
+    expect(capy()).toBe(1);
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Mountain'), toZone: 'graveyard' } as Action);
+    expect(capy()).toBe(4);
   });
 });

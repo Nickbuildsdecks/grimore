@@ -22189,6 +22189,14 @@ const NOT_AN_ABILITY_WORD: readonly string[] = [
 ];
 
 function withoutAbilityWord(line: string): string {
+  /*
+    "Descend 4 —" and "Descend 8 —" (D612): an ability word with a number in it (CR 207.2c), which
+    the letters-only label below cannot match. The sentence after the dash restates the whole
+    condition — "if there are four or more permanent cards in your graveyard" — so dropping the
+    label loses nothing, exactly as for any other ability word.
+  */
+  const descend = /^Descend \d+\s*[—–]\s*(.+)$/.exec(line.trim());
+  if (descend !== null) return descend[1]!.trim();
   const split = /^([A-Za-z][A-Za-z'’]*(?: [A-Za-z'’]+){0,3})\s*[—–]\s*(.+)$/
     .exec(line.trim());
   if (split === null) return line;
@@ -22757,10 +22765,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   const self = `(?:${selfRef(name)}|it)`;
   const n = (word: string): number | null => (/^an?$/i.test(word) ? 1 : countFrom(word));
 
-  const threshold = /^there are (\S+) or more cards in your graveyard$/i.exec(text);
+  const threshold = /^there are (\S+) or more (permanent )?cards in your graveyard$/i.exec(text);
   if (threshold !== null) {
     const atLeast = n(threshold[1]!);
-    return atLeast === null ? null : { kind: 'controller-graveyard', atLeast };
+    if (atLeast === null) return null;
+    // "permanent cards" is descend (D612).
+    return threshold[2] === undefined ? { kind: 'controller-graveyard', atLeast } : { kind: 'controller-graveyard', atLeast, permanents: true };
   }
   const delirium = /^there are (\S+) or more card types among cards in your graveyard$/i.exec(text);
   if (delirium !== null) {
@@ -23328,6 +23338,10 @@ function interveningConditionRows(
   }
   if (/^you gained life this turn$/i.test(text)) {
     return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
+  }
+  // "If you descended this turn" (D612): a permanent card went to your graveyard this turn.
+  if (/^you descended this turn$/i.test(text)) {
+    return (c) => turnFacts.descended(c.state, c.controller) > 0;
   }
   const gained = /^you gained (\w+) or more life this turn$/i.exec(text);
   if (gained !== null) {

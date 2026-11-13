@@ -986,6 +986,7 @@ export function endTurnCleanup(state: GameState): GameState {
     creaturesDiedThisTurn: 0,
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
+    descendedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
     // what makes it a miracle.

@@ -18,7 +18,7 @@ import {
   type DeckSpec,
   type ZoneId,
 } from './cards.js';
-import { characteristicsOf } from './characteristics.js';
+import { characteristicsOf, isPermanentCard } from './characteristics.js';
 import { FORMATS } from './formats.js';
 import {
   MAX_BAND_SIZE,
@@ -223,6 +223,16 @@ export function relocate(
   */
   if (state.automated && inst.zone !== 'graveyard' && toZone === 'graveyard') {
     next = { ...next, toGraveyard: [...next.toGraveyard, inst.id] };
+    /*
+      And descending (D612): a permanent **card** — not a token — put into its owner's graveyard,
+      from anywhere. The printed card type is asked, which is what a card in a graveyard has: a
+      milled Grizzly Bears descends, a resolved Shock does not.
+    */
+    if (!inst.isToken && isPermanentCard(state.cardDefs[inst.defKey]?.typeLine)) {
+      const key = String(inst.owner);
+      const before = next.descendedThisTurn ?? {};
+      next = { ...next, descendedThisTurn: { ...before, [key]: (before[key] ?? 0) + 1 } };
+    }
   }
   /*
     And the last of the destinations nothing could see: a card arriving in **exile**.

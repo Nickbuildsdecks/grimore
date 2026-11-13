@@ -1258,6 +1258,13 @@ export interface AutomationState {
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * "If you descended this turn" (D612): how many **permanent cards** each seat has had put into
+   * its graveyard this turn, from anywhere — which is what "descend" means on the cards that print it.
+   * Keyed by the **owner**, since a graveyard is its owner's; a token is not a card and
+   * does not count. Written by `relocate` and cleared with the four above it.
+   */
+  readonly descendedThisTurn?: Readonly<Record<string, number>>;
+  /**
    * How many cards each seat has **drawn this turn**, keyed by seat index as a string.
    *
    * The third thing this engine remembers about a turn rather than about a permanent or a seat, and

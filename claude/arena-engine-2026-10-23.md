@@ -25339,3 +25339,63 @@ Pod sweep on D610's build (8040f0c), seeds 47801–47840: 39 of 40 finished, and
 It is fixed here, and seed 47815 now finishes.
 
 Break run on D610's build: 4 deliberate faults, 4 caught.
+
+## D612 — Descend, and the D611 break-run gap
+
+The Lost Caverns of Ixalan cards print two descend forms. Neither read.
+
+**1. "If you descended this turn."** This is a fact about the turn, so it is kept beside raid,
+morbid and revolt as `GameState.descendedThisTurn`:
+- It is written by `relocate` when a permanent **card** goes to its owner's graveyard from
+  anywhere: milled, discarded, died, or a land sacrificed.
+- It is keyed by the owner, since a graveyard is its owner's.
+- A token is not a card and does not count. Neither does an instant or a sorcery.
+- It is cleared with the other turn facts, and it is optional so older saves load.
+- The condition reads "you descended this turn".
+
+**2. "Descend 4 —" and "Descend 8 —".** These are ability words with a digit in them (CR 207.2c),
+which the letters-only label pattern in `withoutAbilityWord` could never strip. The sentence after
+the dash restates the whole condition, so the label comes off exactly as any other ability word
+does. The condition "there are four or more **permanent** cards in your graveyard" is threshold's
+`controller-graveyard` with `permanents: true`. That is counted by `isPermanentCard`, the printed
+type before the dash, so a Kindred Instant is not one. Triggers with the same condition read
+through D607's static-condition fallback.
+
+**D611 break run: 6 faults, 5 caught.** The miss: "no targets given means any target qualifies".
+An alternative cost is offered with no `aimedAt`, and would have taken the reduction. It is now
+pinned by asking `costChangeFor` directly: no targets, empty targets, and a tapped creature.
+
+**Still unread:**
+- Akawalli's "an additional +2/+2"
+- Molten Collapse's "If you descended this turn, you may choose both instead"
+- the descend-8 activated and copy abilities
+
+Two older refusal rows used descend as the example of something unread. They now use Akawalli's
+descend-8 line and "if you scried this turn".
+
+**Tests.** 4 new engine tests:
+- Both rows read.
+- A Grizzly Bears put into the graveyard is descending; a Lightning Bolt and a dying Pest are not.
+- The fact is gone next turn.
+- Descend 4 counts permanent cards, not cards: three Bears and two Bolts are not enough, and a
+  Mountain makes four.
+
+There is also the D611 pin. Each of the following was broken on purpose and its test failed:
+- Every card counted, not only permanent cards.
+- Tokens counted.
+- The automated reset removed.
+- `permanents` ignored.
+- Land dropped from the permanent types.
+
+The tabletop-path reset in `engine.ts` is not exercised by these tests. It mirrors the four turn
+facts beside it.
+
+    engine tests: 4,332, all passing
+
+### Measurements
+
+    cards fully read 9,865 of 31,292 (was 9,853); lines read 27,744 of 58,524 (47.4%, was 27,726)
+
+Pod sweep on D611's build (2d94519), seeds 47901–47940: 40 of 40 finished, no throw and no stall.
+
+Break run on D611's build: 6 deliberate faults, 5 caught; the miss is pinned here.

@@ -689,6 +689,9 @@ export const turnFacts = {
     state.leftBattlefieldThisTurn?.[String(seat)] ?? 0,
   lifeGained: (state: GameState, seat: SeatIndex): number =>
     state.lifeGainedThisTurn?.[String(seat)] ?? 0,
+  /** Permanent cards put into this seat's graveyard this turn (D612). */
+  descended: (state: GameState, seat: SeatIndex): number =>
+    state.descendedThisTurn?.[String(seat)] ?? 0,
 } as const;
 
 /**

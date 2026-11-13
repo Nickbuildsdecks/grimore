@@ -8223,13 +8223,14 @@ describe('the label in front of an ability, which has no rules meaning', () => {
       cmc: 3, colors: ['G'], power: '4', toughness: '2', layout: 'normal',
       oracle_text: 'Exhaust — {2}{G}{G}: Put two +1/+1 counters on this creature.',
     }],
-    // A digit in the label, which the label pattern refuses outright.
-    ['a label with a number in it (descend)', {
+    // "Descend N" comes off since D612 (an ability word with a digit, and the sentence restates the
+    // condition); this remainder — "an additional +2/+2" and a blocking limit — still does not read.
+    ['a descend line whose remainder does not read', {
       name: 'Akawalli, the Seething Tower', type_line: 'Legendary Creature — Fungus',
       mana_cost: '{1}{B}{G}', cmc: 3, colors: ['B', 'G'], power: '3', toughness: '3',
       layout: 'normal',
-      oracle_text: 'Descend 4 — As long as there are four or more permanent cards in your'
-        + ' graveyard, Akawalli, the Seething Tower gets +2/+2 and has trample.',
+      oracle_text: 'Descend 8 — As long as there are eight or more permanent cards in your'
+        + " graveyard, Akawalli gets an additional +2/+2 and can't be blocked by more than one creature.",
     }],
   ])('leaves %s unread', (_label, row) => {
     const read = card(row);
@@ -17852,7 +17853,8 @@ describe('the second condition vocabulary, and the ability word in front of it (
     ['a comparison between two players',
       'When Mardu Hordechief enters, if an opponent controls more lands than you, draw a card.'],
     ['a per-turn fact the engine does not keep',
-      'When Mardu Hordechief enters, if you descended this turn, draw a card.'],
+      // Descended is kept since D612; scrying is not.
+      'When Mardu Hordechief enters, if you scried this turn, draw a card.'],
     ['a narrower death than "a creature"',
       'When Mardu Hordechief enters, if a nontoken creature died this turn, draw a card.'],
     ['more than one death',

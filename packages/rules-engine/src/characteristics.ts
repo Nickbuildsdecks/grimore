@@ -1576,6 +1576,11 @@ export interface ContinuousEffect {
         readonly kind: 'controller-graveyard';
         /** "seven or more", which is what every threshold card printed says. */
         readonly atLeast: number;
+        /**
+         * Descend (D612): "four or more **permanent** cards in your graveyard" — cards whose printed
+         * type line has a permanent type. Absent counts every card, which is threshold.
+         */
+        readonly permanents?: true;
       }
     /*
       The general "as long as" family (D604/D605), each answered without a live characteristic: a
@@ -1817,7 +1822,9 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     a graveyard is a card in a graveyard.
   */
   if (cond.kind === 'controller-graveyard') {
-    return (state.zones[zoneKey(effect.controller, 'graveyard')] ?? []).length >= cond.atLeast;
+    const cards = state.zones[zoneKey(effect.controller, 'graveyard')] ?? [];
+    if (cond.permanents !== true) return cards.length >= cond.atLeast;
+    return cards.filter((id) => isPermanentCard(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine)).length >= cond.atLeast;
   }
   // The general family (D605): see the union.
   if (cond.kind === 'graveyard-card-types') {
@@ -2834,4 +2841,14 @@ export function expireEffects(
     }
     return true;
   });
+}
+
+/**
+ * Whether a printed type line names a permanent type (CR 110.4): artifact, battle, creature,
+ * enchantment, land or planeswalker. Only the types before the dash, so a "Kindred Instant — Elf"
+ * is not one. What "permanent card" means to descend (D612).
+ */
+export function isPermanentCard(typeLine: string | undefined): boolean {
+  const types = (typeLine ?? '').split(/[—–]/)[0] ?? '';
+  return /\b(?:artifact|battle|creature|enchantment|land|planeswalker)\b/i.test(types);
 }
