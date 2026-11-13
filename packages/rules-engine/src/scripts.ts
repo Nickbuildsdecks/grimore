@@ -71,7 +71,7 @@ import { costValue, parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
-import { legalTargets, retarget } from './targeting.js';
+import { isLegalTarget, legalTargets, retarget } from './targeting.js';
 import { targetKey, type ActivationTiming, type StackObject, type Target } from './turnTypes.js';
 
 /**
@@ -11086,11 +11086,25 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
     .exec(text);
   if (head === null || head[2] === undefined) return null;
   const [, amount, how, rest] = head as unknown as [string, string, string, string];
-  if (/\b(?:it|this spell|this creature)\b/i.test(rest) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
   const ctx = (state: GameState, caster: SeatIndex, card?: string): EffectContext => ({
     state, controller: caster, source: card ?? '', targets: [], x: 0, decisions: [], kicked: false,
   });
   const description = `${amount === 'X' ? '{X}' : `{${amount}}`} less ${how} ${rest}`;
+  /*
+    "if it targets a tapped creature" (D611): the phrase after "targets" read as a target phrase,
+    by the reader every "target …" goes through, and asked of whatever the spell is aimed at.
+    Before the refusal of "it" below, which is about a condition naming the spell's own state.
+  */
+  const aim = how.toLowerCase() === 'if' && amount !== 'X' ? /^it targets (an? .+)$/i.exec(rest) : null;
+  if (aim !== null) {
+    const spec = targetSpecFrom(aim[1]!.replace(/^an? /i, 'target '), false);
+    if (spec === null) return null;
+    return { selfCostChange: {
+      generic: -Number(amount), description, when: () => true,
+      targets: (state, caster, target, card) => isLegalTarget(state, spec, target, caster, card),
+    } };
+  }
+  if (/\b(?:it|this spell|this creature)\b/i.test(rest) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
   if (how.toLowerCase() === 'if') {
     if (amount === 'X') return null;
     const condition = interveningConditionFor(rest, name);

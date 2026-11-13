@@ -3671,6 +3671,11 @@ function payFrom(
   extraGeneric = 0, avoid?: string,
   /** What this pays for, so a restricted mana source may help when its restriction allows (D595). */
   paying?: PaymentFor,
+  /**
+   * Permanents the same cost spends some other way — sacrificed, or tapped by {T}, crew or "tap an
+   * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
+   */
+  exclude?: ReadonlySet<string>,
 ): { state: GameState; tapped: readonly string[] } {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
@@ -3686,7 +3691,7 @@ function payFrom(
   /** What the restricted sources tapped here made, by type — see the end of this function. */
   const boundMade: Partial<Record<ManaType, number>> = {};
   if (!canPay(poolOf(next, seat), cost, x)) {
-    const sources = manaSources(next, seat, paying);
+    const sources = manaSources(next, seat, paying).filter((source) => exclude?.has(source.key) !== true);
     /*
       `avoid` is the permanent whose own ability is being paid for, kept out of the sources unless
       nothing else can cover the cost.

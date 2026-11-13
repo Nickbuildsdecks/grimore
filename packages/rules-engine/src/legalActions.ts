@@ -1565,7 +1565,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
       ? script.additionalCost
       : undefined;
-    const victims = sacrificeAsked === undefined
+    let victims = sacrificeAsked === undefined
       ? []
       : sacrificeOptions(state, seat, id, sacrificeAsked);
     if (sacrificeAsked !== undefined && victims.length === 0) {
@@ -1639,7 +1639,15 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       putting {1} on. Applied here, where affordability is judged, and again in `castSpell`, where
       the mana is actually taken — through the same function, so the two cannot drift apart.
     */
-    const change = costChangeFor(state, seat, def, id);
+    /*
+      Everything the spell could be aimed at, for a change that depends on its target (D611): the
+      offer is the cheaper one when any candidate earns it, and the candidates are narrowed below
+      to the ones that do when only the cheaper cast is affordable.
+    */
+    const aimable = script?.selfCostChange?.targets === undefined
+      ? undefined
+      : playableTargets(state, specsFor(script), seat, id).candidates.flat();
+    const change = costChangeFor(state, seat, def, id, aimable);
     const cost: ManaCost = withCostChange(taxed, change.generic);
     /*
       Delve, which takes generic mana off the cost and pays for it out of the graveyard
@@ -1687,6 +1695,18 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         : sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
+    }
+    /*
+      And fodder that is also mana — a Treasure — offered only where the mana is there without it
+      (sweep 47815): `castSpell` pays with the sacrificed permanent kept out of the sources.
+    */
+    if (victims.length > 0 && convoked === null && (!offered || costShown !== '')) {
+      const all = restrictedMana ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) }) : sources;
+      victims = victims.filter((victim) => canAfford(poolOf(state, seat), payable, all.filter((source) => source.key !== victim)));
+      if (victims.length === 0) {
+        why(id, 'everything it could sacrifice is needed for its mana');
+        continue;
+      }
     }
     /*
       The half of the cost that is paid in cards, said out loud on the play.
@@ -1761,10 +1781,28 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
 
     const specs = specsFor(script);
-    const { ok, candidates } = playableTargets(state, specs, seat, id);
+    const { ok, candidates: open } = playableTargets(state, specs, seat, id);
     if (!ok) {
       why(id, 'nothing it could legally target');
       continue;
+    }
+    /*
+      A cast that is affordable only because of what it targets (D611): "costs {3} less if it
+      targets a tapped creature" off four lands is a cast at a tapped creature, so the candidates
+      say so. The first spec that has one that earns it is narrowed to those, and the rest are left
+      alone — Animist's Might's legendary creature is its first target, not its second. Delve,
+      convoke and improvise are not asked again for the dearer cost; the narrowing is assumed.
+    */
+    const earns = script?.selfCostChange?.targets;
+    let candidates = open;
+    if (earns !== undefined && !offered && aimable !== undefined) {
+      const full = costChangeFor(state, seat, def, id, []);
+      const fullAffordable = full.generic === change.generic || (script?.delve !== true && tapRule === null
+        && canAfford(poolOf(state, seat), withCostChange(taxed, full.generic), restrictedMana
+          ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) })
+          : sources));
+      const at = fullAffordable ? -1 : open.findIndex((list) => list.some((t) => earns(state, seat, t, id)));
+      if (at >= 0) candidates = open.map((list, i) => (i === at ? list.filter((t) => earns(state, seat, t, id)) : list));
     }
 
     /*
@@ -2101,8 +2139,33 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         : crewPlan(state, seat, ability.cost.crew, id);
       if (ability.cost.crew !== undefined && crew === null) continue;
       // And "tap an untapped creature you control" (D610): not offered without enough to tap.
-      if (ability.cost.tapUntapped !== undefined
-        && tapCostPlan(state, seat, ability.cost.tapUntapped, id, ability.cost.tap === true) === null) continue;
+      const tapped = ability.cost.tapUntapped === undefined
+        ? null
+        : tapCostPlan(state, seat, ability.cost.tapUntapped, id, ability.cost.tap === true);
+      if (ability.cost.tapUntapped !== undefined && tapped === null) continue;
+      /*
+        A permanent the cost spends some other way cannot also make its mana (sweep 47815).
+
+        Thraxodemon — "{3}, {T}, Sacrifice another creature or artifact" — was offered with a
+        Treasure as its fodder, and the {3} was then paid by cracking that same Treasure, so the
+        sacrifice found nothing to sacrifice. The same holds for the source tapped by {T}, the
+        creatures crew or "tap an untapped creature" taps, and whatever is sacrificed: each is
+        kept out of the mana here, and in `activate`, which pays with the same exclusions. Fodder
+        whose loss would leave the mana short is not offered, and an ability with none left is not.
+      */
+      let fodder = victims;
+      if (ability.cost.mana) {
+        const cost = parseManaCost(ability.cost.mana);
+        const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources;
+        const spent = new Set<string>([...(ability.cost.tap ? [id] : []), ...(crew ?? []), ...(tapped ?? [])]);
+        const affords = (also?: string) => canAfford(poolOf(state, seat), cost,
+          all.filter((source) => !spent.has(source.key) && source.key !== also));
+        if (spent.size > 0 && !affords()) continue;
+        if (ability.cost.sacrifice !== undefined) {
+          fodder = victims.filter((victim) => affords(victim));
+          if (fodder.length === 0) continue;
+        }
+      }
 
       const specs = ability.targets ?? [];
       const { ok, candidates } = playableTargets(state, specs, seat, id);
@@ -2122,7 +2185,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ...(zone === 'hand' ? { fromHand: true } : {}),
         ...(zone === 'graveyard' ? { fromGraveyard: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
-        sacrificeOptions: victims,
+        sacrificeOptions: fodder,
         // Which kind of cost that list is for, read off the cost rather than guessed from the list.
         ...(ability.cost.sacrifice === 'artifact' ? { sacrificeKind: 'artifact' as const } : {}),
         ...(ability.cost.sacrifice === undefined ? {} : { sacrificeWords: sacrificeWords(ability.cost) }),
@@ -2209,6 +2272,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
  */
 export function costChangeFor(
   state: GameState, seat: SeatIndex, def: CardDef | undefined, card?: string,
+  /**
+   * What the spell is, or may be, aimed at (D611): the targets chosen, when it is being cast, or
+   * every legal candidate, when it is being offered. A change that depends on the target applies
+   * when one of these passes it, and never when this is absent.
+   */
+  aimedAt?: readonly Target[],
 ): { readonly generic: number; readonly notes: readonly string[] } {
   if (def === undefined) return { generic: 0, notes: [] };
   let up = 0;
@@ -2262,7 +2331,9 @@ export function costChangeFor(
   }
   // And a conditional change printed on the spell: "costs {1} less to cast if …" (D578).
   const conditional = scriptForCard(def)?.selfCostChange;
-  if (conditional !== undefined && conditional.generic !== 0 && conditional.when(state, seat, card)) {
+  if (conditional !== undefined && conditional.generic !== 0 && conditional.when(state, seat, card)
+    && (conditional.targets === undefined
+      || (aimedAt ?? []).some((target) => conditional.targets!(state, seat, target, card)))) {
     // Times the count when it is "for each …" (D601); a count of nought changes nothing.
     const amount = conditional.generic * (conditional.per === undefined ? 1 : conditional.per(state, seat, card));
     if (amount > 0) up += amount;

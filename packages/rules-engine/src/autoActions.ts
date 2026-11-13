@@ -741,7 +741,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     printed cost first would floor at nought and then have the tax added on top, so a taxed
     commander would come out cheaper than an untaxed one is dear.
   */
-  const change = costChangeFor(state, action.by, def, action.card);
+  // With the targets already chosen (CR 601.2c before 601.2f), so "if it targets …" is answered (D611).
+  const change = costChangeFor(state, action.by, def, action.card, action.targets ?? []);
 
   /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
@@ -831,7 +832,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   // A spell, by its live type line, so a restricted mana source may pay for it (D595).
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
-    { spell: characteristics.typeLine });
+    { spell: characteristics.typeLine }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
@@ -1759,7 +1760,11 @@ function activate(
   }
 
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
-  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card, { abilityOf: ch.typeLine });
+  // Nothing the cost spends another way pays its mana: see `payFrom`'s `exclude` (sweep 47815).
+  const spent = new Set<string>([
+    ...(ability.cost.tap ? [inst.id] : []), ...crewed, ...(sacrificed === null ? [] : [sacrificed]),
+  ]);
+  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.

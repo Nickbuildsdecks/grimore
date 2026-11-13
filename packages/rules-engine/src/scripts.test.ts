@@ -37,7 +37,7 @@ import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
-import { CARD_SCRIPTS, PEST_TOKEN, soleTargetSpecOf } from './scripts.js';
+import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
 import { costChangeFor } from './legalActions.js';
 import { scriptForCard, unreadLines } from './derive.js';
@@ -45078,8 +45078,8 @@ describe('a spell that costs less for what the board holds (D601)', () => {
     for (const text of [
       // A count that names the card itself: on a card in hand there is nothing to count (D601 break run).
       'This spell costs {1} less to cast for each +1/+1 counter on it.\nDraw a card.',
-      // The cost is computed before this engine knows the targets.
-      'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.',
+      // A target condition the target reader cannot say (D611 reads the ones it can).
+      'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.\nDestroy target creature.',
       // Only generic mana moves.
       'This spell costs {U} less to cast if an opponent cast two or more spells this turn.\nDraw a card.',
       // A cost increase dropped would be a card better than printed.
@@ -45973,5 +45973,165 @@ describe('a cost that taps other permanents you control (D610)', () => {
     expect(offered(s, 'Test Rally')).toBe(false);
     expect(offered(table(['Test Clock']), 'Test Clock')).toBe(false);
     expect(offered(table(['Test Clock', 'Bonesplitter']), 'Test Clock')).toBe(true);
+  });
+});
+
+describe('a spell that costs less for what it targets (D611)', () => {
+  /*
+    "This spell costs {3} less to cast if it targets a tapped creature": `selfCostChange.targets`,
+    read through the target-phrase reader and asked of the targets chosen as the spell is cast. The
+    offer takes the cheaper cost when any candidate earns it, and narrows the candidates to those
+    that do when only the cheaper cast is affordable.
+  */
+  const spell = (name: string, text: string, cost = '{4}{R}') => ({
+    name, type_line: 'Instant', mana_cost: cost, cmc: 5, colors: ['R'], layout: 'normal',
+    power: null, toughness: null, oracle_text: text,
+  });
+  const RESPONSE = spell('Test Response', 'This spell costs {3} less to cast if it targets a tapped creature.\nDestroy target creature.');
+  const MIGHT = spell('Test Might', 'This spell costs {2} less to cast if it targets a legendary creature you control.\nTarget creature you control fights target creature you don\'t control.');
+  const HERO = { name: 'Test Hero', type_line: 'Legendary Creature — Human Samurai', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [RESPONSE, MIGHT, HERO];
+  const deck = customDeck({
+    id: 'aimed', name: 'Aimed',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Centaur Courser', count: 4 }, { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, lands: number, tapTheirs: readonly string[] = [], mine: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'aimed', 1: 'aimed' }, deckSpecs: { aimed: deck.deck },
+      hands: { 0: [hand] },
+      battlefield: { 0: [...Array.from({ length: lands }, () => 'Mountain'), ...mine], 1: ['Grizzly Bears', 'Centaur Courser'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of tapTheirs) s = apply(s, { type: 'card:tap', by: 1, card: find(s, 1, 'battlefield', name) } as Action);
+    return s;
+  };
+  const play = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+  const untapped = (s: GameState) => ids(s, 0, 'battlefield')
+    .filter((id) => nameOf(s, id) === 'Mountain' && !s.instances[id]!.tapped).length;
+  const cast = (s: GameState, name: string, at: string) => apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', at) }],
+  } as Action);
+
+  it('reads the rows whole, and leaves unread a phrase the target reader cannot say', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [RESPONSE, MIGHT]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+      expect(read.ok && read.script?.selfCostChange?.targets).toBeDefined();
+    }
+    for (const text of [
+      'This spell costs {1} less to cast if it targets an attacking or tapped creature.\nDestroy target creature.',
+      'This spell costs {3} less to cast if it targets a creature token.\nDestroy target creature.',
+    ]) {
+      const read = compileCard(spell('Test Refused', text) as never);
+      expect(read.ok && read.unread.length).toBe(1);
+    }
+  });
+
+  it('the cost is the chosen target\'s: {3} less at a tapped creature, full price at an untapped one', () => {
+    let s = table('Test Response', 5, ['Centaur Courser']);
+    s = drain(passBoth(cast(s, 'Test Response', 'Centaur Courser')), 20);
+    expect(untapped(s)).toBe(3);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    s = table('Test Response', 5, ['Centaur Courser']);
+    s = drain(passBoth(cast(s, 'Test Response', 'Grizzly Bears')), 20);
+    expect(untapped(s)).toBe(0);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('off two lands it is offered only at the tapped creature, and refused at another', () => {
+    const s = table('Test Response', 2, ['Centaur Courser']);
+    const offer = play(s, 'Test Response');
+    expect(offer?.costChange).toBe(-3);
+    expect(offer?.candidates[0]).toEqual([{ kind: 'card', id: find(s, 1, 'battlefield', 'Centaur Courser') }]);
+    expect(() => cast(s, 'Test Response', 'Grizzly Bears')).toThrow();
+    // With five lands both are offered, and with nothing tapped two lands are not enough.
+    expect(play(table('Test Response', 5, ['Centaur Courser']), 'Test Response')?.candidates[0]?.length).toBe(2);
+    expect(play(table('Test Response', 2), 'Test Response')).toBeUndefined();
+  });
+
+  it('the spec that can earn it is the one narrowed, not every spec', () => {
+    // Test Might with three lands: the legendary creature is its first target; the second is free.
+    const s = table('Test Might', 3, [], ['Test Hero', 'Grizzly Bears']);
+    const offer = play(s, 'Test Might');
+    expect(offer?.candidates[0]).toEqual([{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Hero') }]);
+    expect(offer?.candidates[1]?.length).toBe(2);
+    expect(play(table('Test Might', 3, [], ['Grizzly Bears']), 'Test Might')).toBeUndefined();
+  });
+});
+
+describe('a permanent a cost spends cannot also pay its mana (sweep 47815)', () => {
+  /*
+    Thraxodemon — "{3}, {T}, Sacrifice another creature or artifact: Draw a card" — was offered with
+    a Treasure as fodder, and the {3} was paid by cracking that same Treasure first. The offer now
+    lists only fodder whose loss leaves the mana payable, and the payment keeps everything the cost
+    spends another way — sacrificed, tapped by {T} or by "tap an untapped creature" — out of it.
+  */
+  const row = (name: string, type: string, text: string, cost: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, mana_cost: cost, cmc: 1, colors: ['R'], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const DEMON = row('Test Demon', 'Creature — Demon', '{3}, {T}, Sacrifice another creature or artifact: Draw a card.', '{1}', ['2', '2']);
+  const LEVER = row('Test Lever', 'Artifact', '{1}, Tap an untapped creature you control: You gain 1 life.', '{1}');
+  const FEAST = row('Test Feast', 'Sorcery', 'As an additional cost to cast this spell, sacrifice an artifact.\nDraw two cards.', '{2}{R}');
+  const ROWS = [DEMON, LEVER, FEAST];
+  const deck = customDeck({
+    id: 'spenders', name: 'Spenders',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Bonesplitter', count: 4 }, { name: 'Llanowar Elves', count: 4 }, { name: 'Forest', count: 6 }, { name: 'Mountain', count: 38 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], treasures: number, hand: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'spenders', 1: 'spenders' }, deckSpecs: { spenders: deck.deck },
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (treasures > 0) s = createToken(s, 0, TREASURE_TOKEN, treasures);
+    return s;
+  };
+  const treasure = (s: GameState) => ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Treasure')!;
+  const activation = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('a Treasure needed for the mana is not offered as the sacrifice, and refused if sent', () => {
+    let s = table(['Test Demon', 'Mountain', 'Mountain', 'Grizzly Bears'], 1);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const t = treasure(s);
+    expect(activation(s, 'Test Demon')?.sacrificeOptions).toEqual([bears]);
+    const demon = find(s, 0, 'battlefield', 'Test Demon');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: demon, abilityIndex: 0, sacrifice: t } as Action)).toThrow(/cannot pay/);
+    s = apply(s, { type: 'auto:activate', by: 0, card: demon, abilityIndex: 0, sacrifice: bears } as Action);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+    expect(ids(s, 0, 'battlefield').some((id) => nameOf(s, id) === 'Treasure')).toBe(false);
+    // With the mana there without it, the Treasure is fodder too; with nothing else, nothing is.
+    expect(activation(table(['Test Demon', 'Mountain', 'Mountain', 'Mountain', 'Grizzly Bears'], 1), 'Test Demon')?.sacrificeOptions.length).toBe(2);
+    expect(activation(table(['Test Demon', 'Mountain', 'Mountain'], 1), 'Test Demon')).toBeUndefined();
+  });
+
+  it('a creature tapped for the cost does not also tap for mana', () => {
+    // The Elves are the only creature and the only mana: not both.
+    expect(activation(table(['Test Lever', 'Llanowar Elves'], 0), 'Test Lever')).toBeUndefined();
+    let s = table(['Test Lever', 'Llanowar Elves', 'Forest'], 0);
+    expect(activation(s, 'Test Lever')).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Lever'), abilityIndex: 0 } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
+    expect(s.instances[find(s, 0, 'battlefield', 'Llanowar Elves')]!.tapped).toBe(true);
+    expect(s.instances[find(s, 0, 'battlefield', 'Forest')]!.tapped).toBe(true);
+  });
+
+  it('a spell that sacrifices an artifact keeps the Treasure for its mana when it must', () => {
+    let s = table(['Mountain', 'Mountain', 'Bonesplitter'], 1, ['Test Feast']);
+    const feast = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Feast'));
+    expect(feast?.sacrificeOptions).toEqual([find(s, 0, 'battlefield', 'Bonesplitter')]);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Feast'), sacrifice: treasure(s) } as Action)).toThrow(/cannot pay/);
+    s = table(['Mountain', 'Mountain'], 1, ['Test Feast']);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Feast'))).toBe(false);
   });
 });

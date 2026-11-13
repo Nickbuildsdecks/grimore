@@ -3315,6 +3315,13 @@ export interface CardScript {
      * Absent means once.
      */
     readonly per?: (state: GameState, caster: SeatIndex, card?: string) => number;
+    /**
+     * "if it targets a tapped creature" (D611): the change applies only when one of the spell's
+     * targets passes this. Asked of the targets chosen when the spell is cast (CR 601.2c comes
+     * before 601.2f), and of every legal candidate when the cast is offered, where the play's
+     * candidates are then narrowed to the ones that pass if only the cheaper cast is affordable.
+     */
+    readonly targets?: (state: GameState, caster: SeatIndex, target: Target, card?: string) => boolean;
     /** Shown on the play when it applies: "costs {1} less". */
     readonly description: string;
   };

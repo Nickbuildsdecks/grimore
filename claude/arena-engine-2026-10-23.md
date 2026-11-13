@@ -25264,3 +25264,78 @@ Each of the following was broken on purpose and its test failed:
 Pod sweep on D609's build (1fc9d24), seeds 47701–47740: 40 of 40 finished, no throw and no stall.
 
 Break run on D609's build: 6 deliberate faults, 3 caught; all 3 misses pinned here.
+
+## D611 — A spell that costs less for what it targets, and fodder that was also the mana
+
+**"This spell costs {3} less to cast if it targets a tapped creature"** was 43 printed lines, 29 of
+them the line keeping their card unfinished. D601 refused the whole family: the cost was computed
+before the engine knew the targets. But the cast action carries its targets, and CR 601.2c (choose
+targets) comes before 601.2f (determine the total cost). So the cost can be the chosen target's.
+
+**`selfCostChange.targets`** is a predicate on one target. The phrase after "it targets" goes
+through `targetSpecFrom`, the reader every "target …" phrase uses, and is asked with
+`isLegalTarget`. Phrases that reader cannot say stay unread:
+- "a creature that was dealt damage this turn"
+- "an attacking or tapped creature"
+- "a creature token"
+- "a creature card with mana value 3 or less"
+- "a spell or ability that targets …"
+
+`costChangeFor` takes `aimedAt`:
+- **At the cast** it is the chosen targets.
+- **At the offer** it is every legal candidate, so the offer shows the cheaper cost when any
+  candidate earns it.
+- **When only the cheaper cast is affordable**, the play's candidates are narrowed to the ones that
+  earn it, on the first spec that has any. Animist's Might's legendary creature is its first
+  target, and its second target is left alone.
+- **A client that aims elsewhere anyway** is refused with "cannot pay".
+- **Alternative costs** are offered at the full price, and the payment may then come out cheaper.
+
+### Sweep 47801, seed 47815: fodder that was also the mana
+
+Thraxodemon ("{3}, {T}, Sacrifice another creature or artifact: Draw a card") was offered with a
+Treasure as its fodder. The {3} was paid by cracking that same Treasure, so the sacrifice found no
+card. This came from D609's wider sacrifice kinds.
+
+`payFrom` now takes `exclude`, a hard exclusion where `avoid` is only a preference:
+- `activate` excludes the source tapped by {T}, the creatures crew and "tap an untapped creature"
+  tap, and the sacrifice.
+- `castSpell` excludes an additional-cost sacrifice.
+
+On the offer side:
+- Fodder is offered only where the mana is there without it.
+- An ability whose cost-tapped permanents are also its only mana is not offered.
+
+**Tests.** 8 new engine tests:
+- D611:
+  - The rows read, and two phrases stay refused.
+  - {3} less at a tapped creature, full price at an untapped one.
+  - Off two lands, it is offered only at the tapped creature, and refused at another.
+  - Only the spec that can earn it is narrowed.
+- Sweep 47815:
+  - The rows read.
+  - A Treasure needed for the mana is not fodder, and is refused with "cannot pay" if sent.
+  - Elves tapped for the cost do not also tap for mana.
+  - The spell form of the same.
+
+Each of the following was broken on purpose and its test failed:
+- The narrowing removed.
+- The cast passing no targets.
+- Every spec narrowed.
+- The narrowing applied even when the full cost is affordable.
+- The offer asked of no candidates.
+- Each of the five exclusions.
+
+The D487 and D601 refusal rows that used "a tapped creature" now use "a creature that was dealt
+damage this turn".
+
+    engine tests: 4,327, all passing
+
+### Measurements
+
+    cards fully read 9,853 of 31,292 (was 9,828); lines read 27,726 of 58,524 (47.4%, was 27,693)
+
+Pod sweep on D610's build (8040f0c), seeds 47801–47840: 39 of 40 finished, and seed 47815 threw.
+It is fixed here, and seed 47815 now finishes.
+
+Break run on D610's build: 4 deliberate faults, 4 caught.

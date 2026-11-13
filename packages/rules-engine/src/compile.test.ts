@@ -10315,8 +10315,9 @@ describe("a spell's non-resolution lines (D487)", () => {
   const RESOLUTION = 'Flinging Thing deals 2 damage to any target.';
 
   it.each([
-    // A cost modification: a way to cast the card, exactly like a keyword (64 lines).
-    'This spell costs {3} less to cast if it targets a tapped creature.',
+    // A cost modification: a way to cast the card, exactly like a keyword (64 lines). Since D611
+    // "if it targets a tapped creature" reads; a target condition the reader cannot say does not.
+    'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.',
     'This spell costs {2} less to cast if it was bargained.',
     // A triggered ability, which on a spell functions somewhere other than resolution (36).
     'Whenever an opponent gains life, you may pay {R}. If you do, return Flinging Thing from your'
