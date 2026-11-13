@@ -8620,11 +8620,12 @@ describe('an ability cost that is not mana, a tap or life', () => {
     // And two sacrifices in one cost, which the field cannot count: refused rather than halved.
     ['two sacrifices in one cost, which the field cannot count',
       'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],
-    // The discards that are more than "a card" (D580): a count, a random pick and a filter, none
-    // of which the flag carries — so none is read as the cheaper cost it resembles.
+    // The discards that are more than "a card" (D580): a count is still refused. A random pick and
+    // a filter read since D614 (`discardAtRandom`, `discardKind`); a filter it cannot say does not.
     ['two cards, which the flag cannot count', 'Discard two cards: Draw a card.'],        // 16 lines
-    ['a card at random, which is not a choice', 'Discard a card at random: Draw a card.'],  // 16
-    ['a creature card, which is a filter', 'Discard a creature card: Draw a card.'],      // 14
+    ['a filter the kind reader cannot say', 'Discard a nonland card: Draw a card.'],
+    ['a random discard beside a chosen one', 'Discard a card at random, Discard a card: Draw a card.'],
+    ['a chosen discard beside a random one', 'Discard a card, Discard a card at random: Draw a card.'],
     ['"Discard a card" twice, which the flag cannot count',
       'Discard a card, Discard a card: Draw a card.'],
     // Bloodsoaked Altar's cost, the one legal card with both: two choices for one activation,

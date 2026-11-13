@@ -25447,3 +25447,57 @@ it.
     cards fully read 9,894 of 31,292 (was 9,865); lines read 27,783 of 58,524 (47.5%, was 27,744)
 
 Pod sweep on D612's build (cc75323), seeds 48001–48040: 40 of 40 finished, no throw and no stall.
+
+## D614 — A discard cost with a filter or at random, and the D612 break-run gaps
+
+D580 read "Discard a card" and left its relatives unread on purpose, because the flag could not
+carry them. Two of them now have fields:
+
+- **"Discard a creature card"** (and "a land card", "an instant or sorcery card", "an Elf card")
+  is `AbilityCost.discardKind`. It narrows the player's choice through D613's `graveyardKind`. The
+  offer's `discardOptions`, and the check in `activate`, both list only matching cards. A kind
+  that reader cannot say ("a nonland card") stays unread.
+- **"Discard a card at random"** is `AbilityCost.discardAtRandom`. Nobody chooses, so nothing
+  travels on the action, and a client that sends a card is refused. The card is picked by the
+  game's own generator (`mulberry32` over the seed, the state version and `autoSeq`, as
+  `bottomPile` does), so a replay of the action log discards the same card. It is offered to any
+  hand with another card in it. It is refused on a mana ability, and refused beside a second
+  discard in either order.
+
+"Discard two cards" is still refused: a count needs more than one choice from the player, which
+neither the table nor the bot asks for yet.
+
+**The D612 break run: 5 faults, 2 caught.** The three misses:
+- **Descend keyed by the controller, not the owner.** Now pinned: a Grizzly Bears of seat 0's,
+  stolen by seat 1 and destroyed, descends seat 0.
+- **A number-label rule wider than "Descend".** No real card changes under it: none of the 97
+  corpus cards with "Word N —" compiles differently. It is now pinned with constructed lines:
+  "Rampage 2 — Whenever …" and "Suspend 4 — … gets +1/+1 as long as …" stay unread, and "Descend 4
+  — Whenever …" reads.
+- **Subtypes included in the permanent-type test.** This is vacuous. No subtype on a non-permanent
+  card is a permanent type word, so the two readings never differ. A Kindred Instant row is pinned
+  anyway, to show that "Kindred" is not counted.
+
+**Tests.** 4 new engine tests:
+- Both rows read.
+- A creature card only: the Bolt is not offered, and is refused if sent.
+- At random: no choice travels, one card goes, a sent card is refused, and an empty hand is not
+  offered.
+- The random pick is the same on a replay.
+
+Plus 2 D612 pins and 3 refusal rows. Each of the following was broken on purpose and its test
+failed:
+- The offer filter removed.
+- The payment filter removed.
+- The random offer gate removed.
+- No card discarded.
+- The random-beside-chosen guard removed. The row only listed one order at first; the reverse
+  order was added.
+
+    engine tests: 4,343, all passing
+
+### Measurements
+
+    cards fully read 9,925 of 31,292 (was 9,894); lines read 27,820 of 58,524 (47.5%, was 27,783)
+
+Break run on D612's build: 5 deliberate faults, 2 caught; 2 misses pinned here, 1 vacuous.

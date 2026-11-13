@@ -37,7 +37,7 @@ import {
   poolOf, spendEnergy,
   sacrifice,
 } from './effects.js';
-import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
+import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
 /*
@@ -1718,7 +1718,9 @@ function activate(
   */
   let discarded: string | null = null;
   if (ability.cost.discardACard === true) {
-    const options = discardOptions(state, action.by, inst.id);
+    const kind = ability.cost.discardKind;
+    const options = discardOptions(state, action.by, inst.id).filter((card) => kind === undefined
+      || kind.matches(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine ?? ''));
     if (options.length === 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'you have no card to discard for that');
     }
@@ -1729,6 +1731,17 @@ function activate(
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card cannot be discarded for this');
     }
     discarded = action.discarded;
+  } else if (ability.cost.discardAtRandom === true) {
+    // "Discard a card at random" (D614): the game's generator picks, so a replay picks the same.
+    if (action.discarded !== undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is discarded at random, not chosen');
+    }
+    const options = discardOptions(state, action.by, inst.id);
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'you have no card to discard for that');
+    }
+    const rng = mulberry32(actionSeed(state.rngSeed, state.stateVersion + state.autoSeq));
+    discarded = options[Math.floor(rng() * options.length)] ?? options[0]!;
   } else if (action.discarded !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability does not ask for a discard');
   }

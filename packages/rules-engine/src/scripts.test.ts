@@ -46159,10 +46159,11 @@ describe('descend (D612)', () => {
   });
   const CHILD = creature('Test Child', 'At the beginning of your end step, if you descended this turn, put a +1/+1 counter on Test Child.');
   const CAPY = creature('Test Capybara', 'Descend 4 — Test Capybara gets +3/+0 as long as there are four or more permanent cards in your graveyard.');
-  const ROWS = [CHILD, CAPY];
+  const KINDRED = { name: 'Test Kindred', type_line: 'Kindred Instant — Goblin', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Test Kindred deals 1 damage to any target.' };
+  const ROWS = [CHILD, CAPY, KINDRED];
   const deck = customDeck({
     id: 'descend', name: 'Descend',
-    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Mountain', count: 44 }],
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Mountain', count: 42 }],
     data: ROWS as never[],
   });
   const table = (mine: readonly string[], hand: readonly string[] = []): GameState => advanceTo(arena({
@@ -46194,6 +46195,30 @@ describe('descend (D612)', () => {
     expect(s.descendedThisTurn?.['0']).toBe(1);
     s = toEnd(s);
     expect(counters(s)).toBe(1);
+  });
+
+  it('the owner descends, not the controller; a Kindred instant is not a permanent card (D612 break run)', () => {
+    let s = table(['Grizzly Bears'], ['Test Kindred']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(gainControl(s, bears, 1), 20);
+    s = destroy(s, bears, {});
+    expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+    expect(s.descendedThisTurn?.['0']).toBe(1);
+    expect(s.descendedThisTurn?.['1'] ?? 0).toBe(0);
+    s = bury(s, 'Test Kindred');
+    expect(s.descendedThisTurn?.['0']).toBe(1);
+  });
+
+  it('only "Descend N" comes off: another word with a number keeps its line unread (D612 break run)', () => {
+    for (const text of [
+      'Rampage 2 — Whenever Test Probe attacks, you gain 1 life.',
+      'Suspend 4 — Test Probe gets +1/+1 as long as there are four or more cards in your graveyard.',
+    ]) {
+      const read = compileCard({ ...CHILD, name: 'Test Probe', oracle_text: text } as never);
+      expect(read.ok && read.unread.length).toBe(1);
+    }
+    const descend = compileCard({ ...CHILD, name: 'Test Probe', oracle_text: 'Descend 4 — Whenever Test Probe attacks, you gain 1 life.' } as never);
+    expect(descend.ok && descend.unread).toEqual([]);
   });
 
   it('it is this turn only, and the owner\'s', () => {
@@ -46281,5 +46306,81 @@ describe('a cost that exiles cards from your graveyard (D613)', () => {
     // And a sorcery, the second half of the "or".
     const t = activate(table(['Test Scholar'], ['Grizzly Bears', 'Lava Spike']), 'Test Scholar');
     expect(namesIn(t, 0, 'exile')).toEqual(['Lava Spike']);
+  });
+});
+
+describe('a discard cost with a filter, or at random (D614)', () => {
+  /*
+    "Discard a creature card:" narrows the player's choice (`discardKind`); "Discard a card at
+    random:" is picked by the game's generator (`discardAtRandom`), so nothing travels on the action.
+  */
+  const row = (name: string, text: string) => ({
+    name, type_line: 'Creature — Shaman', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: '2', toughness: '2', oracle_text: text,
+  });
+  const SHAMAN = row('Test Shaman', 'Discard a creature card: You gain 2 life.');
+  const OGRE = row('Test Ogre', 'Discard a card at random: Test Ogre gets +2/+0 until end of turn.');
+  const ROWS = [SHAMAN, OGRE];
+  const deck = customDeck({
+    id: 'pitchers', name: 'Pitchers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'pitchers', 1: 'pitchers' }, deckSpecs: { pitchers: deck.deck },
+      hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // Only the named cards in hand: everything else goes back on the library.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      const name = nameOf(s, id);
+      const keep = hand.filter((h) => h === name).length;
+      const have = ids(s, 0, 'hand').filter((x) => nameOf(s, x) === name).length;
+      if (have > keep) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library' } as Action);
+    }
+    return s;
+  };
+  const play = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+
+  it('reads both rows whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('a creature card only: the Bolt is not offered, and refused if sent', () => {
+    let s = table(['Test Shaman'], ['Lightning Bolt', 'Grizzly Bears']);
+    const bolt = find(s, 0, 'hand', 'Lightning Bolt');
+    const bears = find(s, 0, 'hand', 'Grizzly Bears');
+    expect(play(s, 'Test Shaman')?.discardOptions).toEqual([bears]);
+    const shaman = find(s, 0, 'battlefield', 'Test Shaman');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: shaman, abilityIndex: 0, discarded: bolt } as Action)).toThrow();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: shaman, abilityIndex: 0, discarded: bears } as Action)), 20);
+    expect(life(s, 0)).toBe(22);
+    expect(play(s, 'Test Shaman')).toBeUndefined();
+  });
+
+  it('at random: nobody chooses, one card goes, and an empty hand is not offered', () => {
+    let s = table(['Test Ogre'], ['Lightning Bolt', 'Grizzly Bears']);
+    const offer = play(s, 'Test Ogre');
+    expect(offer).toBeDefined();
+    expect(offer?.discardOptions).toBeUndefined();
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: ogre, abilityIndex: 0, discarded: find(s, 0, 'hand', 'Lightning Bolt') } as Action)).toThrow();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ogre, abilityIndex: 0 } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(1);
+    expect(namesIn(s, 0, 'graveyard').length).toBe(1);
+    expect(characteristicsOf(s, s.instances[ogre]!).power).toBe(4);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ogre, abilityIndex: 0 } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(0);
+    expect(play(s, 'Test Ogre')).toBeUndefined();
+  });
+
+  it('the random pick is the same on a replay of the same state', () => {
+    const s = table(['Test Ogre'], ['Lightning Bolt', 'Grizzly Bears', 'Forest']);
+    const act = { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ogre'), abilityIndex: 0 } as Action;
+    expect(namesIn(apply(s, act), 0, 'graveyard')).toEqual(namesIn(apply(s, act), 0, 'graveyard'));
   });
 });

@@ -1939,6 +1939,16 @@ export interface AbilityCost {
    */
   readonly discardACard?: true;
   /**
+   * "Discard a creature card", "Discard a land card" (D614): narrows `discardACard` to cards whose
+   * printed type line passes `matches`. The player still chooses which.
+   */
+  readonly discardKind?: { readonly words: string; readonly matches: (typeLine: string) => boolean };
+  /**
+   * "Discard a card at random" (D614): one card of the hand, other than the source, chosen by the
+   * game's own generator as the cost is paid. Nobody chooses, so nothing travels on the action.
+   */
+  readonly discardAtRandom?: true;
+  /**
    * "Exile this card from your graveyard:" — embalm's cost, and the second time the card itself is
    * what you are paying with (CR 702.89a, CR 702.100a).
    *

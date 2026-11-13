@@ -2147,8 +2147,14 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         : [];
       if (ability.cost.returnsUnblockedAttacker === true && ninjas.length === 0) continue;
       // "Discard a card" (D579): not offered to a hand with nothing in it to discard.
-      const pitches = ability.cost.discardACard === true ? discardOptions(state, seat, id) : [];
+      const kind = ability.cost.discardKind;
+      const pitches = ability.cost.discardACard === true
+        ? discardOptions(state, seat, id).filter((card) => kind === undefined
+          || kind.matches(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine ?? ''))
+        : [];
       if (ability.cost.discardACard === true && pitches.length === 0) continue;
+      // "At random" (D614): offered to a hand with any other card in it; nobody picks.
+      if (ability.cost.discardAtRandom === true && discardOptions(state, seat, id).length === 0) continue;
 
       /*
         Crew, asked of the same planner that will pay it (CR 702.122a).

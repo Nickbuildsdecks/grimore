@@ -21707,6 +21707,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
+  let discardKind: NonNullable<AbilityCost['discardKind']> | null = null;
+  let discardsAtRandom = false;
   let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -21760,8 +21762,23 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       the field is a flag, so the second would be dropped in silence.
     */
     if (/^Discard a card$/i.test(component)) {
-      if (discardsACard) return null;
+      if (discardsACard || discardKind !== null || discardsAtRandom) return null;
       discardsACard = true;
+      continue;
+    }
+    // "Discard a creature card" and "Discard a card at random" (D614): a filter, and a random pick.
+    const discardOf = /^Discard an? (.+?) card$/i.exec(component);
+    if (discardOf !== null) {
+      if (discardsACard || discardKind !== null || discardsAtRandom) return null;
+      const matches = graveyardKind(discardOf[1]);
+      if (matches === null) return null;
+      discardsACard = true;
+      discardKind = { words: discardOf[1]!, matches };
+      continue;
+    }
+    if (/^Discard a card at random$/i.test(component)) {
+      if (discardsACard || discardKind !== null || discardsAtRandom) return null;
+      discardsAtRandom = true;
       continue;
     }
     /*
@@ -21947,7 +21964,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const anything = taps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
-    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null;
+    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null
+    || discardsAtRandom;
   if (taps > 1 || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
@@ -21960,7 +21978,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     One legal card prints it, counted: Bloodsoaked Altar's "{T}, Pay 2 life, Discard a card,
     Sacrifice a creature". One card is a line here, not a second question in two clients.
   */
-  if (discardsACard && sacrifices !== null) return null;
+  if ((discardsACard || discardsAtRandom) && sacrifices !== null) return null;
   const cost: AbilityCost = {
     ...(mana.length === 0 ? {} : { mana: mana.join('') }),
     ...(taps === 1 ? { tap: true } : {}),
@@ -21976,6 +21994,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
     ...(tapsOthers === null ? {} : { tapUntapped: tapsOthers }),
     ...(exilesCards === null ? {} : { exileFromGraveyard: exilesCards }),
+    ...(discardKind === null ? {} : { discardKind }),
+    ...(discardsAtRandom ? { discardAtRandom: true as const } : {}),
   };
 
   /*
@@ -21999,7 +22019,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     permanents (D610): "Tap an untapped creature you control: Add {G}" would make free mana there. So
     a tap-others cost on a mana ability stays unread.
   */
-  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined) && /^add\b/i.test(manaClause)) return null;
+  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true)
+    && /^add\b/i.test(manaClause)) return null;
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
