@@ -777,6 +777,28 @@ export function tapToPayPlan(
  * it says. `want` is a cap rather than a promise — a shorter list than asked for is the answer
  * "this cost cannot be paid", and `castablePlays` reads it that way.
  */
+export function bouncePlan(
+  state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['returnToHand']>, source: string,
+): readonly string[] | null {
+  /*
+    "Return a land you control to its owner's hand" (D615): tapped first — a land tapped for mana
+    and then returned is the whole trick of the card — then the cheapest, never the source. `null`
+    when there are too few.
+  */
+  const fits = listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+    if (id === source) return false;
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst)) return false;
+    const ch = characteristicsOf(state, inst);
+    const kind = cost.kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, cost.kind);
+    return kind && (cost.subtype === undefined || hasSubtype(ch.typeLine, cost.subtype.toLowerCase()));
+  });
+  if (fits.length < cost.count) return null;
+  const rank = (id: string): number => (state.instances[id]!.tapped ? 0 : 1000)
+    + (state.cardDefs[state.instances[id]!.defKey]?.cmc ?? 0);
+  return [...fits].sort((a, b) => rank(a) - rank(b)).slice(0, cost.count);
+}
+
 export function graveyardCostPlan(
   state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['exileFromGraveyard']>, source: string,
 ): readonly string[] | null {
@@ -2172,6 +2194,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? null
         : tapCostPlan(state, seat, ability.cost.tapUntapped, id, ability.cost.tap === true);
       if (ability.cost.tapUntapped !== undefined && tapped === null) continue;
+      // And "return a land you control to its owner's hand" (D615): not offered without enough.
+      if (ability.cost.returnToHand !== undefined
+        && bouncePlan(state, seat, ability.cost.returnToHand, id) === null) continue;
       // And "exile a creature card from your graveyard" (D613): not offered without enough.
       if (ability.cost.exileFromGraveyard !== undefined
         && graveyardCostPlan(state, seat, ability.cost.exileFromGraveyard, id) === null) continue;

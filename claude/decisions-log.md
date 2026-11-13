@@ -42967,3 +42967,46 @@ failed:
     cards fully read 9,925 of 31,292 (was 9,894); lines read 27,820 of 58,524 (47.5%, was 27,783)
 
 Break run on D612's build: 5 deliberate faults, 2 caught; 2 misses pinned here, 1 vacuous.
+
+## D615 — A cost that returns permanents to your hand
+
+Two cost shapes:
+- **"Return ~ to its owner's hand"** (12 lines: Attunement, Broken Fall, Gossamer Chains) is
+  `returnSelf`. The source goes back as the cost is paid.
+- **"Return a land you control to its owner's hand"** (13 lines: Meloku, Floodbringer, Oboro
+  Breezecaller), plus "two/three lands", "a Forest", "two Islands", "an artifact" and "an Elf", is
+  `returnToHand`. It has a count, a kind (land, artifact, creature or enchantment), and an optional
+  basic land type or creature type.
+
+**Who chooses: the engine, with `bouncePlan`.** It takes tapped permanents first, then the cheapest,
+and never the source. Tapped first is the point of Quirion Ranger: a land tapped for mana and then
+returned is legal (mana abilities come before costs are paid, CR 601.2g–h). So `activate` checks
+there are enough before anything is spent, and **chooses after the mana is paid**, from the state
+in which those lands are tapped.
+
+"Tapped", "snow", "unblocked attacking" and "Elves" (an irregular plural) stay unread. So does the
+cost on a mana ability.
+
+**Tests.** 4 new engine tests:
+- The rows read, and the mana form is refused.
+- A Forest, the tapped one first, and not a Mountain; with only a Mountain it is not offered.
+- Two lands: the Forest just tapped for its {G} goes back and an untapped Mountain stays.
+- The card returns itself.
+
+Each of the following was broken on purpose and its test failed:
+- Untapped first.
+- The subtype ignored.
+- The offer not gated.
+- The choice made before the payment. The first version of the test did not check which lands went
+  back; it now forces a {G} from the last land on the battlefield.
+- The self-return dropped.
+- The mana-ability guard removed.
+
+    engine tests: 4,347, all passing
+
+### Measurements
+
+    cards fully read 9,944 of 31,292 (was 9,925); lines read 27,841 of 58,524 (47.6%, was 27,820)
+
+Pod sweep 48101–48140 ran on D614's build (43d5112) rather than D613's, because the queue was
+restarted after D614 was pushed: 40 of 40 finished, no throw and no stall.

@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './s
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1773,6 +1773,12 @@ function activate(
   }
 
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
+  // And the permanents to return (D615): checked now, chosen after the mana (tapped ones first).
+  if (ability.cost.returnToHand !== undefined
+    && bouncePlan(state, action.by, ability.cost.returnToHand, inst.id) === null) {
+    const want = ability.cost.returnToHand;
+    throw new EngineError('RULE_NOT_APPLICABLE', `you control too few ${(want.subtype ?? want.kind).toLowerCase()}s to return for that`);
+  }
   // And the graveyard cards (D613), chosen before anything is spent so a refusal changes nothing.
   const exiledForCost = ability.cost.exileFromGraveyard === undefined
     ? []
@@ -1882,6 +1888,18 @@ function activate(
     where the effect reads it from to build the token copy.
   */
   if (ability.cost.exileSelf) next = relocate(next, requireInstance(next, inst.id), 'exile', inst.owner, 'bottom');
+  // Returned as the cost is paid (D615): chosen from the state after the mana, so a land tapped to
+  // pay is the one that goes back, and the source last of all when it is part of the cost.
+  if (ability.cost.returnToHand !== undefined) {
+    for (const id of bouncePlan(next, action.by, ability.cost.returnToHand, inst.id) ?? []) {
+      const card = next.instances[id];
+      if (card !== undefined) next = relocate(next, card, 'hand', card.owner, 'bottom');
+    }
+  }
+  if (ability.cost.returnSelf === true) {
+    const self = next.instances[inst.id];
+    if (self !== undefined && self.zone === 'battlefield') next = relocate(next, self, 'hand', self.owner, 'bottom');
+  }
   // Exiled as the cost is paid, before the ability is on the stack (D613).
   for (const id of exiledForCost) {
     const card = next.instances[id];

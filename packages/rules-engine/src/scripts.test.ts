@@ -46384,3 +46384,74 @@ describe('a discard cost with a filter, or at random (D614)', () => {
     expect(namesIn(apply(s, act), 0, 'graveyard')).toEqual(namesIn(apply(s, act), 0, 'graveyard'));
   });
 });
+
+describe('a cost that returns permanents to your hand (D615)', () => {
+  /*
+    "Return ~ to its owner's hand:" (`returnSelf`) and "Return a land you control to its owner's
+    hand:" (`returnToHand`, chosen by `bouncePlan`: tapped first, then cheapest, never the source).
+  */
+  const row = (name: string, text: string) => ({
+    name, type_line: 'Creature — Elf Ranger', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: text,
+  });
+  const RANGER = row('Test Ranger', 'Return a Forest you control to its owner\'s hand: You gain 1 life.');
+  const SEER = row('Test Seer', '{G}, Return two lands you control to their owner\'s hand: You gain 3 life.');
+  const CHAINS = { ...row('Test Chains', 'Return Test Chains to its owner\'s hand: You gain 2 life.'), type_line: 'Enchantment', power: null, toughness: null };
+  const ROWS = [RANGER, SEER, CHAINS];
+  const deck = customDeck({
+    id: 'bouncers', name: 'Bouncers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 10 }, { name: 'Forest', count: 38 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'bouncers', 1: 'bouncers' }, deckSpecs: { bouncers: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+  const activate = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 } as Action)), 20);
+  const inHand = (s: GameState, name: string) => namesIn(s, 0, 'hand').filter((n) => n === name).length;
+
+  it('reads every row whole, and refuses it on a mana ability', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const mana = compileCard(row('Test Druid', 'Return a land you control to its owner\'s hand: Add {G}.') as never);
+    expect(mana.ok && mana.unread.length).toBe(1);
+  });
+
+  it('a Forest, the tapped one first, and not a Mountain', () => {
+    let s = table(['Test Ranger', 'Mountain', 'Forest', 'Forest']);
+    const forests = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest');
+    s = apply(s, { type: 'card:tap', by: 0, card: forests[1]! } as Action);
+    const before = inHand(s, 'Forest');
+    s = activate(s, 'Test Ranger');
+    expect(life(s, 0)).toBe(21);
+    expect(inHand(s, 'Forest')).toBe(before + 1);
+    expect(s.instances[forests[1]!]!.zone).toBe('hand');
+    expect(s.instances[forests[0]!]!.zone).toBe('battlefield');
+    expect(offered(table(['Test Ranger', 'Mountain']), 'Test Ranger')).toBe(false);
+  });
+
+  it('two lands, the ones just tapped for its mana first', () => {
+    expect(offered(table(['Test Seer', 'Forest']), 'Test Seer')).toBe(false);
+    // The {G} can only come from the Forest, which is last on the battlefield: chosen before the
+    // payment, the two Mountains would go back and leave the tapped Forest.
+    let s = table(['Test Seer', 'Mountain', 'Mountain', 'Forest']);
+    s = activate(s, 'Test Seer');
+    expect(life(s, 0)).toBe(23);
+    const left = ids(s, 0, 'battlefield').filter((id) => /Forest|Mountain/.test(nameOf(s, id)));
+    expect(left.length).toBe(1);
+    // The land tapped for the {G} went back; the one left is untapped (D615 fault check).
+    expect(s.instances[left[0]!]!.tapped).toBe(false);
+  });
+
+  it('the card returns itself', () => {
+    let s = table(['Test Chains']);
+    s = activate(s, 'Test Chains');
+    expect(life(s, 0)).toBe(22);
+    expect(inHand(s, 'Test Chains')).toBeGreaterThan(0);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Chains');
+  });
+});

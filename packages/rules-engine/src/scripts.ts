@@ -21709,6 +21709,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
   let discardKind: NonNullable<AbilityCost['discardKind']> | null = null;
   let discardsAtRandom = false;
+  let returnsSelf = false;
+  let returnsOthers: NonNullable<AbilityCost['returnToHand']> | null = null;
   let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -21774,6 +21776,27 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       if (matches === null) return null;
       discardsACard = true;
       discardKind = { words: discardOf[1]!, matches };
+      continue;
+    }
+    // "Return ~ to its owner's hand" and "Return a land you control to its owner's hand" (D615).
+    if (new RegExp(`^Return ${self} to its owner's hand$`, 'i').test(component)) {
+      if (returnsSelf) return null;
+      returnsSelf = true;
+      continue;
+    }
+    const bounce = /^Return (an?|two|three) ([A-Z]?[a-z']+?)s? you control to (?:its|their) owner's hand$/.exec(component);
+    if (bounce !== null) {
+      if (returnsOthers !== null) return null;
+      const count = /^an?$/.test(bounce[1]!) ? 1 : countFrom(bounce[1]!);
+      const word = bounce[2]!;
+      if (count === null || count < 1) return null;
+      if (/^(?:land|artifact|creature|enchantment)$/.test(word)) {
+        returnsOthers = { count, kind: word as 'land' };
+      } else if (['Plain', 'Island', 'Swamp', 'Mountain', 'Forest'].includes(word)) {
+        returnsOthers = { count, kind: 'land', subtype: word === 'Plain' ? 'Plains' : word };
+      } else if (/^[A-Z]/.test(word) && isCreatureType(word)) {
+        returnsOthers = { count, kind: 'creature', subtype: word };
+      } else return null;
       continue;
     }
     if (/^Discard a card at random$/i.test(component)) {
@@ -21965,7 +21988,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const anything = taps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
     || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null
-    || discardsAtRandom;
+    || discardsAtRandom || returnsSelf || returnsOthers !== null;
   if (taps > 1 || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
@@ -21996,6 +22019,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(exilesCards === null ? {} : { exileFromGraveyard: exilesCards }),
     ...(discardKind === null ? {} : { discardKind }),
     ...(discardsAtRandom ? { discardAtRandom: true as const } : {}),
+    ...(returnsSelf ? { returnSelf: true as const } : {}),
+    ...(returnsOthers === null ? {} : { returnToHand: returnsOthers }),
   };
 
   /*
@@ -22019,7 +22044,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     permanents (D610): "Tap an untapped creature you control: Add {G}" would make free mana there. So
     a tap-others cost on a mana ability stays unread.
   */
-  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true)
+  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
+    || cost.returnSelf === true || cost.returnToHand !== undefined)
     && /^add\b/i.test(manaClause)) return null;
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {

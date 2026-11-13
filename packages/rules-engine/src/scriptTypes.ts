@@ -1948,6 +1948,19 @@ export interface AbilityCost {
    * game's own generator as the cost is paid. Nobody chooses, so nothing travels on the action.
    */
   readonly discardAtRandom?: true;
+  /** "Return ~ to its owner's hand" as a cost (D615): the source goes back to its owner's hand. */
+  readonly returnSelf?: true;
+  /**
+   * "Return a land you control to its owner's hand", "Return two Islands you control …", "Return an
+   * Elf you control …" (D615) — permanents of yours returned as the cost, chosen by the engine with
+   * `bouncePlan`: tapped ones first, since tapping a land for mana and then returning it is legal
+   * and is the point of Quirion Ranger, then the cheapest. Never the source.
+   */
+  readonly returnToHand?: {
+    readonly count: number;
+    readonly kind: 'land' | 'artifact' | 'creature' | 'enchantment';
+    readonly subtype?: string;
+  };
   /**
    * "Exile this card from your graveyard:" — embalm's cost, and the second time the card itself is
    * what you are paying with (CR 702.89a, CR 702.100a).
