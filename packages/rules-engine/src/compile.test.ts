@@ -8594,8 +8594,8 @@ describe('an ability cost that is not mana, a tap or life', () => {
     */
     // "Sacrifice a land" and "Sacrifice a Forest" were rows here ("no field", "not a creature or an
     // artifact"); D609 gave the cost its wider kinds, and their test is in scripts.test.ts.
-    ['tapping somebody else, which has no field',
-      'Tap an untapped creature you control: Draw a card.'],                             // 18
+    // "Tap an untapped creature you control" was a row here ("tapping somebody else, which has no
+    // field"); D610 gave it `AbilityCost.tapUntapped`, tested in scripts.test.ts.
     // Three rows left here for D581, which took "a creature type", "taking a counter off" and
     // "exiling from a graveyard" to the table above: what is still refused next to each.
     ['another Food, which the artifact sacrifice cannot say', 'Sacrifice another Food: Draw a card.'],

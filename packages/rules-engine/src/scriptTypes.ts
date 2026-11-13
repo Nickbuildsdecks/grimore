@@ -2040,6 +2040,14 @@ export interface AbilityCost {
    */
   readonly fromGraveyard?: true;
   readonly crew?: number;
+  /**
+   * "Tap an untapped creature you control:", "Tap two untapped artifacts you control:", "Tap an
+   * untapped Ally you control:" (D610) — permanents of yours tapped as the cost. Chosen by the engine
+   * exactly as crew's are (`tapCostPlan`, cheapest first), since nothing at the table asks which.
+   * A creature tapped this way need not be free of summoning sickness: the {T} symbol is what asks
+   * that (CR 302.6), and this cost is not the creature's own {T}.
+   */
+  readonly tapUntapped?: { readonly count: number; readonly kind: 'creature' | 'artifact'; readonly subtype?: string };
 }
 
 /**

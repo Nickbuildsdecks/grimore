@@ -45841,18 +45841,23 @@ describe('a sacrifice cost of any permanent kind (D609)', () => {
     gauge('Test Pyre', 'a nontoken permanent'),
     gauge('Test Forge', 'another artifact'),
     gauge('Test Yard', 'an artifact or land'),
+    // The D609 break run's three misses.
+    gauge('Test Claw', 'a permanent'),
+    gauge('Test Shrine', 'an enchantment'),
+    gauge('Test Altar', 'another creature or artifact'),
   ];
+  const CHARM = {"name":"Test Charm","type_line":"Enchantment","mana_cost":"{1}","cmc":1,"colors":[],"power":null,"toughness":null,"oracle_text":"","layout":"normal"};
   const deck = customDeck({
     id: 'altars', name: 'Altars',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 1 })), { name: 'Bonesplitter', count: 2 }, { name: 'Grizzly Bears', count: 2 },
-      { name: 'Forest', count: 25 }, { name: 'Mountain', count: 26 }],
-    data: ROWS as never[],
+      { name: 'Test Charm', count: 1 }, { name: 'Forest', count: 22 }, { name: 'Mountain', count: 25 }],
+    data: [...ROWS, CHARM] as never[],
   });
   /** The altar, Forest, Mountain, Bonesplitter, Bears and a Pest token; the names it may sacrifice. */
   const offered = (altar: string): { s: GameState; names: string[] } => {
     let s = advanceTo(arena({
       decks: { 0: 'altars', 1: 'altars' }, deckSpecs: { altars: deck.deck },
-      battlefield: { 0: [altar, 'Forest', 'Mountain', 'Bonesplitter', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+      battlefield: { 0: [altar, 'Forest', 'Mountain', 'Bonesplitter', 'Grizzly Bears', ...(altar === 'Test Shrine' ? ['Test Charm'] : [])] }, turn: 3, firstSeat: 0,
     }), 'precombat-main');
     s = createToken(s, 0, PEST_TOKEN, 1);
     const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'battlefield', altar));
@@ -45875,6 +45880,11 @@ describe('a sacrifice cost of any permanent kind (D609)', () => {
     // "Another" artifact: the Bonesplitter, not the Forge itself.
     expect(offered('Test Forge').names).toEqual(['Bonesplitter']);
     expect(offered('Test Yard').names).toEqual(['Bonesplitter', 'Forest', 'Mountain', 'Test Yard']);
+    // A permanent includes the source itself; an enchantment is not an artifact; "another creature
+    // or artifact" takes either but not itself (D609 break run).
+    expect(offered('Test Claw').names).toEqual(['Bonesplitter', 'Forest', 'Grizzly Bears', 'Mountain', 'Pest', 'Test Claw']);
+    expect(offered('Test Shrine').names).toEqual(['Test Charm']);
+    expect(offered('Test Altar').names).toEqual(['Bonesplitter', 'Grizzly Bears', 'Pest']);
     // And the play says what it eats, for the table to ask in the cost's words.
     const { s } = offered('Test Quarry');
     expect(legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'battlefield', 'Test Quarry'))?.sacrificeWords).toBe('land');
@@ -45891,5 +45901,77 @@ describe('a sacrifice cost of any permanent kind (D609)', () => {
     const second = offered('Test Quarry').s;
     expect(() => apply(second, { type: 'auto:activate', by: 0, card: find(second, 0, 'battlefield', 'Test Quarry'), abilityIndex: 0,
       sacrifice: find(second, 0, 'battlefield', 'Grizzly Bears') } as Action)).toThrow(/land cannot be sacrificed/);
+  });
+});
+
+describe('a cost that taps other permanents you control (D610)', () => {
+  /*
+    "Tap an untapped creature you control:", "Tap two untapped artifacts you control:", "Tap an
+    untapped Ally you control:" — `AbilityCost.tapUntapped`, planned by `tapCostPlan` (weakest first,
+    the source last, never the source when the cost also prints {T}).
+  */
+  const card = (name: string, type: string, text: string, pt: [string, string] | null = ['1', '1']) => ({
+    name, type_line: type, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const SNAP = card('Test Snap', 'Creature — Elemental', 'Tap an untapped creature you control: Test Snap gets +1/+1 until end of turn.', ['2', '2']);
+  const CAPTAIN = card('Test Captain', 'Creature — Human', '{T}, Tap an untapped creature you control: You gain 2 life.');
+  const RALLY = card('Test Rally', 'Creature — Human Ally', 'Tap an untapped Ally you control: You gain 1 life.');
+  const CLOCK = card('Test Clock', 'Artifact', 'Tap two untapped artifacts you control: You gain 1 life.', null);
+  const ROWS = [SNAP, CAPTAIN, RALLY, CLOCK];
+  const deck = customDeck({
+    id: 'tappers', name: 'Tappers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Bonesplitter', count: 4 }, { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'tappers', 1: 'tappers' }, deckSpecs: { tappers: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+  const activate = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 } as Action)), 20);
+
+  it('reads every row whole, and refuses it on a mana ability', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const mana = compileCard(card('Test Druid', 'Creature — Elf', 'Tap an untapped creature you control: Add {G}.') as never);
+    expect(mana.ok && mana.unread.length).toBe(1);
+  });
+
+  it('taps the weakest other creature first, then itself, then is not offered', () => {
+    let s = table(['Test Snap', 'Grizzly Bears']);
+    const snap = find(s, 0, 'battlefield', 'Test Snap');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = activate(s, 'Test Snap');
+    expect(s.instances[bears]!.tapped).toBe(true);
+    expect(s.instances[snap]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[snap]!).power).toBe(3);
+    s = activate(s, 'Test Snap');
+    expect(s.instances[snap]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[snap]!).power).toBe(4);
+    expect(offered(s, 'Test Snap')).toBe(false);
+  });
+
+  it('with {T} in the cost, the source cannot also be the creature tapped', () => {
+    expect(offered(table(['Test Captain']), 'Test Captain')).toBe(false);
+    let s = table(['Test Captain', 'Grizzly Bears']);
+    expect(offered(s, 'Test Captain')).toBe(true);
+    const before = life(s, 0);
+    s = activate(s, 'Test Captain');
+    expect(life(s, 0)).toBe(before + 2);
+    expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.tapped).toBe(true);
+  });
+
+  it('a tribe and a count: an Ally, not a Bear; two artifacts, not one', () => {
+    expect(offered(table(['Test Rally', 'Grizzly Bears']), 'Test Rally')).toBe(true);
+    // The Rally is an Ally itself and may tap itself; tapped, nothing is left.
+    let s = activate(table(['Test Rally', 'Grizzly Bears']), 'Test Rally');
+    expect(s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!.tapped).toBe(false);
+    expect(offered(s, 'Test Rally')).toBe(false);
+    expect(offered(table(['Test Clock']), 'Test Clock')).toBe(false);
+    expect(offered(table(['Test Clock', 'Bonesplitter']), 'Test Clock')).toBe(true);
   });
 });

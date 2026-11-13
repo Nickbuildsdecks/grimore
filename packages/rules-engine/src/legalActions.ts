@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -31,7 +31,7 @@ import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
-  type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
+  type AbilityCost, type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
 import { BESTOW_TARGET, legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
@@ -625,6 +625,32 @@ export function crewPlan(
     total += entry.power;
   }
   return total >= need ? tapped : null;
+}
+
+/**
+ * The permanents a "tap N untapped <kind> you control" cost taps (D610), or `null` when there are
+ * not enough. Untapped permanents of the kind, the source last — so an ability on a creature that
+ * may tap itself does so only when nothing else will — and otherwise the weakest first, crew's rule.
+ */
+export function tapCostPlan(
+  state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['tapUntapped']>, source: string,
+  sourceTapsItself = false,
+): readonly string[] | null {
+  const available: { id: string; rank: number }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    // A cost that also prints {T} taps the source for that, so it cannot be one of these too
+    // (cohort: "{T}, Tap an untapped Ally you control").
+    if (sourceTapsItself && id === source) continue;
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const ch = characteristicsOf(state, inst);
+    const kind = cost.kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, 'artifact');
+    if (!kind) continue;
+    if (cost.subtype !== undefined && !hasSubtype(ch.typeLine, cost.subtype.toLowerCase())) continue;
+    available.push({ id, rank: (id === source ? 1000 : 0) + (ch.isCreature ? ch.power : 0) });
+  }
+  if (available.length < cost.count) return null;
+  return available.sort((a, b) => a.rank - b.rank).slice(0, cost.count).map((entry) => entry.id);
 }
 
 /**
@@ -2074,6 +2100,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? null
         : crewPlan(state, seat, ability.cost.crew, id);
       if (ability.cost.crew !== undefined && crew === null) continue;
+      // And "tap an untapped creature you control" (D610): not offered without enough to tap.
+      if (ability.cost.tapUntapped !== undefined
+        && tapCostPlan(state, seat, ability.cost.tapUntapped, id, ability.cost.tap === true) === null) continue;
 
       const specs = ability.targets ?? [];
       const { ok, candidates } = playableTargets(state, specs, seat, id);

@@ -25206,3 +25206,61 @@ The cost was the whole blocker on most of these, so 86 cards finished.
 Pod sweep on D608's build (b78a5bc), seeds 47601–47640: 40 of 40 finished, no throw and no stall.
 
 Break run on D608's build: 4 deliberate faults, 1 caught; all 3 misses pinned here.
+
+## D610 — A cost that taps other permanents you control, and the D609 gaps
+
+After D609, the most common cost component still refusing an activated ability was "Tap an untapped
+creature you control" (26 one-short lines), with its relatives:
+- "Tap an untapped Ally you control" (9)
+- "Tap two untapped creatures you control" (9)
+- "… three untapped creatures" (6)
+- "… two untapped artifacts" (4)
+
+None of them had a field.
+
+**`AbilityCost.tapUntapped`: a count, a kind, and an optional creature type.** `tapCostPlan` chooses
+which permanents to tap the way crew already does, because nothing at the table asks: weakest first,
+the source last. A creature that may tap itself (Bramblesnap) does so only when nothing else will.
+When the cost also prints {T} (cohort's "{T}, Tap an untapped Ally you control"), the source is never
+one of the creatures tapped, because it is tapping itself already. `legalActions` does not offer the
+ability without enough to tap, and `activate` taps them with the crew.
+
+Summoning sickness does not stop a creature from being tapped this way: the {T} symbol is what asks
+that (CR 302.6), and this cost is not the creature's own {T}.
+
+**Refused on a mana ability.** Mana abilities are paid inside the mana planner, which knows nothing
+of this cost, so "Tap an untapped creature you control: Add {G}" would be free mana. It stays unread.
+
+D581's "tapping somebody else, which has no field" refusal row is removed with a note.
+
+**The D609 break run: 6 faults, 3 caught. All 3 misses are pinned:**
+- "A permanent" excluding its own source: the source is now in the offered list.
+- "An enchantment" read as an artifact: the Bonesplitter beside the enchantment is not offered.
+- "Another creature or artifact" read as a creature: the Bonesplitter is offered.
+
+**Tests.** 4 new engine tests:
+- Every row reads, and the mana form is refused.
+- The weakest other creature is tapped first, then the source, then the ability is no longer offered.
+- With {T} in the cost, the source alone is not enough.
+- An Ally and not a Bears; two artifacts and not one.
+
+The D609 test is extended for its three misses.
+
+Each of the following was broken on purpose and its test failed:
+- The source ranked first.
+- The {T} exclusion removed.
+- The subtype ignored.
+- The count read as one.
+- The permanents never tapped.
+- The mana guard removed.
+- The three D609 faults.
+
+    engine tests: 4,319, all passing; web 264, realtime 60, api 326
+
+### Measurements
+
+    cards fully read 9,828 of 31,292 (was 9,773); lines read 27,693 of 58,524 (47.3%, was 27,624)
+
+Pod sweep on D609's build (1fc9d24), seeds 47701–47740: 40 of 40 finished, no throw and no stall.
+
+Break run on D609's build: 6 deliberate faults, 3 caught; all 3 misses pinned here.

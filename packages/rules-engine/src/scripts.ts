@@ -21691,6 +21691,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let energy = 0;
   let removes: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
+  let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -21883,6 +21884,22 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         : which === 'another creature' ? 'another-creature' : 'artifact';
       continue;
     }
+    /*
+      "Tap an untapped creature you control", "Tap two untapped artifacts you control", "Tap an
+      untapped Ally you control" (D610): see `AbilityCost.tapUntapped`. One per cost.
+    */
+    const tapOthers = /^Tap (an|one|two|three|four|five) untapped (creatures?|artifacts?|[A-Z][A-Za-z'-]*?)s? you control$/.exec(component);
+    if (tapOthers !== null) {
+      if (tapsOthers !== null) return null;
+      const count = /^an$/i.test(tapOthers[1]!) ? 1 : countFrom(tapOthers[1]!);
+      const word = tapOthers[2]!;
+      if (count === null || count < 1) return null;
+      if (/^creatures?$/.test(word)) tapsOthers = { count, kind: 'creature' };
+      else if (/^artifacts?$/.test(word)) tapsOthers = { count, kind: 'artifact' };
+      else if (isCreatureType(word)) tapsOthers = { count, kind: 'creature', subtype: word };
+      else return null;
+      continue;
+    }
     if (!/^(?:\{[^}]+\})+$/.test(component)) return null;
     /*
       `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
@@ -21902,7 +21919,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const anything = taps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
-    || exilesSelf || energy > 0 || removes !== null;
+    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null;
   if (taps > 1 || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
@@ -21929,6 +21946,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(energy === 0 ? {} : { energy }),
     ...(exilesSelf ? { exileSelf: true as const } : {}),
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
+    ...(tapsOthers === null ? {} : { tapUntapped: tapsOthers }),
   };
 
   /*
@@ -21947,6 +21965,12 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const manaClause = restrictedTo === null ? clause : restrictedTo[1]!;
   const only = spendOnly === undefined || spendOnly === null ? {} : { spendOnly };
 
+  /*
+    A mana ability is paid inside the mana planner, which knows nothing of a cost that taps other
+    permanents (D610): "Tap an untapped creature you control: Add {G}" would make free mana there. So
+    a tap-others cost on a mana ability stays unread.
+  */
+  if (cost.tapUntapped !== undefined && /^add\b/i.test(manaClause)) return null;
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])

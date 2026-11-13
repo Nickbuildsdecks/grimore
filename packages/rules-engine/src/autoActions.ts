@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './s
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources, tapToPayPlan,
+  costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1747,6 +1747,15 @@ function activate(
         `you have no creatures untapped with total power ${ability.cost.crew} to crew ${ch.name}`);
     }
     crewed = plan;
+  }
+
+  // And "tap an untapped creature you control" (D610), planned the same way crew is.
+  if (ability.cost.tapUntapped !== undefined) {
+    const plan = tapCostPlan(state, action.by, ability.cost.tapUntapped, inst.id, ability.cost.tap === true);
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have too few untapped ${ability.cost.tapUntapped.subtype ?? ability.cost.tapUntapped.kind}s to tap for that`);
+    }
+    crewed = [...crewed, ...plan];
   }
 
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
