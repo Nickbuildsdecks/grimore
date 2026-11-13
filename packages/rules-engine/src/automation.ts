@@ -1029,6 +1029,11 @@ function triggerMatches(
         not the table's. See `GameState.spellsCastThisTurnBy`.
       */
       if (want.onNth !== undefined && e.nth !== want.onNth) return false;
+      // D616: the turn it was cast in, where it was cast from, and whether it was kicked.
+      if (want.duringOpponentsTurn === true && (e.activeSeat === undefined || e.activeSeat === sourceSeat)) return false;
+      if (want.fromZone === 'graveyard' && e.castFrom !== 'graveyard') return false;
+      if (want.fromZone === 'not-hand' && (e.castFrom === undefined || e.castFrom === 'hand')) return false;
+      if (want.wasKicked === true && e.kicked !== true) return false;
       const by = want.by ?? 'you';
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;

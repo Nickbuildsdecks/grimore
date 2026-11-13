@@ -927,6 +927,21 @@ export type TriggerEvent =
        * lowercases nothing on the way past.
        */
       readonly ofSubtypes?: readonly string[];
+      /**
+       * D616: "…spell **during an opponent's turn**" (the caster's opponent is the active player),
+       * "…spell **from your graveyard**" / "**from anywhere other than your hand**", and "a
+       * **kicked** spell". Answered from the event's `activeSeat`, `castFrom` and `kicked`, which
+       * the engine sets as it raises it.
+       */
+      readonly duringOpponentsTurn?: true;
+      readonly fromZone?: 'graveyard' | 'not-hand';
+      readonly wasKicked?: true;
+      /** Set by the engine when it raises the event: whose turn it is. */
+      readonly activeSeat?: SeatIndex;
+      /** Set by the engine when it raises the event: the zone the spell was cast from. */
+      readonly castFrom?: string;
+      /** Set by the engine when it raises the event: whether the spell was kicked. */
+      readonly kicked?: boolean;
       /** Set by the engine when it raises the event: the spell's subtypes, as printed. */
       readonly subtypes?: readonly string[];
       /**

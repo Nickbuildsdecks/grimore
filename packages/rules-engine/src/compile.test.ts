@@ -7591,10 +7591,11 @@ describe('the cast trigger, read off the prologue', () => {
       'a colour and a type in one descriptor: read as neither, not as half of each'],
     ['Whenever an opponent casts a spell that targets you or a creature you control',
       'a seat and a board filter in one phrase; its "targets ~" sibling reads since D476'],
-    ['Whenever you cast a spell from your graveyard', 'the zone a spell was cast from'],
-    ['Whenever you cast a spell during an opponent’s turn', 'a fact about the turn'],
+    // "from your graveyard", "during an opponent's turn" and "a kicked spell" read since D616.
+    ['Whenever you cast a spell from a graveyard', 'any graveyard, which the zone alone cannot say'],
+    ['Whenever you cast a spell during your turn', 'a turn the reader does not name'],
     ['Whenever you cast another spell', 'another than what? a permanent is not a spell'],
-    ['Whenever you cast a kicked spell', 'no field asks whether a cost was paid'],
+    ['Whenever you cast a kicked creature spell', 'a kicker and a type in one descriptor'],
   ])('leaves "%s" unread: %s', (prologue) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);

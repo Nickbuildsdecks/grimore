@@ -14888,6 +14888,8 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
   const text = printed.trim();
   if (text === '') return { spell: 'any' };
   const lower = text.toLowerCase();
+  // "A kicked spell" (D616): the descriptor is the kicker, and the rest is any spell.
+  if (lower === 'kicked') return { spell: 'any', wasKicked: true };
   if (lower === 'creature') return { spell: 'creature' };
   if (lower === 'noncreature') return { spell: 'noncreature' };
   if (lower === 'instant or sorcery') return { spell: 'instant-or-sorcery' };
@@ -14940,6 +14942,10 @@ function castBound(printed: string, self: string): Partial<CastEvent> | null {
       : { manaValueAtLeast: value };
   }
   if (new RegExp(`^that targets ${self}$`, 'i').test(text)) return { targetsSelf: true };
+  // D616: the turn it is cast in, and where it is cast from.
+  if (/^during an opponent's turn$/i.test(text)) return { duringOpponentsTurn: true };
+  if (/^from your graveyard$/i.test(text)) return { fromZone: 'graveyard' };
+  if (/^from anywhere other than your hand$/i.test(text)) return { fromZone: 'not-hand' };
   return null;
 }
 
@@ -15449,6 +15455,12 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever you cast your first spell each turn, (.+)$/i,
     on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
+  },
+  // "Your first spell during each opponent's turn" (D616): the first you cast that turn, on a turn
+  // that is not yours — 8 cards one line short.
+  {
+    prologue: () => /^Whenever you cast your first spell during each opponent's turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', onNth: 1, duringOpponentsTurn: true }],
   },
   // Phyrexian Arena. `of: 'you'` is the card, not a default — see this file's step-trigger note.
   {

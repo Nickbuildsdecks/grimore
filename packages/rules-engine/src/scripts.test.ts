@@ -46455,3 +46455,149 @@ describe('a cost that returns permanents to your hand (D615)', () => {
     expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Chains');
   });
 });
+
+describe('cast triggers by turn, by zone and by kicker (D616)', () => {
+  /*
+    "…a spell during an opponent's turn", "your first spell during each opponent's turn", "…a spell
+    from your graveyard", "…from anywhere other than your hand" and "a kicked spell": the cast event
+    carries `activeSeat`, `castFrom` and `kicked`, and the trigger asks them.
+  */
+  const watcher = (name: string, prologue: string) => ({
+    name, type_line: 'Creature — Human Rogue', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: `${prologue}, you gain 1 life.`,
+  });
+  const OPP = watcher('Test Cutthroat', "Whenever you cast a spell during an opponent's turn");
+  const FIRST = watcher('Test Trickster', "Whenever you cast your first spell during each opponent's turn");
+  const GRAVE = watcher('Test Vengeance', 'Whenever you cast a spell from your graveyard');
+  const KICK = watcher('Test Riptide', 'Whenever you cast a kicked spell');
+  const ELSEWHERE = watcher('Test Kellan', 'Whenever you cast a spell from anywhere other than your hand');
+  const RECALL = { name: 'Test Recall', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Test Recall deals 1 damage to any target.\nFlashback {R}' };
+  const BURST = { name: 'Test Burst', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Kicker {R}\nTest Burst deals 1 damage to any target. If this spell was kicked, draw a card.' };
+  const ROWS = [OPP, FIRST, GRAVE, KICK, ELSEWHERE, RECALL, BURST];
+  const deck = customDeck({
+    id: 'casters', name: 'Casters',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Lightning Bolt', count: 8 }, { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[], first: 0 | 1 = 0): GameState => advanceTo(arena({
+    decks: { 0: 'casters', 1: 'casters' }, deckSpecs: { casters: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine, 'Mountain', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: first,
+  }), 'precombat-main');
+  const bolt = (s: GameState, name = 'Lightning Bolt', extra: Partial<Record<string, unknown>> = {}) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'player', seat: 1 }], ...extra,
+  } as Action)), 20);
+
+  it('reads every watcher whole, and the two spells', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('during an opponent\'s turn, and not during your own; the first one only', () => {
+    expect(life(bolt(table(['Test Cutthroat'], ['Lightning Bolt'])), 0)).toBe(20);
+    let s = table(['Test Cutthroat', 'Test Trickster'], ['Lightning Bolt', 'Lightning Bolt'], 1);
+    s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    expect(s.priority).toBe(0);
+    s = bolt(s);
+    expect(life(s, 0)).toBe(22);
+    expect(s.activeSeat).toBe(1);
+    if (s.priority === 1) s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    expect(s.priority).toBe(0);
+    s = bolt(s);
+    // The Cutthroat again, the Trickster not: it was the second spell.
+    expect(life(s, 0)).toBe(23);
+  });
+
+  it('from your graveyard: the flashback cast, not the first one', () => {
+    let s = table(['Test Vengeance'], ['Test Recall']);
+    s = bolt(s, 'Test Recall');
+    expect(life(s, 0)).toBe(20);
+    const recall = find(s, 0, 'graveyard', 'Test Recall');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: recall, flashback: true, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('from anywhere other than your hand: the flashback cast again, not the cast from hand', () => {
+    let s = table(['Test Kellan'], ['Test Recall']);
+    s = bolt(s, 'Test Recall');
+    expect(life(s, 0)).toBe(20);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Recall'), flashback: true, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('a kicked spell, and not the same spell unkicked', () => {
+    expect(life(bolt(table(['Test Riptide'], ['Test Burst']), 'Test Burst'), 0)).toBe(20);
+    expect(life(bolt(table(['Test Riptide'], ['Test Burst']), 'Test Burst', { kicked: true }), 0)).toBe(21);
+  });
+});
+
+describe('the graveyard-exile cost, pinned (D613 break run)', () => {
+  /*
+    D613's break run caught none of its five faults: the tests never used a creature type, "another",
+    "legendary", a card with a second life, or an ability activated from the graveyard. One row each.
+  */
+  const row = (name: string, type: string, text: string) => ({
+    name, type_line: type, mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal',
+    power: /Creature/.test(type) ? '1' : null, toughness: /Creature/.test(type) ? '1' : null, oracle_text: text,
+  });
+  const LICH = row('Test Lich', 'Creature — Zombie', '{1}, Exile two other cards from your graveyard: Return Test Lich from your graveyard to your hand.');
+  const PLAIN = row('Test Urn', 'Artifact', 'Exile a card from your graveyard: You gain 1 life.');
+  const ELF = row('Test Grove', 'Artifact', 'Exile an Elf card from your graveyard: You gain 1 life.');
+  const OTHER = row('Test Crypt', 'Artifact', 'Exile another creature card from your graveyard: You gain 1 life.');
+  const LEGEND = row('Test Shrine', 'Artifact', 'Exile a legendary card from your graveyard: You gain 1 life.');
+  const RECALL = row('Test Echo', 'Instant', 'Draw a card.\nFlashback {1}{U}');
+  const HERO = row('Test Hero', 'Legendary Creature — Human', '');
+  const ROWS = [LICH, PLAIN, ELF, OTHER, LEGEND, RECALL, HERO];
+  const deck = customDeck({
+    id: 'crypts', name: 'Crypts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Llanowar Elves', count: 4 }, { name: 'Lightning Bolt', count: 4 }, { name: 'Swamp', count: 34 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], graveyard: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'crypts', 1: 'crypts' }, deckSpecs: { crypts: deck.deck },
+      hands: { 0: [...graveyard] }, battlefield: { 0: [...mine, 'Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of graveyard) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' } as Action);
+    return s;
+  };
+  const playOf = (s: GameState, name: string, zone: 'battlefield' | 'graveyard' = 'battlefield') =>
+    legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, zone, name));
+  const use = (s: GameState, name: string, zone: 'battlefield' | 'graveyard' = 'battlefield') =>
+    drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, zone, name), abilityIndex: 0 } as Action)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('from the graveyard, the source is not one of the cards it exiles', () => {
+    expect(playOf(table([], ['Test Lich', 'Lightning Bolt']), 'Test Lich', 'graveyard')).toBeUndefined();
+    const s = use(table([], ['Test Lich', 'Lightning Bolt', 'Grizzly Bears']), 'Test Lich', 'graveyard');
+    expect(namesIn(s, 0, 'hand')).toContain('Test Lich');
+    expect(namesIn(s, 0, 'exile').sort()).toEqual(['Grizzly Bears', 'Lightning Bolt']);
+  });
+
+  it('a card with a second life goes last', () => {
+    const s = use(table(['Test Urn'], ['Test Echo', 'Lightning Bolt']), 'Test Urn');
+    expect(namesIn(s, 0, 'exile')).toEqual(['Lightning Bolt']);
+  });
+
+  it('an Elf card is an Elf, and a Bear is not', () => {
+    expect(playOf(table(['Test Grove'], ['Grizzly Bears']), 'Test Grove')).toBeUndefined();
+    const s = use(table(['Test Grove'], ['Grizzly Bears', 'Llanowar Elves']), 'Test Grove');
+    expect(namesIn(s, 0, 'exile')).toEqual(['Llanowar Elves']);
+  });
+
+  it('"another" is one, and "legendary" is a kind', () => {
+    expect(playOf(table(['Test Crypt'], ['Grizzly Bears']), 'Test Crypt')).toBeDefined();
+    expect(playOf(table(['Test Shrine'], ['Grizzly Bears']), 'Test Shrine')).toBeUndefined();
+    const s = use(table(['Test Shrine'], ['Grizzly Bears', 'Test Hero']), 'Test Shrine');
+    expect(namesIn(s, 0, 'exile')).toEqual(['Test Hero']);
+  });
+});

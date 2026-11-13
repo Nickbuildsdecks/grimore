@@ -1069,6 +1069,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // turn" — on the event rather than read at resolution, because by then the tally has moved on
     // (D436's rule, third time). See `GameState.spellsCastThisTurnBy`.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
+    // D616: whose turn, where from, and kicked — for "during an opponent's turn", "from your
+    // graveyard" and "a kicked spell".
+    activeSeat: state.activeSeat,
+    castFrom: inst.zone,
+    kicked: object.kicked === true,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
     /*
       The spell's colours and its mana value **as cast** (D474), for the two cast filters that are
@@ -1191,6 +1196,9 @@ function castFaceDown(
   next = raise(next, {
     kind: 'spell-cast',
     spell: 'creature',
+    // D616: a face-down spell is cast like any other, on somebody's turn and from a zone.
+    activeSeat: state.activeSeat,
+    castFrom: inst.zone,
     types: anonymous.typeLine.types.map((t) => t.toLowerCase()),
     /*
       A face-down spell is a **colourless 2/2 creature with mana value 0 and no subtypes**

@@ -25544,3 +25544,57 @@ Each of the following was broken on purpose and its test failed:
 
 Pod sweep 48101–48140 ran on D614's build (43d5112) rather than D613's, because the queue was
 restarted after D614 was pushed: 40 of 40 finished, no throw and no stall.
+
+## D616 — Cast triggers by turn, by zone and by kicker; the D613 break-run gaps
+
+Probing every "Whenever you cast …" subject with a trivial effect showed which subjects themselves
+were the gap:
+- "a spell during an opponent's turn" (8 cards one line short)
+- "your first spell during each opponent's turn" (8)
+- "a spell from your graveyard" (3)
+- "a spell from anywhere other than your hand" (3)
+- "a kicked spell" (4)
+
+The cast event now carries three more facts as it is raised: `activeSeat`, `castFrom` (the zone the
+card was cast from, already on the stack object since D607) and `kicked`. The trigger asks for them
+with `duringOpponentsTurn`, `fromZone: 'graveyard' | 'not-hand'` and `wasKicked`. "Your first spell
+during each opponent's turn" is `onNth: 1` plus `duringOpponentsTurn`, because the per-caster tally
+restarts every turn. A face-down cast sets the first two as well.
+
+**Still refused, as rows:** "from a graveyard" (any), "during your turn", and "a kicked creature
+spell". So are "your first instant or sorcery spell each turn", "a creature spell that has an
+Adventure" and "a spell that targets a creature you control".
+
+**The D613 break run: 5 faults, 0 caught.** D613's tests used only plain kinds, on a battlefield
+source, with no card that has a second life. Five pins in their own describe:
+- An ability activated from the graveyard ("Exile two other cards") does not count its own card.
+- A flashback card goes after a plain one.
+- "An Elf card" takes the Llanowar Elves and not the Bears.
+- "Another creature card" is one.
+- "A legendary card" is a kind.
+
+All five faults re-injected now fail.
+
+**Tests.** 5 new D616 engine tests:
+- The rows read.
+- During an opponent's turn and not your own; the first one only.
+- From your graveyard: the flashback cast and not the first.
+- From anywhere other than your hand.
+- Kicked and not unkicked.
+
+Plus the 5 D613 pins. Each D616 matcher check was broken on purpose and its test failed. The
+"not-hand" check was uncovered until its own test was added.
+
+    engine tests: 4,357, all passing
+
+### Measurements
+
+    cards fully read 9,961 of 31,292 (was 9,944); lines read 27,869 of 58,524 (47.6%, was 27,841)
+
+Pod sweep 48201–48240 (D614's build): 40 of 40 finished, no throw and no stall.
+
+Break run on D613's build: 5 deliberate faults, 0 caught; all 5 pinned here.
+
+**A process note.** The first gate run for this increment failed in `scripts.test.ts` on a D613 pin,
+because it overlapped with a fault I had injected by hand. The rerun on the restored tree passed.
+From here on, no fault injection runs while a gate is running.
