@@ -83,8 +83,9 @@
  */
 import type { CardDef } from './cards.js';
 import {
-  parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
+  commanderIdentity, parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
 } from './characteristics.js';
+import type { GameState, SeatIndex } from './types.js';
 import { dealDamage, drawLater } from './effects.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
 import { spendRestriction } from './spending.js';
@@ -284,6 +285,12 @@ interface ManaLine {
    * `AbilityDef.spendOnly` and `spending.ts`.
    */
   readonly spendOnly?: SpendRestriction;
+  /**
+   * "…in your commander's color identity" (D617): each colour's ability is offered only while that
+   * colour is in the identity of the controller's commanders (CR 903.4), and none in a game
+   * without one (CR 903.4f).
+   */
+  readonly identity?: true;
 }
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
@@ -442,6 +449,10 @@ function parseManaLine(line: string, name: string): ManaLine | null {
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.
   if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  // Command Tower and Arcane Signet (D617).
+  if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
 
   /*
     A choice of one of several. The separators are tried longest-first, because the printed list is
@@ -500,6 +511,9 @@ function tapAbilities(
       produces: [type],
       ...painEffect(damage),
       ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
+      ...(line?.identity === true
+        ? { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => commanderIdentity(state, controller).includes(type) }
+        : {}),
     };
   });
 }

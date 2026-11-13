@@ -2852,3 +2852,37 @@ export function isPermanentCard(typeLine: string | undefined): boolean {
   const types = (typeLine ?? '').split(/[—–]/)[0] ?? '';
   return /\b(?:artifact|battle|creature|enchantment|land|planeswalker)\b/i.test(types);
 }
+
+/**
+ * A card's colour identity (CR 903.4): its colours, and the colour of every mana symbol in its
+ * mana cost and its rules text, on every face. Hybrid and Phyrexian symbols count for each colour
+ * in them. Reminder text — anything in parentheses — is left out, as CR 903.4 says. A colour
+ * indicator is covered by `colors`.
+ */
+export function colourIdentity(def: CardDef | undefined): readonly string[] {
+  if (def === undefined) return [];
+  const found = new Set<string>();
+  const read = (card: CardDef): void => {
+    for (const colour of card.colors ?? []) found.add(colour);
+    const text = `${card.manaCost ?? ''} ${(card.oracleText ?? '').replace(/\([^)]*\)/g, '')}`;
+    for (const symbol of text.match(/\{[^}]+\}/g) ?? []) {
+      for (const colour of ['W', 'U', 'B', 'R', 'G']) if (symbol.toUpperCase().includes(colour)) found.add(colour);
+    }
+  };
+  read(def);
+  for (const face of def.faces?.cards ?? []) read(face);
+  return ['W', 'U', 'B', 'R', 'G'].filter((colour) => found.has(colour));
+}
+
+/**
+ * The combined colour identity of every commander `seat` owns, wherever it is (CR 903.4). Empty when
+ * the seat has none — a Command Tower in a game without commanders makes no mana (CR 903.4f).
+ */
+export function commanderIdentity(state: GameState, seat: SeatIndex): readonly string[] {
+  const found = new Set<string>();
+  for (const inst of Object.values(state.instances)) {
+    if (!inst.isCommander || inst.owner !== seat) continue;
+    for (const colour of colourIdentity(state.cardDefs[inst.defKey])) found.add(colour);
+  }
+  return ['W', 'U', 'B', 'R', 'G'].filter((colour) => found.has(colour));
+}

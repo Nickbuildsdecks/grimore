@@ -40,6 +40,7 @@ import {
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
 import { costChangeFor } from './legalActions.js';
+import { colourIdentity, commanderIdentity } from './characteristics.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -46378,6 +46379,28 @@ describe('a discard cost with a filter, or at random (D614)', () => {
     expect(play(s, 'Test Ogre')).toBeUndefined();
   });
 
+  it('the random pick is not always the first card, and a random discard makes no mana (D614 break run)', () => {
+    const picked = new Set<string>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = { ...table(['Test Ogre'], ['Lightning Bolt', 'Grizzly Bears', 'Forest']), rngSeed: seed * 7919 };
+      const after = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ogre'), abilityIndex: 0 } as Action);
+      for (const name of namesIn(after, 0, 'graveyard')) picked.add(name);
+    }
+    expect(picked.size).toBeGreaterThan(1);
+    const mana = compileCard({ ...OGRE, name: 'Test Altar', oracle_text: 'Discard a card at random: Add {R}.' } as never);
+    expect(mana.ok && mana.unread.length).toBe(1);
+  });
+
+  it('"an instant or sorcery card" takes a sorcery too (D614 break run)', () => {
+    const SAGE = row('Test Sage', 'Discard an instant or sorcery card: You gain 2 life.');
+    const read = compileCard(SAGE as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const kind = read.ok ? read.script?.abilities?.[0]?.cost.discardKind : undefined;
+    expect(kind?.matches('Sorcery')).toBe(true);
+    expect(kind?.matches('Instant')).toBe(true);
+    expect(kind?.matches('Creature — Bear')).toBe(false);
+  });
+
   it('the random pick is the same on a replay of the same state', () => {
     const s = table(['Test Ogre'], ['Lightning Bolt', 'Grizzly Bears', 'Forest']);
     const act = { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ogre'), abilityIndex: 0 } as Action;
@@ -46599,5 +46622,118 @@ describe('the graveyard-exile cost, pinned (D613 break run)', () => {
     expect(playOf(table(['Test Shrine'], ['Grizzly Bears']), 'Test Shrine')).toBeUndefined();
     const s = use(table(['Test Shrine'], ['Grizzly Bears', 'Test Hero']), 'Test Shrine');
     expect(namesIn(s, 0, 'exile')).toEqual(['Test Hero']);
+  });
+});
+
+describe("mana of any color in your commander's color identity (D617)", () => {
+  /*
+    Command Tower and Arcane Signet: one ability per colour, each offered — as a play and as a source
+    the auto-tapper may use — only while that colour is in the identity of the controller's
+    commanders (CR 903.4). None in a game without a commander (CR 903.4f).
+  */
+  const TOWER = { name: 'Test Tower', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: "{T}: Add one mana of any color in your commander's color identity." };
+  const IZZET = { name: 'Test Izzet', type_line: 'Legendary Creature — Weird', mana_cost: '{U}{R}', cmc: 2, colors: ['U', 'R'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const HYBRID = { name: 'Test Hybrid', type_line: 'Legendary Creature — Elf', mana_cost: '{G/W}', cmc: 1, colors: ['G', 'W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{B}: Test Hybrid gets +1/+1 until end of turn. (This reminder mentions {U}.)' };
+  const ROWS = [TOWER, IZZET, HYBRID];
+  const deck = customDeck({
+    id: 'towers', name: 'Towers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 50 }],
+    data: ROWS as never[],
+  });
+  const table = (commander: string | null): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'towers', 1: 'towers' }, deckSpecs: { towers: deck.deck },
+      battlefield: { 0: ['Test Tower', 'Test Izzet', 'Test Hybrid'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (commander !== null) {
+      const id = find(s, 0, 'battlefield', commander);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, isCommander: true } } };
+    }
+    return s;
+  };
+  const towerColours = (s: GameState): string[] => manaSources(s, 0)
+    .filter((source) => source.key === find(s, 0, 'battlefield', 'Test Tower'))
+    .flatMap((source) => [...source.produces]).sort();
+
+  it('reads the line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(TOWER as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('colour identity: cost, colours, and rules-text symbols, but not reminder text', () => {
+    expect(colourIdentity({ ...IZZET, typeLine: IZZET.type_line, manaCost: IZZET.mana_cost, oracleText: '' } as never)).toEqual(['U', 'R']);
+    expect(colourIdentity({ name: 'h', typeLine: HYBRID.type_line, manaCost: HYBRID.mana_cost, cmc: 1, colors: HYBRID.colors, oracleText: HYBRID.oracle_text } as never)).toEqual(['W', 'B', 'G']);
+  });
+
+  it('the Tower makes only its commander\'s colours, and nothing with no commander', () => {
+    expect(towerColours(table('Test Izzet'))).toEqual(['R', 'U']);
+    expect(commanderIdentity(table('Test Izzet'), 0)).toEqual(['U', 'R']);
+    const none = table(null);
+    expect(towerColours(none)).toEqual([]);
+    const tower = find(none, 0, 'battlefield', 'Test Tower');
+    expect(legalActions(none, 0).plays.some((p) => p.card === tower)).toBe(false);
+    expect(legalActions(table('Test Izzet'), 0).plays.filter((p) => p.card === find(table('Test Izzet'), 0, 'battlefield', 'Test Tower')).length).toBe(2);
+  });
+
+  it("an opponent's commander lends you nothing", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'towers', 1: 'towers' }, deckSpecs: { towers: deck.deck },
+      battlefield: { 0: ['Test Tower', 'Test Izzet'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const [seat, name] of [[0, 'Test Izzet'], [1, 'Grizzly Bears']] as const) {
+      const id = find(s, seat, 'battlefield', name);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, isCommander: true } } };
+    }
+    expect(towerColours(s)).toEqual(['R', 'U']);
+  });
+
+  it('activating a colour outside the identity is refused', () => {
+    const s = table('Test Izzet');
+    const tower = find(s, 0, 'battlefield', 'Test Tower');
+    const script = compileCard(TOWER as never);
+    const greenIndex = script.ok ? (script.script?.abilities ?? []).findIndex((a) => a.produces?.[0] === 'G') : -1;
+    expect(greenIndex).toBeGreaterThanOrEqual(0);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: tower, abilityIndex: greenIndex } as Action)).toThrow();
+  });
+});
+
+describe('the return-to-hand cost, pinned (D615 break run)', () => {
+  /* D615's break run caught one of five: the tests used only lands and the source was never a candidate. */
+  const row = (name: string, type: string, text: string) => ({
+    name, type_line: type, mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: /Creature/.test(type) ? '1' : null, toughness: /Creature/.test(type) ? '1' : null, oracle_text: text,
+  });
+  const ELFLING = row('Test Elfling', 'Creature — Elf', 'Return an Elf you control to its owner\'s hand: You gain 1 life.');
+  const PILGRIM = row('Test Pilgrim', 'Creature — Human', 'Return a Plains you control to its owner\'s hand: You gain 1 life.');
+  const ROWS = [ELFLING, PILGRIM];
+  const deck = customDeck({
+    id: 'returners', name: 'Returners',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Llanowar Elves', count: 4 }, { name: 'Plains', count: 10 }, { name: 'Forest', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'returners', 1: 'returners' }, deckSpecs: { returners: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+
+  it('the source is not its own fodder, and an Elf is a creature, not a land', () => {
+    expect(offered(table(['Test Elfling', 'Forest']), 'Test Elfling')).toBe(false);
+    let s = table(['Test Elfling', 'Llanowar Elves', 'Forest']);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Elfling'), abilityIndex: 0 } as Action)), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Forest');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Elfling');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Llanowar Elves');
+  });
+
+  it('a Plains is a Plains', () => {
+    expect(offered(table(['Test Pilgrim', 'Forest']), 'Test Pilgrim')).toBe(false);
+    expect(offered(table(['Test Pilgrim', 'Plains']), 'Test Pilgrim')).toBe(true);
+  });
+
+  it('returning itself twice is not a cost it reads', () => {
+    const read = compileCard(row('Test Twice', 'Creature — Elf', 'Return Test Twice to its owner\'s hand, Return Test Twice to its owner\'s hand: You gain 1 life.') as never);
+    expect(read.ok && read.unread.length).toBe(1);
   });
 });

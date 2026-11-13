@@ -941,6 +941,8 @@ export function manaSources(
     }[] = [];
     for (const { ability, index: i, grantedBy } of abilities) {
       if (ability.produces === undefined || ability.produces.length === 0) continue;
+      // "Activate only if …", and the commander's identity (D617), hold for a mana source too.
+      if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
       if (ability.spendOnly !== undefined && (paying === undefined || !ability.spendOnly.allows(paying))) continue;
       if (ability.cost.mana !== undefined) continue;
       /*

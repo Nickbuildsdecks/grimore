@@ -43064,3 +43064,65 @@ Break run on D613's build: 5 deliberate faults, 0 caught; all 5 pinned here.
 **A process note.** The first gate run for this increment failed in `scripts.test.ts` on a D613 pin,
 because it overlapped with a fault I had injected by hand. The rerun on the restored tree passed.
 From here on, no fault injection runs while a gate is running.
+
+## D617 — Mana in your commander's colour identity; the D614 and D615 break-run gaps
+
+**Command Tower, Arcane Signet and Commander's Sphere** print "{T}: Add one mana of any color in your
+commander's color identity". Nearly every Commander deck runs at least one, and they were unread.
+
+**Where the reader belongs.** Mana lines never reach the general line reader. `compile.ts` sends
+them to `manaAbilitiesFromLine` in `fromCardData.ts`, and an unreadable mana line is unread outright
+(D497). My first version went in `scripts.ts`, was never reached, and was taken back out. The
+reader is now a `ManaLine.identity` flag beside `ANY_COLOUR`. `tapAbilities` gives each colour's
+ability an `activateOnlyIf` that asks `commanderIdentity`.
+
+**Colour identity, computed** (CR 903.4). Nothing in the engine held it before, and no `CardDef`
+carries Scryfall's `color_identity`.
+- `colourIdentity(def)` is the card's colours plus every mana symbol in its mana cost and rules
+  text, on every face, with hybrid and Phyrexian symbols counting for each colour in them.
+  Reminder text in parentheses is left out.
+- `commanderIdentity(state, seat)` is the union over every commander that seat **owns**, wherever
+  it is. It is empty without one, so the Tower makes nothing (CR 903.4f).
+
+**`manaSources` now honours `activateOnlyIf`**, as the play list and `activate` already did. So
+the auto-tapper never pays with a colour the identity forbids.
+
+**D614 break run: 5 faults, 2 caught.** All three misses are pinned:
+- The random pick always taking the first card. Twelve seeds must pick more than one card.
+- An "or" kind reading only its first half. "An instant or sorcery card" must match a Sorcery.
+- A random discard on a mana ability. "Discard a card at random: Add {R}." must stay unread; without
+  the guard it reads.
+
+**D615 break run: 5 faults, 1 caught.** All four misses are pinned:
+- The source as its own fodder. An Elf returning "an Elf you control" is not offered alone.
+- A creature kind read as land. The Llanowar Elves goes back, not the Forest.
+- "Plains" read as nothing.
+- Self-return written twice. The line stays unread.
+
+**Tests.** 5 new D617 engine tests:
+- The line reads.
+- Identity counts the cost, the colours and the rules-text symbols, but not reminder text.
+- Only the commander's colours, as a source and as plays, and nothing without a commander.
+- An opponent's commander lends you nothing.
+- A colour outside the identity is refused if activated.
+
+Plus 2 D614 pins and 3 D615 pins. Each of the following was broken on purpose and its test failed:
+- The `manaSources` check removed.
+- Reminder text counted.
+- The owner check removed. Nothing tested an opponent's commander at first; that test was added.
+- The identity flag dropped.
+- Symbols not read.
+
+The D614 and D615 spec faults were all re-injected against the new pins and all fail.
+
+    engine tests: 4,367, all passing
+
+### Measurements
+
+    cards fully read 9,964 of 31,292 (was 9,961); lines read 27,873 of 58,524 (47.6%, was 27,869)
+
+The count moves by three cards, but the three are in almost every Commander deck.
+
+Pod sweep 48301–48340 (D615's build): 40 of 40 finished, no throw and no stall.
+
+Break runs: D614, 5 faults, 2 caught; D615, 5 faults, 1 caught. Every miss is pinned here.
