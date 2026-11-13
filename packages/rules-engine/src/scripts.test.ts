@@ -46212,3 +46212,74 @@ describe('descend (D612)', () => {
     expect(capy()).toBe(4);
   });
 });
+
+describe('a cost that exiles cards from your graveyard (D613)', () => {
+  /*
+    "Exile a creature card from your graveyard:", "Exile two cards from your graveyard:", "Exile an
+    instant or sorcery card from your graveyard:" — `AbilityCost.exileFromGraveyard`, chosen by
+    `graveyardCostPlan` in `graveyardFodder`'s order, never the source, and not on a mana ability.
+  */
+  const row = (name: string, type: string, text: string, pt: [string, string] | null = ['2', '2']) => ({
+    name, type_line: type, mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const GHOUL = row('Test Ghoul', 'Creature — Zombie', 'Exile a creature card from your graveyard: You gain 2 life.');
+  const PYRE = row('Test Pyre', 'Artifact', '{1}, Exile two cards from your graveyard: You gain 1 life.', null);
+  const SCHOLAR = row('Test Scholar', 'Creature — Human Wizard', 'Exile an instant or sorcery card from your graveyard: Test Scholar gets +1/+1 until end of turn.');
+  const ROWS = [GHOUL, PYRE, SCHOLAR];
+  const deck = customDeck({
+    id: 'exilers', name: 'Exilers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Lightning Bolt', count: 6 }, { name: 'Lava Spike', count: 4 }, { name: 'Swamp', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], graveyard: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'exilers', 1: 'exilers' }, deckSpecs: { exilers: deck.deck },
+      hands: { 0: [...graveyard] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of graveyard) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', name), toZone: 'graveyard' } as Action);
+    return s;
+  };
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+  const activate = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 } as Action)), 20);
+
+  it('reads every row whole, and refuses it on a mana ability', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const mana = compileCard(row('Test Tender', 'Creature — Elf', '{T}, Exile a card from your graveyard: Add {G}.') as never);
+    expect(mana.ok && mana.unread.length).toBe(1);
+    const historic = compileCard(row('Test Relic', 'Artifact', 'Exile a historic card from your graveyard: You gain 1 life.', null) as never);
+    expect(historic.ok && historic.unread.length).toBe(1);
+  });
+
+  it('exiles a creature card and not the instant beside it, then is not offered', () => {
+    let s = table(['Test Ghoul'], ['Lightning Bolt', 'Grizzly Bears']);
+    expect(offered(s, 'Test Ghoul')).toBe(true);
+    s = activate(s, 'Test Ghoul');
+    expect(life(s, 0)).toBe(22);
+    expect(namesIn(s, 0, 'exile')).toEqual(['Grizzly Bears']);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Lightning Bolt']);
+    expect(offered(s, 'Test Ghoul')).toBe(false);
+  });
+
+  it('a count is that many cards, of any kind when none is named', () => {
+    expect(offered(table(['Test Pyre', 'Swamp'], ['Lightning Bolt']), 'Test Pyre')).toBe(false);
+    let s = table(['Test Pyre', 'Swamp'], ['Lightning Bolt', 'Grizzly Bears', 'Lightning Bolt']);
+    s = activate(s, 'Test Pyre');
+    expect(namesIn(s, 0, 'exile').length).toBe(2);
+    expect(namesIn(s, 0, 'graveyard').length).toBe(1);
+  });
+
+  it('"an instant or sorcery card" is either, and not a creature', () => {
+    expect(offered(table(['Test Scholar'], ['Grizzly Bears']), 'Test Scholar')).toBe(false);
+    const s = activate(table(['Test Scholar'], ['Grizzly Bears', 'Lightning Bolt']), 'Test Scholar');
+    expect(namesIn(s, 0, 'exile')).toEqual(['Lightning Bolt']);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Scholar')]!).power).toBe(3);
+    // And a sorcery, the second half of the "or".
+    const t = activate(table(['Test Scholar'], ['Grizzly Bears', 'Lava Spike']), 'Test Scholar');
+    expect(namesIn(t, 0, 'exile')).toEqual(['Lava Spike']);
+  });
+});

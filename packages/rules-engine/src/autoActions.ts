@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './s
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1760,6 +1760,15 @@ function activate(
   }
 
   // The permanent's own mana is the last mana spent on its own ability. See `payFrom`.
+  // And the graveyard cards (D613), chosen before anything is spent so a refusal changes nothing.
+  const exiledForCost = ability.cost.exileFromGraveyard === undefined
+    ? []
+    : graveyardCostPlan(state, action.by, ability.cost.exileFromGraveyard, inst.id);
+  if (exiledForCost === null) {
+    const want = ability.cost.exileFromGraveyard!;
+    throw new EngineError('RULE_NOT_APPLICABLE', `you have too few ${want.words === '' ? '' : `${want.words} `}cards in your graveyard to exile for that`);
+  }
+
   // Nothing the cost spends another way pays its mana: see `payFrom`'s `exclude` (sweep 47815).
   const spent = new Set<string>([
     ...(ability.cost.tap ? [inst.id] : []), ...crewed, ...(sacrificed === null ? [] : [sacrificed]),
@@ -1860,6 +1869,11 @@ function activate(
     where the effect reads it from to build the token copy.
   */
   if (ability.cost.exileSelf) next = relocate(next, requireInstance(next, inst.id), 'exile', inst.owner, 'bottom');
+  // Exiled as the cost is paid, before the ability is on the stack (D613).
+  for (const id of exiledForCost) {
+    const card = next.instances[id];
+    if (card !== undefined && card.zone === 'graveyard') next = relocate(next, card, 'exile', card.owner, 'bottom');
+  }
 
   if (ability.produces !== undefined) {
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what

@@ -777,6 +777,29 @@ export function tapToPayPlan(
  * it says. `want` is a cap rather than a promise — a shorter list than asked for is the answer
  * "this cost cannot be paid", and `castablePlays` reads it that way.
  */
+export function graveyardCostPlan(
+  state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['exileFromGraveyard']>, source: string,
+): readonly string[] | null {
+  /*
+    "Exile a creature card from your graveyard" (D613): `graveyardFodder`'s order over the cards
+    the cost names, and never the source — an ability activated from the graveyard is paying with
+    other cards, and one activated from the battlefield has no card of its own there. `null` when
+    there are too few.
+  */
+  const spare: string[] = [];
+  const useful: string[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
+    if (id === source) continue;
+    const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+    if (!cost.matches(def?.typeLine ?? '')) continue;
+    const script = scriptForCard(def);
+    if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
+    else spare.push(id);
+  }
+  const plan = [...spare, ...useful].slice(0, cost.count);
+  return plan.length < cost.count ? null : plan;
+}
+
 export function graveyardFodder(
   state: GameState, seat: SeatIndex, exclude: string | undefined, want: number,
 ): readonly string[] {
@@ -2143,6 +2166,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? null
         : tapCostPlan(state, seat, ability.cost.tapUntapped, id, ability.cost.tap === true);
       if (ability.cost.tapUntapped !== undefined && tapped === null) continue;
+      // And "exile a creature card from your graveyard" (D613): not offered without enough.
+      if (ability.cost.exileFromGraveyard !== undefined
+        && graveyardCostPlan(state, seat, ability.cost.exileFromGraveyard, id) === null) continue;
       /*
         A permanent the cost spends some other way cannot also make its mana (sweep 47815).
 

@@ -2039,6 +2039,17 @@ export interface AbilityCost {
    * That is the whole reason it is an ability here rather than another flag on the cast path.
    */
   readonly fromGraveyard?: true;
+  /**
+   * "Exile a creature card from your graveyard:", "Exile two cards from your graveyard:" (D613) —
+   * cards of yours exiled as the cost, chosen by the engine with `graveyardCostPlan` the way escape's
+   * are (cards with no second life go first). `matches` is asked of the printed type line; `words`
+   * is the printed kind, for the refusal. The source itself is never one of them.
+   */
+  readonly exileFromGraveyard?: {
+    readonly count: number;
+    readonly words: string;
+    readonly matches: (typeLine: string) => boolean;
+  };
   readonly crew?: number;
   /**
    * "Tap an untapped creature you control:", "Tap two untapped artifacts you control:", "Tap an

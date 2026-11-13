@@ -21706,6 +21706,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let removes: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
+  let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
   let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -21914,6 +21915,19 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       else return null;
       continue;
     }
+    /*
+      "Exile a creature card from your graveyard", "Exile two cards from your graveyard", "Exile an
+      instant or sorcery card from your graveyard" (D613): see `AbilityCost.exileFromGraveyard`.
+    */
+    const exiles = /^Exile (an?|another|one|two|three|four|five|six|seven)( other)? (?:(.+?) )?cards? from your graveyard$/i.exec(component);
+    if (exiles !== null) {
+      if (exilesCards !== null) return null;
+      const count = /^(?:an?|another)$/i.test(exiles[1]!) ? 1 : countFrom(exiles[1]!);
+      const matches = graveyardKind(exiles[3]);
+      if (count === null || count < 1 || matches === null) return null;
+      exilesCards = { count, words: exiles[3] ?? '', matches };
+      continue;
+    }
     if (!/^(?:\{[^}]+\})+$/.test(component)) return null;
     /*
       `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
@@ -21933,7 +21947,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const anything = taps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
-    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null;
+    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null;
   if (taps > 1 || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
@@ -21961,6 +21975,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(exilesSelf ? { exileSelf: true as const } : {}),
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
     ...(tapsOthers === null ? {} : { tapUntapped: tapsOthers }),
+    ...(exilesCards === null ? {} : { exileFromGraveyard: exilesCards }),
   };
 
   /*
@@ -21984,7 +21999,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     permanents (D610): "Tap an untapped creature you control: Add {G}" would make free mana there. So
     a tap-others cost on a mana ability stays unread.
   */
-  if (cost.tapUntapped !== undefined && /^add\b/i.test(manaClause)) return null;
+  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined) && /^add\b/i.test(manaClause)) return null;
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
@@ -22187,6 +22202,26 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 const NOT_AN_ABILITY_WORD: readonly string[] = [
   ...KEYWORD_ABILITY_NAMES, 'ward', 'channel', 'i', 'ii', 'iii', 'iv', 'v',
 ];
+
+/**
+ * The kind of card a graveyard cost asks for, as a test of a printed type line (D613): nothing
+ * ("two cards"), card types and "legendary" joined by "or" ("an instant or sorcery card", "an
+ * artifact or creature card"), or one capitalised creature type ("an Elf card"). Anything else —
+ * "historic", "with mana value X" — is `null`.
+ */
+function graveyardKind(words: string | undefined): ((typeLine: string) => boolean) | null {
+  if (words === undefined) return () => true;
+  const TYPES = ['artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery', 'legendary'];
+  const parts = words.split(/ or /);
+  if (parts.length === 1 && /^[A-Z]/.test(words) && isCreatureType(words)) {
+    return (typeLine) => (typeLine.split(/[—–]/)[1] ?? '').split(/\s+/).includes(words);
+  }
+  if (!parts.every((part) => TYPES.includes(part))) return null;
+  return (typeLine) => {
+    const front = (typeLine.split(/[—–]/)[0] ?? '').toLowerCase().split(/\s+/);
+    return parts.some((part) => front.includes(part));
+  };
+}
 
 function withoutAbilityWord(line: string): string {
   /*

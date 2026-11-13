@@ -25399,3 +25399,51 @@ facts beside it.
 Pod sweep on D611's build (2d94519), seeds 47901–47940: 40 of 40 finished, no throw and no stall.
 
 Break run on D611's build: 6 deliberate faults, 5 caught; the miss is pinned here.
+
+## D613 — A cost that exiles cards from your graveyard
+
+"Exile a creature card from your graveyard" (25 lines), "Exile two cards" (10), "Exile a card" (6),
+"Exile three cards" (5), and smaller rows that name a kind ("an instant or sorcery card", "an
+artifact or creature card", "an Elf card", "two legendary cards"). About 60 unread ability lines,
+and none of them had a field.
+
+**`AbilityCost.exileFromGraveyard`** has a count, the printed words, and a `matches` test of the
+printed type line, built by `graveyardKind`. That test accepts:
+- nothing, meaning any card;
+- card types and "legendary" joined by "or";
+- one creature type.
+
+"Historic", "with mana value X", "X cards", "any number" and "from a graveyard" stay unread.
+
+**Who chooses the cards: the engine.** `graveyardCostPlan` uses `graveyardFodder`'s order: cards
+with no second life go first. The source is never one of them, which covers "another creature
+card". `legalActions` does not offer the ability without enough cards, and `activate` chooses them
+before anything is spent and exiles them as the cost is paid.
+
+**Refused on a mana ability.** The rule that limits a mana ability's costs refuses it already, and
+the guard beside D610's makes that explicit.
+
+**Tests.** 4 new engine tests:
+- The rows read, and the mana and "historic" forms stay refused.
+- A creature card is exiled and not the instant beside it; after that the ability is not offered.
+- A count is that many cards of any kind.
+- "An instant or sorcery card" takes either, and not a creature.
+
+Each of the following was broken on purpose and its test failed:
+- The kind ignored.
+- The count read as one.
+- The cards never exiled.
+- The offer not gated.
+- Only the first half of an "or" kind accepted. The test only used an instant at first; a sorcery
+  case was added.
+
+The mana-ability guard is the one fault no test can see, because the other refusal stands behind
+it.
+
+    engine tests: 4,336, all passing
+
+### Measurements
+
+    cards fully read 9,894 of 31,292 (was 9,865); lines read 27,783 of 58,524 (47.5%, was 27,744)
+
+Pod sweep on D612's build (cc75323), seeds 48001–48040: 40 of 40 finished, no throw and no stall.
