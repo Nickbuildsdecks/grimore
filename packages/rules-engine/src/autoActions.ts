@@ -1622,6 +1622,13 @@ function activate(
       throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} has summoning sickness`);
     }
   }
+  // The untap symbol (D627): the mirror of the check above (CR 107.6, CR 302.6).
+  if (ability.cost.untap === true) {
+    if (!inst.tapped) throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} is not tapped`);
+    if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} has summoning sickness`);
+    }
+  }
 
   if (ability.cost.life !== undefined) {
     // Checked before anything is spent, and refused at exactly the life that would kill you: a
@@ -1823,6 +1830,7 @@ function activate(
       ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
   }
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
+  if (ability.cost.untap === true) next = withInstance(next, inst.id, { tapped: false });
   /*
     And the once-each-turn record, written beside the tap and the loyalty for the same reason: it
     is part of activating the ability, not part of resolving it, so an ability countered on the

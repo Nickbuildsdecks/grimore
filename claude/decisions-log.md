@@ -43683,3 +43683,68 @@ Pod sweep 49301–49340 (D625's build): 40 of 40 finished, no throw and no stall
 
 **Break run on D625's build:** 4 of 5 caught. The miss lets the power or toughness bound attach to a
 non-creature target kind. It will be pinned with the next increment.
+
+## D627 — "target creature without <keyword>", and the untap symbol {Q}
+
+**Without a keyword.** `parsedTargetPhrase` read "target creature with flying" and refused
+"without". The pattern now takes either word, and `permanentFilter` gained `withoutKeyword`. It is
+read live as `keyword` is, so a creature granted flying in response is out of reach. Typical
+printings:
+- "Tap target creature without flying" (Cephalid Retainer, Dromoka Dunecaster).
+- "Target creature without flying can't block this turn".
+
+38 legal lines name it, and 26 of them are the last unread line on their card.
+
+**The untap symbol `{Q}`** (CR 107.6). 18 lines print it, 15 of them one line short: Hateflayer,
+Farmstead Gleaner, Duergar Mine-Captain. `AbilityCost.untap` is checked in both places a cost is
+checked:
+- `legalActions` offers the ability only while the permanent is tapped.
+- `autoActions` refuses it otherwise, and untaps the permanent as the cost is paid.
+
+On a creature it needs the creature to have been under your control since the turn began, the
+same rule as `{T}` (CR 302.6).
+
+Two shapes stay unread on purpose:
+- **A `{Q}` mana ability.** The mana planner pays `{T}` and nothing else, so read anyway it would
+  be mana from a tapped land for free.
+- **`{T}` together with `{Q}`.** No printing has both.
+
+**Tests.** 9 new engine tests:
+- Without flying: the Hill Giant and not the Shivan Dragon, and granted flying excludes.
+- The same in a disjunction ("artifact or creature without flying").
+- "With flying" is unchanged.
+- The D625 pin: a power bound on a non-creature target is unread.
+- `{Q}` reads as `{ untap: true }`.
+- Untapped, it is neither offered nor allowed.
+- Tapped, it is offered, untaps as the cost, resolves, and is not offered again.
+- On a creature that arrived this turn it is refused, as summoning sickness.
+- A `{Q}` mana ability and `{T}` with `{Q}` stay unread.
+
+Faults injected by hand, each caught:
+- The `withoutKeyword` check removed.
+- "Without" read as "with".
+- Each of the two filter spreads dropped. The disjunction one was uncaught until its own test was
+  added.
+- The tapped check removed from the offer path.
+- The summoning-sickness check removed from the offer path.
+- The "not tapped" refusal removed from the activation path.
+- The untap on payment removed.
+- `{T}` with `{Q}` allowed.
+- A `{Q}` mana ability allowed.
+
+The D625 miss ("bound applied to any kind") is pinned here and checked against its fault.
+
+    engine tests: 4,423, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,448 of 31,653 (was 10,424); lines read 28,713 of 59,306 (48.4%, was 28,686)
+
+Pod sweep 49401–49440: 40 of 40 finished, no throw and no stall. It ran on the build current when it
+started, which was part-way through this increment; its stale-engine banner did not fire.
+
+**Break run on D626's build:** 3 of 5 caught. The misses:
+- "Tapped" accepted on a self-return to hand. No card prints it; the pin comes with the next
+  increment.
+- Owner in place of controller. This is equivalent: a card is only ever in its owner's graveyard,
+  and only its owner can activate it there.

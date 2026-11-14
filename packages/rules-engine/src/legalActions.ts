@@ -2137,6 +2137,11 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         if (inst.tapped) continue;
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       }
+      // The untap symbol (D627): only while tapped, and the same summoning-sickness rule as {T}.
+      if (ability.cost.untap === true) {
+        if (!inst.tapped) continue;
+        if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
+      }
       // A counter is a cost like the life and the loyalty above: with none left to remove, the
       // ability is not offered at all rather than offered and then refused.
       if (ability.cost.removeCounter !== undefined) {

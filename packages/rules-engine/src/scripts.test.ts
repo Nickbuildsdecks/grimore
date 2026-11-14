@@ -47478,3 +47478,112 @@ describe('graveyard returns with a mana-value bound, and a card returning itself
     expect(namesIn(s, 0, 'exile')).toContain('Test Stitchwing');
   });
 });
+
+describe('"target creature without <keyword>" (D627)', () => {
+  const spell = (text: string) => ({
+    name: 'Test Snare', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const specOf = (text: string) => {
+    const read = compileCard(spell(text) as never);
+    expect(read.ok && read.unread).toEqual([]);
+    return read.ok ? read.script?.targets?.[0] : undefined;
+  };
+  const board = () => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'ember-rush' },
+    battlefield: { 1: ['Hill Giant', 'Shivan Dragon'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const allowed = (s: GameState, spec: ReturnType<typeof specOf>, name: string) =>
+    spec!.filter!(s, { kind: 'card', id: find(s, 1, 'battlefield', name) }, 0 as SeatIndex, 'none');
+
+  it('without flying: the Giant and not the Dragon, and a granted flying excludes too', () => {
+    const spec = specOf('Tap target creature without flying.');
+    let s = board();
+    expect(allowed(s, spec, 'Hill Giant')).toBe(true);
+    expect(allowed(s, spec, 'Shivan Dragon')).toBe(false);
+    s = pump(s, [find(s, 1, 'battlefield', 'Hill Giant')], 'none', 1 as SeatIndex, { keywords: ['flying'] });
+    expect(allowed(s, spec, 'Hill Giant')).toBe(false);
+  });
+
+  it('in a disjunction too: "target artifact or creature without flying"', () => {
+    const spec = specOf('Tap target artifact or creature without flying.');
+    const s = board();
+    expect(allowed(s, spec, 'Hill Giant')).toBe(true);
+    expect(allowed(s, spec, 'Shivan Dragon')).toBe(false);
+  });
+
+  it('"with flying" is unchanged by it', () => {
+    const spec = specOf('Destroy target creature with flying.');
+    const s = board();
+    expect(allowed(s, spec, 'Shivan Dragon')).toBe(true);
+    expect(allowed(s, spec, 'Hill Giant')).toBe(false);
+  });
+
+  it('a power bound on anything but a creature stays unread (pinned by the D625 break run)', () => {
+    // A noncreature permanent has no power to compare; no printing asks it of one.
+    const read = compileCard(spell('Destroy target permanent with power 2 or less.') as never);
+    expect(read.ok && read.unread).toHaveLength(1);
+  });
+});
+
+describe('the untap symbol {Q} as a cost (D627)', () => {
+  /*
+    "{Q}: …" is offered only while the permanent is tapped, untaps it as the cost is paid, and on a
+    creature needs it to have been yours since the turn began (CR 107.6, CR 302.6).
+  */
+  const GLEANER = {
+    name: 'Test Gleaner', type_line: 'Creature — Scarecrow', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal',
+    power: '2', toughness: '2', oracle_text: '{Q}: You gain 2 life.',
+  };
+  const deck = customDeck({
+    id: 'untapper', name: 'Untapper', entries: [{ name: 'Test Gleaner', count: 4 }, { name: 'Forest', count: 56 }], data: [GLEANER] as never[],
+  });
+  const table = (turn = 3): GameState => advanceTo(arena({
+    decks: { 0: 'untapper', 1: 'untapper' }, deckSpecs: { untapper: deck.deck },
+    battlefield: { 0: ['Test Gleaner'] }, turn, firstSeat: 0,
+  }), 'precombat-main');
+  const offers = (s: GameState, card: string) => legalActions(s, 0 as SeatIndex).plays
+    .filter((p) => p.kind === 'activate' && p.card === card).length;
+  const act = (card: string) => ({ type: 'auto:activate' as const, by: 0 as SeatIndex, card, abilityIndex: 0 });
+
+  it('reads', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(GLEANER as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.abilities?.[0]?.cost).toEqual({ untap: true });
+  });
+
+  it('untapped: neither offered nor allowed', () => {
+    const s = table();
+    const me = find(s, 0, 'battlefield', 'Test Gleaner');
+    expect(offers(s, me)).toBe(0);
+    expect(refusal(s, act(me))).toContain('is not tapped');
+  });
+
+  it('tapped: offered, untaps it as the cost, and resolves', () => {
+    let s = table();
+    const me = find(s, 0, 'battlefield', 'Test Gleaner');
+    s = { ...s, instances: { ...s.instances, [me]: { ...s.instances[me]!, tapped: true } } };
+    expect(offers(s, me)).toBe(1);
+    s = apply(s, act(me));
+    expect(s.instances[me]?.tapped).toBe(false);
+    s = drain(passBoth(s), 20);
+    expect(life(s, 0)).toBe(22);
+    // Untapped again, so not a second time.
+    expect(offers(s, me)).toBe(0);
+  });
+
+  it('a creature that arrived this turn cannot use it (CR 302.6)', () => {
+    let s = table();
+    const me = find(s, 0, 'battlefield', 'Test Gleaner');
+    s = { ...s, instances: { ...s.instances, [me]: { ...s.instances[me]!, tapped: true, enteredTurn: s.turn } } };
+    expect(offers(s, me)).toBe(0);
+    expect(refusal(s, act(me))).toContain('summoning sickness');
+  });
+
+  it('a {Q} mana ability, and {T} with {Q}, stay unread', () => {
+    for (const text of ['{Q}: Add {G}.', '{T}, {Q}: You gain 2 life.']) {
+      const read = compileCard({ ...GLEANER, oracle_text: text } as never);
+      expect(read.ok && read.unread).toHaveLength(1);
+    }
+  });
+});

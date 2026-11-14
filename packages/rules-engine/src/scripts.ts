@@ -17618,6 +17618,8 @@ const permanentFilter = (
     readonly blocking?: boolean;
     /** "target creature **with flying**", read **live** so a granted keyword counts (CR 109.2). */
     readonly keyword?: Keyword;
+    /** "target creature **without flying**" (D627), read live the same way: a granted one excludes. */
+    readonly withoutKeyword?: Keyword;
     /** "target **legendary** creature", and `false` for "nonlegendary" — a supertype (CR 205.4). */
     readonly legendary?: boolean;
     /** "target **nonbasic** land": the other supertype a printed target phrase names. */
@@ -17677,6 +17679,7 @@ const permanentFilter = (
   */
   if (opts.basic !== undefined && isBasicLand(state, candidate.id) !== opts.basic) return false;
   if (opts.keyword !== undefined && !live.keywords.has(opts.keyword)) return false;
+  if (opts.withoutKeyword !== undefined && live.keywords.has(opts.withoutKeyword)) return false;
   /*
     The combat tests, which are the only ones here that read something other than the permanent.
     `attackingOrBlocking` already does this for the phrase that takes either; these are the halves,
@@ -18365,14 +18368,16 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     };
   }
 
-  // "with flying" — a keyword, read live, so a granted one counts.
+  // "with flying" — a keyword, read live, so a granted one counts. "Without flying" (D627) is its
+  // negation: Tap target creature without flying, "can't block" on a creature without flying.
   let keyword: Keyword | undefined;
-  const withKeyword = /^(.*?)\s+with\s+([A-Za-z]+)$/i.exec(body);
+  let withoutKeyword: Keyword | undefined;
+  const withKeyword = /^(.*?)\s+with(out)?\s+([A-Za-z]+)$/i.exec(body);
   if (withKeyword !== null) {
-    const word = withKeyword[2]!.toLowerCase();
+    const word = withKeyword[3]!.toLowerCase();
     // A word the engine cannot test is not a filter (D259's rule applied to one): refuse the phrase.
     if (!isKeyword(word)) return null;
-    keyword = word;
+    if (withKeyword[2] === undefined) keyword = word; else withoutKeyword = word;
     body = withKeyword[1]!.trim();
   }
 
@@ -18415,6 +18420,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
         ...(yours === undefined ? {} : { yours: true }),
         ...(opponents === undefined ? {} : { opponents: true }),
         ...(keyword === undefined ? {} : { keyword }),
+        ...(withoutKeyword === undefined ? {} : { withoutKeyword }),
         anyOf: named,
       }),
       ...counted,
@@ -18511,6 +18517,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     ...(legendary === undefined ? {} : { legendary }),
     ...(basic === undefined ? {} : { basic }),
     ...(keyword === undefined ? {} : { keyword }),
+    ...(withoutKeyword === undefined ? {} : { withoutKeyword }),
     ...(subtype === undefined ? {} : { anyOf: [subtype] }),
   });
   return { kind: noun?.kind ?? 'permanent', filter, ...counted };
@@ -21885,6 +21892,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   }
 
   let taps = 0;
+  let untaps = 0;
   let life = 0;
   let sacrificesSelf = false;
   let discardsSelf = false;
@@ -21906,6 +21914,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
     if (component === '') return null;
     if (/^\{T\}$/i.test(component)) { taps += 1; continue; }
+    // The untap symbol (D627): Hateflayer, Farmstead Gleaner, Duergar Mine-Captain.
+    if (/^\{Q\}$/i.test(component)) { untaps += 1; continue; }
     const paid = /^Pay\s+(\d+)\s+life$/i.exec(component);
     if (paid !== null) { life += Number(paid[1]); continue; }
     /*
@@ -22174,11 +22184,12 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     The three new components count towards "is there a cost at all", which they have to: "Sacrifice
     a creature: Add {C}{C}" is Ashnod's Altar, whose whole cost is the sacrifice.
   */
-  const anything = taps > 0 || mana.length > 0 || life > 0
+  const anything = taps > 0 || untaps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
     || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null
     || discardsAtRandom || returnsSelf || returnsOthers !== null;
-  if (taps > 1 || !anything) return null;
+  // `{T}` and `{Q}` together is no printing, and each is one symbol at most.
+  if (taps > 1 || untaps > 1 || (taps > 0 && untaps > 0) || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
     sacrifice. Each is a choice the player makes as the ability is activated, and both the table
@@ -22194,6 +22205,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const cost: AbilityCost = {
     ...(mana.length === 0 ? {} : { mana: mana.join('') }),
     ...(taps === 1 ? { tap: true } : {}),
+    ...(untaps === 1 ? { untap: true as const } : {}),
     ...(life === 0 ? {} : { life }),
     ...(sacrificesSelf ? { sacrificeSelf: true as const } : {}),
     ...(discardsSelf ? { discardSelf: true as const } : {}),
@@ -22233,7 +22245,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     permanents (D610): "Tap an untapped creature you control: Add {G}" would make free mana there. So
     a tap-others cost on a mana ability stays unread.
   */
-  if ((cost.tapUntapped !== undefined || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
+  if ((cost.tapUntapped !== undefined || cost.untap === true || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
     || cost.returnSelf === true || cost.returnToHand !== undefined)
     && /^add\b/i.test(manaClause)) return null;
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);

@@ -1875,6 +1875,12 @@ export interface AbilityCost {
   readonly mana?: string;
   /** The `{T}` symbol: requires the permanent to be untapped and not summoning sick. */
   readonly tap?: boolean;
+  /**
+   * The `{Q}` symbol (D627), the untap symbol: requires the permanent to be **tapped**, and untaps
+   * it as the cost is paid (CR 107.6). A creature's `{Q}` ability needs it to have been under your
+   * control since your turn began, exactly as `{T}` does (CR 302.6).
+   */
+  readonly untap?: true;
   readonly sacrificeSelf?: boolean;
   /**
    * "Sacrifice a creature:" — the player picks which, and it is gone before the ability is on the
