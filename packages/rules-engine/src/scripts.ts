@@ -15740,6 +15740,20 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => new RegExp(`^Whenever a creature you control ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'any', of: 'you', what: 'creature' }],
   },
+  /*
+    **Nobody's side named** (D631): "Whenever a creature enters" (Carnival of Souls, Blasting
+    Station), "Whenever an artifact enters", "Whenever a land enters". `who: 'any'` and `of: 'any'`:
+    every one, the card's own arrival included, which is what "a" and not "another" says (CR 603.6a)
+    — the distinction Soul Warden's row above is about. And the opponents' side spelled two ways.
+  */
+  ...(['creature', 'artifact', 'land', 'enchantment'] as const).map((what) => ({
+    prologue: () => new RegExp(`^Whenever an? ${what} ${ENTERS}, (.+)$`, 'i'),
+    on: [{ kind: 'etb' as const, who: 'any' as const, of: 'any' as const, what }],
+  })),
+  ...(['creature', 'artifact', 'land'] as const).map((what) => ({
+    prologue: () => new RegExp(`^Whenever an? ${what} (?:an opponent controls ${ENTERS}|${ENTERS} under an opponent's control), (.+)$`, 'i'),
+    on: [{ kind: 'etb' as const, who: 'any' as const, of: 'opponent' as const, what }],
+  })),
   // Champion of the Parish's shape, and the one the pool spells with both qualifiers.
   {
     prologue: () => new RegExp(`^Whenever another creature you control ${ENTERS}, (.+)$`, 'i'),
@@ -15991,6 +16005,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever one or more creatures you control attack, (.+)$/i,
     on: [{ kind: 'attack-declared', by: 'you' }],
   },
+  /*
+    "Whenever you attack with **two / three or more** creatures" (D631): the same declaration with a
+    count on it, which `attack-declared` now carries. 8 + 6 legal lines; Chivalric Alliance, Armasaur
+    Guide, Gallia of the Endless Dance.
+  */
+  ...[2, 3, 4, 5].map((n) => ({
+    prologue: () => new RegExp(`^Whenever you attack with (?:${n}|${['', '', 'two', 'three', 'four', 'five'][n]}) or more creatures, (.+)$`, 'i'),
+    on: [{ kind: 'attack-declared' as const, by: 'you' as const, atLeast: n }],
+  })),
   /*
     The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`
     on `dies` as well as on `attacks` and `combat-damage`. 52 legal lines print "enchanted creature

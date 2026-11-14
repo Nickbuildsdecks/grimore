@@ -2400,7 +2400,7 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     battalion's count.
   */
   if (attacks.length > 0) {
-    next = raise(next, { kind: 'attack-declared' }, action.by);
+    next = raise(next, { kind: 'attack-declared', attackers: attacks.length }, action.by);
   }
   next = resetPriority(settle(next, state));
   return {

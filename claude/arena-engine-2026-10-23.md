@@ -26441,3 +26441,69 @@ Pod sweep 49701–49740 (D629's build): 40 of 40 finished, no throw and no stall
 **Break run on D628's build:** 5 of 6 caught. The miss: an eliminated opponent's graveyard is
 exiled as well under "each opponent's". It has no effect on play: a player who has left the game
 has nothing left in it to play with (CR 800.4a). The guard stays, as the printed scope.
+
+## D631 — "with three or more creatures", and enters triggers that name nobody's side
+
+I ranked the prologues that block one-line-short cards. The method: put each line's effect behind
+"When ~ enters," and keep the lines that then read, so the opening is the only blocker. Two of the
+largest families need no new machinery.
+
+**"Whenever you attack with two / three or more creatures"** (Chivalric Alliance, Armasaur Guide,
+Gallia of the Endless Dance). The `attack-declared` event (D442) now carries `attackers`, the size
+of the declaration as it is raised, so a myriad token made afterwards is not counted (CR 508.4). A
+trigger's `atLeast` asks it. These stay refused: "with one or more <type>", "a player", "with your
+commander", and "while creatures you control have total power 8 or greater".
+
+**"Whenever a creature / an artifact / a land / an enchantment enters"**, with no side named
+(Carnival of Souls, Blasting Station), and **"Whenever a creature an opponent controls enters"** /
+"… enters under an opponent's control". These are new rows on the `etb` event, which has carried
+`of: 'opponent'` since D134:
+- "A", not "another": the card's own arrival counts (CR 603.6a). That is the distinction the Soul
+  Warden row above it exists for.
+- The opponent rows fire only for an opponent's permanent.
+
+Three refusal rows in `compile.test.ts` named these exact sentences, and are now positive
+assertions or removed with a note. One had been left unread "for its own row"; it now checks the row
+reads `of: 'opponent'`, never `of: 'you'`.
+
+Two families measured and left:
+- **"Deals combat damage to a player or planeswalker."** No event is raised for a hit on a
+  planeswalker, so reading it would miss half the trigger.
+- **"Whenever an artifact is put into a graveyard from the battlefield."** It needs the card's type
+  and controller as it left (last known information), about 4 cards.
+
+### The pre-gate script let a red tree through
+
+`pregate.sh` (written in D628 for exactly this) printed PREGATE-OK over four failing tests, and the
+gate started. The cause: `echo "$out" | grep -q "failed"` under `set -o pipefail`. `grep -q` exits
+at its first match, `echo` takes a SIGPIPE, the pipeline's status is non-zero, and the `&&` that
+should have stopped the script never ran.
+
+It now checks vitest's exit status, and matches " failed" in the shell. It was proven by planting a
+failing test: the script stopped with exit 1, and the test was deleted. The stray gate was killed
+before it finished. Nothing was pushed from that tree.
+
+**Tests.** 4 new engine tests:
+- The rows read.
+- Two attackers: no life. Three: 3 life.
+- "A creature enters" fires for my creature and for theirs; "an opponent controls" only for theirs.
+
+Faults injected by hand, each caught:
+- `atLeast` off by one.
+- The count left off the raised event.
+- The opponent rows read as "any".
+- The any rows read as "you".
+
+    engine tests: 4,439, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,586 of 31,653 (was 10,572); lines read 28,932 of 59,306 (48.8%, was 28,912)
+
+Pod sweep 49801–49840 (D630's build): 40 of 40 finished, no throw and no stall.
+
+**Break runs.**
+- **D629: 4 of 5 caught.** The miss is equivalent: "tap or untap up to two target …" never
+  reaches the reader, because its regex needs "target" straight after "untap".
+- **D630: 3 of 4 caught.** The miss is a timing restriction dropped from a printed monstrosity line
+  ("Activate only as a sorcery"). It will be pinned with the next increment.

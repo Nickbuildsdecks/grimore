@@ -424,6 +424,16 @@ export type TriggerEvent =
        * opponent attacks" would otherwise be the one to invent a fourth vocabulary.
        */
       readonly by?: 'you' | 'opponent' | 'any';
+      /**
+       * How many creatures were declared, on the **raised** event (D631). Counted from the
+       * declaration itself, so a myriad token made afterwards is not in it (CR 508.4).
+       */
+      readonly attackers?: number;
+      /**
+       * "Whenever you attack with **three or more** creatures" (D631), on the **watched** event:
+       * fires only when the declaration had at least this many.
+       */
+      readonly atLeast?: number;
     }
   | {
       readonly kind: 'attacks';

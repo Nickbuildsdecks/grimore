@@ -1134,6 +1134,9 @@ function triggerMatches(
       event's own declaration for why those stay unread).
     */
     case 'attack-declared': {
+      // "With three or more creatures" (D631): the count travels on the raised event.
+      if (want.atLeast !== undefined
+        && ((event as Extract<TriggerEvent, { kind: 'attack-declared' }>).attackers ?? 0) < want.atLeast) return false;
       const by = want.by ?? 'you';
       if (by === 'you') return actorSeat === sourceSeat;
       if (by === 'opponent') return actorSeat !== sourceSeat;

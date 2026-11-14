@@ -7085,13 +7085,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine[0]!.on).toEqual({ kind: 'etb', who: 'any', of: 'you', what: 'land' });
     });
 
-    it('leaves an opponent\'s land alone, which the step and entry triggers cannot express together', () => {
-      // "a land an opponent controls" is `of: 'opponent'`, which the etb trigger does have — but the
-      // phrase is not this phrase, and reading it as `of: 'you'` would fire on the wrong turn. Left
-      // for its own row rather than folded into this one.
+    it('reads an opponent\'s land on its own row, as `of: \'opponent\'` and never `of: \'you\'`', () => {
+      // "a land an opponent controls" is `of: 'opponent'`. It was left unread here for its own row,
+      // and D631 is that row: reading it as `of: 'you'` would fire on the wrong player's land.
       const read = card('Whenever a land an opponent controls enters, draw a card.');
       expect(read.ok).toBe(true);
-      if (read.ok) expect(read.unread).toHaveLength(1);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      expect(read.script?.triggers?.[0]?.on).toEqual({ kind: 'etb', who: 'any', of: 'opponent', what: 'land' });
     });
   });
   /*
@@ -7726,7 +7727,6 @@ describe('the board trigger, read off the prologue', () => {
       '`to-graveyard`, which has no `what` yet'],
     ['Whenever a land you control dies',
       'dies is defined for creatures only (CR 700.4), so the parse refuses it'],
-    ['Whenever a creature an opponent controls enters', "a board that is not yours: `of: 'opponent'`"],
   ])('leaves "%s" unread: %s', (prologue) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
@@ -8297,8 +8297,7 @@ describe('the declaration, read off the prologue', () => {
     // Every variant carries a restriction the event cannot express, with its corpus count. Read as
     // the bare declaration each would be a wrong reading of a real card (D362), so each stays
     // unread — and these rows fail if a prologue row is ever widened to swallow one.
-    ['Whenever you attack with three or more creatures'],      // 8 legal lines
-    ['Whenever you attack with two or more creatures'],         // 6
+    // "With three / two or more creatures" read since D631, on `attack-declared.atLeast`.
     ['Whenever you attack with one or more creatures'],         // 3
     ['Whenever you attack a player'],                           // 7
     ['Whenever you attack with your commander'],                // 2

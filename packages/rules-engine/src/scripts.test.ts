@@ -47791,3 +47791,52 @@ describe('printed monstrosity and adapt, and a keyword taken away (D630)', () =>
     expect(characteristicsOf(s, s.instances[mine]!).keywords.has('flying')).toBe(true);
   });
 });
+
+describe('"with three or more creatures", and enters triggers that name nobody\'s side (D631)', () => {
+  const card = (name: string, type: string, text: string, pt: [string, string] | null = ['2', '2']) => ({
+    name, type_line: type, mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const ALLIANCE = card('Test Alliance', 'Enchantment', 'Whenever you attack with three or more creatures, you gain 3 life.', null);
+  const CARNIVAL = card('Test Carnival', 'Enchantment', 'Whenever a creature enters, you gain 1 life.', null);
+  const WATCH = card('Test Watch', 'Enchantment', 'Whenever a creature an opponent controls enters, you gain 1 life.', null);
+  const ROWS = [ALLIANCE, CARNIVAL, WATCH];
+  const deck = customDeck({
+    id: 'alliance', name: 'Alliance', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Raging Goblin', count: 6 }, { name: 'Mountain', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'alliance', 1: 'alliance' }, deckSpecs: { alliance: deck.deck },
+    battlefield: { 0: ['Mountain', ...mine], 1: [...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it.each([[2, 20], [3, 23]])('attacking with %i creatures: life %i', (attackers, expected) => {
+    let s = table(['Test Alliance', 'Raging Goblin', 'Raging Goblin', 'Raging Goblin']);
+    s = advanceTo(s, 'declare-attackers');
+    const goblins = ids(s, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === 'Raging Goblin');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: goblins.slice(0, attackers).map((id) => ({ attacker: id, defender: 1 })),
+    } as Action));
+    expect(life(s, 0)).toBe(expected);
+  });
+
+  it('"a creature enters" fires for anybody\'s creature; "an opponent controls" only for theirs', () => {
+    let s = table(['Test Carnival', 'Test Watch'], [], ['Raging Goblin']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Raging Goblin') } as Action)), 20);
+    // Carnival for my Goblin; the Watch does not count mine.
+    expect(life(s, 0)).toBe(21);
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Raging Goblin'), toZone: 'battlefield' } as Action);
+    s = drain(passBoth(s), 20);
+    // Both for theirs.
+    expect(life(s, 0)).toBe(23);
+  });
+});
