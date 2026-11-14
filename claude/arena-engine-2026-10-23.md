@@ -27441,3 +27441,46 @@ and the graveyard sorcery could not be paid for. Both tests were tightened.
     engine tests: 4,519, all passing
 
 Coverage: 10,829 of 31,653 cards (+9), 29,622 of 59,306 lines (+25). Staples: 144 of 244.
+
+## D649 — the top of the library, revealed and its lands played
+
+Courser of Kruphix and Oracle of Mul Daya, two Commander staples: "Play with the top card of your
+library revealed." and "You may play lands from the top of your library." D648 gave Oracle its
+extra land drop; these two lines were what was left.
+
+**Both are statics**, read live by `topRevealedFor` and `landsFromTopFor` (through D648's
+`staticsOf`), so they stop the moment the Courser leaves.
+
+**The view.**
+- While a seat's top card is revealed, `SeatView.libraryTop` names it.
+- The card travels in `cards` without the library's own list, as a scry's cards do.
+- `visible` lets every viewer read it. Nothing else of the library is sent.
+
+**The play.**
+- The top card joins the candidate list as a `landOnly` entry, D648's land-drop-and-nothing-else
+  shape.
+- The row reads "Play Forest from the top of your library".
+- `playLand` accepts the seat's own top card, and only the top card, only while the permission
+  holds.
+
+**The table.** The seat strip shows "top: <name>" beside the deck count for any seat whose top is
+revealed. Your own top card gets a "Top of your library" row next to your exile, and tapping it
+there is how the land is played.
+
+**Tests.**
+- 2 engine tests:
+  - an opponent's view holds the top card and its definition while Courser is out, and not the
+    second card; without Courser, neither;
+  - a land on top is offered and played; a spell on top is not offered; the land beneath it is
+    neither offered nor accepted; without Courser, the top land is refused.
+- 1 compiler assertion.
+- 2 exemptions on the mechanic list.
+
+Faults injected by hand: 4 of 5 caught. The miss, `visible`'s top-only clause, is an equivalent
+mutant: no other library card ever reaches an opponent's `cards`, and the owner's own search shows
+the whole library anyway. It stays as a guard. The second-card offer survived at first and was
+pinned.
+
+    engine tests: 4,521, all passing
+
+Coverage: 10,832 of 31,653 cards (+3), 29,639 of 59,306 lines (+17). Staples: 146 of 244.

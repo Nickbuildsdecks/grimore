@@ -23691,6 +23691,9 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   }
   // "You may play lands from your graveyard." (D648): Crucible of Worlds, Ramunap Excavator.
   if (/^you may play lands from your graveyard\.?$/i.test(plain(line).trim())) return { landsFromGraveyard: true };
+  // The top of the library (D649): Courser of Kruphix, Oracle of Mul Daya.
+  if (/^play with the top card of your library revealed\.?$/i.test(plain(line).trim())) return { topRevealed: true };
+  if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
   const anthem = /^(other )?creatures you control get \+(\d+)\/\+(\d+)$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (anthem === null) return null;

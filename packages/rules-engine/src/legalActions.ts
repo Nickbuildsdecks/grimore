@@ -664,6 +664,16 @@ export function landsFromGraveyardFor(state: GameState, seat: SeatIndex): boolea
   return staticsOf(state, seat).some((script) => script.landsFromGraveyard === true);
 }
 
+/** Whether this seat's top card is revealed to everybody now (D649): Courser of Kruphix. */
+export function topRevealedFor(state: GameState, seat: SeatIndex): boolean {
+  return staticsOf(state, seat).some((script) => script.topRevealed === true);
+}
+
+/** Whether this seat may play a land off the top of its library now (D649). */
+export function landsFromTopFor(state: GameState, seat: SeatIndex): boolean {
+  return staticsOf(state, seat).some((script) => script.landsFromTop === true);
+}
+
 export function tapCostPlan(
   state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['tapUntapped']>, source: string,
   sourceTapsItself = false,
@@ -1350,6 +1360,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         id, fromCommand: false, flashback: false, escape: false, foretold: false,
         fromAdventure: false, impulse: false, offered: false, landOnly: true,
       })),
+    // And the top card of the library, when Courser of Kruphix says its lands may be played (D649).
+    ...(landsFromTopFor(state, seat) ? listAt(state, zoneKey(seat, 'library')).slice(0, 1) : [])
+      .map((id) => ({
+        id, fromCommand: false, flashback: false, escape: false, foretold: false,
+        fromAdventure: false, impulse: false, offered: false, landOnly: true, fromTop: true,
+      })),
     ...(state.pendingOfferedCast !== null && state.pendingOfferedCast.seat === seat
       ? [{
           id: state.pendingOfferedCast.card, fromCommand: false, flashback: false, escape: false,
@@ -1464,7 +1480,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         const named = half === undefined
           ? `Play ${ch.name}${impulse
             ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
-            : landOnly ? ' from your graveyard' : ''}`
+            : landOnly ? ('fromTop' in entry ? ' from the top of your library' : ' from your graveyard') : ''}`
           : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`;
         /*
           A land that chooses a colour as it enters (D642) is offered once per colour, which is

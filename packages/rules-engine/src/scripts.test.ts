@@ -7863,6 +7863,10 @@ describe('deck coverage', () => {
         one once she is gone.
       - `script landsFromGraveyard`: Crucible of Worlds, Ramunap Excavator. Same block: a land in the
         graveyard is offered and played, a spell beside it is not, and nothing is offered without it.
+      - `script topRevealed` and `script landsFromTop` (D649): Courser of Kruphix, Oracle of Mul Daya.
+        Driven at runtime by "the top of the library: revealed, and its lands played (D649)": the top
+        card is shown to an opponent only while Courser is out, and a land there — only the top one —
+        is a land drop.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7879,7 +7883,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script landsFromGraveyard',
+      'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
     ]);
 
     const declared = [
@@ -11381,6 +11385,59 @@ describe('extra land drops, and lands played from the graveyard (D648)', () => {
     const bare = table({ graveyard: { 0: ['Forest'] } });
     expect(landRows(bare).some((p) => p.card === find(bare, 0, 'graveyard', 'Forest'))).toBe(false);
     expect(refusal(bare, { type: 'auto:playLand', by: 0, card: find(bare, 0, 'graveyard', 'Forest') })).toMatch(/not in your hand/);
+  });
+});
+
+describe('the top of the library: revealed, and its lands played (D649)', () => {
+  const ROWS = [{
+    name: 'Test Courser', type_line: 'Enchantment Creature — Centaur', mana_cost: '{1}{G}{G}', cmc: 3, colors: ['G'],
+    layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'Play with the top card of your library revealed.\nYou may play lands from the top of your library.',
+  }, {
+    name: 'Test Ritual', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: 'Draw a card.',
+  }];
+  const deck = customDeck({
+    id: 'courser', name: 'Courser',
+    entries: [{ name: 'Test Courser', count: 2 }, { name: 'Test Ritual', count: 4 }, { name: 'Forest', count: 30 }],
+    data: ROWS,
+  }).deck;
+  const table = (battlefield: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'courser', 1: 'courser' }, deckSpecs: { courser: deck }, battlefield: { 0: [...battlefield] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** The library with this card moved to the top, by the tabletop's own move. */
+  const onTop = (s: GameState, name: string): GameState =>
+    apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'library', position: 'top' });
+
+  it('shows everybody the top card while Courser is out, and nobody without it', () => {
+    const s = onTop(table(['Test Courser']), 'Test Ritual');
+    const top = ids(s, 0, 'library')[0]!;
+    const theirs = viewFor(s, 1);
+    expect(theirs.seats[0]!.libraryTop).toBe(top);
+    expect(theirs.cards[top]?.card?.name).toBe('Test Ritual');
+    // The second card stays hidden.
+    expect(theirs.cards[ids(s, 0, 'library')[1]!]).toBeUndefined();
+    const bare = onTop(table([]), 'Test Ritual');
+    expect(viewFor(bare, 1).seats[0]!.libraryTop).toBeUndefined();
+    expect(viewFor(bare, 1).cards[ids(bare, 0, 'library')[0]!]).toBeUndefined();
+  });
+
+  it('offers a land on top as a land drop, and nothing when the top is a spell', () => {
+    let s = onTop(table(['Test Courser']), 'Forest');
+    const top = ids(s, 0, 'library')[0]!;
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === top);
+    expect(rows.map((p) => p.description)).toEqual(['Play Forest from the top of your library']);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: top });
+    expect(s.instances[top]!.zone).toBe('battlefield');
+    const spell = onTop(table(['Test Courser']), 'Test Ritual');
+    expect(legalActions(spell, 0).plays.some((p) => p.card === ids(spell, 0, 'library')[0])).toBe(false);
+    // Only the top card: the second one is not playable even when it is a land.
+    const second = ids(spell, 0, 'library')[1]!;
+    expect(nameOf(spell, second)).toBe('Forest');
+    expect(legalActions(spell, 0).plays.some((p) => p.card === second)).toBe(false);
+    expect(refusal(spell, { type: 'auto:playLand', by: 0, card: second })).toMatch(/not in your hand/);
+    // And without Courser, not even the top.
+    const bare = onTop(table([]), 'Forest');
+    expect(refusal(bare, { type: 'auto:playLand', by: 0, card: ids(bare, 0, 'library')[0]! })).toMatch(/not in your hand/);
   });
 });
 

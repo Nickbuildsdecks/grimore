@@ -2536,6 +2536,17 @@ export interface CardScript {
    */
   readonly landsFromGraveyard?: true;
   /**
+   * "Play with the top card of your library revealed." (D649) — Courser of Kruphix, Oracle of Mul
+   * Daya, Future Sight. While one is on its controller's battlefield, the view shows everybody that
+   * seat's top card (`SeatView.libraryTop`).
+   */
+  readonly topRevealed?: true;
+  /**
+   * "You may play lands from the top of your library." (D649) — Courser, Oracle. The top card, when
+   * it is a land, is offered as a land drop and accepted by `playLand`.
+   */
+  readonly landsFromTop?: true;
+  /**
    * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
    *
    * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other

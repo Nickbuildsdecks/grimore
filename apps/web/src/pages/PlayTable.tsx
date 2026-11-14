@@ -967,7 +967,10 @@ function SeatStrip({
   brokeDeal,
   hitMe,
   sparedMe,
+  topCard,
 }: {
+  /** The name of this seat's top library card while it is revealed to the table (D649, Courser). */
+  topCard?: string
   seat: SeatView
   isMe: boolean
   isActive: boolean
@@ -1109,6 +1112,11 @@ function SeatStrip({
       <span className="text-[var(--g-text-muted)]">
         deck <span data-testid={`library-count-${seat.index}`}>{seat.libraryCount}</span>
       </span>
+      {topCard !== undefined ? (
+        <span className="text-[var(--g-text-muted)]" data-testid={`library-top-${seat.index}`}>
+          top: {topCard}
+        </span>
+      ) : null}
       <span className="text-[var(--g-text-muted)]">gy {seat.graveyardCount}</span>
       {/*
         The two numbers a pod turns on: how much power this seat has, and how much of it is still
@@ -1979,6 +1987,7 @@ function Board({ table }: { table: UseTable }) {
         <div key={o.index} className="flex min-w-0 flex-col gap-1.5">
           <SeatStrip
             seat={o}
+            topCard={o.libraryTop === undefined ? undefined : cardsIn(view, [o.libraryTop])[0]?.card?.name}
             isMe={false}
             isActive={view.activeSeat === o.index}
             isMonarch={view.monarch === o.index}
@@ -2055,6 +2064,7 @@ function Board({ table }: { table: UseTable }) {
       {me ? (
         <SeatStrip
           seat={me}
+          topCard={me.libraryTop === undefined ? undefined : cardsIn(view, [me.libraryTop])[0]?.card?.name}
           isMe
           isActive={isMyTurn}
           isMonarch={view.monarch === seat}
@@ -2111,6 +2121,21 @@ function Board({ table }: { table: UseTable }) {
           {...aiming}
           badgesOf={badgesOf}
         />
+        {/*
+          The top of your library, while Courser of Kruphix or Oracle of Mul Daya reveals it (D649):
+          a land there is a land drop, and tapping it here is how it is played.
+        */}
+        {me?.libraryTop !== undefined ? (
+          <ZoneRow
+            label="Top of your library"
+            testId={`zone-library-top-${seat}`}
+            size="pile"
+            cards={cardsIn(view, [me.libraryTop])}
+            onSelect={onSelect}
+            {...aiming}
+            badgesOf={badgesOf}
+          />
+        ) : null}
         {/*
           The badge matters more on the command zone than anywhere: a commander is castable on most
           turns of a Commander game, and with no badge the one card you always want to cast was the

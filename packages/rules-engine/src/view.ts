@@ -32,7 +32,7 @@ import {
   characteristicsOf, combatDamagePrevented, grantedTriggersOn, type Keyword,
 } from './characteristics.js';
 import { shieldOn } from './effects.js';
-import { legalActions, type LegalActions } from './legalActions.js';
+import { legalActions, topRevealedFor, type LegalActions } from './legalActions.js';
 import { scriptFor } from './scripts.js';
 import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
@@ -246,6 +246,11 @@ export interface SeatView {
   readonly searching: boolean;
   readonly handCount: number;
   readonly libraryCount: number;
+  /**
+   * The id of this seat's top library card while it is revealed to the table (D649) — Courser of
+   * Kruphix, Oracle of Mul Daya. The card itself is in `cards`; the rest of the library is not.
+   */
+  readonly libraryTop?: string;
   readonly graveyardCount: number;
   readonly exileCount: number;
   readonly battlefieldCount: number;
@@ -513,6 +518,10 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
         && ask.candidates.includes(inst.id);
     }
     case 'library': {
+      // A top card revealed to the table (D649, Courser of Kruphix): everybody, owner included.
+      if (topRevealedFor(state, inst.zoneSeat) && listAt(state, zoneKey(inst.zoneSeat, 'library'))[0] === inst.id) {
+        return true;
+      }
       // Only its own, and only in the two situations where a player may read their own library:
       // while searching it, and while looking at the top few cards of it.
       if (!isOwnSide) return false;
@@ -703,6 +712,15 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
   }
   include('stack');
 
+  // A revealed top card (D649) travels as a card without its library's list, like a scry's.
+  for (const seat of state.seats) {
+    const top = listAt(state, zoneKey(seat.index, 'library'))[0];
+    if (top !== undefined && topRevealedFor(state, seat.index)) {
+      const inst = state.instances[top];
+      if (inst !== undefined) cards[top] = redact(state, inst, viewer);
+    }
+  }
+
   // The handful of cards a scry is about, sent to the seat being asked and to nobody else. They
   // travel as cards without a zone list, deliberately: the library's own ids stay unsent, so what
   // the table learns is "these three cards", not "here is the order of your deck".
@@ -732,6 +750,9 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     searching: seat.searching,
     handCount: listAt(state, zoneKey(seat.index, 'hand')).length,
     libraryCount: listAt(state, zoneKey(seat.index, 'library')).length,
+    ...(topRevealedFor(state, seat.index) && listAt(state, zoneKey(seat.index, 'library'))[0] !== undefined
+      ? { libraryTop: listAt(state, zoneKey(seat.index, 'library'))[0]! }
+      : {}),
     graveyardCount: listAt(state, zoneKey(seat.index, 'graveyard')).length,
     exileCount: listAt(state, zoneKey(seat.index, 'exile')).length,
     battlefieldCount: listAt(state, zoneKey(seat.index, 'battlefield')).length,

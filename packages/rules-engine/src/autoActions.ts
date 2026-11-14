@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, type CardScript, type Targ
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, landDropsFor, landsFromGraveyardFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1423,7 +1423,10 @@ function playLand(
   const fromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by;
   // Or out of the graveyard while Crucible of Worlds or the like says so (D648).
   const fromGraveyard = inst.zone === 'graveyard' && inst.zoneSeat === action.by && landsFromGraveyardFor(state, action.by);
-  if (!fromExile && !fromGraveyard && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
+  // Or the top of the library under Courser of Kruphix (D649): the top card only.
+  const fromTop = inst.zone === 'library' && inst.zoneSeat === action.by
+    && listAt(state, zoneKey(action.by, 'library'))[0] === inst.id && landsFromTopFor(state, action.by);
+  if (!fromExile && !fromGraveyard && !fromTop && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   /*

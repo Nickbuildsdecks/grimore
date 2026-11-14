@@ -18363,5 +18363,9 @@ describe('extra land drops and lands from the graveyard (D648)', () => {
     expect(two.ok && two.script?.additionalLands).toBe(2);
     const crucible = card('You may play lands from your graveyard.');
     expect(crucible.ok && crucible.script?.landsFromGraveyard).toBe(true);
+    // And the top of the library (D649): Courser of Kruphix's two lines.
+    const courser = card('Play with the top card of your library revealed.\nYou may play lands from the top of your library.');
+    expect(courser.ok && courser.unread).toEqual([]);
+    expect(courser.ok && [courser.script?.topRevealed, courser.script?.landsFromTop]).toEqual([true, true]);
   });
 });
