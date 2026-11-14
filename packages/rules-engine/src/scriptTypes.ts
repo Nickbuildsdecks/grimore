@@ -981,6 +981,13 @@ export type TriggerEvent =
        */
       readonly targetsSelf?: true;
       /**
+       * "Whenever you cast a spell **of the chosen color**" / "… a creature spell of the chosen
+       * type" (D643): the colour or creature type the watching permanent chose as it entered
+       * (`CardInstance.chosen`). Answered in `fireTrigger` beside `targetsSelf`, because it asks
+       * which permanent is watching; a watcher that chose nothing fires for nothing.
+       */
+      readonly ofChosen?: 'color' | 'type';
+      /**
        * Set by the engine when it raises the event: the **card** targets the spell was cast with,
        * as instance ids. Player and ability targets are deliberately absent — see `targetsSelf`.
        */
@@ -3295,7 +3302,12 @@ export interface CardScript {
     readonly scope:
       | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
-      | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean };
+      | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean }
+      /**
+       * Creatures of a colour (D643): a colour letter, or `CHOSEN_COLOR` for "of the chosen color",
+       * filled in from what the permanent chose as it entered.
+       */
+      | { readonly color: string; readonly other?: boolean; readonly everyone?: boolean };
     readonly effect: PumpOptions;
     /**
      * Filled in from the colour this permanent chose as it entered (D641): `protection` adds

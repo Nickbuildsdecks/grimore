@@ -18293,6 +18293,19 @@ describe('"as it enters, choose" and the lines that read the answer (D641)', () 
     expect(bare.ok && bare.unread.length).toBe(1);
   });
 
+  it('reads a colour scope and casts of the chosen colour or type, only on a card that chose one (D643)', () => {
+    const banner = card('As Test Chooser enters, choose a color.\nCreatures you control of the chosen color get +1/+0.\n{T}: Add one mana of the chosen color.');
+    expect(banner.ok && banner.unread).toEqual([]);
+    expect(banner.ok && banner.script?.statics).toEqual([{ scope: { color: 'the chosen color' }, effect: { power: 1 } }]);
+    const mare = card('As Test Chooser enters, choose a color.\nWhenever you cast a spell of the chosen color, you gain 1 life.');
+    expect(mare.ok && mare.unread).toEqual([]);
+    expect(mare.ok && mare.script?.triggers?.[0]?.on).toMatchObject({ kind: 'spell-cast', ofChosen: 'color' });
+    const orphan = card('Whenever you cast a spell of the chosen color, you gain 1 life.');
+    expect(orphan.ok && orphan.unread.length).toBe(1);
+    const crossed = card('As Test Chooser enters, choose a color.\nWhenever you cast a creature spell of the chosen type, draw a card.');
+    expect(crossed.ok && crossed.unread.length).toBe(1);
+  });
+
   it('refuses "the chosen type" on a card that never chose one, or chose a colour instead', () => {
     const none = card('Creatures you control of the chosen type get +1/+1.');
     expect(none.ok && none.unread.map((u) => u.line)).toEqual(['Creatures you control of the chosen type get +1/+1.']);

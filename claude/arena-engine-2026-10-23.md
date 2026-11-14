@@ -27154,3 +27154,58 @@ answer; both tests were strengthened.
     engine tests: 4,497, all passing
 
 Coverage: 10,717 of 31,653 cards (+21), 29,445 of 59,306 lines (+46).
+
+## D643 — "of the chosen color" as a scope, and casts of the chosen type or colour
+
+D641 and D642 left two families behind:
+- anthems scoped by the chosen colour: Hall of Triumph, Heraldic Banner (whose mana D642 read),
+  and Caged Sun's first line;
+- "Whenever you cast a spell of the chosen color / a creature spell of the chosen type":
+  Vanquisher's Banner, Chronicle of Victory, Diamond Mare, Prism Ring, Diamond Knight, Curse of
+  Wizardry, Jeweled Torque, Paradise Plume.
+
+**A colour scope.**
+- `ContinuousEffect` gains `controller-color`: creatures of a colour, yours or (`everyone`)
+  anybody's, with `other`.
+- The colour is read by `layerFiveColours`: printed colours, then any colour-setting effect, last
+  one winning. It does not use `characteristicsOf`, because the scope is helping to compute the
+  creature's characteristics, and asking for all of them would come back here.
+- A colour-scoped effect never sets a colour, so it is skipped in that pass and the recursion
+  cannot start.
+- The static entry gains a `{ color }` scope. `CHOSEN_COLOR` is filled from `chosen` by
+  `withChosen`, as `CHOSEN_TYPE` is.
+- `groupStaticFromLine` reads "(other) creatures you control of the chosen color" and "creatures
+  of the chosen color", beside the type forms.
+
+**The cast filter.**
+- `spell-cast` gains `ofChosen: 'color' | 'type'`, from the cast tail "of the chosen color/type".
+- It is answered in `fireTrigger` beside heroic's `targetsSelf`, because it asks which permanent
+  is watching: two Banners naming different tribes each draw for their own.
+- The colour is matched against the event's colours. A type is matched against its subtypes,
+  case-insensitively, as `ofSubtypes` is.
+
+**The aim.**
+- `compileSingle`'s choice guard now reads trigger events as well as statics, so "…of the chosen
+  color" on a card that chose a type, or nothing, stays unread.
+- A cast trigger that watches **other players'** spells of the chosen colour (`by` not `you`) aims
+  the pick at the opponents. Curse of Wizardry would otherwise name its controller's own colour
+  and curse them.
+- A hostile colour now uses the colour-to-fear reading.
+
+**Tests.**
+- 4 engine tests:
+  - Hall of Triumph choosing green pumps your green Elf, not your Goblin or the opponent's Elf;
+    an Alloy Golem that chose green is green and pumped; a second Hall choosing red pumps the
+    Goblin;
+  - Vanquisher's Banner on Goblin draws for a Goblin spell and not for an Elf, and pumps it;
+  - Diamond Mare on green gains for green only;
+  - Curse of Wizardry's bot names the opponent's green over its own red.
+- 1 compiler test: the colour scope, the cast trigger, an orphan unread, and a type cast on a
+  colour card unread.
+
+Faults injected by hand: 12 of 12 caught, after the test was made to choose two colours. A
+hard-coded colour survived each single-colour version of it.
+
+    engine tests: 4,502, all passing
+
+Coverage: 10,726 of 31,653 cards (+9), 29,457 of 59,306 lines (+12).

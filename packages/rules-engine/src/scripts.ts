@@ -34,7 +34,7 @@ import {
   counterUnlessPaid, createToken,
   REGENERATION, dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
-  chosenOption, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
@@ -6944,7 +6944,8 @@ export function enterChoiceDecision(
     is not offered, and the bot's answer is its best among the other four.
   */
   const options = except === undefined ? COLOUR_OPTIONS : COLOUR_OPTIONS.filter((word) => word !== except);
-  const pick = aim === 'protection' ? colourToFear : deckColourOf;
+  // A colour to fear for protection, and the opponents' colour for a card that hurts it (D643).
+  const pick = aim === 'friendly' ? deckColourOf : colourToFear;
   return {
     who: 'controller', prompt: except === undefined ? 'Choose a color' : `Choose a color other than ${except}`,
     options,
@@ -15257,6 +15258,9 @@ function castBound(printed: string, self: string): Partial<CastEvent> | null {
       : { manaValueAtLeast: value };
   }
   if (new RegExp(`^that targets ${self}$`, 'i').test(text)) return { targetsSelf: true };
+  // "…spell of the chosen color / type" (D643): the watcher's own answer, asked in `fireTrigger`.
+  const chosen = /^of the chosen (color|type)$/i.exec(text);
+  if (chosen !== null) return { ofChosen: chosen[1]!.toLowerCase() === 'color' ? 'color' : 'type' };
   // D616: the turn it is cast in, and where it is cast from.
   if (/^during an opponent's turn$/i.test(text)) return { duringOpponentsTurn: true };
   if (/^from your graveyard$/i.test(text)) return { fromZone: 'graveyard' };
@@ -23638,14 +23642,16 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     "creatures of the chosen type" (D641): the type is `CHOSEN_TYPE`, filled in from what the
     permanent chose as it entered when the static is installed. Rewritten to the shapes below.
   */
-  const chosenYours = /^(other )?creatures you control of the chosen type (get|have) (.+)$/i.exec(text);
-  const chosenAll = /^(?:all )?creatures of the chosen type (get|have) (.+)$/i.exec(text);
+  // And "of the chosen color" (D643), the same three shapes with a colour scope.
+  const chosenYours = /^(other )?creatures you control of the chosen (type|color) (get|have) (.+)$/i.exec(text);
+  const chosenAll = /^(?:all )?creatures of the chosen (type|color) (get|have) (.+)$/i.exec(text);
+  const chosenScope = (word: string) => (word.toLowerCase() === 'color' ? { color: CHOSEN_COLOR } : { subtype: CHOSEN_TYPE });
   if (chosenYours !== null) {
-    scope = { subtype: CHOSEN_TYPE, ...(chosenYours[1] !== undefined ? { other: true } : {}) };
-    predicate = `${chosenYours[2]!.toLowerCase()} ${chosenYours[3]}`;
+    scope = { ...chosenScope(chosenYours[2]!), ...(chosenYours[1] !== undefined ? { other: true } : {}) };
+    predicate = `${chosenYours[3]!.toLowerCase()} ${chosenYours[4]}`;
   } else if (chosenAll !== null) {
-    scope = { subtype: CHOSEN_TYPE, everyone: true };
-    predicate = `${chosenAll[1]!.toLowerCase()} ${chosenAll[2]}`;
+    scope = { ...chosenScope(chosenAll[1]!), everyone: true };
+    predicate = `${chosenAll[2]!.toLowerCase()} ${chosenAll[3]}`;
   }
   const yours = scope !== null ? null : /^(other )?(?:creatures|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) you control (get|have) (.+)$/i.exec(text);
   const everyone = /^All (?:([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) (get|have) (.+)$/.exec(text);

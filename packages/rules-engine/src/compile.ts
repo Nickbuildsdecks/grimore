@@ -51,7 +51,7 @@ import {
   stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
-import { CHOSEN_TYPE } from './effects.js';
+import { CHOSEN_COLOR, CHOSEN_TYPE } from './effects.js';
 
 /**
  * Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or
@@ -73,8 +73,10 @@ function enterChoiceOf(lines: readonly string[]): { kind: 'creature-type' | 'col
 /** Which choice a line's fragment reads (D641): "the chosen type", "the chosen color", or neither. */
 function choiceReadBy(fragment: Partial<CardScript>): 'creature-type' | 'color' | null {
   const json = JSON.stringify(fragment.statics ?? []);
-  if (json.includes(JSON.stringify(CHOSEN_TYPE))) return 'creature-type';
-  if (json.includes('"chosenColor"')) return 'color';
+  // A trigger's event is plain data, so "…a spell of the chosen color" shows in it too (D643).
+  const events = JSON.stringify((fragment.triggers ?? []).map((t) => t.on));
+  if (json.includes(JSON.stringify(CHOSEN_TYPE)) || events.includes('"ofChosen":"type"')) return 'creature-type';
+  if (json.includes('"chosenColor"') || json.includes(JSON.stringify(CHOSEN_COLOR)) || events.includes('"ofChosen":"color"')) return 'color';
   return null;
 }
 
@@ -83,10 +85,23 @@ function choiceReadBy(fragment: Partial<CardScript>): 'creature-type' | 'color' 
  * shrinks or locks creatures, away from the colour a protection static names, otherwise at the
  * controller's own deck.
  */
-function choiceAimOf(statics: CardScript['statics']): ChoiceAim {
+function choiceAimOf(statics: CardScript['statics'], triggers?: CardScript['triggers']): ChoiceAim {
+  /*
+    A cast trigger that watches **other players'** spells of the chosen colour or type (D643) —
+    Curse of Wizardry's "that player loses 1 life", Jeweled Torque's tax — is pointed at what the
+    opponents cast. Naming its own controller's colour would make Curse of Wizardry a curse on them.
+  */
+  for (const trigger of triggers ?? []) {
+    if (trigger.on.kind === 'spell-cast' && trigger.on.ofChosen !== undefined && (trigger.on.by ?? 'you') !== 'you') {
+      return 'hostile';
+    }
+  }
   for (const entry of statics ?? []) {
     if (entry.chosenColor === 'protection') return 'protection';
-    if (typeof entry.scope === 'object' && entry.scope.subtype === CHOSEN_TYPE) {
+    const chosenScope = typeof entry.scope === 'object'
+      && (('subtype' in entry.scope && entry.scope.subtype === CHOSEN_TYPE)
+        || ('color' in entry.scope && entry.scope.color === CHOSEN_COLOR));
+    if (chosenScope) {
       const e = entry.effect;
       if ((e.power ?? 0) < 0 || (e.toughness ?? 0) < 0 || e.doesntUntap === true || e.cantBlock === true || e.cantAttack === true) {
         return 'hostile';
@@ -886,7 +901,8 @@ function compileSingle(row: CardDataRow): Compilation {
   */
   if (built['entersChoice'] === 'creature-type' || built['entersChoice'] === 'color') {
     built['decisions'] = [enterChoiceDecision(
-      built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics']), enterChoice?.except,
+      built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics'], built['triggers'] as CardScript['triggers']),
+      enterChoice?.except,
     )];
   }
 

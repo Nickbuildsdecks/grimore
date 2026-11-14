@@ -47,7 +47,7 @@ import {
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
-  chosenOption, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
+  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -1529,6 +1529,19 @@ function fireTrigger(
   */
   if (trigger.on.kind === 'spell-cast' && trigger.on.targetsSelf === true
     && !(event.kind === 'spell-cast' && (event.targetIds ?? []).includes(holder))) return next;
+  /*
+    "…a spell of the chosen color / type" (D643): the watcher's own answer, so two Vanquisher's
+    Banners naming different tribes each draw for their own. A creature type is compared as the
+    subtypes are printed, case-insensitively, as `ofSubtypes` is.
+  */
+  if (trigger.on.kind === 'spell-cast' && trigger.on.ofChosen !== undefined && event.kind === 'spell-cast') {
+    const chosen = next.instances[holder]?.chosen;
+    const fits = trigger.on.ofChosen === 'color'
+      ? chosen?.color !== undefined && (event.colors ?? []).includes(chosen.color)
+      : chosen?.type !== undefined
+        && (event.subtypes ?? []).some((t) => t.toLowerCase() === chosen.type!.toLowerCase());
+    if (!fits) return next;
+  }
   /*
     The attachment, resolved here rather than in `triggerMatches` for the same reason `self` is:
     it is a fact about where the watcher *is*, not about what the event was.
@@ -5175,9 +5188,13 @@ type StaticEntry = NonNullable<CardScript['statics']>[number];
 export function withChosen(entry: StaticEntry, chosen: CardInstance['chosen']): StaticEntry | null {
   let next = entry;
   const scope = entry.scope;
-  if (typeof scope === 'object' && scope.subtype === CHOSEN_TYPE) {
+  if (typeof scope === 'object' && 'subtype' in scope && scope.subtype === CHOSEN_TYPE) {
     if (chosen?.type === undefined) return null;
     next = { ...next, scope: { ...scope, subtype: chosen.type } };
+  }
+  if (typeof scope === 'object' && 'color' in scope && scope.color === CHOSEN_COLOR) {
+    if (chosen?.color === undefined) return null;
+    next = { ...next, scope: { ...scope, color: chosen.color } };
   }
   if (next.effect.addSubtypes?.includes(CHOSEN_TYPE) === true) {
     if (chosen?.type === undefined) return null;
@@ -5211,7 +5228,13 @@ function applyStatics(
     if (entry === null) continue;
     const seq = next.autoSeq + 1;
     const scope: ContinuousEffect['scope'] =
-      typeof entry.scope === 'object'
+      typeof entry.scope === 'object' && 'color' in entry.scope
+        ? {
+            kind: 'controller-color', color: entry.scope.color as 'W' | 'U' | 'B' | 'R' | 'G',
+            ...(entry.scope.other === true ? { other: true as const } : {}),
+            ...(entry.scope.everyone === true ? { everyone: true as const } : {}),
+          }
+      : typeof entry.scope === 'object'
         ? {
             kind: 'controller-subtype', subtype: entry.scope.subtype,
             ...(entry.scope.other === true ? { other: true as const } : {}),

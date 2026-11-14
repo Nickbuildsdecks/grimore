@@ -1219,6 +1219,18 @@ export interface ContinuousEffect {
      * line are the layer-4 pass itself, which cannot have its own output, and
      * `combatDamagePrevented`, where nothing in the pool cares.
      */
+    /**
+     * "Creatures you control **of the chosen color** get +1/+1" (D643): creatures of a colour,
+     * yours or (`everyone`) anybody's. The colour is read from layer 5 alone — printed colours and
+     * any colour-setting effect — because a creature's whole characteristics are what this scope is
+     * helping to compute. See `layerFiveColours`.
+     */
+    | {
+        readonly kind: 'controller-color';
+        readonly color: Color;
+        readonly everyone?: true;
+        readonly other?: boolean;
+      }
     | {
         readonly kind: 'controller-subtype';
         readonly subtype: string;
@@ -1917,6 +1929,25 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   return count >= cond.atLeast;
 }
 
+/**
+ * A permanent's colours as far as layer 5 (D643): printed, then any effect that sets them, last
+ * one winning — what `characteristicsOf` computes, without the rest of it. A colour-scoped effect
+ * never sets a colour, so asking only the colour-setting effects cannot come back here.
+ */
+function layerFiveColours(
+  state: GameState, instance: CardInstance, creature: boolean, typeLine: TypeLine,
+): readonly Color[] {
+  const def = isFaceDownObject(instance) ? FACE_DOWN : state.cardDefs[instance.castAs ?? instance.defKey];
+  let colours: readonly Color[] = printedColors(def);
+  for (const effect of state.effects ?? []) {
+    if (effect.setColors === undefined || effect.scope.kind === 'controller-color') continue;
+    if (silenced(state, effect.source)) continue;
+    if (!effectApplies(state, effect, instance, creature, typeLine)) continue;
+    colours = effect.setColors;
+  }
+  return colours;
+}
+
 function effectApplies(
   state: GameState, effect: ContinuousEffect, instance: CardInstance,
   creature: boolean, typeLine: TypeLine,
@@ -1935,6 +1966,10 @@ function effectApplies(
       return creature && (effect.scope.everyone === true || instance.zoneSeat === effect.controller)
         && !(effect.scope.other === true && instance.id === effect.source)
         && hasSubtype(typeLine, effect.scope.subtype);
+    case 'controller-color':
+      return creature && (effect.scope.everyone === true || instance.zoneSeat === effect.controller)
+        && !(effect.scope.other === true && instance.id === effect.source)
+        && layerFiveColours(state, instance, creature, typeLine).includes(effect.scope.color);
     case 'all-creatures':
       return creature;
     /*

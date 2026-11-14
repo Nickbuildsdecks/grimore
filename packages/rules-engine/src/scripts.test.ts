@@ -10939,6 +10939,106 @@ describe('mana of the chosen color, and a land that chooses as it is played (D64
   });
 });
 
+describe('the chosen color as a scope, and casts of the chosen type or color (D643)', () => {
+  const row = (name: string, type: string, text: string, cost: string, colors: string[], pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors, layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Hall of Triumph', 'Legendary Artifact', 'As Hall of Triumph enters, choose a color.\nCreatures you control of the chosen color get +1/+1.', '{1}', []),
+    row('Alloy Golem', 'Artifact Creature — Golem', 'As Alloy Golem enters, choose a color.\nAlloy Golem is the chosen color.', '{1}', [], ['2', '2']),
+    row("Vanquisher's Banner", 'Artifact', "As Vanquisher's Banner enters, choose a creature type.\nCreatures you control of the chosen type get +1/+1.\nWhenever you cast a creature spell of the chosen type, draw a card.", '{1}', []),
+    row('Diamond Mare', 'Artifact Creature — Horse', 'As Diamond Mare enters, choose a color.\nWhenever you cast a spell of the chosen color, you gain 1 life.', '{1}', [], ['1', '3']),
+    row('Curse of Wizardry', 'Enchantment', 'As Curse of Wizardry enters, choose a color.\nWhenever a player casts a spell of the chosen color, that player loses 1 life.', '{1}', []),
+    row('Test Goblin', 'Creature — Goblin', '', '{R}', ['R'], ['1', '1']),
+    row('Test Elf', 'Creature — Elf', '', '{G}', ['G'], ['1', '1']),
+  ];
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => {
+    const deck = (id: string) => customDeck({
+      id, name: id,
+      entries: [
+        { name: 'Mountain', count: 12 }, { name: 'Forest', count: 12 }, { name: 'Test Goblin', count: 6 },
+        { name: 'Test Elf', count: 6 },
+        ...ROWS.slice(0, 5).map((r) => ({ name: r.name, count: 1 })),
+      ],
+      data: ROWS,
+    }).deck;
+    return advanceTo(arena({
+      decks: { 0: 'custom:a', 1: 'custom:b' },
+      deckSpecs: { 'custom:a': deck('custom:a'), 'custom:b': deck('custom:b') },
+      ...setup, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+  };
+  const castAndAnswer = (s0: GameState, name: string, option: string): GameState => {
+    let s = passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', name) }));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option }));
+    return s;
+  };
+
+  it('pumps your creatures of the chosen colour, including one made that colour', () => {
+    let s = table({
+      hands: { 0: ['Hall of Triumph', 'Alloy Golem'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Test Goblin', 'Test Elf'], 1: ['Test Elf'] },
+    });
+    s = tapAllLands(s, 0);
+    s = castAndAnswer(s, 'Hall of Triumph', 'green');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Elf'))).toBe(2);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Goblin'))).toBe(1);
+    // Yours only: the opponent's green Elf is untouched.
+    expect(power(s, find(s, 1, 'battlefield', 'Test Elf'))).toBe(1);
+    // A colourless Golem that chooses green is green, and so is pumped: the colour is read after the
+    // effect that sets it (layer 5), not off the printed card.
+    s = castAndAnswer(s, 'Alloy Golem', 'green');
+    const golem = find(s, 0, 'battlefield', 'Alloy Golem');
+    expect(characteristicsOf(s, s.instances[golem]!).colors).toEqual(['G']);
+    expect([power(s, golem), toughness(s, golem)]).toEqual([3, 3]);
+    // And the colour is the answer, not a constant: the same Hall choosing red pumps the Goblin.
+    let t = table({ hands: { 0: ['Hall of Triumph'] }, battlefield: { 0: ['Mountain', 'Test Goblin', 'Test Elf'] } });
+    t = castAndAnswer(t, 'Hall of Triumph', 'red');
+    expect([power(t, find(t, 0, 'battlefield', 'Test Goblin')), power(t, find(t, 0, 'battlefield', 'Test Elf'))]).toEqual([2, 1]);
+  });
+
+  it('draws for a creature spell of the chosen type, and not for another', () => {
+    let s = table({
+      hands: { 0: ["Vanquisher's Banner", 'Test Goblin', 'Test Elf'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Forest'] },
+    });
+    s = castAndAnswer(s, "Vanquisher's Banner", 'Goblin');
+    const hand = () => ids(s, 0, 'hand').length;
+    let before = hand();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Elf') })));
+    expect(hand()).toBe(before - 1);
+    before = hand();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Goblin') })));
+    s = drain(passBoth(s));
+    // The Goblin left the hand and the Banner drew one: the same size.
+    expect(hand()).toBe(before);
+    // And the anthem: the Goblin is a 2/2.
+    expect(power(s, find(s, 0, 'battlefield', 'Test Goblin'))).toBe(2);
+  });
+
+  it('gains life on a spell of the chosen colour only', () => {
+    let s = table({ hands: { 0: ['Diamond Mare', 'Test Goblin', 'Test Elf'] }, battlefield: { 0: ['Mountain', 'Mountain', 'Forest'] } });
+    s = castAndAnswer(s, 'Diamond Mare', 'green');
+    const start = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Goblin') })));
+    expect(life(s, 0)).toBe(start);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Elf') })));
+    s = drain(passBoth(s));
+    expect(life(s, 0)).toBe(start + 1);
+  });
+
+  it('aims a card that taxes everybody’s spells at the colour the opponents play', () => {
+    let s = table({
+      hands: { 0: ['Curse of Wizardry'] },
+      battlefield: { 0: ['Mountain', 'Test Goblin', 'Test Goblin'], 1: ['Test Elf', 'Test Elf'] },
+    });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Curse of Wizardry') }));
+    // Its own board is red; the opponent's is green, and the curse is for them.
+    expect(botAction(s, 0)).toEqual({ type: 'auto:decide', by: 0, cards: [], option: 'green' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

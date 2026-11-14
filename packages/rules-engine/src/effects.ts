@@ -2733,6 +2733,9 @@ export const ENTERS_COUNTER_OPTION = '+1/+1 counter';
  */
 export const CHOSEN_TYPE = 'the chosen type';
 
+/** "The chosen color" (D643), in a static scope's `color`: replaced on install, as `CHOSEN_TYPE` is. */
+export const CHOSEN_COLOR = 'the chosen color';
+
 export const chosenOption = (ctx: EffectContext, index = 0): string | null =>
   ctx.decisions[index]?.option ?? null;
 
