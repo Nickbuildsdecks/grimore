@@ -43355,3 +43355,51 @@ Each of the two widened patterns was broken on purpose (one at a time) and its t
 Pod sweep 48801–48840 (D620's build): 40 of 40 finished, no throw and no stall.
 
 Break run on D620's build: 5 deliberate faults, 5 caught.
+
+## D622 — conditions that compare you with an opponent
+
+Catch-up cards such as Knight of the White Orchid check whether they are behind. Their intervening
+"if" clauses were refused, so the whole trigger went unread:
+- "if an opponent controls more lands than you"
+- "if you control fewer creatures than an opponent" (and the lands/creatures pairs either way round)
+- "if an opponent has more life than you"
+- "if you have more life than an opponent"
+
+`interveningConditionRows` now reads these. One live opponent who is ahead (or behind) is enough;
+eliminated seats are skipped. Lands are counted by type line and creatures by current
+characteristics, so an animated land counts as a creature while it is one.
+
+**Still refused, on purpose:** the same comparison with artifacts, enchantments or cards in hand
+(e.g. Mardu Hordechief's row in `compile.test.ts` now uses "more artifacts", which is not read).
+
+**Tests.** 3 new engine tests:
+- The rows read.
+- Enters with more lands behind: the trigger fires (23 life); level on lands: it does not (20).
+- Fewer creatures than an opponent (two Bears against the Pup), and less life (25 vs 20).
+
+Three faults were injected by hand (`>=` in place of `>` for the counts, the kind fixed to land, and
+`>=` for life). Each one was caught.
+
+    engine tests: 4,389, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,257 of 31,653 (was 10,251); lines read 28,470 of 59,306 (48.0%, was 28,461)
+
+Pod sweep 48901–48940 (D621's build): 40 of 40 finished, no throw and no stall.
+
+### The break harness was not running the tests
+
+The rewritten `break-par.py` (after the container restart) built each working copy without the
+repository's root `tsconfig.base.json`. Vitest then failed to load all 16 test files. That non-zero
+exit was counted as "caught", so **the break results reported for D618, D619, D620 and D621 are void.**
+The hand-injected faults recorded in each of those entries ran in the real tree and still stand.
+
+What changed:
+- The harness now copies the root tsconfig files.
+- A non-zero exit counts as caught only when tests actually failed. Otherwise the fault is reported
+  INVALID.
+- A no-op fault is now reported UNCAUGHT, with 4,386 tests passing, as it should be.
+
+The four runs have been queued again on their own snapshots, and their results will be recorded in
+the next entry.

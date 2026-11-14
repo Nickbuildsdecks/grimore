@@ -17845,8 +17845,9 @@ describe('the second condition vocabulary, and the ability word in front of it (
   it.each([
     ['coven, which counts distinct powers',
       'Coven — At the beginning of your end step, if you control three or more creatures with different powers, draw a card.'],
-    ['a comparison between two players',
-      'When Mardu Hordechief enters, if an opponent controls more lands than you, draw a card.'],
+    // "an opponent controls more lands than you" reads since D622; artifacts are not compared yet.
+    ['a comparison between two players it does not count',
+      'When Mardu Hordechief enters, if an opponent controls more artifacts than you, draw a card.'],
     ['a per-turn fact the engine does not keep',
       // Descended is kept since D612; scrying is not.
       'When Mardu Hordechief enters, if you scried this turn, draw a card.'],

@@ -47022,3 +47022,54 @@ describe('Auras on lands and other permanents state their bonus too (D621)', () 
     expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === host && p.grantedBy !== undefined)).toBe(true);
   });
 });
+
+describe('conditions that compare you with an opponent (D622)', () => {
+  /*
+    "if an opponent controls more lands than you" (and creatures, and "you control fewer … than an
+    opponent"), "if an opponent has more life than you", "if you have more life than an opponent".
+    Any one opponent will do.
+  */
+  const card = (name: string, condition: string) => ({
+    name, type_line: 'Creature — Dog', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: `When ${name} enters, if ${condition}, you gain 3 life.`,
+  });
+  const LANDS = card('Test Warhound', 'an opponent controls more lands than you');
+  const FEWER = card('Test Pup', 'you control fewer creatures than an opponent');
+  const BEHIND = card('Test Underdog', 'an opponent has more life than you');
+  const ROWS = [LANDS, FEWER, BEHIND];
+  const deck = customDeck({
+    id: 'parity', name: 'Parity',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 50 }],
+    data: ROWS as never[],
+  });
+  const enter = (name: string, mine: readonly string[], theirs: readonly string[], theirLife = 20): number => {
+    let s = advanceTo(arena({
+      decks: { 0: 'parity', 1: 'parity' }, deckSpecs: { parity: deck.deck },
+      hands: { 0: [name] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: theirLife } : seat)) };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 20);
+    return life(s, 0);
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('more lands: yes when they have more, no when equal', () => {
+    expect(enter('Test Warhound', ['Plains'], ['Plains', 'Plains'])).toBe(23);
+    expect(enter('Test Warhound', ['Plains', 'Plains'], ['Plains', 'Plains'])).toBe(20);
+  });
+
+  it('fewer creatures, and less life', () => {
+    // The Pup counts itself once it has entered (the condition is asked then), so two against one.
+    expect(enter('Test Pup', ['Plains'], ['Grizzly Bears', 'Grizzly Bears'])).toBe(23);
+    expect(enter('Test Pup', ['Plains', 'Grizzly Bears', 'Grizzly Bears'], ['Grizzly Bears'])).toBe(20);
+    expect(enter('Test Underdog', ['Plains'], [], 25)).toBe(23);
+    expect(enter('Test Underdog', ['Plains'], [], 20)).toBe(20);
+  });
+});

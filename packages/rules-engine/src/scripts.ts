@@ -23590,6 +23590,33 @@ function interveningConditionRows(
     return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
   }
   // "If you descended this turn" (D612): a permanent card went to your graveyard this turn.
+  /*
+    Comparisons with an opponent (D622): "if an opponent controls more lands than you" — white's
+    catch-up ramp (Loyal Warhound, Scouting Hawk, Knight of the White Orchid) — and its creature and
+    life cousins. Any one opponent will do, as printed; a seat that has left the game is not one.
+  */
+  const comparison = /^an opponent controls more (lands|creatures) than you$/i.exec(text)
+    ?? /^you control fewer (lands|creatures) than an opponent$/i.exec(text);
+  if (comparison !== null) {
+    const kind = comparison[1]!.toLowerCase() === 'lands' ? 'land' : 'creature';
+    const count = (state: GameState, seat: SeatIndex): number => listAt(state, zoneKey(seat, 'battlefield'))
+      .filter((id) => {
+        const inst = state.instances[id];
+        if (inst === undefined) return false;
+        const ch = characteristicsOf(state, inst);
+        return kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, 'land');
+      }).length;
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
+      && count(c.state, seat.index) > count(c.state, c.controller));
+  }
+  if (/^an opponent has more life than you$/i.test(text)) {
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
+      && seat.life > (c.state.seats[c.controller]?.life ?? 0));
+  }
+  if (/^you have more life than an opponent$/i.test(text)) {
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
+      && seat.life < (c.state.seats[c.controller]?.life ?? 0));
+  }
   if (/^you descended this turn$/i.test(text)) {
     return (c) => turnFacts.descended(c.state, c.controller) > 0;
   }
