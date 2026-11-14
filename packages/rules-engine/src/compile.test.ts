@@ -12499,8 +12499,11 @@ describe('"Activate only once each turn" (D508)', () => {
       whole-or-nothing rule, where it matters most. A restriction read in half is an ability the
       table offers at a moment the card forbids — worse than an unread line (D362) — so a clause
       this does not know refuses the line rather than dropping the sentence.
+
+      D623 reads "Activate only if <condition>" through the trigger's condition reader, so the
+      board condition here is now one that reader does not know.
     */
-    ['a board condition', 'Activate only if there are seven or more cards in your graveyard.'],
+    ['a board condition', 'Activate only if creatures you control have total power 8 or greater.'],
   ])('refuses the whole line for a restriction it cannot read: %s', (_label, tail) => {
     const read = once(`{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. ${tail as string}`);
     expect(read.ok).toBe(true);
@@ -12604,7 +12607,7 @@ describe('"Activate only during …", the three timing clauses (D509)', () => {
   });
 
   it.each([
-    ['a board condition', 'Activate only if there are seven or more cards in your graveyard.'],
+    ['a board condition', 'Activate only if creatures you control have total power 8 or greater.'],
     ['an opponent\'s turn', 'Activate only during an opponent\'s turn.'],
     ['a narrower combat window', 'Activate only during combat after blockers are declared.'],
   ])('still refuses the whole line for a clause it cannot read: %s', (_label, tail) => {

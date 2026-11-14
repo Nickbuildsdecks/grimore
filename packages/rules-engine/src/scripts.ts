@@ -66,7 +66,7 @@ import type { EffectFn } from './effects.js';
   No cycle: `fromCardData.ts` imports `cards`, `characteristics`, `effects`, `mana` and the script
   types, and none of them is this file.
 */
-import { keywordWithCost } from './fromCardData.js';
+import { isManaAbilityLine, keywordWithCost } from './fromCardData.js';
 import { costValue, parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
@@ -21565,10 +21565,11 @@ interface ActivationFlags {
   sorcerySpeed?: true;
   onceEachTurn?: true;
   timing?: ActivationTiming;
+  activateOnlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
 }
 
 function activationRestriction(
-  text: string,
+  text: string, name: string,
 ): { readonly rest: string; readonly flags: ActivationFlags } | null {
   const found = /^(.*?)\.?\s*Activate only\s+(.+?)\.?\s*$/i.exec(text);
   if (found === null) return { rest: text, flags: {} };
@@ -21597,6 +21598,20 @@ function activationRestriction(
     } else if (clause === 'during your turn') {
       if (flags.timing !== undefined) return null;
       flags.timing = 'your-turn';
+    } else if (clause.startsWith('if ')) {
+      /*
+        "Activate only if <condition>" (D623): the same conditions a trigger's "if" clause reads,
+        through the same reader, asked of the board when the ability is offered and again when it
+        is activated (`AbilityDef.activateOnlyIf`). "Activate only if there are seven or more cards
+        in your graveyard", "… if you control a Swamp", "… if an opponent controls more lands than
+        you". A condition that reader refuses refuses the line, and so does a second "if" clause.
+      */
+      if (flags.activateOnlyIf !== undefined) return null;
+      const condition = interveningConditionFor(part.trim().slice(3), name);
+      if (condition === null) return null;
+      flags.activateOnlyIf = (state, source, controller) => condition({
+        state, source, controller, targets: [], x: 0, decisions: [], kicked: false,
+      });
     } else return null;
   }
   return { rest: found[1]!, flags };
@@ -21673,6 +21688,31 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     return { abilities: abilities.map((ability) => ({ ...ability, description: text })) };
   }
   /*
+    **An ability word in front of an activated ability that restates it** (D623): "Threshold — {R},
+    {T}, Sacrifice Barbarian Ring: It deals 2 damage to any target. Activate only if there are seven
+    or more cards in your graveyard." Metalcraft, hellbent and morbid print the same shape.
+
+    The label comes off only when what is left reads with an "Activate only if" condition
+    (`activateOnlyIf`), because then the condition the label names is written out and
+    `activationRestriction` has read it; without that sentence the label would be the only thing
+    restricting the ability, and dropping it would offer the ability always. Keyword costs ("Boast —", "Exhaust —") are never labels here, by
+    `withoutAbilityWord`'s list. The description keeps the label, as the button shows the card.
+  */
+  const unlabelled = withoutAbilityWord(text);
+  if (unlabelled !== text) {
+    const inner = abilityFromLine(unlabelled, name);
+    const abilities = inner?.abilities ?? [];
+    if (abilities.length === 0 || abilities.some((ability) => ability.activateOnlyIf === undefined)) return null;
+    /*
+      A line that promises mana must come out as a mana ability or not at all (D497, and
+      `isManaAbilityLine`). With the label on, `compile.ts` never saw it as one, so the check is
+      made here: Urza's Workshop's "Add {C} for each Urza's land" read as an effect would use the
+      stack and make mana nobody could pay with.
+    */
+    if (isManaAbilityLine(unlabelled) && abilities.some((ability) => ability.produces === undefined)) return null;
+    return { abilities: abilities.map((ability) => ({ ...ability, description: text })) };
+  }
+  /*
     The cost, then a colon, then the clause. Every comma-separated component of the cost has to
     classify as something `AbilityCost` can say, and one that does not refuses the line — see the
     docblock for why a dropped cost component is worse than no reading.
@@ -21698,7 +21738,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     *when* the ability may be activated, and the clause vocabulary below is about what it does. A
     line whose restriction were left in would fail to read at all, which is what has been happening.
   */
-  const restricted = activationRestriction(split[2]!.trim());
+  const restricted = activationRestriction(split[2]!.trim(), name);
   if (restricted === null) return null;
   const clause = restricted.rest.replace(/\.\s*$/, '').trim();
   /** The flags the restriction sets, spread into whichever branch below reads the rest of the line. */

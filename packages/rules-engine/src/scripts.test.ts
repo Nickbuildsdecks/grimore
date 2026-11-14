@@ -47073,3 +47073,108 @@ describe('conditions that compare you with an opponent (D622)', () => {
     expect(enter('Test Underdog', ['Plains'], [], 20)).toBe(20);
   });
 });
+
+describe('"Activate only if <condition>" (D623)', () => {
+  /*
+    The trailing restriction on an activated ability, read through the same reader as a trigger's
+    "if" clause. Checked in both places a restriction lives: where the ability is offered and where
+    the activation is applied.
+  */
+  const creature = (name: string, oracle: string) => ({
+    name, type_line: 'Creature — Scout', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: oracle,
+  });
+  const WAYFARER = creature('Test Wayfarer', '{1}: You gain 2 life. Activate only if an opponent controls more lands than you.');
+  const TINKER = creature('Test Tinker', '{1}: You gain 2 life. Activate only if you control two or more artifacts.');
+  const TRUDGE = creature('Test Trudge',
+    '{1}: Return Test Trudge from your graveyard to your hand. Activate only if you control two or more artifacts.');
+  const COG = { name: 'Test Cog', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  // An ability word in front, restated by the sentence at the end (Threshold, Metalcraft, …).
+  const RING = creature('Test Ring',
+    'Threshold — {1}: You gain 4 life. Activate only if there are seven or more cards in your graveyard.');
+  const OPAL = { ...COG, name: 'Test Opal',
+    oracle_text: 'Metalcraft — {T}: Add one mana of any color. Activate only if you control three or more artifacts.' };
+  const ROWS = [WAYFARER, TINKER, TRUDGE, RING, OPAL];
+  const deck = customDeck({
+    id: 'only-if', name: 'Only If',
+    entries: [...[...ROWS, COG].map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 52 }],
+    data: [...ROWS, COG] as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[], graveyard: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'only-if', 1: 'only-if' }, deckSpecs: { 'only-if': deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, graveyard: { 0: [...graveyard] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offers = (s: GameState, card: string) => legalActions(s, 0 as SeatIndex).plays
+    .filter((p) => p.kind === 'activate' && p.card === card).length;
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('an opponent with more lands: offered and gains; with as many: neither offered nor applied', () => {
+    let s = table(['Test Wayfarer', 'Plains'], ['Plains', 'Plains']);
+    let me = find(s, 0, 'battlefield', 'Test Wayfarer');
+    const act = (card: string) => ({ type: 'auto:activate' as const, by: 0 as SeatIndex, card, abilityIndex: 0 });
+    expect(offers(s, me)).toBe(1);
+    s = passBoth(apply(s, act(me)));
+    expect(life(s, 0)).toBe(22);
+
+    s = table(['Test Wayfarer', 'Plains', 'Plains'], ['Plains', 'Plains']);
+    me = find(s, 0, 'battlefield', 'Test Wayfarer');
+    expect(offers(s, me)).toBe(0);
+    expect(refusal(s, act(me))).toContain('cannot be activated right now');
+  });
+
+  it('a count of your artifacts, asked live', () => {
+    let s = table(['Test Tinker', 'Test Cog', 'Plains'], []);
+    const me = find(s, 0, 'battlefield', 'Test Tinker');
+    expect(offers(s, me)).toBe(0);
+    s = table(['Test Tinker', 'Test Cog', 'Test Cog', 'Plains'], []);
+    expect(offers(s, find(s, 0, 'battlefield', 'Test Tinker'))).toBe(1);
+  });
+
+  it('from the graveyard too', () => {
+    let s = table(['Test Cog', 'Plains'], [], ['Test Trudge']);
+    expect(offers(s, find(s, 0, 'graveyard', 'Test Trudge'))).toBe(0);
+    s = table(['Test Cog', 'Test Cog', 'Plains'], [], ['Test Trudge']);
+    const trudge = find(s, 0, 'graveyard', 'Test Trudge');
+    expect(offers(s, trudge)).toBe(1);
+    const inHand = (state: GameState) => namesIn(state, 0, 'hand').filter((n) => n === 'Test Trudge').length;
+    const before = inHand(s);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: trudge, abilityIndex: 0 } as Action));
+    expect(inHand(s)).toBe(before + 1);
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Trudge');
+  });
+
+  it('an ability word in front comes off only when the line restates it', () => {
+    const SIX = ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains'];
+    let s = table(['Test Ring', 'Plains'], [], SIX);
+    expect(offers(s, find(s, 0, 'battlefield', 'Test Ring'))).toBe(0);
+    s = table(['Test Ring', 'Plains'], [], [...SIX, 'Plains']);
+    const ring = find(s, 0, 'battlefield', 'Test Ring');
+    expect(offers(s, ring)).toBe(1);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: 0 } as Action));
+    expect(life(s, 0)).toBe(24);
+    // The button shows the card as printed, label and all.
+    const read = compileCard(RING as never);
+    expect(read.ok && read.script?.abilities?.[0]?.description).toMatch(/^Threshold — /);
+    // Without the sentence the label is the only restriction, and the line stays unread.
+    const bare = compileCard({ ...RING, oracle_text: 'Threshold — {1}: You gain 4 life.' } as never);
+    expect(bare.ok && bare.unread).toHaveLength(1);
+  });
+
+  it('a labelled mana ability stays a mana ability, and holds back until the condition is met', () => {
+    const opalSource = (s: GameState) => manaSources(s, 0 as SeatIndex)
+      .some((entry) => entry.key === find(s, 0, 'battlefield', 'Test Opal'));
+    expect(opalSource(table(['Test Opal', 'Test Cog'], []))).toBe(false);
+    expect(opalSource(table(['Test Opal', 'Test Cog', 'Test Cog'], []))).toBe(true);
+    // A mana line the mana readers cannot read is refused rather than read as a stack ability.
+    const workshop = compileCard({ ...OPAL, name: 'Test Workshop', oracle_text:
+      "Metalcraft — {T}: Add {C} for each Urza's land you control. Activate only if you control three or more artifacts." } as never);
+    expect(workshop.ok && workshop.unread).toHaveLength(1);
+  });
+});

@@ -25937,3 +25937,82 @@ What changed:
 
 The four runs have been queued again on their own snapshots, and their results will be recorded in
 the next entry.
+
+## D623 — "Activate only if <condition>", and ability words that restate it
+
+`activationRestriction` read four clauses after "Activate only": "as a sorcery", "once each turn",
+and the turn-timing clauses. Any "if" refused the line.
+
+**Now read:** an `if <condition>` clause goes through `interveningConditionFor`, the reader a
+trigger's "if" clause already uses. It becomes `AbilityDef.activateOnlyIf`, which three places
+already enforce:
+- `legalActions`, where the ability is offered (battlefield, graveyard and hand alike);
+- `autoActions`, where an activation is applied;
+- `manaSources`, for a mana ability (D617).
+
+A second "if" clause, or a condition the reader refuses, still refuses the line.
+
+**Ability words in front of an activated line.** The 28 legal lines below print a label and then
+restate it in the trailing sentence:
+- "Threshold — {R}, {T}, Sacrifice Barbarian Ring: … Activate only if there are seven or more cards
+  in your graveyard."
+- Metalcraft, Hellbent, Delirium, Morbid, Ferocious and Corrupted print the same shape.
+
+`abilityFromLine` now takes the label off, but only when what is left reads **with** an
+`activateOnlyIf`. Without that sentence the label is the only restriction, and the line stays
+unread. The button keeps the printed text, label included.
+
+**A guard came with it.** A labelled mana line ("Metalcraft — {T}: Add …") is not seen as one by
+`compile.ts`'s `isManaAbilityLine`, so D497's rule is applied here instead: the result must be a real
+mana ability (`produces`) or nothing. Urza's Workshop ("Add {C} for each Urza's land you control")
+would otherwise have become a stack ability adding mana, so it stays unread. Mox Opal, Fanatic of
+Rhonas and Whisperer of the Wilds are mana abilities that hold back until their condition is met.
+
+**Still unread:**
+- "creatures you control have total power 8 or greater" (9 lines).
+- The Tainted lands' "Activate only if you control a Swamp" on a plain `{T}: Add` line. The mana
+  reader refuses any second sentence it does not know.
+- "Activate only if this land entered this turn or if you control a basic land" (5).
+
+The two older refusal rows in `compile.test.ts` that used "seven or more cards in your graveyard"
+now use the total-power condition.
+
+**Tests.** 6 new engine tests:
+- The rows read.
+- An opponent with more lands: the ability is offered and gains life; with as many lands it is
+  neither offered nor applied.
+- A live count of your artifacts.
+- The same restriction on an ability used from the graveyard.
+- A Threshold label: off with the sentence, on (unread) without it; the button keeps the label.
+- A Metalcraft mana ability is not a mana source with two artifacts, and is one with three. The
+  Workshop shape is refused.
+
+Faults injected by hand, each caught:
+- The condition always true.
+- The check removed from `legalActions`.
+- The check removed from `autoActions`.
+- The `activateOnlyIf` requirement removed from the label branch.
+- The mana guard removed.
+- The printed description dropped.
+
+A regex pre-check I had first written was redundant with the `activateOnlyIf` requirement: each was
+enough alone, so a fault in either went uncaught. It was removed.
+
+    engine tests: 4,395, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,304 of 31,653 (was 10,257); lines read 28,523 of 59,306 (48.1%, was 28,470)
+
+Pod sweep 49001–49040 (D622's build): 40 of 40 finished, no throw and no stall.
+
+### Break runs on the repaired harness
+
+| Build | Caught | Missed |
+|---|---|---|
+| D622 | 3 of 4 | A player who has left the game counted as the opponent who is ahead |
+| D621 | 1 of 2 | The Equipment subject widened to "equipped land" |
+| D620 | 3 of 5 | The head of a quoted grant ignored; the grantor guard turned off |
+| D619 | 2 of 2 so far | The third fault was still running |
+
+D618 is still running. The misses will be pinned in the next commit.
