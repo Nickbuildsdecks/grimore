@@ -2726,6 +2726,13 @@ export const chosenCard = (ctx: EffectContext, index = 0): string | null =>
  */
 export const ENTERS_COUNTER_OPTION = '+1/+1 counter';
 
+/**
+ * "The chosen type" (D641), written where a creature type goes in a static — a scope's `subtype` or
+ * an `addSubtypes` entry — and replaced, as the static is installed, by the type the permanent
+ * chose as it entered. Two words with a space, so it can never be a real subtype.
+ */
+export const CHOSEN_TYPE = 'the chosen type';
+
 export const chosenOption = (ctx: EffectContext, index = 0): string | null =>
   ctx.decisions[index]?.option ?? null;
 

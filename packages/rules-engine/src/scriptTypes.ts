@@ -1578,6 +1578,14 @@ export interface ChoiceDecisionSpec {
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];
   /**
+   * The words worked out **when the question is asked**, in place of `options` (D641).
+   *
+   * "Choose a creature type" means any of several hundred. The table offers the ones that can
+   * matter: the types on the chooser's own cards, then the types on any battlefield or graveyard,
+   * which everybody can see. `options` is still the fallback for a reader with no state.
+   */
+  readonly optionsFor?: (state: GameState, chooser: SeatIndex) => readonly string[];
+  /**
    * Which word the engine's own opponent picks, written by the card.
    *
    * It has to live here, because only the card knows what its words *mean*: "Vampire" is a
@@ -2679,7 +2687,7 @@ export interface CardScript {
    * conditional static and lives in `statics`, where a counter from any source turns it on, which
    * is what the card says.
    */
-  readonly entersChoice?: 'riot' | 'unleash';
+  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color';
   /**
    * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
    *
@@ -3289,6 +3297,12 @@ export interface CardScript {
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
       | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean };
     readonly effect: PumpOptions;
+    /**
+     * Filled in from the colour this permanent chose as it entered (D641): `protection` adds
+     * protection from it, `color` makes the permanent that colour. A permanent that chose nothing
+     * installs nothing for this entry.
+     */
+    readonly chosenColor?: 'protection' | 'color';
   }[];
   /**
    * **Soulbond** (CR 702.95): pair this creature with another unpaired creature you control as

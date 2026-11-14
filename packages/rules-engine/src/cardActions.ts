@@ -395,6 +395,8 @@ export function relocate(
     ...(toZone === 'battlefield' ? {} : { frozen: false }),
     // And a Class's level (D638), which belongs to the object that gained it.
     ...(toZone === 'battlefield' ? {} : { classLevel: undefined }),
+    // And what it chose as it entered (D641): the next object chooses again.
+    ...(toZone === 'battlefield' ? {} : { chosen: undefined }),
     counters: toZone !== 'battlefield'
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,

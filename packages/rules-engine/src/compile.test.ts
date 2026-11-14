@@ -35,23 +35,18 @@ for (const deck of Object.values(STARTER_DECKS)) {
 /**
  * A pool card that is **partly** read: some lines compile and at least one does not.
  *
- * Named rather than searched for, so the test below says which card it is about. Obelisk of Urd
- * prints three lines — "Convoke", which this compiler reads into a cost, and two it does not: "As
- * Obelisk of Urd enters the battlefield, choose a creature type." and "Creatures you control of the
- * chosen type get +2/+2." The pair is what hybrid automation (D362) is for, and the card needs
- * **two** readers rather than one, which is part of why it was chosen.
+ * Named rather than searched for, so the test below says which card it is about. Willbender prints
+ * a morph cost, which this compiler reads, and "When Willbender is turned face up, change the target
+ * of target spell or ability with a single target.", which it does not.
  *
- * **It is expected to stop being true**, and it has twice. D447 moved it off Mystic Remora, whose
- * sentence that increment learned to read; D528 moved it off **Contagion Clasp**, whose only unread
- * line was "{4}, {T}: Proliferate." until proliferate joined the clause vocabulary. Each time the
- * test failed loudly, which is the right failure: whoever reads the line moves this constant to
- * another partly-read card and says so.
- *
- * The next candidates, measured rather than guessed — 12 pool cards satisfy this test's four
- * assertions, and the most durable after this one are Willbender (a retarget on a turned-face-up
- * trigger) and Thing in the Ice (a two-sentence line ending in a transform).
+ * **It is expected to stop being true**, and it has three times. D447 moved it off Mystic Remora,
+ * whose sentence that increment learned to read; D528 moved it off **Contagion Clasp**, whose only
+ * unread line was "{4}, {T}: Proliferate." until proliferate joined the clause vocabulary; D641 moved
+ * it off **Obelisk of Urd**, when "as it enters, choose a creature type" and "the chosen type" were
+ * both read. Each time the test failed loudly, which is the right failure: whoever reads the line
+ * moves this constant to another partly-read card and says so.
  */
-const PARTLY_READ_CARD = 'Obelisk of Urd';
+const PARTLY_READ_CARD = 'Willbender';
 
 /** A card's own printed data, as the row an importer would hand over. */
 function rowFor(name: string): CardDataRow {
@@ -18260,5 +18255,31 @@ describe('the dig: what the reader takes and what it leaves (D584)', () => {
       } as never);
       expect(compiled.ok && compiled.unread.map((u) => u.line), text).toEqual([]);
     }
+  });
+});
+
+describe('"as it enters, choose" and the lines that read the answer (D641)', () => {
+  const card = (text: string, type = 'Artifact') => compileCard({
+    name: 'Test Chooser', type_line: type, oracle_text: text, mana_cost: '{2}', cmc: 2, colors: [],
+    layout: 'normal', ...(type.includes('Creature') ? { power: '2', toughness: '2' } : {}),
+  } as never);
+
+  it('reads the choice and the statics that use it, with the type left to fill in', () => {
+    const r = card('As Test Chooser enters, choose a creature type.\nCreatures you control of the chosen type get +1/+1.');
+    expect(r.ok && r.unread).toEqual([]);
+    expect(r.ok && r.script?.entersChoice).toBe('creature-type');
+    expect(r.ok && r.script?.statics).toEqual([{ scope: { subtype: 'the chosen type' }, effect: { power: 1, toughness: 1 } }]);
+    const golem = card('As Test Chooser enters, choose a color.\nTest Chooser is the chosen color.', 'Artifact Creature — Golem');
+    expect(golem.ok && golem.unread).toEqual([]);
+    expect(golem.ok && golem.script?.statics).toEqual([{ scope: 'self', effect: {}, chosenColor: 'color' }]);
+    const others = card('As Test Chooser enters, choose a creature type.\nOther creatures you control of the chosen type get +1/+1.');
+    expect(others.ok && others.script?.statics?.[0]?.scope).toEqual({ subtype: 'the chosen type', other: true });
+  });
+
+  it('refuses "the chosen type" on a card that never chose one, or chose a colour instead', () => {
+    const none = card('Creatures you control of the chosen type get +1/+1.');
+    expect(none.ok && none.unread.map((u) => u.line)).toEqual(['Creatures you control of the chosen type get +1/+1.']);
+    const wrong = card('As Test Chooser enters, choose a color.\nCreatures of the chosen type get +1/+1.');
+    expect(wrong.ok && wrong.unread.map((u) => u.line)).toEqual(['Creatures of the chosen type get +1/+1.']);
   });
 });

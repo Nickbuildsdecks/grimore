@@ -34,7 +34,7 @@ import {
   counterUnlessPaid, createToken,
   REGENERATION, dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
-  chosenOption, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
@@ -6700,16 +6700,17 @@ const DISALLOW: CardScript = {
   that window would leave a creature type chosen and nothing pumping it. There is no such window
   here, and that is not an accident of where the code went.
 
-  The other half is that each card installs its own continuous effect from its own `onResolve`,
-  rather than declaring a `statics` entry. A declared static is a fixed thing the engine installs on
-  arrival; these two are not fixed until somebody answers, so the effect is built with the answer in
-  it. `duration: 'permanent'` means "while the source is on the battlefield", so pushing it a moment
-  before the permanent gets there is fine — state-based actions, which are what purge an effect
-  whose source has gone, do not run in the middle of a resolution.
+  The other half used to be that each card installed its own continuous effect from its own
+  `onResolve`. Since D641 the answer is kept on the permanent (`CardInstance.chosen`) and the
+  effect is an ordinary `statics` entry with "the chosen type" or "the chosen color" in it, filled
+  in as the static is installed on arrival — which every way onto the battlefield passes through,
+  so a reanimated Obelisk has a type too. The compiler reads the same shape off printed text.
 */
 
 /**
- * The creature types worth choosing between: every one with eight or more copies in the pool.
+ * The fallback creature types, for a table with fewer than two types of its own to offer: every one
+ * with eight or more copies in the pool. Since D641 the offer is `creatureTypeOptions`, the types
+ * this table can see.
  *
  * A derived list rather than a judged one, and the honest deviation from the printed card is in
  * the same sentence — Obelisk of Urd says "choose a creature type", meaning any of several hundred.
@@ -6721,27 +6722,6 @@ const CHOOSABLE_TYPES: readonly string[] = [
   'Human', 'Vampire', 'Shaman', 'Monk', 'Wizard', 'Soldier', 'Warrior', 'Knight', 'Goblin', 'Elf',
   'Cat', 'Wall', 'Zombie',
 ];
-
-/** The type this seat controls the most of, for the bot. Ties go to the earlier type in the list. */
-function commonestTypeOf(state: GameState, seat: SeatIndex): string | undefined {
-  const counts = new Map<string, number>();
-  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
-    const inst = state.instances[id];
-    if (inst === undefined) continue;
-    const ch = characteristicsOf(state, inst);
-    if (!ch.isCreature) continue;
-    for (const type of CHOOSABLE_TYPES) {
-      if (hasSubtype(ch.typeLine, type)) counts.set(type, (counts.get(type) ?? 0) + 1);
-    }
-  }
-  let best: string | undefined;
-  let most = 0;
-  for (const type of CHOOSABLE_TYPES) {
-    const n = counts.get(type) ?? 0;
-    if (n > most) { most = n; best = type; }
-  }
-  return best;
-}
 
 /**
  * Obelisk of Urd: convoke, choose a creature type, and that type gets +2/+2.
@@ -6756,21 +6736,14 @@ function commonestTypeOf(state: GameState, seat: SeatIndex): string | undefined 
 const OBELISK_OF_URD: CardScript = {
   name: 'Obelisk of Urd',
   convoke: true,
-  decisions: [{
-    who: 'controller',
-    prompt: 'Choose a creature type',
-    options: CHOOSABLE_TYPES,
-    best: commonestTypeOf,
-  }],
-  onResolve: (c) => {
-    const type = chosenOption(c);
-    if (type === null) return c.state;
-    return staticEffect(
-      c.state, c.source, c.controller,
-      { kind: 'controller-subtype', subtype: type },
-      { power: 2, toughness: 2 },
-    );
-  },
+  /*
+    The general "as it enters, choose" since D641: the answer is kept on the permanent and the
+    anthem is a static filled in from it, so a reanimated Obelisk gets a type too, and the offer is
+    this table's types rather than a fixed thirteen.
+  */
+  entersChoice: 'creature-type',
+  decisions: [enterChoiceDecision('creature-type', 'friendly')],
+  statics: [{ scope: { subtype: CHOSEN_TYPE }, effect: { power: 2, toughness: 2 } }],
 };
 
 /** The five colours as words, because a button saying "W" is a button nobody can read. */
@@ -6826,22 +6799,188 @@ function colourToFear(state: GameState, seat: SeatIndex): string | undefined {
  */
 const VOICE_OF_ALL: CardScript = {
   name: 'Voice of All',
-  decisions: [{
-    who: 'controller',
-    prompt: 'Choose a colour',
-    options: COLOUR_OPTIONS,
-    best: colourToFear,
-  }],
-  onResolve: (c) => {
-    const word = chosenOption(c);
-    const colour = word === null ? undefined : COLOUR_WORDS[word];
-    if (colour === undefined) return c.state;
-    return staticEffect(
-      c.state, c.source, c.controller, { kind: 'cards', ids: [c.source] },
-      { protectionFrom: [colour] },
-    );
-  },
+  // The general "as it enters, choose a color" since D641 — see Obelisk of Urd.
+  entersChoice: 'color',
+  decisions: [enterChoiceDecision('color', 'protection')],
+  statics: [{ scope: 'self', effect: {}, chosenColor: 'protection' }],
 };
+
+// ── "As ~ enters, choose a creature type / a color" (D641) ────────────────────────────────────
+
+/** The creature types printed on a card definition, or none for a card that is not a creature or kindred. */
+function creatureTypesOf(def: CardDef | undefined): readonly string[] {
+  if (def === undefined) return [];
+  const line = parseTypeLine(def.typeLine);
+  if (!line.types.some((t) => t === 'Creature' || t === 'Kindred' || t === 'Tribal')) return [];
+  return line.subtypes.filter((t) => isCreatureType(t));
+}
+
+/** How many of this seat's own cards, in every zone, carry each creature type: the seat's own decklist. */
+function ownTypeCounts(state: GameState, seat: SeatIndex): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const inst of Object.values(state.instances)) {
+    if (inst.owner !== seat) continue;
+    for (const type of creatureTypesOf(state.cardDefs[inst.defKey])) counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The creature types a "choose a creature type" offers (D641): the types on the chooser's own
+ * cards, commonest first, then every other type on a battlefield or in a graveyard, which the
+ * whole table can see, in alphabetical order so the order says nothing about anybody's library.
+ * The printed card allows several hundred; these are the ones that can matter at this table.
+ */
+export function creatureTypeOptions(state: GameState, chooser: SeatIndex): readonly string[] {
+  const own = [...ownTypeCounts(state, chooser).entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([type]) => type);
+  const seen = new Set(own);
+  const visible = new Set<string>();
+  for (const seat of state.seats) {
+    for (const zone of ['battlefield', 'graveyard'] as const) {
+      for (const id of listAt(state, zoneKey(seat.index, zone))) {
+        for (const type of creatureTypesOf(state.cardDefs[state.instances[id]?.defKey ?? ''])) {
+          if (!seen.has(type)) visible.add(type);
+        }
+      }
+    }
+  }
+  const all = [...own, ...[...visible].sort()];
+  return all.length >= 2 ? all : [...new Set([...all, ...CHOOSABLE_TYPES])];
+}
+
+/**
+ * The type a card that helps its controller should name: the commonest among the creatures they
+ * control now, and between equals the commonest in their own cards — so a tribal deck with an
+ * empty board still names its tribe, and a board of two Vampires and an Elf names Vampire.
+ */
+function deckTypeOf(state: GameState, seat: SeatIndex): string | undefined {
+  const onBoard = new Map<string, number>();
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature) continue;
+    for (const type of ch.typeLine.subtypes) if (isCreatureType(type)) onBoard.set(type, (onBoard.get(type) ?? 0) + 1);
+  }
+  // The options are already in order of the seat's own cards, commonest first, so a strict "more
+  // on the board" keeps the earlier — commoner in the deck — of two types tied on the board, and an
+  // empty board leaves the first option, the deck's own tribe.
+  const options = creatureTypeOptions(state, seat);
+  let best = options[0];
+  let most = 0;
+  for (const type of options) {
+    const here = onBoard.get(type) ?? 0;
+    if (here > most) { best = type; most = here; }
+  }
+  return best;
+}
+
+/** The commonest creature type among the creatures opponents control, for a card that hurts them. */
+function opponentsTypeOf(state: GameState, seat: SeatIndex): string | undefined {
+  const counts = new Map<string, number>();
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isCreature) continue;
+      for (const type of ch.typeLine.subtypes) {
+        if (isCreatureType(type)) counts.set(type, (counts.get(type) ?? 0) + 1);
+      }
+    }
+  }
+  let best: string | undefined;
+  let most = 0;
+  for (const [type, n] of [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (n > most) { most = n; best = type; }
+  }
+  return best;
+}
+
+/** The colour most of this seat's own cards are, for a card that helps that colour. */
+function deckColourOf(state: GameState, seat: SeatIndex): string | undefined {
+  const counts = new Map<string, number>();
+  for (const inst of Object.values(state.instances)) {
+    if (inst.owner !== seat) continue;
+    for (const word of COLOUR_OPTIONS) {
+      if ((state.cardDefs[inst.defKey]?.colors ?? []).includes(COLOUR_WORDS[word]!)) {
+        counts.set(word, (counts.get(word) ?? 0) + 1);
+      }
+    }
+  }
+  let best: string | undefined;
+  let most = 0;
+  for (const word of COLOUR_OPTIONS) {
+    const n = counts.get(word) ?? 0;
+    if (n > most) { most = n; best = word; }
+  }
+  return best;
+}
+
+/**
+ * Which way a chosen-type card points, for the bot's answer (D641): toward the chooser's own deck,
+ * or at the opponents. The compiler sets it from the card's other lines — Engineered Plague's
+ * "-1/-1" is aimed at somebody else's tribe.
+ */
+export type ChoiceAim = 'friendly' | 'hostile' | 'protection';
+
+/** The question an "As ~ enters, choose a …" card asks, with the bot's answer aimed as `aim` says. */
+export function enterChoiceDecision(kind: 'creature-type' | 'color', aim: ChoiceAim): ChoiceDecisionSpec {
+  if (kind === 'creature-type') {
+    return {
+      who: 'controller', prompt: 'Choose a creature type', options: CHOOSABLE_TYPES,
+      optionsFor: creatureTypeOptions,
+      best: aim === 'hostile' ? opponentsTypeOf : deckTypeOf,
+    };
+  }
+  return {
+    who: 'controller', prompt: 'Choose a color', options: COLOUR_OPTIONS,
+    best: aim === 'protection' ? colourToFear : deckColourOf,
+  };
+}
+
+/**
+ * "As ~ enters, choose a creature type." / "… choose a color." (D641, CR 614.12)
+ *
+ * The question is the permanent spell's own resolution question, asked before it moves — the
+ * arrangement riot uses (`entersChoice`) — and the answer is kept on the permanent as `chosen`, where
+ * the lines that say "the chosen type" and "the chosen color" read it as they are installed. A
+ * permanent that arrives without being cast gets the engine's answer; see `applyStatics`' caller.
+ * The bot's answer is aimed at the controller's own deck until `compileSingle` sees a line that
+ * hurts the chosen tribe or protects from the colour.
+ */
+function chooseAsEntersFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  const m = new RegExp(`^As ${selfRef(name)} ${ENTERS}, choose an? (creature type|color)$`, 'i').exec(text);
+  if (m === null) return null;
+  const kind = m[1]!.toLowerCase() === 'color' ? 'color' : 'creature-type';
+  return { entersChoice: kind, decisions: [enterChoiceDecision(kind, 'friendly')] };
+}
+
+/**
+ * The lines that read what was chosen (D641), on the permanent itself:
+ * - "~ is the chosen type in addition to its other types." (Adaptive Automaton, Metallic Mimic);
+ * - "~ has protection from the chosen color." (Order of the Stars);
+ * - "~ is the chosen color." (Alloy Golem).
+ * The group statics — "creatures you control of the chosen type get +1/+1" — are
+ * `groupStaticFromLine`'s.
+ */
+function chosenSelfStaticFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  const self = selfRef(name);
+  if (new RegExp(`^${self} is the chosen type in addition to its other types$`, 'i').test(text)) {
+    return { statics: [{ scope: 'self', effect: { addSubtypes: [CHOSEN_TYPE] } }] };
+  }
+  if (new RegExp(`^${self} has protection from the chosen color$`, 'i').test(text)) {
+    return { statics: [{ scope: 'self', effect: {}, chosenColor: 'protection' }] };
+  }
+  if (new RegExp(`^${self} is the chosen color$`, 'i').test(text)) {
+    return { statics: [{ scope: 'self', effect: {}, chosenColor: 'color' }] };
+  }
+  return null;
+}
 
 // ── White-black: the life total that goes up ────────────────────────────────────────────────────
 
@@ -23471,10 +23610,26 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   type Scope = NonNullable<CardScript['statics']>[number]['scope'];
   let scope: Scope | null = null;
   let predicate = '';
-  const yours = /^(other )?(?:creatures|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) you control (get|have) (.+)$/i.exec(text);
+  /*
+    "Creatures you control of the chosen type", "other creatures you control of the chosen type",
+    "creatures of the chosen type" (D641): the type is `CHOSEN_TYPE`, filled in from what the
+    permanent chose as it entered when the static is installed. Rewritten to the shapes below.
+  */
+  const chosenYours = /^(other )?creatures you control of the chosen type (get|have) (.+)$/i.exec(text);
+  const chosenAll = /^(?:all )?creatures of the chosen type (get|have) (.+)$/i.exec(text);
+  if (chosenYours !== null) {
+    scope = { subtype: CHOSEN_TYPE, ...(chosenYours[1] !== undefined ? { other: true } : {}) };
+    predicate = `${chosenYours[2]!.toLowerCase()} ${chosenYours[3]}`;
+  } else if (chosenAll !== null) {
+    scope = { subtype: CHOSEN_TYPE, everyone: true };
+    predicate = `${chosenAll[1]!.toLowerCase()} ${chosenAll[2]}`;
+  }
+  const yours = scope !== null ? null : /^(other )?(?:creatures|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) you control (get|have) (.+)$/i.exec(text);
   const everyone = /^All (?:([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) (get|have) (.+)$/.exec(text);
   const allCreatures = /^All creatures (get|have) (.+)$/i.exec(text);
-  if (allCreatures !== null) {
+  if (scope !== null) {
+    // Read above: a chosen type.
+  } else if (allCreatures !== null) {
     scope = 'all-creatures';
     predicate = `${allCreatures[1]!.toLowerCase()} ${allCreatures[2]}`;
   } else if (yours !== null) {
@@ -24205,6 +24360,8 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? entersTappedFromLine(line, name)
     ?? becomesDayFromLine(line, name)
     ?? entersAsCopyFromLine(line, name)
+    ?? chooseAsEntersFromLine(line, name)
+    ?? chosenSelfStaticFromLine(line, name)
     ?? staticFromLine(line)
     ?? groupStaticFromLine(line, name)
     ?? conditionalStaticFromLine(line, name)

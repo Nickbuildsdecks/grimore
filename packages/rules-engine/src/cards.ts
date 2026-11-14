@@ -190,6 +190,13 @@ export interface CardInstance {
    */
   readonly classLevel?: number;
   /**
+   * What was chosen **as this permanent entered** (D641, CR 614.12): "As ~ enters, choose a creature
+   * type" or "… a color". Statics that say "the chosen type" or "the chosen color" are filled in
+   * from it as they are installed. Cleared when the card leaves, because the new object chooses
+   * again (CR 400.7).
+   */
+  readonly chosen?: { readonly type?: string; readonly color?: 'W' | 'U' | 'B' | 'R' | 'G' };
+  /**
    * The commander tax on **this** commander (D640, CR 903.8), for a deck with two commanders: each
    * partner pays for its own casts. A deck with one keeps the tax on the seat (`Seat.commanderTax`),
    * which is what the tabletop's manual adjustment edits. See `commanderTaxFor`.

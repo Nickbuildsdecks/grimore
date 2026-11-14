@@ -47,9 +47,46 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  classLevelAbility, isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, stationAbility, wholeCardShapeFor,
+  classLevelAbility, enterChoiceDecision, isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor,
+  stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
+import { CHOSEN_TYPE } from './effects.js';
+
+/** Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or none. */
+function enterChoiceOf(lines: readonly string[]): 'creature-type' | 'color' | null {
+  for (const line of lines) {
+    const m = /^As .+ enters(?: the battlefield)?, choose an? (creature type|color)\.?$/i.exec(line.trim());
+    if (m !== null) return m[1]!.toLowerCase() === 'color' ? 'color' : 'creature-type';
+  }
+  return null;
+}
+
+/** Which choice a line's fragment reads (D641): "the chosen type", "the chosen color", or neither. */
+function choiceReadBy(fragment: Partial<CardScript>): 'creature-type' | 'color' | null {
+  const json = JSON.stringify(fragment.statics ?? []);
+  if (json.includes(JSON.stringify(CHOSEN_TYPE))) return 'creature-type';
+  if (json.includes('"chosenColor"')) return 'color';
+  return null;
+}
+
+/**
+ * Which way the bot's answer should point (D641): at an opponent's tribe when a chosen-type static
+ * shrinks or locks creatures, away from the colour a protection static names, otherwise at the
+ * controller's own deck.
+ */
+function choiceAimOf(statics: CardScript['statics']): ChoiceAim {
+  for (const entry of statics ?? []) {
+    if (entry.chosenColor === 'protection') return 'protection';
+    if (typeof entry.scope === 'object' && entry.scope.subtype === CHOSEN_TYPE) {
+      const e = entry.effect;
+      if ((e.power ?? 0) < 0 || (e.toughness ?? 0) < 0 || e.doesntUntap === true || e.cantBlock === true || e.cantAttack === true) {
+        return 'hostile';
+      }
+    }
+  }
+  return 'friendly';
+}
 import type { LevelBand } from './cards.js';
 import type { GameState } from './types.js';
 
@@ -711,6 +748,7 @@ function compileSingle(row: CardDataRow): Compilation {
   */
   const attachment = wholeCardShapeFor(def, lines);
   const claimed = new Set(attachment?.claimed ?? []);
+  const enterChoice = enterChoiceOf(lines);
   if (attachment !== null) {
     merge(built, attachment.fragment);
     compiled.push(...attachment.claimed);
@@ -816,11 +854,27 @@ function compileSingle(row: CardDataRow): Compilation {
 
     const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }
+    /*
+      "The chosen type" on a card that never chose one (D641) — Chromatic Armor chooses with an
+      activated ability, a Changeling lord chooses nothing — would install an anthem for no type and
+      look read. Refused, so the line stays visible as unread.
+    */
+    const reads = choiceReadBy(fragment);
+    if (reads !== null && reads !== enterChoice) { unread.push({ line, why: 'no-reader' }); continue; }
     if (merge(built, fragment) === 'conflict') {
       unread.push({ line, why: 'field-conflict' });
       continue;
     }
     compiled.push(line);
+  }
+
+  /*
+    The bot's answer to "choose a creature type / a color", aimed now that every line is read (D641).
+  */
+  if (built['entersChoice'] === 'creature-type' || built['entersChoice'] === 'color') {
+    built['decisions'] = [enterChoiceDecision(
+      built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics']),
+    )];
   }
 
   /*

@@ -7720,6 +7720,9 @@ describe('deck coverage', () => {
         counters instead of replacing them, an unleashed Cackler cannot block and a declined one
         can, and the restriction follows the counter rather than the answer.
 
+        **No longer exempt since D641**: Obelisk of Urd and Voice of All choose a creature type and a
+        colour through `entersChoice` now, and both are in the pool.
+
       **And what a kick buys a permanent** (D561):
 
       - `script kickedEntersWith`: **29 legal cards** print "If ~ was kicked, it enters with N
@@ -7851,7 +7854,6 @@ describe('deck coverage', () => {
       'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
       'script bloodthirst',
-      'script entersChoice',
       'script kickedEntersWith',
       'trigger damaged',
       'trigger discards', 'trigger cycles',
@@ -10566,11 +10568,17 @@ describe('a question whose answer is a word, not a card', () => {
 
     s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Obelisk of Urd') }));
 
-    // It stopped and asked, and the question has words rather than candidates.
-    expect(s.pendingDecision?.options).toEqual([
-      'Human', 'Vampire', 'Shaman', 'Monk', 'Wizard', 'Soldier', 'Warrior', 'Knight', 'Goblin',
-      'Elf', 'Cat', 'Wall', 'Zombie',
-    ]);
+    /*
+      It stopped and asked, and the question has words rather than candidates. Since D641 the words
+      are this table's types: the caster's own cards first, commonest first (Rot Harvest runs more
+      Elves than anything), and nothing the table cannot see — Tidal Mind's library is not read.
+    */
+    const offered = s.pendingDecision?.options ?? [];
+    expect(offered[0]).toBe('Elf');
+    expect(offered).toEqual(expect.arrayContaining(['Elf', 'Vampire', 'Zombie']));
+    const own = new Set(Object.values(s.instances).filter((i) => i.owner === 0)
+      .flatMap((i) => parseTypeLine(s.cardDefs[i.defKey]?.typeLine).subtypes));
+    expect(offered.filter((t) => !own.has(t))).toEqual([]);
     expect(s.pendingDecision?.candidates).toEqual([]);
     expect(legalActions(s, 0).mustDecide?.options).toContain('Elf');
 
@@ -10750,6 +10758,113 @@ describe('a question whose answer is a word, not a card', () => {
     const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
     expect([power(s, vampire), toughness(s, vampire)]).toEqual([3, 3]);
     expect([power(s, elves), toughness(s, elves)]).toEqual([1, 1]);
+  });
+});
+
+describe('as it enters, choose a creature type or a color (D641)', () => {
+  /*
+    Printed text through the compiler, dealt the way a pasted list is: the cards are data rows, so
+    these run the path a player's own Adaptive Automaton takes.
+  */
+  const row = (name: string, type: string, text: string, cost = '{1}', pt: [string, string] | null = ['2', '2']) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Adaptive Automaton', 'Artifact Creature — Construct',
+      'As Adaptive Automaton enters, choose a creature type.\nAdaptive Automaton is the chosen type in addition to its other types.\nOther creatures you control of the chosen type get +1/+1.'),
+    row('Engineered Plague', 'Enchantment',
+      'As Engineered Plague enters, choose a creature type.\nAll creatures of the chosen type get -1/-1.', '{1}', null),
+    row('Order of the Stars', 'Creature — Human Cleric',
+      'Defender\nAs Order of the Stars enters, choose a color.\nOrder of the Stars has protection from the chosen color.', '{1}', ['0', '1']),
+    row('Test Goblin', 'Creature — Goblin', ''),
+    row('Test Elf', 'Creature — Elf', ''),
+  ];
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => {
+    const deck = (id: string) => customDeck({
+      id, name: id,
+      entries: [
+        { name: 'Mountain', count: 20 }, { name: 'Test Goblin', count: 6 }, { name: 'Test Elf', count: 3 },
+        { name: 'Adaptive Automaton', count: 1 }, { name: 'Engineered Plague', count: 1 },
+        { name: 'Order of the Stars', count: 1 },
+      ],
+      data: ROWS,
+    }).deck;
+    return advanceTo(arena({
+      decks: { 0: 'custom:a', 1: 'custom:b' },
+      deckSpecs: { 'custom:a': deck('custom:a'), 'custom:b': deck('custom:b') },
+      ...setup, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+  };
+  const subtypes = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).typeLine.subtypes;
+
+  it('asks as it resolves, keeps the answer, and the chosen-type statics read it', () => {
+    let s = table({
+      hands: { 0: ['Adaptive Automaton'] },
+      battlefield: { 0: ['Mountain', 'Test Goblin', 'Test Elf'] },
+    });
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Adaptive Automaton') }));
+    // Asked on the stack, with this table's types: the caster's Goblins first, then the rest.
+    expect(s.pendingDecision?.prompt).toBe('Choose a creature type');
+    expect(s.pendingDecision?.options?.[0]).toBe('Goblin');
+    expect(s.pendingDecision?.options).toEqual(expect.arrayContaining(['Goblin', 'Elf', 'Construct']));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' }));
+    const automaton = find(s, 0, 'battlefield', 'Adaptive Automaton');
+    expect(s.instances[automaton]!.chosen).toEqual({ type: 'Elf' });
+    // It is an Elf as well as a Construct, and it pumps the other Elves, not itself or the Goblin.
+    expect(subtypes(s, automaton)).toEqual(expect.arrayContaining(['Construct', 'Elf']));
+    expect([power(s, automaton), toughness(s, automaton)]).toEqual([2, 2]);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Elf'))).toBe(3);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Goblin'))).toBe(2);
+    // Leaving forgets the answer: the next object chooses again (CR 400.7).
+    s = drain(apply(s, { type: 'card:move', by: 0, card: automaton, toZone: 'graveyard' }));
+    expect(s.instances[automaton]!.chosen).toBeUndefined();
+    expect(power(s, find(s, 0, 'battlefield', 'Test Elf'))).toBe(2);
+  });
+
+  it('answers for a permanent that arrives without being cast, aimed at its controller’s board', () => {
+    let s = table({ hands: { 0: ['Adaptive Automaton'] }, battlefield: { 0: ['Test Goblin', 'Test Elf', 'Test Elf'] } });
+    // Put onto the battlefield by an effect rather than cast: no spell asked, so the engine answers.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Adaptive Automaton'), toZone: 'battlefield' }));
+    const automaton = find(s, 0, 'battlefield', 'Adaptive Automaton');
+    /*
+      Two Elves to one Goblin on the board, so Elf — although the deck runs more Goblins, which is
+      why Goblin is the first option offered. The card's own pick, not the first button.
+    */
+    expect(s.instances[automaton]!.chosen).toEqual({ type: 'Elf' });
+    expect(power(s, find(s, 0, 'battlefield', 'Test Goblin'))).toBe(2);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Elf'))).toBe(3);
+    // And with the board tied, the deck's commoner type: one each, Goblins in the deck.
+    let t = table({ hands: { 0: ['Adaptive Automaton'] }, battlefield: { 0: ['Test Goblin', 'Test Elf'] } });
+    t = drain(apply(t, { type: 'card:move', by: 0, card: find(t, 0, 'hand', 'Adaptive Automaton'), toZone: 'battlefield' }));
+    expect(t.instances[find(t, 0, 'battlefield', 'Adaptive Automaton')]!.chosen).toEqual({ type: 'Goblin' });
+  });
+
+  it('aims a card that shrinks the chosen type at the opponents’ creatures', () => {
+    let s = table({
+      hands: { 0: ['Engineered Plague'] },
+      battlefield: { 0: ['Mountain', 'Test Goblin', 'Test Goblin'], 1: ['Test Elf', 'Test Elf', 'Test Goblin'] },
+    });
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Engineered Plague') }));
+    // The caster's own deck is Goblins, but the card hurts the type, so the bot names the Elves.
+    expect(botAction(s, 0)).toEqual({ type: 'auto:decide', by: 0, cards: [], option: 'Elf' });
+    s = drain(apply(s, botAction(s, 0)!));
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Elf').map((id) => power(s, id))).toEqual([1, 1]);
+    // "All creatures": the caster's own Elf would shrink too; its Goblins do not.
+    expect(power(s, find(s, 0, 'battlefield', 'Test Goblin'))).toBe(2);
+  });
+
+  it('gives protection from the chosen color', () => {
+    let s = table({ hands: { 0: ['Order of the Stars'] }, battlefield: { 0: ['Mountain'] } });
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Order of the Stars') }));
+    expect(s.pendingDecision?.options).toEqual(['black', 'red', 'white', 'blue', 'green']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'red' }));
+    const order = find(s, 0, 'battlefield', 'Order of the Stars');
+    expect(s.instances[order]!.chosen).toEqual({ color: 'R' });
+    expect(characteristicsOf(s, s.instances[order]!).protectionFrom).toEqual(['R']);
   });
 });
 

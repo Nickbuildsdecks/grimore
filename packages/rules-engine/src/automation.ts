@@ -47,7 +47,7 @@ import {
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
-  chosenOption, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
+  chosenOption, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -3481,6 +3481,22 @@ function settle(state: GameState, before: GameState): GameState {
         Guarded on having no effect of its own already, which is what keeps it from doubling up on
         the aura effect a resolving aura installs with its own id as the source.
       */
+      /*
+        A permanent that chooses as it enters but arrived **without being cast** — reanimated,
+        flickered, put onto the battlefield by an effect — was asked nothing by a resolving spell,
+        and the rules still give its controller the choice (CR 614.12). The engine answers it with
+        the card's own `best`, the answer the bot would give; recorded under D641 and named in the
+        player guide. A cast one already has its answer and keeps it.
+      */
+      if ((arrivalScript?.entersChoice === 'creature-type' || arrivalScript?.entersChoice === 'color')
+        && next.instances[id]?.chosen === undefined) {
+        const spec = arrivalScript.decisions
+          ?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision);
+        const word = spec === undefined ? undefined
+          : spec.best?.(next, arrival.zoneSeat) ?? (spec.optionsFor?.(next, arrival.zoneSeat) ?? spec.options)[0];
+        const chosen = word === undefined ? undefined : chosenRecord(arrivalScript.entersChoice, word);
+        if (chosen !== undefined) next = withInstance(next, id, { chosen });
+      }
       if (!next.effects.some((effect) => effect.source === id)) {
         next = applyStatics(next, id, arrival.zoneSeat, arrivalScript);
       }
@@ -4194,9 +4210,12 @@ function askOrFinish(
         empty case for free — one word left is a question the engine answers itself, so an extort
         trigger with no mana up resolves without stopping the table at all.
       */
+      // Worked out now when the card says so (D641): "choose a creature type" offers the types
+      // this table can see, which are not known until it is asked.
+      const offered = spec.optionsFor?.(state, entry.seat) ?? spec.options;
       const options = spec.payIfChosen === undefined
-        ? spec.options
-        : spec.options.filter((word) => word !== spec.payIfChosen?.option
+        ? offered
+        : offered.filter((word) => word !== spec.payIfChosen?.option
           || canPayForAnswer(state, entry.seat, spec.payIfChosen));
       if (options.length < 2) {
         answers = [...answers, {
@@ -4956,7 +4975,16 @@ function completeResolution(
         every arrival passes through, but this one needs somebody to ask and only a resolving
         spell can.
       */
-      if (script?.entersChoice !== undefined) {
+      /*
+        "As ~ enters, choose a creature type / a color" (D641, CR 614.12): the answer is the
+        permanent's from the moment it arrives, so the statics installed on arrival — which run
+        after this — are filled in with it. Nothing installs them here.
+      */
+      if (script?.entersChoice === 'creature-type' || script?.entersChoice === 'color') {
+        const answer = chosenOption(ctx);
+        const chosen = answer === null ? undefined : chosenRecord(script.entersChoice, answer);
+        if (chosen !== undefined) next = withInstance(next, inst.id, { chosen });
+      } else if (script?.entersChoice !== undefined) {
         const answer = chosenOption(ctx);
         if (answer === ENTERS_COUNTER_OPTION) next = addCounters(next, inst.id, '+1/+1', 1);
         else if (answer !== null && script.entersChoice === 'riot') {
@@ -5130,11 +5158,57 @@ function addBestowEffect(
   return { ...state, autoSeq: seq, effects: [...state.effects, continuous] };
 }
 
+/** A word answer as the record a permanent keeps (D641): a creature type, or a colour word as its letter. */
+function chosenRecord(kind: 'creature-type' | 'color', word: string): CardInstance['chosen'] {
+  if (kind === 'creature-type') return { type: word };
+  const letter = COLOUR_LETTERS[word.toLowerCase()];
+  return letter === undefined ? undefined : { color: letter };
+}
+
+const COLOUR_LETTERS: Readonly<Record<string, 'W' | 'U' | 'B' | 'R' | 'G'>> = {
+  white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
+};
+
+type StaticEntry = NonNullable<CardScript['statics']>[number];
+
+/** One static with "the chosen …" filled in from `chosen`, or null when it needs an answer there is not (D641). */
+export function withChosen(entry: StaticEntry, chosen: CardInstance['chosen']): StaticEntry | null {
+  let next = entry;
+  const scope = entry.scope;
+  if (typeof scope === 'object' && scope.subtype === CHOSEN_TYPE) {
+    if (chosen?.type === undefined) return null;
+    next = { ...next, scope: { ...scope, subtype: chosen.type } };
+  }
+  if (next.effect.addSubtypes?.includes(CHOSEN_TYPE) === true) {
+    if (chosen?.type === undefined) return null;
+    next = { ...next, effect: { ...next.effect, addSubtypes: next.effect.addSubtypes.map((t) => (t === CHOSEN_TYPE ? chosen.type! : t)) } };
+  }
+  if (next.chosenColor !== undefined) {
+    if (chosen?.color === undefined) return null;
+    const { chosenColor, ...rest } = next;
+    next = {
+      ...rest,
+      effect: chosenColor === 'protection'
+        ? { ...rest.effect, protectionFrom: [...(rest.effect.protectionFrom ?? []), chosen.color] }
+        : { ...rest.effect, setColors: [chosen.color] },
+    };
+  }
+  return next;
+}
+
 function applyStatics(
   state: GameState, id: string, controller: SeatIndex, script: CardScript | undefined,
 ): GameState {
   let next = state;
-  for (const entry of script?.statics ?? []) {
+  const chosen = state.instances[id]?.chosen;
+  for (const raw of script?.statics ?? []) {
+    /*
+      "The chosen type" and "the chosen color" (D641), filled in from what this permanent chose as
+      it entered. A static that needs an answer the permanent does not have installs nothing: an
+      anthem for no type pumps nobody, which is what a permanent that chose nothing would do.
+    */
+    const entry = withChosen(raw, chosen);
+    if (entry === null) continue;
     const seq = next.autoSeq + 1;
     const scope: ContinuousEffect['scope'] =
       typeof entry.scope === 'object'

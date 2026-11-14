@@ -27020,3 +27020,79 @@ Faults injected by hand, 14 of 14 caught:
     engine tests: 4,486, all passing
 
 Coverage is unchanged by this increment: 10,683 of 31,653 cards, 29,275 of 59,306 lines.
+
+## D641 — "as it enters, choose a creature type / a color", kept on the permanent
+
+105 legal cards print "As ~ enters, choose a creature type." (58) or "… choose a color." (48),
+and a line after it that reads "the chosen type" or "the chosen color". The engine could ask the
+question already: Obelisk of Urd and Voice of All were hand-written with a word question and an
+`onResolve` that installed their effect. That one-off approach could not be compiled, and it did
+nothing for a permanent that arrived without being cast.
+
+**The mechanism.**
+- `CardInstance.chosen` holds `{ type }` or `{ color }`, the answer the permanent got as it
+  entered. It is cleared when the card leaves (CR 400.7), like `classLevel`.
+- `entersChoice` gains `'creature-type'` and `'color'`. The permanent spell's resolution question
+  is asked before it moves, the arrangement riot uses since D559. The answer is recorded as the
+  permanent arrives.
+- A permanent that arrives **uncast** (reanimated, flickered, put onto the battlefield by an
+  effect) is answered by the card's own `best`. The rules give its controller the choice; the
+  engine has no one to ask in the middle of another effect. This is named in the player guide.
+- Statics carry the sentinel `CHOSEN_TYPE` (in a scope's `subtype` or in `addSubtypes`), or
+  `chosenColor: 'protection' | 'color'`. `applyStatics` fills them from `chosen` as it installs
+  them (`withChosen`). A static whose answer is missing installs nothing.
+- `ChoiceDecisionSpec.optionsFor` works out the words when the question is asked.
+  `creatureTypeOptions` offers:
+  - first, the types on the chooser's own cards, commonest first;
+  - then every other type on a battlefield or in a graveyard, alphabetically.
+  It never reads anybody's library or hand. The fixed thirteen types remain the fallback for a
+  table with fewer than two types.
+
+**The bot's answer** (`enterChoiceDecision`) is aimed by the compiler from the card's other lines:
+- **friendly**: the type the controller has most of on the battlefield; ties, and an empty board,
+  go to the commonest type in their own cards;
+- **hostile**: for a chosen-type static that shrinks or locks creatures (Engineered Plague), the
+  opponents' commonest type;
+- **protection**: the colour to fear, the Voice of All rule.
+
+**The compiler.**
+- `chooseAsEntersFromLine` reads the choice itself.
+- `groupStaticFromLine` reads three group forms: "creatures you control of the chosen type",
+  "other creatures you control of the chosen type", and "(all) creatures of the chosen type".
+- `chosenSelfStaticFromLine` reads three lines about the card itself: "~ is the chosen type in
+  addition to its other types", "~ has protection from the chosen color", and "~ is the chosen
+  color".
+- `compileSingle` refuses a line that reads a choice the card never makes. Chromatic Armor
+  chooses with an activated ability, so its line stays unread rather than installing an anthem
+  for no type.
+
+Obelisk of Urd and Voice of All now use the shared mechanism. `compiled-vs-written` agrees on
+both. `script entersChoice` leaves the compiler-only exemptions, because the pool carries it now.
+compile.test's partly-read card moves from Obelisk of Urd to Willbender.
+
+**Not done**, and named in the guide:
+- mana of the chosen colour (about 12 lines);
+- colour-scoped anthems;
+- "whenever you cast a spell of the chosen type/color";
+- chosen-type cost reductions;
+- "… your opponents control of the chosen type";
+- Aura protection from a colour.
+
+**Tests.**
+- 4 engine tests on printed text dealt as data:
+  - the question on the stack offers this table's types, and the answer makes the Automaton an
+    Elf that pumps the other Elves; leaving forgets the answer;
+  - an uncast Automaton picks Elf off a two-Elf board although its deck runs more Goblins, and
+    picks Goblin off a tied board;
+  - Engineered Plague's bot names the opponents' Elves;
+  - Order of the Stars gets protection from red.
+- 2 compiler tests: the readings, and the refusal.
+- The Obelisk options test now asserts table-derived types. The bot test keeps Vampire over Elf
+  off a 2-to-1 board.
+
+Faults injected by hand: 18 of 19 caught. The miss is an equivalent mutant: an undefined pick on
+an empty board falls back to the first option in both callers, which is the same word.
+
+    engine tests: 4,492, all passing
+
+Coverage: 10,696 of 31,653 cards (+13), 29,399 of 59,306 lines (+124).
