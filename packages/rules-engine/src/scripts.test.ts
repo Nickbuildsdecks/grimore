@@ -7847,6 +7847,13 @@ describe('deck coverage', () => {
         Driven at runtime by '"one or more cards leave your graveyard" (D634)': three cards leaving
         at once is one trigger, an opponent's graveyard does not count, and "creature cards" waits
         for a creature card.
+
+      **And the hand-size rule** (D646):
+
+      - `script noMaxHandSize`: 23 legal cards print "You have no maximum hand size." (Reliquary
+        Tower, Thought Vessel, Spellbook). No pool deck has one. Driven at runtime by "a token for
+        the target's controller, and no maximum hand size (D646)": the same hand discards down to
+        seven at cleanup without a Tower and keeps every card with one.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7862,6 +7869,7 @@ describe('deck coverage', () => {
       'keyword daybound', 'keyword nightbound', 'trigger day-night', 'script becomesDayAsItEnters',
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
+      'script noMaxHandSize',
     ]);
 
     const declared = [
@@ -11160,6 +11168,90 @@ describe('tapping others for mana, Gates, and "artifacts and/or creatures" (D645
     // "Another": the Oak alone cannot pay it with itself.
     expect(plays(table(['Test Oak', 'Swamp']), 'Test Oak')).toHaveLength(0);
     expect(plays(table(['Test Oak', 'Swamp', 'Test Elf']), 'Test Oak')).toHaveLength(1);
+  });
+});
+
+describe('a token for the target’s controller, and no maximum hand size (D646)', () => {
+  const row = (name: string, type: string, text: string, cost: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Within', 'Instant', 'Destroy target permanent. Its controller creates a 3/3 green Beast creature token.', '{G}'),
+    row('Test Offer', 'Instant', 'Counter target noncreature spell. Its controller creates two Treasure tokens.', '{U}'),
+    row('Test Pongify', 'Instant', "Destroy target creature. It can't be regenerated. Its controller creates a 3/3 green Ape creature token.", '{U}'),
+    row('Test Tower', 'Land', '{T}: Add {C}.\nYou have no maximum hand size.', ''),
+    row('Test Growth', 'Sorcery', 'Draw a card.', '{G}'),
+    row('Test Feast', 'Sorcery', 'Each opponent creates a Food token.', '{G}'),
+  ];
+  const deck = (id: string) => customDeck({
+    id, name: id,
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 20 }, { name: 'Island', count: 20 }, { name: 'Drudge Skeletons', count: 2 }, { name: 'Grizzly Bears', count: 2 }],
+    data: ROWS,
+  }).deck;
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'custom:a', 1: 'custom:b' }, deckSpecs: { 'custom:a': deck('custom:a'), 'custom:b': deck('custom:b') },
+    ...setup, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const tokens = (s: GameState, seat: SeatIndex, name: string) => namesIn(s, seat, 'battlefield').filter((n) => n === name).length;
+
+  it('gives the destroyed permanent’s controller the token, not the caster', () => {
+    let s = table({ hands: { 0: ['Test Within'] }, battlefield: { 0: ['Forest'], 1: ['Grizzly Bears'] } });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Within'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }],
+    })));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect([tokens(s, 1, 'Beast'), tokens(s, 0, 'Beast')]).toEqual([1, 0]);
+  });
+
+  it('gives a countered spell’s controller the Treasures', () => {
+    let s = table({ hands: { 0: ['Test Growth'], 1: ['Test Offer'] }, battlefield: { 0: ['Forest'], 1: ['Island'] } });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth') });
+    const growth = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Offer'),
+      targets: [{ kind: 'card', id: growth }],
+    })));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Growth');
+    expect([tokens(s, 0, 'Treasure'), tokens(s, 1, 'Treasure')]).toEqual([2, 0]);
+  });
+
+  it('gives each opponent a token and the caster none', () => {
+    let s = table({ hands: { 0: ['Test Feast'] }, battlefield: { 0: ['Forest'] } });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Feast') })));
+    expect([tokens(s, 1, 'Food'), tokens(s, 0, 'Food')]).toEqual([1, 0]);
+  });
+
+  it('kills through a regeneration shield, and still makes the Ape', () => {
+    let s = table({ hands: { 0: ['Test Pongify'] }, battlefield: { 0: ['Island'], 1: ['Drudge Skeletons'] } });
+    const skeleton = find(s, 1, 'battlefield', 'Drudge Skeletons');
+    s = addCounters(s, skeleton, 'regeneration', 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pongify'), targets: [{ kind: 'card', id: skeleton }],
+    })));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Drudge Skeletons');
+    expect(tokens(s, 1, 'Ape')).toBe(1);
+  });
+
+  it('keeps every card at cleanup with a Tower, and discards to seven without one', () => {
+    const toCleanup = (start: GameState): GameState => {
+      let s = advanceTo(start, 'end');
+      for (let i = 0; i < 12 && s.pendingDiscard === null && s.priority !== null && s.activeSeat === 0; i++) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      }
+      return s;
+    };
+    const hand = ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island'];
+    const without = toCleanup(table({ hands: { 0: hand } }));
+    // Nine in hand and the turn's draw: ten, so three go.
+    expect(without.pendingDiscard).toEqual({ seat: 0, count: ids(without, 0, 'hand').length - 7 });
+    expect(without.pendingDiscard?.count).toBeGreaterThan(0);
+    const towered = toCleanup(table({ hands: { 0: hand }, battlefield: { 0: ['Test Tower'] } }));
+    expect(towered.pendingDiscard).toBeNull();
+    expect(towered.activeSeat).toBe(1);
+    expect(ids(towered, 0, 'hand').length).toBeGreaterThan(7);
   });
 });
 

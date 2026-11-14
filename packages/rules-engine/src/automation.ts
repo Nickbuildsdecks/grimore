@@ -78,6 +78,19 @@ import {
 
 export const MAX_HAND_SIZE = 7;
 
+/**
+ * This seat's maximum hand size (CR 402.2): seven, or none while it controls a permanent that says
+ * "You have no maximum hand size" (D646) and still has its abilities.
+ */
+export function maxHandSize(state: GameState, seat: SeatIndex): number {
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+    if (scriptForCard(state.cardDefs[inst.defKey])?.noMaxHandSize === true) return Number.POSITIVE_INFINITY;
+  }
+  return MAX_HAND_SIZE;
+}
+
 // ── Actions ──────────────────────────────────────────────────────────────────────────────────────
 
 // The action shapes live in `turnTypes.ts` so `types.ts` can put them in the Action union
@@ -865,8 +878,9 @@ function onEnterStep(state: GameState, step: Step): GameState {
     case 'cleanup': {
       // Hand size is a decision, so the engine stops and waits rather than discarding for them.
       const hand = listAt(next, zoneKey(next.activeSeat, 'hand'));
-      if (hand.length > MAX_HAND_SIZE) {
-        return { ...next, pendingDiscard: { seat: next.activeSeat, count: hand.length - MAX_HAND_SIZE } };
+      const limit = maxHandSize(next, next.activeSeat);
+      if (hand.length > limit) {
+        return { ...next, pendingDiscard: { seat: next.activeSeat, count: hand.length - limit } };
       }
       return endTurnCleanup(next);
     }
@@ -909,10 +923,11 @@ export function cleanupHolds(state: GameState): boolean {
  */
 export function finishCleanup(state: GameState): GameState {
   const hand = listAt(state, zoneKey(state.activeSeat, 'hand'));
-  if (hand.length > MAX_HAND_SIZE) {
+  const limit = maxHandSize(state, state.activeSeat);
+  if (hand.length > limit) {
     return {
       ...state, priority: null, passed: [],
-      pendingDiscard: { seat: state.activeSeat, count: hand.length - MAX_HAND_SIZE },
+      pendingDiscard: { seat: state.activeSeat, count: hand.length - limit },
     };
   }
   return advanceStep(endTurnCleanup(state));

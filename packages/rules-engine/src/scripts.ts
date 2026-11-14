@@ -12761,6 +12761,29 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   // A token: the one family whose characteristics are entirely in the sentence. See `tokenEffect`.
   const token = tokenEffect(text, name);
   if (token !== null) return token;
+  /*
+    A token for somebody else (D646): "target player creates a 3/3 green Beast creature token",
+    "target opponent creates two Treasure tokens", "each opponent creates a 1/1 …". The first is
+    what "Its controller creates …" becomes under the referent swap — Beast Within, Generous Gift,
+    Pongify, Rapid Hybridization, Swan Song, An Offer You Can't Refuse.
+  */
+  const gives = /^(target player|target opponent|each opponent|each player) creates? (.+)$/i.exec(text);
+  if (gives !== null) {
+    const who = gives[1]!.toLowerCase();
+    if (who.startsWith('target')) {
+      const spec = targetSpecFrom(who, false);
+      const made = spec === null ? null : tokenEffect(`create ${gives[2]}`, name, undefined, (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? [] : [seat];
+      });
+      if (spec !== null && made !== null && made.targets === undefined) return { ...made, targets: [spec] };
+    } else {
+      const made = tokenEffect(`create ${gives[2]}`, name, undefined, (c) => c.state.seats
+        .filter((seat) => !seat.eliminated && (who === 'each player' || seat.index !== c.controller))
+        .map((seat) => seat.index));
+      if (made !== null) return made;
+    }
+  }
 
   /*
     The discard, in every person it is printed about — and the largest concentrated family the
@@ -16860,7 +16883,15 @@ function namedTokenFrom(body: string): { token: CardDef; printed: string } | nul
   return { token, printed: made[1]! };
 }
 
-function tokenEffect(clause: string, name: string, granted?: string): ReadEffect | null {
+function tokenEffect(
+  clause: string, name: string, granted?: string,
+  /**
+   * Who gets the tokens (D646), when it is not the controller: "target player creates …", "each
+   * opponent creates …", and through the referent swap "its controller creates …" (Beast Within).
+   * Answers the seats; none means nobody, which is a target that has gone.
+   */
+  recipients?: (c: EffectContext) => readonly SeatIndex[],
+): ReadEffect | null {
   /*
     The count's tail is taken off **before** the token itself is read, because `with (.+)` is greedy
     and would otherwise swallow it as a list of keywords. What is left is the same sentence a
@@ -16921,15 +16952,18 @@ function tokenEffect(clause: string, name: string, granted?: string): ReadEffect
     untouched when the count is nothing, rather than asking `createToken` for no tokens. Keeping it
     is what makes the compiled reading state-for-state equal to theirs.
   */
+  const to = recipients ?? ((c: EffectContext) => [c.controller]);
+  const give = (c: EffectContext, n: number): GameState =>
+    to(c).reduce((state, seat) => createToken(state, seat, made.token, n), c.state);
   if (counted !== null) {
     return {
       effect: (c) => {
         const n = counted(c);
-        return n === 0 ? c.state : createToken(c.state, c.controller, made.token, n);
+        return n === 0 ? c.state : give(c, n);
       },
     };
   }
-  return { effect: (c) => createToken(c.state, c.controller, made.token, fixed!) };
+  return { effect: (c) => give(c, fixed!) };
 }
 
 /**
@@ -17015,7 +17049,12 @@ readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
 ];
 
 /** The kinds a `'controller'` supply can read a controller off: an object on the battlefield. */
-const CONTROLLABLE_KINDS: ReadonlySet<string> = new Set(['creature', 'permanent']);
+/*
+  And a **spell** (D646): "Counter target spell. Its controller creates two Treasure tokens." A spell
+  target is its card's id on the stack, and `withReferent` reads the controller off it before the
+  counter moves it — the stack's controller, which is what "its controller" means for a spell.
+*/
+const CONTROLLABLE_KINDS: ReadonlySet<string> = new Set(['creature', 'permanent', 'spell']);
 
 /**
  * A clause whose **subject is a referent** — "that player", "that creature", "it" — read by
@@ -21474,14 +21513,17 @@ const NO_REGENERATION = /^(?:it|they|that creature|those creatures) can['’]t b
 function noRegenerationRider(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
-  const last = clauses[clauses.length - 1];
-  if (last === undefined || !NO_REGENERATION.test(plain(last).trim().replace(/\.\s*$/, ''))) {
-    return null;
-  }
-  const before = clauses.slice(0, -1);
-  if (before.length === 0) return null;
+  /*
+    Anywhere after the destroy, not only last (D646): Pongify and Rapid Hybridization print
+    "Destroy target creature. It can't be regenerated. Its controller creates a 3/3 … token.", so
+    the rider sits between two sentences that both still do something.
+  */
+  const at = clauses.findIndex((clause) => NO_REGENERATION.test(plain(clause).trim().replace(/\.\s*$/, '')));
+  if (at <= 0) return null;
+  const before = clauses.slice(0, at);
   if (!before.some((clause) => /\bdestroy\b/i.test(clause))) return null;
-  const read = composeEffects(before, name, where);
+  const rest = [...before, ...clauses.slice(at + 1)];
+  const read = composeEffects(rest, name, where);
   if (read === null) return null;
   // `beforeDecisions` stays refused, for `optionalEffect`'s and `referentEffect`'s reason: a half
   // the wrapper cannot see through is a draw moved in front of somebody else's question.
@@ -23588,6 +23630,8 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
  * 0 }` — the same rule everywhere a bonus is read, and the one Judith's hand-written script uses.
  */
 function staticFromLine(line: string): Partial<CardScript> | null {
+  // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
+  if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
   const anthem = /^(other )?creatures you control get \+(\d+)\/\+(\d+)$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (anthem === null) return null;

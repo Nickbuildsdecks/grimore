@@ -44774,3 +44774,55 @@ Faults injected by hand: 10 of 10 caught.
     engine tests: 4,508, all passing
 
 Coverage: 10,755 of 31,653 cards (+26), 29,494 of 59,306 lines (+34).
+
+## D646 — a token for the target's controller, and no maximum hand size
+
+**A new priority list.** The corpus came from Forge and carries no popularity data, and Scryfall
+is blocked. So the remaining tail was ranked against **244 Commander staples named from memory**:
+Sol Ring, Cultivate, Beast Within, Rhystic Study, Reliquary Tower, and so on.
+- Only 127 were fully read.
+- An unread staple costs testers far more than an obscure card, so this list now leads the work.
+- `$SP/staples.mjs` re-measures it. The list is saved in the repository as `claude/commander-staples.txt`.
+
+**Tokens for somebody else.**
+- `tokenEffect` takes a recipient, and the clause reader adds four subjects: "target player
+  creates …", "target opponent creates …", "each opponent creates …" and "each player creates …".
+- "Its controller creates …" then reads through D537's possessive swap, for which "target player
+  creates" is the swapped sentence. That covers Beast Within, Generous Gift, Pongify and Rapid
+  Hybridization.
+- The controller is captured before the destroy, as D537 does for life loss (CR 608.2h).
+
+**A spell's controller.**
+- D537 refused "its controller" on a spell target, believing the controller lived only on the
+  stack object.
+- A cast puts the card on the stack under the caster's seat, so `withReferent` reads it from the
+  instance before the counter moves it.
+- `CONTROLLABLE_KINDS` gains `spell`. Swan Song, An Offer You Can't Refuse, and Countersquall's
+  family of eight read.
+- The D537 test that pinned the refusal now pins the reading, with the reason in its comment.
+
+**The rider mid-line.** "It can't be regenerated" was read only as the last sentence. Pongify
+prints the token after it, so the rider is now taken from anywhere after a destroy and the rest is
+composed without it. A rider before any destroy is still refused.
+
+**No maximum hand size.**
+- `CardScript.noMaxHandSize`, read from "You have no maximum hand size." (23 legal cards).
+- `maxHandSize(state, seat)` asks the seat's permanents live: face-down and ability-less ones
+  don't count.
+- Both cleanup sites use it. `script noMaxHandSize` joins the compiler-only exemptions, with its
+  evidence.
+
+**Tests.**
+- 5 engine tests:
+  - Beast Within gives the Bears' controller the Beast;
+  - An Offer You Can't Refuse gives the countered caster two Treasures;
+  - Pongify kills a shielded Drudge Skeletons and makes its controller an Ape;
+  - each opponent gets the Food and the caster none;
+  - the same hand discards to seven without a Tower and keeps every card with one.
+- 2 compiler tests.
+
+Faults injected by hand: 8 of 8 caught, after the each-opponent recipient got a runtime test.
+
+    engine tests: 4,515, all passing
+
+Coverage: 10,806 of 31,653 cards (+51), 29,578 of 59,306 lines (+84). Staples: 135 of 244.

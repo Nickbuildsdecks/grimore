@@ -2518,6 +2518,12 @@ export interface CardScript {
    */
   readonly payLifeToEnterUntapped?: number;
   /**
+   * "You have no maximum hand size." (D646, CR 402.2) — Reliquary Tower, Thought Vessel, Spellbook.
+   * Asked of the controller's permanents at cleanup by `maxHandSize`, live, so it ends the moment
+   * the permanent leaves or loses its abilities.
+   */
+  readonly noMaxHandSize?: true;
+  /**
    * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
    *
    * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other

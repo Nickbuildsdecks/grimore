@@ -15461,18 +15461,19 @@ describe('the possessive referent: "its controller" (D537)', () => {
     ]);
   });
 
-  it('refuses the possessive on a SPELL target, which has no instance to read', () => {
+  it('reads the possessive on a SPELL target since D646', () => {
     /*
       Countersquall — "Counter target noncreature spell. Its controller loses 2 life." — and eight
-      legal cards of that shape. A spell's controller lives on the stack object, not on an instance
-      on the battlefield, so `'controller'` has nothing to read and the licence does not offer it.
-      Stated as a measured negative rather than hidden: the counter path wants its own supply, and
-      guessing a seat would be a wrong card (D362).
+      legal cards of that shape, refused here until D646 on the belief that a spell's controller
+      lives only on the stack object. It is on the instance too: a cast puts the card on the stack
+      under the caster's seat (`relocate(…, 'stack', action.by)`), so `withReferent` reads the
+      controller off it before the counter moves it — as it reads a creature's before a destroy.
+      Swan Song and An Offer You Can't Refuse are the staples behind the change.
     */
     const read = spell('Counter target noncreature spell. Its controller loses 2 life.',
       'Countersquall', 'Instant');
     expect(read.ok).toBe(true);
-    if (read.ok) expect(read.unread.length).toBe(1);
+    if (read.ok) expect(read.unread).toEqual([]);
   });
 
   it('refuses the possessive with nothing before it, and on an "any target"', () => {
@@ -18323,5 +18324,30 @@ describe('"as it enters, choose" and the lines that read the answer (D641)', () 
     expect(none.ok && none.unread.map((u) => u.line)).toEqual(['Creatures you control of the chosen type get +1/+1.']);
     const wrong = card('As Test Chooser enters, choose a color.\nCreatures of the chosen type get +1/+1.');
     expect(wrong.ok && wrong.unread.map((u) => u.line)).toEqual(['Creatures of the chosen type get +1/+1.']);
+  });
+});
+
+describe('tokens for somebody else, the rider mid-line, and no maximum hand size (D646)', () => {
+  const spell = (text: string) => compileCard({
+    name: 'Test Spell', type_line: 'Instant', oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+  } as never);
+  it('reads each of them', () => {
+    for (const text of [
+      'Destroy target permanent. Its controller creates a 3/3 green Beast creature token.',
+      'Counter target spell. Its controller creates two Treasure tokens.',
+      "Destroy target creature. It can't be regenerated. Its controller creates a 3/3 green Ape creature token.",
+      'Target opponent creates a 1/1 white Soldier creature token.',
+      'Each opponent creates a Food token.',
+    ]) {
+      const read = spell(text);
+      expect(read.ok && read.unread, text).toEqual([]);
+    }
+    const tower = compileCard({ name: 'Test Tower', type_line: 'Land', oracle_text: '{T}: Add {C}.\nYou have no maximum hand size.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' } as never);
+    expect(tower.ok && tower.unread).toEqual([]);
+    expect(tower.ok && tower.script?.noMaxHandSize).toBe(true);
+  });
+  it('still refuses the rider before any destroy', () => {
+    const read = spell("Draw a card. It can't be regenerated. Destroy target creature.");
+    expect(read.ok && read.unread.length).toBe(1);
   });
 });
