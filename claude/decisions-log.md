@@ -43863,3 +43863,47 @@ Faults injected by hand, each caught:
     cards fully read 10,553 of 31,653 (was 10,514); lines read 28,855 of 59,306 (48.7%, was 28,813)
 
 Pod sweep 49601–49640 (D628's build): 40 of 40 finished, no throw and no stall.
+
+## D630 — printed monstrosity and adapt, and a keyword taken away
+
+**"{3}{G}: Monstrosity 3." and "{2}{U}: Adapt 2."** `monstrosity` and `adapt` have built these
+abilities for the hand-written cards since D182, but nothing read the printed line into them. That
+left 9 + 3 legal cards one line short (Chillerpillar, Fleetfeather Cockatrice, Aeromunculus).
+
+`abilityFromLine` now hands the printed number and a mana-only cost to the builder. Monstrosity is
+offered once, through `activateOnlyIf`; adapt stays offered but buys nothing while the creature has
+counters. The reminder text in parentheses is accepted. Two shapes stay unread:
+- **"Monstrosity X".** The count is chosen as it is paid, which neither builder takes.
+- **Any cost with more than mana in it.** The builders charge mana only, so a `{T}` in the cost
+  would be dropped.
+
+"When ~ becomes monstrous" triggers are a separate line and still unread.
+
+**"Target creature loses flying until end of turn"** (Downdraft, Radjan Spirit, Adarkar Windform).
+It is `removeKeywords` on an until-end-of-turn `pump`, the field the "loses all abilities" riders
+already use in layer 6. It is aimed at the other side of the table by default.
+
+**Tests.** 5 new engine tests:
+- The rows read.
+- Monstrosity puts on its counters once and is not offered again.
+- A `{T}` or X cost stays unread.
+- Adapt is still offered and then adds nothing.
+- Only the targeted Dragon loses flying.
+
+Faults injected by hand, each caught:
+- Monstrosity built as adapt.
+- The counters replaced by one.
+- The mana-only check removed. This went uncaught until the `{T}` / X test was added.
+- "Loses" read as "gains".
+
+    engine tests: 4,438, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,572 of 31,653 (was 10,553); lines read 28,912 of 59,306 (48.8%, was 28,855)
+
+Pod sweep 49701–49740 (D629's build): 40 of 40 finished, no throw and no stall.
+
+**Break run on D628's build:** 5 of 6 caught. The miss: an eliminated opponent's graveyard is
+exiled as well under "each opponent's". It has no effect on play: a player who has left the game
+has nothing left in it to play with (CR 800.4a). The guard stays, as the printed scope.

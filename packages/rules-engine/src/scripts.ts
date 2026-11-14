@@ -20393,6 +20393,25 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     real sentence and `setColors: []` is a different claim from `setColors: null`, which is the
     absence of the effect. Nothing in the pool prints it, so it is left unread rather than guessed.
   */
+  /*
+    **The opposite: "Target creature loses flying until end of turn"** (D630). Downdraft, Radjan
+    Spirit, Adarkar Windform. `removeKeywords` has taken a keyword away in layer 6 since the static
+    "loses all abilities" riders; this is the same field on an until-end-of-turn effect. Aimed at
+    the other side of the table by default, which is the only reason to print it.
+  */
+  const stripped = /^(target creature(?: an opponent controls| you don't control)?) loses ([a-z][a-z' ]*?) until end of turn$/i
+    .exec(text);
+  if (stripped !== null) {
+    const words = grantedKeywordList(stripped[2]!);
+    const spec = targetSpecFrom(stripped[1]!, false);
+    if (words !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], c.source, c.controller, { removeKeywords: words })),
+      };
+    }
+  }
+
   const granted =
     /^(target creature(?: you control)?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z' ]*?) until end of turn$/i
       .exec(text);
@@ -22318,6 +22337,21 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(returnsOthers === null ? {} : { returnToHand: returnsOthers }),
   };
 
+  /*
+    **"{3}{G}: Monstrosity 3." and "{2}{G}: Adapt 2."** (D630) — the two keyword actions as printed
+    lines. `monstrosity` and `adapt` have built them for the hand-written cards since D182; nothing
+    read the printed line into them, so 9 + 3 legal one-line-short cards (Fleecemane Lion's printing,
+    Chillerpillar, Aeromunculus) sat unread. Only a mana-only cost and a printed number: "Monstrosity
+    X" is a count chosen as it is paid, which neither builder takes. A timing restriction on the line
+    ("Activate only as a sorcery") is carried as on any other ability.
+  */
+  const keywordAction = /^(monstrosity|adapt) (\d+)\.?(?:\s*\(.*\))?$/i.exec(clause);
+  if (keywordAction !== null) {
+    if (cost.mana === undefined || Object.keys(cost).length !== 1) return null;
+    const n = Number(keywordAction[2]);
+    const built = keywordAction[1]!.toLowerCase() === 'monstrosity' ? monstrosity(n, cost.mana) : adapt(n, cost.mana);
+    return { abilities: [{ ...built, ...timing, description: text }] };
+  }
   /*
     A mana ability, which is `produces` and no effect at all. `Add {R}{G}` is two symbols and one
     ability.

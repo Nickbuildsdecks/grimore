@@ -47725,3 +47725,69 @@ describe('tap or untap, damage to you as well, and a self-return that is not tap
     expect(read.ok && read.unread).toHaveLength(1);
   });
 });
+
+describe('printed monstrosity and adapt, and a keyword taken away (D630)', () => {
+  const beast = (name: string, line: string) => ({
+    name, type_line: 'Creature — Beast', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: line,
+  });
+  const LION = beast('Test Lion', '{1}: Monstrosity 2.');
+  const EEL = beast('Test Eel', '{1}: Adapt 2.');
+  const GUST = { ...beast('Test Gust', '{1}: Target creature loses flying until end of turn.'), type_line: 'Creature — Elemental' };
+  const ROWS = [LION, EEL, GUST];
+  const deck = customDeck({
+    id: 'monsters', name: 'Monsters', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Shivan Dragon', count: 2 }, { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'monsters', 1: 'monsters' }, deckSpecs: { monsters: deck.deck },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offers = (s: GameState, card: string) => legalActions(s, 0 as SeatIndex).plays
+    .filter((p) => p.kind === 'activate' && p.card === card).length;
+  const activate = (s: GameState, card: string, targets?: readonly Target[]) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card, abilityIndex: 0, ...(targets === undefined ? {} : { targets }),
+  } as Action)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('monstrosity puts its counters on once and is then not offered', () => {
+    let s = table(['Test Lion']);
+    const lion = find(s, 0, 'battlefield', 'Test Lion');
+    expect(offers(s, lion)).toBe(1);
+    s = activate(s, lion);
+    expect(s.instances[lion]?.counters['+1/+1']).toBe(2);
+    expect(offers(s, lion)).toBe(0);
+  });
+
+  it('a cost with more than mana in it stays unread, because the builders charge mana only', () => {
+    for (const text of ['{1}, {T}: Monstrosity 2.', '{X}: Monstrosity X.']) {
+      const read = compileCard(beast('Test Lion', text) as never);
+      expect(read.ok && read.unread).toHaveLength(1);
+    }
+  });
+
+  it('adapt is still offered with counters on it, and then does nothing', () => {
+    let s = table(['Test Eel']);
+    const eel = find(s, 0, 'battlefield', 'Test Eel');
+    s = activate(s, eel);
+    expect(s.instances[eel]?.counters['+1/+1']).toBe(2);
+    expect(offers(s, eel)).toBe(1);
+    s = activate(s, eel);
+    expect(s.instances[eel]?.counters['+1/+1']).toBe(2);
+  });
+
+  it('target creature loses flying until end of turn, and only that one', () => {
+    let s = table(['Test Gust', 'Shivan Dragon'], ['Shivan Dragon']);
+    const theirs = find(s, 1, 'battlefield', 'Shivan Dragon');
+    const mine = find(s, 0, 'battlefield', 'Shivan Dragon');
+    s = activate(s, find(s, 0, 'battlefield', 'Test Gust'), [{ kind: 'card', id: theirs }]);
+    expect(characteristicsOf(s, s.instances[theirs]!).keywords.has('flying')).toBe(false);
+    expect(characteristicsOf(s, s.instances[mine]!).keywords.has('flying')).toBe(true);
+  });
+});
