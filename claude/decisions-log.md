@@ -43748,3 +43748,71 @@ started, which was part-way through this increment; its stale-engine banner did 
   increment.
 - Owner in place of controller. This is equivalent: a card is only ever in its owner's graveyard,
   and only its owner can activate it there.
+
+## D628 — a keyword for the whole team, and graveyard hate
+
+**A keyword with no size.** `massPumpSubject`'s reader (D541) read "Creatures you control get +1/+1
+and gain trample until end of turn", but not the same grant without a size. Examples it missed:
+- "Creatures you control gain flying until end of turn" (Frostwind Invoker, Nephalia Moondrakes).
+- "Other creatures you control gain haste" (Bitter Reunion's family).
+- "Attacking creatures gain first strike".
+
+143 legal lines print a mass grant, and 86 of them are the last unread line on their card. Same
+subjects, the same frozen list (CR 611.2c), one `pump` with only `keywords`.
+
+Two things are left as they were:
+- **The "hold for combat" bot hint stays off.** Haste has to arrive before attackers are declared,
+  so holding the card for combat is the wrong advice for the most common grant.
+- **Unknown keywords still refuse.** `grantedKeywordList` refuses a keyword the engine does not run
+  (banding), and a list of three or more.
+
+**Graveyard hate.** These read now:
+- "Exile target player's graveyard" (Bojuka Bog, Angel of Finality).
+- "Exile all cards from target player's graveyard" (Tormod's Crypt, Nihil Spellbomb).
+- "Exile each opponent's graveyard".
+- "Exile all graveyards" and "exile all cards from all graveyards".
+
+The cards go to exile one by one through `exileCard`. The graveyard is read as the effect resolves,
+so a card put there in response goes too.
+
+`compile.test.ts`'s example of "a clause with no reader and no near miss" was Rest in Peace's "exile
+all cards from all graveyards", which now reads. It moved to "each player shuffles their hand and
+graveyard into their library".
+
+### A guard violation shipped in D627
+
+The D627 guide row said "the **untap symbol** ({Q}: Hateflayer, …)". `guards.js` reads "name
+({cost}" as a card name followed by a quoted mana cost, and "untap symbol" is no card. The row was
+written after the pre-gate checks had run, so the D627 commit (b0f7921) carries one guard violation,
+which the gate would have caught had it run after the row. The row is reworded here.
+
+To stop it happening again, the pre-gate checks are now one script, `pregate.sh`, which stops on
+the first failure. The gate starts only if it passes, and the guide row is written **before** it
+runs. The same mistake had nearly started a gate on a red tree earlier in this increment: the
+compile test above was failing and the gate was launched anyway. It was stopped by hand.
+
+**Tests.** 6 new engine tests:
+- The rows read, and banding is refused.
+- Your creatures gain flying and an opponent's do not.
+- "Other creatures you control" leaves out the granter.
+- Target player's graveyard goes to exile, and yours stays.
+- All graveyards go, and the spell itself lands in your graveyard after.
+- Each opponent's graveyard goes, and yours stays.
+
+Faults injected by hand, each caught:
+- The subject replaced by "your creatures".
+- "All" shrunk to yours.
+- "Each opponent's" widened to everyone.
+- The target replaced by everyone.
+- The keyword check removed. This one was uncaught until the refusal row was changed from
+  "afterlife 1" (which the reader's own pattern already refuses, because of the digit) to banding.
+
+    engine tests: 4,429, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,514 of 31,653 (was 10,448); lines read 28,813 of 59,306 (48.6%, was 28,713)
+
+Pod sweep 49501–49540 (D627's build): 40 of 40 finished, no throw and no stall.
+
+**Break run on D627's build:** 6 of 6 caught.

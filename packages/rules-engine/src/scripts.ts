@@ -12473,6 +12473,55 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    **A keyword for the team with no size** (D628): "Creatures you control gain flying until end of
+    turn" (Frostwind Invoker, Nephalia Moondrakes), "… gain haste" (Bitter Reunion), "… gain shroud",
+    "Creatures your opponents control lose …" stays unread. 143 legal lines print a mass grant and 86
+    of them are the last unread line on their card; the reader above took one only beside a size.
+
+    The same subjects, the same frozen list (CR 611.2c), one `pump` with only keywords in it. The bot
+    hint stays off: haste has to arrive before attackers are declared, so "hold this for combat" would
+    be the wrong advice for the most common grant of all.
+  */
+  const teamGains = new RegExp(
+    `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z' ]*?) until end of turn$`, 'i',
+  ).exec(text);
+  if (teamGains !== null) {
+    const subject = massPumpSubject(teamGains[1]!);
+    const words = grantedKeywordList(teamGains[2]!);
+    if (subject !== null && words !== null) {
+      return {
+        ...(subject.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, { keywords: words }),
+      };
+    }
+  }
+
+  /*
+    **Graveyard hate** (D628): "Exile target player's graveyard" (Bojuka Bog, Angel of Finality),
+    "Exile all cards from target player's graveyard" (Tormod's Crypt, Nihil Spellbomb, Remorseful
+    Cleric), "Exile all graveyards" (Scavenger Grounds, Crook of Condemnation), "Exile each opponent's
+    graveyard". The cards go to their owner's exile, which is the only exile there is (CR 406.1);
+    the list is read as the effect resolves, so a card that arrived in response goes too.
+  */
+  const graveyardHate = /^exile (?:all cards from )?(target player's|each opponent's|all) graveyards?$/i.exec(text);
+  if (graveyardHate !== null) {
+    const whose = graveyardHate[1]!.toLowerCase();
+    const seatsOf = (c: EffectContext): readonly SeatIndex[] => {
+      if (whose === 'all') return c.state.seats.map((seat) => seat.index);
+      if (whose === "each opponent's") return c.state.seats.filter((seat) => seat.index !== c.controller && !seat.eliminated).map((seat) => seat.index);
+      const seat = firstPlayerTarget(c);
+      return seat === null ? [] : [seat];
+    };
+    return {
+      ...(whose === "target player's" ? { targets: [TARGET_PLAYER] } : {}),
+      effect: (c) => seatsOf(c).reduce(
+        (state, seat) => [...(state.zones[zoneKey(seat, 'graveyard')] ?? [])].reduce(exileCard, state),
+        c.state,
+      ),
+    };
+  }
+
   if (/^you become the monarch$/i.test(text)) {
     return { effect: (c) => becomeMonarch(c.state, c.controller) };
   }

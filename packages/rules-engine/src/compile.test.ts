@@ -373,8 +373,9 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('leaves a clause it cannot read alone, rather than compiling half of it', () => {
       /*
-        The example has moved once already: it was "exile target creature", and D404 reads that, so
-        the row is now Rest in Peace's sweep — a clause with no reader and no near miss. The
+        The example has moved twice: it was "exile target creature", which D404 reads, and then Rest
+        in Peace's "exile all cards from all graveyards", which D628 reads. It is now Timetwister's
+        shuffle on an enters trigger — a clause with no reader and no near miss. The
         property is the one that has not changed: a line this module cannot read is **reported**,
         and the card is a manual object inside an automated game (D362), rather than compiling the
         half of it that does read.
@@ -382,14 +383,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const banisher = compileCard({
         name: 'Reader Test', type_line: 'Creature — Human', mana_cost: '{3}', cmc: 3,
         power: '2', toughness: '2', colors: [],
-        oracle_text: 'When Reader Test enters the battlefield, exile all cards from all graveyards.',
+        oracle_text: 'When Reader Test enters the battlefield, each player shuffles their hand and graveyard into their library.',
       });
       expect(banisher.ok).toBe(true);
       if (!banisher.ok) return;
       expect(banisher.script).toBeUndefined();
       expect(banisher.unread).toEqual([
         {
-          line: 'When Reader Test enters the battlefield, exile all cards from all graveyards.',
+          line: 'When Reader Test enters the battlefield, each player shuffles their hand and graveyard into their library.',
           why: 'no-reader',
         },
       ]);

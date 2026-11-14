@@ -47587,3 +47587,78 @@ describe('the untap symbol {Q} as a cost (D627)', () => {
     }
   });
 });
+
+describe('a keyword for the whole team, and graveyard hate (D628)', () => {
+  const spell = (name: string, text: string) => ({
+    name, type_line: 'Instant', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const WINGS = spell('Test Wings', 'Creatures you control gain flying until end of turn.');
+  const RALLY = { ...spell('Test Rally', ''), type_line: 'Creature — Goblin', power: '1', toughness: '1',
+    oracle_text: '{1}: Other creatures you control gain haste until end of turn.' };
+  const CRYPT = spell('Test Crypt', "Exile all cards from target player's graveyard.");
+  const GROUNDS = spell('Test Grounds', 'Exile all graveyards.');
+  const PURGE = spell('Test Purge', "Exile each opponent's graveyard.");
+  const ROWS = [WINGS, RALLY, CRYPT, GROUNDS, PURGE];
+  const deck = customDeck({
+    id: 'team', name: 'Team',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 6 }, { name: 'Mountain', count: 46 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hand?: readonly string[]; mine?: readonly string[]; theirs?: readonly string[]; yards?: Record<number, readonly string[]> }) => advanceTo(arena({
+    decks: { 0: 'team', 1: 'team' }, deckSpecs: { team: deck.deck },
+    hands: { 0: [...(opts.hand ?? [])] }, battlefield: { 0: ['Mountain', 'Mountain', ...(opts.mine ?? [])], 1: [...(opts.theirs ?? [])] },
+    graveyard: opts.yards ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, targets?: readonly Target[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 20);
+  const has = (s: GameState, seat: SeatIndex, word: string) => characteristicsOf(s, s.instances[find(s, seat, 'battlefield', 'Hill Giant')]!).keywords.has(word as never);
+
+  it('reads every row whole, and a keyword the engine does not know is refused', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    // Banding is a keyword the engine does not run, so granting it would be granting nothing.
+    const banding = compileCard(spell('Test Ghosts', 'Creatures you control gain banding until end of turn.') as never);
+    expect(banding.ok && banding.unread).toHaveLength(1);
+  });
+
+  it('your creatures gain flying, theirs do not', () => {
+    const s = cast(table({ hand: ['Test Wings'], mine: ['Hill Giant'], theirs: ['Hill Giant'] }), 'Test Wings');
+    expect(has(s, 0, 'flying')).toBe(true);
+    expect(has(s, 1, 'flying')).toBe(false);
+  });
+
+  it('"other creatures you control" leaves out the creature granting it', () => {
+    let s = table({ mine: ['Hill Giant', 'Test Rally'] });
+    const rally = find(s, 0, 'battlefield', 'Test Rally');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: rally, abilityIndex: 0 } as Action)), 20);
+    expect(has(s, 0, 'haste')).toBe(true);
+    expect(characteristicsOf(s, s.instances[rally]!).keywords.has('haste')).toBe(false);
+  });
+
+  it("target player's graveyard goes to exile, and nobody else's", () => {
+    let s = table({ hand: ['Test Crypt'], yards: { 0: ['Hill Giant'], 1: ['Hill Giant', 'Mountain'] } });
+    s = cast(s, 'Test Crypt', [{ kind: 'player', seat: 1 as SeatIndex }]);
+    expect(namesIn(s, 1, 'graveyard')).toEqual([]);
+    expect(namesIn(s, 1, 'exile').sort()).toEqual(['Hill Giant', 'Mountain']);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Hill Giant');
+  });
+
+  it('all graveyards: both, and the spell itself goes to its graveyard after', () => {
+    let s = table({ hand: ['Test Grounds'], yards: { 0: ['Hill Giant'], 1: ['Hill Giant'] } });
+    s = cast(s, 'Test Grounds');
+    expect(namesIn(s, 0, 'exile')).toContain('Hill Giant');
+    expect(namesIn(s, 1, 'exile')).toContain('Hill Giant');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Test Grounds']);
+  });
+
+  it("each opponent's graveyard: theirs, not yours", () => {
+    let s = table({ hand: ['Test Purge'], yards: { 0: ['Hill Giant'], 1: ['Hill Giant'] } });
+    s = cast(s, 'Test Purge');
+    expect(namesIn(s, 1, 'exile')).toContain('Hill Giant');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Hill Giant');
+  });
+});
