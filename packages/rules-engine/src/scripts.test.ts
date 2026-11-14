@@ -47840,3 +47840,92 @@ describe('"with three or more creatures", and enters triggers that name nobody\'
     expect(life(s, 0)).toBe(23);
   });
 });
+
+describe('abilities that work from the graveyard (D632)', () => {
+  const card = (name: string, text: string) => ({
+    name, type_line: 'Creature — Spirit', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '1', oracle_text: text,
+  });
+  const GHOUL = card('Test Ghoul', 'At the beginning of your upkeep, you may return Test Ghoul from your graveyard to the battlefield.');
+  const GHAST = card('Test Ghast', 'Whenever a land you control enters, you may return this card from your graveyard to the battlefield tapped.');
+  const SHADE = card('Test Shade', 'Whenever a land you control enters, you may pay {1}. If you do, return Test Shade from your graveyard to your hand.');
+  const ROWS = [GHOUL, GHAST, SHADE];
+  const deck = customDeck({
+    id: 'yard', name: 'Yard', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 54 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { mine?: readonly string[]; yard?: readonly string[]; hand?: readonly string[]; theirYard?: readonly string[] }) => advanceTo(arena({
+    decks: { 0: 'yard', 1: 'yard' }, deckSpecs: { yard: deck.deck },
+    battlefield: { 0: [...(opts.mine ?? [])] }, graveyard: { 0: [...(opts.yard ?? [])], 1: [...(opts.theirYard ?? [])] },
+    hands: { 0: [...(opts.hand ?? [])] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const playLand = (s: GameState) => apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Swamp') });
+
+  it('reads every row whole, each as a graveyard ability', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+      expect(read.ok && read.script?.triggers?.[0]?.inGraveyard).toBe(true);
+    }
+  });
+
+  it('a land entering returns the card from your graveyard, tapped, on a yes', () => {
+    let s = table({ yard: ['Test Ghast'], hand: ['Swamp'] });
+    s = passBoth(playLand(s));
+    s = say(s, 0, 'Yes');
+    s = drain(passBoth(s), 20);
+    const back = find(s, 0, 'battlefield', 'Test Ghast');
+    expect(s.instances[back]?.tapped).toBe(true);
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Ghast');
+  });
+
+  it('on the battlefield, and in an opponent\'s graveyard for your land, it does nothing', () => {
+    let s = table({ mine: ['Test Ghast'], theirYard: ['Test Ghast'], hand: ['Swamp'] });
+    s = drain(passBoth(playLand(s)), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Ghast')).toHaveLength(1);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Ghast');
+  });
+
+  it('every graveyard is watched: the opponent\'s card answers their own land', () => {
+    let s = table({ theirYard: ['Test Ghast'] });
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Swamp'), toZone: 'battlefield' } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = say(s, 1 as SeatIndex, 'Yes');
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Ghast');
+  });
+
+  it('a price on the return: paid, and the card goes to your hand', () => {
+    let s = table({ mine: ['Swamp'], yard: ['Test Shade'], hand: ['Swamp'] });
+    s = passBoth(playLand(s));
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {1}']);
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}' } as Action)), 20);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Shade');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Shade');
+  });
+
+  it('at the beginning of your upkeep, from the graveyard', () => {
+    // Not through `table`, which walks past the upkeep: the question stops it there, which is the point.
+    let s = arena({
+      decks: { 0: 'yard', 1: 'yard' }, deckSpecs: { yard: deck.deck }, graveyard: { 0: ['Test Ghoul'] }, turn: 3, firstSeat: 0,
+    });
+    for (let i = 0; i < 12 && s.pendingDecision === null; i++) s = passBoth(s);
+    expect(s.step).toBe('upkeep');
+    s = say(s, 0, 'Yes');
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Ghoul');
+  });
+});
+
+describe('a printed monstrosity keeps its timing (pinned by the D630 break run)', () => {
+  it('"Activate only as a sorcery" survives on the built ability', () => {
+    const read = compileCard({
+      name: 'Test Lion', type_line: 'Creature — Cat', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: '{1}: Monstrosity 2. Activate only as a sorcery.',
+    } as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.abilities?.[0]?.sorcerySpeed).toBe(true);
+  });
+});

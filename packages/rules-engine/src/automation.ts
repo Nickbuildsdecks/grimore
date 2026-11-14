@@ -2054,6 +2054,8 @@ function raise(
       // A card that was cycled answers for its own cycling and for nothing else printed on it
       // (D567): a Drannith Healer in a graveyard does not gain life for the next card cycled.
       if (ownCycle && !(trigger.on.kind === 'cycles' && trigger.on.self === true)) continue;
+      // A graveyard ability does nothing anywhere else (D632); the loop below offers it.
+      if (trigger.inGraveyard === true) continue;
       next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, fromStack);
     }
     // And nothing grants an ability to a card in a graveyard.
@@ -2091,6 +2093,27 @@ function raise(
       && scriptForCard(next.cardDefs[inst.defKey])?.morph?.disguise === true) {
       const ward = DISGUISED_FACE_DOWN.grantedTriggers![DISGUISE_GRANT.index]!;
       next = fireTrigger(next, ward, id, inst, DISGUISE_GRANT.index, event, actor, subject, fromStack, DISGUISE_GRANT);
+    }
+  }
+  /*
+    **Abilities that work from a graveyard** (D632, CR 113.6k): Bloodghast's family, Prized Amalgam,
+    Ashen Ghoul's upkeep. Every card in a graveyard is offered the event, but only for triggers the
+    compiler marked `inGraveyard` — a card in a graveyard has no other abilities working (the loop
+    above skips the same triggers on the battlefield). The owner's seat is the card's `zoneSeat`, so
+    "you" in the trigger is its owner, which is who controls an ability of a card in a graveyard
+    (CR 113.8). A snapshot of each graveyard, because firing can only add to the stack, not move
+    cards, but the list is read once regardless.
+  */
+  for (const seat of next.seats) {
+    if (seat.eliminated) continue;
+    for (const id of [...(next.zones[zoneKey(seat.index, 'graveyard')] ?? [])]) {
+      const inst = next.instances[id];
+      if (inst === undefined || inst.zone !== 'graveyard') continue;
+      const script = scriptForCard(next.cardDefs[inst.defKey]);
+      for (const [i, trigger] of (script?.triggers ?? []).entries()) {
+        if (trigger.inGraveyard !== true) continue;
+        next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, false);
+      }
     }
   }
   return next;

@@ -17580,6 +17580,32 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       The event-relative clauses first — "that player" is `c.actor`, which only a trigger has. See
       `eventRelativeEffect` for why that reading cannot live in the shared clause vocabulary.
     */
+    /*
+      **A card returning itself from your graveyard** (D632): "At the beginning of your upkeep, you
+      may return this card from your graveyard to the battlefield", "… you may pay {1}. If you do,
+      return ~ from your graveyard to your hand". The ability works from the graveyard
+      (`TriggerDef.inGraveyard`), so the clause is read by `graveyardSelfReturn` alone, possibly
+      behind a "you may" or a price — never by the battlefield vocabulary, which would read it as a
+      permanent bouncing itself. Only for events a permanent watches from the battlefield: a death
+      or a trip to the graveyard already fires from there for its own card.
+    */
+    const fromYard = where === 'battlefield'
+      && new RegExp(`\\b(?:return|put) (?:${self}|this card) from your graveyard\\b`, 'i').test(clause);
+    if (fromYard) {
+      const own = (text: string): ReadEffect | null => graveyardSelfReturn(text, name);
+      const back = own(clause) ?? optionalEffect(clause, own);
+      if (back === null) return null;
+      return {
+        triggers: on.map((event) => ({
+          on: event,
+          description: clause,
+          inGraveyard: true as const,
+          ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
+          ...(back.decisions === undefined ? {} : { decisions: back.decisions }),
+          effect: back.effect,
+        } as TriggerDef)),
+      };
+    }
     const reader = (text: string): ReadEffect | null =>
       eventRelativeEffect(text, name, on) ?? composeEffects(clausesOf(text), name, where);
     /*

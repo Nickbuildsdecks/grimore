@@ -26507,3 +26507,66 @@ Pod sweep 49801–49840 (D630's build): 40 of 40 finished, no throw and no stall
   reaches the reader, because its regex needs "target" straight after "untap".
 - **D630: 3 of 4 caught.** The miss is a timing restriction dropped from a printed monstrosity line
   ("Activate only as a sorcery"). It will be pinned with the next increment.
+
+## D632 — abilities that work from the graveyard
+
+92 unread trigger lines return their own card from your graveyard, and on 68 cards that is the last
+unread line. Examples:
+- Bloodghast's family: "Whenever a land you control enters, you may return this card from your
+  graveyard to the battlefield".
+- Ashen Ghoul's upkeep.
+- The Prized Amalgam shapes: "… you may pay {1}. If you do, return ~ from your graveyard to your
+  hand".
+
+Until now no trigger could watch from a graveyard, except a card's own death, its arrival there, or
+its own cycling.
+
+**The engine.** `TriggerDef.inGraveyard` marks an ability that works only while its card is in its
+owner's graveyard (CR 113.6k):
+- After the battlefield watchers, `raise` offers every event to each card in each living seat's
+  graveyard, for those triggers only.
+- The battlefield loop skips them, so they do nothing on the battlefield.
+- The card's `zoneSeat` in a graveyard is its owner, so "you" in the trigger is the owner, which is
+  who controls such an ability (CR 113.8).
+
+**The compiler.** A trigger whose events all fire on the battlefield, and whose clause returns its own
+card from your graveyard, is read by `graveyardSelfReturn` alone (D626, to the hand or to the
+battlefield, tapped or not). It may sit behind `optionalEffect`'s "you may" or "you may pay {N}. If
+you do,". The trigger is marked `inGraveyard`. The battlefield vocabulary never sees the clause,
+because it would read it as a permanent bouncing itself. Death and to-graveyard triggers are not
+intercepted; they already fire from there for their own card.
+
+Riders stay unread:
+- "It gains haste until end of turn".
+- "With a finality counter on it".
+- Pay-any-number-of-times shapes.
+
+**Tests.** 6 new engine tests, plus the D630 pin:
+- The rows read, each marked as a graveyard ability.
+- A land entering returns the card tapped on a yes.
+- The same card on the battlefield, or in an opponent's graveyard, does nothing for your land.
+- The opponent's graveyard card answers **their** land, and they are the one asked.
+- A priced return: paid, and the card goes to the hand.
+- The upkeep return from the graveyard.
+- The D630 pin: "Monstrosity 2. Activate only as a sorcery." keeps `sorcerySpeed`.
+
+Faults injected by hand, each caught:
+- Graveyard triggers allowed on the battlefield.
+- The graveyard loop not firing.
+- The compiler not marking `inGraveyard`.
+- The priced path dropped.
+- The D630 timing dropped.
+- Only seat 0's graveyard watched. This went uncaught until the opponent test was added.
+
+    engine tests: 4,446, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,603 of 31,653 (was 10,586); lines read 28,955 of 59,306 (48.8%, was 28,932)
+
+Pod sweep 49901–49940 (D631's build): 40 of 40 finished, no throw and no stall.
+
+**Break run on D630's build:** 3 of 4 caught. The miss is pinned above.
+
+**To watch:** the graveyard loop runs on every event, so the next sweep's running time is the check
+that it costs nothing a game would notice.

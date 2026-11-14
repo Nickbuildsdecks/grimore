@@ -1858,6 +1858,14 @@ export interface TriggerDef {
    */
   readonly onceEachTurn?: true;
   /**
+   * The ability works **only while its card is in its owner's graveyard** (D632, CR 113.6k):
+   * "At the beginning of your upkeep, you may return this card from your graveyard to the
+   * battlefield", "Whenever you cast a multicolored spell, you may pay {1}. If you do, return ~ from
+   * your graveyard to your hand". `raise` offers events to graveyard cards for these triggers only,
+   * and never to these triggers while the card is anywhere else.
+   */
+  readonly inGraveyard?: true;
+  /**
    * The intervening-if clause: "**if** that creature's power is greater than this creature's, put
    * a +1/+1 counter on it" (CR 603.4).
    *
