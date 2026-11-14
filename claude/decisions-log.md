@@ -43320,3 +43320,38 @@ reading.
 Pod sweep 48601–48640 (D618's build): 40 of 40 finished, no throw and no stall.
 
 Break run on D618's build, the first with the rewritten harness: 5 deliberate faults, 5 caught.
+
+## D621 — Auras on lands and other permanents state their bonus too
+
+`attachmentScriptFor` looked only for "Enchanted creature …" on an Aura, and `attachmentBonus` read
+only that subject. So an Aura on a land attached and did nothing:
+- Abundant Growth: "Enchanted land has '{T}: Add one mana of any color.'"
+- Gift of Paradise: two mana of any one colour.
+- The Fields: Barbed Field, Noxious Field and Flowering Field.
+
+33 legal lines on land Auras were unread for no reason but the pattern.
+
+Both now accept "enchanted creature / land / artifact / enchantment / permanent". The bonus grammar
+is unchanged. A quoted ability is granted to the host through the attachment as before, and a quoted
+mana ability becomes a mana source on the enchanted land.
+
+**Not read yet,** and next in line: "Whenever enchanted land is tapped for mana, its controller adds
+an additional {G}" (Wild Growth, Fertile Ground, Utopia Sprawl, Overgrowth). That is a triggered
+mana ability, and a family of its own.
+
+**Tests.** 3 new engine tests:
+- The rows read.
+- The enchanted Forest makes any colour, and an untapped unenchanted Forest only green.
+- A granted non-mana ability is offered on the land as a granted play.
+
+Each of the two widened patterns was broken on purpose (one at a time) and its tests failed.
+
+    engine tests: 4,386, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,251 of 31,653 (was 10,224); lines read 28,461 of 59,306 (48.0%, was 28,428)
+
+Pod sweep 48801–48840 (D620's build): 40 of 40 finished, no throw and no stall.
+
+Break run on D620's build: 5 deliberate faults, 5 caught.

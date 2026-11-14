@@ -46976,3 +46976,49 @@ describe('statics over a group of creatures (D620)', () => {
     expect([...printedKeywords(ship.oracle_text)]).not.toContain('flying');
   });
 });
+
+describe('Auras on lands and other permanents state their bonus too (D621)', () => {
+  /*
+    `attachmentScriptFor` only looked for "Enchanted creature …", so an Aura on a land — Abundant
+    Growth's "Enchanted land has '{T}: Add one mana of any color.'" — attached and did nothing.
+  */
+  const GROWTH = { name: 'Test Growth', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: null, toughness: null, oracle_text: 'Enchant land\nEnchanted land has "{T}: Add one mana of any color."' };
+  const FIELD = { name: 'Test Field', type_line: 'Enchantment — Aura', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Enchant land\nEnchanted land has "{T}: This land deals 1 damage to any target."' };
+  const ROWS = [GROWTH, FIELD];
+  const deck = customDeck({
+    id: 'landauras', name: 'Land Auras',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 28 }, { name: 'Mountain', count: 28 }],
+    data: ROWS as never[],
+  });
+  const enchant = (aura: string, lands: readonly string[]): { s: GameState; host: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'landauras', 1: 'landauras' }, deckSpecs: { landauras: deck.deck },
+      hands: { 0: [aura] }, battlefield: { 0: [...lands] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const host = ids(s, 0, 'battlefield')[ids(s, 0, 'battlefield').length - 1]!;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: host }] } as Action)), 20);
+    return { s, host };
+  };
+
+  it('reads both rows whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('the enchanted Forest makes any colour, and an unenchanted one still only green', () => {
+    const { s, host } = enchant('Test Growth', ['Forest', 'Forest', 'Forest']);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Growth')]!.attachedTo).toBe(host);
+    const made = manaSources(s, 0).filter((source) => source.key === host).flatMap((source) => [...source.produces]);
+    expect(new Set(made)).toEqual(new Set(['W', 'U', 'B', 'R', 'G']));
+    const other = ids(s, 0, 'battlefield').find((id) => id !== host && nameOf(s, id) === 'Forest' && !s.instances[id]!.tapped)!;
+    expect(manaSources(s, 0).filter((source) => source.key === other).flatMap((source) => [...source.produces])).toEqual(['G']);
+  });
+
+  it('a granted non-mana ability is offered on the land', () => {
+    const { s, host } = enchant('Test Field', ['Mountain', 'Mountain']);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === host && p.grantedBy !== undefined)).toBe(true);
+  });
+});

@@ -13696,7 +13696,7 @@ function attachmentBonus(
   grantedTriggers?: readonly TriggerDef[];
   grantedAbilities?: readonly AbilityDef[];
 } | null {
-  const matched = /^(?:equipped|enchanted) creature (.+?)\.?$/i.exec(plain(line).trim());
+  const matched = /^(?:equipped|enchanted) (?:creature|land|artifact|enchantment|permanent) (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   const tail = matched[1]!.trim();
 
@@ -13911,7 +13911,12 @@ export function attachmentScriptFor(
   const isEquipment = hasSubtype(typeLine, 'equipment');
   if (!isAura && !isEquipment) return null;
 
-  const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
+  /*
+    An Aura on a land, an artifact or any permanent states its bonus the same way (D621): "Enchanted
+    land has '{T}: Add one mana of any color.'" is Abundant Growth, and 33 legal lines on Auras for
+    lands were unread for no reason but this pattern.
+  */
+  const subject = isAura ? /^enchanted (?:creature|land|artifact|enchantment|permanent)\b/i : /^equipped creature/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
   const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
   /*
