@@ -26631,3 +26631,47 @@ the first timed sweep, and the baseline for the graveyard-trigger loop D632 adde
 **Break run on D631's build:** 3 of 4 caught. The miss: the any-controller "enters" rows reading
 `another`, which would drop the card's own arrival. No test cast a creature carrying such a row.
 The pin comes with the next increment.
+
+## D634 — "one or more cards leave your graveyard"
+
+13 legal lines watch a graveyard empty out: Fuming Effigy, Garrison Excavator, Hardened Academic,
+and "… creature cards …" (Chalk Outline, Desecrated Tomb). No event existed.
+
+**The event.** `relocate`, the one place a card changes zone, records a card leaving a graveyard in
+`GameState.leftGraveyard`, to anywhere: exiled, returned to a hand, reanimated, cast from there. It
+stores whose graveyard it was and whether it was a creature card, read before the move. `settle`
+announces the list as **one** `leaves-graveyard` event per graveyard, which is the "one or more"
+every printing says: three cards exiled at once fire one trigger. The list is optional on
+`GameState`, initialised in both of `engine.ts`'s states, reset in `settle`, and keeps `settle`'s
+loop going. The trigger asks `of: 'you'` and optionally `creatures`.
+
+**The D631 pin.** A creature printing "Whenever a creature enters" gains life for its own arrival.
+
+**Tests.** 6 new engine tests:
+- The rows read.
+- Three cards exiled at once is one trigger.
+- A card returned by an ability, with nothing else happening, still fires it.
+- An opponent's graveyard does not count.
+- "Creature cards" waits for a creature card.
+- The D631 pin.
+
+Faults injected by hand:
+- **Caught:** one event per card instead of per graveyard; the "you" check removed; the creature
+  check removed; the D631 rows reading `another`.
+- **Caught once its test was added:** the drain left out of `settle`'s loop guard. Every earlier
+  test cast a spell, and the spell landing in a graveyard started the pass anyway. The
+  ability-only return is the case that needs the guard.
+
+    engine tests: 4,458, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,627 of 31,653 (was 10,614); lines read 28,991 of 59,306 (48.9%, was 28,969)
+
+Pod sweep 50101–50140 (D633's build): 40 of 40 finished, no throw and no stall, in 322 s against
+50001's 426 s on D632. The graveyard loop D632 added shows no cost a game would notice.
+
+**Break run on D632's build:** 4 of 5 caught. The miss: eliminated seats' graveyards still watched.
+It is real rather than equivalent: a player who has left the game would still have a Bloodghast
+come back. It needs a three-seat test (two seats end the game when one leaves), and is owed as a
+pin.

@@ -7759,6 +7759,10 @@ describe('deck coverage', () => {
         (Benthic Biomancer, Dreamdrinker Vampire, Simic-style "on a creature you control"). Driven at
         runtime by '"one or more +1/+1 counters are put on" (D633)': two counters at once fire one
         trigger, an opponent's creature does not count, and a regeneration shield is not a counter.
+      - `trigger leaves-graveyard` (D634): 13 legal corpus lines (Fuming Effigy, Chalk Outline).
+        Driven at runtime by '"one or more cards leave your graveyard" (D634)': three cards leaving
+        at once is one trigger, an opponent's graveyard does not count, and "creature cards" waits
+        for a creature card.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7774,7 +7778,7 @@ describe('deck coverage', () => {
       'script entersUntappedIf', 'script payLifeToEnterUntapped',
       'keyword daybound', 'keyword nightbound', 'trigger day-night', 'script becomesDayAsItEnters',
       'script retrace',
-      'trigger counters-put',
+      'trigger counters-put', 'trigger leaves-graveyard',
     ]);
 
     const declared = [
@@ -48006,5 +48010,71 @@ describe('"one or more +1/+1 counters are put on" (D633)', () => {
     let s = table(['Test Ascendancy', 'Test Grower']);
     s = activate(s, find(s, 0, 'battlefield', 'Test Grower'), 1);
     expect(life(s, 0)).toBe(20);
+  });
+});
+
+describe('"one or more cards leave your graveyard" (D634)', () => {
+  const card = (name: string, type: string, text: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const EFFIGY = card('Test Effigy', 'Enchantment', 'Whenever one or more cards leave your graveyard, you gain 1 life.');
+  const OUTLINE = card('Test Outline', 'Enchantment', 'Whenever one or more creature cards leave your graveyard, you gain 2 life.');
+  const CRYPT = card('Test Crypt', 'Instant', "Exile all cards from target player's graveyard.");
+  const HERALD = card('Test Herald', 'Creature — Human', 'Whenever a creature enters, you gain 1 life.', ['1', '1']);
+  const DIGGER = card('Test Digger', 'Creature — Zombie', '{1}: Return target creature card from your graveyard to your hand.', ['1', '1']);
+  const ROWS = [EFFIGY, OUTLINE, CRYPT, HERALD, DIGGER];
+  const deck = customDeck({
+    id: 'leave', name: 'Leave', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 4 }, { name: 'Swamp', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], hand: readonly string[], yards: Record<number, readonly string[]>) => advanceTo(arena({
+    decks: { 0: 'leave', 1: 'leave' }, deckSpecs: { leave: deck.deck },
+    battlefield: { 0: ['Swamp', 'Swamp', ...mine] }, hands: { 0: [...hand] }, graveyard: yards, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const crypt = (s: GameState, seat: SeatIndex) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Crypt'), targets: [{ kind: 'player', seat }],
+  } as Action)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('three cards leaving at once is one trigger', () => {
+    const s = crypt(table(['Test Effigy'], ['Test Crypt'], { 0: ['Hill Giant', 'Swamp', 'Swamp'] }), 0);
+    expect(namesIn(s, 0, 'exile')).toHaveLength(3);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('a card leaving with nothing else happening still fires it (an ability, not a spell)', () => {
+    let s = table(['Test Effigy', 'Test Digger'], [], { 0: ['Hill Giant'] });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Digger'), abilityIndex: 0,
+      targets: [{ kind: 'card', id: find(s, 0, 'graveyard', 'Hill Giant') }],
+    } as Action)), 20);
+    expect(namesIn(s, 0, 'hand')).toContain('Hill Giant');
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it("an opponent's graveyard is not yours", () => {
+    const s = crypt(table(['Test Effigy'], ['Test Crypt'], { 1: ['Hill Giant'] }), 1);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('"creature cards": only when a creature card is among them', () => {
+    let s = crypt(table(['Test Outline'], ['Test Crypt'], { 0: ['Swamp'] }), 0);
+    expect(life(s, 0)).toBe(20);
+    s = crypt(table(['Test Outline'], ['Test Crypt'], { 0: ['Swamp', 'Hill Giant'] }), 0);
+    expect(life(s, 0)).toBe(22);
+  });
+
+  it('"a creature enters" counts the creature that carries it (pinned by the D631 break run)', () => {
+    let s = table([], ['Test Herald'], {});
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Herald') } as Action)), 20);
+    expect(life(s, 0)).toBe(21);
   });
 });

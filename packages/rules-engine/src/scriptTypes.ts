@@ -1119,6 +1119,20 @@ export type TriggerEvent =
    * more" every printing says. Watched from the battlefield; the subject is the permanent the
    * counters went on.
    */
+  /**
+   * "Whenever one or more cards leave your graveyard" (D634) and "… creature cards …": one event per
+   * graveyard per batch of moves, however many cards left it.
+   */
+  | {
+      readonly kind: 'leaves-graveyard';
+      /** Whose graveyard, from the watcher's seat. `you` is the only form printed. */
+      readonly of?: 'you';
+      /** Only when at least one of them was a creature card. */
+      readonly creatures?: true;
+      /** Set by the engine: whose graveyard, and whether any creature card was among them. */
+      readonly subjectSeat?: SeatIndex;
+      readonly anyCreature?: boolean;
+    }
   | {
       readonly kind: 'counters-put';
       /** Which counter the trigger watches: `+1/+1`, `-1/-1` or `loyalty`. Set on the raised event too. */

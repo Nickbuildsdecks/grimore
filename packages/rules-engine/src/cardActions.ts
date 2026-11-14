@@ -221,6 +221,18 @@ export function relocate(
 
     Moving within a graveyard is not arriving in one.
   */
+  /*
+    And the other direction (D634): a card **leaving** a graveyard, to anywhere — exiled by a
+    Bojuka Bog, returned to a hand, reanimated, cast with flashback. Whose graveyard, and whether it
+    was a creature card, read now because the zone is about to change.
+  */
+  if (state.automated && inst.zone === 'graveyard' && toZone !== 'graveyard') {
+    const front = (state.cardDefs[inst.defKey]?.typeLine ?? '').split(/[—–]/)[0]!.toLowerCase();
+    next = {
+      ...next,
+      leftGraveyard: [...(next.leftGraveyard ?? []), { seat: inst.zoneSeat, creature: /\bcreature\b/.test(front) }],
+    };
+  }
   if (state.automated && inst.zone !== 'graveyard' && toZone === 'graveyard') {
     next = { ...next, toGraveyard: [...next.toGraveyard, inst.id] };
     /*

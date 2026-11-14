@@ -15274,6 +15274,19 @@ const TRIGGER_SHAPES: readonly ({
       ...(matched[1]!.toLowerCase() === 'creature' ? { what: 'creature' as const } : {}),
     }],
   },
+  /*
+    "Whenever one or more cards leave your graveyard" (D634): Fuming Effigy, Garrison Excavator,
+    Hardened Academic; and "… creature cards …" (Chalk Outline, Desecrated Tomb). One event per
+    graveyard per batch of moves.
+  */
+  {
+    prologue: () => /^Whenever one or more cards leave your graveyard, (.+)$/i,
+    on: [{ kind: 'leaves-graveyard', of: 'you' }],
+  },
+  {
+    prologue: () => /^Whenever one or more creature cards leave your graveyard, (.+)$/i,
+    on: [{ kind: 'leaves-graveyard', of: 'you', creatures: true }],
+  },
   {
     prologue: () => /^Whenever one or more -1\/-1 counters are put on a creature, (.+)$/i,
     on: [{ kind: 'counters-put', counter: '-1/-1', countersOn: 'any', what: 'creature' }],

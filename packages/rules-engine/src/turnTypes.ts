@@ -963,6 +963,13 @@ export interface AutomationState {
    */
   readonly countersPut?: readonly { readonly card: string; readonly counter: string }[];
   /**
+   * Cards that left a graveyard and were not yet announced (D634): whose graveyard, and whether the
+   * card was a creature card. `settle` announces them as **one** `leaves-graveyard` event per
+   * graveyard, which is the "one or more cards leave your graveyard" every printing says.
+   * Optional, so a game saved before it existed loads.
+   */
+  readonly leftGraveyard?: readonly { readonly seat: SeatIndex; readonly creature: boolean }[];
+  /**
    * Permanents **sacrificed** since the last `settle`, with the seat that sacrificed each (D570).
    *
    * A sacrificed creature is in `died` and `left` too, and neither can say it was a sacrifice
