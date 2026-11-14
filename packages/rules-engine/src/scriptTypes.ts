@@ -2524,6 +2524,18 @@ export interface CardScript {
    */
   readonly noMaxHandSize?: true;
   /**
+   * "You may play an additional land on each of your turns" (1), "… two additional lands …" (2) —
+   * D648, CR 305.2. Added live by `landDropsFor` while the permanent is on its controller's
+   * battlefield with its abilities; several stack.
+   */
+  readonly additionalLands?: number;
+  /**
+   * "You may play lands from your graveyard" (D648) — Crucible of Worlds, Ramunap Excavator. Read
+   * live by `landZonesFor`: the land plays offered, and `playLand`, include the controller's
+   * graveyard while one is on their battlefield with its abilities.
+   */
+  readonly landsFromGraveyard?: true;
+  /**
    * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
    *
    * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other

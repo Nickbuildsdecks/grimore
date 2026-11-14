@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, type CardScript, type Targ
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, landDropsFor, landsFromGraveyardFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1421,7 +1421,9 @@ function playLand(
   // From the hand, or out of exile under a permission to play the card (D583) — which is a land
   // drop like any other and is counted below with the rest.
   const fromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by;
-  if (!fromExile && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
+  // Or out of the graveyard while Crucible of Worlds or the like says so (D648).
+  const fromGraveyard = inst.zone === 'graveyard' && inst.zoneSeat === action.by && landsFromGraveyardFor(state, action.by);
+  if (!fromExile && !fromGraveyard && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   /*
@@ -1446,7 +1448,7 @@ function playLand(
   // One, plus whatever something has given you this turn (CR 505.5b). The allowance is read here
   // rather than decremented when it is given, so an Explore cast with the land drop still unused
   // is two lands and not one — which is what the card says and what a player expects.
-  const allowed = 1 + (state.extraLands[String(action.by)] ?? 0);
+  const allowed = landDropsFor(state, action.by);
   if (played >= allowed) {
     throw new EngineError('RULE_NOT_APPLICABLE', played > 1
       ? `you have already played ${played} lands this turn`

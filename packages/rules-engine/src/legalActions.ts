@@ -637,6 +637,33 @@ export function crewPlan(
  * not enough. Untapped permanents of the kind, the source last — so an ability on a creature that
  * may tap itself does so only when nothing else will — and otherwise the weakest first, crew's rule.
  */
+/** The permanents whose static abilities this seat may lean on now: its own, face up, abilities intact. */
+function staticsOf(state: GameState, seat: SeatIndex): readonly CardScript[] {
+  const out: CardScript[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown === true || allAbilitiesLost(state, inst)) continue;
+    const script = scriptForCard(state.cardDefs[inst.defKey]);
+    if (script !== undefined) out.push(script);
+  }
+  return out;
+}
+
+/**
+ * How many lands this seat may play this turn (CR 305.2): one, plus what an effect handed it this
+ * turn (`extraLands`), plus every "you may play an additional land on each of your turns" it
+ * controls (D648) — read live, so an Azusa that dies takes her two drops with her.
+ */
+export function landDropsFor(state: GameState, seat: SeatIndex): number {
+  const statics = staticsOf(state, seat).reduce((n, script) => n + (script.additionalLands ?? 0), 0);
+  return 1 + (state.extraLands[String(seat)] ?? 0) + statics;
+}
+
+/** Whether this seat may play lands from its graveyard now (D648): Crucible of Worlds. */
+export function landsFromGraveyardFor(state: GameState, seat: SeatIndex): boolean {
+  return staticsOf(state, seat).some((script) => script.landsFromGraveyard === true);
+}
+
 export function tapCostPlan(
   state: GameState, seat: SeatIndex, cost: NonNullable<AbilityCost['tapUntapped']>, source: string,
   sourceTapsItself = false,
@@ -1223,7 +1250,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   const splitSecond = splitSecondHeld(state);
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
   /** One land a turn, plus any extra drops something has handed this seat (CR 505.5b). */
-  const landsAllowed = 1 + (state.extraLands[String(seat)] ?? 0);
+  const landsAllowed = landDropsFor(state, seat);
   // Per commander (D640): see `commanderTaxFor`, asked for each card below.
 
   // A commander is cast from the command zone, which is why it is a second list rather than part
@@ -1313,6 +1340,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       it is not filtered by anything: the offer was made to this seat about this card, and the only
       question left below is what the spell needs chosen before it goes on the stack.
     */
+    /*
+      And lands in the graveyard while something lets this seat play them (D648) — Crucible of
+      Worlds. A land drop and nothing else: `landOnly` keeps a spell in the same graveyard from
+      being offered as a cast it has no permission for.
+    */
+    ...(landsFromGraveyardFor(state, seat) ? listAt(state, zoneKey(seat, 'graveyard')) : [])
+      .map((id) => ({
+        id, fromCommand: false, flashback: false, escape: false, foretold: false,
+        fromAdventure: false, impulse: false, offered: false, landOnly: true,
+      })),
     ...(state.pendingOfferedCast !== null && state.pendingOfferedCast.seat === seat
       ? [{
           id: state.pendingOfferedCast.card, fromCommand: false, flashback: false, escape: false,
@@ -1341,6 +1378,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } = entry;
     const tax = fromCommand ? commanderTaxFor(state, id) : 0;
     const retrace = 'retrace' in entry && entry.retrace === true;
+    const landOnly = 'landOnly' in entry && entry.landOnly === true;
     const inst = state.instances[id];
     if (inst === undefined) continue;
     /*
@@ -1368,6 +1406,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const def = faceDef ?? state.cardDefs[inst.defKey];
     const ch = characteristicsOf(state, faceDef === undefined ? inst : { ...inst, castAs: defKeyFor(faceDef) });
     const script = scriptForCard(def);
+    // A graveyard entry under Crucible of Worlds is a land drop or nothing (D648).
+    if (landOnly && !ch.isLand) continue;
 
     /*
       Morph: the same card offered a second time, as a {3} face-down 2/2 (CR 702.37a).
@@ -1424,7 +1464,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         const named = half === undefined
           ? `Play ${ch.name}${impulse
             ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
-            : ''}`
+            : landOnly ? ' from your graveyard' : ''}`
           : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`;
         /*
           A land that chooses a colour as it enters (D642) is offered once per colour, which is

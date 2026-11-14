@@ -27402,3 +27402,42 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,516, all passing
 
 Coverage: 10,820 of 31,653 cards (+14), 29,597 of 59,306 lines (+19). Staples: 140 of 244.
+
+## D648 — extra land drops, and lands played from the graveyard
+
+Staples behind it: Azusa, Lost but Seeking; Aesi, Tyrant of Gyre Strait; Crucible of Worlds;
+Ramunap Excavator; and the extra-drop half of Oracle of Mul Daya and Dryad of the Ilysian Grove.
+The corpus has 22 legal cards printing "You may play an additional land / two additional lands on
+each of your turns", and 8 printing "You may play lands from your graveyard".
+
+**Read live from the board.**
+- `CardScript.additionalLands` (a count) and `landsFromGraveyard` are statics.
+- They are asked of the seat's permanents each time a land drop is counted or offered, through
+  `staticsOf`: the seat's own battlefield, face up, abilities intact.
+- So an Azusa that dies, or is turned into a Frog, takes her drops with her. Nothing is recorded
+  when she arrives.
+- `landDropsFor` = 1 + this turn's `extraLands` (Explore) + every `additionalLands`. Both counting
+  sites use it: `legalActions` and `playLand`.
+
+**The graveyard is a land drop and nothing else.**
+- With a Crucible, the seat's graveyard joins the candidate list as `landOnly` entries. A
+  non-land there is skipped before anything else is asked of it, so a sorcery beside the Forest
+  is never offered as a cast.
+- The row reads "Play Forest from your graveyard".
+- `playLand` accepts a graveyard card of the seat's own only while `landsFromGraveyardFor` says
+  so.
+
+**Tests.**
+- 2 engine tests:
+  - three lands with Azusa; one once she is gone; one when she has lost her abilities;
+  - with a Crucible a graveyard Forest is offered and played, and a sorcery beside it (with mana
+    to pay for it) is not; without one, the Forest is neither offered nor accepted.
+- 1 compiler test: the counts and the zone.
+- Two exemptions join the mechanic list, with their evidence.
+
+Faults injected by hand: 8 of 8 caught. Two survived at first: no test removed Azusa's abilities,
+and the graveyard sorcery could not be paid for. Both tests were tightened.
+
+    engine tests: 4,519, all passing
+
+Coverage: 10,829 of 31,653 cards (+9), 29,622 of 59,306 lines (+25). Staples: 144 of 244.

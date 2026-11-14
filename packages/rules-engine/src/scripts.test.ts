@@ -7854,6 +7854,15 @@ describe('deck coverage', () => {
         Tower, Thought Vessel, Spellbook). No pool deck has one. Driven at runtime by "a token for
         the target's controller, and no maximum hand size (D646)": the same hand discards down to
         seven at cleanup without a Tower and keeps every card with one.
+
+      **And the land drop** (D648):
+
+      - `script additionalLands`: "You may play an additional land / two additional lands on each of
+        your turns" (Azusa, Oracle of Mul Daya, Aesi, Dryad of the Ilysian Grove). Driven at runtime
+        by "extra land drops, and lands played from the graveyard (D648)": three lands with Azusa,
+        one once she is gone.
+      - `script landsFromGraveyard`: Crucible of Worlds, Ramunap Excavator. Same block: a land in the
+        graveyard is offered and played, a spell beside it is not, and nothing is offered without it.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7870,6 +7879,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
+      'script additionalLands', 'script landsFromGraveyard',
     ]);
 
     const declared = [
@@ -11318,6 +11328,59 @@ describe('a search split two ways, and a search by the target’s controller (D6
     expect(namesIn(t, 1, 'exile')).toEqual(['Grizzly Bears']);
     t = drain(apply(t, { type: 'auto:decide', by: 1, cards: [] }));
     expect(namesIn(t, 1, 'battlefield')).toEqual([]);
+  });
+});
+
+describe('extra land drops, and lands played from the graveyard (D648)', () => {
+  const row = (name: string, type: string, text: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Azusa', 'Legendary Creature — Human Monk', 'You may play two additional lands on each of your turns.', ['0', '3']),
+    row('Test Crucible', 'Artifact', 'You may play lands from your graveyard.'),
+    row('Test Ritual', 'Sorcery', 'Draw a card.'),
+  ];
+  const deck = customDeck({
+    id: 'lands', name: 'Lands',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 30 }],
+    data: ROWS,
+  }).deck;
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]>; graveyard?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'lands', 1: 'lands' }, deckSpecs: { lands: deck }, ...setup, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const landRows = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.kind === 'land');
+
+  it('plays three lands with Azusa out, and one once she is gone', () => {
+    let s = table({ hands: { 0: ['Forest', 'Forest', 'Forest', 'Forest'] }, battlefield: { 0: ['Test Azusa'] } });
+    for (let i = 0; i < 3; i++) s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    expect(landRows(s)).toHaveLength(0);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') })).toMatch(/already played/);
+    let t = table({ hands: { 0: ['Forest', 'Forest'] }, battlefield: { 0: ['Test Azusa'] } });
+    t = apply(t, { type: 'card:move', by: 0, card: find(t, 0, 'battlefield', 'Test Azusa'), toZone: 'graveyard' });
+    t = apply(t, { type: 'auto:playLand', by: 0, card: find(t, 0, 'hand', 'Forest') });
+    expect(landRows(t)).toHaveLength(0);
+    // And an Azusa that has lost her abilities gives no drops either: a Frog is just a Frog.
+    let u = table({ hands: { 0: ['Forest', 'Forest'] }, battlefield: { 0: ['Test Azusa'] } });
+    const azusa = find(u, 0, 'battlefield', 'Test Azusa');
+    u = pump(u, [azusa], azusa, 1, { setPower: 1, setToughness: 1, losesAllAbilities: true });
+    u = apply(u, { type: 'auto:playLand', by: 0, card: find(u, 0, 'hand', 'Forest') });
+    expect(landRows(u)).toHaveLength(0);
+  });
+
+  it('offers a land in the graveyard as a land drop with Crucible out, and never a spell', () => {
+    // A Forest out to pay for the Ritual, so only the permission — not the mana — keeps it from being cast.
+    const s = table({ graveyard: { 0: ['Forest', 'Test Ritual'] }, battlefield: { 0: ['Test Crucible', 'Forest'] } });
+    const forest = find(s, 0, 'graveyard', 'Forest');
+    const rows = landRows(s).filter((p) => p.card === forest);
+    expect(rows.map((p) => p.description)).toEqual(['Play Forest from your graveyard']);
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'graveyard', 'Test Ritual'))).toBe(false);
+    const played = apply(s, { type: 'auto:playLand', by: 0, card: forest });
+    expect(played.instances[forest]!.zone).toBe('battlefield');
+    // Without the Crucible the same land stays where it is.
+    const bare = table({ graveyard: { 0: ['Forest'] } });
+    expect(landRows(bare).some((p) => p.card === find(bare, 0, 'graveyard', 'Forest'))).toBe(false);
+    expect(refusal(bare, { type: 'auto:playLand', by: 0, card: find(bare, 0, 'graveyard', 'Forest') })).toMatch(/not in your hand/);
   });
 });
 

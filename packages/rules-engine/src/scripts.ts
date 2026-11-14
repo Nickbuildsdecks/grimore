@@ -23683,6 +23683,14 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  // "You may play an additional land / two additional lands on each of your turns." (D648)
+  const extra = /^you may play (an|one|two|three) additional lands? on each of your turns\.?$/i.exec(plain(line).trim());
+  if (extra !== null) {
+    const n = /^(an|one)$/i.test(extra[1]!) ? 1 : countFrom(extra[1]!);
+    return n === null || n < 1 ? null : { additionalLands: n };
+  }
+  // "You may play lands from your graveyard." (D648): Crucible of Worlds, Ramunap Excavator.
+  if (/^you may play lands from your graveyard\.?$/i.test(plain(line).trim())) return { landsFromGraveyard: true };
   const anthem = /^(other )?creatures you control get \+(\d+)\/\+(\d+)$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (anthem === null) return null;

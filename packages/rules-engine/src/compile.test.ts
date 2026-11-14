@@ -18351,3 +18351,17 @@ describe('tokens for somebody else, the rider mid-line, and no maximum hand size
     expect(read.ok && read.unread.length).toBe(1);
   });
 });
+
+describe('extra land drops and lands from the graveyard (D648)', () => {
+  const card = (text: string) => compileCard({
+    name: 'Test Static', type_line: 'Artifact', oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+  } as never);
+  it('reads the counts and the zone', () => {
+    const one = card('You may play an additional land on each of your turns.');
+    expect(one.ok && one.script?.additionalLands).toBe(1);
+    const two = card('You may play two additional lands on each of your turns.');
+    expect(two.ok && two.script?.additionalLands).toBe(2);
+    const crucible = card('You may play lands from your graveyard.');
+    expect(crucible.ok && crucible.script?.landsFromGraveyard).toBe(true);
+  });
+});
