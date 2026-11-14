@@ -15216,6 +15216,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When ${self} is turned face up, (.+)$`, 'i'),
     on: [{ kind: 'turned-face-up' }],
   },
+  // "When ~ enters or is turned face up" (D635): Efreet Weaponmaster's two moments, one ability.
+  {
+    prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or is turned face up, (.+)$`, 'i'),
+    on: [{ kind: 'etb' }, { kind: 'turned-face-up' }],
+  },
   /*
     ── The block, per creature (D480) ──────────────────────────────────────────────────────
 
@@ -15501,7 +15506,8 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: () => new RegExp(
-      '^Whenever (?<who>you|a player|an opponent) (?:cast|casts)'
+      // "When you cast a creature spell" (D635) is the same trigger as "Whenever" (CR 603.2).
+      '^When(?:ever)? (?<who>you|a player|an opponent) (?:cast|casts)'
       // A list with commas is taken only in its printed shape, "x, y, or z " (D606), so a comma after
       // "spell" that ends the prologue is never swallowed into the descriptor.
       + "(?<copy> or (?:copy|copies))? an? (?<what>(?:[A-Za-z'-]+, )+or [A-Za-z'-]+ |[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$",
@@ -16112,6 +16118,21 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you' }],
+  },
+  /*
+    "Whenever a Dragon you control attacks" (D635): Atarka, Kolaghan, Utvara Hellkite. One
+    capitalised creature type, checked against the attacker's live subtypes.
+  */
+  {
+    prologue: () => /^Whenever an? (?<tribe>[A-Z][a-z]+) you control attacks, (?<clause>.+)$/,
+    from: (matched) => (isCreatureType(matched.groups!.tribe!)
+      ? [{ kind: 'attacks' as const, who: 'any' as const, of: 'you' as const, ofSubtypes: [matched.groups!.tribe!] }]
+      : null),
+  },
+  // "Whenever a creature you control becomes blocked" (D635): the per-creature block, from your side.
+  {
+    prologue: () => /^Whenever a creature you control becomes blocked, (.+)$/i,
+    on: [{ kind: 'becomes-blocked', who: 'any', of: 'you' }],
   },
   // Chasm Skulker, and Fate Unraveler for the opponent's half. `by` defaults to `you`, which
   // `automation.ts` states outright — "a card that says nothing watches its own controller" — so the

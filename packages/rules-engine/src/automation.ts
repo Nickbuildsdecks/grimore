@@ -1308,6 +1308,10 @@ function triggerMatches(
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
+      // "Whenever a Dragon you control attacks" (D635), the tribe asked as the board events ask it.
+      if (want.kind === 'attacks' && want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+        (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+      ))) return false;
       // And battalion's: at least N creatures in the declaration, counted where it happened.
       if (want.kind === 'attacks' && want.withAtLeast !== undefined
         && (e.declared ?? 0) < want.withAtLeast) return false;
@@ -1822,6 +1826,11 @@ function raise(
         ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       };
     }
+  }
+  // The attacker's live subtypes, for "whenever a Dragon you control attacks" (D635).
+  if (subject !== undefined && event.kind === 'attacks') {
+    const inst = next.instances[subject];
+    if (inst !== undefined) event = { ...event, subjectSubtypes: characteristicsOf(next, inst).typeLine.subtypes };
   }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher

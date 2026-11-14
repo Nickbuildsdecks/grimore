@@ -499,6 +499,13 @@ export type TriggerEvent =
       readonly withAtLeast?: number;
       /** Set by the engine: how many creatures were declared as attackers in this declaration. */
       readonly declared?: number;
+      /**
+       * "Whenever a **Dragon** you control attacks" (D635): the attacker's live subtypes, any of
+       * these, compared as the board events' `ofSubtypes` is (D479).
+       */
+      readonly ofSubtypes?: readonly string[];
+      /** Set by the engine: the attacker's live subtypes, for `ofSubtypes` (D635). */
+      readonly subjectSubtypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* creature attacked. See `subject`. */
       readonly subject?: string;
     }

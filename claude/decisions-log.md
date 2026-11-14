@@ -44141,3 +44141,53 @@ Pod sweep 50101–50140 (D633's build): 40 of 40 finished, no throw and no stall
 It is real rather than equivalent: a player who has left the game would still have a Bloodghast
 come back. It needs a three-seat test (two seats end the game when one leaves), and is owed as a
 pin.
+
+## D635 — a tribe attacking, a creature becoming blocked, "When you cast", enters-or-face-up
+
+Four of the prologues the ranking puts next, each an event the engine already raises:
+- **"Whenever a Dragon you control attacks"** (Atarka, Kolaghan, Utvara Hellkite): one capitalised
+  creature type, checked by `isCreatureType`. `attacks` gained `ofSubtypes`, asked like the board
+  events' (D479). It needed one engine change: `raise` never attached subtypes to an attack event,
+  only to enters, dies, sacrifices and combat damage. The first test failed at runtime with a
+  correctly compiled trigger, which is how this was found. The attacker's live subtypes are now
+  added.
+- **"Whenever a creature you control becomes blocked"**: `becomes-blocked` with `who: 'any'` and
+  `of: 'you'`, already matched by the shared board case.
+- **"When you cast a creature spell"**: the cast family now accepts "When" as well as "Whenever",
+  the same trigger (CR 603.2). "When you cast this spell" has its own row and is unaffected.
+- **"When ~ enters or is turned face up"** (Efreet Weaponmaster): two events, one printed ability.
+
+"Whenever a permanent is turned face up" stays unread: `turned-face-up` is only ever offered to its
+own permanent.
+
+**The D632 miss, settled.** "Eliminated seats still watched" was recorded as owed a three-seat pin.
+Writing that pin showed the miss is equivalent: elimination empties the player's zones (CR 800.4a)
+before any event is raised, so there is no card left to watch. The test stays as the record.
+
+**Tests.** 5 new engine tests:
+- The rows read, and the Efreet watches both moments.
+- A Dragon attacking fires the row; a Giant does not.
+- Your creature becoming blocked fires the row.
+- "When you cast a creature spell" fires on the cast.
+- The three-seat eliminated-player test described above.
+
+Faults injected by hand, each caught:
+- The subtype check removed.
+- The subtype enrichment removed.
+- "Becomes blocked" read for the opponent's side.
+- Enters-or-face-up read as enters only.
+- "When" refused by the cast family.
+
+    engine tests: 4,463, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,647 of 31,653 (was 10,627); lines read 29,015 of 59,306 (48.9%, was 28,991)
+
+Pod sweep 50201–50240 (D634's build): 40 of 40 finished, no throw and no stall, in 333 s.
+
+**Break runs.**
+- **D633: 4 of 5 caught.** The miss: the counter type ignored, so a -1/-1 counter would fire a
+  +1/+1 trigger. It is pinned in the next increment.
+- **D634: 4 of 5 caught.** The miss is equivalent: recording a move within a graveyard does
+  nothing, because nothing moves a card from a graveyard to a graveyard.

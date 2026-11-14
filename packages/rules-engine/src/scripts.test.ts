@@ -48078,3 +48078,84 @@ describe('"one or more cards leave your graveyard" (D634)', () => {
     expect(life(s, 0)).toBe(21);
   });
 });
+
+describe('a graveyard ability of a player who has left the game (pinned by the D632 break run)', () => {
+  it('does nothing: an eliminated seat\'s graveyard is not watched', () => {
+    // Three seats, because a two-player game is over the moment one player leaves (CR 800.4a).
+    const WAKER = {
+      name: 'Test Waker', type_line: 'Creature — Spirit', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Whenever a creature enters, you may return this card from your graveyard to the battlefield.',
+    };
+    const list = customDeck({
+      id: 'wakers', name: 'Wakers', entries: [{ name: 'Test Waker', count: 4 }, { name: 'Hill Giant', count: 4 }, { name: 'Swamp', count: 52 }],
+      data: [WAKER] as never[],
+    });
+    const build = (eliminated: boolean) => {
+      let s = advanceTo(arena({
+        format: 'pod', seats: 3,
+        decks: { 0: 'wakers', 1: 'wakers', 2: 'wakers' }, deckSpecs: { wakers: list.deck },
+        graveyard: { 2: ['Test Waker'] }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      if (eliminated) s = { ...s, seats: s.seats.map((seat) => (seat.index === 2 ? { ...seat, eliminated: true } : seat)) };
+      s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Hill Giant'), toZone: 'battlefield' } as Action);
+      for (let i = 0; i < 6 && s.pendingDecision === null; i++) s = passBoth(s);
+      return s;
+    };
+    // The control: the same board with seat 2 still in the game asks seat 2.
+    expect(build(false).pendingDecision?.seat).toBe(2);
+    expect(build(true).pendingDecision).toBeNull();
+  });
+});
+
+describe('a tribe attacking, a creature becoming blocked, "When you cast", and enters-or-face-up (D635)', () => {
+  const enchantment = (name: string, text: string) => ({
+    name, type_line: 'Enchantment', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const ROOST = enchantment('Test Roost', 'Whenever a Dragon you control attacks, you gain 1 life.');
+  const BLOCKED = enchantment('Test Ambush', 'Whenever a creature you control becomes blocked, you gain 2 life.');
+  const CASTING = enchantment('Test Casting', 'When you cast a creature spell, you gain 3 life.');
+  const EFREET = { ...enchantment('Test Efreet', 'Morph {2}{R}\nWhen Test Efreet enters or is turned face up, you gain 4 life.'),
+    type_line: 'Creature — Efreet', power: '2', toughness: '3' };
+  const ROWS = [ROOST, BLOCKED, CASTING, EFREET];
+  const deck = customDeck({
+    id: 'tribe', name: 'Tribe',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Shivan Dragon', count: 2 }, { name: 'Hill Giant', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Mountain', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'tribe', 1: 'tribe' }, deckSpecs: { tribe: deck.deck },
+    battlefield: { 0: ['Mountain', 'Mountain', ...mine], 1: [...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const swing = (s: GameState, name: string) => drain(apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', name), defender: 1 }],
+  } as Action));
+
+  it('reads every row whole; the Efreet watches both moments', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+    const efreet = compileCard(EFREET as never);
+    expect((efreet.ok ? efreet.script?.triggers ?? [] : []).map((t) => t.on.kind).sort()).toEqual(['etb', 'turned-face-up']);
+  });
+
+  it('a Dragon attacking fires it; a Giant does not', () => {
+    expect(life(swing(table(['Test Roost', 'Shivan Dragon']), 'Shivan Dragon'), 0)).toBe(21);
+    expect(life(swing(table(['Test Roost', 'Hill Giant']), 'Hill Giant'), 0)).toBe(20);
+  });
+
+  it('your creature becoming blocked fires it', () => {
+    let s = swing(table(['Test Ambush', 'Hill Giant'], ['Hill Giant']), 'Hill Giant');
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Hill Giant'), attacker: find(s, 0, 'battlefield', 'Hill Giant') }] });
+    s = drain(s, 20);
+    expect(life(s, 0)).toBe(22);
+  });
+
+  it('"When you cast a creature spell" fires on the cast', () => {
+    let s = table(['Test Casting'], [], ['Raging Goblin']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Raging Goblin') } as Action)), 20);
+    expect(life(s, 0)).toBe(23);
+  });
+});
