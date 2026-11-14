@@ -18306,6 +18306,18 @@ describe('"as it enters, choose" and the lines that read the answer (D641)', () 
     expect(crossed.ok && crossed.unread.length).toBe(1);
   });
 
+  it('reads mana spent only on the chosen type, and nowhere a type was not chosen (D644)', () => {
+    const land = (text: string) => card(text, 'Land');
+    const territory = land('As Test Chooser enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type.');
+    expect(territory.ok && territory.unread).toEqual([]);
+    expect(territory.ok && territory.script?.abilities?.filter((a) => a.spendOnly?.chosenType === true)).toHaveLength(5);
+    // The same line with no choice: read whole it would be mana for nothing, so it is not read.
+    const orphan = land('{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type.');
+    expect(orphan.ok && orphan.unread.length).toBe(1);
+    const colour = land('As Test Chooser enters, choose a color.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type.');
+    expect(colour.ok && colour.unread.length).toBe(1);
+  });
+
   it('refuses "the chosen type" on a card that never chose one, or chose a colour instead', () => {
     const none = card('Creatures you control of the chosen type get +1/+1.');
     expect(none.ok && none.unread.map((u) => u.line)).toEqual(['Creatures you control of the chosen type get +1/+1.']);

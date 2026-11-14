@@ -27209,3 +27209,50 @@ hard-coded colour survived each single-colour version of it.
     engine tests: 4,502, all passing
 
 Coverage: 10,726 of 31,653 cards (+9), 29,457 of 59,306 lines (+12).
+
+## D644 — mana that may only be spent on the chosen creature type
+
+"Spend this mana only to cast a creature spell of the chosen type" is printed on Unclaimed
+Territory, Pillar of Origins, Secluded Courtyard (which adds "or activate an ability of a creature
+or creature card of the chosen type"), Cavern of Souls, Echoing Cavern and Eclipsed Realms. These
+are tribal Commander staples. `spendRestriction` refused them explicitly ("no chosen type is kept
+yet"), and D641 now keeps one.
+
+**The restriction.**
+- `spendRestriction` reads the phrase without "of the chosen type" and marks the restriction
+  `chosenType`.
+- The only place a restriction is checked is `manaSources`, which knows the source permanent. It
+  now also asks that the spell, or the ability's source, has the creature type the source chose.
+- "creature card" in the activate half is read as "creature": the type line asked is the same.
+
+**Where it may be read.**
+- `parseManaLine` refuses a chosen-type restriction outside the line reader (`chosenOk`), as D642
+  does for a chosen colour.
+- `compileSingle` refuses "the chosen type" in a mana line on a card that did not choose a type.
+
+**The lands.**
+- D642's land rows extend to creature types. A creature-type land is offered once per type in
+  `creatureTypeOptions`: the deck's own types first, commonest first.
+- `playLand` checks the word against `optionsFor` and records `{ type }`.
+
+**Not done**, and named in the guide:
+- Cavern of Souls's "and that spell can't be countered". It needs the spell to remember which
+  mana paid for it.
+- A changeling creature spell counting as every type for these lands: `PaymentFor` carries the
+  printed type line.
+- Eclipsed Realms's named-type list.
+
+**Tests.**
+- 2 engine tests:
+  - an Unclaimed Territory is offered Goblin then Elf (the deck's order); Dragon is refused;
+    choosing Elf, it gives any colour to an Elf spell and only colourless to a Goblin or an
+    instant;
+  - Secluded Courtyard on Goblin pays a Goblin's ability in colour and an Elf's or an artifact's
+    only in colourless.
+- 1 compiler test: five restricted abilities; the orphan and a colour-choosing card both unread.
+
+Faults injected by hand: 10 of 10 caught.
+
+    engine tests: 4,505, all passing
+
+Coverage: 10,729 of 31,653 cards (+3), 29,460 of 59,306 lines (+3).

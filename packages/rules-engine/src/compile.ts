@@ -861,7 +861,8 @@ function compileSingle(row: CardDataRow): Compilation {
     */
     const mana = manaAbilitiesFromLine(line, def.name);
     // Mana "of the chosen color" on a card that never chose a colour would tap for nothing (D642).
-    if (mana !== null && /\bthe chosen colou?r\b/i.test(line) && enterChoice?.kind !== 'color') {
+    if (mana !== null && ((/\bthe chosen colou?r\b/i.test(line) && enterChoice?.kind !== 'color')
+      || (/\bthe chosen type\b/i.test(line) && enterChoice?.kind !== 'creature-type'))) {
       unread.push({ line, why: 'no-reader' });
       continue;
     }

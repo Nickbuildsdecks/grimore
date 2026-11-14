@@ -949,6 +949,12 @@ export function manaSources(
       // "Activate only if …", and the commander's identity (D617), hold for a mana source too.
       if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
       if (ability.spendOnly !== undefined && (paying === undefined || !ability.spendOnly.allows(paying))) continue;
+      // "…of the chosen type" (D644): the type this source chose, on what is being paid for.
+      if (ability.spendOnly?.chosenType === true) {
+        const type = inst.chosen?.type;
+        const line = paying?.spell ?? paying?.abilityOf;
+        if (type === undefined || line === undefined || !hasSubtype(line, type)) continue;
+      }
       if (ability.cost.mana !== undefined) continue;
       /*
         `{T}` **or** a sacrifice of itself, where it used to be `{T}` and never a sacrifice.
@@ -1411,11 +1417,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           where a land's choice can be made: nothing resolves for it, so there is no question to
           ask after it is played.
         */
-        const colourChoice = landScript?.entersChoice === 'color'
+        // And a creature type (D644), one row per type this table offers — Unclaimed Territory.
+        const colourChoice = landScript?.entersChoice === 'color' || landScript?.entersChoice === 'creature-type'
           ? landScript.decisions?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision)
           : undefined;
         if (colourChoice !== undefined) {
-          for (const word of colourChoice.options) {
+          for (const word of colourChoice.optionsFor?.(state, seat) ?? colourChoice.options) {
             out.push({ ...base, description: `${named}, choosing ${word}${tappedNote}`, choose: word });
           }
         } else if (shock !== undefined) {

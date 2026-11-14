@@ -1579,8 +1579,8 @@ export interface AutoPlayLandAction {
    */
   readonly payLife?: boolean;
   /**
-   * A land that chooses a colour as it enters (D642) — the Thriving lands, Uncharted Haven: the
-   * colour word, one of the land's own options. Refused when it is not one; absent means the engine
+   * A land that chooses a colour or a creature type as it enters (D642, D644) — the Thriving lands,
+   * Unclaimed Territory: the word, one of the land's own options. Refused when it is not one; absent means the engine
    * answers with the land's own pick, which is what any other way onto the battlefield gets.
    */
   readonly choose?: string;

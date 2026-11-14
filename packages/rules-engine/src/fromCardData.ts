@@ -446,6 +446,8 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   const restriction = /^Spend this mana only (.+)$/i.exec(rest);
   const spendOnly = restriction === null ? undefined : spendRestriction(restriction[1]!);
   if (spendOnly === null) return null;
+  // A chosen type only the line reader may take, for the reason `chosenOk` says (D644).
+  if (spendOnly?.chosenType === true && !chosenOk) return null;
   const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
   if (rest !== '' && damage === undefined && spendOnly === undefined) return null;
 

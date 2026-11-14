@@ -24,7 +24,15 @@ import type { SpendRestriction } from './scriptTypes.js';
  * type" (no chosen type is kept yet), and every rider ("and that spell can't be countered").
  */
 export function spendRestriction(phrase: string): SpendRestriction | null {
-  const text = phrase.trim().replace(/\.$/, '');
+  const printed = phrase.trim().replace(/\.$/, '');
+  /*
+    "…a creature spell **of the chosen type**" (D644): Unclaimed Territory, Pillar of Origins,
+    Secluded Courtyard. The words are read without the phrase, and the restriction is marked so the
+    one place that checks it — `manaSources`, which knows the source — also asks the spell or the
+    ability's source for the creature type the land chose as it entered.
+  */
+  const chosenType = / of the chosen type\b/i.test(printed);
+  const text = printed.replace(/ of the chosen type\b/gi, '');
   const words = (run: string): ((t: TypeLine) => boolean) | null => {
     const parts = run.trim().split(/\s+(?:and\/or|or|and)\s+|,\s*(?:or\s+)?/).map((p) => p.trim()).filter((p) => p !== '');
     const alternatives: ((t: TypeLine) => boolean)[] = [];
@@ -33,6 +41,9 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
       for (const raw of part.split(/\s+/)) {
         const word = raw.replace(/s$/, '');
         const lower = word.toLowerCase();
+        // "a creature **card** of the chosen type" (Secluded Courtyard): the card in another zone,
+        // whose type line is the same question.
+        if (lower === 'card') continue;
         if (lower === 'noncreature') { tests.push((t) => !hasType(t, 'creature')); continue; }
         if (lower === 'legendary') { tests.push((t) => t.supertypes.some((s) => s.toLowerCase() === 'legendary')); continue; }
         if (/^[a-z]/.test(word)) {
@@ -83,7 +94,8 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
     }
   }
   return {
-    words: text,
+    words: printed,
+    ...(chosenType ? { chosenType: true as const } : {}),
     allows: (paying) => (paying.spell !== undefined && spells !== undefined && spells(paying.spell))
       || (paying.abilityOf !== undefined && abilities !== undefined && abilities(paying.abilityOf)),
   };

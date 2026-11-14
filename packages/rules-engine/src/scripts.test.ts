@@ -11039,6 +11039,58 @@ describe('the chosen color as a scope, and casts of the chosen type or color (D6
   });
 });
 
+describe('mana spent only on the chosen type (D644)', () => {
+  const row = (name: string, type: string, text: string, cost = '', colors: string[] = [], pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: cost === '' ? 0 : 1, colors, layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Unclaimed Territory', 'Land', 'As Unclaimed Territory enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type.'),
+    row('Secluded Courtyard', 'Land', 'As Secluded Courtyard enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type or activate an ability of a creature or creature card of the chosen type.'),
+    row('Test Goblin', 'Creature — Goblin', '', '{R}', ['R'], ['1', '1']),
+    row('Test Elf', 'Creature — Elf', '', '{G}', ['G'], ['1', '1']),
+  ];
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => {
+    const deck = customDeck({
+      id: 'custom:t', name: 'Tribes',
+      entries: [
+        { name: 'Wastes', count: 20 }, { name: 'Unclaimed Territory', count: 2 }, { name: 'Secluded Courtyard', count: 2 },
+        { name: 'Test Goblin', count: 8 }, { name: 'Test Elf', count: 5 },
+      ],
+      data: ROWS,
+    }).deck;
+    return advanceTo(arena({ decks: { 0: 'custom:t' }, deckSpecs: { 'custom:t': deck }, ...setup, turn: 3, firstSeat: 0 }), 'precombat-main');
+  };
+  const produced = (s: GameState, land: string, spell: string) => [...(manaSources(s, 0, { spell: parseTypeLine(spell) })
+    .find((entry) => entry.key === land)?.produces ?? [])].sort();
+
+  it('offers the land once per type, and its coloured mana pays only for that type', () => {
+    let s = table({ hands: { 0: ['Unclaimed Territory'] } });
+    const land = find(s, 0, 'hand', 'Unclaimed Territory');
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === land).map((p) => p.choose);
+    // The deck's own types, commonest first.
+    expect(rows.slice(0, 2)).toEqual(['Goblin', 'Elf']);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: land, choose: 'Dragon' })).toMatch(/cannot choose Dragon/);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land, choose: 'Elf' });
+    expect(s.instances[land]!.chosen).toEqual({ type: 'Elf' });
+    // An Elf spell may spend any colour from it; a Goblin spell only its colourless.
+    expect(produced(s, land, 'Creature — Elf')).toEqual(['B', 'C', 'G', 'R', 'U', 'W']);
+    expect(produced(s, land, 'Creature — Goblin')).toEqual(['C']);
+    expect(produced(s, land, 'Instant')).toEqual(['C']);
+  });
+
+  it('pays for an ability of a creature of the chosen type, where it says so', () => {
+    let s = table({ hands: { 0: ['Secluded Courtyard'] } });
+    const land = find(s, 0, 'hand', 'Secluded Courtyard');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land, choose: 'Goblin' });
+    const ability = (line: string) => [...(manaSources(s, 0, { abilityOf: parseTypeLine(line) })
+      .find((entry) => entry.key === land)?.produces ?? [])].sort();
+    expect(ability('Creature — Goblin')).toEqual(['B', 'C', 'G', 'R', 'U', 'W']);
+    expect(ability('Creature — Elf')).toEqual(['C']);
+    expect(ability('Artifact')).toEqual(['C']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

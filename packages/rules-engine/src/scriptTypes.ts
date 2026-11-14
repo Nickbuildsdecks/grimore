@@ -2208,6 +2208,11 @@ export interface PaymentFor {
 export interface SpendRestriction {
   readonly words: string;
   readonly allows: (paying: PaymentFor) => boolean;
+  /**
+   * "…of the chosen type" (D644): the spell, or the ability's source, must also have the creature
+   * type the mana's source chose as it entered. Checked by `manaSources`, which knows the source.
+   */
+  readonly chosenType?: true;
 }
 
 export interface AbilityDef {

@@ -1469,17 +1469,19 @@ function playLand(
   */
   const landScript = scriptForCard(state.cardDefs[faceKey ?? inst.defKey]);
   if (action.choose !== undefined) {
-    const spec = landScript?.entersChoice === 'color'
+    const spec = landScript?.entersChoice === 'color' || landScript?.entersChoice === 'creature-type'
       ? landScript.decisions?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision)
       : undefined;
-    if (spec === undefined || !spec.options.includes(action.choose)) {
+    if (spec === undefined || !(spec.optionsFor?.(state, action.by) ?? spec.options).includes(action.choose)) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} cannot choose ${action.choose}`);
     }
   }
   let next = relocate(state, inst, 'battlefield', action.by, 'bottom');
   if (action.choose !== undefined) {
     const letter = ({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' } as const)[action.choose as 'white'];
-    next = withInstance(next, inst.id, { chosen: { color: letter } });
+    next = withInstance(next, inst.id, {
+      chosen: landScript?.entersChoice === 'creature-type' ? { type: action.choose } : { color: letter },
+    });
   }
   /*
     And on the battlefield it **is** the back face, for as long as it is there.
