@@ -27360,3 +27360,45 @@ Faults injected by hand: 8 of 8 caught, after the each-opponent recipient got a 
     engine tests: 4,515, all passing
 
 Coverage: 10,806 of 31,653 cards (+51), 29,578 of 59,306 lines (+84). Staples: 135 of 244.
+
+## D647 — a search split two ways, and a search by the target's controller
+
+Two staple shapes from D646's list.
+- **Cultivate and Kodama's Reach**: "Search your library for up to two basic land cards, reveal
+  those cards, put one onto the battlefield tapped and the other into your hand". D455 refused it
+  on purpose, as "a split destination".
+- **Path to Exile, Assassin's Trophy and Ghost Quarter**: "Its controller may search their
+  library for a basic land card, put it onto the battlefield (tapped), then shuffle". Nothing read
+  the second person.
+
+**The split.**
+- The two destinations are told apart by **the order the cards are chosen in**. The first goes
+  onto the battlefield tapped, the second into the hand, and the prompt says so.
+- That is the cheapest honest reading: the decision already keeps the order the cards were
+  picked, and a second question ("which one goes to your hand?") would ask what the first answer
+  already said.
+- One card found goes onto the battlefield, which is the land a player wants out of a ramp spell.
+- D455's refusal row is gone, with a note saying when and why. The reader's docblock no longer
+  lists the split as refused.
+
+**Somebody else's search.**
+- "target player/target opponent (may) search(es) their library for …" is read as the
+  second-person search. The question goes to `who: 'target-player'` and their library is offered,
+  because a decision reads the asked seat's zone. What they find goes to **their** battlefield.
+- Under D537's possessive swap, "Its controller may search …" becomes exactly that sentence. The
+  question is re-aimed at the referent, whose seat was captured before the exile.
+- "may" is the search's own `min: 0`.
+- The exile runs before the question, which is the printed order. The test asserts it.
+
+**Tests.**
+- 2 engine tests:
+  - Cultivate picking Island then Plains: the Island enters tapped and the Plains goes to hand;
+    one Plains alone enters;
+  - Path to Exile: the opponent is asked, offered only their own library, and their Island enters
+    tapped under them; declining leaves them nothing.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,516, all passing
+
+Coverage: 10,820 of 31,653 cards (+14), 29,597 of 59,306 lines (+19). Staples: 140 of 244.

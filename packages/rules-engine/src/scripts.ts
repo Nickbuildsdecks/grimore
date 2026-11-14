@@ -54,6 +54,7 @@ import type {
   CountersDecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
   SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
+import { isCardsDecision } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
 import type { EffectFn } from './effects.js';
@@ -1990,9 +1991,9 @@ const ANY_NUMBER = 1000;
  * What is still refused, and each is a shape rather than an oversight: a count this reader cannot
  * name (`up to X`, `up to that many`); a condition on a characteristic ("with mana value 3 or
  * less"); a category that is not a type (`permanent`, which D449's own guard caught); two zones
- * ("search your library **and/or graveyard**"); two filters rather than two words of one ("a basic
- * land card **or a Desert card**"); a split destination (Cultivate's one-here-one-there); and the
- * top of the library, which `searchYourLibrary`'s own shuffle would undo. Each stays unread (D362).
+ * ("search your library **and/or graveyard**"); and two filters rather than two words of one ("a
+ * basic land card **or a Desert card**"). Each stays unread (D362). Cultivate's split destination
+ * reads since D647, and the top of the library since D602.
  */
 /**
  * How many cards a printed search asks for, and whether it says so in the plural.
@@ -2026,6 +2027,31 @@ function searchQuantity(
 
 function searchClause(text: string, name: string): ReadEffect | null {
   /*
+    **Somebody else's search** (D647): "target player may search their library for a basic land
+    card, put it onto the battlefield, then shuffle" — which is what Path to Exile's, Assassin's
+    Trophy's and Ghost Quarter's "**Its controller** may search their library …" becomes under the
+    possessive swap (D537). Read as the same search in the second person, asked of that player: the
+    question goes to them (`who: 'target-player'`, re-aimed at the referent by the swap), their
+    library is the one offered, and what they find goes to their battlefield or hand.
+  */
+  const theirs = /^(target player|target opponent) (?:may )?search(?:es)? their library for (.+)$/i.exec(text.trim());
+  if (theirs !== null) {
+    const spec = targetSpecFrom(theirs[1]!.toLowerCase(), false);
+    const own = searchClause(`search your library for ${theirs[2]!.replace(/\binto their hand\b/i, 'into your hand')}`, name);
+    if (spec === null || own === null || own.targets !== undefined || own.decisions?.length !== 1) return null;
+    const question = own.decisions[0]!;
+    if (typeof question === 'function' || !isCardsDecision(question)) return null;
+    const asked: CardsDecisionSpec = { ...question, who: 'target-player' };
+    return {
+      targets: [spec],
+      decisions: [asked],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c) ?? (c.referentSeat ?? null);
+        return seat === null ? c.state : own.effect({ ...c, controller: seat });
+      },
+    };
+  }
+  /*
     "…, reveal it, then shuffle and put that card on top" (D602): the Harbingers, the Forerunners,
     Campus Guide. The search shuffles as it is answered (`answerDecision`, CR 701.19e) and the effect
     runs after, so moving the card to the top here is the printed order: shuffle, then on top.
@@ -2037,6 +2063,31 @@ function searchClause(text: string, name: string): ReadEffect | null {
     return {
       decisions: [searchYourLibrary(`Search your library for ${onTop[1]!.trim()}`, filter.filter === null ? undefined : filter.filter, 1)],
       effect: (c) => chosenCards(c).reduce((state, id) => putOnTopOfLibrary(state, id), c.state),
+    };
+  }
+  /*
+    Cultivate and Kodama's Reach (D647): "Search your library for up to two basic land cards, reveal
+    those cards, put one onto the battlefield tapped and the other into your hand". The split is the
+    order the cards are chosen in: the first found goes onto the battlefield tapped, the second into
+    the hand — the prompt says so. One card found goes onto the battlefield, which is the land a
+    player wants out of a ramp spell.
+  */
+  const split = /^search your library for (up to two .+?)(?:, reveal (?:them|those cards))?, put one onto the battlefield tapped and the other into your hand$/i.exec(text.trim());
+  if (split !== null) {
+    const quantity = searchQuantity(split[1]!.trim());
+    const filter = quantity === null ? null : libraryFilter(quantity.singular, name);
+    if (quantity === null || quantity.max !== 2 || filter === null) return null;
+    return {
+      decisions: [searchYourLibrary(
+        `Search your library for ${split[1]!.trim()}: the first you choose enters tapped, the second goes to your hand`,
+        filter.filter === null ? undefined : filter.filter, 2,
+      )],
+      effect: (c) => {
+        const [land, kept] = chosenCards(c);
+        let next = land === undefined ? c.state : putOntoBattlefield(c.state, land, c.controller, { tapped: true });
+        if (kept !== undefined) next = moveToHand(next, [kept]);
+        return next;
+      },
     };
   }
   const parsed =

@@ -11255,6 +11255,72 @@ describe('a token for the target’s controller, and no maximum hand size (D646)
   });
 });
 
+describe('a search split two ways, and a search by the target’s controller (D647)', () => {
+  const row = (name: string, type: string, text: string, cost: string) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Cultivate', 'Sorcery', 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.', '{G}'),
+    row('Test Path', 'Instant', 'Exile target creature. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.', '{W}'),
+  ];
+  const deck = (id: string) => customDeck({
+    id, name: id,
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 15 }, { name: 'Island', count: 10 }, { name: 'Plains', count: 10 }, { name: 'Grizzly Bears', count: 4 }],
+    data: ROWS,
+  }).deck;
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'custom:a', 1: 'custom:b' }, deckSpecs: { 'custom:a': deck('custom:a'), 'custom:b': deck('custom:b') },
+    ...setup, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const pick = (s: GameState, names: readonly string[]): string[] => {
+    const left = [...s.pendingDecision!.candidates];
+    return names.map((n) => {
+      const at = left.findIndex((id) => nameOf(s, id) === n);
+      return left.splice(at, 1)[0]!;
+    });
+  };
+
+  it('puts the first land found onto the battlefield tapped and the second into the hand', () => {
+    let s = table({ hands: { 0: ['Test Cultivate'] }, battlefield: { 0: ['Forest'] } });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Cultivate') }));
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.max).toBe(2);
+    const [island, plains] = pick(s, ['Island', 'Plains']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [island!, plains!] }));
+    expect(s.instances[island!]!.zone).toBe('battlefield');
+    expect(s.instances[island!]!.tapped).toBe(true);
+    expect(s.instances[plains!]!.zone).toBe('hand');
+    // One found goes onto the battlefield.
+    let t = table({ hands: { 0: ['Test Cultivate'] }, battlefield: { 0: ['Forest'] } });
+    t = passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Cultivate') }));
+    const [only] = pick(t, ['Plains']);
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [only!] }));
+    expect(t.instances[only!]!.zone).toBe('battlefield');
+  });
+
+  it('lets the exiled creature’s controller search their own library, onto their battlefield', () => {
+    let s = table({ hands: { 0: ['Test Path'] }, battlefield: { 0: ['Plains'], 1: ['Grizzly Bears'] } });
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Path'), targets: [{ kind: 'card', id: bears }] }));
+    // The question is the opponent's, and the cards offered are in the opponent's library.
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision!.candidates.every((id) => s.instances[id]!.owner === 1 && s.instances[id]!.zone === 'library')).toBe(true);
+    const [land] = pick(s, ['Island']);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [land!] }));
+    expect(s.instances[bears]!.zone).toBe('exile');
+    expect(s.instances[land!]!.zone).toBe('battlefield');
+    expect(s.instances[land!]!.zoneSeat).toBe(1);
+    expect(s.instances[land!]!.tapped).toBe(true);
+    // And may decline.
+    let t = table({ hands: { 0: ['Test Path'] }, battlefield: { 0: ['Plains'], 1: ['Grizzly Bears'] } });
+    t = passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Path'), targets: [{ kind: 'card', id: find(t, 1, 'battlefield', 'Grizzly Bears') }] }));
+    // The exile has already happened when the question is asked — the printed order.
+    expect(namesIn(t, 1, 'exile')).toEqual(['Grizzly Bears']);
+    t = drain(apply(t, { type: 'auto:decide', by: 1, cards: [] }));
+    expect(namesIn(t, 1, 'battlefield')).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -9737,8 +9737,8 @@ describe('the library search as a product, widened (D455)', () => {
     // Two zones.
     ['two zones', 'Search your library and/or graveyard for a creature card, reveal it, put it into your hand.'],
     // The top of the library was a row here until D602: see the note in the D449 block.
-    // Cultivate: one card to one place and the other to another.
-    ['a split destination', 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand.'],
+    // Cultivate's split destination was a row here until D647, which reads it in choice order (the
+    // first found enters tapped, the second goes to hand); see "a search split two ways (D647)".
     // Shefet Monitor: two filters rather than two words of one.
     ['two filters', 'Search your library for a basic land card or a Desert card, put it onto the battlefield tapped.'],
   ])('refuses %s', (_label, text) => {
