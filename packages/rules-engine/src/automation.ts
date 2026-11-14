@@ -1219,7 +1219,11 @@ function triggerMatches(
     case 'step': {
       const e = event as Extract<TriggerEvent, { kind: 'step' }>;
       if (e.step !== want.step) return false;
-      return (want.of ?? 'you') === 'any' || actorSeat === sourceSeat;
+      const of = want.of ?? 'you';
+      // D618: an opponent's step; the host's controller is answered in `fireTrigger`, which knows it.
+      if (of === 'opponent') return actorSeat !== undefined && actorSeat !== sourceSeat;
+      if (of === 'enchanted-controller') return true;
+      return of === 'any' || actorSeat === sourceSeat;
     }
     /*
       The events that are about one permanent and may still be watched by another. One branch
@@ -1544,6 +1548,12 @@ function fireTrigger(
 
     An absent list refuses: a creature nothing damaged was not dealt damage by anybody.
   */
+  // "At the beginning of the upkeep of enchanted creature's controller" (D618): whose step it is has
+  // to be the seat that controls what this is attached to, now.
+  if (trigger.on.kind === 'step' && trigger.on.of === 'enchanted-controller') {
+    const host = next.instances[next.instances[holder]?.attachedTo ?? ''];
+    if (host === undefined || host.zone !== 'battlefield' || host.zoneSeat !== actor) return next;
+  }
   if (trigger.on.kind === 'dies' && trigger.on.damagedBy === 'self') {
     const hitBy = event.kind === 'dies' ? event.subjectDamagedBy ?? [] : [];
     if (!hitBy.includes(damageSourceRef(next, holder))) return next;

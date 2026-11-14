@@ -1260,7 +1260,12 @@ export type TriggerEvent =
    * own turn; in a pod it is three turns of four, so it cannot be approximated by either of the
    * values above when a card does arrive.
    */
-  | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
+  /**
+   * `of` (D618): 'you', 'any', 'opponent' — an opponent of the watcher's controller is the active
+   * player — and 'enchanted-controller' — the active player controls the permanent this Aura or
+   * Equipment is attached to ("At the beginning of the upkeep of enchanted creature's controller").
+   */
+  | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' | 'opponent' | 'enchanted-controller' }
   /**
    * A Saga's chapter, which fires when its lore counter *reaches* this number (CR 714.2b).
    *

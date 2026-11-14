@@ -415,7 +415,14 @@ export function relocate(
     */
     pairedWith: undefined,
   });
-  return unpairAllFrom(detachAllFrom(next, inst.id), inst.id);
+  /*
+    A change of **controller** is not a zone change (D618): an Aura or Equipment on a creature that
+    is stolen stays on it (CR 303.4, 301.5 say what it is attached to, not who controls the host).
+    Only an object that really leaves the battlefield takes its attachments' hosts away. The pair
+    still breaks, which is soulbond's own rule for a change of control (CR 702.95e).
+  */
+  const leaves = !(inst.zone === 'battlefield' && toZone === 'battlefield');
+  return unpairAllFrom(leaves ? detachAllFrom(next, inst.id) : next, inst.id);
 }
 
 /**

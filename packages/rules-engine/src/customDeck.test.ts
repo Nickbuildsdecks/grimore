@@ -518,14 +518,14 @@ describe('a pasted list resolved against card data', () => {
   it('flags the line it could not read rather than deleting the card (D362)', () => {
     /*
       Hybrid automation, which is what makes dealing a partly-read card the right answer rather
-      than a reckless one. "At the beginning of each opponent's upkeep" has no prologue — `of` on a
-      step trigger is `'you' | 'any'` and this needs a third value — so the line is **reported**,
-      and the table shows the card with that line flagged for a human to apply.
+      than a reckless one. "At the beginning of each of your postcombat main phases" has no prologue
+      (it was "each opponent's upkeep" until D618 read that), so the line is **reported**, and the
+      table shows the card with that line flagged for a human to apply.
     */
     const unreadable = {
       name: 'Datawood Watcher', type_line: 'Creature — Human Scout', mana_cost: '{1}{W}', cmc: 2,
       colors: ['W'], layout: 'normal', power: '2', toughness: '2',
-      oracle_text: "At the beginning of each opponent's upkeep, draw a card.",
+      oracle_text: 'At the beginning of each of your postcombat main phases, draw a card.',
     };
     const { deck, unknown } = customDeck({
       id: 'custom:0', name: 'Mine',
@@ -536,7 +536,7 @@ describe('a pasted list resolved against card data', () => {
     const card = deck.cards[0]!.card;
     expect(card.typeLine).toBe('Creature — Human Scout');
     expect(unreadLines(card).map((entry) => entry.line))
-      .toEqual(["At the beginning of each opponent's upkeep, draw a card."]);
+      .toEqual(['At the beginning of each of your postcombat main phases, draw a card.']);
   });
 
   it('matches a row by name the same way the pool is matched', () => {

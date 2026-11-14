@@ -6978,8 +6978,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(triggers[0]!.on).toEqual({ kind: 'step', step, of: 'you' });
     });
 
+    // "each opponent's upkeep" reads since D618, as `of: 'opponent'` — see the step table below.
     it.each([
-      ["At the beginning of each opponent's upkeep, draw a card."],
       ["At the beginning of each opponent's draw step, draw a card."],
       ['At the beginning of combat on each opponent\'s turn, draw a card.'],
     ])('leaves %s alone, because "your" is the half that is the rule', (text) => {
@@ -7481,13 +7481,12 @@ describe('the step of the turn, read off the prologue', () => {
       that, a row quietly added later would make these pass while still being unread for a real
       card, and an unread assertion that cannot fail is the trap D415 and D433 are both about.
     */
-    ["each opponent's upkeep", '31 printed lines, 0 cards the compiler can finish'],
-    ["each opponent's end step", '7 lines, 0 cards'],
+    // "each opponent's upkeep", "each opponent's end step" and "the upkeep of enchanted creature's
+    // controller" read since D618: `of: 'opponent'` and `of: 'enchanted-controller'`.
     ['combat on each opponent’s turn', 'the apostrophe Scryfall prints is not even this one'],
     ['each combat', '27 lines, 0 cards'],
     ["each player's draw step", '13 lines, 0 cards'],
     ['your second main phase', '10 lines, 0 cards'],
-    ["the upkeep of enchanted creature's controller", "an attachment's seat, not `of`"],
     ['each of your postcombat main phases', 'a turn structure this engine does not have'],
     ['your next upkeep', 'a delayed trigger, scheduled rather than printed'],
   ])('leaves "At the beginning of %s" unread: %s', (prologue) => {
@@ -7496,6 +7495,19 @@ describe('the step of the turn, read off the prologue', () => {
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  it.each([
+    ["each opponent's upkeep", 'upkeep', 'opponent'],
+    ["each opponent's end step", 'end', 'opponent'],
+    ["the upkeep of enchanted creature's controller", 'upkeep', 'enchanted-controller'],
+    ["the end step of enchanted creature's controller", 'end', 'enchanted-controller'],
+  ])('reads "At the beginning of %s" as %s, of %s (D618)', (prologue, step, of) => {
+    const read = permanent(`At the beginning of ${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect((field(read.script, 'triggers') as readonly TriggerDef[])[0]!.on).toEqual({ kind: 'step', step, of });
   });
 });
 

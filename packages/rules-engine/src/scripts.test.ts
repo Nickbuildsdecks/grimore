@@ -46496,7 +46496,8 @@ describe('cast triggers by turn, by zone and by kicker (D616)', () => {
   const ELSEWHERE = watcher('Test Kellan', 'Whenever you cast a spell from anywhere other than your hand');
   const RECALL = { name: 'Test Recall', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Test Recall deals 1 damage to any target.\nFlashback {R}' };
   const BURST = { name: 'Test Burst', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: 'Kicker {R}\nTest Burst deals 1 damage to any target. If this spell was kicked, draw a card.' };
-  const ROWS = [OPP, FIRST, GRAVE, KICK, ELSEWHERE, RECALL, BURST];
+  const GENERAL = { name: 'Test General', type_line: 'Legendary Creature — Human', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [OPP, FIRST, GRAVE, KICK, ELSEWHERE, RECALL, BURST, GENERAL];
   const deck = customDeck({
     id: 'casters', name: 'Casters',
     entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Lightning Bolt', count: 8 }, { name: 'Mountain', count: 40 }],
@@ -46548,6 +46549,20 @@ describe('cast triggers by turn, by zone and by kicker (D616)', () => {
     expect(life(s, 0)).toBe(20);
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Recall'), flashback: true, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
     expect(life(s, 0)).toBe(21);
+  });
+
+  it('a commander cast from the command zone is not from your graveyard, but is not from your hand (D616 break run)', () => {
+    const fromCommand = (watcher: string): GameState => {
+      let s = table([watcher], ['Test General']);
+      const id = find(s, 0, 'hand', 'Test General');
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'command' } as Action);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, isCommander: true } } };
+      return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 20);
+    };
+    const general = fromCommand('Test Vengeance');
+    expect(namesIn(general, 0, 'battlefield')).toContain('Test General');
+    expect(life(general, 0)).toBe(20);
+    expect(life(fromCommand('Test Kellan'), 0)).toBe(21);
   });
 
   it('a kicked spell, and not the same spell unkicked', () => {
@@ -46676,6 +46691,19 @@ describe("mana of any color in your commander's color identity (D617)", () => {
     expect(legalActions(table('Test Izzet'), 0).plays.filter((p) => p.card === find(table('Test Izzet'), 0, 'battlefield', 'Test Tower')).length).toBe(2);
   });
 
+  it('identity from each source on its own: hybrid, colour indicator, a face; and no trailing words (D617 break run)', () => {
+    const def = (manaCost: string, colors: string[], oracleText: string, faces?: unknown) =>
+      ({ name: 'x', typeLine: 'Creature', manaCost, cmc: 1, colors, oracleText, ...(faces === undefined ? {} : { faces }) }) as never;
+    // A hybrid symbol is both colours, with nothing on `colors` to cover for it.
+    expect(colourIdentity(def('{G/W}', [], ''))).toEqual(['W', 'G']);
+    // A colour indicator, which is only on `colors`.
+    expect(colourIdentity(def('', ['U'], ''))).toEqual(['U']);
+    // The back face's symbol counts.
+    expect(colourIdentity(def('{G}', ['G'], '', { kind: 'transform', cards: [{ name: 'y', typeLine: 'Creature', manaCost: '', cmc: 0, colors: [], oracleText: '{R}: y gets +1/+0.' }] }))).toEqual(['R', 'G']);
+    const wider = compileCard({ ...TOWER, name: 'Test Wider', oracle_text: "{T}: Add one mana of any color in your commander's color identity or of the chosen color." } as never);
+    expect(wider.ok && wider.unread.length).toBe(1);
+  });
+
   it("an opponent's commander lends you nothing", () => {
     let s = advanceTo(arena({
       decks: { 0: 'towers', 1: 'towers' }, deckSpecs: { towers: deck.deck },
@@ -46735,5 +46763,67 @@ describe('the return-to-hand cost, pinned (D615 break run)', () => {
   it('returning itself twice is not a cost it reads', () => {
     const read = compileCard(row('Test Twice', 'Creature — Elf', 'Return Test Twice to its owner\'s hand, Return Test Twice to its owner\'s hand: You gain 1 life.') as never);
     expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
+describe("upkeep triggers on an opponent's turn and on the enchanted permanent's controller's (D618)", () => {
+  /*
+    `of: 'opponent'` — "At the beginning of each opponent's upkeep" — and `of: 'enchanted-controller'`
+    — "At the beginning of the upkeep of enchanted creature's controller", answered from what the Aura
+    is attached to now, so a stolen creature carries its curse to its new controller's turn.
+  */
+  const STORM = { name: 'Test Storm', type_line: 'Enchantment', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: "At the beginning of each opponent's upkeep, Test Storm deals 1 damage to that player." };
+  const BOND = { name: 'Test Bond', type_line: 'Enchantment — Aura', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: "Enchant creature\nAt the beginning of the upkeep of enchanted creature's controller, Test Bond deals 1 damage to that player." };
+  const ROWS = [STORM, BOND];
+  const deck = customDeck({
+    id: 'curses', name: 'Curses',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Mountain', count: 50 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'curses', 1: 'curses' }, deckSpecs: { curses: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const throughUpkeep = (s: GameState): GameState => drain(advanceTo(nextTurn(s), 'draw'), 20);
+
+  it('reads both rows whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it("each opponent's upkeep: their turn and not yours", () => {
+    let s = table(['Test Storm'], []);
+    s = throughUpkeep(s);
+    expect(s.activeSeat).toBe(1);
+    expect(life(s, 1)).toBe(19);
+    expect(life(s, 0)).toBe(20);
+    s = throughUpkeep(s);
+    expect(s.activeSeat).toBe(0);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it("the enchanted creature's controller, and the new one once it changes hands; the Aura stays on", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'curses', 1: 'curses' }, deckSpecs: { curses: deck.deck },
+      hands: { 0: ['Test Bond'] }, battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bond'), targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    const bond = find(s, 0, 'battlefield', 'Test Bond');
+    expect(s.instances[bond]!.attachedTo).toBe(bears);
+    s = throughUpkeep(s);
+    expect(life(s, 1)).toBe(19);
+    s = throughUpkeep(s);
+    expect(life(s, 0)).toBe(20);
+    s = drain(gainControl(s, bears, 0), 20);
+    // A change of control is not a zone change: the Aura is still on the Bears.
+    expect(s.instances[bond]!.attachedTo).toBe(bears);
+    s = throughUpkeep(s);
+    expect(life(s, 1)).toBe(19);
+    s = throughUpkeep(s);
+    expect(life(s, 0)).toBe(19);
   });
 });

@@ -15556,6 +15556,27 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^At the beginning of (?:each|the)(?: player's)? upkeep, (.+)$/i,
     on: [{ kind: 'step', step: 'upkeep', of: 'any' }],
   },
+  /*
+    D618: the opponent rows the table above counted and held back, and the attachment rows it set
+    aside for want of a field. `of: 'opponent'` and `of: 'enchanted-controller'` now exist; the
+    second is answered in `fireTrigger`, which knows what the watcher is attached to.
+  */
+  {
+    prologue: () => /^At the beginning of each opponent's upkeep, (.+)$/i,
+    on: [{ kind: 'step', step: 'upkeep', of: 'opponent' }],
+  },
+  {
+    prologue: () => /^At the beginning of each opponent's end step, (.+)$/i,
+    on: [{ kind: 'step', step: 'end', of: 'opponent' }],
+  },
+  {
+    prologue: () => /^At the beginning of the upkeep of (?:enchanted|equipped) (?:creature|permanent|artifact|land|enchantment)'s controller, (.+)$/i,
+    on: [{ kind: 'step', step: 'upkeep', of: 'enchanted-controller' }],
+  },
+  {
+    prologue: () => /^At the beginning of the end step of (?:enchanted|equipped) (?:creature|permanent|artifact|land|enchantment)'s controller, (.+)$/i,
+    on: [{ kind: 'step', step: 'end', of: 'enchanted-controller' }],
+  },
   {
     prologue: () => /^At the beginning of your first main phase, (.+)$/i,
     on: [{ kind: 'step', step: 'precombat-main', of: 'you' }],

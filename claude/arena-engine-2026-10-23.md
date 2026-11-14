@@ -25660,3 +25660,73 @@ The count moves by three cards, but the three are in almost every Commander deck
 Pod sweep 48301–48340 (D615's build): 40 of 40 finished, no throw and no stall.
 
 Break runs: D614, 5 faults, 2 caught; D615, 5 faults, 1 caught. Every miss is pinned here.
+
+## D618 — Upkeeps on an opponent's turn and on the enchanted creature's controller's; Auras stay on stolen creatures
+
+D434's step table counted "each opponent's upkeep" (31 lines), "each opponent's end step" (7) and
+"the upkeep of enchanted creature's controller" (21, plus 9 for other permanent kinds). It held them
+back because no card body could read then. The vocabulary has grown since, so they ship:
+- `TriggerDef` `step` gains `of: 'opponent'`: the active player is an opponent of the watcher's
+  controller.
+- It also gains `of: 'enchanted-controller'`: the active player controls the permanent this Aura or
+  Equipment is attached to now. That is answered in `fireTrigger` beside heroic and the attachment
+  checks, because `triggerMatches` is not told the holder.
+- New rows: each opponent's upkeep and end step, and the upkeep and end step of an enchanted or
+  equipped creature, permanent, artifact, land or enchantment's controller.
+
+"That player" already reads on a step event (the active seat is the actor).
+
+### An engine bug found on the way: stealing a creature knocked its Auras off
+
+`relocate` called `detachAllFrom` on every move, including battlefield to battlefield. So
+`gainControl` of an enchanted creature left the Aura unattached on the battlefield. A change of
+controller is not a zone change, and attachments stay (CR 303.4, 301.5). `relocate` now detaches
+only when the permanent really leaves the battlefield. A soulbond pair still breaks on a change of
+control (CR 702.95e).
+
+**Break runs pinned here:**
+- **D616: 4 faults, 3 caught.** The miss, "from your graveyard" read as "not from your hand", is
+  pinned with a commander cast from the command zone: it fires "from anywhere other than your hand"
+  and not "from your graveyard".
+- **D617: 4 faults, 0 caught.** The test cards printed each colour twice, on `colors` and in a
+  symbol, so "hybrid counts one colour" and "colors ignored" hid behind each other. There was also
+  no face test and no trailing-text refusal. Four direct pins: a hybrid with empty `colors`, a
+  colour indicator alone, a back face's {R}, and "…identity or of the chosen color" staying unread.
+  All four faults re-injected now fail.
+
+**Refusal rows updated.** Two compile tables now assert the four new mappings. "Each opponent's draw
+step" and "combat on each opponent's turn" stay refused. The `customDeck` unread-line example moved
+to "each of your postcombat main phases".
+
+**Tests.** 3 new D618 engine tests:
+- Both rows read.
+- Each opponent's upkeep: their turn, not yours.
+- The enchanted creature's controller, and the new one after a steal. The Aura is asserted still
+  attached.
+
+Plus 4 compile mapping rows, the D616 pin and the D617 pins. Each of the following was broken on
+purpose and its test failed:
+- Opponent read as anyone.
+- The host-controller check removed.
+- Attachments detached on a control change.
+- The opponent end-step row widened.
+
+    engine tests: 4,372, all passing
+
+### The session's container was replaced mid-gate
+
+The first D618 working tree was lost before it was committed: a fresh clone, an empty scratchpad,
+and Postgres and Redis down. D617 was safe on origin. D618 was redone from the recorded edits, and
+the corpus was rebuilt from Forge with `scripts/corpus/legality.mjs` and `from-forge.mjs`. Forge has
+added cards since, so the corpus is now **34,234 rows, 31,653 legal** (was 33,847 and 31,292), and
+the figures below start a new baseline. The fresh clone also needed every workspace package built
+(`turbo run build`) before the web build typechecked: `PlayTable.tsx` reads a type from one of them.
+Its local Postgres also had no `postgres` password and no `grimore_dev` database, so the first gate
+failed in `packages/db`. Setting both locally (this session's own database, nothing else) let it pass.
+
+### Measurements, on the rebuilt corpus
+
+    D617 baseline:  cards fully read 10,003 of 31,653; lines read 28,115 of 59,306 (47.4%)
+    D618:           cards fully read 10,015 of 31,653; lines read 28,132 of 59,306 (47.4%)
+
+Pod sweep 48501–48540 (D617's build, old corpus): 40 of 40 finished, no throw and no stall.
