@@ -365,6 +365,8 @@ export function relocate(
     // back free. Changing controller is not leaving, and the effect is keyed to the permanent —
     // "its controller's next untap step" reads the controller when the step comes round.
     ...(toZone === 'battlefield' ? {} : { frozen: false }),
+    // And a Class's level (D638), which belongs to the object that gained it.
+    ...(toZone === 'battlefield' ? {} : { classLevel: undefined }),
     counters: toZone !== 'battlefield'
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,

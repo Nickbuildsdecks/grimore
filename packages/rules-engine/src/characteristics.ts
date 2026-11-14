@@ -241,6 +241,8 @@ export const SELF_TYPE_WORDS = [
   'Vehicle', 'Equipment', 'Aura', 'token', 'card', 'spell',
   // D637: "When this Spacecraft enters" — 40-odd legal Spacecraft name themselves this way.
   'Spacecraft',
+  // D638: "When this Class enters", "this Class's level".
+  'Class',
 ] as const;
 
 /**
@@ -1575,6 +1577,11 @@ export interface ContinuousEffect {
         readonly below?: number;
       }
     | {
+        /** A Class at this level or higher (D638, CR 716): the source's own `classLevel`, 1 if unset. */
+        readonly kind: 'source-class-level';
+        readonly atLeast: number;
+      }
+    | {
         /**
          * "As long as there are seven or more cards in your graveyard" — threshold (D502).
          *
@@ -1827,6 +1834,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     — Galvanic Blast's count — runs while a spell resolves rather than inside this computation, so
     it reads live and is not subject to this.
   */
+  if (cond.kind === 'source-class-level') {
+    const source = state.instances[effect.source];
+    return source !== undefined && source.zone === 'battlefield' && (source.classLevel ?? 1) >= cond.atLeast;
+  }
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];
     const held = source === undefined ? 0 : (source.counters[cond.counter] ?? 0);

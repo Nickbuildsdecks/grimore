@@ -183,6 +183,12 @@ export interface CardInstance {
   /** Deliberately shown to the whole table, which beats a face-up card in a hidden zone. */
   readonly revealed: boolean;
   readonly counters: Readonly<Record<string, number>>;
+  /**
+   * A Class's level (D638, CR 716): a designation, not a counter, so proliferate cannot raise it.
+   * Absent on the battlefield means level 1, which is where every Class starts (CR 716.2a); cleared
+   * when the card leaves, because the new object starts again at 1 (CR 400.7).
+   */
+  readonly classLevel?: number;
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
   /**

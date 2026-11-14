@@ -37,7 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, KICKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
+  DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -4039,7 +4039,8 @@ const seatHasCounters = (state: GameState, seat: SeatIndex): boolean =>
  */
 export function proliferateCandidates(state: GameState): string[] {
   const permanents = state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield')))
-    .filter((id) => Object.values(state.instances[id]?.counters ?? {}).some((n) => n > 0));
+    // A marker is not a counter (D638): a permanent with only a regeneration shield is not offered.
+    .filter((id) => Object.entries(state.instances[id]?.counters ?? {}).some(([key, n]) => n > 0 && !MARKERS.has(key)));
   const players = state.seats
     .filter((seat) => !seat.eliminated && seatHasCounters(state, seat.index))
     .map((seat) => `${SEAT_CHOICE}${seat.index}`);

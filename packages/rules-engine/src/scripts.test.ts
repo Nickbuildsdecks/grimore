@@ -47013,8 +47013,11 @@ describe('statics over a group of creatures (D620)', () => {
   });
 
   it('a Class above its first level, a Case once solved, and a station band are not the card\'s own', () => {
+    // D638 reads a Class's levels — and the level-2 line is scoped to level 2, not the card's own.
     const klass = compileCard(card('Test Class', 'Enchantment — Class', 'Creatures you control have vigilance.\n{1}{G}: Level 2\nCreatures you control have haste.', null) as never);
-    expect(klass.ok && klass.unread.map((u) => u.line)).toEqual(['{1}{G}: Level 2', 'Creatures you control have haste.']);
+    expect(klass.ok && klass.unread).toEqual([]);
+    const haste = (klass.ok ? klass.script?.statics ?? [] : []).find((s) => (s.effect as { keywords?: string[] }).keywords?.includes('haste'));
+    expect((haste?.effect as { while?: unknown }).while).toEqual({ kind: 'source-class-level', atLeast: 2 });
     // A trigger, because the trigger reader is the one that takes an ability word off.
     const caseCard = compileCard(card('Test Case', 'Enchantment — Case', 'To solve — You control three or more creatures.\nSolved — Whenever you attack, you gain 1 life.', null) as never);
     expect(caseCard.ok && caseCard.unread.map((u) => u.line)).toContain('Solved — Whenever you attack, you gain 1 life.');
@@ -48312,5 +48315,91 @@ describe('a tribe word that is not a creature type (pinned by the D635 break run
       oracle_text: 'Whenever a Vehicle you control attacks, you gain 1 life.',
     } as never);
     expect(read.ok && read.unread).toHaveLength(1);
+  });
+});
+
+describe('a Class levels up, and proliferate leaves markers alone (D638)', () => {
+  const KLASS = {
+    name: 'Test Class', type_line: 'Enchantment — Class', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: null, toughness: null,
+    oracle_text: '(Gain the next level as a sorcery to add its ability.)\nCreatures you control have vigilance.\n{1}: Level 2\nCreatures you control have haste.\n{1}: You gain 1 life.\n{1}: Level 3\nCreatures you control get +1/+1.',
+  };
+  const deck = customDeck({
+    id: 'klass', name: 'Klass', entries: [{ name: 'Test Class', count: 4 }, { name: 'Hill Giant', count: 4 }, { name: 'Forest', count: 52 }],
+    data: [KLASS] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'klass', 1: 'klass' }, deckSpecs: { klass: deck.deck },
+    battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Test Class', 'Hill Giant'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const klass = (s: GameState) => find(s, 0, 'battlefield', 'Test Class');
+  const giant = (s: GameState) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Hill Giant')]!);
+  const levelIndex = (level: number) => (compileCard(KLASS as never) as unknown as { script: { abilities: { description: string }[] } })
+    .script.abilities.findIndex((a) => a.description.endsWith(`Level ${level}`));
+  const level = (s: GameState, n: number) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: klass(s), abilityIndex: levelIndex(n) } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(KLASS as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('level 1 is vigilance only; level 2 adds haste; level 3 adds +1/+1 and keeps both', () => {
+    let s = table();
+    expect(giant(s).keywords.has('vigilance')).toBe(true);
+    expect(giant(s).keywords.has('haste')).toBe(false);
+    s = level(s, 2);
+    expect(s.instances[klass(s)]?.classLevel).toBe(2);
+    expect(giant(s).keywords.has('haste')).toBe(true);
+    expect(giant(s).power).toBe(3);
+    s = level(s, 3);
+    expect(giant(s).power).toBe(4);
+    expect(giant(s).keywords.has('haste')).toBe(true);
+  });
+
+  it('an activated ability from level 2 is offered only from level 2', () => {
+    let s = table();
+    const gain = (state: GameState) => legalActions(state, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === klass(state) && p.abilityIndex !== undefined
+        && (compileCard(KLASS as never) as unknown as { script: { abilities: { description: string }[] } }).script.abilities[p.abilityIndex]?.description.includes('gain 1 life')).length;
+    expect(gain(s)).toBe(0);
+    s = level(s, 2);
+    expect(gain(s)).toBe(1);
+  });
+
+  it('level 3 cannot be skipped to, and a Class that leaves comes back at level 1', () => {
+    let s = table();
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: klass(s), abilityIndex: levelIndex(3) } as Action)).not.toBeNull();
+    s = level(s, 2);
+    const id = klass(s);
+    s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'hand' } as Action);
+    expect(s.instances[id]?.classLevel).toBeUndefined();
+  });
+
+  it('proliferate adds to real counters and not to a regeneration shield', () => {
+    let s = table();
+    const id = find(s, 0, 'battlefield', 'Hill Giant');
+    s = addCounters(addCounters(s, id, '+1/+1', 1), id, REGENERATION, 1);
+    s = proliferate(s, [id]);
+    expect(s.instances[id]?.counters['+1/+1']).toBe(2);
+    expect(s.instances[id]?.counters[REGENERATION]).toBe(1);
+    // And a permanent with only a shield is not offered as something with counters on it.
+    const bare = addCounters(table(), find(table(), 0, 'battlefield', 'Hill Giant'), REGENERATION, 1);
+    expect(proliferateCandidates(bare)).not.toContain(find(bare, 0, 'battlefield', 'Hill Giant'));
+  });
+});
+
+describe('a band static that already has a condition (pinned by the D636 break run)', () => {
+  it('refuses the band rather than replacing its condition', () => {
+    const read = compileCard({
+      name: 'Test Captain', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Level up {1} ({1}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 1+\n2/2\nAs long as you control a Plains, Test Captain gets +2/+2.',
+    } as never);
+    // The same line on a plain creature reads (with its own condition), so the refusal is the band's.
+    const plainly = compileCard({
+      name: 'Test Captain', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'As long as you control a Plains, Test Captain gets +2/+2.',
+    } as never);
+    expect(plainly.ok && plainly.unread).toEqual([]);
+    expect(read.ok && read.unread.length).toBeGreaterThan(0);
   });
 });

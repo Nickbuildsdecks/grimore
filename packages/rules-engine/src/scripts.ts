@@ -26,7 +26,7 @@ import {
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
-import { listAt } from './cardActions.js';
+import { listAt, withInstance } from './cardActions.js';
 import {
   addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
   chosenCards,
@@ -8967,6 +8967,23 @@ export function stationAbility(): AbilityDef {
     sorcerySpeed: true,
     description: 'Station (tap another creature you control: put charge counters equal to its power on this)',
     effect: (c) => ((c.tappedPower ?? 0) > 0 ? addCounters(c.state, c.source, 'charge', c.tappedPower!) : c.state),
+  };
+}
+
+/**
+ * A Class's "{cost}: Level N" (D638, CR 716.2): gain the next level, only as a sorcery, and only
+ * from the level just below — a Class at level 1 cannot jump to 3 (CR 716.2a). Sets
+ * `CardInstance.classLevel`, a designation rather than a counter.
+ */
+export function classLevelAbility(cost: string, level: number): AbilityDef {
+  return {
+    cost: { mana: cost },
+    sorcerySpeed: true,
+    description: `${cost}: Level ${level}`,
+    activateOnlyIf: (state, source) => (state.instances[source]?.classLevel ?? 1) === level - 1,
+    effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield'
+      ? withInstance(c.state, c.source, { classLevel: level })
+      : c.state),
   };
 }
 

@@ -906,6 +906,18 @@ export const FADE = 'fade';
 export const RENOWNED = 'renowned';
 
 /**
+ * The keys in `counters` that are **markers**, not counters (D638): facts the engine keeps on the
+ * permanent — a regeneration shield, "this was kicked", "this is renowned" — because that is where
+ * it keeps per-object facts, not because the card has a counter on it.
+ *
+ * Proliferate is the reason this list exists. It adds one of each kind of counter a permanent
+ * already has (CR 701.27a), and it was adding one of each of these too: a second regeneration
+ * shield, a creature that was kicked twice. And a permanent carrying only a marker was offered as a
+ * thing with counters on it.
+ */
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED]);
+
+/**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
  *
  * A shield, not a trigger: it sits on the permanent and is spent the next time something would
@@ -1851,7 +1863,7 @@ export function proliferate(state: GameState, chosen: readonly string[]): GameSt
     const inst = next.instances[id];
     if (inst === undefined || inst.zone !== 'battlefield') continue;
     for (const [key, value] of Object.entries(inst.counters)) {
-      if (value > 0) next = addCounters(next, id, key, 1);
+      if (value > 0 && !MARKERS.has(key)) next = addCounters(next, id, key, 1);
     }
   }
   return next;

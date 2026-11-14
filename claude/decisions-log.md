@@ -44318,3 +44318,66 @@ Pod sweep 50401–50440 (D636's build): 40 of 40 finished, no throw and no stall
 **Break run on D636's build:** 6 of 7 caught. The miss is real: a band static that already had a
 condition would be accepted, and the band's condition would silently replace it. It will be pinned
 with the next increment.
+
+## D638 — Class levels; proliferate stops counting markers
+
+**Class levels** (CR 716). D620 left every line from a Class's first "{cost}: Level N" down unread,
+because read as the card's own they all worked from level 1. A Class's level is a **designation,
+not a counter**, so it is a new instance field, `CardInstance.classLevel`:
+- Absent on the battlefield means level 1.
+- `relocate` clears it when the card leaves, so the new object starts again (CR 400.7).
+
+`classLevelAbility(cost, N)` gains level N only from level N-1, at sorcery speed (CR 716.2a).
+`readClassLevels` scopes each level's lines to "this level or higher", since levels are cumulative,
+the way D636 scopes a band:
+- activated abilities through `activateOnlyIf`;
+- triggers through `condition`;
+- statics through a new `source-class-level` condition.
+
+"This Class" joined `SELF_TYPE_WORDS`. Only 1 of the 35 legal Classes reads whole, because their
+level-1 lines are mostly abilities nothing reads yet: cost reducers, replacement effects, "you may
+play lands from your graveyard". The machinery is in place for when those land.
+
+**Proliferate added to markers.** The engine keeps several per-object facts in `counters`: the
+regeneration shield, "unearthed", "evoked", "dashed", "kicked", "myriad", "renowned". Proliferate
+adds one of each kind of counter a permanent has (CR 701.27a), and it was adding one of each of
+these too: a second regeneration shield, a creature kicked twice. `proliferateCandidates` also
+offered a permanent carrying only a marker. Both now skip `MARKERS`, a new set in `effects.ts`.
+Found while deciding not to store Class level as a counter, for exactly this reason.
+
+**The D636 pin.** A band static that already has its own condition ("As long as you control a
+Plains, ~ gets +2/+2" inside a band) refuses the band, rather than having its condition replaced. A
+control shows the same line reads on a plain creature, so the refusal is the band's.
+
+**Tests.** 6 new engine tests, 1 changed:
+- The Class reads whole.
+- Level 1 is vigilance only; level 2 adds haste; level 3 adds +1/+1 and keeps both.
+- A level-2 activated ability is offered only from level 2.
+- Level 3 cannot be skipped to, and a Class that leaves comes back at level 1.
+- Proliferate adds to +1/+1 and not to a shield, and a shield alone is not a candidate.
+- The D636 pin.
+- The D620 row now checks the level-2 static is scoped to level 2.
+
+Faults injected by hand, each caught:
+- Level gain allowed from any lower level.
+- `classLevel` kept on leaving the battlefield.
+- The class-level condition always true.
+- Proliferate counting markers.
+- The candidate filter counting markers.
+- **Caught once its test was added:** the scoping of a Class's activated abilities and triggers.
+  The first Class test had only statics past level 1.
+- **Caught once its pin was rewritten:** the D636 condition check. The first pin's line did not read
+  at all, so it was refused for that reason instead.
+
+    engine tests: 4,479, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,683 of 31,653 (was 10,682); lines read 29,275 of 59,306 (49.4%, was 29,270)
+
+**Break run on D637's build:** 7 of 7 caught.
+
+**Pod sweep 50501–50540 (D637's build): 39 of 40 finished; one looped.** Seed 50534 made 1,000
+`auto:activate`s of Blessing of Leeches' "{0}: Regenerate enchanted creature", which D624 began
+reading. Each activation adds a regeneration shield, which looks like progress to the bot, and a
+{0} cost never runs out. The fix is the next increment (D639), with this seed as its check.

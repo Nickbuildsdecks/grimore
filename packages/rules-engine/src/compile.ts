@@ -47,7 +47,7 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, stationAbility, wholeCardShapeFor,
+  classLevelAbility, isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, stationAbility, wholeCardShapeFor,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import type { LevelBand } from './cards.js';
@@ -317,6 +317,66 @@ function readStationBands(lines: readonly string[], first: number, name: string,
       ...(statics.length === 0 ? {} : { statics }),
     },
     claimed: [lines[header]!, ...lines.slice(first)],
+  };
+}
+
+/**
+ * **A Class's levels, read** (D638, CR 716). From the first "{cost}: Level N" header to the end of the
+ * card, each header is the ability that gains that level (`classLevelAbility`), and the lines under
+ * it are abilities the Class has **from that level on** — cumulative, like station. Scoped as D636
+ * scopes a band, on `CardInstance.classLevel`: activated abilities through `activateOnlyIf`,
+ * triggers through `condition`, statics through a `source-class-level` `while`. Anything that cannot
+ * be scoped refuses the reading, and the tail stays unread as D620 left it.
+ */
+function readClassLevels(lines: readonly string[], first: number, name: string): {
+  readonly fragment: Record<string, unknown>;
+  readonly claimed: readonly string[];
+} | null {
+  const abilities: AbilityDef[] = [];
+  const triggers: TriggerDef[] = [];
+  const statics: unknown[] = [];
+  let index = first;
+  while (index < lines.length) {
+    const header = /^((?:\{[^}]+\})+): Level (\d+)$/i.exec(lines[index]!.trim());
+    if (header === null) return null;
+    const level = Number(header[2]);
+    if (level < 2) return null;
+    abilities.push(classLevelAbility(header[1]!, level));
+    const reached = (state: GameState, id: string): boolean => {
+      const inst = state.instances[id];
+      return inst !== undefined && inst.zone === 'battlefield' && (inst.classLevel ?? 1) >= level;
+    };
+    index += 1;
+    for (; index < lines.length && !/^(?:\{[^}]+\})+: Level \d+$/i.test(lines[index]!.trim()); index++) {
+      const read = lineScriptFor(lines[index]!, name);
+      if (read === null) return null;
+      // A grant (`grantedTriggers`, `grantedAbilities`) cannot be scoped, so it refuses, as in a band.
+      for (const key of Object.keys(read)) {
+        if (!['abilities', 'triggers', 'statics'].includes(key)) return null;
+      }
+      for (const ability of read.abilities ?? []) {
+        const prior = ability.activateOnlyIf;
+        abilities.push({ ...ability, activateOnlyIf: (state, source, controller) => reached(state, source) && (prior === undefined || prior(state, source, controller)) });
+      }
+      for (const trigger of read.triggers ?? []) {
+        const prior = trigger.condition;
+        triggers.push({ ...trigger, condition: (c) => reached(c.state, c.source) && (prior === undefined || prior(c)) });
+      }
+      for (const fixed of read.statics ?? []) {
+        const effect = ((fixed as unknown as { effect?: Record<string, unknown> }).effect) ?? {};
+        if (effect['while'] !== undefined || effect['grants'] !== undefined || effect['grantsAbilities'] !== undefined) return null;
+        statics.push({ ...fixed, effect: { ...effect, while: { kind: 'source-class-level', atLeast: level } } });
+      }
+    }
+  }
+  if (abilities.length === 0) return null;
+  return {
+    fragment: {
+      abilities,
+      ...(triggers.length === 0 ? {} : { triggers }),
+      ...(statics.length === 0 ? {} : { statics }),
+    },
+    claimed: lines.slice(first),
   };
 }
 
@@ -695,6 +755,13 @@ function compileSingle(row: CardDataRow): Compilation {
     def = { ...def, levelBands: stationed.bands };
     for (const line of stationed.claimed) claimed.add(line);
     compiled.push(...stationed.claimed);
+    firstBand = -1;
+  }
+  // And a Class (D638): its levels, from the first "{cost}: Level N" down.
+  const classed = classLevel >= 0 && (leveled < 0 || classLevel < leveled) ? readClassLevels(lines, classLevel, def.name) : null;
+  if (classed !== null && merge(built, classed.fragment as Partial<CardScript>) === 'merged') {
+    for (const line of classed.claimed) claimed.add(line);
+    compiled.push(...classed.claimed);
     firstBand = -1;
   }
   if (levelled !== null && merge(built, levelled.fragment as Partial<CardScript>) === 'merged') {
