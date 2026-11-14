@@ -66,7 +66,7 @@ import type { EffectFn } from './effects.js';
   No cycle: `fromCardData.ts` imports `cards`, `characteristics`, `effects`, `mana` and the script
   types, and none of them is this file.
 */
-import { isManaAbilityLine, keywordWithCost } from './fromCardData.js';
+import { isManaAbilityLine, keywordWithCost, tapOthersCost } from './fromCardData.js';
 import { costValue, parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
@@ -22597,16 +22597,10 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       "Tap an untapped creature you control", "Tap two untapped artifacts you control", "Tap an
       untapped Ally you control" (D610): see `AbilityCost.tapUntapped`. One per cost.
     */
-    const tapOthers = /^Tap (an|one|two|three|four|five) untapped (creatures?|artifacts?|[A-Z][A-Za-z'-]*?)s? you control$/.exec(component);
-    if (tapOthers !== null) {
-      if (tapsOthers !== null) return null;
-      const count = /^an$/i.test(tapOthers[1]!) ? 1 : countFrom(tapOthers[1]!);
-      const word = tapOthers[2]!;
-      if (count === null || count < 1) return null;
-      if (/^creatures?$/.test(word)) tapsOthers = { count, kind: 'creature' };
-      else if (/^artifacts?$/.test(word)) tapsOthers = { count, kind: 'artifact' };
-      else if (isCreatureType(word)) tapsOthers = { count, kind: 'creature', subtype: word };
-      else return null;
+    if (/^Tap (an|one|another|two|three|four|five) untapped /.test(component)) {
+      const tapOthers = tapOthersCost(component);
+      if (tapOthers === null || tapsOthers !== null) return null;
+      tapsOthers = tapOthers;
       continue;
     }
     /*

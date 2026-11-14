@@ -83,7 +83,7 @@
  */
 import type { CardDef } from './cards.js';
 import {
-  commanderIdentity, parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
+  commanderIdentity, isCreatureType, parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
 } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { dealDamage, drawLater } from './effects.js';
@@ -301,9 +301,41 @@ interface ManaLine {
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
 interface ManaAbilityCost {
-  readonly tap: true;
+  /** False only for a cost that is nothing but tapping other permanents (Birchlore Rangers, D645). */
+  readonly tap: boolean;
   readonly life?: number;
   readonly sacrificeSelf?: true;
+  /** "{T}, Tap an untapped creature you control: Add …" (D645) — Holdout Settlement, Loam Dryad. */
+  readonly tapUntapped?: NonNullable<AbilityDef['cost']['tapUntapped']>;
+}
+
+const COST_COUNTS: Readonly<Record<string, number>> = { an: 1, a: 1, one: 1, another: 1, two: 2, three: 3, four: 4, five: 5 };
+
+/**
+ * "Tap an untapped creature you control", "Tap two untapped artifacts you control", "Tap an
+ * untapped Ally / Gate you control", "Tap two untapped artifacts and/or creatures you control",
+ * "Tap another untapped creature you control" — the `tapUntapped` cost (D610, widened in D645), or
+ * `null`. Shared by the mana-line parser here and the activated-ability reader in `scripts.ts`.
+ */
+export function tapOthersCost(component: string): NonNullable<AbilityDef['cost']['tapUntapped']> | null {
+  const m = /^Tap (an|one|another|two|three|four|five) untapped (.+?) you control$/.exec(component.trim());
+  if (m === null) return null;
+  const count = COST_COUNTS[m[1]!.toLowerCase()];
+  if (count === undefined) return null;
+  const other = m[1]!.toLowerCase() === 'another' ? { other: true as const } : {};
+  const word = m[2]!;
+  if (/^creatures?$/.test(word)) return { count, kind: 'creature', ...other };
+  if (/^artifacts?$/.test(word)) return { count, kind: 'artifact', ...other };
+  if (/^artifacts? (?:and\/or|or) creatures?$/.test(word)) return { count, kind: 'artifact-or-creature', ...other };
+  if (!/^[A-Z][A-Za-z'-]*$/.test(word)) return null;
+  // The plural back to the subtype: "Elves", "Wolves", "Faeries", "Allies", "Gates".
+  const singulars = [word, word.replace(/s$/, ''), word.replace(/es$/, ''), word.replace(/ves$/, 'f'), word.replace(/ies$/, 'y')];
+  const creature = singulars.find((s) => isCreatureType(s));
+  if (creature !== undefined) return { count, kind: 'creature', subtype: creature, ...other };
+  // A noncreature subtype a permanent can carry: Gate, Desert, Equipment, Vehicle, Food.
+  const noncreature = singulars.find((s) => ['Gate', 'Desert', 'Equipment', 'Vehicle', 'Food', 'Treasure', 'Clue'].includes(s));
+  if (noncreature !== undefined) return { count, kind: 'permanent', subtype: noncreature, ...other };
+  return null;
 }
 
 /** `one mana of any color`, in both spellings this project has in its own card pool. */
@@ -329,6 +361,8 @@ const COLOURS: readonly ManaType[] = ['W', 'U', 'B', 'R', 'G'];
  * accepted, because the same card prints each on different printings.
  */
 function parseCostClause(clause: string, name: string): ManaAbilityCost | null {
+  const others = tapOthersCost(clause);
+  if (others !== null) return { tap: true, tapUntapped: others };
   const life = /^Pay\s+(\d+)\s+life$/i.exec(clause);
   if (life !== null) {
     const amount = Number(life[1]);
@@ -350,7 +384,8 @@ function parseCostClause(clause: string, name: string): ManaAbilityCost | null {
 /** Two parsed costs that the engine would treat as the same cost. */
 function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
   return (a.life ?? 0) === (b.life ?? 0)
-    && (a.sacrificeSelf ?? false) === (b.sacrificeSelf ?? false);
+    && (a.sacrificeSelf ?? false) === (b.sacrificeSelf ?? false)
+    && JSON.stringify(a.tapUntapped ?? null) === JSON.stringify(b.tapUntapped ?? null);
 }
 
 /**
@@ -437,7 +472,8 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     sentence, so every pain land was still refused and the reader looked like it had not been
     written. Greedy, the class stops at the first full stop because it cannot contain one.
   */
-  const match = /^(\{T\}(?:,\s*[^:]+)?):\s*Add\s+([^.]+)(?:\.\s*(.*))?$/i.exec(line);
+  // Or a cost that is only "Tap two untapped Elves you control" (Birchlore Rangers, D645).
+  const match = /^(\{T\}(?:,\s*[^:]+)?|Tap [^:,]+ untapped [^:,]+ you control):\s*Add\s+([^.]+)(?:\.\s*(.*))?$/i.exec(line);
   if (match === null) return null;
   const printed = match[1]!.trim();
   const body = match[2]!.trim();
@@ -451,13 +487,20 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
   if (rest !== '' && damage === undefined && spendOnly === undefined) return null;
 
-  const clauses = printed.split(/\s*,\s*/).slice(1).map((c) => c.trim()).filter((c) => c !== '');
-  if (clauses.length > 1) return null;
   let cost: ManaAbilityCost = { tap: true };
-  if (clauses.length === 1) {
-    const extra = parseCostClause(clauses[0]!, name);
-    if (extra === null) return null;
-    cost = extra;
+  if (!/^\{T\}/i.test(printed)) {
+    // A cost of nothing but tapping others (D645): no {T}, so the source itself stays untapped.
+    const others = tapOthersCost(printed);
+    if (others === null) return null;
+    cost = { tap: false, tapUntapped: others };
+  } else {
+    const clauses = printed.split(/\s*,\s*/).slice(1).map((c) => c.trim()).filter((c) => c !== '');
+    if (clauses.length > 1) return null;
+    if (clauses.length === 1) {
+      const extra = parseCostClause(clauses[0]!, name);
+      if (extra === null) return null;
+      cost = extra;
+    }
   }
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.

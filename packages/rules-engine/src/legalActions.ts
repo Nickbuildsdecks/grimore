@@ -646,10 +646,15 @@ export function tapCostPlan(
     // A cost that also prints {T} taps the source for that, so it cannot be one of these too
     // (cohort: "{T}, Tap an untapped Ally you control").
     if (sourceTapsItself && id === source) continue;
+    // "Tap **another** untapped creature" (D645) never taps the source.
+    if (cost.other === true && id === source) continue;
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
     const ch = characteristicsOf(state, inst);
-    const kind = cost.kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, 'artifact');
+    const kind = cost.kind === 'creature' ? ch.isCreature
+      : cost.kind === 'artifact' ? hasType(ch.typeLine, 'artifact')
+        : cost.kind === 'artifact-or-creature' ? ch.isCreature || hasType(ch.typeLine, 'artifact')
+          : true;
     if (!kind) continue;
     if (cost.subtype !== undefined && !hasSubtype(ch.typeLine, cost.subtype.toLowerCase())) continue;
     available.push({ id, rank: (id === source ? 1000 : 0) + (ch.isCreature ? ch.power : 0) });
@@ -985,6 +990,13 @@ export function manaSources(
         Add {C}" is pressed by the player, like the Familiar's.
       */
       if (ability.cost.discardACard === true) continue;
+      /*
+        Nor one that taps **other** permanents (D645): Holdout Settlement's "{T}, Tap an untapped
+        creature you control: Add one mana of any color." Which creature to tap is the player's
+        answer — the auto-tapper would otherwise tap an attacker to pay for a spell — so the ability
+        is a play the player presses, as the Apprentice's is above.
+      */
+      if (ability.cost.tapUntapped !== undefined) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
       // is a legal way to lose the game, so the engine stops one short of it.
@@ -1122,6 +1134,8 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
         colour's pip here, and so did a Command Tower outside its commander's identity.
       */
       if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
+      // Pressed by the player, so not counted here either (D645): see `manaSources`.
+      if (ability.cost.tapUntapped !== undefined) continue;
       if (ability.cost.tap) {
         // A creature's tap ability is unavailable while it is summoning sick.
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;

@@ -2181,7 +2181,17 @@ export interface AbilityCost {
    * A creature tapped this way need not be free of summoning sickness: the {T} symbol is what asks
    * that (CR 302.6), and this cost is not the creature's own {T}.
    */
-  readonly tapUntapped?: { readonly count: number; readonly kind: 'creature' | 'artifact'; readonly subtype?: string };
+  readonly tapUntapped?: {
+    readonly count: number;
+    /**
+     * `artifact-or-creature` is "artifacts and/or creatures" (Adaptive Gemguard); `permanent` with a
+     * `subtype` is a noncreature one, "an untapped Gate you control" (Crackling Perimeter) — D645.
+     */
+    readonly kind: 'creature' | 'artifact' | 'artifact-or-creature' | 'permanent';
+    readonly subtype?: string;
+    /** "Tap **another** untapped creature you control" (D645): never the source itself. */
+    readonly other?: true;
+  };
 }
 
 /**

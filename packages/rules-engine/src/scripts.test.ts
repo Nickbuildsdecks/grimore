@@ -11091,6 +11091,78 @@ describe('mana spent only on the chosen type (D644)', () => {
   });
 });
 
+describe('tapping others for mana, Gates, and "artifacts and/or creatures" (D645)', () => {
+  const card = (name: string, type: string, text: string, pt: [string, string] | null = ['1', '1']) => ({
+    name, type_line: type, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const ROWS = [
+    card('Test Rangers', 'Creature — Elf Druid', 'Tap two untapped Elves you control: Add one mana of any color.'),
+    card('Test Settlement', 'Land', '{T}: Add {C}.\n{T}, Tap an untapped creature you control: Add one mana of any color.', null),
+    card('Test Perimeter', 'Enchantment', 'Tap an untapped Gate you control: Test Perimeter deals 1 damage to each opponent.', null),
+    card('Test Gemguard', 'Artifact Creature — Gnome', 'Tap two untapped artifacts and/or creatures you control: Put a +1/+1 counter on Test Gemguard.'),
+    card('Test Oak', 'Creature — Treefolk', '{B}, Tap another untapped creature you control: Test Oak gets +1/+1 until end of turn.', ['0', '5']),
+    card('Test Gate', 'Land — Gate', '{T}: Add {C}.', null),
+    card('Test Elf', 'Creature — Elf', ''),
+    card('Test Relic', 'Artifact', '', null),
+  ];
+  const deck = customDeck({
+    id: 'others', name: 'Others',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 30 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'others', 1: 'others' }, deckSpecs: { others: deck.deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const plays = (s: GameState, name: string) => legalActions(s, 0).plays
+    .filter((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+
+  it('makes mana by tapping two Elves, as a play the player presses and not one the auto-tapper takes', () => {
+    let s = table(['Test Rangers', 'Test Elf']);
+    const rangers = find(s, 0, 'battlefield', 'Test Rangers');
+    const elf = find(s, 0, 'battlefield', 'Test Elf');
+    // Never an automatic source: which Elves to tap is the player's answer.
+    expect(manaSources(s, 0).some((entry) => entry.key === rangers)).toBe(false);
+    expect(potentialMana(s, 0).G).toBe(0);
+    // Offered once per colour, and pressing one taps both Elves — itself included, since its own
+    // summoning sickness is no bar: the cost is not its {T}.
+    expect(plays(s, 'Test Rangers')).toHaveLength(5);
+    const green = plays(s, 'Test Rangers').find((p) => p.description.includes('{G}'))!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: rangers, abilityIndex: green.abilityIndex! } as Action);
+    expect(s.pools['0']!.G).toBe(1);
+    expect([s.instances[rangers]!.tapped, s.instances[elf]!.tapped]).toEqual([true, true]);
+    expect(plays(s, 'Test Rangers')).toHaveLength(0);
+  });
+
+  it('a land with "{T}, Tap an untapped creature" taps for colourless on its own and colour with help', () => {
+    const alone = table(['Test Settlement']);
+    const land = find(alone, 0, 'battlefield', 'Test Settlement');
+    expect([...(manaSources(alone, 0).find((e) => e.key === land)?.produces ?? [])]).toEqual(['C']);
+    expect(plays(alone, 'Test Settlement').filter((p) => p.description.includes('Tap an untapped'))).toHaveLength(0);
+    const helped = table(['Test Settlement', 'Test Elf']);
+    expect(plays(helped, 'Test Settlement').filter((p) => p.description.includes('Tap an untapped'))).toHaveLength(5);
+  });
+
+  it('taps a Gate, "artifacts and/or creatures", and never the source for "another"', () => {
+    let s = table(['Test Perimeter', 'Test Gate']);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Perimeter'), abilityIndex: 0 } as Action)));
+    expect(life(s, 1)).toBe(before - 1);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Gate')]!.tapped).toBe(true);
+    // A Swamp is no Gate.
+    expect(plays(table(['Test Perimeter', 'Swamp']), 'Test Perimeter')).toHaveLength(0);
+    // An artifact and a creature together pay "two artifacts and/or creatures".
+    let g = table(['Test Gemguard', 'Test Relic']);
+    g = drain(passBoth(apply(g, { type: 'auto:activate', by: 0, card: find(g, 0, 'battlefield', 'Test Gemguard'), abilityIndex: 0 } as Action)));
+    expect(g.instances[find(g, 0, 'battlefield', 'Test Gemguard')]!.counters['+1/+1']).toBe(1);
+    expect(g.instances[find(g, 0, 'battlefield', 'Test Relic')]!.tapped).toBe(true);
+    // "Another": the Oak alone cannot pay it with itself.
+    expect(plays(table(['Test Oak', 'Swamp']), 'Test Oak')).toHaveLength(0);
+    expect(plays(table(['Test Oak', 'Swamp', 'Test Elf']), 'Test Oak')).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -46364,14 +46436,16 @@ describe('a cost that taps other permanents you control (D610)', () => {
   const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
   const activate = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0 } as Action)), 20);
 
-  it('reads every row whole, and refuses it on a mana ability', () => {
+  it('reads every row whole, and on a mana ability too since D645', () => {
     expect(deck.unknown).toEqual([]);
     for (const row of ROWS) {
       const read = compileCard(row as never);
       expect(read.ok && read.unread).toEqual([]);
     }
+    // Refused here until D645; read now, as an ability the player presses (see the D645 block).
     const mana = compileCard(card('Test Druid', 'Creature — Elf', 'Tap an untapped creature you control: Add {G}.') as never);
-    expect(mana.ok && mana.unread.length).toBe(1);
+    expect(mana.ok && mana.unread).toEqual([]);
+    expect(mana.ok && mana.script?.abilities?.[0]?.cost).toEqual({ tap: false, tapUntapped: { count: 1, kind: 'creature' } });
   });
 
   it('taps the weakest other creature first, then itself, then is not offered', () => {

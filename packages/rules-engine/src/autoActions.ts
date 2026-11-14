@@ -1803,7 +1803,10 @@ function activate(
   if (ability.cost.tapUntapped !== undefined) {
     const plan = tapCostPlan(state, action.by, ability.cost.tapUntapped, inst.id, ability.cost.tap === true);
     if (plan === null) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `you have too few untapped ${ability.cost.tapUntapped.subtype ?? ability.cost.tapUntapped.kind}s to tap for that`);
+      const want = ability.cost.tapUntapped;
+      const what = want.subtype !== undefined ? `${want.subtype}s`
+        : want.kind === 'artifact-or-creature' ? 'artifacts and creatures' : `${want.kind}s`;
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have too few untapped ${what} to tap for that`);
     }
     crewed = [...crewed, ...plan];
   }

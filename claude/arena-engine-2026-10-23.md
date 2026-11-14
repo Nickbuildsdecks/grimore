@@ -27256,3 +27256,55 @@ Faults injected by hand: 10 of 10 caught.
     engine tests: 4,505, all passing
 
 Coverage: 10,729 of 31,653 cards (+3), 29,460 of 59,306 lines (+3).
+
+## D645 — costs that tap your other permanents: Gates, "and/or", "another", and mana
+
+D610 added `tapUntapped` ("Tap an untapped creature you control:") for creatures, artifacts and a
+creature type. Ranking cost blocks after D644 found about 20 cards one line short on its edges:
+- a mana ability with the cost: Holdout Settlement, Loam Dryad and Jaspera Sentinel ("{T}, Tap an
+  untapped creature you control: Add one mana of any color."), and Birchlore Rangers ("Tap two
+  untapped Elves you control: Add one mana of any color.", with no {T});
+- a noncreature subtype: Crackling Perimeter's Gate, Dune Diviner's Desert;
+- "artifacts and/or creatures": Adaptive Gemguard;
+- "another untapped creature": Black Oak of Odunos, Wanderbrine Trapper;
+- plural creature types such as "Elves", which the old pattern turned into "Elve".
+
+**One parser.** `tapOthersCost` in `fromCardData.ts` now reads the cost for both readers: the
+activated-ability reader in `scripts.ts`, and the mana-line parser, which `scripts.ts` cannot be
+imported by. The kinds become:
+- `creature`, `artifact`;
+- `artifact-or-creature`;
+- `permanent` with a noncreature subtype (Gate, Desert, Equipment, Vehicle, Food, Treasure, Clue);
+- plus an `other` flag.
+
+Plurals are singularised the way `singularCreatureType` does it. `tapCostPlan` honours the kinds
+and never taps the source for `other`.
+
+**Mana abilities.**
+- The mana-line parser accepts the cost after `{T}`, and as the whole cost (`tap: false`).
+- `sameCost` compares it, so Holdout Settlement's free `{C}` row and its paid colour rows are
+  not folded into one cost.
+- **These abilities are not mana sources.** `manaSources` skips them, as it skips Overeager
+  Apprentice's discard (D580): which creature to tap is the player's answer, and an auto-tapper
+  choosing it could tap the attacker they were about to swing with. `potentialMana` skips them
+  too, kept in step.
+- They stay plays the player presses, and activation already taps the planned permanents before
+  the mana branch runs.
+
+The D610 test that asserted the mana-ability refusal now asserts the reading. Its comment says
+why the expectation changed.
+
+**Tests.**
+- 3 engine tests:
+  - Birchlore Rangers is no automatic source and lights no pips; it is offered five rows; pressing
+    green taps it and the other Elf (its own summoning sickness is no bar) and adds {G};
+  - Holdout Settlement alone taps for {C} only, and with a creature offers the five coloured
+    rows;
+  - a Gate pays Crackling Perimeter and a Swamp does not; an artifact plus a creature pay the
+    Gemguard; "another" refuses the Oak with nobody else to tap.
+
+Faults injected by hand: 10 of 10 caught.
+
+    engine tests: 4,508, all passing
+
+Coverage: 10,755 of 31,653 cards (+26), 29,494 of 59,306 lines (+34).
