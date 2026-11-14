@@ -48403,3 +48403,38 @@ describe('a band static that already has a condition (pinned by the D636 break r
     expect(read.ok && read.unread.length).toBeGreaterThan(0);
   });
 });
+
+describe('a free regeneration is not a thing to keep pressing (D639)', () => {
+  /*
+    Sweep seed 50534 looped on Blessing of Leeches' "{0}: Regenerate enchanted creature" — 1000
+    activations, each adding a shield. A second shield buys nothing the search can see, so the
+    ability says so (`buysNothingIf`) once its creature has one. The player may still press it.
+  */
+  const ability = (text: string, type: string) => {
+    const read = compileCard({
+      name: 'Test Leeches', type_line: type, mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal',
+      power: type.startsWith('Creature') ? '2' : null, toughness: type.startsWith('Creature') ? '2' : null, oracle_text: text,
+    } as never);
+    expect(read.ok && read.unread).toEqual([]);
+    return (read.ok ? read.script?.abilities ?? [] : []).find((a) => a.description.includes('Regenerate'))!;
+  };
+  const board = (shielded: boolean) => ({
+    instances: {
+      aura: { attachedTo: 'host', counters: {} },
+      host: { counters: shielded ? { [REGENERATION]: 1 } : {} },
+      self: { counters: shielded ? { [REGENERATION]: 1 } : {} },
+    },
+  }) as never;
+
+  it('on an Aura: buys nothing once the enchanted creature has a shield', () => {
+    const regen = ability('Enchant creature\n{0}: Regenerate enchanted creature.', 'Enchantment — Aura');
+    expect(regen.buysNothingIf!(board(false), 'aura', 0 as SeatIndex)).toBe(false);
+    expect(regen.buysNothingIf!(board(true), 'aura', 0 as SeatIndex)).toBe(true);
+  });
+
+  it('on the creature itself: the same', () => {
+    const regen = ability('{0}: Regenerate Test Leeches.', 'Creature — Leech');
+    expect(regen.buysNothingIf!(board(false), 'self', 0 as SeatIndex)).toBe(false);
+    expect(regen.buysNothingIf!(board(true), 'self', 0 as SeatIndex)).toBe(true);
+  });
+});

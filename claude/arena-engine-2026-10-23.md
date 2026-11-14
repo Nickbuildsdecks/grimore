@@ -26915,3 +26915,37 @@ Faults injected by hand, each caught:
 `auto:activate`s of Blessing of Leeches' "{0}: Regenerate enchanted creature", which D624 began
 reading. Each activation adds a regeneration shield, which looks like progress to the bot, and a
 {0} cost never runs out. The fix is the next increment (D639), with this seed as its check.
+
+## D639 — a free regeneration is not a thing to keep pressing
+
+Sweep 50501's one loop. Seed 50534 played Blessing of Leeches, whose "{0}: Regenerate enchanted
+creature" D624 began reading, and the bot pressed it 1,000 times in one main phase. Each press adds
+a regeneration shield, which the search sees as a change worth making, and a {0} cost never runs
+out.
+
+`AbilityDef.buysNothingIf` (D182, written for adapt) is the field for exactly this: the play stays
+legal for a person, and the search stops taking it. Both compiled regenerate readers now set it:
+- the host's (D624);
+- the creature's own ("Regenerate ~").
+
+The question they ask is "does this creature already have a shield", through one shared predicate,
+`ALREADY_SHIELDED`.
+
+`compiled-vs-written.test.ts` then flagged Blight Mamba and Drudge Skeletons: their compiled
+readings now carried the hint and the hand-written scripts did not. The four hand-written
+regenerators (Drudge Skeletons, River Boa, Blight Mamba, Skithiryx) now carry it too. Their costs
+are mana, so they could not loop, but the bot would still pay for a second shield.
+
+`pregate.sh` stopped on that disagreement before a gate ran, which is what D628 and D631 built it
+to do.
+
+**Tests.** 2 new engine tests: the hint is false with no shield and true with one, on an Aura's
+host and on the creature itself. Seed 50534 replayed alone: finished in 62 turns, no loop.
+
+Faults injected by hand, each caught:
+- The self hint removed.
+- The host hint always false.
+
+    engine tests: 4,481, all passing
+
+Coverage is unchanged by this increment: 10,683 of 31,653 cards, 29,275 of 59,306 lines.

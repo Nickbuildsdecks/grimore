@@ -32,7 +32,7 @@ import {
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
-  dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
+  REGENERATION, dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
   chosenOption, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
@@ -1190,6 +1190,14 @@ const BALAN: CardScript = {
   ],
 };
 
+/**
+ * Whether a permanent already carries a regeneration shield (D639). The hand-written regenerators
+ * and the compiled ones ask the same question, so a free or cheap "Regenerate ~" is not pressed again
+ * by the bot once it has done its job. See `AbilityDef.buysNothingIf`.
+ */
+const ALREADY_SHIELDED = (state: GameState, source: string): boolean =>
+  (state.instances[source]?.counters[REGENERATION] ?? 0) > 0;
+
 const DRUDGE_SKELETONS: CardScript = {
   name: 'Drudge Skeletons',
   abilities: [
@@ -1197,6 +1205,8 @@ const DRUDGE_SKELETONS: CardScript = {
       cost: { mana: '{B}' },
       description: '{B}: Regenerate Drudge Skeletons.',
       effect: (c) => regenerate(c.state, c.source),
+      // D639: a second shield buys nothing the bot can see coming.
+      buysNothingIf: ALREADY_SHIELDED,
     },
   ],
 };
@@ -7370,6 +7380,8 @@ const RIVER_BOA: CardScript = {
     cost: { mana: '{G}' },
     description: '{G}: Regenerate River Boa.',
     effect: (c) => regenerate(c.state, c.source),
+    // D639: a second shield buys nothing the bot can see coming.
+    buysNothingIf: ALREADY_SHIELDED,
   }],
 };
 
@@ -9412,6 +9424,8 @@ const BLIGHT_MAMBA: CardScript = {
     cost: { mana: '{1}{G}' },
     description: '{1}{G}: Regenerate Blight Mamba.',
     effect: (c) => regenerate(c.state, c.source),
+    // D639: a second shield buys nothing the bot can see coming.
+    buysNothingIf: ALREADY_SHIELDED,
   }],
 };
 
@@ -9472,6 +9486,8 @@ const SKITHIRYX: CardScript = {
       cost: { mana: '{B}{B}' },
       description: '{B}{B}: Regenerate Skithiryx.',
       effect: (c) => regenerate(c.state, c.source),
+      // D639: a second shield buys nothing the bot can see coming.
+      buysNothingIf: ALREADY_SHIELDED,
     },
   ],
 };
@@ -13474,7 +13490,20 @@ function selfEffect(
       return host !== undefined && c.state.instances[host]?.zone === 'battlefield' ? host : undefined;
     };
     if (hosted[1] === undefined) {
-      return { effect: (c) => { const host = hostOf(c); return host === undefined ? c.state : regenerate(c.state, host); } };
+      return {
+        effect: (c) => { const host = hostOf(c); return host === undefined ? c.state : regenerate(c.state, host); },
+        /*
+          A second shield on a creature that already has one buys nothing the bot can see coming,
+          and a {0} cost made it press the button for ever (D639: Blessing of Leeches, sweep seed
+          50534, 1000 activations). The player may still do it; the search does not take it.
+        */
+        abilityFlags: {
+          buysNothingIf: (state, source) => {
+            const host = state.instances[source]?.attachedTo;
+            return host !== undefined && host !== null && (state.instances[host]?.counters[REGENERATION] ?? 0) > 0;
+          },
+        },
+      };
     }
     const word = (hosted[5] ?? '').trim().toLowerCase();
     const bonus = hosted[2] !== undefined
@@ -13539,7 +13568,11 @@ function selfEffect(
   const regenerated = new RegExp(`^regenerate (?:(${self})|it)$`, 'i').exec(text);
   if (regenerated !== null) {
     const named = regenerated[1];
-    return { effect: (c) => regenerate(c.state, itMeans(named, c)) };
+    return {
+      effect: (c) => regenerate(c.state, itMeans(named, c)),
+      // The same as the host's (D639): no second shield for the search to chase.
+      abilityFlags: { buysNothingIf: ALREADY_SHIELDED },
+    };
   }
 
   const counted = new RegExp(
