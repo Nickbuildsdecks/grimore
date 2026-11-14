@@ -39,6 +39,7 @@ import {
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
+import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
 import { scriptForCard, unreadLines } from './derive.js';
@@ -47660,5 +47661,67 @@ describe('a keyword for the whole team, and graveyard hate (D628)', () => {
     s = cast(s, 'Test Purge');
     expect(namesIn(s, 1, 'exile')).toContain('Hill Giant');
     expect(namesIn(s, 0, 'graveyard')).toContain('Hill Giant');
+  });
+});
+
+describe('tap or untap, damage to you as well, and a self-return that is not tapped (D629)', () => {
+  const TRICKSTER = {
+    name: 'Test Trickster', type_line: 'Creature — Human Wizard', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+    power: '1', toughness: '1', oracle_text: '{1}: Tap or untap target creature.',
+  };
+  const SLINGER = { ...TRICKSTER, name: 'Test Slinger', oracle_text: '{T}: Test Slinger deals 2 damage to any target and 1 damage to you.' };
+  const ROWS = [TRICKSTER, SLINGER];
+  const deck = customDeck({
+    id: 'twiddle', name: 'Twiddle', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Hill Giant', count: 4 }, { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'twiddle', 1: 'twiddle' }, deckSpecs: { twiddle: deck.deck },
+    battlefield: { 0: ['Mountain', 'Mountain', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const twiddle = (s: GameState, target: string): GameState => passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Trickster'), abilityIndex: 0,
+    targets: [{ kind: 'card', id: target }],
+  } as Action));
+
+  it('reads both rows whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('asks Tap or Untap as it resolves; the bot taps theirs and untaps yours; the answer is applied', () => {
+    let s = table(['Test Trickster', 'Hill Giant'], ['Hill Giant']);
+    const theirs = find(s, 1, 'battlefield', 'Hill Giant');
+    const mine = find(s, 0, 'battlefield', 'Hill Giant');
+    s = twiddle(s, theirs);
+    expect(s.pendingDecision?.options).toEqual(['Tap', 'Untap']);
+    expect(preferredOption(s)).toBe('Tap');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Tap' } as Action), 20);
+    expect(s.instances[theirs]?.tapped).toBe(true);
+
+    s = { ...s, instances: { ...s.instances, [mine]: { ...s.instances[mine]!, tapped: true } } };
+    s = twiddle(s, mine);
+    expect(preferredOption(s)).toBe('Untap');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Untap' } as Action), 20);
+    expect(s.instances[mine]?.tapped).toBe(false);
+  });
+
+  it('deals the damage and then the damage to you', () => {
+    let s = table(['Test Slinger'], ['Hill Giant']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Slinger'), abilityIndex: 0,
+      targets: [{ kind: 'player', seat: 1 as SeatIndex }],
+    } as Action)), 20);
+    // Two amounts, so neither can stand in for the other.
+    expect(life(s, 1)).toBe(18);
+    expect(life(s, 0)).toBe(19);
+  });
+
+  it('"tapped" on a return to hand is no printing, and is refused (pinned by the D626 break run)', () => {
+    const read = compileCard({ ...TRICKSTER, oracle_text: '{1}: Return Test Trickster from your graveyard to your hand tapped.' } as never);
+    expect(read.ok && read.unread).toHaveLength(1);
   });
 });

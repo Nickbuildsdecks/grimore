@@ -26350,3 +26350,50 @@ Faults injected by hand, each caught:
 Pod sweep 49501–49540 (D627's build): 40 of 40 finished, no throw and no stall.
 
 **Break run on D627's build:** 6 of 6 caught.
+
+## D629 — tap or untap, and "… and N damage to you"
+
+**"Tap or untap target creature"** (Twiddle, Puppet Strings, Bounding Krasis, Elder Druid,
+Trickster Mage): 42 legal lines, 31 of them the last unread line on their card. It reads as one
+target and a two-word question, Tap or Untap, asked as the effect resolves (CR 608.2d). "You may"
+in front works through `optionalEffect` as before: the inner question is gated on Yes and read at
+index 0 after `withoutOurs`. Only a single target; "up to two" stays unread.
+
+The bot's answer comes from the target. `ChoiceDecisionSpec.best` is handed only the state and the
+chooser, but while it is asked `pendingDecision.stackId` names the resolving object, which carries
+its targets:
+- Someone else's permanent: tap it.
+- Your own: untap it. This is also the no-op answer when your own untapped creature was targeted
+  only to be targeted.
+
+**"~ deals N damage to any target and M damage to you"** (Char, Fireslinger, Brothers of Fire,
+Goblin Artillery): 15 lines, 14 the last unread line on their card. `damageEffect` splits the
+trailing "and M damage to you" off the destination and deals it through `damageDestination('you')`
+with its own printed number, after the first half. If the only target is illegal on resolution,
+neither half happens (CR 608.2b); the engine's fizzle already does that.
+
+**The D626 pin.** "Return ~ from your graveyard to your hand tapped" is no printing, and it stays
+unread.
+
+**Tests.** 4 new engine tests:
+- The rows read.
+- Tap or Untap is asked; the bot's preference is Tap on theirs and Untap on yours; each answer is
+  applied.
+- 2 to the target and 1 to you. The two amounts differ on purpose: with 1 and 1, the fault "the
+  first amount used for both" went uncaught.
+- The D626 pin.
+
+Faults injected by hand, each caught:
+- Always tap.
+- The bot always taps.
+- The damage to you dropped.
+- "Tapped" accepted on a self-return to hand.
+- The first amount used for both halves.
+
+    engine tests: 4,433, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,553 of 31,653 (was 10,514); lines read 28,855 of 59,306 (48.7%, was 28,813)
+
+Pod sweep 49601–49640 (D628's build): 40 of 40 finished, no throw and no stall.

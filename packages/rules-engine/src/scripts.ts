@@ -18875,12 +18875,24 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     return inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
   };
 
-  const dest = damageDestination(where);
-  if (dest === null) return null;
+  /*
+    **"… and N damage to you"** (D629): Char ("deals 4 damage to any target and 2 damage to you"),
+    Fireslinger, Brothers of Fire, Goblin Artillery. 15 legal lines, 14 the last unread line on
+    their card. The second half is the "you" destination below, with its own printed number. If
+    the only target is illegal on resolution the spell or ability does not resolve at all
+    (CR 608.2b), so you take no damage either; the engine's fizzle already does that.
+  */
+  const toYou = /^(.+?) and (\d+) damage to you$/i.exec(where);
+  const dest = damageDestination(toYou === null ? where : toYou[1]!);
+  const back = toYou === null ? null : damageDestination('you');
+  if (dest === null || (toYou !== null && back === null)) return null;
   return {
     ...(dest.targets === undefined ? {} : { targets: dest.targets }),
     ...(dest.spellFlags === undefined ? {} : { spellFlags: dest.spellFlags }),
-    effect: (c) => dest.apply(c, amountOf(c)),
+    effect: (c) => {
+      const dealtOut = dest.apply(c, amountOf(c));
+      return back === null ? dealtOut : back.apply({ ...c, state: dealtOut }, Number(toYou![2]));
+    },
   };
 }
 
@@ -19477,6 +19489,39 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     board in one direction. Carrying the flag here would be wrong rather than merely redundant — it
     would tell the bot this ability buys nothing.
   */
+  /*
+    **"Tap or untap target creature"** (D629): Twiddle, Puppet Strings, Bounding Krasis, Elder Druid,
+    Trickster Mage. 42 legal lines, 31 of them the last unread line on their card. One target, and a
+    two-word question asked as the effect resolves, which is when the choice is made (CR 608.2d).
+
+    The bot's answer is read off the target the stack object carries (`pendingDecision.stackId`):
+    tap somebody else's permanent, untap your own. That covers both halves the cards are played for
+    — locking an attacker or blocker down, and untapping a land or a creature of yours — and when
+    the target is your own untapped creature, "untap" changes nothing, which is the answer to give
+    when it was chosen only to be targeted.
+  */
+  const tapOrUntap = new RegExp(`^tap or untap (target .+)$`, 'i').exec(text);
+  if (tapOrUntap !== null) {
+    const spec = targetSpecFrom(tapOrUntap[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec) && spec.count === undefined) {
+      return {
+        targets: [spec],
+        decisions: [{
+          who: 'controller',
+          prompt: 'Tap it or untap it?',
+          options: ['Tap', 'Untap'],
+          best: (state, chooser) => {
+            const object = state.pendingDecision === null ? undefined : state.stackObjects[state.pendingDecision.stackId];
+            const aimed = object?.targets.find((t) => t.kind === 'card');
+            const id = aimed !== undefined && 'id' in aimed ? aimed.id : undefined;
+            return id !== undefined && state.instances[id]?.zoneSeat === chooser ? 'Untap' : 'Tap';
+          },
+        }],
+        effect: (c) => foldCardTargets(c, (state, id) => tap(state, id, chosenOption(c) !== 'Untap')),
+      };
+    }
+  }
+
   const tapClause = new RegExp(`^tap (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (tapClause !== null) {
     const spec = targetSpecFrom(tapClause[1]!, false);
