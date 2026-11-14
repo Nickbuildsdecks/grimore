@@ -40,6 +40,24 @@ describe("parseDecklist", () => {
     ]);
   });
 
+  it("takes a second card under the Commander header as the partner, and a third into the deck", () => {
+    const list = parseDecklist("Commander\n1 Thrasios, Triton Hero\n1 Tymna the Weaver\n1 Sol Ring\n\nDeck\n9 Forest");
+    expect(list.commander).toBe("Thrasios, Triton Hero");
+    expect(list.partner).toBe("Tymna the Weaver");
+    expect(list.entries).toEqual([
+      { name: "Sol Ring", count: 1 },
+      { name: "Forest", count: 9 },
+    ]);
+    expect(list.total).toBe(10);
+  });
+
+  it("does not take a repeated name or a stack of copies as a partner", () => {
+    expect(parseDecklist("Commander\n1 Krenko, Mob Boss\n1 Krenko, Mob Boss").partner).toBeUndefined();
+    const list = parseDecklist("Commander\n1 Krenko, Mob Boss\n4 Goblin Guide");
+    expect(list.partner).toBeUndefined();
+    expect(list.entries).toEqual([{ name: "Goblin Guide", count: 4 }]);
+  });
+
   it("ignores comments and blank lines", () => {
     const list = parseDecklist("# my deck\n\n4 Forest\n// the good one\n1 Explore");
     expect(list.entries).toEqual([

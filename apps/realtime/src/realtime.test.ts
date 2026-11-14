@@ -1555,6 +1555,24 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(view.zones['0:command']?.length).toBe(1);
     }, 20_000);
 
+    it('deals a second commander that does not partner into the library, and says why (D640)', async () => {
+      const { a } = await seatedPair();
+      // Neither card prints Partner, so the second name under the header is an ordinary card.
+      const text = ['Commander', '1 Tatyova, Benthic Druid', '1 Krenko, Mob Boss', '', 'Deck', '29 Forest', '29 Island'].join('\n');
+      const ack = okAck(await emitAck(a, 'pod:deck', { name: 'Two', text }));
+      expect(ack.deck).toMatchObject({ total: 59, commander: 'Tatyova, Benthic Druid' });
+      expect(ack.deck!.partner).toBeUndefined();
+      expect(ack.deck!.partnerRefused).toMatch(/cannot both be commanders/);
+      const loaded = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+        expectedVersion: ack.stateVersion!,
+      }));
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!);
+      const view = unpackView(after.state as unknown as PackedView);
+      expect(view.seats.find((s) => s.index === 0)?.libraryCount).toBe(59);
+      expect(view.zones['0:command']?.length).toBe(1);
+    }, 20_000);
+
     /*
       The summary, the ack and the dealt deck all read the same list.
 

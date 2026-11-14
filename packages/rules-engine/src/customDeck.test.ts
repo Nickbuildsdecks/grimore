@@ -12,8 +12,9 @@ import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   applyAction, characteristicsOf, createGame, customDeck, deckIsAutomatable, legalActions,
-  poolCardNamed, STARTER_DECKS, unreadLines, viewFor,
+  partnersLegally, poolCardNamed, STARTER_DECKS, unreadLines, viewFor,
 } from './index.js';
+import type { CardDef } from './cards.js';
 import { arena, find, PLAYERS } from './testkit.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -583,5 +584,73 @@ describe('a pasted list resolved against card data', () => {
       data: [bear('Datawood Bear'), typeless('Datawood Nothing')],
     });
     expect(unknown).toHaveLength(1);
+  });
+});
+
+describe('two commanders in one list (D640, CR 702.124)', () => {
+  const legend = (name: string, text: string, type = 'Legendary Creature — Human') => ({
+    name, typeLine: type, oracleText: text, manaCost: '{1}{R}', cmc: 2, colors: ['R'],
+  }) as unknown as CardDef;
+
+  it('pairs only what the printed text pairs', () => {
+    const ok = (a: CardDef, b: CardDef) => expect(partnersLegally(a, b)).toBeNull();
+    const no = (a: CardDef, b: CardDef) => expect(partnersLegally(a, b)).toMatch(/cannot both be commanders/);
+    ok(legend('A', 'Flying\nPartner (You can have two commanders if both have partner.)'), legend('B', 'Partner'));
+    no(legend('A', 'Partner'), legend('B', 'Flying'));
+    // "Partner with" pairs only the two cards that name each other.
+    ok(legend('Pir', 'Partner with Toothy, Imaginary Friend (When this creature enters, ...)'),
+      legend('Toothy, Imaginary Friend', 'Partner with Pir'));
+    no(legend('Pir', 'Partner with Toothy, Imaginary Friend'), legend('Toothy, Imaginary Friend', 'Partner'));
+    no(legend('Pir', 'Partner with Toothy, Imaginary Friend'), legend('Toothy, Imaginary Friend', 'Flying'));
+    // A Partner—kind pairs with its own kind only, and not with plain Partner.
+    ok(legend('A', 'Partner—Friends forever'), legend('B', 'Partner—Friends forever'));
+    no(legend('A', 'Partner—Friends forever'), legend('B', 'Partner—Survivors'));
+    no(legend('A', 'Partner—Friends forever'), legend('B', 'Partner'));
+    // A Background, either way round, only for a commander that chooses one.
+    const background = legend('Raised by Giants', 'Commander creatures you own have base power and toughness 10/10.',
+      'Legendary Enchantment — Background');
+    ok(legend('A', 'Choose a Background'), background);
+    ok(background, legend('A', 'Choose a Background'));
+    no(legend('A', 'Partner'), background);
+    // A Doctor's companion, only with a Time Lord Doctor.
+    ok(legend('Rose', "Doctor's companion"), legend('The Tenth Doctor', 'Allons-y!', 'Legendary Creature — Time Lord Doctor'));
+    no(legend('Rose', "Doctor's companion"), legend('Davros', 'Flying', 'Legendary Creature — Dalek'));
+  });
+
+  const row = (name: string, text: string) => ({
+    name, type_line: 'Legendary Creature — Human Warrior', oracle_text: text, mana_cost: '{1}{R}',
+    cmc: 2, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+  });
+
+  it('keeps a legal partner beside the commander, out of the deck', () => {
+    const built = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Mountain', count: 98 }],
+      commander: 'Tester One', partner: 'Tester Two',
+      data: [row('Tester One', 'Partner'), row('Tester Two', 'Partner')],
+    });
+    expect(built.deck.commander?.name).toBe('Tester One');
+    expect(built.deck.partner?.name).toBe('Tester Two');
+    expect(built.deck.cards.map((e) => e.card.name)).toEqual(['Mountain']);
+    expect(built.partnerRefused).toBeUndefined();
+    expect(deckIsAutomatable(built.deck)).toBe(true);
+  });
+
+  it('puts an illegal second commander back in the deck, and says why', () => {
+    const built = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Mountain', count: 98 }],
+      commander: 'Tester One', partner: 'Tester Two',
+      data: [row('Tester One', 'Partner'), row('Tester Two', 'Haste')],
+    });
+    expect(built.deck.partner).toBeUndefined();
+    expect(built.deck.cards.map((e) => [e.card.name, e.count])).toEqual([['Mountain', 98], ['Tester Two', 1]]);
+    expect(built.partnerRefused).toMatch(/Tester One and Tester Two cannot both be commanders/);
+    // And with no first commander there is nothing to partner with.
+    const alone = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Mountain', count: 98 }],
+      partner: 'Tester Two', data: [row('Tester Two', 'Partner')],
+    });
+    expect(alone.deck.partner).toBeUndefined();
+    expect(alone.partnerRefused).toMatch(/no first commander/);
+    expect(alone.deck.cards).toHaveLength(2);
   });
 });

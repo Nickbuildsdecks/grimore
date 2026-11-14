@@ -51,6 +51,12 @@ export interface ParsedDecklist {
   readonly entries: readonly DecklistEntry[];
   /** The first card under a `Commander` header, when the list has one. */
   readonly commander?: string;
+  /**
+   * The second card under that header (D640): a partner, a Background, a Doctor's companion. This
+   * parser has no card text, so it cannot tell a legal pair; the rules engine checks, and puts an
+   * illegal second name back into the deck.
+   */
+  readonly partner?: string;
   /** Total cards in `entries`, which is what a player means by "how big is my deck". */
   readonly total: number;
   /** How many cards were dropped with the sideboard, so the UI can say so rather than lie. */
@@ -159,6 +165,7 @@ export function parseDecklist(text: string): ParsedDecklist {
   const merged = new Map<string, number>();
   const order: string[] = [];
   let commander: string | undefined;
+  let partner: string | undefined;
   let section: 'main' | 'commander' | 'drop' = 'main';
   let sideboard = 0;
   let total = 0;
@@ -194,10 +201,15 @@ export function parseDecklist(text: string): ParsedDecklist {
       continue;
     }
     if (section === 'commander') {
-      // The first card under the header is the commander; anything else there joins the deck,
-      // because a list with two legends under one header is a list this cannot adjudicate.
+      // The first card under the header is the commander and the second its partner (D640),
+      // which the rules engine checks against card text; a third joins the deck, because no
+      // legal Commander deck has three.
       if (commander === undefined) {
         commander = name;
+        continue;
+      }
+      if (partner === undefined && count === 1 && name.toLowerCase() !== commander.toLowerCase()) {
+        partner = name;
         continue;
       }
     }
@@ -240,6 +252,7 @@ export function parseDecklist(text: string): ParsedDecklist {
   return {
     entries,
     ...(commander === undefined ? {} : { commander }),
+    ...(partner === undefined ? {} : { partner }),
     total,
     sideboard,
     errors,

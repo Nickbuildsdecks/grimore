@@ -48,6 +48,12 @@ export interface CustomDeckInput {
   /** A name to put in the command zone, when the list named one. */
   readonly commander?: string;
   /**
+   * A second commander (D640), when the list named two under its commander header. Kept only if the
+   * pair is legal (`partnersLegally`); otherwise it joins the deck, as every second name under that
+   * header did before, and `partnerRefused` says why.
+   */
+  readonly partner?: string;
+  /**
    * Card rows for names the pool does not have, from whatever holds the card table.
    *
    * Matched by name, case- and space-insensitively, the same way the pool is. A row the derivation
@@ -59,6 +65,8 @@ export interface CustomDeckInput {
 
 export interface CustomDeckResult {
   readonly deck: DeckSpec;
+  /** Why a named second commander was put in the deck instead (D640), when it was. */
+  readonly partnerRefused?: string;
   /**
    * The names that ended up as cardboard, in the spelling the list used, for the table to say so.
    *
@@ -95,6 +103,7 @@ function poolIndex(): Map<string, CardDef> {
   for (const deck of Object.values(STARTER_DECKS)) {
     for (const entry of deck.cards) built.set(entry.card.name.trim().toLowerCase(), entry.card);
     if (deck.commander) built.set(deck.commander.name.trim().toLowerCase(), deck.commander);
+    if (deck.partner) built.set(deck.partner.name.trim().toLowerCase(), deck.partner);
   }
   index = built;
   return built;
@@ -201,17 +210,53 @@ export function customDeck(input: CustomDeckInput): CustomDeckResult {
     count: entry.count,
   }));
   const commanderCard = input.commander === undefined ? undefined : resolve(input.commander);
+  const partnerCard = input.partner === undefined ? undefined : resolve(input.partner);
+  const refused = partnerCard === undefined ? null
+    : commanderCard === undefined ? 'there is no first commander to partner with'
+      : partnersLegally(commanderCard, partnerCard);
+  const keptPartner = partnerCard !== undefined && refused === null ? partnerCard : undefined;
   return {
     deck: {
       id: input.id,
       name: input.name,
       description: 'A list somebody pasted in.',
       ...(commanderCard === undefined ? {} : { commander: commanderCard }),
-      cards,
+      ...(keptPartner === undefined ? {} : { partner: keptPartner }),
+      cards: partnerCard !== undefined && keptPartner === undefined ? [...cards, { card: partnerCard, count: 1 }] : cards,
     },
+    ...(partnerCard !== undefined && refused !== null ? { partnerRefused: refused } : {}),
     unknown,
     fromData,
   };
+}
+
+/**
+ * Whether two cards may be a deck's two commanders (D640, CR 702.124), read off their printed text,
+ * or the reason they may not.
+ *
+ * - Both print **Partner** on its own (CR 702.124c).
+ * - **"Partner with X"**, each naming the other (CR 702.124j).
+ * - The same **"Partner—<kind>"** on both: Friends forever, Character select, Survivors (CR 702.124f
+ *   and the later variants, which pair only with their own kind).
+ * - **"Choose a Background"** with a Legendary Enchantment — Background (CR 702.124k).
+ * - **"Doctor's companion"** with a Time Lord Doctor (CR 702.124m).
+ */
+export function partnersLegally(a: CardDef, b: CardDef): string | null {
+  const lines = (card: CardDef) => (card.oracleText ?? '').split('\n').map((line) => line.replace(/\s*\(.*\)\s*$/, '').trim());
+  const has = (card: CardDef, test: (line: string) => boolean) => lines(card).some(test);
+  const bare = (line: string) => /^Partner$/i.test(line);
+  if (has(a, bare) && has(b, bare)) return null;
+  const withName = (card: CardDef, other: CardDef) => has(card, (line) => line.toLowerCase() === `partner with ${other.name.toLowerCase()}`);
+  if (withName(a, b) && withName(b, a)) return null;
+  const kind = (card: CardDef) => lines(card).map((line) => /^Partner[—–-]\s*(.+)$/i.exec(line)?.[1]?.toLowerCase()).find((k) => k !== undefined);
+  if (kind(a) !== undefined && kind(a) === kind(b)) return null;
+  const background = (card: CardDef) => /\bBackground\b/.test(card.typeLine ?? '');
+  const chooses = (card: CardDef) => has(card, (line) => /^Choose a Background$/i.test(line));
+  if ((chooses(a) && background(b)) || (chooses(b) && background(a))) return null;
+  const doctor = (card: CardDef) => /\bTime Lord\b/.test(card.typeLine ?? '') && /\bDoctor\b/.test(card.typeLine ?? '');
+  const companion = (card: CardDef) => has(card, (line) => /^Doctor['’]s companion$/i.test(line));
+  if ((companion(a) && doctor(b)) || (companion(b) && doctor(a))) return null;
+  return `${a.name} and ${b.name} cannot both be commanders: neither partners with the other`;
 }
 
 /**
@@ -229,5 +274,6 @@ export function customDeck(input: CustomDeckInput): CustomDeckResult {
  */
 export function deckIsAutomatable(deck: DeckSpec): boolean {
   if (deck.commander !== undefined && deck.commander.typeLine.trim().length === 0) return false;
+  if (deck.partner !== undefined && deck.partner.typeLine.trim().length === 0) return false;
   return deck.cards.every((entry) => entry.card.typeLine.trim().length > 0);
 }

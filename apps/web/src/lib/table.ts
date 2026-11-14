@@ -399,6 +399,10 @@ export interface PastedDeck {
   unknown: string[]
   unknownCount: number
   commander?: string
+  /** A second commander the engine accepted. */
+  partner?: string
+  /** Why a second name under the commander header joined the deck instead. */
+  partnerRefused?: string
 }
 
 /**
@@ -410,7 +414,12 @@ export interface PastedDeck {
  */
 export function pastedNote(deck: PastedDeck): string {
   const parts = [`${deck.total} ${deck.total === 1 ? "card" : "cards"}`]
-  if (deck.commander !== undefined) parts.push(`${deck.commander} in the command zone`)
+  if (deck.commander !== undefined) {
+    parts.push(deck.partner === undefined
+      ? `${deck.commander} in the command zone`
+      : `${deck.commander} and ${deck.partner} in the command zone`)
+  }
+  if (deck.partnerRefused !== undefined) parts.push(`${deck.partnerRefused}, so it joins the deck`)
   if (deck.sideboard > 0) parts.push(`${deck.sideboard} in the sideboard, left out`)
   /*
     The paste accepts up to `maxCards` (250). A four-seat table cannot be dealt past

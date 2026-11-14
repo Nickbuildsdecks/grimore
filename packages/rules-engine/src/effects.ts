@@ -531,7 +531,11 @@ export function dealDamage(
     const key = from?.isCommander === true ? String(from.owner) : null;
     const tally = key === null
       ? {}
-      : { commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + left } };
+      : {
+        commanderDamage: { ...seat.commanderDamage, [key]: (seat.commanderDamage[key] ?? 0) + left },
+        // And per commander (D640): see `Seat.commanderDamageBy`.
+        commanderDamageBy: { ...(seat.commanderDamageBy ?? {}), [from!.id]: ((seat.commanderDamageBy ?? {})[from!.id] ?? 0) + left },
+      };
     /*
       And the wider tally, which is for the table rather than for the rules: all damage, by the
       seat that dealt it (`Seat.damageFrom`).

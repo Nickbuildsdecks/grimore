@@ -44415,3 +44415,74 @@ Faults injected by hand, each caught:
     engine tests: 4,481, all passing
 
 Coverage is unchanged by this increment: 10,683 of 31,653 cards, 29,275 of 59,306 lines.
+
+## D640 — two commanders: partners, Backgrounds and companions
+
+Until now a list with two names under its `Commander` header got one commander. The second name
+joined the deck, and the engine had one tax and one 21-damage tally per seat. That is wrong for
+every partner deck, and partners are a large share of Commander tables:
+- 60 cards print a bare Partner;
+- 52 print "Partner with";
+- 32 print "Choose a Background";
+- 27 are a Doctor's companion;
+- 19 print a "Partner—" kind.
+
+**The deck.**
+- `DeckSpec.partner` is a second commander. It is placed in the command zone beside `commander`.
+- `parseDecklist` reads the second single card under the header as `partner`. A third card, a
+  repeated name, or a line of several copies joins the deck as before.
+- `customDeck` checks the pair against the printed text with `partnersLegally`, which allows:
+  - both print a bare "Partner" (CR 702.124c);
+  - "Partner with", each naming the other (702.124j);
+  - the same "Partner—" kind on both (Friends forever, Character select, Survivors, Father & son);
+  - "Choose a Background" with a Background, either way round;
+  - "Doctor's companion" with a Time Lord Doctor.
+- An illegal pair keeps the old behaviour: the second card joins the deck. The result carries
+  `partnerRefused`, and the realtime ack and the web note say it. The ack's `total` counts that
+  card, because it is dealt into the library.
+- The realtime pod passes `partner` through: stored list, card warm-up, card data rows, ack.
+
+**The rules.**
+- Commander tax (CR 903.8) is per commander when an owner has two. `CardInstance.commanderTax`
+  holds it, and `commanderTaxFor` / `withCommanderTaxPaid` read and pay it. A seat with one
+  commander still uses `Seat.commanderTax`, so the tabletop tax button and every existing game
+  are unchanged.
+- Commander damage (CR 903.10a) is per commander. Combat damage now also records
+  `Seat.commanderDamageBy`, keyed by the commander's instance id. The state-based check judges
+  an owner with two commanders on that record, and skips the per-seat sum, which would add the
+  two together. An owner with one commander is judged on the seat tally exactly as before, which
+  keeps the tabletop "cmd +1" button working.
+
+**Not done.**
+- The tabletop commander-damage button still counts per seat. On a partner deck it can record
+  damage, but it cannot knock a player out.
+- Colour identity is not checked, for one commander or two.
+- The older sandbox route in `apps/api` has its own parser and is unchanged.
+
+**Tests.**
+- 2 engine tests:
+  - both partners are dealt to the command zone; each pays its own tax; the second still casts
+    for its printed cost after the first was taxed;
+  - 20 + 20 from two partners is not out, and 23 from one is, through real combat.
+- 3 deck tests: the pairing rules, with each kind accepted and refused; a legal pair kept; an
+  illegal pair returned to the deck with its reason.
+- 2 parser tests, 1 web note test, and 1 realtime test on live Postgres and Redis.
+
+Faults injected by hand, 14 of 14 caught:
+- per-commander tax read or paid at seat level;
+- the per-seat sum still judged for partners;
+- the per-commander check removed;
+- the per-commander tally not added;
+- the partner not placed;
+- "Partner with" one-sided;
+- any two kinds pairing;
+- the Background only one way round;
+- any companion pairing;
+- the refused card dropped;
+- a "Partner—" kind treated as bare Partner;
+- the parser taking any second line;
+- the note omitting the partner.
+
+    engine tests: 4,486, all passing
+
+Coverage is unchanged by this increment: 10,683 of 31,653 cards, 29,275 of 59,306 lines.

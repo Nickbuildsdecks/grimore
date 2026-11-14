@@ -60,6 +60,14 @@ export interface Seat {
   /** Damage dealt to this seat by each other seat's commander, keyed by seat index. */
   readonly commanderDamage: Readonly<Record<string, number>>;
   /**
+   * The same damage keyed by **commander instance** (D640), which is what the rule counts (CR
+   * 903.10a): partners are two commanders, and 21 from either alone is the loss — the seat tally
+   * above would add them together. Kept beside the seat record rather than replacing it, because the
+   * tabletop's manual adjustment and the client's display key by seat. The 21-damage check reads this
+   * for an owner with two commanders and the seat tally for an owner with one.
+   */
+  readonly commanderDamageBy?: Readonly<Record<string, number>>;
+  /**
    * **All** damage dealt to this seat by each other seat this game, keyed by seat index.
    *
    * `commanderDamage`'s wider sibling, and it exists for the table rather than for the rules:

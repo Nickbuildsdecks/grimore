@@ -58,6 +58,10 @@ export interface DeckListSummary {
   readonly unknown: readonly string[];
   readonly unknownCount: number;
   readonly commander?: string;
+  /** A second commander the engine accepted (D640). */
+  readonly partner?: string;
+  /** Why a second name under the commander header went into the deck instead (D640). */
+  readonly partnerRefused?: string;
 }
 
 export class PodError extends Error {
@@ -94,7 +98,7 @@ export interface SeatRecord extends PodSeat {
    * reconnect. The text is not kept: it has been parsed, and keeping both would mean deciding
    * which one is true.
    */
-  pastedList?: { name?: string; entries: { name: string; count: number }[]; commander?: string };
+  pastedList?: { name?: string; entries: { name: string; count: number }[]; commander?: string; partner?: string };
 }
 
 export interface PodRecord {
@@ -311,6 +315,7 @@ function deckFromPastedList(
     name: list.name ?? fallbackName,
     entries: list.entries,
     ...(list.commander === undefined ? {} : { commander: list.commander }),
+    ...(list.partner === undefined ? {} : { partner: list.partner }),
     data,
   });
 }
@@ -328,6 +333,7 @@ function rowsForList(
   if (cards === undefined) return [];
   const names = list.entries.map((e) => e.name);
   if (list.commander !== undefined) names.push(list.commander);
+  if (list.partner !== undefined) names.push(list.partner);
   const rows: CardDataRow[] = [];
   for (const name of names) {
     const row = cards.rowFor(name);
@@ -341,10 +347,11 @@ function listSummary(
   list: NonNullable<SeatRecord['pastedList']>, cards: CardLibrary | undefined,
 ): NonNullable<PodSeat['list']> {
   // The id is never read here: only `unknown` is, which is what the table is allowed to know.
-  const { unknown } = deckFromPastedList(list, 'summary', 'A pasted list', rowsForList(list, cards));
+  const { unknown, partnerRefused } = deckFromPastedList(list, 'summary', 'A pasted list', rowsForList(list, cards));
   return {
     ...(list.name === undefined ? {} : { name: list.name }),
-    total: list.entries.reduce((n, e) => n + e.count, 0),
+    // A second commander the engine refused is dealt into the library (D640), so it counts.
+    total: list.entries.reduce((n, e) => n + e.count, 0) + (partnerRefused === undefined ? 0 : 1),
     unknown: unknown.length,
   };
 }
@@ -543,6 +550,7 @@ export class PodStore {
       if (seat.pastedList === undefined) continue;
       for (const entry of seat.pastedList.entries) names.add(entry.name);
       if (seat.pastedList.commander !== undefined) names.add(seat.pastedList.commander);
+      if (seat.pastedList.partner !== undefined) names.add(seat.pastedList.partner);
     }
     if (names.size > 0) await this.cards.warm([...names]);
   }
@@ -883,6 +891,7 @@ export class PodStore {
       const peek = parseDecklist(input.text);
       const names = peek.entries.map((e) => e.name);
       if (peek.commander !== undefined) names.push(peek.commander);
+      if (peek.partner !== undefined) names.push(peek.partner);
       if (names.length > 0) await this.cards.warm(names);
     }
     const { snapshot, result } = await this.mutate(code, (record) => {
@@ -898,6 +907,7 @@ export class PodStore {
         ...(name === undefined ? {} : { name }),
         entries: parsed.entries.map((e) => ({ name: e.name, count: e.count })),
         ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
+        ...(parsed.partner === undefined ? {} : { partner: parsed.partner }),
       };
       /*
         Read off `seat.pastedList`, which was just written above, rather than off `parsed`. The two
@@ -905,21 +915,24 @@ export class PodStore {
         makes the ack provably a reading of **the list that will be dealt** rather than of the
         parse it came from. If those two ever diverge, the player is told about the deck they get.
       */
-      const { unknown } = deckFromPastedList(
+      const { unknown, deck: built, partnerRefused } = deckFromPastedList(
         seat.pastedList, customDeckIdFor(seat.seat), 'Your list',
         rowsForList(seat.pastedList, this.cards),
       );
       return {
         record,
         result: {
-          total: parsed.total,
-          distinct: parsed.entries.length,
+          // A refused second commander joins the deck (D640), so it is in the size the player checks.
+          total: parsed.total + (partnerRefused === undefined ? 0 : 1),
+          distinct: parsed.entries.length + (partnerRefused === undefined ? 0 : 1),
           sideboard: parsed.sideboard,
           // The names themselves, capped: a player pasting a list with twelve unreadable cards
           // wants to know *which* twelve, and a cap keeps a pathological paste out of the ack.
           unknown: unknown.slice(0, 20),
           unknownCount: unknown.length,
           ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
+          ...(built.partner === undefined ? {} : { partner: built.partner.name }),
+          ...(partnerRefused === undefined ? {} : { partnerRefused }),
         } satisfies DeckListSummary,
       };
     });

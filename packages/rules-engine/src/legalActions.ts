@@ -11,7 +11,7 @@
  * technically true and useless.
  */
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
-import { listAt } from './cardActions.js';
+import { commanderTaxFor, listAt } from './cardActions.js';
 import {
   allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
@@ -1193,7 +1193,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   const landsPlayed = state.landsPlayed[String(seat)] ?? 0;
   /** One land a turn, plus any extra drops something has handed this seat (CR 505.5b). */
   const landsAllowed = 1 + (state.extraLands[String(seat)] ?? 0);
-  const tax = state.seats[seat]?.commanderTax ?? 0;
+  // Per commander (D640): see `commanderTaxFor`, asked for each card below.
 
   // A commander is cast from the command zone, which is why it is a second list rather than part
   // of the hand. Without this the engine never offered a commander at all — in a format whose
@@ -1308,6 +1308,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
   for (const entry of castable) {
     const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } = entry;
+    const tax = fromCommand ? commanderTaxFor(state, id) : 0;
     const retrace = 'retrace' in entry && entry.retrace === true;
     const inst = state.instances[id];
     if (inst === undefined) continue;

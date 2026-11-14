@@ -189,6 +189,12 @@ export interface CardInstance {
    * when the card leaves, because the new object starts again at 1 (CR 400.7).
    */
   readonly classLevel?: number;
+  /**
+   * The commander tax on **this** commander (D640, CR 903.8), for a deck with two commanders: each
+   * partner pays for its own casts. A deck with one keeps the tax on the seat (`Seat.commanderTax`),
+   * which is what the tabletop's manual adjustment edits. See `commanderTaxFor`.
+   */
+  readonly commanderTax?: number;
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
   /**
@@ -443,6 +449,11 @@ export interface DeckSpec {
   readonly description: string;
   /** Goes to the command zone when the table format uses one; otherwise joins the library. */
   readonly commander?: CardDef;
+  /**
+   * A second commander (D640, CR 702.124): partners, "Partner with", a Background, a Doctor's
+   * companion. Placed beside `commander`, and each pays its own tax and deals its own 21.
+   */
+  readonly partner?: CardDef;
   readonly cards: readonly DeckEntry[];
 }
 

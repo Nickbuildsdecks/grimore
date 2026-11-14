@@ -11,7 +11,7 @@
  */
 import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
-import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
+import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPaid, withInstance } from './cardActions.js';
 import {
   characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
@@ -639,7 +639,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
 
   // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
   // command zone. It goes up by two *after* the cast, so the first one is offered of it.
-  const tax = fromCommand ? (state.seats[action.by]?.commanderTax ?? 0) : 0;
+  // Per commander when there are two (D640). See `commanderTaxFor`.
+  const tax = fromCommand ? commanderTaxFor(state, inst.id) : 0;
   /*
     "This spell costs {1} more to cast for each target beyond the first" (D579): generic mana on
     top of the cost, like the tax, and counted off the targets just checked. Kept apart from `tax`
@@ -874,7 +875,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     next = sacrifice(next, [victim.id]);
   }
   if (fromCommand) {
-    next = replaceSeat(next, action.by, { commanderTax: tax + 2 });
+    next = withCommanderTaxPaid(next, inst.id);
   }
   /*
     A foretold card turns face up as it is cast, which is the moment the hidden half of the mechanic

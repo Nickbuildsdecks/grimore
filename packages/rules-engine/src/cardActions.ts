@@ -93,6 +93,34 @@ export function requireInstance(state: GameState, id: unknown): CardInstance {
   return inst;
 }
 
+/** How many commanders a seat owns: two for partners (D640), one otherwise. */
+export function commandersOf(state: GameState, seat: SeatIndex): number {
+  let n = 0;
+  for (const inst of Object.values(state.instances)) if (inst.isCommander && inst.owner === seat) n += 1;
+  return n;
+}
+
+/**
+ * The commander tax on casting this commander from the command zone (D640, CR 903.8): its own when
+ * its owner has two, the seat's when it has one.
+ */
+export function commanderTaxFor(state: GameState, id: string): number {
+  const inst = state.instances[id];
+  if (inst === undefined) return 0;
+  return commandersOf(state, inst.owner) > 1
+    ? inst.commanderTax ?? 0
+    : state.seats[inst.owner]?.commanderTax ?? 0;
+}
+
+/** The tax after this commander is cast from the command zone: two more, where `commanderTaxFor` reads it. */
+export function withCommanderTaxPaid(state: GameState, id: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined) return state;
+  const tax = commanderTaxFor(state, id) + 2;
+  if (commandersOf(state, inst.owner) > 1) return withInstance(state, id, { commanderTax: tax });
+  return { ...state, seats: state.seats.map((seat) => (seat.index === inst.owner ? { ...seat, commanderTax: tax } : seat)) };
+}
+
 export function withInstance(state: GameState, id: string, patch: Partial<CardInstance>): GameState {
   const inst = requireInstance(state, id);
   return { ...state, instances: { ...state.instances, [id]: { ...inst, ...patch } } };
@@ -749,6 +777,7 @@ export function reduceCardAction(state: GameState, action: CardAction, ctx: Acti
         for (let i = 0; i < entry.count; i++) place(entry.card, false);
       }
       if (deck.commander !== undefined) place(deck.commander, usesCommandZone);
+      if (deck.partner !== undefined) place(deck.partner, usesCommandZone);
 
       if (Object.keys(instances).length > MAX_INSTANCES) {
         throw new EngineError('INVALID_DECK', `a table may hold at most ${MAX_INSTANCES} cards`);

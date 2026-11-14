@@ -6,7 +6,7 @@ import {
   POISON_THRESHOLD,
   isFormatId,
 } from './formats.js';
-import { dealOpeningHands, listAt, reduceCardAction } from './cardActions.js';
+import { commandersOf, dealOpeningHands, listAt, reduceCardAction } from './cardActions.js';
 import { returnExiledBy } from './effects.js';
 import { zoneKey, type CardInstance, type ZoneId } from './cards.js';
 import { reduceAutoAction } from './autoActions.js';
@@ -450,8 +450,16 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
     } else if (def.poisonRule && seat.poison >= POISON_THRESHOLD) {
       reason = 'poison';
     } else if (
-      def.commanderDamageRule &&
-      Object.values(seat.commanderDamage).some((d) => d >= COMMANDER_DAMAGE_THRESHOLD)
+      def.commanderDamageRule && (
+        /*
+          Per commander (D640, CR 903.10a). The seat tally counts for an owner with one commander,
+          where it is the same number; for partners it would add two commanders together, so their
+          owner is judged on `commanderDamageBy`, one commander at a time.
+        */
+        Object.entries(seat.commanderDamage).some(([from, d]) => d >= COMMANDER_DAMAGE_THRESHOLD
+          && commandersOf(state, Number(from) as SeatIndex) < 2)
+        || Object.values(seat.commanderDamageBy ?? {}).some((d) => d >= COMMANDER_DAMAGE_THRESHOLD)
+      )
     ) {
       reason = 'commanderDamage';
     }

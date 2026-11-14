@@ -17,7 +17,7 @@ import {
   KEYWORDS, STEPS,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock, evaluate,
   destroy, forcedAttackers,
-  characteristicsOf, customDeck,
+  characteristicsOf, commanderTaxFor, customDeck,
   hasType,
   lastLogEntry,
   legalActions,
@@ -1297,6 +1297,87 @@ describe('the commander, which a Commander format is about', () => {
     expect(s.seats[1]!.eliminated).toBe(true);
     expect(s.seats[1]!.eliminatedReason).toBe('commanderDamage');
     expect(s.seats[1]!.life).toBe(40);
+  });
+
+  /*
+    Partner commanders (D640, CR 702.124, 903.8, 903.10a). Two commanders, built from card data the
+    way a pasted list's are, so the test runs the path a player's own deck takes.
+  */
+  const partnerRow = (name: string, power: string) => ({
+    name, type_line: 'Legendary Creature — Human Warrior', oracle_text: 'Partner', mana_cost: '{1}{R}',
+    cmc: 2, colors: ['R'], layout: 'normal', power, toughness: '2',
+  });
+  const partnerTable = () => {
+    const { deck, partnerRefused } = customDeck({
+      id: 'custom:partners', name: 'Partners',
+      entries: [{ name: 'Mountain', count: 60 }],
+      commander: 'Partner Tester Ash', partner: 'Partner Tester Birch',
+      data: [partnerRow('Partner Tester Ash', '3'), partnerRow('Partner Tester Birch', '1')],
+    });
+    expect(partnerRefused).toBeUndefined();
+    let s = arena({
+      format: 'edh', decks: { 0: 'custom:partners' }, deckSpecs: { 'custom:partners': deck },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] }, turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return s;
+  };
+  const castFromCommand = (s0: GameState, name: string): GameState => {
+    let s = s0;
+    for (const id of ids(s, 0, 'battlefield').filter((i) => nameOf(s, i) === 'Mountain' && !s.instances[i]!.tapped).slice(0, 2)) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'command', name) }));
+    return drain(s);
+  };
+
+  it('deals both partners to the command zone, and each pays its own tax (CR 903.8)', () => {
+    let s = partnerTable();
+    expect(namesIn(s, 0, 'command').sort()).toEqual(['Partner Tester Ash', 'Partner Tester Birch']);
+    // Neither is in the library: a partner is a commander, not a 61st card.
+    expect(namesIn(s, 0, 'library')).not.toContain('Partner Tester Birch');
+    s = castFromCommand(s, 'Partner Tester Ash');
+    const ash = find(s, 0, 'battlefield', 'Partner Tester Ash');
+    expect(s.instances[ash]!.commanderTax).toBe(2);
+    expect(s.seats[0]!.commanderTax).toBe(0);
+    // Birch has paid nothing, so two Mountains still cast it — one seat-wide tax would cost four.
+    s = castFromCommand(s, 'Partner Tester Birch');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Partner Tester Birch');
+    expect(s.instances[find(s, 0, 'battlefield', 'Partner Tester Birch')]!.commanderTax).toBe(2);
+    // Back to the command zone, Ash costs its own two more and no more than that.
+    s = apply(s, { type: 'card:move', by: 0, card: ash, toZone: 'command' });
+    expect(commanderTaxFor(s, ash)).toBe(2);
+  });
+
+  it('judges twenty-one per partner: twenty and twenty is not out, twenty-one from one is (CR 903.10a)', () => {
+    let s = castFromCommand(castFromCommand(partnerTable(), 'Partner Tester Ash'), 'Partner Tester Birch');
+    const ash = find(s, 0, 'battlefield', 'Partner Tester Ash');
+    const birch = find(s, 0, 'battlefield', 'Partner Tester Birch');
+    s = nextTurn(nextTurn(s));
+    s = {
+      ...s,
+      seats: s.seats.map((seat) => (seat.index === 1
+        ? { ...seat, life: 40, commanderDamage: { 0: 37 }, commanderDamageBy: { [ash]: 17, [birch]: 20 } }
+        : seat)),
+    };
+    const swing = (state: GameState): GameState => {
+      let t = advanceTo(state, 'declare-attackers');
+      t = apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: ash, defender: 1 }] });
+      for (let i = 0; i < 8 && t.step !== 'postcombat-main'; i++) {
+        if (t.priority === null) break;
+        t = apply(t, { type: 'auto:pass', by: t.priority });
+      }
+      return t;
+    };
+    s = swing(s);
+    // Forty from the seat, twenty from each commander: still in.
+    expect(s.seats[1]!.commanderDamage['0']).toBe(40);
+    expect(s.seats[1]!.commanderDamageBy).toEqual({ [ash]: 20, [birch]: 20 });
+    expect(s.seats[1]!.eliminated).toBe(false);
+    s = swing(nextTurn(nextTurn(s)));
+    expect(s.seats[1]!.commanderDamageBy![ash]).toBe(23);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.seats[1]!.eliminatedReason).toBe('commanderDamage');
   });
 
   it('counts combat damage only, not a burn spell the commander happens to cast', () => {

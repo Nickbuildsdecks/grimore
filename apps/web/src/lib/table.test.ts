@@ -84,6 +84,15 @@ describe("what the table says about a list somebody pasted", () => {
     )
   })
 
+  it("names both commanders of a partner deck, and says when a second one was refused", () => {
+    expect(pastedNote({ ...base, total: 98, commander: "Thrasios, Triton Hero", partner: "Tymna the Weaver" }))
+      .toBe("98 cards · Thrasios, Triton Hero and Tymna the Weaver in the command zone · every one of them scripted")
+    expect(pastedNote({
+      ...base, total: 99, commander: "Krenko, Mob Boss",
+      partnerRefused: "Krenko, Mob Boss and Sol Ring cannot both be commanders: neither partners with the other",
+    })).toContain("neither partners with the other, so it joins the deck")
+  })
+
   it("admits there are more when the server capped the list", () => {
     expect(pastedNote({ ...base, unknown: ["Sol Ring"], unknownCount: 9 })).toContain("and more")
   })
