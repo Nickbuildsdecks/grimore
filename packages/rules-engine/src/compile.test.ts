@@ -6705,27 +6705,40 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(printedKeywords('Flying\nTrample')).toEqual(['flying', 'trample']);
     });
 
-    it('Brimstone Mage taps for one damage, and not also for three and for five', () => {
+    /*
+      D636 reads the bands, and these two rows changed from "the tail is unread" to "the tail is read
+      and **scoped**": every band ability exists only while the level count is inside its band. The
+      property D572 protected — no band ability at level zero — is what is asserted now.
+    */
+    it('Brimstone Mage taps for one damage at level zero, and for three and five only in their bands', () => {
       const mage = compileCard(BRIMSTONE_MAGE as never);
       expect(mage.ok).toBe(true);
       if (!mage.ok) return;
-      // Its level-zero ability is above the first band and is the card's own.
-      expect(mage.compiled).toEqual(['{T}: Brimstone Mage deals 1 damage to any target.']);
-      expect(mage.script?.abilities ?? []).toHaveLength(1);
-      // Everything from the first header down is reported, not read.
-      const unread = mage.unread.map((u) => u.line);
-      expect(unread).toContain('LEVEL 1-2');
-      expect(unread).toContain('{T}: Brimstone Mage deals 3 damage to any target.');
-      expect(unread).toContain('{T}: Brimstone Mage deals 5 damage to any target.');
+      expect(mage.unread).toEqual([]);
+      const abilities = mage.script?.abilities ?? [];
+      const by = (amount: number) => abilities.find((a) => a.description.includes(`deals ${amount} damage`))!;
+      const at = (level: number) => ({ instances: { m: { counters: { level } } } }) as never;
+      // The line above the first band is the card's own, at every level.
+      expect(by(1).activateOnlyIf).toBeUndefined();
+      expect(by(3).activateOnlyIf!(at(0), 'm', 0 as SeatIndex)).toBe(false);
+      expect(by(3).activateOnlyIf!(at(1), 'm', 0 as SeatIndex)).toBe(true);
+      expect(by(3).activateOnlyIf!(at(3), 'm', 0 as SeatIndex)).toBe(false);
+      expect(by(5).activateOnlyIf!(at(2), 'm', 0 as SeatIndex)).toBe(false);
+      expect(by(5).activateOnlyIf!(at(3), 'm', 0 as SeatIndex)).toBe(true);
     });
 
-    it('Kargan Dragonlord has no ability of its own under the bands: no firebreathing, no flying', () => {
+    it('Kargan Dragonlord: firebreathing only at 8+, and the bands on the definition', () => {
       const lord = compileCard(KARGAN_DRAGONLORD as never);
       expect(lord.ok).toBe(true);
       if (!lord.ok) return;
-      expect(lord.compiled).toEqual([]);
-      expect(lord.script?.abilities ?? []).toEqual([]);
-      expect(lord.unread.map((u) => u.line)).toContain('{R}: Kargan Dragonlord gets +1/+0 until end of turn.');
+      expect(lord.unread).toEqual([]);
+      expect(lord.def.levelBands).toEqual([
+        { from: 4, power: 4, toughness: 4, keywords: ['flying'] },
+        { from: 8, power: 8, toughness: 8, keywords: ['flying', 'trample'] },
+      ]);
+      const breath = (lord.script?.abilities ?? []).find((a) => a.description.includes('+1/+0'))!;
+      expect(breath.activateOnlyIf!({ instances: { k: { counters: { level: 7 } } } } as never, 'k', 0 as SeatIndex)).toBe(false);
+      expect(breath.activateOnlyIf!({ instances: { k: { counters: { level: 8 } } } } as never, 'k', 0 as SeatIndex)).toBe(true);
     });
 
     it('and on the battlefield it is a 2/2 that does not fly', () => {
@@ -6743,6 +6756,24 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const ch = characteristicsOf(s, s.instances[id]!);
       expect([ch.power, ch.toughness]).toEqual([2, 2]);
       expect(ch.keywords.has('flying')).toBe(false);
+      expect(ch.keywords.has('trample')).toBe(false);
+    });
+
+    it('and with four level counters it is a 4/4 that flies (D636)', () => {
+      const list = customDeck({
+        id: 'levelers', name: 'Levelers',
+        entries: [{ name: 'Kargan Dragonlord', count: 4 }, { name: 'Mountain', count: 20 }],
+        data: [KARGAN_DRAGONLORD] as never[],
+      });
+      let s = arena({
+        decks: { 0: 'levelers', 1: 'levelers' }, deckSpecs: { levelers: list.deck },
+        battlefield: { 0: ['Mountain', 'Kargan Dragonlord'] }, turn: 3, firstSeat: 0,
+      });
+      const id = find(s, 0 as SeatIndex, 'battlefield', 'Kargan Dragonlord');
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters: { level: 4 } } } };
+      const ch = characteristicsOf(s, s.instances[id]!);
+      expect([ch.power, ch.toughness]).toEqual([4, 4]);
+      expect(ch.keywords.has('flying')).toBe(true);
       expect(ch.keywords.has('trample')).toBe(false);
     });
   });

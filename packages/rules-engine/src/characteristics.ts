@@ -1566,6 +1566,11 @@ export interface ContinuousEffect {
         readonly kind: 'source-has-counter';
         readonly counter: string;
         readonly atLeast: number;
+        /**
+         * And **fewer than** this many (D636): a level band's upper edge, "LEVEL 2-6" being at
+         * least 2 and below 7. Absent: no upper edge.
+         */
+        readonly below?: number;
       }
     | {
         /**
@@ -1822,7 +1827,8 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   */
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];
-    return source !== undefined && (source.counters[cond.counter] ?? 0) >= cond.atLeast;
+    const held = source === undefined ? 0 : (source.counters[cond.counter] ?? 0);
+    return source !== undefined && held >= cond.atLeast && (cond.below === undefined || held < cond.below);
   }
   /*
     Threshold, and the one condition here that is a plain length (D502). No face-down rule to apply

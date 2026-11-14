@@ -40,16 +40,18 @@
  */
 import type { CardDef, CardFaces } from './cards.js';
 import { costValue, parseManaCost } from './mana.js';
-import { hasType, isPrintedAbilityLine, parseTypeLine, LEVEL_BAND_HEADER } from './characteristics.js';
+import { hasType, isPrintedAbilityLine, parseTypeLine, printedKeywords, LEVEL_BAND_HEADER } from './characteristics.js';
 import {
   cardFromData, intrinsicManaAbilities, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
   printedLoyalty, printedRulesLines,
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  isKeywordDeclaration, lineScriptFor, spellScriptFor, wholeCardShapeFor,
+  isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, wholeCardShapeFor,
 } from './scripts.js';
-import type { CardScript } from './scriptTypes.js';
+import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
+import type { LevelBand } from './cards.js';
+import type { GameState } from './types.js';
 
 /** A printed line, and why nothing could turn it into rules. */
 export interface UnreadLine {
@@ -144,6 +146,103 @@ function merge(
     into[key] = value;
   }
   return 'merged';
+}
+
+/**
+ * **A leveler's bands, read** (D636, CR 711).
+ *
+ * `levelBands` and `levelUpAbility` have carried Student of Warfare and Beastbreaker since D572; what
+ * was missing was a reader, so all 26 legal levelers were unread from their first `LEVEL` header
+ * down. The card's text is the header line "Level up {cost}", then bands: `LEVEL n-m` or `LEVEL n+`,
+ * a size line, and the lines the creature has while in that band (CR 711.2).
+ *
+ * - A line that is **only keywords** goes on the band (`LevelBand.keywords`), which is where
+ *   `characteristicsOf` already looks.
+ * - Any other line is read by the ordinary line reader and then **scoped to the band**: an activated
+ *   ability gets an `activateOnlyIf` on the level count, a trigger a `condition`, and a static a
+ *   `source-has-counter` `while` with its upper edge. Brimstone Mage's 1-damage ping exists only at
+ *   levels 1-2 and its 3-damage one only at 3+, which is the card.
+ * - Anything else — a line no reader has, a static that already has a condition, a fragment that is
+ *   more than abilities, triggers and plain statics — refuses the whole reading, and the tail stays
+ *   unread as before (D572). Half a leveler is the Brimstone Mage problem D572 fixed.
+ */
+function readLevelBands(lines: readonly string[], first: number, name: string): {
+  readonly bands: readonly LevelBand[];
+  readonly fragment: Record<string, unknown>;
+  readonly claimed: readonly string[];
+} | null {
+  const header = lines.findIndex((line) => /^Level up ((?:\{[^}]+\})+)/.test(line.trim()));
+  if (header < 0 || header > first) return null;
+  const cost = /^Level up ((?:\{[^}]+\})+)/.exec(lines[header]!.trim())![1]!;
+  const bands: LevelBand[] = [];
+  const abilities: AbilityDef[] = [levelUpAbility(cost)];
+  const triggers: TriggerDef[] = [];
+  const statics: unknown[] = [];
+  let index = first;
+  while (index < lines.length) {
+    const band = /^LEVEL (\d+)(?:-(\d+)|\+)$/.exec(lines[index]!.trim());
+    if (band === null) return null;
+    const size = /^(\d+)\/(\d+)$/.exec((lines[index + 1] ?? '').trim());
+    if (size === null) return null;
+    const from = Number(band[1]);
+    const to = band[2] === undefined ? undefined : Number(band[2]);
+    const inBand = (state: GameState, id: string): boolean => {
+      const level = state.instances[id]?.counters['level'] ?? 0;
+      return level >= from && (to === undefined || level <= to);
+    };
+    const keywords: string[] = [];
+    index += 2;
+    for (; index < lines.length && !/^LEVEL /.test(lines[index]!.trim()); index++) {
+      const line = lines[index]!;
+      const words = printedKeywords(line);
+      const parts = line.replace(/\([^)]*\)/g, '').split(/,\s*/).map((part) => part.trim()).filter((part) => part !== '');
+      if (words.length > 0 && words.length === parts.length) { keywords.push(...words); continue; }
+      const read = lineScriptFor(line, name);
+      if (read === null) return null;
+      /*
+        Only the three lists a band can scope. A line that hands an ability to something else
+        (`grantedTriggers`, `grantedAbilities`) is refused here, not read: the grant would be indexed
+        by a static that a band condition cannot carry, and it would not be this card's ability.
+      */
+      for (const key of Object.keys(read)) {
+        if (!['abilities', 'triggers', 'statics'].includes(key)) return null;
+      }
+      for (const ability of read.abilities ?? []) {
+        const prior = ability.activateOnlyIf;
+        abilities.push({
+          ...ability,
+          activateOnlyIf: (state, source, controller) => inBand(state, source)
+            && (prior === undefined || prior(state, source, controller)),
+        });
+      }
+      for (const trigger of read.triggers ?? []) {
+        const prior = trigger.condition;
+        triggers.push({ ...trigger, condition: (c) => inBand(c.state, c.source) && (prior === undefined || prior(c)) });
+      }
+      for (const fixed of read.statics ?? []) {
+        const effect = ((fixed as unknown as { effect?: Record<string, unknown> }).effect) ?? {};
+        if (effect['while'] !== undefined || effect['grants'] !== undefined || effect['grantsAbilities'] !== undefined) return null;
+        statics.push({
+          ...fixed,
+          effect: {
+            ...effect,
+            while: { kind: 'source-has-counter', counter: 'level', atLeast: from, ...(to === undefined ? {} : { below: to + 1 }) },
+          },
+        });
+      }
+    }
+    bands.push({ from, power: Number(size[1]), toughness: Number(size[2]), ...(keywords.length === 0 ? {} : { keywords }) });
+  }
+  return {
+    bands,
+    fragment: {
+      levelUp: { cost },
+      abilities,
+      ...(triggers.length === 0 ? {} : { triggers }),
+      ...(statics.length === 0 ? {} : { statics }),
+    },
+    claimed: [lines[header]!, ...lines.slice(first)],
+  };
 }
 
 /**
@@ -390,7 +489,7 @@ function compileUncached(row: CardDataRow): Compilation {
 function compileSingle(row: CardDataRow): Compilation {
   const printed = printedDef(row);
   if ('why' in printed) return { ok: false, why: printed.why };
-  const def = printed.def;
+  let def = printed.def;
   const typeLine = parseTypeLine(def.typeLine);
   const lines = printedRulesLines(row.oracle_text);
 
@@ -505,7 +604,17 @@ function compileSingle(row: CardDataRow): Compilation {
     ? lines.findIndex((line) => /^(?:\{[^}]+\})+: Level \d+$/i.test(line.trim()))
     : -1;
   const leveled = lines.findIndex((line) => LEVEL_BAND_HEADER.test(line));
-  const firstBand = leveled >= 0 && classLevel >= 0 ? Math.min(leveled, classLevel) : Math.max(leveled, classLevel);
+  let firstBand = leveled >= 0 && classLevel >= 0 ? Math.min(leveled, classLevel) : Math.max(leveled, classLevel);
+  // A leveler whose every band reads (D636): the bands go on the definition, the rest into the script.
+  const levelled = leveled >= 0 && classLevel < 0 && hasType(typeLine, 'creature')
+    ? readLevelBands(lines, leveled, def.name)
+    : null;
+  if (levelled !== null && merge(built, levelled.fragment as Partial<CardScript>) === 'merged') {
+    def = { ...def, levelBands: levelled.bands };
+    for (const line of levelled.claimed) claimed.add(line);
+    compiled.push(...levelled.claimed);
+    firstBand = -1;
+  }
 
   for (const [index, line] of lines.entries()) {
     if (claimed.has(line)) continue;

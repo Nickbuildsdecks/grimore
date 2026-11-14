@@ -48159,3 +48159,82 @@ describe('a tribe attacking, a creature becoming blocked, "When you cast", and e
     expect(life(s, 0)).toBe(23);
   });
 });
+
+describe('a leveler whose band is a static (D636)', () => {
+  const VINDICATOR = {
+    name: 'Test Vindicator', type_line: 'Creature — Human Knight', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal',
+    power: '2', toughness: '4',
+    oracle_text: 'Level up {2}{W} ({2}{W}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 2-4\n3/6\nOther creatures you control get +1/+1.\nLEVEL 5+\n4/8\nOther creatures you control get +2/+2.',
+  };
+  const deck = customDeck({
+    id: 'vindicator', name: 'Vindicator', entries: [{ name: 'Test Vindicator', count: 4 }, { name: 'Hill Giant', count: 4 }, { name: 'Plains', count: 52 }],
+    data: [VINDICATOR] as never[],
+  });
+  const at = (level: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'vindicator', 1: 'vindicator' }, deckSpecs: { vindicator: deck.deck },
+      battlefield: { 0: ['Test Vindicator', 'Hill Giant'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'battlefield', 'Test Vindicator');
+    if (level > 0) s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters: { level } } } };
+    const giant = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Hill Giant')]!);
+    const self = characteristicsOf(s, s.instances[id]!);
+    return { giant: giant.power, self: self.power };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(VINDICATOR as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('each band\'s anthem only in its band, never both', () => {
+    expect(at(0)).toEqual({ giant: 3, self: 2 });
+    expect(at(2)).toEqual({ giant: 4, self: 3 });
+    expect(at(4)).toEqual({ giant: 4, self: 3 });
+    expect(at(5)).toEqual({ giant: 5, self: 4 });
+  });
+});
+
+describe('a leveler whose band is a trigger, levelled by its own ability (D636)', () => {
+  const RAIDER = {
+    name: 'Test Raider', type_line: 'Creature — Human Warrior', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Level up {1} ({1}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 1+\n3/3\nWhenever Test Raider attacks, you gain 2 life.',
+  };
+  const deck = customDeck({ id: 'raider', name: 'Raider', entries: [{ name: 'Test Raider', count: 4 }, { name: 'Mountain', count: 56 }], data: [RAIDER] as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'raider', 1: 'raider' }, deckSpecs: { raider: deck.deck }, battlefield: { 0: ['Mountain', 'Test Raider'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const swing = (s: GameState) => drain(apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Raider'), defender: 1 }],
+  } as Action));
+
+  it('at level zero the attack trigger is not there; one level up and it is', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(life(swing(table()), 0)).toBe(20);
+    let s = table();
+    const raider = find(s, 0, 'battlefield', 'Test Raider');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: raider, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[raider]?.counters['level']).toBe(1);
+    expect(characteristicsOf(s, s.instances[raider]!).power).toBe(3);
+    expect(life(swing(s), 0)).toBe(22);
+  });
+});
+
+describe('the counter a trigger names (pinned by the D633 break run)', () => {
+  it('a -1/-1 counter does not fire "+1/+1 counters are put on ~"', () => {
+    const MANCER = {
+      name: 'Test Mancer', type_line: 'Creature — Merfolk', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'Whenever one or more +1/+1 counters are put on Test Mancer, you gain 1 life.',
+    };
+    const list = customDeck({ id: 'mancer', name: 'Mancer', entries: [{ name: 'Test Mancer', count: 4 }, { name: 'Island', count: 56 }], data: [MANCER] as never[] });
+    const start = advanceTo(arena({
+      decks: { 0: 'mancer', 1: 'mancer' }, deckSpecs: { mancer: list.deck }, battlefield: { 0: ['Island', 'Test Mancer'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const me = find(start, 0, 'battlefield', 'Test Mancer');
+    // Placed as an effect would (`addCounters`), and announced by the next action's settle.
+    const after = (counter: string) => drain(passBoth(addCounters(start, me, counter, 1)), 20);
+    expect(life(after('+1/+1'), 0)).toBe(21);
+    expect(life(after('-1/-1'), 0)).toBe(20);
+  });
+});

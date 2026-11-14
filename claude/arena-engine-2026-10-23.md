@@ -26725,3 +26725,74 @@ Pod sweep 50201–50240 (D634's build): 40 of 40 finished, no throw and no stall
   +1/+1 trigger. It is pinned in the next increment.
 - **D634: 4 of 5 caught.** The miss is equivalent: recording a move within a graveyard does
   nothing, because nothing moves a card from a graveyard to a graveyard.
+
+## D636 — level up, read: bands as the card's abilities in their band
+
+`levelBands` (a size and keywords per band) and `levelUpAbility` have carried the pool's two
+levelers since D572, but nothing filled them from printed text. So all 26 legal levelers were
+unread from their first `LEVEL` header down. That was D572's deliberate fix: read line by line,
+Brimstone Mage had every band's ping from level zero.
+
+**The reader** (`readLevelBands`, in `compile.ts`):
+- "Level up {cost}" becomes `levelUp` and `levelUpAbility(cost)`, at sorcery speed.
+- Each `LEVEL n-m` or `LEVEL n+` header and its size line becomes a `LevelBand`.
+- A band line that is only keywords goes on the band's `keywords`, which is where
+  `characteristicsOf` already looks.
+- Any other band line is read by the ordinary line reader and **scoped to the band**:
+  - an activated ability gets an `activateOnlyIf` on the level count;
+  - a trigger gets a level `condition`;
+  - a static gets a `source-has-counter` `while`. The condition gained a `below` for the band's
+    upper edge, so Kabira Vindicator's +1/+1 (levels 2-4) and +2/+2 (5+) never stack.
+- Anything it cannot scope refuses the whole reading, and the tail stays unread exactly as D572
+  left it. That includes a line no reader has, a static that already has a condition, and a line
+  that grants an ability to something else.
+
+**The definition.** The compiled `def` now carries `levelBands`. `compileSingle`'s `def` became a
+`let`, so the reader can attach them.
+
+16 of the 26 legal levelers now read whole. The other ten print a band line nothing reads yet:
+Hexdrinker's "protection from everything", Halimar Wavewatch's islandwalk, Lighthouse
+Chronologist's extra turn. Spacecraft share the header pattern (`STATION n+`) but also become
+creatures at their threshold, which `LevelBand` cannot say, so they stay unread.
+
+Two D572 rows asserted the old "unread" reading. They now assert the scoped one: Brimstone Mage's
+1-damage line is its own at every level, its 3 only at 1-2 and its 5 only at 3+; Kargan
+Dragonlord's firebreathing only at 8+, and its bands on the definition. A new row checks the
+Dragonlord at four counters is a 4/4 that flies.
+
+`guards.js`'s D251 tripwire flagged the band reader for reading `triggers` without
+`grantedTriggers`. The reader does handle it, by refusing any fragment that grants; a comment at
+the key check now says so.
+
+**The D633 pin.** A -1/-1 counter does not fire "+1/+1 counters are put on ~". It places counters
+with `addCounters` directly, because the test card's own "-1/-1 counter" line does not read and the
+manual `card:counter` action does not go through `addCounters`. A +1/+1 counter is the control.
+
+**Tests.** 5 new engine tests, 2 changed, plus the D633 pin:
+- A Kabira Vindicator-style card reads whole.
+- Its anthems apply only in their band, at levels 0, 2, 4 and 5.
+- A leveler's attack trigger is not there at level zero, and is after one activation of its own
+  "Level up", which also makes it a 3/3.
+- The Dragonlord at four counters.
+
+Faults injected by hand, each caught:
+- The band's upper edge ignored on abilities.
+- The upper edge left off the static.
+- The `below` check removed.
+- Triggers not scoped.
+- Keywords not put on the band.
+- The level-up ability missing.
+- Activated abilities not scoped.
+- For the D633 pin: the counter type ignored.
+
+    engine tests: 4,468, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,663 of 31,653 (was 10,647); lines read 29,126 of 59,306 (49.1%, was 29,015)
+
+Pod sweep 50301–50340 (D635's build): 40 of 40 finished, no throw and no stall, in 291 s.
+
+**Break run on D635's build:** 4 of 5 caught. The miss is real: with the tribe word unchecked,
+"Whenever a Vehicle you control attacks" would read as a creature type that never matches, a trigger
+that silently never fires. The pin comes with the next increment.

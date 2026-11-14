@@ -8956,7 +8956,7 @@ const BLASTODERM: CardScript = {
  * an opponent's turn, after blockers, would make every leveler a combat trick. The printed cards say
  * "Activate only as a sorcery" for that reason, and the engine already had the flag.
  */
-function levelUpAbility(cost: string): AbilityDef {
+export function levelUpAbility(cost: string): AbilityDef {
   return {
     cost: { mana: cost },
     sorcerySpeed: true,
