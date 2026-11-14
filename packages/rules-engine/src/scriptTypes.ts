@@ -1114,6 +1114,26 @@ export type TriggerEvent =
       readonly subject?: string;
     }
   /**
+   * "Whenever one or more +1/+1 counters are put on ~" (D633), and on a creature or a permanent you
+   * control. One event per placement on one permanent, however many counters it added — the "one or
+   * more" every printing says. Watched from the battlefield; the subject is the permanent the
+   * counters went on.
+   */
+  | {
+      readonly kind: 'counters-put';
+      /** Which counter the trigger watches: `+1/+1`, `-1/-1` or `loyalty`. Set on the raised event too. */
+      readonly counter?: string;
+      /** `self` (the default): this permanent. `another`: anything else. `any`: either. */
+      readonly countersOn?: 'self' | 'another' | 'any';
+      /** Whose permanent, from the watcher's seat. Absent: anybody's. */
+      readonly of?: 'you';
+      /** `creature`: only a creature. Absent: any permanent. */
+      readonly what?: 'creature';
+      /** Set by the engine: the permanent's controller, and whether it is a creature. */
+      readonly subjectSeat?: SeatIndex;
+      readonly subjectIsCreature?: boolean;
+    }
+  /**
    * "Whenever you draw a card" (CR 121.2), and the opponents' half of it.
    *
    * One event per card, so "draw three cards" fires it three times. `by` works the way it does on

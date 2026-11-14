@@ -15250,6 +15250,35 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'becomes-tapped' }],
   },
   /*
+    "Whenever one or more +1/+1 counters are put on ~" (D633): Benthic Biomancer, Dreamdrinker
+    Vampire, Dusk Legion Duelist — 14 legal lines — and the board versions. On the `counters-put`
+    event, one per placement however many counters it was. "Whenever **a** +1/+1 counter is put
+    on" is per counter, which this event does not count, and stays unread.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever one or more \\+1/\\+1 counters are put on ${self}, (.+)$`, 'i'),
+    on: [{ kind: 'counters-put', counter: '+1/+1' }],
+  },
+  {
+    prologue: () => /^Whenever one or more \+1\/\+1 counters are put on (another )(creature|permanent) you control, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'counters-put', counter: '+1/+1', of: 'you',
+      countersOn: 'another',
+      ...(matched[2]!.toLowerCase() === 'creature' ? { what: 'creature' as const } : {}),
+    }],
+  },
+  {
+    prologue: () => /^Whenever one or more \+1\/\+1 counters are put on an? (creature|permanent) you control, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'counters-put', counter: '+1/+1', of: 'you', countersOn: 'any',
+      ...(matched[1]!.toLowerCase() === 'creature' ? { what: 'creature' as const } : {}),
+    }],
+  },
+  {
+    prologue: () => /^Whenever one or more -1\/-1 counters are put on a creature, (.+)$/i,
+    on: [{ kind: 'counters-put', counter: '-1/-1', countersOn: 'any', what: 'creature' }],
+  },
+  /*
     "When ~ is put into a graveyard from the battlefield" on its own (D461).
 
     The paired form — "When ~ enters **or** is put into a graveyard from the battlefield" — has been

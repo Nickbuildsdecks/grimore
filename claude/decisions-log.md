@@ -44036,3 +44036,64 @@ Pod sweep 49901–49940 (D631's build): 40 of 40 finished, no throw and no stall
 
 **To watch:** the graveyard loop runs on every event, so the next sweep's running time is the check
 that it costs nothing a game would notice.
+
+## D633 — "one or more +1/+1 counters are put on"
+
+36 legal lines watch counters being put on something, and on 26 cards that is the last unread line.
+Examples:
+- "Whenever one or more +1/+1 counters are put on ~": Benthic Biomancer, Dreamdrinker Vampire,
+  Dusk Legion Duelist (14 lines).
+- "… on a creature you control" and "… on another creature you control".
+- "Whenever one or more -1/-1 counters are put on a creature".
+
+The engine raised no event for it.
+
+**The event.** It follows the same detect-then-announce pattern as `drew` and `cycled`:
+- `addCounters` records a placement in `GameState.countersPut`. Only a +1/+1, -1/-1 or loyalty
+  counter is recorded, only on the battlefield, and only when counters were added.
+- `settle` drains the list and raises `counters-put`, with the counter, the permanent's controller
+  and whether it is a creature.
+- One event per placement is the "one or more" every printing says: two counters from one effect
+  is one trigger.
+- A permanent that enters with counters gets them through `addCounters`, and that counts as putting
+  them on (CR 122.6).
+- The regeneration shield is stored as a counter but is not one, and removing counters is not
+  putting them on.
+
+The new list is optional on `GameState`, so a saved game loads. It is reset in `engine.ts`'s two
+initial states and in `settle`, and it keeps `settle`'s loop going like the lists beside it.
+
+**The rows.** On ~ itself; on a creature or permanent you control, with or without "another"; and
+-1/-1 counters on any creature. "Whenever **a** +1/+1 counter is put on" counts per counter, which
+this event does not, so it stays unread.
+
+`deck coverage` requires every trigger kind to have a pool card or a named exemption (D442).
+`counters-put` is exempt, naming its corpus count and the runtime block that drives it.
+
+**Tests.** 6 new engine tests:
+- The rows read.
+- Two counters at once fire one trigger.
+- Your creature fires "a creature you control", and the opponent's does not.
+- Counters on another creature do not fire "on ~".
+- Removing a counter fires nothing.
+- A regeneration shield fires nothing.
+
+Faults injected by hand:
+- **Caught:** the "you control" check removed; the drain left out of the loop guard.
+- **Caught once their tests were added:** the self check removed; removals recorded.
+- **Equivalent, kept:** any counter recorded, regeneration included. Every row names its counter,
+  so no trigger can ask for a regeneration event. The key filter is kept so a future row with no
+  counter named cannot fire on a shield.
+
+    engine tests: 4,452, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,614 of 31,653 (was 10,603); lines read 28,969 of 59,306 (48.8%, was 28,955)
+
+Pod sweep 50001–50040 (D632's build): 40 of 40 finished, no throw and no stall, in 426 s. That is
+the first timed sweep, and the baseline for the graveyard-trigger loop D632 added to every event.
+
+**Break run on D631's build:** 3 of 4 caught. The miss: the any-controller "enters" rows reading
+`another`, which would drop the card's own arrival. No test cast a creature carrying such a row.
+The pin comes with the next increment.

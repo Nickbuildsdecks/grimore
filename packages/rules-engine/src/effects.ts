@@ -1875,7 +1875,18 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
   const counters = { ...inst.counters };
   if (value === 0) delete counters[key];
   else counters[key] = value;
-  return withInstance(state, id, { counters });
+  const placed = withInstance(state, id, { counters });
+  /*
+    "Whenever one or more +1/+1 counters are put on ~" (D633): recorded for `settle` to announce.
+    Only the counters a card can name — not the regeneration shield, which is kept as a counter but
+    is not one — only on the battlefield, and only when some were added: removing them is not
+    putting them on. A permanent entering with counters gets them through here too, and that counts
+    as putting them on (CR 122.6).
+  */
+  if (amount > 0 && inst.zone === 'battlefield' && (key === '+1/+1' || key === '-1/-1' || key === 'loyalty')) {
+    return { ...placed, countersPut: [...(placed.countersPut ?? []), { card: id, counter: key }] };
+  }
+  return placed;
 }
 
 /**

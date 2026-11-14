@@ -956,6 +956,13 @@ export interface AutomationState {
    */
   readonly cycled?: readonly { readonly card: string; readonly seat: SeatIndex }[];
   /**
+   * Counters put on a permanent and not yet announced (D633): one entry per `addCounters` call
+   * that added a +1/+1, -1/-1 or loyalty counter to something on the battlefield — "one or more
+   * counters are put on", which is one event however many counters the call added. Drained by
+   * `settle` into `counters-put`. Optional, so a game saved before it existed loads.
+   */
+  readonly countersPut?: readonly { readonly card: string; readonly counter: string }[];
+  /**
    * Permanents **sacrificed** since the last `settle`, with the seat that sacrificed each (D570).
    *
    * A sacrificed creature is in `died` and `left` too, and neither can say it was a sacrifice

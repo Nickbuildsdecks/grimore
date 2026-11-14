@@ -1133,6 +1133,17 @@ function triggerMatches(
       whole of the filter: there is no subject to be, and no size or type to ask about (see the
       event's own declaration for why those stay unread).
     */
+    // "Whenever one or more +1/+1 counters are put on ~" (D633). See the event's declaration.
+    case 'counters-put': {
+      const e = event as Extract<TriggerEvent, { kind: 'counters-put' }>;
+      if (want.counter !== undefined && e.counter !== want.counter) return false;
+      const on = want.countersOn ?? 'self';
+      if (on === 'self' && !isSubject) return false;
+      if (on === 'another' && isSubject) return false;
+      if (want.of === 'you' && e.subjectSeat !== sourceSeat) return false;
+      if (want.what === 'creature' && e.subjectIsCreature !== true) return false;
+      return true;
+    }
     case 'attack-declared': {
       // "With three or more creatures" (D631): the count travels on the raised event.
       if (want.atLeast !== undefined
@@ -3016,7 +3027,7 @@ function settle(state: GameState, before: GameState): GameState {
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
       || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0
-      || (next.sacrificed ?? []).length > 0
+      || (next.sacrificed ?? []).length > 0 || (next.countersPut ?? []).length > 0
       /*
         And the two lists drained below that were missing from this guard until D592: a transform
         or a copy **on its own** never started a pass, so it waited for some other event to carry
@@ -3073,6 +3084,8 @@ function settle(state: GameState, before: GameState): GameState {
     // not below because the list is emptied a few lines down, after madness has asked about it.
     const thrown = next.discarded;
     const cycledNow = next.cycled ?? [];
+    // And the counters put on permanents (D633).
+    const countered = next.countersPut ?? [];
     // And the permanents sacrificed (D570).
     const givenUp = next.sacrificed ?? [];
     const drawn = next.drew;
@@ -3117,7 +3130,7 @@ function settle(state: GameState, before: GameState): GameState {
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [],
+      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [], countersPut: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -3258,6 +3271,18 @@ function settle(state: GameState, before: GameState): GameState {
       if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner);
     }
     for (const { card, seat } of cycledNow) next = raise(next, { kind: 'cycles' }, seat, card);
+    /*
+      Counters put on permanents (D633), with whose permanent it was and whether it was a creature
+      read now, as the trigger sees it (CR 603.2).
+    */
+    for (const { card, counter } of countered) {
+      const inst = next.instances[card];
+      if (inst === undefined || inst.zone !== 'battlefield') continue;
+      next = raise(next, {
+        kind: 'counters-put', counter, subjectSeat: inst.zoneSeat,
+        subjectIsCreature: characteristicsOf(next, inst).isCreature,
+      }, inst.zoneSeat, card);
+    }
     /*
       And sacrifices (D570), before the deaths below: the sacrifice is the act and the death is
       what it did, and for one controller's triggers the order they go on the stack in is the order

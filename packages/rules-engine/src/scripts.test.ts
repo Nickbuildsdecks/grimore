@@ -7752,6 +7752,13 @@ describe('deck coverage', () => {
         one. Driven at runtime by "retrace (D599)" on Flame Jab's corpus row: offered from the
         graveyard with only the hand's land cards to discard, refused a non-land, and cast for its
         cost and a land.
+
+      **And counters put on a permanent** (D633):
+
+      - `trigger counters-put`: 36 legal corpus lines, 26 the last unread line on their card
+        (Benthic Biomancer, Dreamdrinker Vampire, Simic-style "on a creature you control"). Driven at
+        runtime by '"one or more +1/+1 counters are put on" (D633)': two counters at once fire one
+        trigger, an opponent's creature does not count, and a regeneration shield is not a counter.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7767,6 +7774,7 @@ describe('deck coverage', () => {
       'script entersUntappedIf', 'script payLifeToEnterUntapped',
       'keyword daybound', 'keyword nightbound', 'trigger day-night', 'script becomesDayAsItEnters',
       'script retrace',
+      'trigger counters-put',
     ]);
 
     const declared = [
@@ -47927,5 +47935,76 @@ describe('a printed monstrosity keeps its timing (pinned by the D630 break run)'
     } as never);
     expect(read.ok && read.unread).toEqual([]);
     expect(read.ok && read.script?.abilities?.[0]?.sorcerySpeed).toBe(true);
+  });
+});
+
+describe('"one or more +1/+1 counters are put on" (D633)', () => {
+  const creature = (name: string, text: string) => ({
+    name, type_line: 'Creature — Merfolk', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: text,
+  });
+  const BIOMANCER = creature('Test Biomancer',
+    '{1}: Put two +1/+1 counters on Test Biomancer.\nWhenever one or more +1/+1 counters are put on Test Biomancer, you gain 1 life.');
+  const GROWER = creature('Test Grower', '{1}: Put a +1/+1 counter on target creature.\n{G}: Regenerate Test Grower.'
+    + '\nRemove a +1/+1 counter from Test Grower: Test Grower gains flying until end of turn.');
+  const ASCENDANCY = { ...creature('Test Ascendancy', 'Whenever one or more +1/+1 counters are put on a creature you control, you gain 1 life.'),
+    type_line: 'Enchantment', power: null, toughness: null };
+  const ROWS = [BIOMANCER, GROWER, ASCENDANCY];
+  const deck = customDeck({
+    id: 'counters', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 54 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'counters', 1: 'counters' }, deckSpecs: { counters: deck.deck },
+    battlefield: { 0: ['Forest', 'Forest', 'Forest', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, card: string, abilityIndex: number, targets?: readonly Target[]) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card, abilityIndex, ...(targets === undefined ? {} : { targets }),
+  } as Action)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('two counters at once is one trigger', () => {
+    let s = table(['Test Biomancer']);
+    s = activate(s, find(s, 0, 'battlefield', 'Test Biomancer'), 0);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Biomancer')]?.counters['+1/+1']).toBe(2);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('"a creature you control": yours fires it, an opponent\'s does not', () => {
+    let s = table(['Test Ascendancy', 'Test Grower'], ['Test Grower']);
+    const grower = find(s, 0, 'battlefield', 'Test Grower');
+    s = activate(s, grower, 0, [{ kind: 'card', id: grower }]);
+    expect(life(s, 0)).toBe(21);
+    s = activate(s, grower, 0, [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Grower') }]);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('"on ~" is only its own counters: another creature getting one does not fire it', () => {
+    let s = table(['Test Biomancer', 'Test Grower']);
+    const grower = find(s, 0, 'battlefield', 'Test Grower');
+    s = activate(s, grower, 0, [{ kind: 'card', id: grower }]);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('removing a counter is not putting one on', () => {
+    let s = table(['Test Ascendancy', 'Test Grower']);
+    const grower = find(s, 0, 'battlefield', 'Test Grower');
+    s = activate(s, grower, 0, [{ kind: 'card', id: grower }]);
+    expect(life(s, 0)).toBe(21);
+    s = activate(s, grower, 2);
+    expect(s.instances[grower]?.counters['+1/+1'] ?? 0).toBe(0);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('a regeneration shield is not a counter anybody put on it', () => {
+    let s = table(['Test Ascendancy', 'Test Grower']);
+    s = activate(s, find(s, 0, 'battlefield', 'Test Grower'), 1);
+    expect(life(s, 0)).toBe(20);
   });
 });
