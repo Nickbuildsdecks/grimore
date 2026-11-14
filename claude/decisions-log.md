@@ -44262,3 +44262,59 @@ Pod sweep 50301–50340 (D635's build): 40 of 40 finished, no throw and no stall
 **Break run on D635's build:** 4 of 5 caught. The miss is real: with the tribe word unchecked,
 "Whenever a Vehicle you control attacks" would read as a creature type that never matches, a trigger
 that silently never fires. The pin comes with the next increment.
+
+## D637 — Station: Spacecraft, read
+
+67 legal Spacecraft, every one unread, because D620 refuses their `STATION n+` bands for the
+reason D572 refused level bands. D636 built the scoping, and this applies it to charge counters,
+with the three differences the rules make (CR 721):
+- **The station ability.** "Station" builds `stationAbility()`: tap another untapped creature you
+  control (D610's `tapUntapped`) to put on charge counters equal to its power, only as a sorcery.
+  The power comes from a new `EffectContext.tappedPower`. `activate` sums the tapped creatures'
+  power before they tap, and it travels on the stack object as `sacrificedStats` does, into both
+  resolution contexts.
+- **Cumulative bands.** Each band is "as long as it has N or more charge counters", with no upper
+  edge, so scoped abilities ask only the lower edge. Because `levelBandOf` picks one band, each
+  band carries every lower band's keywords.
+- **The creature threshold.** A Spacecraft's printed size belongs to its last band, "It's an
+  artifact creature at N+". That band is marked `LevelBand.creature`, and `characteristicsOf` adds
+  the Creature type to the base type line before layer 4: the Spacecraft's own static ability. A
+  Spacecraft printed with no size never becomes one.
+
+`LevelBand` gained `counter` (`level` or `charge`) and `creature`, and `levelBandOf` counts the
+band's own counter. **"This Spacecraft"** joined `SELF_TYPE_WORDS`, the one list every
+self-reference reader uses. On its own that finished lines on most of the 67 ("When this Spacecraft
+enters, …").
+
+19 of 67 Spacecraft read whole. The rest print a band line or an ability nothing reads yet.
+
+**The D635 pin.** "Whenever a Vehicle you control attacks" stays unread: Vehicle is not a creature
+type, and a row that took it would never fire.
+
+**Tests.** 5 new engine tests:
+- The Spacecraft reads whole, with the creature band last and carrying its keywords.
+- Tapping a 3-power creature puts three charge counters on it; the 2+ ability arrives and it is not
+  yet a creature.
+- At six counters it is a 4/4 artifact creature with flying, and the 2+ ability is still there.
+- Station is refused outside the main phase. The test asserts the sorcery-speed message, in its own
+  beginning of combat where it has priority, and is refused with no other creature to tap.
+- The D635 pin.
+
+Faults injected by hand:
+- **Caught:** `levelBandOf` counting `level` for charge bands; the creature type not added;
+  `tappedPower` replaced by the creature count; the band keywords dropped; the creature mark on the
+  first band; the charge check removed; the D635 tribe check removed.
+- **Caught once the test was tightened:** sorcery speed removed. The first version asserted only
+  "refused", and the refusal it got was "no priority".
+
+    engine tests: 4,473, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,682 of 31,653 (was 10,663); lines read 29,270 of 59,306 (49.4%, was 29,126)
+
+Pod sweep 50401–50440 (D636's build): 40 of 40 finished, no throw and no stall, in 301 s.
+
+**Break run on D636's build:** 6 of 7 caught. The miss is real: a band static that already had a
+condition would be accepted, and the band's condition would silently replace it. It will be pinned
+with the next increment.

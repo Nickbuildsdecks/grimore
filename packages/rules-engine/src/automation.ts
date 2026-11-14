@@ -2249,6 +2249,8 @@ interface TriggerAbout {
    * anything at all. See `StackObject.sacrificedStats`.
    */
   readonly sacrificed?: SacrificedStats;
+  /** The power tapped to pay for it (D637). See `StackObject.tappedPower`. */
+  readonly tappedPower?: number;
 }
 
 /**
@@ -2328,6 +2330,7 @@ function pushAbility(
     ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     ...(about.sacrificed === undefined ? {} : { sacrificedStats: about.sacrificed }),
+    ...(about.tappedPower === undefined ? {} : { tappedPower: about.tappedPower }),
     targetSeqs: targetSeqsFor(state, targets),
     ...aboutSeqsFor(state, about),
   };
@@ -4710,6 +4713,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       ...aboutNow(state, object),
       answering: object.answering,
       actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
+      ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
       enteringAttack: object.enteringAttack,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
@@ -4802,6 +4806,8 @@ function completeResolution(
     actor: object.actor,
     // And what was sacrificed to pay for it, for one that measures the thing given up.
     sacrificed: object.sacrificedStats,
+    // And the power tapped to pay for it, for a station (D637).
+    ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
     // And the face its source showed when it was put on the stack, for CR 701.28f (D592).
     ...(object.kind === 'spell' ? {} : { sourceFace: object.cardKey }),
     // And how a divided quantity was split, for the one card shape that announces numbers with

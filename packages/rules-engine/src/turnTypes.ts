@@ -388,6 +388,8 @@ export interface StackObject {
    * deals the same damage though nothing was sacrificed for the copy.
    */
   readonly sacrificedStats?: SacrificedStats;
+  /** The power tapped to pay for this ability (D637). See `EffectContext.tappedPower`. */
+  readonly tappedPower?: number;
   /**
    * Whether this spell's buyback was paid (CR 702.26a).
    *

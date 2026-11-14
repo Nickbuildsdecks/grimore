@@ -47,7 +47,7 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, wholeCardShapeFor,
+  isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor, stationAbility, wholeCardShapeFor,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import type { LevelBand } from './cards.js';
@@ -237,6 +237,81 @@ function readLevelBands(lines: readonly string[], first: number, name: string): 
     bands,
     fragment: {
       levelUp: { cost },
+      abilities,
+      ...(triggers.length === 0 ? {} : { triggers }),
+      ...(statics.length === 0 ? {} : { statics }),
+    },
+    claimed: [lines[header]!, ...lines.slice(first)],
+  };
+}
+
+/**
+ * **A Spacecraft's station bands, read** (D637, CR 721): the same scoping as a leveler's (D636), on
+ * charge counters, with three differences the rules make.
+ *
+ * - There is no size line under a header. A Spacecraft's printed power and toughness belong to its
+ *   **last** band, where "It's an artifact creature at N+" — so that band is marked `creature`, and
+ *   a Spacecraft printed with no size never becomes one.
+ * - The bands are **cumulative**: each is "as long as it has N or more charge counters" with no
+ *   upper edge, so at 8 counters the 2+ lines and the 8+ lines all apply. Scoped abilities ask only
+ *   the lower edge, and a band's keywords include every lower band's, because `levelBandOf` picks
+ *   one band.
+ * - The ability that adds the counters is the "Station" line, built by `stationAbility`.
+ */
+function readStationBands(lines: readonly string[], first: number, name: string, size: { power: number; toughness: number } | null): {
+  readonly bands: readonly LevelBand[];
+  readonly fragment: Record<string, unknown>;
+  readonly claimed: readonly string[];
+} | null {
+  const header = lines.findIndex((line) => /^Station(?:\s*\(.*\))?$/.test(line.trim()));
+  if (header < 0 || header > first) return null;
+  const bands: LevelBand[] = [];
+  const abilities: AbilityDef[] = [stationAbility()];
+  const triggers: TriggerDef[] = [];
+  const statics: unknown[] = [];
+  const keywords: string[] = [];
+  let index = first;
+  while (index < lines.length) {
+    const band = /^STATION (\d+)\+$/.exec(lines[index]!.trim());
+    if (band === null) return null;
+    const from = Number(band[1]);
+    const charged = (state: GameState, id: string): boolean => (state.instances[id]?.counters['charge'] ?? 0) >= from;
+    index += 1;
+    for (; index < lines.length && !/^STATION /.test(lines[index]!.trim()); index++) {
+      const line = lines[index]!;
+      const words = printedKeywords(line);
+      const parts = line.replace(/\([^)]*\)/g, '').split(/,\s*/).map((part) => part.trim()).filter((part) => part !== '');
+      if (words.length > 0 && words.length === parts.length) { keywords.push(...words); continue; }
+      const read = lineScriptFor(line, name);
+      if (read === null) return null;
+      // As for a leveler: a grant (`grantedTriggers`, `grantedAbilities`) cannot be scoped, so it refuses.
+      for (const key of Object.keys(read)) {
+        if (!['abilities', 'triggers', 'statics'].includes(key)) return null;
+      }
+      for (const ability of read.abilities ?? []) {
+        const prior = ability.activateOnlyIf;
+        abilities.push({ ...ability, activateOnlyIf: (state, source, controller) => charged(state, source) && (prior === undefined || prior(state, source, controller)) });
+      }
+      for (const trigger of read.triggers ?? []) {
+        const prior = trigger.condition;
+        triggers.push({ ...trigger, condition: (c) => charged(c.state, c.source) && (prior === undefined || prior(c)) });
+      }
+      for (const fixed of read.statics ?? []) {
+        const effect = ((fixed as unknown as { effect?: Record<string, unknown> }).effect) ?? {};
+        if (effect['while'] !== undefined || effect['grants'] !== undefined || effect['grantsAbilities'] !== undefined) return null;
+        statics.push({ ...fixed, effect: { ...effect, while: { kind: 'source-has-counter', counter: 'charge', atLeast: from } } });
+      }
+    }
+    bands.push({
+      from, counter: 'charge', power: size?.power ?? 0, toughness: size?.toughness ?? 0,
+      ...(keywords.length === 0 ? {} : { keywords: [...new Set(keywords)] }),
+    });
+  }
+  if (bands.length === 0) return null;
+  if (size !== null) bands[bands.length - 1] = { ...bands[bands.length - 1]!, creature: true };
+  return {
+    bands,
+    fragment: {
       abilities,
       ...(triggers.length === 0 ? {} : { triggers }),
       ...(statics.length === 0 ? {} : { statics }),
@@ -609,6 +684,19 @@ function compileSingle(row: CardDataRow): Compilation {
   const levelled = leveled >= 0 && classLevel < 0 && hasType(typeLine, 'creature')
     ? readLevelBands(lines, leveled, def.name)
     : null;
+  // And a Spacecraft (D637): station bands, with its printed size on the last.
+  const sized = /^\d+$/.test(def.power ?? '') && /^\d+$/.test(def.toughness ?? '')
+    ? { power: Number(def.power), toughness: Number(def.toughness) }
+    : null;
+  const stationed = levelled === null && leveled >= 0 && classLevel < 0 && /\bSpacecraft\b/.test(def.typeLine ?? '')
+    ? readStationBands(lines, leveled, def.name, sized)
+    : null;
+  if (stationed !== null && merge(built, stationed.fragment as Partial<CardScript>) === 'merged') {
+    def = { ...def, levelBands: stationed.bands };
+    for (const line of stationed.claimed) claimed.add(line);
+    compiled.push(...stationed.claimed);
+    firstBand = -1;
+  }
   if (levelled !== null && merge(built, levelled.fragment as Partial<CardScript>) === 'merged') {
     def = { ...def, levelBands: levelled.bands };
     for (const line of levelled.claimed) claimed.add(line);

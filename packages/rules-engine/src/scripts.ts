@@ -8956,6 +8956,20 @@ const BLASTODERM: CardScript = {
  * an opponent's turn, after blockers, would make every leveler a combat trick. The printed cards say
  * "Activate only as a sorcery" for that reason, and the engine already had the flag.
  */
+/**
+ * Station (D637, CR 702.184): "Tap another untapped creature you control: Put charge counters equal
+ * to its power on this permanent. Activate only as a sorcery." The power is the tapped creature's as
+ * the cost is paid (`EffectContext.tappedPower`), which is the number the rule names.
+ */
+export function stationAbility(): AbilityDef {
+  return {
+    cost: { tapUntapped: { count: 1, kind: 'creature' } },
+    sorcerySpeed: true,
+    description: 'Station (tap another creature you control: put charge counters equal to its power on this)',
+    effect: (c) => ((c.tappedPower ?? 0) > 0 ? addCounters(c.state, c.source, 'charge', c.tappedPower!) : c.state),
+  };
+}
+
 export function levelUpAbility(cost: string): AbilityDef {
   return {
     cost: { mana: cost },

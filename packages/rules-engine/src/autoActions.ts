@@ -1811,6 +1811,9 @@ function activate(
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.
+  // The power of the creatures tapped for a `tapUntapped` cost, read before they tap (D637).
+  const tappedPower = ability.cost.tapUntapped === undefined ? null
+    : crewed.reduce((sum, id) => sum + (state.instances[id] === undefined ? 0 : characteristicsOf(state, state.instances[id]!).power), 0);
   for (const id of crewed) next = withInstance(next, id, { tapped: true });
   if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
   // And the energy, spent as the ability is activated rather than as it resolves — so it is gone
@@ -1963,6 +1966,7 @@ function activate(
     {
       ...(ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget }),
       ...(sacrificedStats === null ? {} : { sacrificed: sacrificedStats }),
+      ...(tappedPower === null ? {} : { tappedPower }),
     },
     action.grantedBy);
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed

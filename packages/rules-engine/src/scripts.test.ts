@@ -48238,3 +48238,79 @@ describe('the counter a trigger names (pinned by the D633 break run)', () => {
     expect(life(after('-1/-1'), 0)).toBe(20);
   });
 });
+
+describe('Station: a Spacecraft charged by tapping creatures (D637)', () => {
+  const SHIP = {
+    name: 'Test Ship', type_line: 'Artifact — Spacecraft', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: "Station (Tap another creature you control: Put charge counters equal to its power on this Spacecraft. Station only as a sorcery. It's an artifact creature at 6+.)\nSTATION 2+\n{T}: You gain 1 life.\nSTATION 6+\nFlying",
+  };
+  const deck = customDeck({
+    id: 'ships', name: 'Ships', entries: [{ name: 'Test Ship', count: 4 }, { name: 'Hill Giant', count: 8 }, { name: 'Mountain', count: 48 }],
+    data: [SHIP] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'ships', 1: 'ships' }, deckSpecs: { ships: deck.deck },
+    battlefield: { 0: ['Test Ship', 'Hill Giant', 'Hill Giant'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const station = (s: GameState) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ship'), abilityIndex: 0,
+  } as Action)), 20);
+  const ship = (s: GameState) => s.instances[find(s, 0, 'battlefield', 'Test Ship')]!;
+
+  it('reads whole, with the creature band last and the keywords on it', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(SHIP as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.def.levelBands).toEqual([
+      { from: 2, counter: 'charge', power: 4, toughness: 4 },
+      { from: 6, counter: 'charge', power: 4, toughness: 4, keywords: ['flying'], creature: true },
+    ]);
+  });
+
+  it('tapping a 3-power creature puts on three counters; the 2+ ability arrives, the ship is not yet a creature', () => {
+    let s = table();
+    const lifeAbility = (state: GameState) => legalActions(state, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === ship(state).id && p.abilityIndex === 1).length;
+    expect(lifeAbility(s)).toBe(0);
+    s = station(s);
+    expect(ship(s).counters['charge']).toBe(3);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Hill Giant' && s.instances[id]!.tapped)).toHaveLength(1);
+    expect(characteristicsOf(s, ship(s)).isCreature).toBe(false);
+    expect(lifeAbility(s)).toBe(1);
+  });
+
+  it('at six it is a 4/4 artifact creature with flying, and the 2+ ability is still there', () => {
+    let s = station(table());
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 20);
+    s = station(s);
+    expect(ship(s).counters['charge']).toBe(6);
+    const ch = characteristicsOf(s, ship(s));
+    expect(ch.isCreature).toBe(true);
+    expect(hasType(ch.typeLine, 'artifact')).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([4, 4]);
+    expect(ch.keywords.has('flying')).toBe(true);
+  });
+
+  it('only as a sorcery, and only by tapping another creature', () => {
+    const s = table();
+    const act = { type: 'auto:activate' as const, by: 0 as SeatIndex, card: ship(s).id, abilityIndex: 0 };
+    // In its own beginning of combat it has priority, so the refusal is the sorcery-speed one.
+    const combat = advanceTo(s, 'begin-combat');
+    expect(combat.priority).toBe(0);
+    expect(refusal(combat, act) ?? '').toContain('main phase');
+    const alone = advanceTo(arena({
+      decks: { 0: 'ships', 1: 'ships' }, deckSpecs: { ships: deck.deck }, battlefield: { 0: ['Test Ship'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    expect(refusal(alone, { ...act, card: find(alone, 0, 'battlefield', 'Test Ship') })).not.toBeNull();
+  });
+});
+
+describe('a tribe word that is not a creature type (pinned by the D635 break run)', () => {
+  it('"Whenever a Vehicle you control attacks" stays unread rather than never firing', () => {
+    const read = compileCard({
+      name: 'Test Garage', type_line: 'Enchantment', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Whenever a Vehicle you control attacks, you gain 1 life.',
+    } as never);
+    expect(read.ok && read.unread).toHaveLength(1);
+  });
+});

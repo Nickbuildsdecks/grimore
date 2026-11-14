@@ -239,6 +239,8 @@ const COLOUR_WORDS: Readonly<Record<string, Color>> = Object.freeze({
 export const SELF_TYPE_WORDS = [
   'creature', 'artifact', 'enchantment', 'permanent', 'land', 'planeswalker', 'battle',
   'Vehicle', 'Equipment', 'Aura', 'token', 'card', 'spell',
+  // D637: "When this Spacecraft enters" — 40-odd legal Spacecraft name themselves this way.
+  'Spacecraft',
 ] as const;
 
 /**
@@ -2286,7 +2288,7 @@ function withChangeling(
 function levelBandOf(def: CardDef | undefined, instance: CardInstance): LevelBand | undefined {
   const bands = def?.levelBands;
   if (bands === undefined || instance.zone !== 'battlefield') return undefined;
-  const level = instance.counters['level'] ?? 0;
+  const level = instance.counters[bands[0]?.counter ?? 'level'] ?? 0;
   if (level <= 0) return undefined;
   let best: LevelBand | undefined;
   for (const candidate of bands) {
@@ -2357,7 +2359,13 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     face-down profile is above it: both answer "what card is this object" rather than "what has
     been done to it".
   */
-  const printed = bestowTypeLine(parseTypeLine(def?.typeLine), instance);
+  const bandNow = levelBandOf(def, instance);
+  const bestowed = bestowTypeLine(parseTypeLine(def?.typeLine), instance);
+  // A Spacecraft at its threshold is an artifact creature (D637, CR 721): its own static ability,
+  // so part of the base type line, before any effect's layer 4.
+  const printed = bandNow?.creature === true && !hasType(bestowed, 'creature')
+    ? { ...bestowed, types: [...bestowed.types, 'Creature'] }
+    : bestowed;
   /*
     Layer 4 first, in a pass of its own (CR 613.1c).
 
@@ -2393,7 +2401,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     and gets "loses all abilities" right for free: a Turn to Frog cast on a levelled creature clears
     the band's first strike in the loop below, exactly as it clears a printed keyword.
   */
-  const band = levelBandOf(def, instance);
+  const band = bandNow;
   const keywords = new Set<Keyword>([
     ...printedKeywords(def?.oracleText),
     ...(band?.keywords ?? []).filter(isKeyword),

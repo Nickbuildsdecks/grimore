@@ -610,6 +610,8 @@ export function normaliseDef(card: CardDef): CardDef {
     */
     ...(card.levelBands === undefined ? {} : {
       levelBands: card.levelBands.map((band) => ({
+        ...(band.counter === undefined ? {} : { counter: band.counter }),
+        ...(band.creature === undefined ? {} : { creature: band.creature }),
         from: band.from,
         power: band.power,
         toughness: band.toughness,

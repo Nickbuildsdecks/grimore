@@ -154,6 +154,11 @@ export interface EffectContext {
    */
   readonly sacrificed?: SacrificedStats;
   /**
+   * The total power of the creatures tapped to pay this ability's cost, as they were (D637): a
+   * Spacecraft's station puts that many charge counters on it.
+   */
+  readonly tappedPower?: number;
+  /**
    * The face the source showed when this ability was put on the stack — its `defKey` then (D592).
    *
    * For one rule: a permanent's own ability that transforms it does so only if it has not

@@ -96,6 +96,16 @@ export interface LevelBand {
   readonly toughness: number;
   /** Keywords the band grants, lowercased, as `printedKeywords` returns them. */
   readonly keywords?: readonly string[];
+  /**
+   * The counter the bands count (D637): `level` (the default, CR 711) or `charge`, a Spacecraft's
+   * station (CR 721). Every band of one card counts the same counter.
+   */
+  readonly counter?: 'level' | 'charge';
+  /**
+   * In this band the permanent is an **artifact creature** with this band's size (D637): a
+   * Spacecraft at its printed threshold, "It's an artifact creature at 8+".
+   */
+  readonly creature?: true;
 }
 
 /**
