@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
+import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
 import { scriptForCard, unreadLines } from './derive.js';
@@ -46960,6 +46960,30 @@ describe('statics over a group of creatures (D620)', () => {
     expect(read.ok && read.script?.statics?.[0]?.effect.grants).toEqual([0]);
   });
 
+  it('a size and a quoted ability together: both halves apply (pinned by the D620 break run)', () => {
+    const CAPTAIN = card('Test Captain', 'Creature — Goblin',
+      'Other Goblin creatures you control get +1/+1 and have "{1}: This creature gets +1/+0 until end of turn."');
+    const read = compileCard(CAPTAIN as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const effect = read.ok ? read.script?.statics?.[0]?.effect : undefined;
+    expect(effect?.grantsAbilities).toEqual([0]);
+    expect(effect).toMatchObject({ power: 1, toughness: 1 });
+  });
+
+  it('a group grant that names its grantor inside the quote is refused (pinned by the D620 break run)', () => {
+    /*
+      The card's own name is bound to the ability's source, and a granted ability's source is the
+      creature holding it, not the card that gave it (D512, D513). So "Test Marshal deals 1 damage"
+      would be read as the holder dealing it. The same line saying "this creature" reads.
+    */
+    const naming = compileCard(card('Test Marshal', 'Creature — Goblin',
+      'Other Goblin creatures you control have "{T}: Test Marshal deals 1 damage to any target."') as never);
+    expect(naming.ok && naming.unread).toHaveLength(1);
+    const plainly = compileCard(card('Test Marshal', 'Creature — Goblin',
+      'Other Goblin creatures you control have "{T}: This creature deals 1 damage to any target."') as never);
+    expect(plainly.ok && plainly.unread).toEqual([]);
+  });
+
   it('a granted mana ability makes mana', () => {
     const s = table(['Test Roots', 'Test Elf']);
     const elf = find(s, 0, 'battlefield', 'Test Elf');
@@ -46999,6 +47023,15 @@ describe('Auras on lands and other permanents state their bonus too (D621)', () 
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: host }] } as Action)), 20);
     return { s, host };
   };
+
+  it('an Equipment still only reads "equipped creature" (pinned by the D621 break run)', () => {
+    // Equipment attaches to creatures only (CR 301.5); a line about an equipped land is not a
+    // printing, and reading one would hand a bonus to a host it can never have.
+    const RACK = { ...GROWTH, name: 'Test Rack', type_line: 'Artifact — Equipment',
+      oracle_text: 'Equipped land has "{T}: Add one mana of any color."\nEquip {1}' };
+    const read = compileCard(RACK as never);
+    expect(read.ok && read.unread.map((u) => u.line)).toContain('Equipped land has "{T}: Add one mana of any color."');
+  });
 
   it('reads both rows whole', () => {
     expect(deck.unknown).toEqual([]);
@@ -47071,6 +47104,24 @@ describe('conditions that compare you with an opponent (D622)', () => {
     expect(enter('Test Pup', ['Plains', 'Grizzly Bears', 'Grizzly Bears'], ['Grizzly Bears'])).toBe(20);
     expect(enter('Test Underdog', ['Plains'], [], 25)).toBe(23);
     expect(enter('Test Underdog', ['Plains'], [], 20)).toBe(20);
+  });
+
+  it('a player who has left the game is not the opponent who is ahead', () => {
+    // Asked of the compiled condition directly: a two-seat game with its only opponent gone is
+    // over, so the board is built live and the seat marked out afterwards (CR 800.4a).
+    const read = compileCard(LANDS as never);
+    const condition = read.ok ? read.script?.triggers?.[0]?.condition : undefined;
+    expect(condition).toBeDefined();
+    const s = advanceTo(arena({
+      decks: { 0: 'parity', 1: 'parity' }, deckSpecs: { parity: deck.deck },
+      battlefield: { 0: ['Plains'], 1: ['Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ask = (state: GameState) => condition!({
+      state, source: find(state, 0, 'battlefield', 'Plains'), controller: 0 as SeatIndex,
+      targets: [], x: 0, decisions: [], kicked: false,
+    });
+    expect(ask(s)).toBe(true);
+    expect(ask({ ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, eliminated: true } : seat)) })).toBe(false);
   });
 });
 
@@ -47176,5 +47227,104 @@ describe('"Activate only if <condition>" (D623)', () => {
     const workshop = compileCard({ ...OPAL, name: 'Test Workshop', oracle_text:
       "Metalcraft — {T}: Add {C} for each Urza's land you control. Activate only if you control three or more artifacts." } as never);
     expect(workshop.ok && workshop.unread).toHaveLength(1);
+  });
+});
+
+describe('an Aura or Equipment ability aimed at its own creature (D624)', () => {
+  /*
+    "{1}{G}: Regenerate enchanted creature", "{1}: Enchanted creature gets +1/+1 until end of turn",
+    "{R}: Equipped creature gains first strike until end of turn" — the host through `attachedTo`.
+  */
+  const aura = (name: string, line: string) => ({
+    name, type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: null, toughness: null, oracle_text: `Enchant creature\n${line}`,
+  });
+  const BRACE = aura('Test Brace', '{1}: Enchanted creature gets +1/+1 until end of turn.');
+  const SHELL = aura('Test Shell', '{G}: Regenerate enchanted creature.');
+  const SPURS = {
+    name: 'Test Spurs', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    power: null, toughness: null, oracle_text: '{1}: Equipped creature gains first strike until end of turn.\nEquip {1}',
+  };
+  const ROWS = [BRACE, SHELL, SPURS];
+  const deck = customDeck({
+    id: 'hosts', name: 'Hosts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 50 }],
+    data: ROWS as never[],
+  });
+  const FORESTS = ['Forest', 'Forest', 'Forest', 'Forest'];
+  /** Seat 0 with Grizzly Bears and four Forests, and `aura` cast onto the Bears. */
+  const enchanted = (auraName: string): { s: GameState; bears: string; aura: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hosts', 1: 'hosts' }, deckSpecs: { hosts: deck.deck },
+      hands: { 0: [auraName] }, battlefield: { 0: ['Grizzly Bears', ...FORESTS], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', auraName), targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    return { s, bears, aura: find(s, 0, 'battlefield', auraName) };
+  };
+  const activate = (s: GameState, card: string, abilityIndex = 0) =>
+    drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex } as Action)), 20);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('pumps the enchanted creature, not anybody else\'s', () => {
+    const { s, bears, aura: brace } = enchanted('Test Brace');
+    expect(s.instances[brace]?.attachedTo).toBe(bears);
+    const after = activate(s, brace);
+    expect(characteristicsOf(after, after.instances[bears]!).power).toBe(3);
+    const theirs = find(after, 1, 'battlefield', 'Grizzly Bears');
+    expect(characteristicsOf(after, after.instances[theirs]!).power).toBe(2);
+  });
+
+  it('regenerates the enchanted creature, and the shield is on the creature', () => {
+    const { s, bears, aura: shell } = enchanted('Test Shell');
+    const after = activate(s, shell);
+    expect(after.instances[bears]?.counters[REGENERATION] ?? 0).toBe(1);
+    expect(after.instances[shell]?.counters[REGENERATION] ?? 0).toBe(0);
+  });
+
+  it('an Equipment on nothing does nothing; equipped, it reaches the creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hosts', 1: 'hosts' }, deckSpecs: { hosts: deck.deck },
+      battlefield: { 0: ['Test Spurs', 'Grizzly Bears', ...FORESTS] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const spurs = find(s, 0, 'battlefield', 'Test Spurs');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const equipIndex = (compileCard(SPURS as never) as { script?: { abilities?: readonly { description: string }[] } })
+      .script!.abilities!.findIndex((a) => a.description.startsWith('Equip'));
+    expect(equipIndex).toBeGreaterThanOrEqual(0);
+    s = activate(s, spurs, equipIndex === 0 ? 1 : 0);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('first strike')).toBe(false);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: spurs, abilityIndex: equipIndex, targets: [{ kind: 'card', id: bears }] } as Action)), 20);
+    expect(s.instances[spurs]?.attachedTo).toBe(bears);
+    s = activate(s, spurs, equipIndex === 0 ? 1 : 0);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('first strike')).toBe(true);
+  });
+
+  it('moving the Equipment leaves the first creature its first strike until end of turn (CR 611.2a)', () => {
+    /*
+      `removeEffectsFrom` used to take every effect the Equipment was the source of, so equipping
+      the second creature stripped what the ability had given the first. Only the static bonus moves.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'hosts', 1: 'hosts' }, deckSpecs: { hosts: deck.deck },
+      battlefield: { 0: ['Test Spurs', 'Grizzly Bears', 'Grizzly Bears', ...FORESTS] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const spurs = find(s, 0, 'battlefield', 'Test Spurs');
+    const [first, second] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    const equip = (state: GameState, onto: string) => drain(passBoth(apply(state, {
+      type: 'auto:activate', by: 0, card: spurs, abilityIndex: 0, targets: [{ kind: 'card', id: onto }],
+    } as Action)), 20);
+    s = activate(equip(s, first!), spurs, 1);
+    s = equip(s, second!);
+    expect(s.instances[spurs]?.attachedTo).toBe(second);
+    expect(characteristicsOf(s, s.instances[first!]!).keywords.has('first strike')).toBe(true);
+    expect(characteristicsOf(s, s.instances[second!]!).keywords.has('first strike')).toBe(false);
   });
 });

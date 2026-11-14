@@ -2614,9 +2614,18 @@ export function staticEffect(
   return pushEffect(state, { source, controller, scope, ...modsFrom(opts), duration: 'permanent' });
 }
 
-/** Removes every effect a given permanent is the source of. Used when an aura leaves. */
+/**
+ * Removes the static effects a given permanent is the source of: an Aura's or Equipment's bonus,
+ * when the attachment ends or moves.
+ *
+ * **Only the `permanent` ones** (D624). An Aura or Equipment can also be the source of an effect
+ * its own activated ability made — "{R}: Equipped creature gains first strike until end of turn" —
+ * and that effect, once the ability has resolved, lasts as long as it says whatever happens to its
+ * source (CR 611.2a). Removed with the bonus, moving the Equipment to another creature took the
+ * first strike off the first one mid-turn.
+ */
 export function removeEffectsFrom(state: GameState, source: string): GameState {
-  const effects = state.effects.filter((e) => e.source !== source);
+  const effects = state.effects.filter((e) => e.source !== source || e.duration !== 'permanent');
   return effects.length === state.effects.length ? state : { ...state, effects };
 }
 

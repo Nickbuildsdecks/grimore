@@ -2502,7 +2502,9 @@ export function stateBasedActions(state: GameState): GameState {
           // runs the Equipment is attached to nothing rather than to something dead. Reading only
           // `attachedTo` would find nothing wrong and leave the +2/+0 in `effects` forever —
           // exactly the shape of the Aura bug in D21, one card type along.
-          const bonus = next.effects.some((e) => e.source === inst.id);
+          // The bonus is the static one; an until-end-of-turn effect its own ability made stays
+          // (D624), so counting it here would ask for a removal that never happens, every pass.
+          const bonus = next.effects.some((e) => e.source === inst.id && e.duration === 'permanent');
           if (!stillLegal && (inst.attachedTo !== null || bonus)) {
             next = removeEffectsFrom(withInstance(next, inst.id, { attachedTo: null }), inst.id);
             changed = true;

@@ -13375,6 +13375,41 @@ function selfEffect(
     }
   }
 
+  /*
+    **The attachment's host as the subject** (D624): "{1}{G}: Regenerate enchanted creature",
+    "{2}: Enchanted creature gets +1/+1 until end of turn", "{R}: Equipped creature gains first strike
+    until end of turn". 29 legal one-line-short Auras and Equipment print one of these, and the
+    reading is the self one with a different object: `attachedTo` on the source, which is how the
+    engine attaches an Aura or an Equipment (D305).
+
+    An Aura or Equipment that is not attached to anything has no host, and the ability then does
+    nothing, as it would at a table. The bot is not told the pump is a "self shrink": the creature
+    that changes is not the one paying.
+  */
+  const hosted = /^(?:enchanted|equipped) creature (gets ([+-]\d+)\/([+-]\d+)(?: and gains ([a-z][a-z' ]*?))?|gains ([a-z][a-z' ]*?)) until end of turn$/i.exec(text)
+    ?? /^regenerate (?:enchanted|equipped) creature$/i.exec(text);
+  if (hosted !== null) {
+    const hostOf = (c: Parameters<EffectFn>[0]): string | undefined => {
+      const host = c.state.instances[c.source]?.attachedTo ?? undefined;
+      return host !== undefined && c.state.instances[host]?.zone === 'battlefield' ? host : undefined;
+    };
+    if (hosted[1] === undefined) {
+      return { effect: (c) => { const host = hostOf(c); return host === undefined ? c.state : regenerate(c.state, host); } };
+    }
+    const word = (hosted[5] ?? '').trim().toLowerCase();
+    const bonus = hosted[2] !== undefined
+      ? pumpAndGrant(Number(hosted[2]), Number(hosted[3]), hosted[4])
+      : (isKeyword(word) ? { keywords: [word] } : null);
+    if (bonus !== null) {
+      return {
+        effect: (c) => {
+          const host = hostOf(c);
+          return host === undefined ? c.state : pump(c.state, [host], c.source, c.controller, bonus);
+        },
+      };
+    }
+  }
+
   const grown = new RegExp(
     `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
     'i',

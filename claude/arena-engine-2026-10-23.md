@@ -26016,3 +26016,80 @@ Pod sweep 49001–49040 (D622's build): 40 of 40 finished, no throw and no stall
 | D619 | 2 of 2 so far | The third fault was still running |
 
 D618 is still running. The misses will be pinned in the next commit.
+
+## D624 — an Aura or Equipment ability aimed at its own creature, and effects that outlive an attachment
+
+29 one-line-short legal Auras and Equipment print an activated ability whose object is their host:
+- "{G}: Regenerate enchanted creature" (13: Carapace, Blessing of Leeches, Dark Privilege, …).
+- "{1}: Enchanted creature gets +1/+1 until end of turn" (12: Armor of Faith, Briar Shield, …).
+- "Equipped creature gains <keyword> until end of turn".
+
+`selfEffect` read these sentences for "~" and "it" only. It now also reads "enchanted creature" and
+"equipped creature", resolved through `attachedTo` on the source (D305's attachment). An Aura or
+Equipment attached to nothing has no host, and the ability does nothing. The bot is not told a
+negative pump on the host is a `selfShrink`, because the creature that changes is not the one paying.
+
+### A rules bug found by a fault that did not fail
+
+The first test, "an Equipment on nothing does nothing", did not fail when the host lookup was made to
+fall back to any creature. The cause was not the test. **`removeEffectsFrom` took every effect the
+Equipment was the source of**, and the state-based Equipment check called it whenever such an effect
+existed. So the fallback's first strike was wiped at once.
+
+The same removal runs on `equipTo`. Equip the Spurs to creature A, give A first strike with the Spurs'
+ability, and move the Spurs to B: A lost first strike mid-turn. By CR 611.2a, the effect of a resolved
+ability lasts its stated duration whatever happens to its source. An Aura's ability had the same
+problem whenever the Aura left the battlefield.
+
+What changed:
+- `removeEffectsFrom` now removes only `permanent` effects, which is what an attachment's static
+  bonus is.
+- The Equipment check in `stateBasedActions` counts only those effects as "the bonus".
+
+That second change has no test, on purpose. Left counting every effect, the check would see a
+"bonus" it never removes and set `changed` on every pass. That costs passes (the loop stops at 32),
+not correctness, so nothing a test can observe.
+
+**Tests.** 5 new engine tests:
+- The rows read.
+- The Brace pumps its own creature and not an opponent's.
+- The Shell's shield lands on the creature, not on the Aura.
+- An Equipment on nothing does nothing; once equipped, it reaches the creature.
+- Moving the Equipment leaves the first creature its first strike, and the second does not get it.
+
+Faults injected by hand, each caught:
+- The pump aimed at the source.
+- Regeneration on the source.
+- The keyword branch refused.
+- `removeEffectsFrom` back to removing everything.
+- An unattached host falling back to any creature.
+
+    engine tests: 4,404, all passing
+
+### Pins for the misses of the repaired break runs (D620–D622)
+
+Each pin below was injected with its fault, and each fault was caught:
+- **D622:** a seat that has left the game is not the opponent who is ahead. Asked of the compiled
+  condition directly, because a two-seat game with its only opponent gone is over.
+- **D621:** an Equipment line about an "equipped land" stays unread.
+- **D620:** a lord's size *and* its quoted ability both apply ("get +1/+1 and have …").
+- **D620:** a group grant whose quote names the grantor is refused, and the same line saying
+  "this creature" reads.
+
+**D619's miss** dropped the curly apostrophe from "each opponent['’]s turn". That fault is
+equivalent: `triggerFromLine` runs `plain()` first, which straightens apostrophes, so nothing can
+tell the two apart. There is no pin.
+
+**D618 re-run:** 4 of 5 caught. The miss narrows "the upkeep of enchanted or equipped creature's
+controller" to "enchanted" only, so the next commit pins the equipped row.
+
+**D623 break run** (in progress): 3 of 4 so far. The miss is a second "if" clause overwriting the
+first; no card prints two, and it will be pinned with the D618 row.
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,345 of 31,653 (was 10,304); lines read 28,573 of 59,306 (48.2%, was 28,523)
+
+Pod sweep 49101–49140: 40 of 40 finished, no throw and no stall. It ran on a build from mid-way
+through this increment (D623 plus the host reader, without the `removeEffectsFrom` change), and the
+sweep's own stale-engine banner says so.
