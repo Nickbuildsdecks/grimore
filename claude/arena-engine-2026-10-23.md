@@ -26093,3 +26093,73 @@ first; no card prints two, and it will be pinned with the D618 row.
 Pod sweep 49101–49140: 40 of 40 finished, no throw and no stall. It ran on a build from mid-way
 through this increment (D623 plus the host reader, without the `removeEffectsFrom` change), and the
 sweep's own stale-engine banner says so.
+
+## D625 — a power or toughness bound on a target
+
+`targetSpecFrom` knew "with power N or greater" as six exact strings: N of 4–6, "or greater" only,
+written for Selesnya Charm and Hidden Dragonslayer. Every other number, every "or less" and every
+toughness bound left the line unread. Examples:
+- Cruel Cut and Defeat: "Destroy target creature with power 2 or less".
+- Gallant Strike: "… with toughness 4 or greater".
+- Goblin Tunneler and 10 other tappers: "Target creature with power 2 or less can't be blocked this
+  turn".
+
+The bound is now peeled off the end of the phrase, the way D492 peels a mana-value bound, and the
+rest is read as before:
+- The controller clause is printed on either side of it ("target creature an opponent controls with
+  power 3 or less" / "… with power 3 or less an opponent controls"), so a clause after the bound is
+  moved back onto the inner phrase.
+- The bound is read live from `characteristicsOf`, so a pump in response takes a creature out of
+  reach. That is the re-check CR 608.2b makes on resolution.
+- It applies to creatures only, which is every printing.
+- "With power or toughness N or less" is an or across two bounds, and stays unread.
+
+The six exact cases were unreachable once the peel ran first, so they are gone rather than left as a
+second reading of the same phrase.
+
+### A D624 reading that did nothing
+
+The list of newly read lines showed four D624 cards that read but could not work: Briar Shield,
+Carapace, Stamina and Thrull Retainer, as in "Sacrifice Carapace: Regenerate enchanted creature".
+The cost puts the Aura in the graveyard, `relocate` clears its `attachedTo`, and the ability then
+finds no host. The rules use last known information (CR 608.2h), which this engine does not keep. So a
+line whose cost sacrifices, exiles or returns the source, and whose effect names "enchanted creature"
+or "equipped creature", is now refused.
+
+**Tests.** 3 new engine tests:
+- Power 2 or less: the Swiftspear and not the Hill Giant, and a +2 pump takes the Swiftspear out.
+- Toughness 4 or greater, plus a 1/2 that tells toughness from power.
+- The controller clause on both sides.
+
+1 more in D624's block: the self-sacrifice Aura is unread and the `{G}` one reads.
+
+Faults injected by hand, each caught:
+- Power read for toughness.
+- "Or less" off by one.
+- The controller clause after the bound dropped.
+- The printed power read in place of the live power.
+- The inner phrase's own filter dropped.
+- The self-sacrifice guard removed.
+
+One refusal row in `compile.test.ts` used "with power 2 or less"; it now uses the
+power-or-toughness form.
+
+    engine tests: 4,410, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,390 of 31,653 (was 10,345); lines read 28,636 of 59,306 (48.3%, was 28,573)
+
+The four refused D624 cards are in that difference.
+
+Pod sweep 49201–49240 (D624's build): 40 of 40 finished, no throw and no stall.
+
+### Break runs
+
+| Build | Caught | Missed |
+|---|---|---|
+| D623 | 4 of 5 | A second "if" clause overwriting the first. The pin was committed with D624's tree and checked against the fault. |
+| D624 | 5 of 6 | A host off the battlefield still counting. This fault is equivalent: `relocate` detaches everything pointing at a card as it leaves, so `attachedTo` never names a card off the battlefield, and `regenerate` checks the zone anyway. |
+
+The D618 miss (the "equipped creature's controller" row) is pinned in this commit, checked against
+its fault.

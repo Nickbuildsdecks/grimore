@@ -17921,36 +17921,47 @@ function targetSpecFrom(
     return { ...inner, description: printed, filter: withinBound };
   }
 
+  /*
+    **A power or toughness bound, peeled the same way (D625).**
+
+    "Target creature with power 2 or less can't be blocked this turn" (Access Tunnel, Crafty
+    Pathmage), "Tap target creature with power 2 or less", "Destroy target creature with power 3 or
+    greater" (Reckless Ambition's family). It used to be six exact strings for Selesnya Charm and
+    Hidden Dragonslayer, "or greater" only and 4–6 only; every other number and "or less" left the
+    line unread.
+
+    The controller clause is printed on either side of it — "target creature with power 4 or greater
+    an opponent controls" (Hidden Dragonslayer, D571) and "target creature an opponent controls with
+    power 3 or less" — so whichever follows the bound is moved back onto the inner phrase.
+
+    Read **live**, as `permanentFilter`'s `powerAtLeast` is: a Giant Growth in response takes the
+    creature out of reach (CR 608.2b re-checks the target on resolution). A creature only, which is
+    the printed shape; "with power or toughness N or less" is an or across two bounds and stays
+    unread.
+  */
+  const sized = /^(.*?) with (power|toughness) (\d+) or (less|greater)( an opponent controls| you control| you don't control)?$/i
+    .exec(printed);
+  if (sized !== null && parsed) {
+    const inner = targetSpecFrom(`${sized[1]!.trim()}${sized[5] ?? ''}`, friendly, parsed);
+    if (inner === null || inner.kind !== 'creature') return null;
+    const toughness = sized[2]!.toLowerCase() === 'toughness';
+    const bound = Number(sized[3]!);
+    const atMost = sized[4]!.toLowerCase() === 'less';
+    const withinBound: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      const live = characteristicsOf(state, inst);
+      const value = toughness ? live.toughness : live.power;
+      if (!(atMost ? value <= bound : value >= bound)) return false;
+      return inner.filter === undefined || inner.filter(state, candidate, controller, source);
+    };
+    return { ...inner, description: printed, filter: withinBound };
+  }
+
   switch (printed.toLowerCase()) {
     case 'any target': return spec({ kind: 'any' });
     case 'target creature': return spec({ kind: 'creature' });
-    /*
-      "with power N or greater", the phrase Selesnya Charm's second mode and Hidden Dragonslayer's
-      turned-face-up trigger both print. The number is read rather than fixed, because the two cards
-      print different ones — five and four — and a reader that took either as the rule would make
-      one of them point at creatures the print excludes.
-    */
-    case 'target creature with power 4 or greater':
-    case 'target creature with power 5 or greater':
-    case 'target creature with power 6 or greater':
-      return spec({
-        kind: 'creature',
-        filter: permanentFilter({ powerAtLeast: Number(/(\d+)/.exec(printed)![1]) }),
-      });
-    case 'target creature an opponent controls with power 4 or greater':
-    case 'target creature an opponent controls with power 5 or greater':
-    case 'target creature an opponent controls with power 6 or greater':
-    // The other printed order, which is the one Hidden Dragonslayer itself uses (D571): the pool
-    // had typed its card the first way round, so that was the only order this read.
-    case 'target creature with power 4 or greater an opponent controls':
-    case 'target creature with power 5 or greater an opponent controls':
-    case 'target creature with power 6 or greater an opponent controls':
-      return spec({
-        kind: 'creature',
-        filter: permanentFilter({
-          opponents: true, powerAtLeast: Number(/(\d+)/.exec(printed)![1]),
-        }),
-      });
     case 'target permanent': return spec({ kind: 'permanent' });
     case 'another target permanent':
       return spec({ kind: 'permanent', filter: permanentFilter({ another: true }) });
@@ -22318,6 +22329,16 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     announced as the spell is cast. Only the ability path has no machinery for it.
   */
   if (dividesAQuantity(read)) return null;
+  /*
+    "Sacrifice Carapace: Regenerate enchanted creature" (D625). The host is read off the source's
+    `attachedTo` when the ability resolves, and a cost that moved the source away has cleared it by
+    then, so the ability would do nothing. The rules answer with last known information (CR 608.2h):
+    the creature it was attached to as it left. The engine keeps none, so the line stays unread
+    rather than reading as an ability that does nothing. 4 legal cards: Briar Shield, Carapace,
+    Stamina, Thrull Retainer.
+  */
+  if ((cost.sacrificeSelf === true || cost.exileSelf === true || cost.returnSelf === true)
+    && /\b(?:enchanted|equipped) creature\b/i.test(clause)) return null;
   return {
     abilities: [{
       ...timing,

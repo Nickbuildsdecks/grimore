@@ -46794,6 +46794,15 @@ describe("upkeep triggers on an opponent's turn and on the enchanted permanent's
     }
   });
 
+  it('the Equipment row reads as the same trigger (pinned by the D618 break run)', () => {
+    const YOKE = { ...BOND, name: 'Test Yoke', type_line: 'Artifact — Equipment',
+      oracle_text: "At the beginning of the upkeep of equipped creature's controller, Test Yoke deals 1 damage to that player.\nEquip {1}" };
+    const read = compileCard(YOKE as never);
+    expect(read.ok && read.unread).toEqual([]);
+    const on = read.ok ? read.script?.triggers?.[0]?.on : undefined;
+    expect(on).toMatchObject({ kind: 'step', step: 'upkeep', of: 'enchanted-controller' });
+  });
+
   it("each opponent's upkeep: their turn and not yours", () => {
     let s = table(['Test Storm'], []);
     s = throughUpkeep(s);
@@ -47180,6 +47189,12 @@ describe('"Activate only if <condition>" (D623)', () => {
     expect(refusal(s, act(me))).toContain('cannot be activated right now');
   });
 
+  it('two "if" clauses refuse the line rather than keep one (pinned by the D623 break run)', () => {
+    // No printing says two; the second would silently replace the first (D487).
+    const both = compileCard({ ...TINKER, oracle_text: '{1}: You gain 2 life. Activate only if you control two or more artifacts and only if an opponent controls more lands than you.' } as never);
+    expect(both.ok && both.unread).toHaveLength(1);
+  });
+
   it('a count of your artifacts, asked live', () => {
     let s = table(['Test Tinker', 'Test Cog', 'Plains'], []);
     const me = find(s, 0, 'battlefield', 'Test Tinker');
@@ -47273,6 +47288,14 @@ describe('an Aura or Equipment ability aimed at its own creature (D624)', () => 
     }
   });
 
+  it('stays unread when the cost sacrifices the Aura, which would leave it no creature (D625)', () => {
+    // CR 608.2h's last known information is not kept, so the honest reading is none.
+    const gone = compileCard(aura('Test Carapace', 'Sacrifice Test Carapace: Regenerate enchanted creature.') as never);
+    expect(gone.ok && gone.unread).toHaveLength(1);
+    const kept = compileCard(aura('Test Carapace', '{G}: Regenerate enchanted creature.') as never);
+    expect(kept.ok && kept.unread).toEqual([]);
+  });
+
   it('pumps the enchanted creature, not anybody else\'s', () => {
     const { s, bears, aura: brace } = enchanted('Test Brace');
     expect(s.instances[brace]?.attachedTo).toBe(bears);
@@ -47326,5 +47349,57 @@ describe('an Aura or Equipment ability aimed at its own creature (D624)', () => 
     expect(s.instances[spurs]?.attachedTo).toBe(second);
     expect(characteristicsOf(s, s.instances[first!]!).keywords.has('first strike')).toBe(true);
     expect(characteristicsOf(s, s.instances[second!]!).keywords.has('first strike')).toBe(false);
+  });
+});
+
+describe('a power or toughness bound on a target (D625)', () => {
+  /*
+    "target creature with power 2 or less", "… with toughness 4 or greater", and the controller
+    clause on either side of the bound. Asked of the compiled spec's filter, live.
+  */
+  const spell = (name: string, text: string) => ({
+    name, type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const specOf = (text: string) => {
+    const read = compileCard(spell('Test Cut', text) as never);
+    expect(read.ok && read.unread).toEqual([]);
+    return read.ok ? read.script?.targets?.[0] : undefined;
+  };
+  const board = () => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'ember-rush' },
+    battlefield: { 0: ['Hill Giant', 'Monastery Swiftspear'], 1: ['Hill Giant', 'Monastery Swiftspear', 'Shivan Dragon'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const allowed = (s: GameState, spec: ReturnType<typeof specOf>, seat: SeatIndex, name: string) =>
+    spec!.filter!(s, { kind: 'card', id: find(s, seat, 'battlefield', name) }, 0 as SeatIndex, 'none');
+
+  it('power 2 or less: the Swiftspear and not the Giant, and a pump takes the Swiftspear out of reach', () => {
+    const spec = specOf('Destroy target creature with power 2 or less.');
+    let s = board();
+    expect(allowed(s, spec, 1, 'Monastery Swiftspear')).toBe(true);
+    expect(allowed(s, spec, 1, 'Hill Giant')).toBe(false);
+    s = pump(s, [find(s, 1, 'battlefield', 'Monastery Swiftspear')], 'none', 1 as SeatIndex, { power: 2 });
+    expect(allowed(s, spec, 1, 'Monastery Swiftspear')).toBe(false);
+  });
+
+  it('toughness 4 or greater', () => {
+    const spec = specOf('Destroy target creature with toughness 4 or greater.');
+    const s = board();
+    expect(allowed(s, spec, 1, 'Shivan Dragon')).toBe(true);
+    expect(allowed(s, spec, 1, 'Hill Giant')).toBe(false);
+    // The Swiftspear is a 1/2, which is what tells toughness from power.
+    expect(allowed(s, specOf('Destroy target creature with toughness 2 or greater.'), 1, 'Monastery Swiftspear')).toBe(true);
+  });
+
+  it('the controller clause on either side of the bound', () => {
+    const s = board();
+    for (const text of [
+      'Destroy target creature an opponent controls with power 3 or less.',
+      'Destroy target creature with power 3 or less an opponent controls.',
+    ]) {
+      const spec = specOf(text);
+      expect(allowed(s, spec, 1, 'Hill Giant')).toBe(true);
+      expect(allowed(s, spec, 0, 'Hill Giant')).toBe(false);
+      expect(allowed(s, spec, 1, 'Shivan Dragon')).toBe(false);
+    }
   });
 });
