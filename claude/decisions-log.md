@@ -43629,3 +43629,57 @@ Pod sweep 49201–49240 (D624's build): 40 of 40 finished, no throw and no stall
 
 The D618 miss (the "equipped creature's controller" row) is pinned in this commit, checked against
 its fault.
+
+## D626 — graveyard returns with a mana-value bound, and a card returning itself to the battlefield
+
+The largest family left in the dump has 476 unread lines naming "from your graveyard to the
+battlefield", and on 285 cards it is the last unread line. The plain target form ("Return target
+creature card from your graveyard to the battlefield") has read since D527. What was left, in two
+pieces:
+
+**1. A mana-value bound in front of the zone.** "Return target creature card with mana value 3 or
+less from your graveyard to the battlefield" (about 20 legal lines). Two things stood in the way:
+- Both graveyard readers, to hand and to the battlefield, required "card from" to be adjacent, so
+  the bound never matched.
+- They added "in your graveyard" **after** the phrase, while `targetSpecFrom` peels a mana-value
+  clause only off the end (D492).
+
+Now the regexes allow the bound, and `graveyardPhrase` puts the zone before it. The bound itself is
+D492's, read off the printed mana cost.
+
+**2. A card returning itself to the battlefield as an activated ability.** "{1}{B}: Return Bone
+Dragon from your graveyard to the battlefield tapped", Advanced Stitchwing, and Necrosavant (upkeep
+only, D509's timing). `graveyardSelfReturn` read only "to your hand"; it now reads the battlefield as
+well, tapped or not, under your control. It does nothing if the card has left the graveyard by the
+time the ability resolves (CR 400.7). The `fromGraveyard` cost marker that `graveyardSelfReturn`
+already produced puts the button on the card in the graveyard and not on a copy on the battlefield.
+
+**Still unread:**
+- "With mana value X or less".
+- "With total mana value".
+- Returns triggered from the graveyard ("At the beginning of your upkeep, return ~ from your
+  graveyard to the battlefield"), which need graveyard-active triggers.
+- "With a finality counter on it" and "attached to that creature" riders, still refused per D527.
+
+**Tests.** 4 new engine tests:
+- To the battlefield: mana value 2 or less takes the Swiftspear and not the Hill Giant, and only
+  from your graveyard.
+- To your hand with "3 or greater".
+- The Stitchwing is offered from the graveyard, not from the battlefield, and comes back tapped.
+- Exiled in response, it stays in exile.
+
+Faults injected by hand, each caught:
+- The bound dropped while the zone was moved.
+- "Tapped" ignored.
+- The graveyard check on resolution removed.
+
+    engine tests: 4,414, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,424 of 31,653 (was 10,390); lines read 28,686 of 59,306 (48.4%, was 28,636)
+
+Pod sweep 49301–49340 (D625's build): 40 of 40 finished, no throw and no stall.
+
+**Break run on D625's build:** 4 of 5 caught. The miss lets the power or toughness bound attach to a
+non-creature target kind. It will be pinned with the next increment.

@@ -47403,3 +47403,78 @@ describe('a power or toughness bound on a target (D625)', () => {
     }
   });
 });
+
+describe('graveyard returns with a mana-value bound, and a card returning itself to the battlefield (D626)', () => {
+  const spell = (name: string, text: string) => ({
+    name, type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const specOf = (text: string) => {
+    const read = compileCard(spell('Test Recall', text) as never);
+    expect(read.ok && read.unread).toEqual([]);
+    return read.ok ? read.script?.targets?.[0] : undefined;
+  };
+  const yard = () => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'ember-rush' },
+    graveyard: { 0: ['Monastery Swiftspear', 'Hill Giant'], 1: ['Monastery Swiftspear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const allowed = (s: GameState, spec: ReturnType<typeof specOf>, seat: SeatIndex, name: string) =>
+    spec!.filter!(s, { kind: 'card', id: find(s, seat, 'graveyard', name) }, 0 as SeatIndex, 'none');
+
+  it('to the battlefield: mana value 2 or less takes the Swiftspear and not the Giant, and only from your graveyard', () => {
+    const spec = specOf('Return target creature card with mana value 2 or less from your graveyard to the battlefield.');
+    const s = yard();
+    expect(allowed(s, spec, 0, 'Monastery Swiftspear')).toBe(true);
+    expect(allowed(s, spec, 0, 'Hill Giant')).toBe(false);
+    expect(allowed(s, spec, 1, 'Monastery Swiftspear')).toBe(false);
+  });
+
+  it('to your hand, the same bound', () => {
+    const spec = specOf('Return target creature card with mana value 3 or greater from your graveyard to your hand.');
+    const s = yard();
+    expect(allowed(s, spec, 0, 'Hill Giant')).toBe(true);
+    expect(allowed(s, spec, 0, 'Monastery Swiftspear')).toBe(false);
+  });
+
+  const STITCH = {
+    name: 'Test Stitchwing', type_line: 'Creature — Zombie Horror', mana_cost: '{3}{U}', cmc: 4, colors: ['U'], layout: 'normal',
+    power: '3', toughness: '4', oracle_text: 'Flying\n{1}: Return Test Stitchwing from your graveyard to the battlefield tapped.',
+  };
+  const deck = customDeck({
+    id: 'stitch', name: 'Stitch', entries: [{ name: 'Test Stitchwing', count: 2 }, { name: 'Island', count: 58 }], data: [STITCH] as never[],
+  });
+
+  it('a card brings itself back from the graveyard, tapped, and not from the battlefield', () => {
+    expect(deck.unknown).toEqual([]);
+    let s = advanceTo(arena({
+      decks: { 0: 'stitch', 1: 'stitch' }, deckSpecs: { stitch: deck.deck },
+      battlefield: { 0: ['Island', 'Island', 'Test Stitchwing'] }, graveyard: { 0: ['Test Stitchwing'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const onField = find(s, 0, 'battlefield', 'Test Stitchwing');
+    const inYard = find(s, 0, 'graveyard', 'Test Stitchwing');
+    const offers = (state: GameState, card: string) => legalActions(state, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === card).length;
+    expect(offers(s, onField)).toBe(0);
+    expect(offers(s, inYard)).toBe(1);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: inYard, abilityIndex: 0 } as Action)), 20);
+    const back = namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Stitchwing').length;
+    expect(back).toBe(2);
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Stitchwing');
+    const returned = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Stitchwing' && id !== onField);
+    expect(returned.length).toBe(1);
+    expect(s.instances[returned[0]!]?.tapped).toBe(true);
+  });
+
+  it('does nothing if the card has left the graveyard before it resolves (CR 400.7)', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'stitch', 1: 'stitch' }, deckSpecs: { stitch: deck.deck },
+      battlefield: { 0: ['Island', 'Island'] }, graveyard: { 0: ['Test Stitchwing'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const inYard = find(s, 0, 'graveyard', 'Test Stitchwing');
+    s = apply(s, { type: 'auto:activate', by: 0, card: inYard, abilityIndex: 0 } as Action);
+    // Exiled in response, as a Bojuka Bog or a Relic would.
+    s = apply(s, { type: 'card:move', by: 0, card: inYard, toZone: 'exile' } as Action);
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Stitchwing');
+    expect(namesIn(s, 0, 'exile')).toContain('Test Stitchwing');
+  });
+});

@@ -19778,11 +19778,11 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     target *count* that is X, where the engine's X is a cost).
   */
   const raised = new RegExp(
-    `^return (${TARGET_QUANTIFIER_PREFIX}target .*?cards?) from your graveyard to your hand$`,
+    `^return (${TARGET_QUANTIFIER_PREFIX}target .*?cards?(?: with mana value \\d+ or (?:less|greater))?) from your graveyard to your hand$`,
     'i',
   ).exec(text);
   if (raised !== null) {
-    const spec = targetSpecFrom(`${raised[1]!} in your graveyard`, false);
+    const spec = targetSpecFrom(graveyardPhrase(raised[1]!, 'your'), false);
     if (spec !== null && POINTS_AT_A_GRAVEYARD_CARD.has(spec.kind)) {
       return {
         targets: [spec],
@@ -19815,14 +19815,14 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     would be a strictly better card than the one printed.
   */
   const reanimated =
-    /^return target (.*?)card from (your|a|an opponent's) graveyard to the battlefield( tapped)?$/i
+    /^return target (.*?)card( with mana value \d+ or (?:less|greater))? from (your|a|an opponent's) graveyard to the battlefield( tapped)?$/i
       .exec(text);
   if (reanimated !== null) {
     const spec = targetSpecFrom(
-      `target ${reanimated[1]!}card in ${reanimated[2]!.toLowerCase()} graveyard`, false,
+      graveyardPhrase(`target ${reanimated[1]!}card${reanimated[2] ?? ''}`, reanimated[3]!.toLowerCase()), false,
     );
     if (spec !== null) {
-      const tapped = reanimated[3] !== undefined;
+      const tapped = reanimated[4] !== undefined;
       return {
         targets: [spec],
         effect: (c) => {
@@ -21674,12 +21674,44 @@ function activationRestriction(
  * `c.source` is the card paying for the ability, which is the card in the graveyard: the same
  * identity unearth's cost spends. So the effect needs nothing from the clause beyond having matched.
  */
+/**
+ * "target creature card with mana value 3 or less" and whose graveyard it is in, as the phrase
+ * `targetSpecFrom` reads (D626): the zone goes before the bound.
+ *
+ * `targetSpecFrom` peels a mana-value clause off the **end** of a phrase (D492), and the graveyard
+ * readers used to add "in your graveyard" after it, so "Return target creature card with mana value
+ * 3 or less from your graveyard to the battlefield" hid its own bound and went unread (about 20
+ * legal lines: Sun Titan's family, Reveillark's cousins, Unearth-style spells). Moving the clause
+ * to the end is all it takes; the bound itself is D492's, read off the printed mana cost.
+ */
+function graveyardPhrase(head: string, whose: string): string {
+  const bound = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(head.trim());
+  return bound === null
+    ? `${head.trim()} in ${whose} graveyard`
+    : `${bound[1]!} in ${whose} graveyard with mana value ${bound[2]!} or ${bound[3]!}`;
+}
+
 function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
   const matched = new RegExp(
-    `^return (?:${selfRef(name)}|this card) from your graveyard to your hand$`, 'i',
+    `^return (?:${selfRef(name)}|this card) from your graveyard to (your hand|the battlefield)( tapped)?$`, 'i',
   ).exec(plain(clause).trim());
   if (matched === null) return null;
-  return { effect: (c) => bounceToHand(c.state, c.source) };
+  if (matched[1]!.toLowerCase() === 'your hand') {
+    return matched[2] === undefined ? { effect: (c) => bounceToHand(c.state, c.source) } : null;
+  }
+  /*
+    **To the battlefield** (D626): "{1}{B}: Return Bone Dragon... from your graveyard to the
+    battlefield tapped", Advanced Stitchwing, Necrosavant's upkeep-only one. About 20 legal lines.
+    Under your control (CR 701.17a's reading of "to the battlefield" with no owner named), and only
+    if the card is still in the graveyard when the ability resolves: exiled in response, it is a new
+    object somewhere else (CR 400.7) and the ability does nothing.
+  */
+  const tapped = matched[2] !== undefined;
+  return {
+    effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
+      ? putOntoBattlefield(c.state, c.source, c.controller, tapped ? { tapped: true } : {})
+      : c.state),
+  };
 }
 
 /** What "affinity for <phrase>" counts, as a test of one permanent, or `null` (D597). */
