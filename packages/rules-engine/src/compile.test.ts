@@ -17200,15 +17200,15 @@ describe('the Flanking keyword line (D554)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 
-  it('leaves a tribal static that grants flanking unread, and reads the two grants that do work', () => {
+  it('reads the tribal static that grants flanking (D620), and the two grants that did already', () => {
     /*
       Measured rather than claimed, because the KEYWORDS note says which grants came along and a
       note like that is exactly the kind that rots.
 
       Jabari's Banner ("gains flanking until end of turn") and Agility ("has flanking") read now,
       because every grant reader asks `isKeyword` and the answer changed when the word joined the
-      list. Sidewinder Sliver's "All Sliver creatures have flanking" does not: a tribal static is a
-      shape nothing reads yet, and it is **reported** rather than guessed at (D362).
+      list. Sidewinder Sliver's "All Sliver creatures have flanking" was reported unread until D620
+      read group statics: it is a static over every Sliver, whoever controls it.
     */
     const banner = compileCard({
       name: "Jabari's Banner", type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
@@ -17224,7 +17224,8 @@ describe('the Flanking keyword line (D554)', () => {
     });
     expect(sliver.ok).toBe(true);
     if (sliver.ok) {
-      expect(sliver.unread.map((u) => u.line)).toEqual(['All Sliver creatures have flanking.']);
+      expect(sliver.unread).toEqual([]);
+      expect(sliver.script?.statics?.[0]?.scope).toEqual({ subtype: 'Sliver', everyone: true });
     }
   });
 

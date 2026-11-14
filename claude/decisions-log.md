@@ -43242,3 +43242,81 @@ Each of the following was broken on purpose and its test failed:
 ### Measurements (rebuilt corpus)
 
     cards fully read 10,018 of 31,653 (was 10,015); lines read 28,141 of 59,306 (47.5%, was 28,132)
+
+## D620 — Statics over a group of creatures; Class, Case and Station lines kept off the card
+
+**The largest family left in one reader.** On the rebuilt corpus, 746 legal lines open with a group
+and "get" or "have", and 367 of them were the only thing a card had left. `staticFromLine` read
+exactly one of them, the plain anthem "Creatures you control get +1/+1". Lords ("Other Goblin
+creatures you control get +1/+1"), tribal keyword grants ("Elves you control have haste"), Slivers
+("All Slivers have …") and quoted grants ("Creatures you control have '{T}: Add {G}.'") were all
+unread.
+
+**`groupStaticFromLine`** reads the subject into a static scope the engine already had:
+- your creatures, and other creatures you control;
+- your creatures of a type, optionally "other". The plural goes back to the type with
+  `singularCreatureType`: Goblins, Elves, Wolves, Zombies.
+- every creature;
+- and one new scope: every creature **of a type, whoever controls it**, which is "All Slivers".
+  This is `everyone` on the subtype scope; `applyStatics` passes it and `effectApplies` drops the
+  controller check for it.
+
+The predicate is the self-static grammar in the plural. It is singularised and read by
+`thresholdPredicate`: a size, keywords, protection from a colour, "can't block". A quoted ability
+goes through `grantedTriggerFrom` / `grantedAbilityFrom` with the grantor guard on, and the static
+carries `grants` / `grantsAbilities`. A quoted mana ability becomes a mana source on every creature
+that gets it.
+
+Anything the predicate reader refuses still refuses the line: "until end of turn", a count, a
+condition, a non-creature group ("Lands you control", "Artifacts you control") and a quality that is
+not a creature type ("Nontoken creatures", "Artifact creatures").
+
+### Three layouts read as the card's own, found by reviewing what newly read
+
+Checking a sample of the 411 newly read lines turned up Barbarian Class: "Creatures you control have
+haste" is its **level 3** line. The same is true of every Class line under a level header, for any
+reader, and it predates this increment. Wizard Class's level-3 draw trigger had been firing from
+level 1. Looking for the same shape found two more:
+- **Class levels.** `compile.ts` now reports every line from the first "{cost}: Level N" on a Class
+  as unread, the way D572 does for leveler bands. Nothing reads class levels yet.
+- **Case cards.** "Solved —" is a state, not a condition the sentence restates, but
+  `withoutAbilityWord` stripped it like any label, so Case of the Trampled Garden's attack trigger
+  was on from the start. "Solved" and "To solve" are now in `NOT_AN_ABILITY_WORD`.
+- **Spacecraft and Planets.** A "STATION 7+" band is a leveler band in another shape, and 58 legal
+  Spacecraft had the "Flying" under one read as their own. `LEVEL_BAND_HEADER` now matches station
+  bands too, so both the compiler and the printed-keyword reader stop there.
+
+Together these took 79 wrongly counted lines back out of the measurement.
+
+**Tests.** 8 new engine tests:
+- The rows read.
+- A lord pumps the others of its type you control, not itself and not an opponent's.
+- "Elves you control" is the plural of Elf.
+- "All Slivers" reaches an opponent's Sliver and not a Goblin.
+- A quoted ability is granted to an opponent's Sliver.
+- A quoted trigger is granted.
+- A granted mana ability makes mana.
+- Class, Case and Station lines are not the card's own.
+
+Each of the following was broken on purpose and its test failed:
+- `everyone` ignored.
+- "Other" dropped.
+- Irregular plurals unread.
+- The Class guard removed.
+- The Case labels removed. At first this fault passed: the test used a static line, which never
+  goes through the label stripper. It now uses a trigger line.
+- The station header removed.
+- Quoted triggers dropped. At first this passed too, with no test for it; one was added.
+
+The Sidewinder Sliver row in `compile.test.ts` asserted the tribal static unread and now asserts its
+reading.
+
+    engine tests: 4,383, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,224 of 31,653 (was 10,018; +206); lines read 28,428 of 59,306 (47.9%, was 28,141)
+
+Pod sweep 48601–48640 (D618's build): 40 of 40 finished, no throw and no stall.
+
+Break run on D618's build, the first with the rewritten harness: 5 deliberate faults, 5 caught.

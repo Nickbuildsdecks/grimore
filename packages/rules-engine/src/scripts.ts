@@ -22314,6 +22314,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
  */
 const NOT_AN_ABILITY_WORD: readonly string[] = [
   ...KEYWORD_ABILITY_NAMES, 'ward', 'channel', 'i', 'ii', 'iii', 'iv', 'v',
+  /*
+    A Case's two labels (D620): "Solved —" is a **state** the Case is in, not a condition
+    the sentence after it restates, so stripping it made Case of the Trampled Garden attack-trigger
+    as if it had always been solved. "To solve —" is the condition itself. Nothing reads Cases yet,
+    so both stay on and their lines stay unread.
+  */
+  'solved', 'to solve',
 ];
 
 /**
@@ -22986,6 +22993,96 @@ function staticFromLine(line: string): Partial<CardScript> | null {
 }
 
 /**
+ * A creature type named in the plural, back to its singular (D620): "Goblins", "Elves", "Dwarves",
+ * "Wolves", "Zombies". Only a word that is a creature type in the singular is answered.
+ */
+function singularCreatureType(word: string): string | null {
+  for (const candidate of [word, word.replace(/s$/, ''), word.replace(/es$/, ''), word.replace(/ves$/, 'f'), word.replace(/ies$/, 'y')]) {
+    if (isCreatureType(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * **A static over a group** (D620): "Other Goblin creatures you control get +1/+1", "Elves you
+ * control have haste", "Creatures you control get +1/+1 and have trample", "All Slivers have
+ * 'Sacrifice this permanent: Add {B}{B}'" — 746 legal lines, half of them the only thing a card had
+ * left. `staticFromLine` read the plain anthem and nothing else.
+ *
+ * The subject is one of the static scopes the engine already has: your creatures, other creatures
+ * you control, your creatures of a type (with "other"), or — for "All Slivers" — creatures of a
+ * type whoever controls them (`everyone`). The predicate is the self-static one in the plural, so
+ * it is singularised and read by `thresholdPredicate`; a quoted ability goes through the two grant
+ * readers with the grantor guard **on**, because the quote names the creature that gets it.
+ * Anything the predicate reader refuses — "until end of turn", a count, a condition — refuses the
+ * line.
+ */
+function groupStaticFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  type Scope = NonNullable<CardScript['statics']>[number]['scope'];
+  let scope: Scope | null = null;
+  let predicate = '';
+  const yours = /^(other )?(?:creatures|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) you control (get|have) (.+)$/i.exec(text);
+  const everyone = /^All (?:([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) (get|have) (.+)$/.exec(text);
+  const allCreatures = /^All creatures (get|have) (.+)$/i.exec(text);
+  if (allCreatures !== null) {
+    scope = 'all-creatures';
+    predicate = `${allCreatures[1]!.toLowerCase()} ${allCreatures[2]}`;
+  } else if (yours !== null) {
+    const other = yours[1] !== undefined;
+    let typed: string | undefined;
+    if (yours[2] !== undefined) {
+      if (!isCreatureType(yours[2])) return null;
+      typed = yours[2];
+    } else if (yours[3] !== undefined && !/^creatures$/i.test(yours[3])) {
+      const single = singularCreatureType(yours[3]);
+      if (single === null) return null;
+      typed = single;
+    }
+    scope = typed === undefined
+      ? (other ? 'other-controller-creatures' : 'controller-creatures')
+      : { subtype: typed, ...(other ? { other: true } : {}) };
+    predicate = `${yours[4]!.toLowerCase()} ${yours[5]}`;
+  } else if (everyone !== null) {
+    const typed = everyone[1] ?? singularCreatureType(everyone[2]!);
+    if (typed === null || !isCreatureType(typed)) return null;
+    scope = { subtype: typed, everyone: true };
+    predicate = `${everyone[3]} ${everyone[4]}`;
+  }
+  if (scope === null) return null;
+  // The plural verbs, singular: the predicate grammar is the self-static one.
+  const singular = predicate.replace(/^get /, 'gets ').replace(/^have /, 'has ').replace(/ and have /g, ' and has ');
+  const quoted = /^(?:(.*?)\s+and\s+)?has\s+"([^"]+)"$/i.exec(singular);
+  let effect: PumpOptions;
+  let grantedTriggers: readonly TriggerDef[] | null = null;
+  let grantedAbilities: readonly AbilityDef[] | null = null;
+  if (quoted === null) {
+    const read = thresholdPredicate(singular);
+    if (read === null) return null;
+    effect = read;
+  } else {
+    grantedTriggers = grantedTriggerFrom(quoted[2]!, name);
+    grantedAbilities = grantedTriggers !== null ? null : grantedAbilityFrom(quoted[2]!, name);
+    if (grantedTriggers === null && grantedAbilities === null) return null;
+    const head = quoted[1] === undefined ? {} : thresholdPredicate(quoted[1]);
+    if (head === null) return null;
+    effect = head;
+  }
+  return {
+    statics: [{
+      scope,
+      effect: {
+        ...effect,
+        ...(grantedTriggers === null ? {} : { grants: grantedTriggers.map((_, i) => i) }),
+        ...(grantedAbilities === null ? {} : { grantsAbilities: grantedAbilities.map((_, i) => i) }),
+      },
+    }],
+    ...(grantedTriggers === null ? {} : { grantedTriggers }),
+    ...(grantedAbilities === null ? {} : { grantedAbilities }),
+  };
+}
+
+/**
  * "~ enters the battlefield with N counters on it" (CR 614.1c), as a printed sentence.
  *
  * `entersWith` already existed and three keywords already built it — modular, vanishing and fading
@@ -23633,6 +23730,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? becomesDayFromLine(line, name)
     ?? entersAsCopyFromLine(line, name)
     ?? staticFromLine(line)
+    ?? groupStaticFromLine(line, name)
     ?? conditionalStaticFromLine(line, name)
     /*
       Before `definesSizeFromLine`, which would not match it anyway — but the order says which is

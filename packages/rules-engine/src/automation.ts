@@ -5056,6 +5056,7 @@ function applyStatics(
         ? {
             kind: 'controller-subtype', subtype: entry.scope.subtype,
             ...(entry.scope.other === true ? { other: true as const } : {}),
+            ...(entry.scope.everyone === true ? { everyone: true as const } : {}),
           }
       : entry.scope === 'self' ? { kind: 'cards', ids: [id] }
       : entry.scope === 'controller-creatures' ? { kind: 'controller-creatures' }

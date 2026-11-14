@@ -40,7 +40,7 @@ import {
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
 import { costChangeFor } from './legalActions.js';
-import { colourIdentity, commanderIdentity } from './characteristics.js';
+import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -46885,5 +46885,94 @@ describe('the rest of the step prologues (D619)', () => {
     expect(life(s, 0)).toBe(20);
     s = drain(advanceTo(s, 'end'), 20);
     expect(life(s, 0)).toBe(21);
+  });
+});
+
+describe('statics over a group of creatures (D620)', () => {
+  /*
+    `groupStaticFromLine`: your creatures, other creatures you control, your creatures of a type,
+    every creature of a type ("All Slivers"), every creature — getting a size, keywords, or a quoted
+    ability. And three layouts whose lines must not read as the card's own from the start: a Class
+    above its level, a Case before it is solved, a Spacecraft below its station.
+  */
+  const card = (name: string, type: string, text: string, pt: [string, string] | null = ['1', '1']) => ({
+    name, type_line: type, mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: pt === null ? null : pt[0], toughness: pt === null ? null : pt[1], oracle_text: text,
+  });
+  const LORD = card('Test Lord', 'Creature — Goblin', 'Other Goblin creatures you control get +1/+1.');
+  const GOBLIN = card('Test Goblin', 'Creature — Goblin', '');
+  const HASTE = card('Test Elf Banner', 'Enchantment', 'Elves you control have haste.', null);
+  const ELF = card('Test Elf', 'Creature — Elf', '');
+  const SPEED = card('Test Speed Sliver', 'Creature — Sliver', 'All Sliver creatures have flying.');
+  const SLIVER = card('Test Sliver', 'Creature — Sliver', '');
+  const PUMP = card('Test Pump Sliver', 'Creature — Sliver', 'All Slivers have "{1}: This creature gets +1/+0 until end of turn."');
+  const ROOTS = card('Test Roots', 'Enchantment', 'Creatures you control have "{T}: Add {G}."', null);
+  const ROWS = [LORD, GOBLIN, HASTE, ELF, SPEED, SLIVER, PUMP, ROOTS];
+  const deck = customDeck({
+    id: 'groups', name: 'Groups',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'groups', 1: 'groups' }, deckSpecs: { groups: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ch = (s: GameState, seat: SeatIndex, name: string) => characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('a lord pumps the others of its type you control, not itself and not theirs', () => {
+    const s = table(['Test Lord', 'Test Goblin'], ['Test Goblin']);
+    expect(ch(s, 0, 'Test Goblin').power).toBe(2);
+    expect(ch(s, 0, 'Test Lord').power).toBe(1);
+    expect(ch(s, 1, 'Test Goblin').power).toBe(1);
+  });
+
+  it('"Elves you control" is the plural of Elf', () => {
+    const s = table(['Test Elf Banner', 'Test Elf', 'Test Goblin']);
+    expect(ch(s, 0, 'Test Elf').keywords.has('haste')).toBe(true);
+    expect(ch(s, 0, 'Test Goblin').keywords.has('haste')).toBe(false);
+  });
+
+  it('"All Slivers" reaches every Sliver, whoever controls it, and only Slivers', () => {
+    const s = table(['Test Speed Sliver', 'Test Goblin'], ['Test Sliver']);
+    expect(ch(s, 1, 'Test Sliver').keywords.has('flying')).toBe(true);
+    expect(ch(s, 0, 'Test Speed Sliver').keywords.has('flying')).toBe(true);
+    expect(ch(s, 0, 'Test Goblin').keywords.has('flying')).toBe(false);
+  });
+
+  it('a quoted ability is granted to each Sliver, an opponent\'s included', () => {
+    const s = table(['Test Pump Sliver'], ['Test Sliver', 'Forest']);
+    const theirs = find(s, 1, 'battlefield', 'Test Sliver');
+    expect(grantedAbilitiesOn(s, s.instances[theirs]!).length).toBe(1);
+  });
+
+  it('a quoted triggered ability is granted too', () => {
+    const read = compileCard(card('Test Rally', 'Enchantment', 'Creatures you control have "Whenever this creature attacks, you gain 1 life."', null) as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.grantedTriggers?.length).toBe(1);
+    expect(read.ok && read.script?.statics?.[0]?.effect.grants).toEqual([0]);
+  });
+
+  it('a granted mana ability makes mana', () => {
+    const s = table(['Test Roots', 'Test Elf']);
+    const elf = find(s, 0, 'battlefield', 'Test Elf');
+    expect(manaSources(s, 0).some((source) => source.key === elf && source.produces.includes('G'))).toBe(true);
+  });
+
+  it('a Class above its first level, a Case once solved, and a station band are not the card\'s own', () => {
+    const klass = compileCard(card('Test Class', 'Enchantment — Class', 'Creatures you control have vigilance.\n{1}{G}: Level 2\nCreatures you control have haste.', null) as never);
+    expect(klass.ok && klass.unread.map((u) => u.line)).toEqual(['{1}{G}: Level 2', 'Creatures you control have haste.']);
+    // A trigger, because the trigger reader is the one that takes an ability word off.
+    const caseCard = compileCard(card('Test Case', 'Enchantment — Case', 'To solve — You control three or more creatures.\nSolved — Whenever you attack, you gain 1 life.', null) as never);
+    expect(caseCard.ok && caseCard.unread.map((u) => u.line)).toContain('Solved — Whenever you attack, you gain 1 life.');
+    const ship = card('Test Ship', 'Artifact — Spacecraft', 'Station\nSTATION 7+\nFlying\n4/4', null);
+    expect([...printedKeywords(ship.oracle_text)]).not.toContain('flying');
   });
 });

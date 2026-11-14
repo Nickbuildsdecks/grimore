@@ -3221,7 +3221,8 @@ export interface CardScript {
   readonly statics?: readonly {
     readonly scope:
       | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
-      | { readonly subtype: string; readonly other?: boolean };
+      /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
+      | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean };
     readonly effect: PumpOptions;
   }[];
   /**

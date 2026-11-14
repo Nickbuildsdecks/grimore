@@ -474,7 +474,13 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
  *
  * Both forms are matched, so a pool card written the old way stops here too.
  */
-export const LEVEL_BAND_HEADER = /^LEVEL \d+(?:-\d+|\+)(?![\w/])/i;
+/*
+  And a Spacecraft's or Planet's **station** band, "STATION 7+" (D620): the same shape, and the same
+  problem — the "Flying" and the size under it belong to the permanent only once it has that many
+  charge counters. 58 legal Spacecraft printed a keyword under a band and had it read
+  as their own from the start.
+*/
+export const LEVEL_BAND_HEADER = /^(?:LEVEL \d+(?:-\d+|\+)|STATION \d+\+)(?![\w/])/i;
 
 const PARTS_CACHE = new Map<string, readonly PrintedPart[]>();
 const PARTS_CACHE_CAP = 200_000;
@@ -1212,6 +1218,8 @@ export interface ContinuousEffect {
     | {
         readonly kind: 'controller-subtype';
         readonly subtype: string;
+        /** "All Slivers": every creature of the type, whoever controls it (D620). */
+        readonly everyone?: true;
         /** "**Other** Goblin creatures", which is how almost every lord is worded. */
         readonly other?: boolean;
       }
@@ -1905,7 +1913,7 @@ function effectApplies(
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':
-      return creature && instance.zoneSeat === effect.controller
+      return creature && (effect.scope.everyone === true || instance.zoneSeat === effect.controller)
         && !(effect.scope.other === true && instance.id === effect.source)
         && hasSubtype(typeLine, effect.scope.subtype);
     case 'all-creatures':

@@ -493,7 +493,19 @@ function compileSingle(row: CardDataRow): Compilation {
     and nothing under it is offered to a reader. `levelBands` on the definition is the engine's
     reading of a band; nothing fills it from printed text yet, and an unread line is what says so.
   */
-  const firstBand = lines.findIndex((line) => LEVEL_BAND_HEADER.test(line));
+  /*
+    And a **Class**'s levels (D620), which are the same problem in a different shape: every
+    line after "{1}{R}: Level 2" is an ability the Class has only from that level on. Read line by
+    line, Barbarian Class gave its creatures haste — its level-3 line — from the turn it was cast,
+    once D620 could read that line at all. Nothing reads class levels yet, so from the first level
+    header to the end of the card every line is reported, and the level-1 lines above it read as
+    the card's own. The header itself is an activated ability with no effect this engine has.
+  */
+  const classLevel = hasType(typeLine, 'enchantment') && /\bClass\b/.test(def.typeLine ?? '')
+    ? lines.findIndex((line) => /^(?:\{[^}]+\})+: Level \d+$/i.test(line.trim()))
+    : -1;
+  const leveled = lines.findIndex((line) => LEVEL_BAND_HEADER.test(line));
+  const firstBand = leveled >= 0 && classLevel >= 0 ? Math.min(leveled, classLevel) : Math.max(leveled, classLevel);
 
   for (const [index, line] of lines.entries()) {
     if (claimed.has(line)) continue;
