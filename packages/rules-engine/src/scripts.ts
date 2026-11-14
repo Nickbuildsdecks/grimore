@@ -15569,6 +15569,39 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^At the beginning of each opponent's end step, (.+)$/i,
     on: [{ kind: 'step', step: 'end', of: 'opponent' }],
   },
+  /*
+    D619: the rest of D434's table, each a step the engine has always had with an `of` that now
+    exists. "Each of your postcombat main phases" is plural on cards that also grant extra combats;
+    this engine's turn has one postcombat main, so the trigger fires on every one there is.
+  */
+  {
+    prologue: () => /^At the beginning of combat on each opponent['’]s turn, (.+)$/i,
+    on: [{ kind: 'step', step: 'begin-combat', of: 'opponent' }],
+  },
+  {
+    prologue: () => /^At the beginning of each opponent's draw step, (.+)$/i,
+    on: [{ kind: 'step', step: 'draw', of: 'opponent' }],
+  },
+  {
+    prologue: () => /^At the beginning of each combat, (.+)$/i,
+    on: [{ kind: 'step', step: 'begin-combat', of: 'any' }],
+  },
+  {
+    prologue: () => /^At the beginning of each (?:player's )?draw step, (.+)$/i,
+    on: [{ kind: 'step', step: 'draw', of: 'any' }],
+  },
+  {
+    prologue: () => /^At the beginning of (?:your second main phase|your postcombat main phase|each of your postcombat main phases), (.+)$/i,
+    on: [{ kind: 'step', step: 'postcombat-main', of: 'you' }],
+  },
+  {
+    prologue: () => /^At the beginning of your precombat main phase, (.+)$/i,
+    on: [{ kind: 'step', step: 'precombat-main', of: 'you' }],
+  },
+  {
+    prologue: () => /^At the beginning of each player's (?:precombat|first) main phase, (.+)$/i,
+    on: [{ kind: 'step', step: 'precombat-main', of: 'any' }],
+  },
   {
     prologue: () => /^At the beginning of the upkeep of (?:enchanted|equipped) (?:creature|permanent|artifact|land|enchantment)'s controller, (.+)$/i,
     on: [{ kind: 'step', step: 'upkeep', of: 'enchanted-controller' }],

@@ -6978,34 +6978,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(triggers[0]!.on).toEqual({ kind: 'step', step, of: 'you' });
     });
 
-    // "each opponent's upkeep" reads since D618, as `of: 'opponent'` — see the step table below.
-    it.each([
-      ["At the beginning of each opponent's draw step, draw a card."],
-      ['At the beginning of combat on each opponent\'s turn, draw a card.'],
-    ])('leaves %s alone, because "your" is the half that is the rule', (text) => {
-      /*
-        `each opponent's` is still read by nothing: `of: 'you'` is wrong for it and `of: 'any'` is
-        wrong too, so it stays unread (D362) rather than firing on the wrong turn. D434 measured
-        what the missing third value would buy — 43 printed lines, **no** card whose body this
-        compiler can finish — and declined to add `of: 'opponent'` on that count; `TriggerDef`'s
-        `step` docblock carries the figure.
-
-        One row per *new* prologue as well as the upkeep, which a break run is what established:
-        widening only the draw-step pattern to "each opponent's" failed nothing while this described
-        the upkeep alone, so the claim "of: 'you' is the card saying your" was asserted for one
-        prologue and assumed for the other two.
-
-        **"At the beginning of each end step" was the fourth row here and has been removed, because
-        it is now read** (D434): `of: 'any'` is exactly right for it, 152 printed lines say it in
-        three spellings, and 17 of those cards compile whole. This row had encoded a *gap* as a
-        rule — "'your' is the half that is the rule" was true of what the compiler did, not of
-        Magic — and a test that pins a gap fails the day the gap closes, which is this one. The new
-        reading has its own table in `the step of the turn, read off the prologue`.
-      */
-      const read = card(text as string, 'Creature — Human Soldier');
-      expect(read.ok).toBe(true);
-      if (read.ok) expect(read.unread).toHaveLength(1);
-    });
+    /*
+      A table of "each opponent's …" refusals stood here, asserting "'your' is the half that is the
+      rule". It pinned a gap, not a rule: D618 added `of: 'opponent'`, D619 read the draw step and
+      combat on each opponent's turn, and the mappings are asserted in the step table below.
+    */
   });
   /*
     Third batch off the corpus queue (D429): cycling, and landfall.
@@ -7483,11 +7460,6 @@ describe('the step of the turn, read off the prologue', () => {
     */
     // "each opponent's upkeep", "each opponent's end step" and "the upkeep of enchanted creature's
     // controller" read since D618: `of: 'opponent'` and `of: 'enchanted-controller'`.
-    ['combat on each opponent’s turn', 'the apostrophe Scryfall prints is not even this one'],
-    ['each combat', '27 lines, 0 cards'],
-    ["each player's draw step", '13 lines, 0 cards'],
-    ['your second main phase', '10 lines, 0 cards'],
-    ['each of your postcombat main phases', 'a turn structure this engine does not have'],
     ['your next upkeep', 'a delayed trigger, scheduled rather than printed'],
   ])('leaves "At the beginning of %s" unread: %s', (prologue) => {
     const read = permanent(`At the beginning of ${prologue}, you gain 1 life.`);
@@ -7502,6 +7474,14 @@ describe('the step of the turn, read off the prologue', () => {
     ["each opponent's end step", 'end', 'opponent'],
     ["the upkeep of enchanted creature's controller", 'upkeep', 'enchanted-controller'],
     ["the end step of enchanted creature's controller", 'end', 'enchanted-controller'],
+    // D619.
+    ['combat on each opponent’s turn', 'begin-combat', 'opponent'],
+    ["each opponent's draw step", 'draw', 'opponent'],
+    ['each combat', 'begin-combat', 'any'],
+    ["each player's draw step", 'draw', 'any'],
+    ['your second main phase', 'postcombat-main', 'you'],
+    ['each of your postcombat main phases', 'postcombat-main', 'you'],
+    ["each player's precombat main phase", 'precombat-main', 'any'],
   ])('reads "At the beginning of %s" as %s, of %s (D618)', (prologue, step, of) => {
     const read = permanent(`At the beginning of ${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);

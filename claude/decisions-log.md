@@ -43196,3 +43196,49 @@ failed in `packages/db`. Setting both locally (this session's own database, noth
     D618:           cards fully read 10,015 of 31,653; lines read 28,132 of 59,306 (47.4%)
 
 Pod sweep 48501–48540 (D617's build, old corpus): 40 of 40 finished, no throw and no stall.
+
+## D619 — The rest of the step prologues
+
+D434's step table held back nine spellings for want of `of: 'opponent'` or for want of a card. D618
+added the field, so they read now. Each is a step the engine has always raised (`raise` sends a step
+event for every step, after its turn-based action):
+
+| printed | trigger |
+| --- | --- |
+| combat on each opponent's turn (either apostrophe) | `begin-combat`, opponent |
+| each opponent's draw step | `draw`, opponent |
+| each combat | `begin-combat`, any |
+| each (player's) draw step | `draw`, any |
+| your second main phase / your postcombat main phase / each of your postcombat main phases | `postcombat-main`, you |
+| your precombat main phase | `precombat-main`, you |
+| each player's precombat / first main phase | `precombat-main`, any |
+
+"Each of your postcombat main phases" is plural on cards that grant extra combats. This engine's
+turn has one postcombat main, so the trigger fires on every one there is. "Your next upkeep" is
+still refused: it is a delayed trigger that something else schedules.
+
+**Refusal rows.**
+- The "'your' is the half that is the rule" table pinned a gap rather than a rule, and it is gone;
+  a note says why.
+- The step table asserts the seven new mappings.
+- The `customDeck` unread-line example is now "your next upkeep".
+
+**Tests.** 3 new engine tests:
+- The rows read.
+- Over one round from your upkeep, each watcher fires as often as its words say: each combat 2,
+  combat on an opponent's turn 1, each draw step 2, an opponent's draw step 1, your second main 1,
+  each player's first main 2.
+- The second main phase is after combat: no life at begin combat, +1 by the end step.
+
+Each of the following was broken on purpose and its test failed:
+- The opponent's combat widened to any.
+- Each draw narrowed to yours.
+- The opponent's draw widened.
+- The second main swapped for the first. The round count could not see this one, so the timing test
+  was added for it.
+
+    engine tests: 4,375, all passing
+
+### Measurements (rebuilt corpus)
+
+    cards fully read 10,018 of 31,653 (was 10,015); lines read 28,141 of 59,306 (47.5%, was 28,132)

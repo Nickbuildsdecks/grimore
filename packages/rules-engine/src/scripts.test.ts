@@ -46827,3 +46827,63 @@ describe("upkeep triggers on an opponent's turn and on the enchanted permanent's
     expect(life(s, 0)).toBe(19);
   });
 });
+
+describe('the rest of the step prologues (D619)', () => {
+  /*
+    Combat on each opponent's turn, each opponent's draw step, each combat, each player's draw step,
+    your second main phase and each player's precombat main phase: steps the engine has always
+    raised, with an `of` that D618 made complete. Counted over one round from your upkeep.
+  */
+  const watcher = (name: string, prologue: string) => ({
+    name, type_line: 'Enchantment', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    power: null, toughness: null, oracle_text: `At the beginning of ${prologue}, you gain 1 life.`,
+  });
+  const ROWS = [
+    watcher('Test Each Combat', 'each combat'),
+    watcher('Test Their Combat', "combat on each opponent's turn"),
+    watcher('Test Each Draw', "each player's draw step"),
+    watcher('Test Their Draw', "each opponent's draw step"),
+    watcher('Test Second Main', 'your second main phase'),
+    watcher('Test Each First Main', "each player's precombat main phase"),
+  ];
+  const deck = customDeck({
+    id: 'steps', name: 'Steps',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const gained = (name: string): number => {
+    const s = advanceTo(arena({
+      decks: { 0: 'steps', 1: 'steps' }, deckSpecs: { steps: deck.deck },
+      battlefield: { 0: [name] }, turn: 3, firstSeat: 0,
+    }), 'upkeep');
+    return life(nextTurn(nextTurn(s)), 0) - 20;
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) {
+      const read = compileCard(r as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('each fires as often in one round as its words say', () => {
+    expect(gained('Test Each Combat')).toBe(2);
+    expect(gained('Test Their Combat')).toBe(1);
+    expect(gained('Test Each Draw')).toBe(2);
+    expect(gained('Test Their Draw')).toBe(1);
+    expect(gained('Test Second Main')).toBe(1);
+    expect(gained('Test Each First Main')).toBe(2);
+  });
+
+  it('the second main phase is after combat, not the first one', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'steps', 1: 'steps' }, deckSpecs: { steps: deck.deck },
+      battlefield: { 0: ['Test Second Main'] }, turn: 3, firstSeat: 0,
+    }), 'upkeep');
+    s = drain(advanceTo(s, 'begin-combat'), 20);
+    expect(life(s, 0)).toBe(20);
+    s = drain(advanceTo(s, 'end'), 20);
+    expect(life(s, 0)).toBe(21);
+  });
+});
