@@ -30,7 +30,7 @@ import {
 import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import {
-  FORETELL_COST, MORPH_COST, morphCostText,
+  FORETELL_COST, MORPH_COST, isChoiceDecision, morphCostText,
   type AbilityCost, type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
 import { BESTOW_TARGET, legalTargets } from './targeting.js';
@@ -263,6 +263,11 @@ export interface LegalPlay {
    * land is offered again without it, entering tapped. See `CardScript.payLifeToEnterUntapped`.
    */
   readonly payLife?: true;
+  /**
+   * On a land that chooses a colour as it enters (D642): this row's colour. The land is offered
+   * once per colour it may choose, the way a shock land is offered twice. See `AutoPlayLandAction.choose`.
+   */
+  readonly choose?: string;
   /**
    * For a modal spell: which modes this play takes, as indices into the script's `modal.modes`.
    *
@@ -1105,6 +1110,12 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
         .filter((ability): ability is AbilityDef => ability !== undefined),
     ]) {
       if (ability.produces === undefined) continue;
+      /*
+        "Activate only if …" too, as `manaSources` asks it (D642). Without it a land that makes "one
+        mana of the chosen color" — five abilities, one per colour, four of them off — lit every
+        colour's pip here, and so did a Command Tower outside its commander's identity.
+      */
+      if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
       if (ability.cost.tap) {
         // A creature's tap ability is unavailable while it is summoning sick.
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
@@ -1395,7 +1406,19 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
             ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
             : ''}`
           : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`;
-        if (shock !== undefined) {
+        /*
+          A land that chooses a colour as it enters (D642) is offered once per colour, which is
+          where a land's choice can be made: nothing resolves for it, so there is no question to
+          ask after it is played.
+        */
+        const colourChoice = landScript?.entersChoice === 'color'
+          ? landScript.decisions?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision)
+          : undefined;
+        if (colourChoice !== undefined) {
+          for (const word of colourChoice.options) {
+            out.push({ ...base, description: `${named}, choosing ${word}${tappedNote}`, choose: word });
+          }
+        } else if (shock !== undefined) {
           if ((state.seats[seat]?.life ?? 0) > shock) {
             out.push({ ...base, description: `${named} untapped (pay ${shock} life)`, payLife: true });
           }

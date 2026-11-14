@@ -59,7 +59,7 @@ import { scriptForCard } from './derive.js';
 const playedScript = (state: GameState, id: string | undefined): CardScript | undefined =>
   scriptForCard(state.cardDefs[state.instances[id ?? '']?.defKey ?? '']);
 import {
-  isNumberDecision, type AbilityCost, type AbilityDef, type CardScript,
+  isChoiceDecision, isNumberDecision, type AbilityCost, type AbilityDef, type CardScript,
 } from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
@@ -5228,13 +5228,23 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       return script?.entersUntappedIf === undefined || script.entersUntappedIf.test(state, seat, p.card);
     };
     const ready = offered.find(readyNow);
-    const chosen = ready ?? offered[0] ?? lands.find((p) => p.payLife !== true) ?? lands[0]!;
+    const first = ready ?? offered[0] ?? lands.find((p) => p.payLife !== true) ?? lands[0]!;
+    /*
+      A land that chooses a colour (D642) is one row per colour; the card's own pick decides which
+      row, the answer it would give any other way onto the battlefield.
+    */
+    const rows = lands.filter((p) => p.card === first.card && p.half === first.half && p.choose !== undefined);
+    const script = scriptForCard(landDef(first));
+    const spec = script?.decisions?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision);
+    const pick = rows.length === 0 ? undefined : spec?.best?.(state, seat);
+    const chosen = rows.find((p) => p.choose === pick) ?? first;
     return {
       type: 'auto:playLand', by: seat, card: chosen.card,
       // Which face, for the reason every other half-carrying action says so: without it the engine
       // is told to play the *front* of the card as a land, and refuses the play it just offered.
       ...(chosen.half === undefined ? {} : { half: chosen.half }),
       ...(chosen.payLife === true ? { payLife: true } : {}),
+      ...(chosen.choose === undefined ? {} : { choose: chosen.choose }),
     };
   }
 

@@ -602,6 +602,8 @@ describe('two commanders in one list (D640, CR 702.124)', () => {
       legend('Toothy, Imaginary Friend', 'Partner with Pir'));
     no(legend('Pir', 'Partner with Toothy, Imaginary Friend'), legend('Toothy, Imaginary Friend', 'Partner'));
     no(legend('Pir', 'Partner with Toothy, Imaginary Friend'), legend('Toothy, Imaginary Friend', 'Flying'));
+    // Two "Partner with" cards that each name somebody else are not a pair.
+    no(legend('Pir', 'Partner with Toothy, Imaginary Friend'), legend('Brallin, Skyshark Rider', 'Partner with Shabraki, the Bloodseeker'));
     // A Partner—kind pairs with its own kind only, and not with plain Partner.
     ok(legend('A', 'Partner—Friends forever'), legend('B', 'Partner—Friends forever'));
     no(legend('A', 'Partner—Friends forever'), legend('B', 'Partner—Survivors'));

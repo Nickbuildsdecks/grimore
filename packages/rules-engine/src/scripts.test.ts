@@ -21,7 +21,7 @@ import {
   hasType,
   lastLogEntry,
   legalActions,
-  manaSources,
+  manaSources, potentialMana,
   parseTypeLine,
   compileCard,
   packView, parseManaCost, pendingDeclaration, isPrintedAbilityLine, printedKeywords,
@@ -10865,6 +10865,77 @@ describe('as it enters, choose a creature type or a color (D641)', () => {
     const order = find(s, 0, 'battlefield', 'Order of the Stars');
     expect(s.instances[order]!.chosen).toEqual({ color: 'R' });
     expect(characteristicsOf(s, s.instances[order]!).protectionFrom).toEqual(['R']);
+  });
+});
+
+describe('mana of the chosen color, and a land that chooses as it is played (D642)', () => {
+  const row = (name: string, type: string, text: string, cost = '', colors: string[] = [], pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: cost === '' ? 0 : 2, colors, layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Thriving Grove', 'Land', 'Thriving Grove enters tapped.\nAs Thriving Grove enters, choose a color other than green.\n{T}: Add {G} or one mana of the chosen color.'),
+    row('Coldsteel Heart', 'Snow Artifact', 'Coldsteel Heart enters tapped.\nAs Coldsteel Heart enters, choose a color.\n{T}: Add one mana of the chosen color.', '{2}'),
+    row('Test Firebrand', 'Creature — Human Shaman', '', '{1}{R}', ['R'], ['2', '2']),
+    row('Test Wildling', 'Creature — Elf', '', '{1}{G}', ['G'], ['2', '2']),
+  ];
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => {
+    const deck = customDeck({
+      id: 'custom:g', name: 'Grove',
+      entries: [
+        { name: 'Forest', count: 20 }, { name: 'Mountain', count: 10 }, { name: 'Thriving Grove', count: 2 },
+        { name: 'Coldsteel Heart', count: 1 }, { name: 'Test Firebrand', count: 8 }, { name: 'Test Wildling', count: 10 },
+      ],
+      data: ROWS,
+    }).deck;
+    return advanceTo(arena({ decks: { 0: 'custom:g' }, deckSpecs: { 'custom:g': deck }, ...setup, turn: 3, firstSeat: 0 }), 'precombat-main');
+  };
+  const colourOf = (s: GameState, id: string) => s.instances[id]!.chosen?.color;
+
+  it('offers a Thriving land once per colour other than its own, and taps for its own or the chosen one', () => {
+    let s = table({ hands: { 0: ['Thriving Grove'] } });
+    const grove = find(s, 0, 'hand', 'Thriving Grove');
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === grove);
+    expect(rows.map((p) => p.choose)).toEqual(['black', 'red', 'white', 'blue']);
+    expect(rows[1]!.description).toBe('Play Thriving Grove, choosing red');
+    // Green is the land's own colour and not a choice; a land that chooses nothing takes no colour.
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: grove, choose: 'green' })).toMatch(/cannot choose green/);
+    // Blue, which is not the land's own pick (that is red): the row's answer is the one kept.
+    s = apply(s, { type: 'auto:playLand', by: 0, card: grove, choose: 'blue' });
+    expect(colourOf(s, grove)).toBe('U');
+    expect(s.instances[grove]!.tapped).toBe(true);
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    const source = manaSources(s, 0).find((entry) => entry.key === grove);
+    expect([...(source?.produces ?? [])].sort()).toEqual(['G', 'U']);
+    // The pips light green and blue, not all five.
+    const pips = potentialMana(s, 0);
+    expect([pips.G, pips.U, pips.W, pips.R, pips.B]).toEqual([1, 1, 0, 0, 0]);
+  });
+
+  it('refuses a colour on a land that does not choose one', () => {
+    const s = table({ hands: { 0: ['Forest'] } });
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest'), choose: 'red' }))
+      .toMatch(/cannot choose red/);
+  });
+
+  it('the engine’s own player names the deck’s other colour', () => {
+    const s = table({ hands: { 0: ['Thriving Grove'] } });
+    const action = botAction(s, 0);
+    // Ten green Wildlings and eight red Firebrands: green is the deck's colour, but the land makes
+    // green already and may not choose it, so red.
+    expect(action).toMatchObject({ type: 'auto:playLand', card: find(s, 0, 'hand', 'Thriving Grove'), choose: 'red' });
+  });
+
+  it('asks a cast Coldsteel Heart on the stack, and it taps only for that colour', () => {
+    let s = table({ hands: { 0: ['Coldsteel Heart'] }, battlefield: { 0: ['Forest', 'Forest'] } });
+    s = tapAllLands(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Coldsteel Heart') }));
+    expect(s.pendingDecision?.options).toEqual(['black', 'red', 'white', 'blue', 'green']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'blue' }));
+    const heart = find(s, 0, 'battlefield', 'Coldsteel Heart');
+    expect(colourOf(s, heart)).toBe('U');
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(manaSources(s, 0).find((entry) => entry.key === heart)?.produces).toEqual(['U']);
   });
 });
 

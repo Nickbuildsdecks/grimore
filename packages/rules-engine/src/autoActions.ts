@@ -49,7 +49,7 @@ import { abilityTargetSpecs } from './scripts.js';
   with a hand-written script this is exactly `scriptFor(def.name)`, so nothing in the pool changes.
 */
 import { scriptForCard } from './derive.js';
-import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
+import { FORETELL_COST, MORPH_COST, isChoiceDecision, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
@@ -1410,7 +1410,7 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
 }
 
 function playLand(
-  state: GameState, action: { by: SeatIndex; card: string; half?: number; payLife?: boolean },
+  state: GameState, action: { by: SeatIndex; card: string; half?: number; payLife?: boolean; choose?: string },
 ): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
@@ -1462,7 +1462,25 @@ function playLand(
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${shockPrice} life to pay for ${ch.name}`);
   }
 
+  /*
+    A land's colour, chosen by choosing the row (D642) and checked against the land's own options
+    before anything moves. Recorded after the move and before `settle`, whose arrival pass fills
+    the land's mana and statics in from it — and answers for a land played without one.
+  */
+  const landScript = scriptForCard(state.cardDefs[faceKey ?? inst.defKey]);
+  if (action.choose !== undefined) {
+    const spec = landScript?.entersChoice === 'color'
+      ? landScript.decisions?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision)
+      : undefined;
+    if (spec === undefined || !spec.options.includes(action.choose)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} cannot choose ${action.choose}`);
+    }
+  }
   let next = relocate(state, inst, 'battlefield', action.by, 'bottom');
+  if (action.choose !== undefined) {
+    const letter = ({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' } as const)[action.choose as 'white'];
+    next = withInstance(next, inst.id, { chosen: { color: letter } });
+  }
   /*
     And on the battlefield it **is** the back face, for as long as it is there.
 

@@ -6763,7 +6763,7 @@ const COLOUR_OPTIONS: readonly string[] = ['black', 'red', 'white', 'blue', 'gre
  * Ties go to black and then red, which is the order `COLOUR_OPTIONS` is in: those are the two
  * colours that hold this pool's removal, so an empty board gets the answer a player would give.
  */
-function colourToFear(state: GameState, seat: SeatIndex): string | undefined {
+function colourToFear(state: GameState, seat: SeatIndex, except?: string): string | undefined {
   const counts = new Map<string, number>();
   for (const other of state.seats) {
     if (other.index === seat || other.eliminated) continue;
@@ -6783,6 +6783,7 @@ function colourToFear(state: GameState, seat: SeatIndex): string | undefined {
   let best: string | undefined;
   let most = 0;
   for (const word of COLOUR_OPTIONS) {
+    if (word === except) continue;
     const n = counts.get(word) ?? 0;
     if (n > most) { most = n; best = word; }
   }
@@ -6900,7 +6901,7 @@ function opponentsTypeOf(state: GameState, seat: SeatIndex): string | undefined 
 }
 
 /** The colour most of this seat's own cards are, for a card that helps that colour. */
-function deckColourOf(state: GameState, seat: SeatIndex): string | undefined {
+function deckColourOf(state: GameState, seat: SeatIndex, except?: string): string | undefined {
   const counts = new Map<string, number>();
   for (const inst of Object.values(state.instances)) {
     if (inst.owner !== seat) continue;
@@ -6913,6 +6914,7 @@ function deckColourOf(state: GameState, seat: SeatIndex): string | undefined {
   let best: string | undefined;
   let most = 0;
   for (const word of COLOUR_OPTIONS) {
+    if (word === except) continue;
     const n = counts.get(word) ?? 0;
     if (n > most) { most = n; best = word; }
   }
@@ -6927,7 +6929,9 @@ function deckColourOf(state: GameState, seat: SeatIndex): string | undefined {
 export type ChoiceAim = 'friendly' | 'hostile' | 'protection';
 
 /** The question an "As ~ enters, choose a …" card asks, with the bot's answer aimed as `aim` says. */
-export function enterChoiceDecision(kind: 'creature-type' | 'color', aim: ChoiceAim): ChoiceDecisionSpec {
+export function enterChoiceDecision(
+  kind: 'creature-type' | 'color', aim: ChoiceAim, except?: string,
+): ChoiceDecisionSpec {
   if (kind === 'creature-type') {
     return {
       who: 'controller', prompt: 'Choose a creature type', options: CHOOSABLE_TYPES,
@@ -6935,9 +6939,16 @@ export function enterChoiceDecision(kind: 'creature-type' | 'color', aim: Choice
       best: aim === 'hostile' ? opponentsTypeOf : deckTypeOf,
     };
   }
+  /*
+    "Choose a color other than green" (D642), the Thriving lands and the Gates: the printed colour
+    is not offered, and the bot's answer is its best among the other four.
+  */
+  const options = except === undefined ? COLOUR_OPTIONS : COLOUR_OPTIONS.filter((word) => word !== except);
+  const pick = aim === 'protection' ? colourToFear : deckColourOf;
   return {
-    who: 'controller', prompt: 'Choose a color', options: COLOUR_OPTIONS,
-    best: aim === 'protection' ? colourToFear : deckColourOf,
+    who: 'controller', prompt: except === undefined ? 'Choose a color' : `Choose a color other than ${except}`,
+    options,
+    best: except === undefined ? pick : (state, chooser) => pick(state, chooser, except),
   };
 }
 
@@ -6953,10 +6964,22 @@ export function enterChoiceDecision(kind: 'creature-type' | 'color', aim: Choice
  */
 function chooseAsEntersFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
-  const m = new RegExp(`^As ${selfRef(name)} ${ENTERS}, choose an? (creature type|color)$`, 'i').exec(text);
+  /*
+    And the two-sentence land line (D642): "This land enters tapped. As it enters, choose a color."
+    — Valgavoth's Lair, Night Market, Mirage Mesa — which is "enters tapped" and the choice at once.
+  */
+  const m = new RegExp(
+    `^(?:(${selfRef(name)}) ${ENTERS} tapped\\. )?As (?:${selfRef(name)}|it) ${ENTERS}, choose an? (creature type|color)(?: other than (white|blue|black|red|green))?$`, 'i',
+  ).exec(text);
   if (m === null) return null;
-  const kind = m[1]!.toLowerCase() === 'color' ? 'color' : 'creature-type';
-  return { entersChoice: kind, decisions: [enterChoiceDecision(kind, 'friendly')] };
+  // "As it enters" only after the sentence that says what "it" is.
+  if (m[1] === undefined && new RegExp(`^As it ${ENTERS}`, 'i').test(text)) return null;
+  const kind = m[2]!.toLowerCase() === 'color' ? 'color' : 'creature-type';
+  const except = m[3]?.toLowerCase();
+  return {
+    ...(m[1] === undefined ? {} : { entersTapped: true as const }),
+    entersChoice: kind, decisions: [enterChoiceDecision(kind, 'friendly', except)],
+  };
 }
 
 /**

@@ -2201,6 +2201,15 @@ describe("a shock land's two rows (D587)", () => {
       .toEqual({ type: "auto:playLand", card: "crypt", payLife: true })
   })
 
+  it("sends a land's colour with the row that chose it (D642)", () => {
+    const grove = play({
+      kind: "land", card: "grove", name: "Thriving Grove", manaCost: "", targetSpecs: [], candidates: [],
+      description: "Play Thriving Grove, choosing red", choose: "red",
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: grove }).action)
+      .toEqual({ type: "auto:playLand", card: "grove", choose: "red" })
+  })
+
   it("and nothing with the row that does not, so the land enters tapped", () => {
     const tapped = land({ description: "Play Blood Crypt tapped" })
     expect(arenaReducer(IDLE, { kind: "choosePlay", play: tapped }).action)

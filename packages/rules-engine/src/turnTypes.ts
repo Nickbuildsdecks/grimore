@@ -1578,6 +1578,12 @@ export interface AutoPlayLandAction {
    * for none, and when the player has no more life than the price. Absent means it enters tapped.
    */
   readonly payLife?: boolean;
+  /**
+   * A land that chooses a colour as it enters (D642) — the Thriving lands, Uncharted Haven: the
+   * colour word, one of the land's own options. Refused when it is not one; absent means the engine
+   * answers with the land's own pick, which is what any other way onto the battlefield gets.
+   */
+  readonly choose?: string;
 }
 export interface AutoCastAction {
   readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;

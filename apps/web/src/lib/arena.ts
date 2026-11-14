@@ -415,7 +415,9 @@ function playAction(
   // A shock land's choice was made by choosing the row (D587): the paying row says so, and a
   // play without it enters tapped — the engine never pays life a client did not ask it to.
   const withLife = play.payLife === true ? { payLife: true } : {}
-  if (play.kind === "land") return { type: "auto:playLand", card: play.card, ...withHalf, ...withLife }
+  // And a land's colour (D642): one row per colour, so the row the player picked is the answer.
+  const withChoice = play.choose === undefined ? {} : { choose: play.choose }
+  if (play.kind === "land") return { type: "auto:playLand", card: play.card, ...withHalf, ...withLife, ...withChoice }
   // A modal spell's modes were chosen by choosing *this* play: the engine offers one play per
   // legal combination, so picking a mode and picking a spell are the same gesture.
   const withModes = play.modes === undefined ? {} : { modes: [...play.modes] }

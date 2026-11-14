@@ -53,11 +53,19 @@ import {
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_TYPE } from './effects.js';
 
-/** Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or none. */
-function enterChoiceOf(lines: readonly string[]): 'creature-type' | 'color' | null {
+/**
+ * Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or
+ * none — and the colour it may not be, for "a color other than green" (D642).
+ */
+function enterChoiceOf(lines: readonly string[]): { kind: 'creature-type' | 'color'; except?: string } | null {
   for (const line of lines) {
-    const m = /^As .+ enters(?: the battlefield)?, choose an? (creature type|color)\.?$/i.exec(line.trim());
-    if (m !== null) return m[1]!.toLowerCase() === 'color' ? 'color' : 'creature-type';
+    const m = /^(?:.+ enters tapped\. )?As .+ enters(?: the battlefield)?, choose an? (creature type|color)(?: other than (white|blue|black|red|green))?\.?$/i.exec(line.trim());
+    if (m !== null) {
+      return {
+        kind: m[1]!.toLowerCase() === 'color' ? 'color' : 'creature-type',
+        ...(m[2] === undefined ? {} : { except: m[2].toLowerCase() }),
+      };
+    }
   }
   return null;
 }
@@ -837,6 +845,11 @@ function compileSingle(row: CardDataRow): Compilation {
       Order is the whole fix. Asked after, the general reader wins and the mana is lost again.
     */
     const mana = manaAbilitiesFromLine(line, def.name);
+    // Mana "of the chosen color" on a card that never chose a colour would tap for nothing (D642).
+    if (mana !== null && /\bthe chosen colou?r\b/i.test(line) && enterChoice?.kind !== 'color') {
+      unread.push({ line, why: 'no-reader' });
+      continue;
+    }
     if (mana !== null) {
       if (merge(built, { abilities: [...mana] }) === 'conflict') {
         unread.push({ line, why: 'field-conflict' });
@@ -860,7 +873,7 @@ function compileSingle(row: CardDataRow): Compilation {
       look read. Refused, so the line stays visible as unread.
     */
     const reads = choiceReadBy(fragment);
-    if (reads !== null && reads !== enterChoice) { unread.push({ line, why: 'no-reader' }); continue; }
+    if (reads !== null && reads !== enterChoice?.kind) { unread.push({ line, why: 'no-reader' }); continue; }
     if (merge(built, fragment) === 'conflict') {
       unread.push({ line, why: 'field-conflict' });
       continue;
@@ -873,7 +886,7 @@ function compileSingle(row: CardDataRow): Compilation {
   */
   if (built['entersChoice'] === 'creature-type' || built['entersChoice'] === 'color') {
     built['decisions'] = [enterChoiceDecision(
-      built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics']),
+      built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics']), enterChoice?.except,
     )];
   }
 

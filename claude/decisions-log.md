@@ -44562,3 +44562,61 @@ an empty board falls back to the first option in both callers, which is the same
     engine tests: 4,492, all passing
 
 Coverage: 10,696 of 31,653 cards (+13), 29,399 of 59,306 lines (+124).
+
+## D642 — mana of the chosen colour, and a land that chooses as it is played
+
+The largest group D641 left: about 30 legal lines make "one mana of the chosen color". 20 print
+"{T}: Add one mana of the chosen color.", and the ten Thriving lands and Gates print
+"{T}: Add {G} or one mana of the chosen color." after "choose a color other than green". Most of
+these are **lands**, and a land is played, not cast. No spell resolves for it, so D641's
+resolution question never reaches it.
+
+**The mana.**
+- `parseManaLine` reads "one mana of the chosen color", optionally after one printed colour.
+- It makes five one-colour abilities, the shape "any color" already has. Each colour other than
+  the printed one carries `activateOnlyIf: chosen.color === that colour`, the gate Command Tower's
+  identity uses since D617.
+- So nothing else in the engine needed teaching: about 38 readers of `produces`, the solver and
+  the auto-tapper all see ordinary mana abilities. `manaSources` already asked `activateOnlyIf`.
+- `potentialMana`, the dimmed pips, did not ask `activateOnlyIf`, and now does. Without it a
+  chosen-colour land lit all five colours, and so did a Command Tower outside its identity.
+- Only the line-by-line reader may take the line (`chosenOk`), and `compileSingle` refuses it
+  unless the card chooses a colour. The new compiler test caught the first draft: a land with
+  only the mana line and no choice was read **whole** by `cardFromData`, and would have tapped
+  for nothing.
+
+**The choice.**
+- "choose a color other than X" leaves X out of the options and out of the bot's pick.
+- The two-sentence land line "This land enters tapped. As it enters, choose a color." is
+  `entersTapped` plus the choice. "As it enters" alone is refused, because nothing says what
+  "it" is.
+- **A land is offered once per colour** (`LegalPlay.choose`, `AutoPlayLandAction.choose`): "Play
+  Thriving Grove, choosing red". This is the shock-land arrangement from D587; the row is the
+  answer. `playLand` checks the word against the land's own options and records `chosen` before
+  `settle`.
+- A land played without a colour, or put onto the battlefield by an effect, gets the card's own
+  pick through D641's uncast path.
+- The bot plays the row matching that pick.
+- The web client sends `choose` with the row, as it sends `payLife`.
+
+**Also in this commit:** the D640 break run's one miss ("Partner with" ignoring the names) is
+pinned. Two "Partner with" cards that each name somebody else are now asserted to be refused, and
+the break is caught.
+
+**Tests.**
+- 4 engine tests on printed text dealt as data:
+  - a Thriving Grove is offered four rows, without green; choosing green is refused; played
+    choosing blue (not its own pick), it is tapped, taps for G or U, and lights only those pips;
+  - a colour on a land that chooses nothing is refused;
+  - the bot names red for a deck whose commonest colour is green, because green is excluded;
+  - a cast Coldsteel Heart is asked on the stack and taps only for blue.
+- 1 compiler test: the five abilities, the excluded colour, the two-sentence line, an orphan mana
+  line unread, and a bare "As it enters" unread.
+- 1 web test: the row's colour is sent.
+
+Faults injected by hand: 14 of 14 caught. Two first survived, because the tests chose the default
+answer; both tests were strengthened.
+
+    engine tests: 4,497, all passing
+
+Coverage: 10,717 of 31,653 cards (+21), 29,445 of 59,306 lines (+46).

@@ -18276,6 +18276,23 @@ describe('"as it enters, choose" and the lines that read the answer (D641)', () 
     expect(others.ok && others.script?.statics?.[0]?.scope).toEqual({ subtype: 'the chosen type', other: true });
   });
 
+  it('reads mana of the chosen colour only on a card that chooses one (D642)', () => {
+    const land = (text: string) => card(text, 'Land');
+    const grove = land('As Test Chooser enters, choose a color other than green.\n{T}: Add {G} or one mana of the chosen color.');
+    expect(grove.ok && grove.unread).toEqual([]);
+    // Five abilities, one per colour; the decision leaves green out.
+    expect(grove.ok && grove.script?.abilities?.map((a) => a.produces)).toEqual([['W'], ['U'], ['B'], ['R'], ['G']]);
+    expect(grove.ok && (grove.script?.decisions?.[0] as { options?: readonly string[] }).options).toEqual(['black', 'red', 'white', 'blue']);
+    const lair = land('Test Chooser enters tapped. As it enters, choose a color.\n{T}: Add one mana of the chosen color.');
+    expect(lair.ok && lair.unread).toEqual([]);
+    expect(lair.ok && lair.script?.entersTapped).toBe(true);
+    const orphan = land('{T}: Add one mana of the chosen color.');
+    expect(orphan.ok && orphan.unread.map((u) => u.line)).toEqual(['{T}: Add one mana of the chosen color.']);
+    // "As it enters" with nothing before it to say what "it" is, is not read.
+    const bare = land('As it enters, choose a color.');
+    expect(bare.ok && bare.unread.length).toBe(1);
+  });
+
   it('refuses "the chosen type" on a card that never chose one, or chose a colour instead', () => {
     const none = card('Creatures you control of the chosen type get +1/+1.');
     expect(none.ok && none.unread.map((u) => u.line)).toEqual(['Creatures you control of the chosen type get +1/+1.']);

@@ -291,6 +291,12 @@ interface ManaLine {
    * without one (CR 903.4f).
    */
   readonly identity?: true;
+  /**
+   * "…one mana of the chosen color" (D642): each colour's ability is offered only while that is the
+   * colour the permanent chose as it entered (`CardInstance.chosen`). `fixed` is the colour printed
+   * beside it — a Thriving land's "Add {G} or one mana of the chosen color" — which is always on.
+   */
+  readonly chosen?: { readonly fixed?: ManaType };
 }
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
@@ -411,7 +417,12 @@ function selfDamageSentence(sentence: string, name: string): number | undefined 
   return amount > 0 ? amount : undefined;
 }
 
-function parseManaLine(line: string, name: string): ManaLine | null {
+/**
+ * `chosenOk` (D642): only the line-by-line reader may take "one mana of the chosen color", because
+ * only it can see whether the card chooses a colour as it enters — `compileSingle` checks. A whole
+ * card read here is one with no such line, so mana of a chosen colour on it would be mana of nothing.
+ */
+function parseManaLine(line: string, name: string, chosenOk = false): ManaLine | null {
   /*
     The body is matched as "anything up to the first full stop", which is safe because a mana
     symbol contains none, and it is what lets a **second sentence** be read rather than refusing the
@@ -449,6 +460,17 @@ function parseManaLine(line: string, name: string): ManaLine | null {
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.
   if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  // "One mana of the chosen color" (D642), alone or after one printed colour (the Thriving lands).
+  const chosenColour = /^(?:\{([WUBRG])\}\s+or\s+)?one\s+mana\s+of\s+the\s+chosen\s+colou?r$/i.exec(body);
+  if (chosenColour !== null) {
+    if (!chosenOk) return null;
+    const fixed = chosenColour[1] as ManaType | undefined;
+    return {
+      mode: 'choice', produces: COLOURS, cost, printed, damage,
+      chosen: fixed === undefined ? {} : { fixed },
+      ...(spendOnly === undefined ? {} : { spendOnly }),
+    };
+  }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
@@ -513,6 +535,9 @@ function tapAbilities(
       ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
       ...(line?.identity === true
         ? { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => commanderIdentity(state, controller).includes(type) }
+        : {}),
+      ...(line?.chosen !== undefined && line.chosen.fixed !== type
+        ? { activateOnlyIf: (state: GameState, source: string) => state.instances[source]?.chosen?.color === type }
         : {}),
     };
   });
@@ -660,7 +685,7 @@ export function isManaAbilityLine(line: string): boolean {
 }
 
 export function manaAbilitiesFromLine(line: string, name: string): readonly AbilityDef[] | null {
-  const parsed = parseManaLine(line, name);
+  const parsed = parseManaLine(line, name, true);
   if (parsed === null) return null;
   return parsed.mode === 'sum' ? [sumAbility(parsed)] : tapAbilities(parsed.produces, parsed);
 }
