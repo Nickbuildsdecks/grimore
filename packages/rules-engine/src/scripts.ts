@@ -12167,6 +12167,38 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     ability resolves; the bot names the colour its hand asks for most (pips in the mana costs it
     holds), white when nothing does.
   */
+  /*
+    "Each creature deals 1 damage to its controller" (D667): Rakdos Charm's third mode, Pestilence's
+    cousins. Every creature on the battlefield as the clause resolves, each the source of its own
+    damage (so lifelink and infect on it count), to the player who controls it then.
+  */
+  const selfHurt = /^each creature deals (\w+) damage to its controller$/i.exec(text);
+  if (selfHurt !== null) {
+    const n = countFrom(selfHurt[1]!);
+    if (n !== null) {
+      return {
+        effect: (c) => battlefield(c.state, (id) => {
+          const inst = c.state.instances[id];
+          return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+        }).reduce((state, id) => {
+          const inst = state.instances[id];
+          return inst === undefined ? state : dealDamage(state, { kind: 'player', seat: inst.zoneSeat }, n, { source: id });
+        }, c.state),
+      };
+    }
+  }
+  /*
+    "Each player gains control of all creatures they own" (D667): Homeward Path. Every creature on
+    the battlefield goes back to its owner, the stolen ones and only them.
+  */
+  if (/^each player gains control of all creatures they own$/i.test(text)) {
+    return {
+      effect: (c) => battlefield(c.state, (id) => {
+        const inst = c.state.instances[id];
+        return inst !== undefined && inst.owner !== inst.zoneSeat && characteristicsOf(c.state, inst).isCreature;
+      }).reduce((state, id) => gainControl(state, id, state.instances[id]!.owner), c.state),
+    };
+  }
   if (/^add one mana of any colou?r$/i.test(text)) {
     const words: Readonly<Record<string, ManaType>> = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G' };
     return {
@@ -24872,9 +24904,13 @@ function interveningConditionRows(
     catch-up ramp (Loyal Warhound, Scouting Hawk, Knight of the White Orchid) — and its creature and
     life cousins. Any one opponent will do, as printed; a seat that has left the game is not one.
   */
-  const comparison = /^an opponent controls more (lands|creatures) than you$/i.exec(text)
+  // And by a margin (D667): Tectonic Edge's "an opponent controls at least four more lands than you".
+  const margin = /^an opponent controls at least (\w+) more (lands|creatures) than you$/i.exec(text);
+  const comparison = margin !== null ? [margin[0], margin[2]] as unknown as RegExpExecArray
+    : /^an opponent controls more (lands|creatures) than you$/i.exec(text)
     ?? /^you control fewer (lands|creatures) than an opponent$/i.exec(text);
-  if (comparison !== null) {
+  const by = margin === null ? 1 : number(margin[1]!);
+  if (comparison !== null && by !== undefined && by >= 1) {
     const kind = comparison[1]!.toLowerCase() === 'lands' ? 'land' : 'creature';
     const count = (state: GameState, seat: SeatIndex): number => listAt(state, zoneKey(seat, 'battlefield'))
       .filter((id) => {
@@ -24884,7 +24920,7 @@ function interveningConditionRows(
         return kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, 'land');
       }).length;
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
-      && count(c.state, seat.index) > count(c.state, c.controller));
+      && count(c.state, seat.index) >= count(c.state, c.controller) + by);
   }
   if (/^an opponent has more life than you$/i.test(text)) {
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated

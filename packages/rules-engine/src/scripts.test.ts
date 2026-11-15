@@ -12526,6 +12526,50 @@ describe('Phyrexian Tower\'s sacrifice for mana, and Craterhoof\'s count (D666)'
   });
 });
 
+describe('Tectonic Edge\'s margin, Rakdos Charm\'s self-damage, Homeward Path (D667)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Edge', 'Land', '{T}, Sacrifice this land: Destroy target nonbasic land. Activate only if an opponent controls at least four more lands than you.', ''),
+    row('Test Pest', 'Instant', 'Each creature deals 1 damage to its controller.'),
+    row('Test Path', 'Land', '{T}: Each player gains control of all creatures they own.', ''),
+    row('Test Vault', 'Land', '', ''),
+  ];
+  const deck = customDeck({
+    id: 'edge', name: 'Edge',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'edge', 1: 'edge' }, deckSpecs: { edge: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const edgeOffered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'battlefield', 'Test Edge'));
+
+  it('Tectonic Edge is offered only when an opponent has four more lands', () => {
+    expect(edgeOffered(table([], ['Test Edge'], ['Test Vault', 'Forest', 'Forest']))).toBe(false);
+    expect(edgeOffered(table([], ['Test Edge'], ['Test Vault', 'Forest', 'Forest', 'Forest', 'Forest']))).toBe(true);
+  });
+
+  it('each creature hurts its own controller, one point each', () => {
+    let s = table(['Test Pest'], ['Grizzly Bears', 'Grizzly Bears'], ['Grizzly Bears']);
+    const before = [life(s, 0), life(s, 1)];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pest') })));
+    expect([life(s, 0), life(s, 1)]).toEqual([before[0]! - 2, before[1]! - 1]);
+  });
+
+  it('Homeward Path hands every creature back to its owner', () => {
+    let s = table([], ['Test Path'], ['Grizzly Bears']);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = gainControl(s, bears, 0);
+    expect(s.instances[bears]!.zoneSeat).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Path'), abilityIndex: 0 })));
+    expect(s.instances[bears]!.zoneSeat).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -28126,3 +28126,33 @@ source-entry assertion.
     engine tests: 4,578, all passing
 
 Coverage: 11,093 of 31,653 cards (+7), 30,113 of 59,306 lines (+15). Staples: 183 of 244 (+2).
+
+## D667 — Tectonic Edge's margin, Rakdos Charm's self-damage, Homeward Path
+
+Three small readers, each a staple. Staples went from 183 to 185.
+
+- **"An opponent controls at least four more lands than you"** (Tectonic Edge). It sits beside
+  D622's "more lands / creatures than you" comparison, now with a margin: at least N more. The
+  existing form is the margin 1, so it reads exactly as before. Being an "Activate only if" clause,
+  it is asked when the ability is offered and again when it is activated.
+- **"Each creature deals N damage to its controller"** (Rakdos Charm's third mode). Every creature on
+  the battlefield as the clause resolves, each the source of its own damage, to the player who
+  controls it at that moment.
+- **"Each player gains control of all creatures they own"** (Homeward Path). Every creature whose
+  controller is not its owner goes back to its owner, using `gainControl`.
+
+**Not done:** Akroma's Will's header ("Choose one. If you control a commander as you cast this
+spell, you may choose both."). `ModalDef.max` is fixed, so it needs a conditional maximum in the
+combinations `legalActions` offers.
+
+**Tests.** 3 engine tests:
+- Tectonic Edge is not offered against three lands and is offered against five, its controller
+  having one;
+- the self-damage clause costs seat 0 two life for two creatures and seat 1 one;
+- Homeward Path gives a stolen Bears back.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,581, all passing
+
+Coverage: 11,096 of 31,653 cards (+3), 30,120 of 59,306 lines (+7). Staples: 185 of 244 (+2).
