@@ -45997,3 +45997,28 @@ Faults injected by hand: 2 of 2 caught.
     engine tests: 4,619, all passing
 
 Coverage: 11,220 of 31,653 cards (+5), 30,412 of 59,306 lines (+5). Staples: 192 of 244 (+1).
+
+## D680 — "if you've cast a … spell this turn"
+
+Intervening-if conditions about the spells you cast this turn, read from the per-seat tallies D678
+added:
+- "if you've cast a noncreature spell this turn" (Alicia Masters, H.E.R.B.I.E., the beginning-of-combat
+  Treasure and surveil makers);
+- "if you've cast a creature spell this turn";
+- "if you've cast a spell this turn", "two or more spells", "three or more spells";
+- "if you haven't cast a spell this turn".
+
+Spells cast only, so a copy or a land played does not count (CR 601.2). "Instant or sorcery"
+counts are not tallied yet and stay unread.
+
+**Tests.** 3 engine tests:
+- a creature spell alone draws nothing at the end step; a noncreature spell then draws one;
+- "haven't cast a spell" gains life on a quiet turn and not after a creature spell;
+- "two or more spells" counts two creature spells and not one.
+
+Faults injected by hand: 4 of 4 caught (threshold fixed at one, kind ignored, strict comparison,
+"haven't" always true).
+
+    engine tests: 4,622, all passing
+
+Coverage: 11,227 of 31,653 cards (+7), 30,423 of 59,306 lines (+11). Staples: 192 of 244.

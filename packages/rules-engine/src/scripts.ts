@@ -25068,6 +25068,23 @@ function interveningConditionRows(
   if (/^a permanent (?:you controlled left the battlefield|left the battlefield under your control) this turn$/i.test(text)) {
     return (c) => turnFacts.leftBattlefield(c.state, c.controller) > 0;
   }
+  /*
+    Spells you cast this turn (D680), from the per-seat tallies D678 made: "if you've cast a
+    noncreature spell this turn" (the Treasure makers, Council of Reeds), "… a creature spell …",
+    "if you've cast a spell this turn", "if you haven't cast a spell this turn", "if you've cast two
+    or more spells this turn". Spells cast, so a copy or a land does not count (CR 601.2).
+  */
+  const castThisTurn = /^you(?:'ve| have) cast (a|an|two or more|three or more) (creature |noncreature )?spells? this turn$/i.exec(text);
+  if (castThisTurn !== null) {
+    const atLeast = castThisTurn[1]!.startsWith('two') ? 2 : castThisTurn[1]!.startsWith('three') ? 3 : 1;
+    const kind = castThisTurn[2]?.trim().toLowerCase();
+    return (c) => (kind === undefined
+      ? c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0
+      : c.state.spellsCastThisTurnByKind?.[`${c.controller}:${kind}`] ?? 0) >= atLeast;
+  }
+  if (/^you haven't cast a spell this turn$/i.test(text)) {
+    return (c) => (c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0) === 0;
+  }
   if (/^you gained life this turn$/i.test(text)) {
     return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
   }

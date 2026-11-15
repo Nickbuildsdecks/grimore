@@ -13061,6 +13061,60 @@ describe('"When ~ enters untapped" (D679)', () => {
   });
 });
 
+describe('"if you\'ve cast a … spell this turn" (D680)', () => {
+  const ROWS = [
+    { name: 'Test Scholar', type_line: 'Creature — Human Wizard', oracle_text: "At the beginning of your end step, if you've cast a noncreature spell this turn, draw a card.", mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Hermit', type_line: 'Creature — Human Monk', oracle_text: "At the beginning of your end step, if you haven't cast a spell this turn, you gain 3 life.", mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Prodigy', type_line: 'Creature — Human Wizard', oracle_text: "At the beginning of your end step, if you've cast two or more spells this turn, you gain 5 life.", mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Spark', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Pup', type_line: 'Creature — Dog', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'castturn', name: 'Cast this turn',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (watcher: string) => advanceTo(arena({
+    decks: { 0: 'castturn', 1: 'castturn' }, deckSpecs: { castturn: deck },
+    hands: { 0: ['Test Pup', 'Test Pup', 'Test Spark', 'Test Spark'] },
+    battlefield: { 0: [watcher] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+  // The end step's trigger goes on the stack as the step begins, and resolves before cleanup.
+  const toEnd = (s: GameState) => {
+    let next = advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+
+  it('a noncreature spell this turn draws at the end step; a creature spell alone does not', () => {
+    let s = cast(table('Test Scholar'), 'Test Pup');
+    const hand = ids(s, 0, 'hand').length;
+    expect(ids(toEnd(s), 0, 'hand').length).toBe(hand);
+    s = cast(s, 'Test Spark');
+    expect(ids(toEnd(s), 0, 'hand').length).toBe(hand);
+    expect(ids(toEnd(s), 0, 'hand').length).toBe(ids(s, 0, 'hand').length + 1);
+  });
+
+  it('"if you haven\'t cast a spell this turn" pays only on a turn with no spell', () => {
+    const quiet = table('Test Hermit');
+    expect(toEnd(quiet).seats[0]!.life).toBe(quiet.seats[0]!.life + 3);
+    const busy = cast(quiet, 'Test Pup');
+    expect(toEnd(busy).seats[0]!.life).toBe(busy.seats[0]!.life);
+  });
+
+  it('"two or more spells" counts every spell you cast, of either kind', () => {
+    let s = cast(table('Test Prodigy'), 'Test Pup');
+    expect(toEnd(s).seats[0]!.life).toBe(s.seats[0]!.life);
+    s = cast(s, 'Test Pup');
+    expect(toEnd(s).seats[0]!.life).toBe(s.seats[0]!.life + 5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
