@@ -46303,3 +46303,35 @@ not on the card).
     engine tests: 4,657, all passing
 
 Coverage: 11,298 of 31,653 cards (+17), 30,525 of 59,306 lines (+34). Staples: 203 of 244.
+
+## D690 — the Pacts: pay at your next upkeep or lose the game
+
+"At the beginning of your next upkeep, pay {3}{U}{U}. If you don't, you lose the game." Pact of
+Negation, Slaughter Pact, Summoner's Pact, Intervention Pact, Pact of the Titan.
+
+Changes:
+- D689's delayed reader takes a final line that is entirely "At the beginning of your next upkeep,
+  …" whole, with all its sentences.
+- `clausesOf` holds "pay {cost}. If you don't, you lose the game" together as "pay {cost} or lose
+  the game".
+- `readEffect` reads that as one controller question with the price on the paying answer
+  (`payIfChosen`). The engine offers "Pay" only when it is affordable and pays it on the answer. The
+  bot's `best` always pays.
+- Not paying calls the new `loseTheGame`, which eliminates the seat with the new `EliminatedReason`
+  `'effect'` (CR 104.3a). The engine's elimination pass then removes the seat's cards.
+- The web labels it "out (a card's effect)".
+
+Staples went from 203 to 204 (Pact of Negation).
+
+**Tests.** 3 engine tests and 1 web test:
+- the Pact reads, with one delayed trigger;
+- on turn 5's upkeep the caster is asked, paying taps two lands, and the caster stays in the game;
+- with no lands, only "Don't pay" is offered and the caster loses (reason `effect`), and declining
+  with lands loses too;
+- the web label.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,660, all passing
+
+Coverage: 11,302 of 31,653 cards (+4), 30,533 of 59,306 lines (+8). Staples: 204 of 244 (+1).

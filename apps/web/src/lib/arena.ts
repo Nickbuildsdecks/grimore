@@ -1123,6 +1123,7 @@ export function eliminatedLabel(reason: string | null): string {
   if (reason === null) return "out"
   if (reason === "commanderDamage") return "out (commander damage)"
   if (reason === "library") return "out (empty library)"
+  if (reason === "effect") return "out (a card's effect)"
   return `out (${reason})`
 }
 

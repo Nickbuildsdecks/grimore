@@ -1764,6 +1764,15 @@ export function miracleOffer(state: GameState, card: string, cost: string): Game
   };
 }
 
+/**
+ * "You lose the game" (D690, CR 104.3a): the seat leaves at once, as a conceding one does. The
+ * engine's elimination pass then takes away what it owns (CR 800.4a).
+ */
+export function loseTheGame(state: GameState, seat: SeatIndex): GameState {
+  if (state.seats[seat] === undefined || state.seats[seat]!.eliminated) return state;
+  return replaceSeat(state, seat, { eliminated: true, eliminatedReason: 'effect' });
+}
+
 export function tap(state: GameState, id: string, tapped = true): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;

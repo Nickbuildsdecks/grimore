@@ -15,6 +15,7 @@ import {
   targetsRequired,
   targetsWanted,
   type ArenaMode, type Decision,
+  eliminatedLabel,
 } from "./arena"
 
 const player = (seat: number): Target => ({ kind: "player", seat: seat as 0 })
@@ -2231,5 +2232,13 @@ describe("a shock land's two rows (D587)", () => {
     const tapped = land({ description: "Play Blood Crypt tapped" })
     expect(arenaReducer(IDLE, { kind: "choosePlay", play: tapped }).action)
       .toEqual({ type: "auto:playLand", card: "crypt" })
+  })
+})
+
+describe("why a seat is out (D690)", () => {
+  it("names a card's effect, the way it names the other reasons", () => {
+    expect(eliminatedLabel("effect")).toBe("out (a card's effect)")
+    expect(eliminatedLabel("library")).toBe("out (empty library)")
+    expect(eliminatedLabel(null)).toBe("out")
   })
 })

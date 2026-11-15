@@ -49,7 +49,8 @@ export interface Pact {
   readonly broken?: true;
 }
 
-export type EliminatedReason = 'life' | 'poison' | 'commanderDamage' | 'concede' | 'library';
+/** `effect`: a card said so (D690) — a Pact's unpaid upkeep cost, "you lose the game". */
+export type EliminatedReason = 'life' | 'poison' | 'commanderDamage' | 'concede' | 'library' | 'effect';
 
 export interface Seat {
   readonly index: SeatIndex;

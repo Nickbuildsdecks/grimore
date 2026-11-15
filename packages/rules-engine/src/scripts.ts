@@ -42,7 +42,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, EVOKED, KICKED, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, recordExpiry, pairCreatures,
@@ -21921,6 +21921,28 @@ function readEffect(
     "Each other player" is "each opponent" at a table with no teams (D654), which every table here
     is: Grave Pact prints the first and the clause vocabulary reads the second.
   */
+  /*
+    The Pacts' upkeep (D690): "pay {3}{U}{U}. If you don't, you lose the game", held together by
+    `clausesOf`. One question to the controller with the price on its paying answer, which the
+    engine offers only when it can be paid; the bot always pays when it can.
+  */
+  const payOrLose = /^pay ((?:\{[^}]+\})+) or lose the game$/i.exec(clause.trim());
+  if (payOrLose !== null) {
+    const cost = payOrLose[1]!;
+    const parsed = parseManaCost(cost);
+    if (parsed.unsupported !== undefined || parsed.x) return null;
+    const pay = `Pay ${cost}`;
+    return {
+      decisions: [{
+        who: 'controller',
+        prompt: `${pay}? If you do not, you lose the game.`,
+        options: [TAX_NOT_PAID, pay],
+        payIfChosen: { option: pay, cost },
+        best: () => pay,
+      }],
+      effect: (c) => (chosenOption(c, 0) === pay ? c.state : loseTheGame(c.state, c.controller)),
+    };
+  }
   const others = /^each other player (.+)$/i.exec(clause.trim());
   if (others !== null) return readEffect(`each opponent ${others[1]}`, name, where);
   /*
@@ -22029,6 +22051,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.
     .replace(/(put it onto the battlefield tapped),\s+then shuffle\.\s+Then if you control (\w+) or more lands, untap that land/gi, '$1 and untap it if you control $2 or more lands, then shuffle')
+    // The Pacts (D690): "Pay {3}{U}{U}. If you don't, you lose the game." is one question.
+    .replace(/(pay (?:\{[^}]+\})+)\.\s+If you don't, you lose the game/gi, '$1 or lose the game')
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
@@ -26033,7 +26057,9 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   let readNow = toRead;
   if (toRead.length > 0) {
     const lastText = plain(toRead[toRead.length - 1]!).trim();
-    const sentences = lastText.split(/(?<=\.)\s+/);
+    // A line that is all one delayed instruction may run to several sentences (the Pacts, D690).
+    const whole = /^at the beginning of your next upkeep, .+$/i.test(lastText);
+    const sentences = whole ? [lastText] : lastText.split(/(?<=\.)\s+/);
     const final = sentences[sentences.length - 1]!.replace(/\.$/, '').trim();
     const nextTurn = /^(.+) at the beginning of the next turn's upkeep$/i.exec(final);
     const yourNext = /^at the beginning of your next upkeep, (.+)$/i.exec(final);

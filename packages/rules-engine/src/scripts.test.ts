@@ -13722,6 +13722,63 @@ describe('a draw at the beginning of the next upkeep (D689)', () => {
   });
 });
 
+describe('the Pacts: pay at your next upkeep or lose the game (D690)', () => {
+  const ROWS = [
+    { name: 'Test Pact', type_line: 'Instant', oracle_text: "You gain 1 life.\nAt the beginning of your next upkeep, pay {2}. If you don't, you lose the game.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'pact', name: 'Pact',
+    entries: [{ name: 'Test Pact', count: 2 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  // Cast on turn 3, then on to the caster's next upkeep question (turn 5).
+  const toQuestion = (lands: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'pact', 1: 'pact' }, deckSpecs: { pact: deck.deck },
+      hands: { 0: ['Test Pact'] }, battlefield: { 0: Array.from({ length: lands }, () => 'Forest') }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pact') }));
+    s = nextTurn(s);
+    for (let i = 0; i < 200 && s.pendingDecision === null && !(s.turn >= 6); i++) {
+      s = s.pendingDiscard !== null
+        ? apply(s, { type: 'auto:discard', by: s.pendingDiscard.seat, card: ids(s, s.pendingDiscard.seat, 'hand')[0]! })
+        : passBoth(s);
+    }
+    return s;
+  };
+
+  it('reads whole, the upkeep as a delayed trigger', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && (read.script?.triggers ?? []).filter((t) => t.delayed === true).length).toBe(1);
+  });
+
+  it('asked on your own next upkeep; paying taps the mana and keeps you in the game', () => {
+    let s = toQuestion(2);
+    expect(s.turn).toBe(5);
+    expect(s.step).toBe('upkeep');
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toEqual(["Don't pay", 'Pay {2}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {2}' }));
+    expect(s.seats[0]!.eliminated).toBe(false);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(2);
+  });
+
+  it('unable to pay, or choosing not to, loses the game', () => {
+    let broke = toQuestion(0);
+    if (broke.pendingDecision !== null) {
+      expect(broke.pendingDecision.options).toEqual(["Don't pay"]);
+      broke = drain(apply(broke, { type: 'auto:decide', by: 0, cards: [], option: "Don't pay" }));
+    }
+    expect(broke.seats[0]!.eliminated).toBe(true);
+    expect(broke.seats[0]!.eliminatedReason).toBe('effect');
+    let s = toQuestion(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: "Don't pay" }));
+    expect(s.seats[0]!.eliminated).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
