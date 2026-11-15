@@ -27733,3 +27733,41 @@ by adding the free spell to the Misstep test.
     engine tests: 4,537, all passing
 
 Coverage: 10,915 of 31,653 cards (+17), 29,771 of 59,306 lines (+37). Staples: 163 of 244 (+6).
+
+## D656 — lands from hand, graveyard cards to the top, drain and gain
+
+Three readers, picked by how many legal cards each shape reaches. Staples went from 163 to 166.
+
+**"(You may) put a land card from your hand onto the battlefield (tapped)"** (45 cards: Sakura-Tribe
+Scout, Arboreal Grazer, Growth Spiral, and Elvish Piper's creature form).
+- A question about the hand, with a filter, read by `libraryFilter`.
+- "You may" is the empty answer (min 0), not a yes-or-no in front of the question. Without it, the
+  bound is one card, clamped to what the hand holds.
+- It is not a land play, so the land drop stays.
+- The D525 refusal row that used this half as its unreadable example now uses "You may exile a
+  creature card from your hand". The sequence reader already judges "if you do" by whether the
+  answer named a card.
+
+**"Put target X card from your graveyard on top of your library"** (44 cards: Academy Ruins,
+Aphetto Vulture, Bloodwater Entity). The same targets as the return-to-hand reader beside it, moved
+to the top of the owner's library.
+
+**"… You gain life equal to the life lost this way"** (20 cards: Gray Merchant, Kokusho).
+- `clausesOf` holds the two sentences together.
+- The gain is what the first clause actually took, read off every seat's life total before and
+  after. A seat that has left the game, or whose life cannot change, gives nothing back.
+
+**Not done:** devotion as X (Gray Merchant's count), and "any number of target … cards" to the top.
+
+**Tests.** 4 engine tests:
+- the Scout offers only lands, can be declined, and leaves the land drop;
+- the mandatory form asks for one card and puts it in tapped;
+- Academy Ruins tops the artifact;
+- a Merchant in a pod of three gains 4 from two opponents, and 2 once one of them has conceded.
+
+Faults injected by hand: 7 of 7 caught. One survivor (a fixed 2 per opponent) was pinned by the
+conceded seat.
+
+    engine tests: 4,541, all passing
+
+Coverage: 10,974 of 31,653 cards (+59), 29,854 of 59,306 lines (+83). Staples: 166 of 244 (+3).

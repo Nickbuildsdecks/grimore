@@ -12965,6 +12965,34 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     their own answers through the engine. The composition that matters — "each opponent discards a
     card and you gain 1 life" — has a test at a real table below rather than an argument here.
   */
+  /*
+    "You may put a land card from your hand onto the battlefield" (D656): Sakura-Tribe Scout, Arboreal
+    Grazer, Growth Spiral's second sentence, Elvish Piper's creature. A question about the hand, as
+    a discard is; "you may" is the empty answer rather than a yes-or-no in front, so the question
+    is asked once and a player with no such card is not asked at all. Without "may" the answer is
+    one card whenever there is one (the bound is clamped to what the hand holds).
+  */
+  const fromHand = /^(you may )?put (a|an|up to one|up to two|any number of) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(text);
+  if (fromHand !== null) {
+    const quantity = fromHand[2]!.toLowerCase();
+    const filter = libraryFilter(`a ${fromHand[3]!} card`, name);
+    if (filter !== null) {
+      const max = quantity === 'up to two' ? 2 : quantity === 'any number of' ? ANY_NUMBER : 1;
+      const optional = fromHand[1] !== undefined || quantity.startsWith('up to') || quantity === 'any number of';
+      const tapped = fromHand[4] !== undefined;
+      return {
+        decisions: [{
+          who: 'controller', from: 'hand', prompt: `Put ${fromHand[2]!} ${fromHand[3]!} card from your hand onto the battlefield${tapped ? ' tapped' : ''}`,
+          min: optional ? 0 : 1, max,
+          ...(filter.filter === null ? {} : { filter: filter.filter }),
+        }],
+        effect: (c) => chosenCards(c).reduce(
+          (state, id) => (state.instances[id]?.zone === 'hand' ? putOntoBattlefield(state, id, c.controller, tapped ? { tapped: true } : {}) : state),
+          c.state,
+        ),
+      };
+    }
+  }
   const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
   if (roundDiscard !== null) {
     const n = countFrom(roundDiscard[2]!);
@@ -20408,6 +20436,24 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     relation between the two choices, which `TargetSpec` cannot express) and `X target cards` (5 — a
     target *count* that is X, where the engine's X is a cost).
   */
+  /*
+    "Put target creature card from your graveyard on top of your library" (D656): Academy Ruins,
+    Reito Lantern, Aphetto Vulture, Bloodwater Entity — 44 legal cards print the move. The same
+    targets as the return below, a different destination: the owner's library, on top (CR 401.4).
+  */
+  const toTop = new RegExp(
+    `^put (${TARGET_QUANTIFIER_PREFIX}target .*?cards?(?: with mana value \\d+ or (?:less|greater))?) from your graveyard on top of your library$`,
+    'i',
+  ).exec(text);
+  if (toTop !== null) {
+    const spec = targetSpecFrom(graveyardPhrase(toTop[1]!, 'your'), false);
+    if (spec !== null && POINTS_AT_A_GRAVEYARD_CARD.has(spec.kind)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, putOnTopOfLibrary),
+      };
+    }
+  }
   const raised = new RegExp(
     `^return (${TARGET_QUANTIFIER_PREFIX}target .*?cards?(?: with mana value \\d+ or (?:less|greater))?) from your graveyard to your hand$`,
     'i',
@@ -21240,6 +21286,27 @@ function readEffect(
   */
   const others = /^each other player (.+)$/i.exec(clause.trim());
   if (others !== null) return readEffect(`each opponent ${others[1]}`, name, where);
+  /*
+    "Each opponent loses X life. You gain life equal to the life lost this way." (D656): Gray
+    Merchant, Kokusho, Sanguine Bond's cousins. `clausesOf` holds the two sentences together; the
+    gain is what the first clause actually took, read off the life totals around it, so a seat that
+    is gone or whose life cannot change gives nothing back.
+  */
+  const drained = /^(.+), and you gain life equal to the life lost this way$/i.exec(clause.trim());
+  if (drained !== null) {
+    const inner = readEffect(drained[1]!, name, where);
+    if (inner === null || inner.beforeDecisions !== undefined || inner.immediate !== undefined) return null;
+    return {
+      ...inner,
+      effect: (c) => {
+        const after = inner.effect(c);
+        const lost = c.state.seats.reduce(
+          (sum, seat) => sum + Math.max(0, seat.life - (after.seats[seat.index]?.life ?? seat.life)), 0,
+        );
+        return lost > 0 ? gainLife(after, c.controller, lost) : after;
+      },
+    };
+  }
   return preventionEffect(clause, name)
     ?? untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
@@ -21275,14 +21342,18 @@ function clausesOf(line: string): readonly string[] {
     second verb — cut apart, neither half is a sentence.
   */
   const BACK = ', then put them back in any order';
+  const LIFE_LOST = ', and you gain life equal to the life lost this way';
   return plain(line)
     // "The card" is Worldly Tutor's wording of the same step (D655).
     .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')
     .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
+    // And Gray Merchant's second sentence (D656), which is about the first one's result.
+    .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
+      .replace(/\u0004/g, LIFE_LOST)
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }

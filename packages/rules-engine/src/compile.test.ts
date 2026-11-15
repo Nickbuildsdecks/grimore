@@ -14155,8 +14155,10 @@ describe('"you may" outside a trigger (D525)', () => {
       'You may discard a Plains card rather than pay this spell’s mana cost.'],
     ['a free cast, for the same reason',
       'You may cast this card from your graveyard without paying its mana cost.'],
+    // Was "You may put a creature card from your hand onto the battlefield. …" until D656 read
+    // that half; the "if you do" is then the answer naming a card, which the sequence reader checks.
     ['a sequence whose first half does not read',
-      'You may put a creature card from your hand onto the battlefield. If you do, draw a card.'],
+      'You may exile a creature card from your hand. If you do, draw a card.'],
     ['a sequence whose second half does not read',
       'You may discard a card. If you do, put a creature card from your hand onto the battlefield.'],
   ])('refuses %s', (_why, text) => {

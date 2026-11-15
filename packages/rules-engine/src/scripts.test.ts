@@ -11839,6 +11839,83 @@ describe('token anthems, team protection, tutors to the top, an exact mana value
   });
 });
 
+describe('lands from hand, graveyard cards to the top, drain and gain (D656)', () => {
+  const row = (name: string, type: string, text: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Scout', 'Creature — Snake Shaman Scout', '{T}: You may put a land card from your hand onto the battlefield.', ['0', '1']),
+    row('Test Spiral', 'Instant', 'Put a land card from your hand onto the battlefield tapped.'),
+    row('Test Ruins', 'Instant', 'Put target artifact card from your graveyard on top of your library.'),
+    row('Test Merchant', 'Creature — Zombie', 'When this creature enters, each opponent loses 2 life. You gain life equal to the life lost this way.', ['2', '4']),
+    row('Test Relic', 'Artifact', ''),
+  ];
+  const deck = customDeck({
+    id: 'scouts', name: 'Scouts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 36 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[] = [], seats = 2) => advanceTo(arena({
+    ...(seats > 2 ? { format: 'pod' as const, seats } : {}),
+    decks: Object.fromEntries([...Array(seats).keys()].map((i) => [i, 'scouts'])), deckSpecs: { scouts: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Sakura-Tribe Scout puts a land from hand, and only a land; declining is an answer', () => {
+    let s = table(['Forest', 'Grizzly Bears'], ['Test Scout']);
+    const forest = find(s, 0, 'hand', 'Forest');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Scout'), abilityIndex: 0 });
+    s = passBoth(s);
+    const offered = s.pendingDecision!.candidates;
+    // The lands in hand (the turn's draw may have added one), never the Bears.
+    expect(offered).toContain(forest);
+    expect(offered.every((id) => nameOf(s, id) === 'Forest')).toBe(true);
+    expect(s.pendingDecision?.min).toBe(0);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [forest] }));
+    expect(s.instances[forest]!.zone).toBe('battlefield');
+    expect(s.instances[forest]!.tapped).toBe(false);
+    // And it is not the land drop: the turn's one land can still be played.
+    const another = find(s, 0, 'library', 'Forest');
+    s = apply(s, { type: 'card:move', by: 0, card: another, toZone: 'hand' });
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: another })).toBeNull();
+  });
+
+  it('Growth Spiral\'s half must put a land when there is one, and it enters tapped', () => {
+    let s = table(['Test Spiral', 'Forest']);
+    const forest = find(s, 0, 'hand', 'Forest');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spiral') }));
+    expect(s.pendingDecision?.min).toBe(1);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [forest] }));
+    expect(s.instances[forest]!.tapped).toBe(true);
+  });
+
+  it('Academy Ruins puts the artifact from the graveyard on top of the library', () => {
+    let s = table(['Test Ruins', 'Test Relic']);
+    const relic = find(s, 0, 'hand', 'Test Relic');
+    s = apply(s, { type: 'card:move', by: 0, card: relic, toZone: 'graveyard' });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ruins'), targets: [{ kind: 'card', id: relic }],
+    })));
+    expect(ids(s, 0, 'library')[0]).toBe(relic);
+  });
+
+  it('Gray Merchant gains what the opponents lost, two seats\' worth in a pod of three', () => {
+    let s = table([], ['Forest'], 3);
+    const before = [life(s, 0), life(s, 1), life(s, 2)];
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Merchant'), toZone: 'hand' });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Merchant') })));
+    expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0]! + 4, before[1]! - 2, before[2]! - 2]);
+    // A seat that has left the game loses nothing, so it gives nothing back.
+    let gone = table([], ['Forest'], 3);
+    gone = apply(gone, { type: 'concede', by: 2 });
+    const start = life(gone, 0);
+    gone = apply(gone, { type: 'card:move', by: 0, card: find(gone, 0, 'library', 'Test Merchant'), toZone: 'hand' });
+    gone = drain(passBoth(apply(gone, { type: 'auto:cast', by: 0, card: find(gone, 0, 'hand', 'Test Merchant') })));
+    expect(life(gone, 0)).toBe(start + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
