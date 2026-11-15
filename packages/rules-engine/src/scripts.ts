@@ -12194,6 +12194,20 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     holds), white when nothing does.
   */
   /*
+    Insurrection (D676): "Untap all creatures and gain control of them until end of turn. They gain
+    haste until end of turn." Every creature, Act of Treason's sentence over the whole board
+    (`stealUntilEndOfTurn`, whose haste is the second sentence). The caster's own creatures are
+    untapped and given haste; they were already theirs.
+  */
+  if (/^untap all creatures and gain control of them until end of turn, and they gain haste until end of turn$/i.test(text)) {
+    return {
+      effect: (c) => battlefield(c.state, (id) => {
+        const inst = c.state.instances[id];
+        return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+      }).reduce((state, id) => stealUntilEndOfTurn(state, id, c.controller, c.source), c.state),
+    };
+  }
+  /*
     "Each creature deals 1 damage to its controller" (D667): Rakdos Charm's third mode, Pestilence's
     cousins. Every creature on the battlefield as the clause resolves, each the source of its own
     damage (so lifelink and infect on it count), to the player who controls it then.
@@ -20831,8 +20845,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     refuses the **line**, which keeps D487: a reanimation that silently dropped its finality counter
     would be a strictly better card than the one printed.
   */
+  // And "put … onto the battlefield under your control" (D676): Reanimate, Animate Dead's effect.
   const reanimated =
-    /^return target (.*?)card( with mana value \d+ or (?:less|greater))? from (your|a|an opponent's) graveyard to the battlefield( tapped)?$/i
+    /^(?:return|put) target (.*?)card( with mana value \d+ or (?:less|greater))? from (your|a|an opponent's) graveyard (?:to|onto) the battlefield(?: under your control)?( tapped)?$/i
       .exec(text);
   if (reanimated !== null) {
     const spec = targetSpecFrom(
@@ -21751,10 +21766,12 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
+    // And Insurrection's (D676): "They" are the creatures the first sentence took.
+    .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
-      .replace(/\u0004/g, LIFE_LOST)
+      .replace(/\u0004/g, LIFE_LOST).replace(/\u0005/g, ', and they gain haste until end of turn')
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }

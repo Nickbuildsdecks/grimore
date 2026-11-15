@@ -45880,3 +45880,31 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,610, all passing
 
 Coverage: 11,199 of 31,653 cards (+13), 30,386 of 59,306 lines (+13). Staples: 186 of 244.
+
+## D676 — Reanimate and Insurrection
+
+Two staples. Staples went from 186 to 188.
+
+- **Reanimate.** The reanimation reader (D527) took "Return target … card from your / a / an
+  opponent's graveyard to the battlefield". It now also takes "Put … onto the battlefield under your
+  control", which is Reanimate's wording and Animate Dead's effect. "Under your control" is what it
+  already did. The second sentence, "You lose life equal to its mana value", was readable since
+  D660, because the first clause aims at a card.
+- **Insurrection.** "Untap all creatures and gain control of them until end of turn. They gain haste
+  until end of turn."
+  - `clausesOf` holds the two sentences together, as it does for D656's drain: "they" are the
+    creatures the first sentence took.
+  - The whole is Act of Treason's `stealUntilEndOfTurn` over every creature on the battlefield. That
+    function already untaps, gives haste and schedules the return.
+
+**Tests.** 2 engine tests:
+- Reanimate takes the opponent's 6-drop from their graveyard onto the caster's battlefield and costs
+  6 life;
+- Insurrection takes the opponent's two creatures, one of them tapped, untapped and with haste, and
+  they go back at the next turn.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 4,612, all passing
+
+Coverage: 11,210 of 31,653 cards (+11), 30,400 of 59,306 lines (+14). Staples: 188 of 244 (+2).

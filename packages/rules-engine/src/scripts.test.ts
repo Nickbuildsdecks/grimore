@@ -12875,6 +12875,50 @@ describe('Entwine: every mode for the extra cost (D675)', () => {
   });
 });
 
+describe('Reanimate and Insurrection (D676)', () => {
+  const row = (name: string, text: string, cost = '{0}') => ({
+    name, type_line: 'Sorcery', oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Reanimate', 'Put target creature card from a graveyard onto the battlefield under your control. You lose life equal to its mana value.'),
+    row('Test Insurrection', 'Untap all creatures and gain control of them until end of turn. They gain haste until end of turn.'),
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}{R}{R}', cmc: 6, colors: ['R'], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'reanimate', name: 'Reanimate',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'reanimate', 1: 'reanimate' }, deckSpecs: { reanimate: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Reanimate takes a creature from an opponent\'s graveyard and costs its mana value in life', () => {
+    let s = table(['Test Reanimate'], []);
+    const giant = find(s, 1, 'library', 'Test Giant');
+    s = apply(s, { type: 'card:move', by: 1, card: giant, toZone: 'graveyard' });
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Reanimate'), targets: [{ kind: 'card', id: giant }] })));
+    expect([s.instances[giant]!.zone, s.instances[giant]!.zoneSeat]).toEqual(['battlefield', 0]);
+    expect(life(s, 0)).toBe(before - 6);
+  });
+
+  it('Insurrection takes every creature until end of turn, untapped and hasty, and gives them back', () => {
+    let s = table(['Test Insurrection'], ['Grizzly Bears'], ['Grizzly Bears', 'Test Giant']);
+    const theirs = ids(s, 1, 'battlefield');
+    s = { ...s, instances: { ...s.instances, [theirs[0]!]: { ...s.instances[theirs[0]!]!, tapped: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Insurrection') })));
+    for (const id of theirs) {
+      expect(s.instances[id]!.zoneSeat).toBe(0);
+      expect(s.instances[id]!.tapped).toBe(false);
+      expect(characteristicsOf(s, s.instances[id]!).keywords.has('haste')).toBe(true);
+    }
+    s = nextTurn(s);
+    expect(theirs.every((id) => s.instances[id]!.zoneSeat === 1)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
