@@ -181,6 +181,10 @@ export function sacrificeOptions(
                   : kind === 'enchantment' ? hasType(ch.typeLine, 'enchantment')
                     : ch.isCreature;
     if (!rightKind) return false;
+    // "Sacrifice a green creature" (D686): one of the named colours, live.
+    if (cost.sacrificeColours !== undefined && !cost.sacrificeColours.some((colour) => ch.colors.includes(colour))) {
+      return false;
+    }
     // "Sacrifice another Vampire or Zombie": one of the named subtypes, read where the kind was.
     return cost.sacrificeSubtypes === undefined
       || cost.sacrificeSubtypes.some((sub) => hasSubtype(ch.typeLine, sub));
@@ -192,8 +196,15 @@ export function sacrificeOptions(
  * creature", or the subtype where the cost names one ("Goblin").
  */
 export function sacrificeWords(
-  cost: { readonly sacrifice?: AbilityCost['sacrifice']; readonly sacrificeSubtypes?: readonly string[] },
+  cost: {
+    readonly sacrifice?: AbilityCost['sacrifice']; readonly sacrificeSubtypes?: readonly string[];
+    readonly sacrificeColours?: readonly string[];
+  },
 ): string {
+  if (cost.sacrificeColours !== undefined && cost.sacrificeColours.length > 0) {
+    const words: Record<string, string> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
+    return `${cost.sacrificeColours.map((c) => words[c] ?? c).join(' or ')} ${sacrificeWords({ ...cost, sacrificeColours: undefined })}`;
+  }
   if (cost.sacrificeSubtypes !== undefined && cost.sacrificeSubtypes.length > 0) {
     return cost.sacrificeSubtypes.join(' or ');
   }
@@ -4390,10 +4401,18 @@ function askOrFinish(
     const poolSeat = !isCountersDecision(spec) && spec.fromSeat === 'target-player'
       ? object.targets.find((t) => t.kind === 'player')
       : undefined;
-    const candidates = (isCountersDecision(spec)
+    // "With mana value X or less" (D686): bounded by the X this spell was cast with.
+    const bounded = !isCountersDecision(spec) && spec.manaValueAtMostX === true
+      ? {
+        ...spec,
+        filter: (s: GameState, id: string, chooser: SeatIndex) => (spec.filter === undefined || spec.filter(s, id, chooser))
+          && (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= Math.max(0, object.x ?? 0),
+      }
+      : spec;
+    const candidates = (isCountersDecision(bounded)
       ? proliferateCandidates(state)
       : decisionCandidates(
-        state, spec, entry.seat,
+        state, bounded, entry.seat,
         poolSeat !== undefined && poolSeat.kind === 'player' ? poolSeat.seat : undefined,
       )).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);

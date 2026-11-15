@@ -13493,6 +13493,67 @@ describe('Fabled Passage\'s untap, and "an opponent controls N or more" (D685)',
   });
 });
 
+describe('colour and X in a search, and a coloured sacrifice (D686)', () => {
+  const ROWS = [
+    { name: 'Test Order', type_line: 'Sorcery', oracle_text: 'As an additional cost to cast this spell, sacrifice a green creature.\nSearch your library for a green creature card, put it onto the battlefield, then shuffle.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Zenith', type_line: 'Sorcery', oracle_text: 'Search your library for a creature card with mana value X or less, put it onto the battlefield, then shuffle.', mana_cost: '{X}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: '', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'zenith', name: 'Zenith',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], lands = 0) => advanceTo(arena({
+    decks: { 0: 'zenith', 1: 'zenith' }, deckSpecs: { zenith: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: [...mine, ...Array.from({ length: lands }, () => 'Forest')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolveTo = (s: GameState) => {
+    let next = s;
+    while (next.pendingDecision === null && next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+    // A search that cannot carry the X bound stays unread rather than searching unbounded.
+    const tutor = compileCard({ ...ROWS[1]!, name: 'Test Tutor', oracle_text: 'Search your library for a creature card with mana value X or less, reveal it, then shuffle and put that card on top.' } as never);
+    expect(tutor.ok && tutor.unread.length).toBe(1);
+  });
+
+  it('Natural Order: only a green creature pays, and only a green creature card is offered', () => {
+    const s0 = table(['Test Order'], ['Test Elf', 'Test Ogre']);
+    const order = find(s0, 0, 'hand', 'Test Order');
+    expect(refusal(s0, { type: 'auto:cast', by: 0, card: order, sacrifice: find(s0, 0, 'battlefield', 'Test Ogre') } as Action))
+      .toMatch(/cannot be sacrificed/);
+    let s = resolveTo(apply(s0, { type: 'auto:cast', by: 0, card: order, sacrifice: find(s0, 0, 'battlefield', 'Test Elf') } as Action));
+    expect(choices(s).every((n) => n === 'Test Elf' || n === 'Test Wurm')).toBe(true);
+    expect(choices(s)).toContain('Test Wurm');
+    s = drain(decide(s, ['Test Wurm']));
+    expect(ids(s, 0, 'battlefield').map((id) => s.cardDefs[s.instances[id]!.defKey]!.name)).toContain('Test Wurm');
+    // With no green creature to sacrifice, it is not offered at all.
+    const none = table(['Test Order'], ['Test Ogre']);
+    expect(legalActions(none, 0).plays.some((p) => p.card === find(none, 0, 'hand', 'Test Order'))).toBe(false);
+  });
+
+  it('"mana value X or less" is bounded by the X it was cast with', () => {
+    const one = resolveTo(apply(table(['Test Zenith'], [], 1), { type: 'auto:cast', by: 0, card: find(table(['Test Zenith'], [], 1), 0, 'hand', 'Test Zenith'), x: 1 } as Action));
+    expect([...new Set(choices(one))].sort()).toEqual(['Test Elf', 'Test Ogre']);
+    const s6 = table(['Test Zenith'], [], 6);
+    const six = resolveTo(apply(s6, { type: 'auto:cast', by: 0, card: find(s6, 0, 'hand', 'Test Zenith'), x: 6 } as Action));
+    expect([...new Set(choices(six))].sort()).toEqual(['Test Elf', 'Test Ogre', 'Test Wurm']);
+    const s0 = table(['Test Zenith'], []);
+    const zero = resolveTo(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Zenith'), x: 0 } as Action));
+    expect(zero.pendingDecision === null || choices(zero).length === 0).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

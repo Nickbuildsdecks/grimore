@@ -1533,6 +1533,12 @@ export interface CardsDecisionSpec {
   /** Which cards in that zone qualify. Without one, any card in the zone does. */
   readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
   /**
+   * "…with mana value X or less" (D686): Green Sun's Zenith, Chord of Calling. Only a card whose
+   * printed mana value is at most the X the spell was cast with qualifies; the engine reads X off
+   * the stack object as it asks.
+   */
+  readonly manaValueAtMostX?: true;
+  /**
    * Which cards the engine's own opponent picks, written by the card.
    *
    * The twin of `ChoiceDecisionSpec.best` and here for the same reason: only the card knows what
@@ -2005,6 +2011,11 @@ export interface AbilityCost {
    * A kindred Zombie enchantment would be the card that needs a permanent-wide member.
    */
   readonly sacrificeSubtypes?: readonly string[];
+  /**
+   * Narrows `sacrifice` to permanents of one of these colours (D686): Natural Order's "sacrifice a
+   * green creature". Read live off `characteristicsOf`, as the subtypes are.
+   */
+  readonly sacrificeColours?: readonly Color[];
   /**
    * `'artifact'` is the fourth member and the first that is not about creatures at all.
    *
@@ -3327,6 +3338,7 @@ export interface CardScript {
     | {
         readonly sacrifice: NonNullable<AbilityCost['sacrifice']>;
         readonly sacrificeSubtypes?: readonly string[];
+        readonly sacrificeColours?: readonly Color[];
       }
     /**
      * "As an additional cost to cast this spell, discard a card" (D585).

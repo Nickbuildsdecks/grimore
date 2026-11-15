@@ -2151,7 +2151,8 @@ function searchClause(text: string, name: string): ReadEffect | null {
   const onTop = /^search your library for (an? .+?)(?:, reveal it)?, then shuffle and put that card on top$/i.exec(text.trim());
   if (onTop !== null) {
     const filter = libraryFilter(onTop[1]!.trim(), name);
-    if (filter === null) return null;
+    // An X bound is carried only by the plain search below (D686); here it would be dropped.
+    if (filter === null || filter.xBound === true) return null;
     return {
       decisions: [searchYourLibrary(`Search your library for ${onTop[1]!.trim()}`, filter.filter === null ? undefined : filter.filter, 1)],
       effect: (c) => chosenCards(c).reduce((state, id) => putOnTopOfLibrary(state, id), c.state),
@@ -2168,7 +2169,7 @@ function searchClause(text: string, name: string): ReadEffect | null {
   if (split !== null) {
     const quantity = searchQuantity(split[1]!.trim());
     const filter = quantity === null ? null : libraryFilter(quantity.singular, name);
-    if (quantity === null || quantity.max !== 2 || filter === null) return null;
+    if (quantity === null || quantity.max !== 2 || filter === null || filter.xBound === true) return null;
     return {
       decisions: [searchYourLibrary(
         `Search your library for ${split[1]!.trim()}: the first you choose enters tapped, the second goes to your hand`,
@@ -2206,12 +2207,15 @@ function searchClause(text: string, name: string): ReadEffect | null {
   if ((pronoun === 'them' || pronoun === 'those cards') !== (quantity.max > 1)) return null;
 
   return {
-    decisions: [searchYourLibrary(
-      // The prompt is the **printed** phrase, plural and all, because it is what a player reads.
-      `Search your library for ${printed}`,
-      filter.filter === null ? undefined : filter.filter,
-      quantity.max,
-    )],
+    decisions: [{
+      ...searchYourLibrary(
+        // The prompt is the **printed** phrase, plural and all, because it is what a player reads.
+        `Search your library for ${printed}`,
+        filter.filter === null ? undefined : filter.filter,
+        quantity.max,
+      ),
+      ...(filter.xBound === true ? { manaValueAtMostX: true as const } : {}),
+    }],
     effect: (c) => {
       const found = chosenCards(c);
       if (found.length === 0) return c.state;
@@ -2267,10 +2271,39 @@ const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
  * position. A bare "with mana value 3" would fall through to the body, fail there, and leave the
  * line unread, which is the honest default.
  */
+/** A search filter narrowed to cards of one printed colour (D686). */
+function withColour(
+  filter: CardsDecisionSpec['filter'] | null | undefined, colour: Color,
+): NonNullable<CardsDecisionSpec['filter']> {
+  return (state, id, seat) => {
+    const inst = state.instances[id];
+    if (inst === undefined || !(state.cardDefs[inst.defKey]?.colors ?? []).includes(colour)) return false;
+    return filter === null || filter === undefined || filter(state, id, seat);
+  };
+}
+
 function libraryFilter(
   phrase: string, name: string,
-): { readonly phrase: string; readonly filter: CardsDecisionSpec['filter'] | null } | null {
+): { readonly phrase: string; readonly filter: CardsDecisionSpec['filter'] | null; readonly xBound?: true } | null {
+  /*
+    A colour in front of the card words (D686): "a green creature card" (Green Sun's Zenith, Natural
+    Order). The printed colours of the card, as a card in a library has; the rest of the phrase is
+    read as before.
+  */
+  const coloured = /^(an?) (white|blue|black|red|green) (.+)$/i.exec(phrase.trim());
+  if (coloured !== null) {
+    const colour = COLOUR_WORDS[coloured[2]!.toLowerCase()]!;
+    const rest = libraryFilter(`${/^[aeiou]/i.test(coloured[3]!) ? 'an' : 'a'} ${coloured[3]!}`, name);
+    return rest === null ? null : { ...rest, phrase: phrase.trim(), filter: withColour(rest.filter, colour) };
+  }
   const whole = phrase.trim();
+  // "With mana value X or less" (D686): the bound is the spell's X, which only the engine knows as
+  // it asks, so it is returned as a flag for the search to carry (`CardsDecisionSpec.manaValueAtMostX`).
+  const xClause = /^(.*?) with mana value X or less$/i.exec(whole);
+  if (xClause !== null) {
+    const body = cardFilterBody(xClause[1]!.trim(), name);
+    return body === null ? null : { phrase: whole, filter: body.filter, xBound: true };
+  }
   const clause = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(whole);
   const body = cardFilterBody(clause === null ? whole : clause[1]!.trim(), name);
   if (body === null) return null;
@@ -13300,7 +13333,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   if (fromHand !== null) {
     const quantity = fromHand[2]!.toLowerCase();
     const filter = libraryFilter(`a ${fromHand[3]!} card`, name);
-    if (filter !== null) {
+    if (filter !== null && filter.xBound !== true) {
       const max = quantity === 'up to two' ? 2 : quantity === 'any number of' ? ANY_NUMBER : 1;
       const optional = fromHand[1] !== undefined || quantity.startsWith('up to') || quantity === 'any number of';
       const tapped = fromHand[4] !== undefined;
@@ -24872,6 +24905,11 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
         sacrifice: creature[1]!.toLowerCase() === 'another' ? 'another-creature' : 'creature',
       },
     };
+  }
+  // "Sacrifice a green creature" (D686): Natural Order.
+  const colouredVictim = /^sacrifice an? (white|blue|black|red|green) creature$/i.exec(cost);
+  if (colouredVictim !== null) {
+    return { additionalCost: { sacrifice: 'creature', sacrificeColours: [COLOUR_WORDS[colouredVictim[1]!.toLowerCase()]!] } };
   }
   if (/^sacrifice an artifact$/i.test(cost)) return { additionalCost: { sacrifice: 'artifact' } };
   if (/^sacrifice an artifact or creature$/i.test(cost)) {

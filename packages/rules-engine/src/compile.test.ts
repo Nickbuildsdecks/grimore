@@ -9031,7 +9031,7 @@ describe('a library search, generalised (D449)', () => {
     expect(question(compiled)['filter']).toBeUndefined();
   });
 
-  it.each([
+  it('reads a colour and a type (D686), the last row of the old refusals', () => {
     /*
       The multi-word filters, which are the dangerous refusals rather than the obvious ones: each
       ends in " card" like a type phrase and so reaches the type branch, where a capitalised
@@ -9039,42 +9039,8 @@ describe('a library search, generalised (D449)', () => {
       find nothing, silently, on a card that otherwise works. The one-word guard is what refuses
       them, and these are the printed shapes it is refusing (counts are legal lines in the corpus).
     */
-    /*
-      **Retired rows (D455).** This list opened with five, and three of them have since become
-      readings rather than refusals:
-
-      | row | printed phrase | why it was refused | why it reads now |
-      | --- | --- | --- | --- |
-      | `a basic of a named type` | `a basic Plains card` | the one-word guard | a leading `basic` distributes over the list |
-      | `two types` | `an instant or sorcery card` | the one-word guard | alternatives are OR-ed |
-      | `a supertype and a type` | `a legendary creature card` | the one-word guard | words inside an alternative are AND-ed |
-
-      The claim they made was "each ends in ' card' like a type phrase and so reaches the type
-      branch, where a capitalised multi-word name would be matched against a subtype list that holds
-      one word per entry — and find nothing, silently". That was true of a reader that took the whole
-      phrase as one word. D455 splits the phrase into alternatives of conjunctions, which is the
-      grammar Magic actually prints, and each word still has to classify on its own — so the
-      silent-nothing the rows were guarding against is still impossible, and the two rows left are
-      the shapes that genuinely cannot be read: `permanent` is not a type (CR 205.2a) and a colour
-      is not on the type line at all.
-
-      **A fourth row retired (D491).** `a Rebel permanent card`, 10 lines, refused here because
-      "`permanent` is not a type (CR 205.2a)". That sentence is still true and is no longer a reason
-      to refuse the phrase: `cardWordMatch` reads the word as what CR 110.1 says a permanent *is* —
-      any of the six permanent types — rather than as a word to look for on the line. So the
-      silent-nothing this row guarded against is impossible for the same reason the three above are,
-      and the row is a reading now.
-
-      **One row is left**, and it is the next increment in this family rather than a rule: a colour
-      is not on the type line at all, so `a green creature card` needs a filter over `CardDef.colors`.
-    */
-    ['a colour and a type', 'a green creature card'],                                 // 4
-  ])('refuses %s, which ends in "card" but is not a type', (_label, filterPhrase) => {
-    const text = `Search your library for ${filterPhrase as string}, put that card into your hand,`
-      + ' then shuffle.';
-    const compiled = spell(text);
-    expect(compiled.ok).toBe(true);
-    expect(unreadLines(compiled)).toEqual([text]);
+    const text = 'Search your library for a green creature card, put that card into your hand, then shuffle.';
+    expect(unreadLines(spell(text))).toEqual([]);
   });
 
 

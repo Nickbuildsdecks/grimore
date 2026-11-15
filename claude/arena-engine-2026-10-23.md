@@ -28717,3 +28717,33 @@ fetch, no untap, an off-by-one in the land count).
     engine tests: 4,645, all passing
 
 Coverage: 11,263 of 31,653 cards (+2), 30,464 of 59,306 lines (+2). Staples: 200 of 244 (+2).
+
+## D686 — colour and X in a search, and a coloured sacrifice
+
+What now reads:
+- `libraryFilter` peels a colour word off the front of a search phrase: "a green creature card", "a
+  red instant card", "a green card". `withColour` tests the card's printed colours.
+- "With mana value X or less" comes back as `xBound`. `searchClause` carries it as the new
+  `CardsDecisionSpec.manaValueAtMostX`. The engine bounds the candidates by the stack object's X as
+  it asks the question. The other three search readers would drop the bound, so they refuse it.
+- "As an additional cost to cast this spell, sacrifice a green creature": the new
+  `AbilityCost.sacrificeColours` / `additionalCost.sacrificeColours`. `sacrificeOptions` checks it
+  live, and `sacrificeWords` names it ("green creature").
+
+Staples went from 200 to 202 (Natural Order, Chord of Calling). Green Sun's Zenith also needs its
+self-shuffle, which comes next.
+
+**Tests.** 3 engine tests:
+- both lines read, and a top-of-library tutor with an X bound stays unread;
+- Natural Order refuses a red creature as its cost, offers only green creature cards, puts the found
+  Wurm onto the battlefield, and is not offered without a green creature;
+- X=1 offers the one-drops, X=6 offers the Wurm too, and X=0 offers nothing.
+
+The D449 compile test had kept "a green creature card" as the last of its refused filters. That
+row is retired; the test now checks that the phrase reads.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,648, all passing
+
+Coverage: 11,272 of 31,653 cards (+9), 30,476 of 59,306 lines (+12). Staples: 202 of 244 (+2).
