@@ -12842,6 +12842,39 @@ describe('Offspring: pay more, get a 1/1 token copy (D674)', () => {
   });
 });
 
+describe('Entwine: every mode for the extra cost (D675)', () => {
+  const ROWS = [
+    { name: 'Test Chant', type_line: 'Instant', oracle_text: 'Choose one —\n• You gain 5 life.\n• Draw a card.\nEntwine {2} (Choose both if you pay the entwine cost.)', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'entwine', name: 'Entwine',
+    entries: [{ name: 'Test Chant', count: 4 }, { name: 'Plains', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (lands: number) => advanceTo(arena({
+    decks: { 0: 'entwine', 1: 'entwine' }, deckSpecs: { entwine: deck },
+    hands: { 0: ['Test Chant'] }, battlefield: { 0: Array.from({ length: lands }, () => 'Plains') }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const rows = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', 'Test Chant'));
+
+  it('offers each mode alone, and both for three mana', () => {
+    expect(rows(table(1)).map((p) => [p.modes, p.kicked === true])).toEqual([[[0], false], [[1], false]]);
+    expect(rows(table(3)).map((p) => [p.modes, p.kicked === true])).toEqual([[[0], false], [[1], false], [[0, 1], true]]);
+  });
+
+  it('entwined, it gains the life and draws the card; unpaid, both is refused, and paid, one is', () => {
+    let s = table(3);
+    const chant = find(s, 0, 'hand', 'Test Chant');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: chant, modes: [0, 1] })).not.toBeNull();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: chant, modes: [0], kicked: true })).not.toBeNull();
+    const [lifeBefore, handBefore] = [life(s, 0), ids(s, 0, 'hand').length];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: chant, modes: [0, 1], kicked: true })));
+    expect(life(s, 0)).toBe(lifeBefore + 5);
+    expect(ids(s, 0, 'hand').length).toBe(handBefore - 1 + 1);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped)).toHaveLength(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

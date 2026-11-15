@@ -3903,11 +3903,13 @@ function payFrom(
  * the order they are printed whatever order the player picked them in (CR 601.2b).
  */
 export function modeCombinations(
-  script: CardScript | undefined, state?: GameState, seat?: SeatIndex,
+  script: CardScript | undefined, state?: GameState, seat?: SeatIndex, kicked = false,
 ): number[][] {
   const modal = script?.modal;
   if (modal === undefined || modal.modes.length === 0) return [];
   const total = modal.modes.length;
+  // Entwined (D675): every mode, and only that.
+  if (modal.entwine === true && kicked) return [Array.from({ length: total }, (_, i) => i)];
   // The Will cycle (D668): more modes while the caster controls a commander on the battlefield.
   const commanded = modal.maxWithCommander !== undefined && state !== undefined && seat !== undefined
     && Object.values(state.instances).some((inst) => inst.isCommander && inst.zone === 'battlefield' && inst.zoneSeat === seat);

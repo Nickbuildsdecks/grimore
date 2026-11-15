@@ -25240,8 +25240,23 @@ export interface SpellReading {
  * argument exists for it and a silently dropped hint is a card that plays badly with nothing to
  * flag it (D362).
  */
-function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef } | null {
+function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef; kicker?: CardScript['kicker'] } | null {
   if (lines.length < 3) return null;
+  /*
+    Entwine (D675) is the line after the bullets: "Entwine {2}" with the reminder stripped. Read here,
+    with the modes, because it is an option on the mode choice — and paid as a kicker. A non-mana
+    entwine ("Entwine—Sacrifice three lands") stays unread.
+  */
+  const lastLine = plain(lines[lines.length - 1]!).replace(/\([^)]*\)/g, '').trim();
+  const entwined = /^entwine\s+((?:\{[^}]*\})+)$/i.exec(lastLine);
+  if (entwined !== null) {
+    const rest = modalScriptFor(lines.slice(0, -1), name);
+    if (rest === null || rest.kicker !== undefined || rest.modal.modes.length < 2) return null;
+    return {
+      modal: { ...rest.modal, entwine: true },
+      kicker: { cost: entwined[1]!, description: `Entwine ${entwined[1]!}` },
+    };
+  }
   // "Choose two" and "Choose one or more" too (D664): the Commands, Austere Command, Farewell.
   // And the Will cycle's (D668): one, or both while you control a commander as you cast it.
   const willHeader = /^choose one\. if you control a commander as you cast this spell, you may choose both(?: instead)?\.?$/i
@@ -25539,6 +25554,11 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
         only member of that family a spell can print.
       */
       if (isDevoidLine(line)) { compiled.push(line); continue; }
+      // Entwine stays with the bullets it is an option on (D675): `modalScriptFor` reads it there.
+      if (/^entwine\s+\{/i.test(line.trim()) && /^choose /i.test(plain(lines[0] ?? '').trim())) {
+        resolution.push(line);
+        continue;
+      }
       if (isKeywordDeclaration(line)) { declared.push(line); continue; }
       // And the lines that are not the spell's resolution at all (D487) — same rule, same reason.
       if (notPartOfTheResolution(line) !== null) { declared.push(line); continue; }

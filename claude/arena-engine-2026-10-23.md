@@ -28380,3 +28380,37 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,608, all passing
 
 Coverage: 11,186 of 31,653 cards (+10), 30,373 of 59,306 lines (+20). Staples: 186 of 244.
+
+## D675 — Entwine
+
+"Entwine {2} (Choose both if you pay the entwine cost.)" (CR 702.42), under a "Choose one —" list. It
+is on 30 legal lines, 13 of them a card's only unread line.
+
+**How it is built.**
+- **Compiler.**
+  - `spellScriptFor`'s keyword loop no longer takes an Entwine line out of a modal spell's
+    resolution. Before, it filed the line as an unimplemented keyword before the modal reader saw
+    it.
+  - `modalScriptFor` reads a trailing "Entwine {cost}" (mana only) over two or more modes. It returns
+    the modal with `entwine: true`, plus a `kicker` carrying the cost, described "Entwine {cost}".
+- **Engine.**
+  - `modeCombinations` takes `kicked`. An entwine spell cast kicked has exactly one combination:
+    every mode.
+  - `autoActions` passes the action's `kicked` when it validates the modes, and already charges a
+    kicker's cost.
+  - `legalActions`' modal branch offers one more row, kicked and with every mode, only when the
+    printed cost plus the entwine cost is affordable (it previously left kicker out of modal spells
+    entirely).
+
+**Not done:** non-mana entwine ("Entwine—Sacrifice three lands", Betrayal of Flesh).
+
+**Tests.** 2 engine tests:
+- with one land the spell offers each mode alone; with three it also offers both, kicked;
+- unpaid both is refused, paid one alone is refused, and entwined it gains 5 life and draws a card
+  with three lands tapped.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,610, all passing
+
+Coverage: 11,199 of 31,653 cards (+13), 30,386 of 59,306 lines (+13). Staples: 186 of 244.

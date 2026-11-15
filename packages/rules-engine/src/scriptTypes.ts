@@ -2468,6 +2468,11 @@ export interface ModalDef {
    * cast, which is when `modeCombinations` is asked with the state.
    */
   readonly maxWithCommander?: number;
+  /**
+   * "Entwine {2} (Choose both if you pay the entwine cost.)" (D675, CR 702.42): paid as the card's
+   * `kicker` (so the cast charges it), and a kicked cast takes every mode and nothing else.
+   */
+  readonly entwine?: true;
 }
 
 export interface CardScript {

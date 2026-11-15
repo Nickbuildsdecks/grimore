@@ -1950,6 +1950,31 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });
       }
+      /*
+        Entwined (D675): every mode, for the printed cost plus the entwine cost, offered as the
+        kicker's second row is and only when the whole thing can be paid.
+      */
+      const entwine = script?.modal?.entwine === true && !flashback && !escape && !foretold ? script.kicker : undefined;
+      if (entwine !== undefined) {
+        const all = modeCombinations(script, state, seat, true)[0]!;
+        const chosen = modesOf(script, all);
+        const specs = modeTargetSpecs(chosen);
+        const { ok, candidates } = playableTargets(state, specs, seat, id);
+        const withEntwine = parseManaCost(`${def?.manaCost ?? ''}${entwine.cost}`);
+        const entwinedCost: ManaCost = withCostChange(
+          fromCommand && tax > 0 ? { ...withEntwine, generic: withEntwine.generic + tax } : withEntwine,
+          change.generic,
+        );
+        if (ok && withEntwine.unsupported === undefined && canAfford(poolOf(state, seat), entwinedCost, sources)) {
+          out.push({
+            kind: 'cast', card: id, name: ch.name, kicked: true,
+            description: `Cast ${ch.name} with ${entwine.description.toLowerCase()} — ${chosen.map((m) => m.description).join('; and ')}`,
+            manaCost: `${def?.manaCost ?? ''}${entwine.cost}`, ...taxOn,
+            modes: all, targetSpecs: specs, candidates,
+            isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
+          });
+        }
+      }
       continue;
     }
 
