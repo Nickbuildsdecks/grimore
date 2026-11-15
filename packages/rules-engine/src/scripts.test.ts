@@ -11986,6 +11986,99 @@ describe('devotion: a count, and the gods that need it (D657)', () => {
   });
 });
 
+describe('a "may" answered by somebody else (D658)', () => {
+  const row = (name: string, type: string, text: string) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Fecund', 'Enchantment', "Whenever a creature dies, that creature's controller may draw a card."),
+    row('Test Kill', 'Instant', 'Destroy target creature.'),
+    row('Test Consolation', 'Instant', 'Destroy target creature. Its controller may draw a card.'),
+    row('Test Gift', 'Sorcery', 'Target player may draw a card.'),
+    row('Test Round', 'Sorcery', 'Each opponent may draw a card.'),
+    row('Test Offer', 'Sorcery', 'Target opponent may put a land card from their hand onto the battlefield.'),
+  ];
+  const deck = customDeck({
+    id: 'askers', name: 'Askers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[] = [], seats = 2) => advanceTo(arena({
+    ...(seats > 2 ? { format: 'pod' as const, seats } : {}),
+    decks: Object.fromEntries([...Array(seats).keys()].map((i) => [i, 'askers'])), deckSpecs: { askers: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const hand = (s: GameState, seat: SeatIndex) => ids(s, seat, 'hand').length;
+  const say = (s: GameState, seat: SeatIndex, option: string) => apply(s, { type: 'auto:decide', by: seat, cards: [], option });
+
+  it('Fecundity asks the dead creature\'s controller, who draws on a yes', () => {
+    let s = table(['Test Kill'], ['Test Fecund']);
+    const before = hand(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] }));
+    s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(say(s, 1, 'Yes'));
+    expect(hand(s, 1)).toBe(before + 1);
+  });
+
+  it('"Its controller may draw a card": asked of the destroyed creature\'s controller, and No draws nothing', () => {
+    let s = table(['Test Consolation']);
+    const before = [hand(s, 0), hand(s, 1)];
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Consolation'), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }] }));
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = drain(say(s, 1, 'No'));
+    expect([hand(s, 0), hand(s, 1)]).toEqual([before[0]! - 1, before[1]]);
+    expect(countOf(s, 1, 'graveyard', 'Grizzly Bears')).toBe(1);
+  });
+
+  it('"Target player may draw a card": the target answers, not the caster', () => {
+    let s = table(['Test Gift']);
+    const before = hand(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gift'), targets: [{ kind: 'player', seat: 1 }] }));
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = drain(say(s, 1, 'Yes'));
+    expect(hand(s, 1)).toBe(before + 1);
+  });
+
+  it('the clause\'s own question goes to the same player, from their own hand, and only on a yes', () => {
+    let s = table(['Test Offer', 'Swamp']);
+    // Two lands, so the choice is a real one (a forced single answer is given for them).
+    for (let i = 0; i < 2; i++) s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Swamp'), toZone: 'hand' });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Offer'), targets: [{ kind: 'player', seat: 1 }] }));
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = say(s, 1, 'Yes');
+    expect(s.pendingDecision?.seat).toBe(1);
+    const offered = s.pendingDecision!.candidates;
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => s.instances[id]!.zone === 'hand' && s.instances[id]!.owner === 1)).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [offered[0]!] }));
+    expect(s.instances[offered[0]!]!.zone).toBe('battlefield');
+    expect(s.instances[offered[0]!]!.zoneSeat).toBe(1);
+    // A no asks nothing more.
+    let t = table(['Test Offer']);
+    for (let i = 0; i < 2; i++) t = apply(t, { type: 'card:move', by: 1, card: find(t, 1, 'library', 'Swamp'), toZone: 'hand' });
+    t = passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Offer'), targets: [{ kind: 'player', seat: 1 }] }));
+    t = say(t, 1, 'No');
+    expect(t.pendingDecision).toBeNull();
+  });
+
+  it('"Each opponent may draw a card": each opponent answers for themselves, the caster is not asked', () => {
+    let s = table(['Test Round'], [], 3);
+    const before = [hand(s, 0), hand(s, 1), hand(s, 2)];
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Round') }));
+    const asked: SeatIndex[] = [];
+    while (s.pendingDecision !== null) {
+      const seat = s.pendingDecision.seat;
+      asked.push(seat);
+      s = say(s, seat, seat === 1 ? 'Yes' : 'No');
+    }
+    s = drain(s);
+    expect([...asked].sort()).toEqual([1, 2]);
+    expect([hand(s, 0), hand(s, 1), hand(s, 2)]).toEqual([before[0]! - 1, before[1]! + 1, before[2]]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

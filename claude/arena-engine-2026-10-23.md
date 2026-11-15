@@ -27805,3 +27805,45 @@ count.
     engine tests: 4,545, all passing
 
 Coverage: 10,989 of 31,653 cards (+15), 29,887 of 59,306 lines (+33). Staples: 168 of 244 (+2).
+
+## D658 — a "may" answered by somebody else
+
+"Target player may …", "each opponent may …", and, through the referent readers that swap their
+pronoun for "target player", "that player may …", "its controller may …" and Fecundity's "that
+creature's controller may draw a card". No reader asked a non-controller an optional question
+before; 289 legal cards print one.
+
+**`anotherPlayersMay`**, the last reader in `readEffect`'s chain.
+- It is last so that D647's targeted search keeps its reading: one search that may come back empty
+  is one question, where this would ask two.
+- The clause after "may" is read as if that player had printed it ("their" becomes "your") and run
+  with that player as controller.
+- "Target player / target opponent": a `target-player` Yes/No. The clause's own questions are
+  re-aimed at the same player and gated on Yes (`askOnlyIfChosen`, D450). The referent readers then
+  re-aim `target-player` at the acting, hit or referent player, as they already did for other
+  questions.
+- "Each player / each opponent": one Yes/No per seat. Each answer carries its seat, so each seat
+  that says yes gets the effect as its own controller. A clause that asks its own question is
+  refused here, because the plan expands a seat at a time and the gate is per question.
+- Refused: a clause with targets, or one with work before its questions.
+
+**Measured: +5 cards.** The mechanism is in, but most of the 289 lines fail on the clause after
+"may": "cast …", "pay …", "put … onto the battlefield" in shapes nothing reads yet. Those are now
+ordinary clause readers away rather than a missing mechanism.
+
+**Tests.** 5 engine tests:
+- Fecundity asks the dead creature's controller, who draws on a yes;
+- "its controller may draw" is asked of the destroyed creature's controller, and No draws nothing;
+- "target player may draw" is answered by the target;
+- "each opponent may draw" asks seats 1 and 2 and not the caster, and each answer counts only for
+  that seat;
+- "target opponent may put a land card from their hand onto the battlefield": the land question
+  goes to the same player, from their own hand, and is not asked on a no.
+
+Faults injected by hand: 9 of 9 caught. One survivor (the inner question not gated) was pinned by
+giving the declining player lands in hand.
+
+    engine tests: 4,550, all passing
+
+Coverage: 10,994 of 31,653 cards (+5), 29,894 of 59,306 lines (+7). Staples: 169 of 244 (+1,
+Fecundity).

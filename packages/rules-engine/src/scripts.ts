@@ -21286,6 +21286,63 @@ function preventionEffect(clause: string, name: string): ReadEffect | null {
   return { targets: [spec], effect: (c) => shieldFirstTarget(c, amount), ...PREVENTS };
 }
 
+/**
+ * **A "may" answered by somebody else** (D658): "target player may draw a card", "each opponent may
+ * search their library for a basic land card, …", and — through the referent readers, which swap
+ * their pronoun for "target player" — "that player may …" and Path to Exile's "its controller may …".
+ *
+ * The clause after "may" is read as if that player had printed it ("their" becomes "your") and run
+ * with that player as its controller, which is the reading D647 gave a targeted search. The
+ * yes-or-no is that player's, asked of them (`target-player`, or one question per seat for "each"),
+ * and the clause's own questions are re-aimed at them too and asked only on a yes (D450's gate).
+ *
+ * `undefined` when the clause is not this shape at all, `null` when it is and does not read.
+ *
+ * **Refused:** a clause that targets (whose choice would the target be?), one with work before its
+ * questions, and for "each", any clause that asks a question of its own — the plan expands a seat
+ * at a time and the gate is per question, not per seat.
+ */
+function anotherPlayersMay(
+  clause: string, name: string, where: SubjectZone | null,
+): ReadEffect | null | undefined {
+  const matched = /^(target player|target opponent|each player|each opponent) may (.+)$/i.exec(clause.trim());
+  if (matched === null) return undefined;
+  const who = matched[1]!.toLowerCase();
+  const words = matched[2]!.trim().replace(/\.$/, '');
+  const inner = readEffect(words.replace(/\btheir\b/gi, 'your').replace(/\bthey\b/gi, 'you'), name, where);
+  if (inner === null || inner.beforeDecisions !== undefined || (inner.targets ?? []).length > 0) return null;
+  const prompt = `${words.charAt(0).toUpperCase()}${words.slice(1)}?`;
+  if (who.startsWith('each')) {
+    if ((inner.decisions ?? []).length > 0) return null;
+    const opponentsOnly = who === 'each opponent';
+    return {
+      decisions: [{ who: opponentsOnly ? 'each-opponent' : 'each-player', prompt, options: ['Yes', 'No'] }],
+      effect: (c) => c.decisions.reduce(
+        (state, answer) => (answer.option === 'Yes'
+          ? inner.effect({ ...c, state, controller: answer.seat, decisions: [] })
+          : state),
+        c.state,
+      ),
+    };
+  }
+  // The clause's questions are the chosen player's, and only on a yes.
+  const reaimed: DecisionSpecOf[] = [];
+  for (const spec of inner.decisions ?? []) {
+    if (typeof spec === 'function' || !('who' in spec) || spec.who !== 'controller') return null;
+    if (spec.from === undefined && spec.options === undefined && spec.range === undefined) return null;
+    reaimed.push({ ...spec, who: 'target-player', askOnlyIfChosen: 'Yes' } as DecisionSpecOf);
+  }
+  return {
+    targets: [who === 'target opponent' ? TARGET_OPPONENT : TARGET_PLAYER_HELPED],
+    decisions: [{ who: 'target-player', prompt, options: ['Yes', 'No'] }, ...reaimed],
+    effect: (c) => {
+      const seat = firstPlayerTarget(c);
+      if (seat === null || chosenOption(c) !== 'Yes') return c.state;
+      return inner.effect({ ...c, controller: seat, decisions: c.decisions.slice(1) });
+    },
+  };
+}
+
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -21334,7 +21391,11 @@ function readEffect(
     ?? targetedEffect(clause, name)
     // Last, and the docblock on `conjoinedEffect` is about why: a conjunction any reader above
     // understands as one clause must keep that reading.
-    ?? conjoinedEffect(clause, name, where);
+    ?? conjoinedEffect(clause, name, where)
+    // After every other reader (D658): "target player may search …" already reads as one search
+    // that may come back empty (D647), which is one question where this would ask two.
+    ?? anotherPlayersMay(clause, name, where)
+    ?? null;
 }
 
 /**
