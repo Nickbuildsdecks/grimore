@@ -46127,3 +46127,34 @@ Faults injected by hand: 7 of 7 caught.
     engine tests: 4,637, all passing
 
 Coverage: 11,255 of 31,653 cards (+13), 30,456 of 59,306 lines (+16). Staples: 197 of 244 (+1).
+
+## D684 — "the owner of target permanent shuffles it into their library", and Chaos Warp
+
+What now reads:
+- "The owner of target permanent shuffles it into their library" and "Target creature's owner
+  shuffles it into their library". The card goes on top of its **owner's** library
+  (`putOnTopOfLibrary`), and that library is then shuffled.
+- Chaos Warp's tail: "…, then reveals the top card of their library. If it's a permanent card, they
+  put it onto the battlefield." `clausesOf` holds it on as one phrase (`CHAOS_WARP_TAIL`). The owner
+  puts a revealed permanent card onto the battlefield under their own control; any other card stays
+  on top.
+- The self form "~'s owner shuffles it into their library" (the Hellions, Cerulean Sphinx) and "its
+  owner shuffles it into their library" (Lembas).
+
+Staples went from 197 to 198 (Chaos Warp).
+
+**Tests.** 5 engine tests:
+- every line reads;
+- a creature owned by seat 1 and controlled by seat 0 goes into seat 1's library, which is
+  shuffled;
+- Chaos Warp over a library of permanents puts one onto the battlefield;
+- Chaos Warp over a library of instants leaves the instant on top, or returns the Ogre if the
+  shuffle put it on top;
+- the Sphinx shuffles itself in.
+
+Faults injected by hand: 6 of 6 caught (controller instead of owner, no shuffle, any card onto the
+battlefield, tail ignored, self form inert, wrong seat for the revealed permanent).
+
+    engine tests: 4,642, all passing
+
+Coverage: 11,261 of 31,653 cards (+6), 30,462 of 59,306 lines (+6). Staples: 198 of 244 (+1).

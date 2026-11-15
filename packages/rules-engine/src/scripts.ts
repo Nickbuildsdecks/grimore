@@ -14240,6 +14240,19 @@ function selfEffect(
     }
   }
 
+  // "~'s owner shuffles it into their library" (D684): the Hellions, Cerulean Sphinx, Lembas.
+  const selfTucked = new RegExp(`^(?:(${self})'s|its) owner shuffles (?:it|${self}) into their library$`, 'i').exec(text);
+  if (selfTucked !== null) {
+    const named = selfTucked[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        const owner = c.state.instances[id]?.owner;
+        return owner === undefined ? c.state : shuffleLibrary(putOnTopOfLibrary(c.state, id), owner);
+      },
+    };
+  }
+
   const regenerated = new RegExp(`^regenerate (?:(${self})|it)$`, 'i').exec(text);
   if (regenerated !== null) {
     const named = regenerated[1];
@@ -20206,6 +20219,38 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     judgement: nothing hand-written pairs the flag with a zone change that gives the card back, and
     whether returning a creature answers a board is what the bot's search sees by playing it out.
   */
+  /*
+    "The owner of target permanent shuffles it into their library" (D684), and "Target creature's
+    owner shuffles it into their library": the card goes into its owner's library, which is then
+    shuffled. Chaos Warp goes on: "…, then reveals the top card of their library. If it's a
+    permanent card, they put it onto the battlefield." `clausesOf` holds that tail on as one phrase;
+    the owner puts the card onto the battlefield under their own control, and a nonpermanent card
+    stays on top.
+  */
+  const tucked = new RegExp(
+    `^(?:the owner of (${TARGET_QUANTIFIER_PREFIX}target .+?)|(${TARGET_QUANTIFIER_PREFIX}target .+?)'s owner) shuffles it into their library(${CHAOS_WARP_TAIL})?$`, 'i',
+  ).exec(text);
+  if (tucked !== null) {
+    const spec = targetSpecFrom((tucked[1] ?? tucked[2])!, false);
+    const warp = tucked[3] !== undefined;
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => {
+          const owner = state.instances[id]?.owner;
+          if (owner === undefined) return state;
+          const shuffled = shuffleLibrary(putOnTopOfLibrary(state, id), owner);
+          if (!warp) return shuffled;
+          const top = listAt(shuffled, zoneKey(owner, 'library'))[0];
+          const line = parseTypeLine(top === undefined ? undefined : shuffled.cardDefs[shuffled.instances[top]?.defKey ?? '']?.typeLine);
+          return top !== undefined && PERMANENT_TYPES.some((type) => hasType(line, type))
+            ? putOntoBattlefield(shuffled, top, owner)
+            : shuffled;
+        }),
+      };
+    }
+  }
+
   const toLibraryTop = new RegExp(
     `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on top of its owner's library$`, 'i',
   ).exec(text);
@@ -21930,6 +21975,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
+    // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
+    .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
     .replace(/(destroy all [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*destroyed this way)/gi, '$1\u0007$2')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
@@ -21939,7 +21986,7 @@ function clausesOf(line: string): readonly string[] {
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
       .replace(/\u0004/g, LIFE_LOST).replace(/\u0005/g, ', and they gain haste until end of turn')
-      .replace(/\u0006/g, ', then ').replace(/\u0007/g, '; ')
+      .replace(/\u0006/g, ', then ').replace(/\u0007/g, '; ').replace(/\u0008/g, CHAOS_WARP_TAIL)
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }
@@ -22201,6 +22248,9 @@ function revealKeepGroup(
     consumed: 2,
   };
 }
+
+/** Chaos Warp's tail, as `clausesOf` hands it on (D684). */
+const CHAOS_WARP_TAIL = ', and reveals the top card of their library, putting it onto the battlefield if it is a permanent card';
 
 /** The basic land types, as the subtype a reveal-and-keep may name ("all Island cards", D683). */
 const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];

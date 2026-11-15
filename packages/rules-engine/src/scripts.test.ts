@@ -13354,6 +13354,90 @@ describe('reveal the top N, keep all of a kind (D683)', () => {
   });
 });
 
+describe('"the owner of target permanent shuffles it into their library", and Chaos Warp (D684)', () => {
+  const ROWS = [
+    { name: 'Test Warp', type_line: 'Instant', oracle_text: "The owner of target permanent shuffles it into their library, then reveals the top card of their library. If it's a permanent card, they put it onto the battlefield.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Tuck', type_line: 'Instant', oracle_text: "Target creature's owner shuffles it into their library.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Sphinx', type_line: 'Creature — Sphinx', oracle_text: "{0}: Test Sphinx's owner shuffles it into their library.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spell', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'tuck', name: 'Tuck',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const nameOfId = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  const table = (hand: string[], mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'tuck', 1: 'tuck' }, deckSpecs: { tuck: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castAt = (s: GameState, name: string, target: string) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'card', id: target }] } as Action);
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+  const names = (s: GameState, seat: SeatIndex, zone: 'battlefield' | 'library') => ids(s, seat, zone).map((id) => nameOfId(s, id));
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('goes into its owner\'s library, not its controller\'s, and the library is shuffled', () => {
+    let s = table(['Test Tuck'], ['Test Ogre'], []);
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    s = { ...s, instances: { ...s.instances, [ogre]: { ...s.instances[ogre]!, owner: 1 as SeatIndex } } };
+    const before = [...ids(s, 1, 'library')];
+    s = castAt(s, 'Test Tuck', ogre);
+    expect(names(s, 0, 'battlefield')).not.toContain('Test Ogre');
+    expect(ids(s, 1, 'library').length).toBe(before.length + 1);
+    // Shuffled, not left on top over the old order.
+    expect(ids(s, 1, 'library')).not.toEqual([ogre, ...before]);
+    expect(ids(s, 1, 'library').slice(1)).not.toEqual(before);
+    expect(ids(s, 0, 'library').map((id) => s.instances[id]!.owner).every((o) => o === 0)).toBe(true);
+  });
+
+  it('Chaos Warp: a permanent card revealed comes onto the battlefield under its owner', () => {
+    const s0 = table(['Test Warp'], [], ['Test Ogre']);
+    const before = ids(s0, 1, 'library').length;
+    // Seat 1's library is all permanents (Forests, Ogres, Sphinxes) but for its instants.
+    const allPermanents = { ...s0, zones: { ...s0.zones, '1:library': ids(s0, 1, 'library').filter((id) => !/Spell|Warp|Tuck/.test(nameOfId(s0, id))) } };
+    const s = castAt(allPermanents, 'Test Warp', find(s0, 1, 'battlefield', 'Test Ogre'));
+    expect(ids(s, 1, 'battlefield').length).toBe(1);
+    expect(ids(s, 1, 'library').length).toBe(ids(allPermanents, 1, 'library').length);
+    expect(before).toBeGreaterThan(0);
+  });
+
+  it('Chaos Warp: a nonpermanent card revealed stays on top of the library', () => {
+    const s0 = table(['Test Warp'], [], ['Test Ogre']);
+    const spells = ids(s0, 1, 'library').filter((id) => nameOfId(s0, id) === 'Test Spell');
+    const onlySpells = { ...s0, zones: { ...s0.zones, '1:library': spells } };
+    const s = castAt(onlySpells, 'Test Warp', find(s0, 1, 'battlefield', 'Test Ogre'));
+    const top = names(s, 1, 'library')[0];
+    if (top === 'Test Ogre') {
+      // The shuffle put the Ogre on top: it comes straight back.
+      expect(names(s, 1, 'battlefield')).toEqual(['Test Ogre']);
+    } else {
+      expect(top).toBe('Test Spell');
+      expect(names(s, 1, 'battlefield')).toEqual([]);
+      expect(ids(s, 1, 'library').length).toBe(spells.length + 1);
+    }
+  });
+
+  it('"~\'s owner shuffles it into their library" moves the source itself', () => {
+    let s = table([], ['Test Sphinx'], []);
+    const sphinx = find(s, 0, 'battlefield', 'Test Sphinx');
+    s = apply(s, { type: 'auto:activate', by: 0, card: sphinx, abilityIndex: 0 });
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(names(s, 0, 'battlefield')).not.toContain('Test Sphinx');
+    expect(names(s, 0, 'library').filter((n) => n === 'Test Sphinx').length).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
