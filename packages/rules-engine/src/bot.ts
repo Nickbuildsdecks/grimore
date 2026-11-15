@@ -2517,6 +2517,8 @@ function candidateActions(
             // targets one thing — and the bot had just decided it wanted all of them.
             ...(play.overloaded === true ? { overloaded: true } : {}),
             ...(play.commanderFree === true ? { commanderFree: true } : {}),
+            // And the pitch (D691): the card it exiles rides as `discarded`, chosen above.
+            ...(play.pitchCast === true ? { pitchCast: true } : {}),
             // And retrace, flashback's zone again (D601): sent without it, the land the bot chose
             // to discard rides along on what the engine reads as a cast from hand, and the card
             // is in a graveyard. Sweep 46821 threw on exactly that, with Glamerdye.
@@ -4876,7 +4878,7 @@ const playKey = (play: LegalPlay): string =>
   + `${play.evoked === true ? 'e' : ''}${play.dashed === true ? 'd' : ''}`
   + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
   + `${play.overloaded === true ? 'o' : ''}`
-  + `${play.commanderFree === true ? 'f' : ''}`
+  + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}`
   // And replicate's count, for the same reason one step further: the three castings of a Pyromatics
   // are three plays, and a key that could not tell them apart would read "x2 is still on offer"
   // after the printed one had been cast.

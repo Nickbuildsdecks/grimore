@@ -3259,6 +3259,18 @@ export interface CardScript {
    */
   readonly freeWithCommander?: true;
   /**
+   * "You may exile a blue card from your hand rather than pay this spell's mana cost" (D691): Force
+   * of Will, Force of Negation, Snapback, Misdirection's kin. An alternative cost of one other card
+   * of `colour` from the caster's hand, exiled as the spell is cast, plus `life` where printed ("pay
+   * 1 life and …"). `notYourTurn`: "If it's not your turn, …" (Force of Negation and the Modern
+   * Horizons Forces).
+   */
+  readonly pitch?: {
+    readonly colour: Color;
+    readonly life?: number;
+    readonly notYourTurn?: true;
+  };
+  /**
    * "Shuffle ~ into its owner's library" as the last sentence of a spell (D687): Green Sun's
    * Zenith, the Beacons, Kodama's Reach's cousins that recycle. As the spell resolves, its card
    * goes into its owner's library, which is shuffled, instead of into a graveyard (CR 608.2n). A

@@ -2242,3 +2242,10 @@ describe("why a seat is out (D690)", () => {
     expect(eliminatedLabel(null)).toBe("out")
   })
 })
+
+describe("a pitch cost: a card exiled from hand instead of the mana (D691)", () => {
+  it("says exile and names the colour", () => {
+    expect(feedWords("discarded", undefined, undefined, "blue card")).toBe("tap a blue card in your hand to exile")
+    expect(feedWords("discarded")).toBe("tap a card in your hand to discard")
+  })
+})

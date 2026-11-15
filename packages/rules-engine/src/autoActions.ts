@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScrip
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -503,6 +503,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const overloaded = action.overloaded === true;
   // And the commander's free cast (D653), the sixth: validated with the five for the same reasons.
   const commanderFree = action.commanderFree === true;
+  // And the pitch (D691), the seventh: a card of the printed colour from hand instead of the mana.
+  const pitchCast = action.pitchCast === true;
   /*
     And rebound, which is not an alternative cost at all and so is not validated with the five
     above: nothing is announced, nothing is chosen, and the player is not asked. It is a fact about
@@ -513,9 +515,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     not flagged, so it does not rebound again. See `StackObject.rebounding`.
   */
   const rebounding = script?.rebound === true && inst.zone === 'hand' && inst.zoneSeat === action.by;
-  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree) {
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
-      : spectacled ? 'spectacle' : overloaded ? 'overload' : 'free cast';
+      : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -525,12 +527,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
       : bestowed ? script?.bestow : spectacled ? script?.spectacle
-        : overloaded ? script?.overload : script?.freeWithCommander) === undefined) {
+        : overloaded ? script?.overload : pitchCast ? script?.pitch : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
@@ -540,6 +542,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     }
     if (commanderFree && !controlsACommander(state, action.by)) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'you do not control a commander');
+    }
+    if (pitchCast && script?.pitch?.notYourTurn === true && state.activeSeat === action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that pitch cost is only payable when it is not your turn');
     }
     if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
@@ -614,6 +619,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     the hand as this runs and on the stack by the time anything is paid.
   */
   let discardedForCost: string | null = null;
+  let pitchedForCost: string | null = null;
   if (retrace) {
     // A land card, and only a land card (CR 702.81a) — the offer listed exactly these.
     const lands = listAt(state, zoneKey(action.by, 'hand')).filter((card) =>
@@ -634,8 +640,19 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card cannot be discarded for this');
     }
     discardedForCost = action.discarded;
+  } else if (pitchCast) {
+    // The pitch (D691): exiled rather than discarded, so it is held apart from the discard above.
+    const options = pitchOptions(state, action.by, inst.id, script?.pitch?.colour ?? '');
+    if (action.discarded === undefined || !options.includes(action.discarded)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose another ${script?.pitch?.colour ?? ''} card in your hand to exile for ${characteristics.name}`);
+    }
+    pitchedForCost = action.discarded;
   } else if (action.discarded !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} does not ask for a discard`);
+  }
+  const pitchLife = pitchCast ? script?.pitch?.life ?? 0 : 0;
+  if (pitchLife > 0 && (state.seats[action.by]?.life ?? 0) <= pitchLife) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${pitchLife} life to pay for ${characteristics.name}`);
   }
   /*
     And a printed amount of life (D585): nothing to choose, and refused at exactly the life that
@@ -692,7 +709,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
                   // And the commander's free cast (D653): nothing at all.
-                  : commanderFree ? '{0}'
+                  : commanderFree || pitchCast ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.
@@ -851,6 +868,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
   if (lifeForCost > 0) next = loseLife(next, action.by, lifeForCost);
+  // The pitch (D691): its life, and its card exiled, as the rest of the cost is paid.
+  if (pitchLife > 0) next = loseLife(next, action.by, pitchLife);
+  if (pitchedForCost !== null) {
+    const card = requireInstance(next, pitchedForCost);
+    next = relocate(next, card, 'exile', card.owner, 'bottom');
+  }
   // And the card discarded for it: a discard like any other, so `settle` raises it for madness
   // and for anything that watches one, and it is gone before anybody may respond.
   if (discardedForCost !== null) {

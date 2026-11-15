@@ -46335,3 +46335,41 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,660, all passing
 
 Coverage: 11,302 of 31,653 cards (+4), 30,533 of 59,306 lines (+8). Staples: 204 of 244 (+1).
+
+## D691 — a pitch cost: exile a card of the colour instead of the mana
+
+"You may exile a blue card from your hand rather than pay this spell's mana cost." Force of Will
+("pay 1 life and …"), Force of Negation ("If it's not your turn, …"), Snapback, Unmask, Vine Dryad,
+and the other one-card pitches.
+
+What was added:
+- `CardScript.pitch {colour, life?, notYourTurn?}`, read by `pitchFromLine` beside the
+  additional-cost reader. A two-card pitch is refused.
+- `legalActions` offers a seventh alternative cast, `pitchCast`, at {0}. It is offered while another
+  card of the colour is in hand (`pitchOptions`), the life can be paid without ending the game, and,
+  for `notYourTurn`, it is not the caster's turn. The choices travel as the play's `discardOptions`
+  with `pitchWords`.
+- `autoActions` validates the flag with the other alternative costs. The chosen card arrives as
+  `discarded` but is held apart from the discard cost, and is **exiled** as the cost is paid, along
+  with the life.
+- The bot sends `pitchCast` and picks the card the way it picks any discard.
+- The web copies the flag and asks "tap a blue card in your hand to exile".
+- The mechanic-coverage test lists `script pitch` as compiler-only, with a note.
+
+Staples went from 204 to 206 (Force of Will, Force of Negation).
+
+**Tests.** 4 engine tests and 1 web test:
+- both lines read;
+- Force is offered with exactly the other blue card, exiles it, takes 1 life and counters the
+  spell;
+- it is not offered without another blue card and refuses a red one;
+- Negation is offered on the opponent's turn, and on my own turn (with my own spell on the stack to
+  aim at) it is not offered and is refused;
+- the web wording.
+
+Faults injected by hand: 6 of 6 caught. The own-turn fault survived at first, because Negation had
+nothing to target; it was pinned by putting a spell on the stack.
+
+    engine tests: 4,664, all passing
+
+Coverage: 11,307 of 31,653 cards (+5), 30,552 of 59,306 lines (+19). Staples: 206 of 244 (+2).

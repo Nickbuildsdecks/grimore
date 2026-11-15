@@ -24948,6 +24948,26 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  *   a land you control to its owner's hand" — other zones and other verbs.
  * - "pay **X** life" — X announced as the spell is cast; the pool's Toxic Deluge has it by hand.
  */
+/**
+ * A pitch cost (D691): "You may exile a blue card from your hand rather than pay this spell's mana
+ * cost." Force of Will's "pay 1 life and" before it, and Force of Negation's "If it's not your
+ * turn," in front. One card only: "exile two white cards" (Sunscour) is refused.
+ */
+function pitchFromLine(line: string): Partial<CardScript> | null {
+  const read = /^(if it's not your turn, )?you may (?:pay (\w+) life and )?exile an? (white|blue|black|red|green) card from your hand rather than pay this spell's mana cost$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (read === null) return null;
+  const life = read[2] === undefined ? undefined : WORD_NUMBERS[read[2].toLowerCase()] ?? (/^\d+$/.test(read[2]) ? Number(read[2]) : undefined);
+  if (read[2] !== undefined && life === undefined) return null;
+  return {
+    pitch: {
+      colour: COLOUR_WORDS[read[3]!.toLowerCase()]!,
+      ...(life === undefined ? {} : { life }),
+      ...(read[1] === undefined ? {} : { notYourTurn: true as const }),
+    },
+  };
+}
+
 function additionalCostFromLine(line: string): Partial<CardScript> | null {
   const cost = /^As an additional cost to cast this spell, (.+)$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''))?.[1];
@@ -25966,7 +25986,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       sentence about casting handed to the clause readers refuses the card at best and runs the
       sacrifice on resolution at worst.
     */
-    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line)
+    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line) ?? pitchFromLine(line)
       ?? spellStaticFromLine(line) ?? selfCostChangeFromLine(line, name);
     if (keyword === null) {
       /*

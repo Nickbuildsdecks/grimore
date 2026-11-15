@@ -1712,6 +1712,12 @@ export interface AutoCastAction {
    */
   readonly commanderFree?: boolean;
   /**
+   * Cast it for its pitch cost (D691): exile `discarded`, a card of the printed colour from your
+   * hand, and pay any printed life, instead of the mana cost. Refused on a card without the line,
+   * with a card of another colour, and for "if it's not your turn" on your own turn.
+   */
+  readonly pitchCast?: boolean;
+  /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *
    * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather

@@ -142,8 +142,11 @@ export type Decision = NonNullable<LegalActions["mustDecide"]>
  */
 export function feedWords(
   cost: "sacrifice" | "returned" | "discarded", sacrificeKind?: LegalPlay["sacrificeKind"], words?: string,
+  pitchWords?: string,
 ): string {
   if (cost === "returned") return "tap an unblocked attacker to return to your hand"
+  // A pitch cost (D691) is paid from the same cards as a discard, but the card is exiled.
+  if (cost === "discarded" && pitchWords !== undefined) return `tap a ${pitchWords} in your hand to exile`
   if (cost === "discarded") return "tap a card in your hand to discard"
   // The cost's own words where the engine sent them (D609): "a land", "a token", "a Forest".
   if (words !== undefined && words !== "") return `tap ${/^[aeiou]/i.test(words) ? "an" : "a"} ${words} to sacrifice`
@@ -480,7 +483,7 @@ function playAction(
   */
   const COST_FLAGS = [
     "kicked", "buyback", "flashback", "escape", "retrace", "faceDown", "foretold", "offered",
-    "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree",
+    "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree", "pitchCast",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

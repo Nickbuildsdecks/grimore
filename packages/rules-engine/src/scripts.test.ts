@@ -7886,6 +7886,9 @@ describe('deck coverage', () => {
       - `script spellsCantBeCountered` (D688): "Creature spells you control can't be countered"
         (Rhythm of the Wild) and "Spells can't be countered". No pool deck has one. Driven at
         runtime by "\"Creature spells you control can't be countered\" (D688)".
+      - `script pitch` (D691): Force of Will, Force of Negation and the one-card pitch spells. No pool
+        deck has one. Driven at runtime by "a pitch cost: exile a card of the colour instead of the
+        mana (D691)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7907,6 +7910,7 @@ describe('deck coverage', () => {
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
       'script spellsCantBeCountered',
+      'script pitch',
     ]);
 
     const declared = [
@@ -13776,6 +13780,80 @@ describe('the Pacts: pay at your next upkeep or lose the game (D690)', () => {
     let s = toQuestion(2);
     s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: "Don't pay" }));
     expect(s.seats[0]!.eliminated).toBe(true);
+  });
+});
+
+describe('a pitch cost: exile a card of the colour instead of the mana (D691)', () => {
+  const ROWS = [
+    { name: 'Test Force', type_line: 'Instant', oracle_text: "You may pay 1 life and exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target spell.", mana_cost: '{3}{U}{U}', cmc: 5, colors: ['U'], layout: 'normal' },
+    { name: 'Test Negation', type_line: 'Instant', oracle_text: "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target noncreature spell.", mana_cost: '{1}{U}{U}', cmc: 3, colors: ['U'], layout: 'normal' },
+    { name: 'Test Wisp', type_line: 'Creature — Spirit', oracle_text: '', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'pitch', name: 'Pitch',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  // Seat 1 casts `spell` on its own turn; seat 0 holds `hand` and no lands.
+  const facing = (spell: string, hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'pitch', 1: 'pitch' }, deckSpecs: { pitch: deck.deck },
+      hands: { 0: hand, 1: [spell] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', spell) });
+    return apply(s, { type: 'auto:pass', by: 1 });
+  };
+  const pitchPlay = (s: GameState, name: string) => legalActions(s, 0).plays
+    .find((p) => p.card === find(s, 0, 'hand', name) && (p as { pitchCast?: boolean }).pitchCast === true);
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads both lines whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('Force: offered with another blue card in hand, exiles it, takes 1 life, and counters', () => {
+    let s = facing('Test Bear', ['Test Force', 'Test Wisp', 'Test Ogre']);
+    const play = pitchPlay(s, 'Test Force');
+    expect(play).toBeDefined();
+    expect((play!.discardOptions ?? []).map((id) => nameOf(s, id))).toEqual(['Test Wisp']);
+    const bear = s.stackOrder[0]!;
+    const life = s.seats[0]!.life;
+    const wisp = find(s, 0, 'hand', 'Test Wisp');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Force'), pitchCast: true, discarded: wisp, targets: [{ kind: 'card', id: bear }] } as Action);
+    expect(s.instances[wisp]!.zone).toBe('exile');
+    expect(s.seats[0]!.life).toBe(life - 1);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('Force: not offered with no other blue card, and refuses a card of another colour', () => {
+    const s = facing('Test Bear', ['Test Force', 'Test Ogre']);
+    expect(pitchPlay(s, 'Test Force')).toBeUndefined();
+    const t = facing('Test Bear', ['Test Force', 'Test Wisp', 'Test Ogre']);
+    expect(refusal(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Force'), pitchCast: true, discarded: find(t, 0, 'hand', 'Test Ogre'), targets: [{ kind: 'card', id: t.stackOrder[0]! }] } as Action))
+      .toMatch(/to exile/);
+  });
+
+  it('Negation: only when it is not your turn', () => {
+    const theirs = facing('Test Spark', ['Test Negation', 'Test Wisp']);
+    expect(pitchPlay(theirs, 'Test Negation')).toBeDefined();
+    // On my own turn, with my own sorcery on the stack for it to point at.
+    let mine = advanceTo(arena({
+      decks: { 0: 'pitch', 1: 'pitch' }, deckSpecs: { pitch: deck.deck },
+      hands: { 0: ['Test Negation', 'Test Wisp', 'Test Spark'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    mine = apply(mine, { type: 'auto:cast', by: 0, card: find(mine, 0, 'hand', 'Test Spark') });
+    expect(mine.stackOrder.length).toBe(1);
+    expect(pitchPlay(mine, 'Test Negation')).toBeUndefined();
+    expect(refusal(mine, { type: 'auto:cast', by: 0, card: find(mine, 0, 'hand', 'Test Negation'), pitchCast: true, discarded: find(mine, 0, 'hand', 'Test Wisp'), targets: [{ kind: 'card', id: mine.stackOrder[0]! }] } as Action))
+      .toMatch(/not your turn/);
   });
 });
 

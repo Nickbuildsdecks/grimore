@@ -252,6 +252,13 @@ export interface LegalPlay {
   /** Set on the play that casts the card for nothing because you control a commander (D653). */
   readonly commanderFree?: boolean;
   /**
+   * Set on the play that casts the card for its pitch cost (D691): one card of the printed colour
+   * exiled from your hand instead of the mana, chosen from `discardOptions` and sent as
+   * `discarded`. `pitchWords` names the card for the table ("blue card").
+   */
+  readonly pitchCast?: boolean;
+  readonly pitchWords?: string;
+  /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
    *
@@ -640,6 +647,18 @@ export function crewPlan(
  * may tap itself does so only when nothing else will — and otherwise the weakest first, crew's rule.
  */
 /** Whether this seat controls a commander on the battlefield (D653): "if you control a commander". */
+/** Colour words, for the pitch's offer (D691). */
+const COLOUR_NAMES: Readonly<Record<string, string>> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
+
+/**
+ * The cards a pitch cost may exile (D691): every **other** card in the caster's hand of that
+ * colour, by its printed colours (a card in hand has no others).
+ */
+export function pitchOptions(state: GameState, seat: SeatIndex, spell: string, colour: string): string[] {
+  return listAt(state, zoneKey(seat, 'hand')).filter((id) => id !== spell
+    && (state.cardDefs[state.instances[id]?.defKey ?? '']?.colors ?? []).includes(colour));
+}
+
 export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
   return listAt(state, zoneKey(seat, 'battlefield')).some((id) => state.instances[id]?.isCommander === true);
 }
@@ -1684,6 +1703,20 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           note: 'commander bonus (free, because you control a commander)',
           specs: specsFor(script),
         }]),
+        /*
+          And the pitch (D691): "exile a blue card from your hand rather than pay this spell's mana
+          cost". Offered while another card of that colour is in hand, the printed life can be paid
+          without ending the game, and, for the Forces that say so, it is not the caster's turn.
+        */
+        ...(script?.pitch === undefined || pitchOptions(state, seat, id, script.pitch.colour).length === 0
+          || (script.pitch.notYourTurn === true && state.activeSeat === seat)
+          || ((script.pitch.life ?? 0) > 0 && (state.seats[seat]?.life ?? 0) <= (script.pitch.life ?? 0))
+          ? [] : [{
+            flag: 'pitchCast' as const,
+            cost: '{0}',
+            note: `alternative cost (exile a ${COLOUR_NAMES[script.pitch.colour]} card from your hand${script.pitch.life === undefined ? '' : ` and pay ${script.pitch.life} life`})`,
+            specs: specsFor(script),
+          }]),
         ...(script?.overload === undefined ? [] : [{
           flag: 'overloaded' as const,
           cost: script.overload.cost,
@@ -1706,6 +1739,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           : { costChange: altChange.generic, costNote: altChange.notes[0] ?? '' }),
         targetSpecs: alternative.specs, candidates: altTargets.candidates,
         isManaAbility: false, sacrificeOptions: [],
+        ...(alternative.flag === 'pitchCast' && script?.pitch !== undefined
+          ? {
+            discardOptions: pitchOptions(state, seat, id, script.pitch.colour),
+            pitchWords: `${COLOUR_NAMES[script.pitch.colour]} card`,
+          }
+          : {}),
       });
     }
 
