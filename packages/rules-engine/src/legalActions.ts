@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { commanderTaxFor, listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -671,6 +671,15 @@ const BASIC_TYPE_MANA: Readonly<Record<string, ManaType>> = {
 function typeGrantedMana(subtypes: readonly string[]): AbilityDef[] {
   return [...new Set(subtypes.map((s) => BASIC_TYPE_MANA[s.toLowerCase()]).filter((t): t is ManaType => t !== undefined))]
     .map((t) => ({ cost: { tap: true }, description: `{T}: Add {${t}}.`, produces: [t] }));
+}
+
+/**
+ * The life an ability's cost takes from this seat (D702): its printed amount, plus one for each
+ * colour in the seat's commanders' identity where the cost says so (War Room). Read as the
+ * ability is offered and as it is paid.
+ */
+export function abilityLifeCost(state: GameState, seat: SeatIndex, cost: AbilityCost): number {
+  return (cost.life ?? 0) + (cost.lifePerIdentityColour === true ? commanderIdentity(state, seat).length : 0);
 }
 
 /** What a spell's mana is being spent on, for a restricted source (D595, D697). */
@@ -2398,7 +2407,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
           : sources)) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
-      if (ability.cost.life !== undefined && (state.seats[seat]?.life ?? 0) <= ability.cost.life) continue;
+      const lifeCost = abilityLifeCost(state, seat, ability.cost);
+      if (lifeCost > 0 && (state.seats[seat]?.life ?? 0) <= lifeCost) continue;
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;

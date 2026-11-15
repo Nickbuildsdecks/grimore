@@ -29208,3 +29208,27 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,697, all passing
 
 Coverage: 11,370 of 31,653 cards (+1), 30,666 of 59,306 lines (+1). Staples: 214 of 244 (+1).
+
+## D702 — War Room: life equal to your commanders' colours
+
+"{3}, {T}, Pay life equal to the number of colors in your commanders' color identity: Draw a card."
+
+What was added:
+- The new `AbilityCost.lifePerIdentityColour`, read by the activated-cost loop.
+- `abilityLifeCost(state, seat, cost)`, the printed life plus one for each colour in the seat's
+  commanders' identity (`commanderIdentity`). It is read where the ability is offered and where it
+  is checked and paid, so the offer and the payment agree.
+- As every life cost here, it is not offered at exactly the life it would take.
+
+Staples went from 214 to 215 (War Room).
+
+**Tests.** 3 engine tests:
+- the land reads;
+- under a blue-red commander the draw costs 2 life and draws;
+- it is not offered at 2 life and is offered at 3.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,700, all passing
+
+Coverage: 11,371 of 31,653 cards (+1), 30,667 of 59,306 lines (+1). Staples: 215 of 244 (+1).

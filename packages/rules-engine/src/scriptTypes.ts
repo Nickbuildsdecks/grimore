@@ -2036,6 +2036,11 @@ export interface AbilityCost {
    */
   readonly life?: number;
   /**
+   * "Pay life equal to the number of colors in your commanders' color identity" (D702, War Room):
+   * life on top of `life`, counted as the ability is activated. See `abilityLifeCost`.
+   */
+  readonly lifePerIdentityColour?: true;
+  /**
    * A planeswalker's loyalty cost: `+1`, `0`, `-3`. Paid by adding or removing loyalty counters
    * as the ability is activated (CR 606.2), which is why a minus ability cannot be used without
    * the loyalty to pay for it — and why using one is how a planeswalker runs out.

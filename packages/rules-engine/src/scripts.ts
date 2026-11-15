@@ -23619,6 +23619,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let taps = 0;
   let untaps = 0;
   let life = 0;
+  let lifePerIdentity = false;
   let sacrificesSelf = false;
   let discardsSelf = false;
   let discardsACard = false;
@@ -23643,6 +23644,11 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (/^\{Q\}$/i.test(component)) { untaps += 1; continue; }
     const paid = /^Pay\s+(\d+)\s+life$/i.exec(component);
     if (paid !== null) { life += Number(paid[1]); continue; }
+    // War Room (D702): `AbilityCost.lifePerIdentityColour`, counted as the ability is activated.
+    if (/^Pay life equal to the number of colou?rs in your commanders?'s? colou?r identity$/i.test(plain(component))) {
+      lifePerIdentity = true;
+      continue;
+    }
     /*
       The three costs that are **not** mana, a tap or life, and that `AbilityCost` already carries
       and the payment already enforces (D446).
@@ -23926,6 +23932,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(taps === 1 ? { tap: true } : {}),
     ...(untaps === 1 ? { untap: true as const } : {}),
     ...(life === 0 ? {} : { life }),
+    ...(lifePerIdentity ? { lifePerIdentityColour: true as const } : {}),
     ...(sacrificesSelf ? { sacrificeSelf: true as const } : {}),
     ...(discardsSelf ? { discardSelf: true as const } : {}),
     ...(discardsACard ? { discardACard: true as const } : {}),

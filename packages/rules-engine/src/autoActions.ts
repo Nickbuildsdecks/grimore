@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScrip
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, flashbackCostOf, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1702,12 +1702,13 @@ function activate(
     }
   }
 
-  if (ability.cost.life !== undefined) {
+  const lifeCost = abilityLifeCost(state, action.by, ability.cost);
+  if (lifeCost > 0) {
     // Checked before anything is spent, and refused at exactly the life that would kill you: a
     // cost you cannot pay is not a cost you may choose to pay (CR 118.4).
     const life = state.seats[action.by]?.life ?? 0;
-    if (life <= ability.cost.life) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${ability.cost.life} life to pay`);
+    if (life <= lifeCost) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifeCost} life to pay`);
     }
   }
 
@@ -1890,7 +1891,7 @@ function activate(
   const tappedPower = ability.cost.tapUntapped === undefined ? null
     : crewed.reduce((sum, id) => sum + (state.instances[id] === undefined ? 0 : characteristicsOf(state, state.instances[id]!).power), 0);
   for (const id of crewed) next = withInstance(next, id, { tapped: true });
-  if (ability.cost.life !== undefined) next = loseLife(next, action.by, ability.cost.life);
+  if (lifeCost > 0) next = loseLife(next, action.by, lifeCost);
   // And the energy, spent as the ability is activated rather than as it resolves — so it is gone
   // whether or not the ability is countered, and an opponent cannot drain it in response.
   if (ability.cost.energy !== undefined) next = spendEnergy(next, action.by, ability.cost.energy);

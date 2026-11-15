@@ -14443,6 +14443,50 @@ describe('Guardian Project: a draw for a creature with a new name (D701)', () =>
   });
 });
 
+describe('War Room: life equal to your commanders\' colours (D702)', () => {
+  const ROWS = [
+    { name: 'Test Room', type_line: 'Land', oracle_text: "{T}: Add {C}.\n{3}, {T}, Pay life equal to the number of colors in your commanders' color identity: Draw a card.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Izzet', type_line: 'Legendary Creature — Weird', oracle_text: '', mana_cost: '{U}{R}', cmc: 2, colors: ['U', 'R'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'room', name: 'Room',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (life = 20): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'room', 1: 'room' }, deckSpecs: { room: deck.deck },
+      battlefield: { 0: ['Test Room', 'Test Izzet', 'Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const izzet = find(s, 0, 'battlefield', 'Test Izzet');
+    s = { ...s, instances: { ...s.instances, [izzet]: { ...s.instances[izzet]!, isCommander: true } } };
+    return { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+  };
+  const offered = (s: GameState) => legalActions(s, 0).plays
+    .some((p) => p.card === find(s, 0, 'battlefield', 'Test Room') && (p as { abilityIndex?: number }).abilityIndex === 1);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('costs 2 life under a blue-red commander, and draws', () => {
+    let s = table();
+    expect(offered(s)).toBe(true);
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Room'), abilityIndex: 1 });
+    expect(s.seats[0]!.life).toBe(18);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('not offered at exactly the life it would take', () => {
+    expect(offered(table(2))).toBe(false);
+    expect(offered(table(3))).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
