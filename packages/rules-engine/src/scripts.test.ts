@@ -12429,6 +12429,55 @@ describe('"Choose two", "Choose one or more", and the modes they needed (D664)',
   });
 });
 
+describe('mana abilities that cost mana first: Cabal Coffers and the filter lands (D665)', () => {
+  const row = (name: string, type: string, text: string) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Coffers', 'Land', '{2}, {T}: Add {B} for each Swamp you control.'),
+    row('Test Bluffs', 'Land', '{T}: Add {C}.\n{U/R}, {T}: Add {U}{U}, {U}{R}, or {R}{R}.'),
+    row('Test Grove', 'Land', '{T}: Add {C}.\n{1}, {T}: Add {G}.'),
+  ];
+  const deck = customDeck({
+    id: 'coffers', name: 'Coffers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 30 }, { name: 'Island', count: 10 }],
+    data: ROWS,
+  }).deck;
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'coffers', 1: 'coffers' }, deckSpecs: { coffers: deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const abilityNamed = (s: GameState, card: string, text: string) =>
+    (scriptForCard(s.cardDefs[s.instances[card]!.defKey])?.abilities ?? []).findIndex((a) => a.description.includes(text));
+
+  it('Cabal Coffers pays {2} from two Swamps and adds one black per Swamp, tapped ones included', () => {
+    let s = table(['Test Coffers', 'Swamp', 'Swamp', 'Swamp']);
+    const coffers = find(s, 0, 'battlefield', 'Test Coffers');
+    // Never offered to the automatic payer: it costs mana to make mana.
+    expect(manaSources(s, 0).some((entry) => entry.key === coffers)).toBe(false);
+    s = apply(s, { type: 'auto:activate', by: 0, card: coffers, abilityIndex: 0 });
+    // Two Swamps tapped for the {2}, which is spent; three Swamps counted, so three black remain.
+    expect(s.pools['0']!.B).toBe(3);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped)).toHaveLength(3);
+  });
+
+  it('a land with a free colourless tap and a paid green one never taps for free green', () => {
+    const s = table(['Test Grove']);
+    expect(potentialMana(s, 0).C).toBe(1);
+    expect(potentialMana(s, 0).G ?? 0).toBe(0);
+  });
+
+  it('a filter land turns one hybrid mana into two of its colours, the run chosen', () => {
+    let s = table(['Test Bluffs', 'Island']);
+    const bluffs = find(s, 0, 'battlefield', 'Test Bluffs');
+    const index = abilityNamed(s, bluffs, 'Add {U}{R}');
+    expect(index).toBeGreaterThanOrEqual(0);
+    s = apply(s, { type: 'auto:activate', by: 0, card: bluffs, abilityIndex: index });
+    expect([s.pools['0']!.U, s.pools['0']!.R]).toEqual([1, 1]);
+    expect(s.instances[find(s, 0, 'battlefield', 'Island')]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

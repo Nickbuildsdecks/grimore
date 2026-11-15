@@ -28057,3 +28057,36 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,573, all passing
 
 Coverage: 11,076 of 31,653 cards (+34), 30,088 of 59,306 lines (+87). Staples: 180 of 244 (+4).
+
+## D665 — mana abilities that cost mana first
+
+105 legal lines print a mana ability whose cost starts with mana: "{2}, {T}: Add {B} for each Swamp
+you control" (Cabal Coffers), "{1}, {T}: Add {R}{R}", and the filter lands' "{U/R}, {T}: Add {U}{U},
+{U}{R}, or {R}{R}" (Cascade Bluffs, a staple). The mana-line pattern took only costs starting with
+{T}, so every one was unread. (D662 named Coffers as not done for this reason.)
+
+**What changed.**
+- `parseManaLine` peels a leading mana run, reads the rest as the {T} line it is, and puts the mana
+  on the cost (`ManaAbilityCost.mana`).
+- The engine needed nothing new. Activation already pays an ability's mana with `payFrom`, which
+  taps other sources, and `manaSources` already leaves out any ability that costs mana. Such
+  abilities are therefore pressed by the player, never used by the automatic payer.
+- `sameCost` compares the mana too. Without that, the whole-card fold would merge a free colourless
+  tap with a paid coloured one into a single free choice.
+- The filter lands' choice of equal-sized runs is a new `ManaLine.mode`, `runs`. It gives one
+  ability per run on the line path. It is never folded on the whole-card path, which refuses it out
+  loud.
+
+**Tests.** 3 engine tests:
+- Coffers is not a source for the automatic payer; pressed, it taps two Swamps for its {2} and
+  leaves three black, the tapped Swamps counted;
+- a land with "{T}: Add {C}" and "{1}, {T}: Add {G}" shows one colourless and no free green;
+- a filter land turns an Island's blue into {U}{R}.
+
+Faults injected by hand: 4 of 4 caught. One survivor (`sameCost` ignoring mana) was pinned by the
+free-green test.
+
+    engine tests: 4,576, all passing
+
+Coverage: 11,086 of 31,653 cards (+10), 30,098 of 59,306 lines (+10). Staples: 181 of 244 (+1,
+Cascade Bluffs).

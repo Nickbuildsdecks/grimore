@@ -247,7 +247,12 @@ function isEntersTappedLine(line: string, name: string): boolean {
  * built as one ability per option and a sum is built as one ability producing several.
  */
 interface ManaLine {
-  readonly mode: 'choice' | 'sum';
+  /**
+   * `runs` (D665) is a choice whose answers are several mana each — the filter lands' "Add {U}{U},
+   * {U}{R}, or {R}{R}" — read only by the line reader, one ability per run, never folded.
+   */
+  readonly mode: 'choice' | 'sum' | 'runs';
+  readonly runs?: readonly (readonly ManaType[])[];
   readonly produces: readonly ManaType[];
   /**
    * "Add {G} **for each creature you control**" (D662): how many times `produces` is made, and the
@@ -310,6 +315,13 @@ interface ManaLine {
 interface ManaAbilityCost {
   /** False only for a cost that is nothing but tapping other permanents (Birchlore Rangers, D645). */
   readonly tap: boolean;
+  /**
+   * Mana paid before the tap (D665): "{2}, {T}: Add {B} for each Swamp you control" (Cabal Coffers),
+   * "{U/R}, {T}: Add {U}{U}, {U}{R}, or {R}{R}" (the filter lands). The engine pays it the way it
+   * pays any ability's mana; `manaSources` does not offer such an ability for automatic payment,
+   * so it is pressed by the player.
+   */
+  readonly mana?: string;
   readonly life?: number;
   readonly sacrificeSelf?: true;
   /** "{T}, Tap an untapped creature you control: Add …" (D645) — Holdout Settlement, Loam Dryad. */
@@ -391,6 +403,7 @@ function parseCostClause(clause: string, name: string): ManaAbilityCost | null {
 /** Two parsed costs that the engine would treat as the same cost. */
 function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
   return (a.life ?? 0) === (b.life ?? 0)
+    && (a.mana ?? '') === (b.mana ?? '')
     && (a.sacrificeSelf ?? false) === (b.sacrificeSelf ?? false)
     && JSON.stringify(a.tapUntapped ?? null) === JSON.stringify(b.tapUntapped ?? null);
 }
@@ -465,6 +478,13 @@ function selfDamageSentence(sentence: string, name: string): number | undefined 
  * card read here is one with no such line, so mana of a chosen colour on it would be mana of nothing.
  */
 function parseManaLine(line: string, name: string, chosenOk = false): ManaLine | null {
+  // Mana before the tap (D665): read the rest as the {T} line it is, then charge the mana as well.
+  const lead = /^((?:\{(?:\d+|[WUBRGC]|[WUBRG]\/[WUBRG])\})+),\s*(\{T\}.*)$/i.exec(line.trim());
+  if (lead !== null) {
+    const rest = parseManaLine(lead[2]!, name, chosenOk);
+    if (rest === null || !rest.cost.tap || rest.cost.mana !== undefined) return null;
+    return { ...rest, cost: { ...rest.cost, mana: lead[1]! }, printed: `${lead[1]!}, ${rest.printed}` };
+  }
   /*
     The body is matched as "anything up to the first full stop", which is safe because a mana
     symbol contains none, and it is what lets a **second sentence** be read rather than refusing the
@@ -563,7 +583,11 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const only = runs[0]!;
     return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
-  if (runs.some((r) => r.length !== 1)) return null;
+  if (runs.some((r) => r.length !== 1)) {
+    // The filter lands (D665): every answer the same size, at least two of them.
+    if (!runs.every((r) => r.length === runs[0]!.length)) return null;
+    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
 }
 
@@ -701,6 +725,7 @@ function foldManaLines(
   intrinsic: readonly ManaType[],
   parsed: readonly ManaLine[],
 ): { abilities: AbilityDef[]; produces: ManaType[] } | { why: string } {
+  if (parsed.some((p) => p.mode === 'runs')) return { why: `${name}: it adds one of several mana runs, read only line by line` };
   const sums = parsed.filter((p) => p.mode === 'sum');
   if (sums.length > 0) {
     if (parsed.length > 1 || intrinsic.length > 0) {
@@ -791,6 +816,9 @@ export function isManaAbilityLine(line: string): boolean {
 export function manaAbilitiesFromLine(line: string, name: string): readonly AbilityDef[] | null {
   const parsed = parseManaLine(line, name, true);
   if (parsed === null) return null;
+  if (parsed.mode === 'runs') {
+    return (parsed.runs ?? []).map((run) => sumAbility({ ...parsed, mode: 'sum', produces: run }));
+  }
   return parsed.mode === 'sum' ? [sumAbility(parsed)] : tapAbilities(parsed.produces, parsed);
 }
 
