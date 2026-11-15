@@ -10855,6 +10855,27 @@ describe('a mana-value clause on a target phrase (D492)', () => {
   });
 });
 
+describe('"its mana value" needs an earlier target (D660)', () => {
+  const card = (type: string, text: string) => compileCard({
+    name: 'Measure Thing', type_line: type, mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: text,
+    ...(type.startsWith('Creature') ? { power: '1', toughness: '1' } : {}),
+  });
+  it('reads it after a clause that aims at a card', () => {
+    const read = card('Sorcery', 'Exile target creature. You gain life equal to its mana value.');
+    expect(read.ok && read.unread).toEqual([]);
+  });
+  it.each([
+    ['Sorcery', 'You gain life equal to its mana value.', 'nothing before it pointed at anything'],
+    ['Creature — Zombie', 'Whenever a creature you control dies, you gain life equal to its mana value.', '"its" is the dying creature, not a target'],
+    ['Sorcery', 'Target player discards a card. You gain life equal to its mana value.', '"its" is the discarded card, and the only target is a player'],
+  ])('leaves %s "%s" unread: %s', (type, text) => {
+    const read = card(type, text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});
+
 describe('an exact mana value on a target phrase (D655)', () => {
   const instant = (text: string) => compileCard({
     name: 'Exact Thing', type_line: 'Instant', mana_cost: '{U}', cmc: 1,

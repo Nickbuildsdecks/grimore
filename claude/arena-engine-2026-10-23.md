@@ -27883,3 +27883,44 @@ Faults injected by hand: 6 of 6 caught.
 
 Coverage: 10,999 of 31,653 cards (+5), 29,945 of 59,306 lines (+51). Staples: 170 of 244 (+1,
 Smothering Tithe).
+
+## D660 — the greatest power among a group, and a target's mana value
+
+Two more counts for `boardCount`, so each reads in all five grammars that take a count ("where X
+is", "draw cards equal to", "gain/lose life equal to", "deals damage equal to", "+X/+X").
+
+**"The greatest power (toughness, mana value) among …"** (78 legal cards: Rishkar's Expertise,
+Return of the Wildspeaker).
+- `greatestAmong` handles these groups: creatures you control, other creatures you control,
+  <Type> or non-<Type> creatures you control, creatures your opponents control, and creatures on the
+  battlefield.
+- Live characteristics are read as the effect resolves, so pumps count.
+- An empty group gives 0, and so does a negative maximum, because CR 107.1b makes a negative count 0.
+
+**"Its / that permanent's mana value"** (Feed the Swarm).
+- The value is the first card target's printed mana value, which is the same in every zone
+  (CR 202.3). The permanent having been destroyed first changes nothing.
+- Power and toughness are deliberately not read the same way: they would need last-known
+  information.
+- The first probe read it everywhere, including "Whenever a creature you control dies, you gain life
+  equal to its mana value", where "its" is the dying creature and the gain would have been 0.
+- It now reads only while `composeEffects` reads a clause that follows one aiming at a card (the
+  `earlierCardTarget` flag, set the way `sacrificeInCost` is).
+
+**Tests.**
+- 3 engine tests:
+  - the Expertise draws by a pumped Giant's power and not by the opponent's bigger creature, and
+    draws none with no creatures;
+  - a non-Human group leaves the Human out;
+  - Feed the Swarm costs the destroyed enchantment's mana value.
+- 4 compile tests: read after a card target; unread with no earlier target, in a death trigger, and
+  after a player target ("its" being the discarded card).
+
+Faults injected by hand: 8 of 8 caught. Two survivors were pinned:
+- seats beyond the controller, by breaking a tie between the Giant and the opponent's creature;
+- the player-kind check, by a two-clause row.
+
+    engine tests: 4,560, all passing
+
+Coverage: 11,016 of 31,653 cards (+17), 29,966 of 59,306 lines (+21). Staples: 171 of 244 (+1, Feed
+the Swarm).

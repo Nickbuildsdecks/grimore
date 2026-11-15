@@ -11790,7 +11790,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -11900,7 +11900,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     the plural, which is what this grammar prints.
   */
   const drawEqual = new RegExp(
-    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (drawEqual !== null) {
     const counted = boardCount(drawEqual[1]!, name);
@@ -11923,7 +11923,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     };
   }
   const lifeEqual = new RegExp(
-    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (lifeEqual !== null) {
     const counted = boardCount(lifeEqual[2]!, name);
@@ -16672,6 +16672,21 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
   if (paid !== null) return paid;
   const devoted = devotionCount(plain(phrase).trim().replace(/\.$/, ''));
   if (devoted !== null) return devoted;
+  const greatest = greatestAmong(plain(phrase).trim().replace(/\.$/, ''));
+  if (greatest !== null) return greatest;
+  /*
+    "Its mana value" / "that permanent's mana value" (D660): Feed the Swarm's "You lose life equal to
+    that permanent's mana value". The first card target's printed mana value, which is the same in
+    every zone (CR 202.3), so the creature having been destroyed first changes nothing — unlike its
+    power, which would need last known information and is left unread.
+  */
+  if (earlierCardTarget && /^(?:its|that (?:creature|permanent|card)'s) mana value$/i.test(plain(phrase).trim().replace(/\.$/, ''))) {
+    return (c) => {
+      const id = firstCardTarget(c);
+      const inst = id === null ? undefined : c.state.instances[id];
+      return inst === undefined ? 0 : costValue(parseManaCost(c.state.cardDefs[inst.defKey]?.manaCost ?? ''));
+    };
+  }
   const announced = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
   return announced === null ? null : countOfThing(announced[1]!, name, 'plural');
 }
@@ -16695,6 +16710,19 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
  */
 let sacrificeInCost = false;
 
+/** On while `composeEffects` reads a clause that follows one aiming at a card (D660). */
+let earlierCardTarget = false;
+
+function withEarlierCardTarget<T>(on: boolean, read: () => T): T {
+  const before = earlierCardTarget;
+  earlierCardTarget = on;
+  try {
+    return read();
+  } finally {
+    earlierCardTarget = before;
+  }
+}
+
 function withSacrificeInCost<T>(on: boolean, read: () => T): T {
   const before = sacrificeInCost;
   sacrificeInCost = on;
@@ -16711,6 +16739,46 @@ function withSacrificeInCost<T>(on: boolean, read: () => T): T {
  * symbol counts once if it is either colour (CR 700.5a); Phyrexian symbols count by their colour;
  * generic, colourless and snow symbols never do. Read as the effect resolves, like every board count.
  */
+/**
+ * **"The greatest power among creatures you control"** (D660): Rishkar's Expertise, Return of the
+ * Wildspeaker, Garruk's Uprising's cousins — 78 legal cards. The live power (or toughness, or the
+ * printed mana value) of each creature in the group, read as the effect resolves. An empty group
+ * gives 0, and so does a greatest power below zero: CR 107.1b makes a negative result 0 for every
+ * number but power and toughness themselves, and this is a count of cards or life.
+ *
+ * Groups: creatures you control, other creatures you control, non-<Type> or <Type> creatures you
+ * control, creatures your opponents control, and creatures on the battlefield.
+ */
+function greatestAmong(phrase: string): ((c: EffectContext) => number) | null {
+  const matched = /^the greatest (power|toughness|mana value) among (other )?(?:(non-)?([A-Z][A-Za-z'-]*) )?creatures (you control|your opponents control|on the battlefield)$/i.exec(phrase);
+  if (matched === null) return null;
+  const measure = matched[1]!.toLowerCase();
+  const other = matched[2] !== undefined;
+  const negated = matched[3] !== undefined;
+  const typed = matched[4];
+  if (typed !== undefined && !isCreatureType(typed)) return null;
+  const whose = matched[5]!.toLowerCase();
+  return (c) => {
+    const seats = whose === 'you control' ? [c.controller]
+      : whose === 'your opponents control' ? opponentsOf(c.state, c.controller)
+        : c.state.seats.map((seat) => seat.index);
+    let best: number | null = null;
+    for (const seat of seats) {
+      for (const id of creaturesControlledBy(c.state, seat)) {
+        if (other && id === c.source) continue;
+        const inst = c.state.instances[id]!;
+        const chars = characteristicsOf(c.state, inst);
+        if (typed !== undefined && hasSubtype(chars.typeLine, typed) === negated) continue;
+        const value = measure === 'power' ? chars.power
+          : measure === 'toughness' ? chars.toughness
+            : costValue(parseManaCost(c.state.cardDefs[inst.defKey]?.manaCost ?? ''));
+        best = best === null ? value : Math.max(best, value);
+      }
+    }
+    return Math.max(0, best ?? 0);
+  };
+}
+
 const DEVOTION_COLOURS: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
 
 function devotionCount(phrase: string): ((c: EffectContext) => number) | null {
@@ -19567,7 +19635,7 @@ function countedDamageFrom(
   const flat = clause.trim().replace(/\.\s*$/, '');
 
   const announced = new RegExp(
-    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (announced !== null) {
     const amount = boardCount(announced[2]!, name);
@@ -19575,7 +19643,7 @@ function countedDamageFrom(
   }
 
   const equalTo = new RegExp(
-    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (equalTo !== null) {
     const amount = boardCount(equalTo[2]!, name);
@@ -22064,7 +22132,16 @@ function composeEffects(
       exactly one spec in the list and it is the one being referred to. The licence is checked after
       the loop, where `parts` is complete; a clause read this way is tagged so that check can find it.
     */
-    const read = readEffect(clause, name, where);
+    /*
+      "Its mana value" (D660) is a measure of the object an earlier clause aimed at, and only a
+      clause read here can know there was one: the flag is on while this clause is read when an
+      earlier part targets a card (not a player, not "any target").
+    */
+    const earlier = parts.find((part) => part.targets !== undefined)?.targets?.[0];
+    const read = withEarlierCardTarget(
+      earlier !== undefined && earlier.kind !== 'player' && earlier.kind !== 'any',
+      () => readEffect(clause, name, where),
+    );
     if (read !== null) { parts.push(read); continue; }
     let borrowed: ReadEffect | null = null;
     /*

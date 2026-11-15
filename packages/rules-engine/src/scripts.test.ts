@@ -12138,6 +12138,62 @@ describe('ward in a keyword list, and a tax that is not a "may" (D659)', () => {
   });
 });
 
+describe('the greatest power among a group, and a target\'s mana value (D660)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Expertise', 'Sorcery', 'Draw cards equal to the greatest power among creatures you control.'),
+    row('Test Wildspeak', 'Sorcery', 'Draw cards equal to the greatest power among non-Human creatures you control.'),
+    row('Test Swarm', 'Sorcery', "Destroy target creature or enchantment an opponent controls. You lose life equal to that permanent's mana value."),
+    row('Test Giant', 'Creature — Giant', '', '{4}{G}{G}', ['5', '5']),
+    row('Test Human', 'Creature — Human', '', '{G}', ['7', '7']),
+    row('Test Charm', 'Enchantment', '', '{2}{W}{W}'),
+  ];
+  const deck = customDeck({
+    id: 'greatest', name: 'Greatest',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'greatest', 1: 'greatest' }, deckSpecs: { greatest: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const hand = (s: GameState) => ids(s, 0, 'hand').length;
+
+  it('Rishkar\'s Expertise draws the greatest power, read live, and none with no creatures', () => {
+    let s = table(['Test Expertise'], ['Grizzly Bears', 'Test Giant'], ['Test Human']);
+    const giant = find(s, 0, 'battlefield', 'Test Giant');
+    s = pump(s, [giant], giant, 0, { power: 1 });
+    const before = hand(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Expertise') })));
+    // 6 from the pumped Giant, not the opponent's 7/7, minus the Expertise itself.
+    expect(hand(s)).toBe(before - 1 + 6);
+    let none = table(['Test Expertise'], []);
+    const start = hand(none);
+    none = drain(passBoth(apply(none, { type: 'auto:cast', by: 0, card: find(none, 0, 'hand', 'Test Expertise') })));
+    expect(hand(none)).toBe(start - 1);
+  });
+
+  it('a non-Human group leaves the Human out', () => {
+    let s = table(['Test Wildspeak'], ['Test Human', 'Grizzly Bears']);
+    const before = hand(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wildspeak') })));
+    expect(hand(s)).toBe(before - 1 + 2);
+  });
+
+  it('Feed the Swarm costs the destroyed permanent\'s mana value, read after it is gone', () => {
+    let s = table(['Test Swarm'], [], ['Test Charm']);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Swarm'), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Charm') }],
+    })));
+    expect(countOf(s, 1, 'graveyard', 'Test Charm')).toBe(1);
+    expect(life(s, 0)).toBe(before - 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
