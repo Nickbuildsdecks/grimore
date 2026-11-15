@@ -46698,3 +46698,30 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,700, all passing
 
 Coverage: 11,371 of 31,653 cards (+1), 30,667 of 59,306 lines (+1). Staples: 215 of 244 (+1).
+
+## D703 — Field of the Dead: seven lands with different names
+
+"Whenever Field of the Dead or another land you control enters, if you control seven or more lands
+with different names, create a 2/2 black Zombie creature token."
+
+Two pieces:
+- **The intervening-if on a two-trigger line.** `interveningIfFromLine` accepted only a line that
+  built exactly one trigger. "~ or another land you control enters" is two (D483): the card's own
+  arrival and another land's. The condition now goes on every trigger the line built. One printed
+  ability, so conditioning one half only would be a card that is not printed. A once-a-turn
+  restriction on several events is still refused (D487).
+- **"You control N or more lands with different names"** in `interveningConditionFor`: the number
+  of distinct live names among the lands you control.
+
+Staples went from 215 to 216 (Field of the Dead).
+
+**Tests.** 3 engine tests:
+- the land reads;
+- the Field arriving as the seventh name makes a Zombie, and as the sixth does not;
+- a second Forest arriving with seven names already there makes one, and with six does not.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,703, all passing
+
+Coverage: 11,373 of 31,653 cards (+2), 30,669 of 59,306 lines (+2). Staples: 216 of 244 (+1).

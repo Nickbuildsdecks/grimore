@@ -25727,6 +25727,21 @@ function interveningConditionRows(
       return !another && !buried;
     };
   }
+  /*
+    Field of the Dead (D703): "if you control seven or more lands with different names" — the
+    number of distinct names among the lands you control, read live.
+  */
+  const named = /^you control (\w+) or more lands with different names$/i.exec(text);
+  if (named !== null) {
+    const atLeast = number(named[1]!);
+    if (atLeast === undefined || atLeast < 1) return null;
+    return (c) => new Set(listAt(c.state, zoneKey(c.controller, 'battlefield')).flatMap((id) => {
+      const inst = c.state.instances[id];
+      if (inst === undefined) return [];
+      const ch = characteristicsOf(c.state, inst);
+      return ch.isLand ? [ch.name] : [];
+    })).size >= atLeast;
+  }
   const theirs = /^an opponent controls (\w+) or more (.+)$/i.exec(text);
   if (theirs !== null) {
     const atLeast = number(theirs[1]!);
@@ -25806,17 +25821,22 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
   const read = lineScriptFor(`${clause[1]!}, ${clause[3]!}`, name);
   if (read === null) return null;
   const keys = Object.keys(read);
-  const inner = read.triggers?.[0];
-  if (keys.length !== 1 || keys[0] !== 'triggers' || read.triggers!.length !== 1 || inner === undefined) {
-    return null;
-  }
-  const own = inner.condition;
+  /*
+    Every trigger the line built takes the condition (D703): "Whenever ~ or another land you control
+    enters, if …" is two triggers, the card's own arrival and another land's (D483), and the "if"
+    is about both. One printed ability, so an intervening-if on one half only would be a card that
+    is not printed.
+  */
+  if (keys.length !== 1 || keys[0] !== 'triggers' || (read.triggers ?? []).length === 0) return null;
   return {
-    triggers: [{
-      ...inner,
-      description: `if ${clause[2]!.trim()}, ${inner.description}`,
-      condition: own === undefined ? condition : (c) => condition(c) && own(c),
-    }],
+    triggers: read.triggers!.map((inner) => {
+      const own = inner.condition;
+      return {
+        ...inner,
+        description: `if ${clause[2]!.trim()}, ${inner.description}`,
+        condition: own === undefined ? condition : (c: EffectContext) => condition(c) && own(c),
+      };
+    }),
   };
 }
 

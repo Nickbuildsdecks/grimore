@@ -14487,6 +14487,44 @@ describe('War Room: life equal to your commanders\' colours (D702)', () => {
   });
 });
 
+describe('Field of the Dead: seven lands with different names (D703)', () => {
+  const ROWS = [
+    { name: 'Test Field', type_line: 'Land', oracle_text: 'This land enters tapped.\n{T}: Add {C}.\nWhenever Test Field or another land you control enters, if you control seven or more lands with different names, create a 2/2 black Zombie creature token.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Waste', type_line: 'Land', oracle_text: '{T}: Add {C}.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'field', name: 'Field',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 20 }, { name: 'Plains', count: 4 }, { name: 'Island', count: 4 }, { name: 'Swamp', count: 4 }, { name: 'Mountain', count: 4 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'field', 1: 'field' }, deckSpecs: { field: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const play = (s: GameState, name: string) => drain(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', name) }));
+  const zombies = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('its own arrival as the seventh name makes a Zombie; six names do not', () => {
+    const seven = play(table(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Test Waste'], ['Test Field']), 'Test Field');
+    expect(zombies(seven)).toBe(1);
+    const six = play(table(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'], ['Test Field']), 'Test Field');
+    expect(zombies(six)).toBe(0);
+  });
+
+  it('another land arriving, even a second Forest, makes one too while seven names are there', () => {
+    const s = play(table(['Test Field', 'Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Test Waste'], ['Forest']), 'Forest');
+    expect(zombies(s)).toBe(1);
+    const short = play(table(['Test Field', 'Plains', 'Island', 'Swamp', 'Mountain', 'Forest'], ['Forest']), 'Forest');
+    expect(zombies(short)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
