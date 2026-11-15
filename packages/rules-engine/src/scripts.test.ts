@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo } from './effects.js';
+import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo, poolOf } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
@@ -13854,6 +13854,59 @@ describe('a pitch cost: exile a card of the colour instead of the mana (D691)', 
     expect(pitchPlay(mine, 'Test Negation')).toBeUndefined();
     expect(refusal(mine, { type: 'auto:cast', by: 0, card: find(mine, 0, 'hand', 'Test Negation'), pitchCast: true, discarded: find(mine, 0, 'hand', 'Test Wisp'), targets: [{ kind: 'card', id: mine.stackOrder[0]! }] } as Action))
       .toMatch(/not your turn/);
+  });
+});
+
+describe('Mana Drain: colourless mana at your next main phase (D692)', () => {
+  const ROWS = [
+    { name: 'Test Drain', type_line: 'Instant', oracle_text: "Counter target spell. At the beginning of your next main phase, add an amount of {C} equal to that spell's mana value.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'drain', name: 'Drain',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const colourless = (s: GameState, seat: SeatIndex) => poolOf(s, seat).C ?? 0;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('countering on the opponent\'s turn: the mana arrives at my next precombat main', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'drain', 1: 'drain' }, deckSpecs: { drain: deck.deck },
+      hands: { 0: ['Test Drain'], 1: ['Test Giant'] }, battlefield: { 1: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Giant') });
+    const giant = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Drain'), targets: [{ kind: 'card', id: giant }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(colourless(s, 0)).toBe(0);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = drain(s);
+    expect(s.activeSeat).toBe(0);
+    expect(colourless(s, 0)).toBe(3);
+  });
+
+  it('countering in my own precombat main: the mana arrives at this turn\'s postcombat main', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'drain', 1: 'drain' }, deckSpecs: { drain: deck.deck },
+      hands: { 0: ['Test Drain', 'Test Spark'] }, battlefield: { 0: ['Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spark') });
+    const spark = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Drain'), targets: [{ kind: 'card', id: spark }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.turn).toBe(3);
+    s = drain(advanceTo(s, 'postcombat-main'));
+    expect(s.turn).toBe(3);
+    expect(colourless(s, 0)).toBe(2);
   });
 });
 

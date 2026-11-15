@@ -22331,15 +22331,21 @@ function revealKeepGroup(
  * A spell's resolution, followed by scheduling its delayed upkeep trigger (D689). The trigger is
  * found by identity in the card's own script, or by its description if the script was rebuilt.
  */
-function withLaterTrigger(read: ReadEffect, trigger: TriggerDef, of: 'any' | 'you'): ReadEffect {
+function withLaterTrigger(
+  read: ReadEffect, trigger: TriggerDef, of: 'any' | 'you', when: LaterStep = 'upkeep', aboutTarget = false,
+): ReadEffect {
   const schedule = (c: EffectContext, state: GameState): GameState => {
+    const subject = aboutTarget ? firstCardTarget(c) ?? undefined : undefined;
+    if (aboutTarget && subject === undefined) return state;
     const inst = state.instances[c.source];
     const script = scriptOfCard(inst === undefined ? undefined : state.cardDefs[inst.defKey]);
     const index = (script?.triggers ?? [])
       .findIndex((t) => t === trigger || (t.delayed === true && t.description === trigger.description));
     if (index < 0) return state;
     return scheduleDelayed(state, {
-      source: c.source, controller: c.controller, abilityIndex: index, step: 'upkeep', of,
+      source: c.source, controller: c.controller, abilityIndex: index,
+      step: when === 'upkeep' ? 'upkeep' : nextMainPhase(state, c.controller), of,
+      ...(subject === undefined ? {} : { subject }),
       description: trigger.description,
     });
   };
@@ -22349,6 +22355,19 @@ function withLaterTrigger(read: ReadEffect, trigger: TriggerDef, of: 'any' | 'yo
     appliesNothing: undefined,
     ...(read.immediate === undefined ? {} : { immediate: (c: EffectContext) => schedule(c, read.immediate!(c)) }),
   } as ReadEffect;
+}
+
+/** When a delayed spell trigger fires (D689, D692). */
+type LaterStep = 'upkeep' | 'next-main';
+
+/**
+ * "Your next main phase" (D692): the postcombat main of this turn while the caster's own precombat
+ * main or combat is under way, and otherwise the precombat main of their next turn.
+ */
+function nextMainPhase(state: GameState, seat: SeatIndex): 'precombat-main' | 'postcombat-main' {
+  const midTurn: readonly string[] = ['precombat-main', 'begin-combat', 'declare-attackers', 'declare-blockers',
+    'first-strike-damage', 'combat-damage', 'end-combat'];
+  return state.activeSeat === seat && midTurn.includes(state.step) ? 'postcombat-main' : 'precombat-main';
 }
 
 /** Chaos Warp's tail, as `clausesOf` hands it on (D684). */
@@ -26074,6 +26093,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   */
   let laterTrigger: TriggerDef | null = null;
   let laterOf: 'any' | 'you' = 'any';
+  let laterStep: LaterStep = 'upkeep';
+  let laterAboutTarget = false;
   let readNow = toRead;
   if (toRead.length > 0) {
     const lastText = plain(toRead[toRead.length - 1]!).trim();
@@ -26083,13 +26104,29 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     const final = sentences[sentences.length - 1]!.replace(/\.$/, '').trim();
     const nextTurn = /^(.+) at the beginning of the next turn's upkeep$/i.exec(final);
     const yourNext = /^at the beginning of your next upkeep, (.+)$/i.exec(final);
-    const body = nextTurn?.[1] ?? yourNext?.[1];
-    const inner = body === undefined ? null : readResolution([`${body.charAt(0).toUpperCase()}${body.slice(1)}.`], name);
+    /*
+      Mana Drain (D692): "At the beginning of your next main phase, add an amount of {C} equal to
+      that spell's mana value." The main phase is the next one of yours (`nextMainPhase`), and
+      "that spell" is the one the spell targeted, which the delayed trigger carries as its subject:
+      a countered card's printed mana value, read off it in the graveyard. "You may add" is read
+      as adding, since mana nobody spends empties from the pool unused.
+    */
+    const nextMain = /^at the beginning of your next main phase, (?:you may )?add an amount of \{C\} equal to that spell's mana value$/i.exec(final);
+    const body = nextTurn?.[1] ?? yourNext?.[1] ?? (nextMain === null ? undefined : 'add {C} for each mana in that spell\'s mana value');
+    const inner = nextMain !== null
+      ? { effect: (c: EffectContext) => {
+        const subject = c.subject === undefined ? undefined : c.state.instances[c.subject];
+        const n = subject === undefined ? 0 : c.state.cardDefs[subject.defKey]?.cmc ?? 0;
+        return n > 0 ? addToPool(c.state, c.controller, 'C', n) : c.state;
+      } } as ReadEffect
+      : body === undefined ? null : readResolution([`${body.charAt(0).toUpperCase()}${body.slice(1)}.`], name);
     if (inner !== null && body !== undefined && (inner.targets ?? []).length === 0
       && inner.beforeDecisions === undefined && inner.appliesNothing !== true) {
       laterOf = nextTurn !== null ? 'any' : 'you';
+      laterStep = nextMain !== null ? 'next-main' : 'upkeep';
+      laterAboutTarget = nextMain !== null;
       laterTrigger = {
-        on: { kind: 'step', step: 'upkeep', of: laterOf },
+        on: { kind: 'step', step: nextMain !== null ? 'precombat-main' : 'upkeep', of: laterOf },
         delayed: true,
         description: body.charAt(0).toLowerCase() + body.slice(1),
         effect: inner.effect,
@@ -26104,7 +26141,9 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const readMain = readNow.length === 0 && laterTrigger !== null
     ? { effect: (c: EffectContext) => c.state } as ReadEffect
     : withSacrificeInCost(paidBySacrifice, () => readResolution(readNow, name));
-  const read = readMain === null || laterTrigger === null ? readMain : withLaterTrigger(readMain, laterTrigger, laterOf);
+  const read = readMain === null || laterTrigger === null || (laterAboutTarget && (readMain.targets ?? []).length === 0)
+    ? (laterTrigger === null ? readMain : null)
+    : withLaterTrigger(readMain, laterTrigger, laterOf, laterStep, laterAboutTarget);
   if (read !== null && laterTrigger !== null) built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), laterTrigger];
   if (read !== null && recycles) built['shufflesIntoLibrary'] = true;
   if (read === null) {

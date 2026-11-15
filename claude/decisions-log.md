@@ -46373,3 +46373,31 @@ nothing to target; it was pinned by putting a spell on the stack.
     engine tests: 4,664, all passing
 
 Coverage: 11,307 of 31,653 cards (+5), 30,552 of 59,306 lines (+19). Staples: 206 of 244 (+2).
+
+## D692 — Mana Drain: colourless mana at your next main phase
+
+"Counter target spell. At the beginning of your next main phase, add an amount of {C} equal to that
+spell's mana value."
+
+D689's delayed reader takes one more shape. It is about the spell's target, so:
+- `withLaterTrigger` schedules with the first card target as the delayed trigger's subject. The card
+  is in the graveyard by then and its object is pinned there (CR 400.7).
+- The mana is the subject's printed mana value in {C}.
+- "Your next main phase" is chosen when the trigger is scheduled (`nextMainPhase`): this turn's
+  postcombat main if the caster's own precombat main or combat is under way, otherwise the
+  precombat main of their next turn.
+- "You may add" is read as adding, since unspent mana empties unused.
+- A spell with no card target leaves the sentence unread.
+
+Staples went from 206 to 207 (Mana Drain).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- countering the opponent's three-drop gives {C}{C}{C} at my next precombat main;
+- countering my own two-mana spell in my precombat main gives {C}{C} at this turn's postcombat main.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,667, all passing
+
+Coverage: 11,308 of 31,653 cards (+1), 30,553 of 59,306 lines (+1). Staples: 207 of 244 (+1).
