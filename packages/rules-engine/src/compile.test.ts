@@ -11079,7 +11079,8 @@ describe('tap target, and a self-pump that shrinks (D496)', () => {
     */
     ['Avacynian Priest: `non` in front of a capitalised creature type',
       '{1}, {T}: Tap target non-Human creature.'],
-    ['Blinkmoth Well: `noncreature artifact`', '{2}, {T}: Tap target noncreature artifact.'],
+    // Blinkmoth Well's `noncreature artifact` was a row here until D650, which reads a negated
+    // card type in front of the noun ("nonartifact creature", "noncreature artifact").
     /*
       Refused for the **sentence**. Amber Prison's tap carries a second clause that outlives the
       ability, and reading only the first half would be a card that does strictly less than it

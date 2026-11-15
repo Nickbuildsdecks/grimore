@@ -18092,6 +18092,12 @@ const permanentFilter = (
     readonly colours?: readonly Color[];
     /** A colour the candidate must **not** be: "target **nonblack** creature" (CR 105.3). */
     readonly notColours?: readonly Color[];
+    /**
+     * A card type the candidate must **not** have (D650): "target **nonartifact** creature" (Go for
+     * the Throat), "nonenchantment", "noncreature" — read live, so an animated artifact land is
+     * still an artifact.
+     */
+    readonly notTypes?: readonly string[];
     /** "target **tapped** creature", and `false` for "untapped". */
     readonly tapped?: boolean;
     /** "target **attacking** creature" / "target **blocking** creature", read off the combat. */
@@ -18149,6 +18155,7 @@ const permanentFilter = (
     && !opts.colours.some((colour) => live.colors.includes(colour))) return false;
   if (opts.notColours !== undefined
     && opts.notColours.some((colour) => live.colors.includes(colour))) return false;
+  if (opts.notTypes !== undefined && opts.notTypes.some((type) => hasType(live.typeLine, type))) return false;
   if (opts.tapped !== undefined && inst.tapped !== opts.tapped) return false;
   if (opts.legendary !== undefined && isLegendary(live.typeLine) !== opts.legendary) return false;
   /*
@@ -18953,6 +18960,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
 
   const colours: Color[] = [];
   const notColours: Color[] = [];
+  const notTypes: string[] = [];
   let tapped: boolean | undefined;
   let attacking: true | undefined;
   let blocking: true | undefined;
@@ -18968,6 +18976,8 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     const negatedColour = negated === null ? undefined : COLOUR_WORDS[negated];
     if (colour !== undefined) { colours.push(colour); continue; }
     if (negatedColour !== undefined) { notColours.push(negatedColour); continue; }
+    // "nonartifact", "nonenchantment" (D650): a card type the candidate must not have.
+    if (negated !== null && PERMANENT_TYPES.includes(negated)) { notTypes.push(negated); continue; }
     if (word === 'tapped') { tapped = true; continue; }
     if (word === 'untapped') { tapped = false; continue; }
     if (word === 'attacking') { attacking = true; continue; }
@@ -18992,6 +19002,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     ...(types.length === 0 ? {} : { types }),
     ...(colours.length === 0 ? {} : { colours }),
     ...(notColours.length === 0 ? {} : { notColours }),
+    ...(notTypes.length === 0 ? {} : { notTypes }),
     ...(tapped === undefined ? {} : { tapped }),
     ...(attacking === undefined ? {} : { attacking }),
     ...(blocking === undefined ? {} : { blocking }),

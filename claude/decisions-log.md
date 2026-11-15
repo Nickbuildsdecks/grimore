@@ -44950,3 +44950,26 @@ pinned.
     engine tests: 4,521, all passing
 
 Coverage: 10,832 of 31,653 cards (+3), 29,639 of 59,306 lines (+17). Staples: 146 of 244.
+
+## D650 — a card type a target must not have: "nonartifact creature"
+
+Go for the Throat, a staple, prints "Destroy target nonartifact creature." The target-phrase
+reader knew a negated **colour** ("nonblack", D576), "nonbasic" and "nonlegendary". It did not know
+a negated **card type**, so the whole family was unread: "nonartifact creature", "nonenchantment
+permanent", Blinkmoth Well's "noncreature artifact".
+
+- `permanentFilter` gains `notTypes`, checked against the **live** type line beside
+  `notColours`. A creature made an artifact by an effect stops being a legal "nonartifact
+  creature".
+- The qualifier loop reads `non` + any permanent type.
+- Blinkmoth Well's refusal row in compile.test retires, with a note.
+
+**Tests.** 1 engine test: Go for the Throat offers the Bears and not an artifact Golem. Bears given
+the artifact type stop being offered. The cast destroys them.
+
+Faults injected by hand: 3 of 3 caught, including reading the printed type line instead of the
+live one.
+
+    engine tests: 4,521, all passing
+
+Coverage: 10,851 of 31,653 cards (+19), 29,665 of 59,306 lines (+26). Staples: 147 of 244.

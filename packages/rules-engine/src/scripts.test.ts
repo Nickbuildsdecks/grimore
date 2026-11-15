@@ -11441,6 +11441,36 @@ describe('the top of the library: revealed, and its lands played (D649)', () => 
   });
 });
 
+describe('a card type a target must not have: "nonartifact" (D650)', () => {
+  const ROWS = [
+    { name: 'Test Throat', type_line: 'Instant', oracle_text: 'Destroy target nonartifact creature.', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'throat', name: 'Throat',
+    entries: [{ name: 'Test Throat', count: 2 }, { name: 'Test Golem', count: 2 }, { name: 'Grizzly Bears', count: 2 }, { name: 'Swamp', count: 30 }],
+    data: ROWS,
+  }).deck;
+
+  it('aims at a creature and never at an artifact creature, read live', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'throat', 1: 'throat' }, deckSpecs: { throat: deck },
+      hands: { 0: ['Test Throat'] }, battlefield: { 0: ['Swamp'], 1: ['Test Golem', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Throat'))!;
+    const offered = play.candidates.flat().map((t) => (t.kind === 'card' ? nameOf(s, t.id) : `seat ${t.kind === 'player' ? t.seat : '?'}`));
+    expect(offered).toContain('Grizzly Bears');
+    expect(offered).not.toContain('Test Golem');
+    // Made an artifact by an effect, the Bears stop being a legal target.
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const artifact = pump(s, [bears], bears, 1, { addTypes: ['Artifact'] });
+    const again = legalActions(artifact, 0).plays.find((p) => p.card === find(artifact, 0, 'hand', 'Test Throat'));
+    expect(again?.candidates.flat().some((t) => t.kind === 'card' && t.id === bears) ?? false).toBe(false);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Throat'), targets: [{ kind: 'card', id: bears }] })));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
