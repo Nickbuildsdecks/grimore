@@ -14894,6 +14894,64 @@ describe('Myriad Landscape: basic land cards that share a land type (D709)', () 
   });
 });
 
+describe('Victimize: sacrifice a creature, and if you do, two back (D710)', () => {
+  const ROWS = [
+    { name: 'Test Victimize', type_line: 'Sorcery', oracle_text: 'Choose two target creature cards in your graveyard. Sacrifice a creature. If you do, return the chosen cards to the battlefield tapped.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Fodder', type_line: 'Creature — Thrull', oracle_text: '', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'victimize', name: 'Victimize',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'victimize', 1: 'victimize' }, deckSpecs: { victimize: deck.deck },
+    hands: { 0: ['Test Victimize'] }, battlefield: { 0: mine }, graveyard: { 0: ['Test Giant', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState) => {
+    const targets: Target[] = [
+      { kind: 'card', id: find(s, 0, 'graveyard', 'Test Giant') }, { kind: 'card', id: find(s, 0, 'graveyard', 'Test Bear') },
+    ];
+    return drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Victimize'), targets } as Action), 20);
+  };
+
+  it('reads whole, and the plural return on its own', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const plural = compileCard({ ...ROWS[0], oracle_text: 'Return two target creature cards from your graveyard to the battlefield.' } as never);
+    expect(plural).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks for a creature to sacrifice, then returns both targets tapped', () => {
+    let s = table(['Test Fodder', 'Test Fodder', 'Test Relic']);
+    const giant = find(s, 0, 'graveyard', 'Test Giant');
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    s = cast(s);
+    expect(s.pendingDecision?.seat).toBe(0);
+    // Creatures only: the Relic is not offered.
+    expect((s.pendingDecision?.candidates ?? []).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name)).toEqual(['Test Fodder', 'Test Fodder']);
+    const fodder = find(s, 0, 'battlefield', 'Test Fodder');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [fodder] } as Action), 20);
+    expect(s.instances[fodder]!.zone).toBe('graveyard');
+    for (const id of [giant, bear]) {
+      expect(s.instances[id]!.zone).toBe('battlefield');
+      expect(s.instances[id]!.tapped).toBe(true);
+      expect(s.instances[id]!.zoneSeat).toBe(0);
+    }
+  });
+
+  it('with no creature to sacrifice, nothing comes back', () => {
+    let s = table(['Test Relic']);
+    s = cast(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toEqual(expect.arrayContaining(['Test Giant', 'Test Bear', 'Test Victimize']));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Giant');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -21285,6 +21285,25 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     refuses the **line**, which keeps D487: a reanimation that silently dropped its finality counter
     would be a strictly better card than the one printed.
   */
+  /*
+    And more than one (D710): "Return two target creature cards from your graveyard to the
+    battlefield tapped" (Victimize's return, Breath of Darigaaz's cousins). The targets as the
+    plural return to hand reads them, each put onto the battlefield under the caster's control.
+  */
+  const reanimatedMany = new RegExp(
+    `^return (${TARGET_QUANTIFIER_PREFIX}target .*?cards(?: with mana value \\d+ or (?:less|greater))?) from your graveyard to the battlefield( tapped)?$`,
+    'i',
+  ).exec(text);
+  if (reanimatedMany !== null) {
+    const spec = targetSpecFrom(graveyardPhrase(reanimatedMany[1]!, 'your'), false);
+    if (spec !== null && POINTS_AT_A_GRAVEYARD_CARD.has(spec.kind)) {
+      const tapped = reanimatedMany[2] !== undefined;
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => putOntoBattlefield(state, id, c.controller, tapped ? { tapped: true } : {})),
+      };
+    }
+  }
   // And "put … onto the battlefield under your control" (D676): Reanimate, Animate Dead's effect.
   const reanimated =
     /^(?:return|put) target (.*?)card( with mana value \d+ or (?:less|greater))? from (your|a|an opponent's) graveyard (?:to|onto) the battlefield(?: under your control)?( tapped)?$/i
@@ -22128,6 +22147,29 @@ function readEffect(
     put it. Read as the trailing form, which every pump and grant reader already handles; a clause
     the trailing form does not read stays unread.
   */
+  /*
+    "Sacrifice a creature and if you do <effect>" (D710, from Victimize's glue in `clausesOf`): the
+    sacrifice's question, the effect's targets, and the effect only when a creature was in fact
+    sacrificed — the card chosen has left the battlefield. With no creature to sacrifice there is
+    no answer, and nothing comes back.
+  */
+  const sacrificeThen = /^sacrifice a creature and if you do (.+)$/i.exec(clause.trim());
+  if (sacrificeThen !== null) {
+    const cost = readEffect('sacrifice a creature', name, where);
+    const then = readEffect(sacrificeThen[1]!, name, where);
+    if (cost === null || then === null || (cost.targets ?? []).length > 0 || (then.decisions ?? []).length > 0
+      || cost.beforeDecisions !== undefined || then.beforeDecisions !== undefined) return null;
+    return {
+      ...(then.targets === undefined ? {} : { targets: then.targets }),
+      decisions: cost.decisions ?? [],
+      effect: (c) => {
+        const chosen = chosenCards(c)[0];
+        const after = cost.effect(c);
+        const did = chosen !== undefined && after.instances[chosen]?.zone !== 'battlefield';
+        return did ? then.effect({ ...c, state: after }) : after;
+      },
+    };
+  }
   const leading = /^until end of turn, (.+)$/i.exec(clause.trim());
   if (leading !== null && !/ until end of turn$/i.test(leading[1]!)) {
     return readEffect(`${leading[1]!.replace(/\.$/, '')} until end of turn`, name, where);
@@ -22348,6 +22390,13 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
     .replace(/((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
+    /*
+      Victimize (D710): "Choose two target creature cards in your graveyard. Sacrifice a creature.
+      If you do, return the chosen cards to the battlefield tapped." One clause, the sacrifice
+      first and the return only if it happened; the targets are the return's.
+    */
+    .replace(/choose (\w+(?: \w+)?) target ([^.]+?) cards in your graveyard\.\s+Sacrifice a creature\.\s+If you do, return the chosen cards to the battlefield( tapped)?/gi,
+      (_m, count: string, kind: string, tapped: string | undefined) => `sacrifice a creature and if you do return ${count} target ${kind} cards from your graveyard to the battlefield${tapped ?? ''}`)
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
     // same spell with the shuffle first, as the shuffle touches only the library.
     .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')

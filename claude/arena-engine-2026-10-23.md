@@ -29446,3 +29446,32 @@ Faults injected by hand: 6 of 6 caught, including the D706 one.
     engine tests: 4,724, all passing
 
 Coverage: 11,389 of 31,653 cards (+1), 30,689 of 59,306 lines (+1). Staples: 222 of 244 (+1).
+
+## D710 — Victimize: sacrifice a creature, and if you do, two back
+
+"Choose two target creature cards in your graveyard. Sacrifice a creature. If you do, return the
+chosen cards to the battlefield tapped."
+
+How it is read:
+- **The plural reanimation.** "Return two target creature cards from your graveyard to the
+  battlefield [tapped]" is the plural return to hand's targets (`TARGET_QUANTIFIER_PREFIX`), each
+  put onto the battlefield under the caster's control.
+- **The glue.** `clausesOf` joins Victimize's three sentences into "sacrifice a creature and if you
+  do return two target creature cards from your graveyard to the battlefield tapped".
+- **The composite.** That clause has the return's targets and the sacrifice's question. The return
+  runs only if the chosen creature has in fact left the battlefield. With no creature to sacrifice
+  there is no answer, and nothing returns.
+- A single creature is a forced answer, so the engine answers it.
+
+Staples went from 222 to 223 (Victimize).
+
+**Tests.** 3 engine tests:
+- the card and the plural return each read;
+- the sacrifice question offers creatures only, then both targets return tapped under the caster;
+- with no creature to sacrifice nothing returns.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,727, all passing
+
+Coverage: 11,391 of 31,653 cards (+2), 30,692 of 59,306 lines (+3). Staples: 223 of 244 (+1).
