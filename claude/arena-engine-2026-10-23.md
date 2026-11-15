@@ -28935,3 +28935,37 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,667, all passing
 
 Coverage: 11,308 of 31,653 cards (+1), 30,553 of 59,306 lines (+1). Staples: 207 of 244 (+1).
+
+## D693 — an ability word's upgrade: "… instead if …"
+
+"Threshold — Add {B}{B}{B}{B}{B} instead if there are seven or more cards in your graveyard." (Cabal
+Ritual). Also Morbid, Metalcraft, Hellbent, Ferocious, Delirium and Raid upgrades on about forty
+spells.
+
+How it is read: when a spell's resolution is exactly two lines and the second is "<ability word> —
+<effect> instead if <condition>", `insteadIfUpgrade` reads it as follows:
+- the condition through `interveningConditionFor`;
+- the first line alone;
+- the second line rewritten onto the first line's target. "That creature / player / spell / …"
+  becomes the first line's "target …" phrase (`TARGET_PHRASE`), and a bare "~ deals N damage" takes
+  the first line's destination.
+
+Both readings must ask for the same targets in the same order, and neither may ask a question. The
+spell then runs whichever one the condition picks as it resolves. Spell flags (`makesMana`) are
+merged.
+
+Staples went from 207 to 208 (Cabal Ritual).
+
+**Tests.** 4 engine tests:
+- three upgrades read, while Epicenter (different targets, unreadable second line) and a readable
+  second line that drops the target both stay unread;
+- Cabal Ritual adds three black with six cards in the graveyard and five with seven;
+- Hellbent deals 3 with a card in hand and 5 with none;
+- Metalcraft pumps the same creature +4/+4 with three artifacts and +2/+2 with one.
+
+Faults injected by hand: 5 of 5 caught. The target-equality fault survived at first; it was pinned
+with a readable second line that points elsewhere.
+
+    engine tests: 4,671, all passing
+
+Coverage: 11,324 of 31,653 cards (+16), 30,585 of 59,306 lines (+32). Staples: 208 of 244 (+1).

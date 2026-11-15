@@ -13910,6 +13910,85 @@ describe('Mana Drain: colourless mana at your next main phase (D692)', () => {
   });
 });
 
+describe('an ability word\'s upgrade: "… instead if …" (D693)', () => {
+  const ROWS = [
+    { name: 'Test Ritual', type_line: 'Instant', oracle_text: 'Add {B}{B}{B}.\nThreshold — Add {B}{B}{B}{B}{B} instead if there are seven or more cards in your graveyard.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Flames', type_line: 'Instant', oracle_text: 'Test Flames deals 3 damage to any target.\nHellbent — Test Flames deals 5 damage instead if you have no cards in hand.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Mettle', type_line: 'Instant', oracle_text: 'Target creature gets +2/+2 until end of turn.\nMetalcraft — That creature gets +4/+4 until end of turn instead if you control three or more artifacts.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Epicenter', type_line: 'Sorcery', oracle_text: 'Target player sacrifices a land.\nThreshold — Each player sacrifices all lands they control instead if there are seven or more cards in your graveyard.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'upgrade', name: 'Upgrade',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[] = [], graveyard = 0) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'upgrade', 1: 'upgrade' }, deckSpecs: { upgrade: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The drawn card goes too, so the hand is exactly what the test says.
+    const hand0 = ids(s, 0, 'hand').filter((id) => !hand.includes(s.cardDefs[s.instances[id]!.defKey]!.name));
+    const lib = ids(s, 0, 'library');
+    return {
+      ...s,
+      zones: {
+        ...s.zones,
+        '0:hand': ids(s, 0, 'hand').filter((id) => !hand0.includes(id)),
+        '0:graveyard': [...lib.slice(0, graveyard)],
+        '0:library': [...lib.slice(graveyard), ...hand0],
+      },
+    };
+  };
+  const cast = (s: GameState, name: string, targets: Target[] = []) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets } as Action);
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+
+  it('reads the upgrades whose targets agree, and not one whose targets differ', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+    const epicenter = compileCard(ROWS[3] as never);
+    expect(epicenter.ok && epicenter.unread.length).toBe(2);
+    // An upgrade that reads but points elsewhere (none, here) is refused rather than given the
+    // first line's targets.
+    const rally = compileCard({ ...ROWS[2]!, name: 'Test Rally', oracle_text: 'Target creature gets +2/+2 until end of turn.\nMetalcraft — Creatures you control get +2/+2 until end of turn instead if you control three or more artifacts.' } as never);
+    expect(rally.ok && rally.unread.length).toBe(2);
+  });
+
+  it('Threshold: three black mana, or five with seven cards in the graveyard', () => {
+    const few = apply(table(['Test Ritual'], [], 6), { type: 'auto:cast', by: 0, card: find(table(['Test Ritual'], [], 6), 0, 'hand', 'Test Ritual') });
+    const s6 = drain(few);
+    expect(poolOf(s6, 0).B ?? 0).toBe(3);
+    const t7 = table(['Test Ritual'], [], 7);
+    const s7 = drain(apply(t7, { type: 'auto:cast', by: 0, card: find(t7, 0, 'hand', 'Test Ritual') }));
+    expect(poolOf(s7, 0).B ?? 0).toBe(5);
+  });
+
+  it('Hellbent: 5 to the same target with an empty hand, 3 with a card left', () => {
+    const empty = cast(table(['Test Flames']), 'Test Flames', [{ kind: 'player', seat: 1 as SeatIndex }]);
+    expect(empty.seats[1]!.life).toBe(20 - 5);
+    const held = cast(table(['Test Flames', 'Test Bear']), 'Test Flames', [{ kind: 'player', seat: 1 as SeatIndex }]);
+    expect(held.seats[1]!.life).toBe(20 - 3);
+  });
+
+  it('Metalcraft: the same creature gets the bigger pump with three artifacts', () => {
+    const big = table(['Test Mettle'], ['Test Bear', 'Test Relic', 'Test Relic', 'Test Relic']);
+    const bear = find(big, 0, 'battlefield', 'Test Bear');
+    const s = cast(big, 'Test Mettle', [{ kind: 'card', id: bear }]);
+    expect(power(s, bear)).toBe(6);
+    const small = table(['Test Mettle'], ['Test Bear', 'Test Relic']);
+    const bear2 = find(small, 0, 'battlefield', 'Test Bear');
+    expect(power(cast(small, 'Test Mettle', [{ kind: 'card', id: bear2 }]), bear2)).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

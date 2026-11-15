@@ -22357,6 +22357,50 @@ function withLaterTrigger(
   } as ReadEffect;
 }
 
+/** The target phrase a line points with, for the upgrade's "that …" (D693). */
+const TARGET_PHRASE = /\b(target (?:creature|player|spell|permanent|planeswalker|artifact|land|opponent|nonland permanent|creature or planeswalker|creature or player|player or planeswalker)(?: you control| an opponent controls| you don't control)?)\b/i;
+
+/** See the upgrade's note in `spellScriptFor` (D693). */
+function insteadIfUpgrade(baseLine: string, upgradeLine: string, name: string): ReadEffect | null {
+  const read = /^(?:[A-Za-z' ]+(?: \d+)? — )?(.+) instead if (.+?)\.?$/.exec(plain(upgradeLine).trim());
+  if (read === null) return null;
+  const condition = interveningConditionFor(read[2]!.trim(), name);
+  if (condition === null) return null;
+  const base = readResolution([baseLine], name);
+  if (base === null || base.beforeDecisions !== undefined || (base.decisions ?? []).length > 0) return null;
+  const baseText = plain(baseLine).trim().replace(/\.$/, '');
+  let altText = read[1]!.trim();
+  const aimed = TARGET_PHRASE.exec(baseText)?.[1];
+  if (aimed !== undefined) {
+    altText = altText.replace(/\bthat (?:creature|player|spell|permanent|planeswalker|artifact|land)\b/i, aimed.toLowerCase());
+  }
+  // "~ deals 5 damage" alone: to the same place the first line deals it.
+  const bareDamage = /^(.+ deals (?:\d+|X) damage)$/i.exec(altText);
+  const destination = / deals (?:\d+|X) damage (to .+)$/i.exec(baseText)?.[1];
+  if (bareDamage !== null && destination !== undefined) altText = `${bareDamage[1]!} ${destination}`;
+  altText = `${altText.charAt(0).toUpperCase()}${altText.slice(1)}.`;
+  const alt = readResolution([altText], name);
+  if (alt === null || alt.beforeDecisions !== undefined || (alt.decisions ?? []).length > 0) return null;
+  const specs = (r: ReadEffect) => (r.targets ?? []).map((t) => `${t.kind}|${t.description}`).join('\n');
+  if (specs(base) !== specs(alt)) return null;
+  const pick = (c: EffectContext): ReadEffect => (condition(c) ? alt : base);
+  return {
+    ...base,
+    spellFlags: { ...(base.spellFlags ?? {}), ...(alt.spellFlags ?? {}) },
+    effect: (c) => {
+      const chosen = pick(c);
+      return chosen.appliesNothing === true ? c.state : chosen.effect(c);
+    },
+    ...(base.immediate === undefined && alt.immediate === undefined ? {} : {
+      immediate: (c: EffectContext) => {
+        const chosen = pick(c);
+        return (chosen.immediate ?? chosen.effect)(c);
+      },
+    }),
+    appliesNothing: undefined,
+  } as ReadEffect;
+}
+
 /** When a delayed spell trigger fires (D689, D692). */
 type LaterStep = 'upkeep' | 'next-main';
 
@@ -26095,6 +26139,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   let laterOf: 'any' | 'you' = 'any';
   let laterStep: LaterStep = 'upkeep';
   let laterAboutTarget = false;
+  let upgradedRead: ReadEffect | null = null;
   let readNow = toRead;
   if (toRead.length > 0) {
     const lastText = plain(toRead[toRead.length - 1]!).trim();
@@ -26136,9 +26181,27 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       readNow = [...toRead.slice(0, -1), ...(rest === '' ? [] : [rest])];
     }
   }
+  /*
+    **An ability word's upgrade** (D693): "Threshold — Add {B}{B}{B}{B}{B} instead if there are
+    seven or more cards in your graveyard." (Cabal Ritual), "Morbid — Brimstone Volley deals 5
+    damage instead if a creature died this turn.", "Metalcraft — That creature gets +4/+4 until end
+    of turn instead if you control three or more artifacts." — about forty spells. The second line
+    replaces the first when its condition holds as the spell resolves.
+
+    The second line is read on its own, rewritten onto the first line's target: "that creature" /
+    "that player" / "that spell" becomes the first line's "target …" phrase, and a bare "~ deals N
+    damage" takes the first line's destination. Both readings must then ask for the same targets in
+    the same order, which is what lets one set of chosen targets serve whichever runs. Anything
+    else — a question on either line, a different target, a condition nobody reads — stays unread.
+  */
+  if (laterTrigger === null && readNow.length === 2) {
+    const upgrade = insteadIfUpgrade(readNow[0]!, readNow[1]!, name);
+    if (upgrade !== null) readNow = [];
+    if (upgrade !== null) upgradedRead = upgrade;
+  }
   const additional = (built as Partial<CardScript>).additionalCost;
   const paidBySacrifice = additional !== undefined && 'sacrifice' in additional;
-  const readMain = readNow.length === 0 && laterTrigger !== null
+  const readMain = upgradedRead !== null ? upgradedRead : readNow.length === 0 && laterTrigger !== null
     ? { effect: (c: EffectContext) => c.state } as ReadEffect
     : withSacrificeInCost(paidBySacrifice, () => readResolution(readNow, name));
   const read = readMain === null || laterTrigger === null || (laterAboutTarget && (readMain.targets ?? []).length === 0)
