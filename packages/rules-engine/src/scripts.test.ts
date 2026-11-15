@@ -12681,6 +12681,52 @@ describe('each player loses or gains life (D670)', () => {
   });
 });
 
+describe('Backup N with keyword abilities to hand on (D671)', () => {
+  const row = (name: string, text: string, pt: [string, string]) => ({
+    name, type_line: 'Creature — Human Warrior', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    power: pt[0], toughness: pt[1],
+  });
+  const ROWS = [
+    row('Test Skald', 'Backup 2 (When this creature enters, put two +1/+1 counters on target creature. If that\'s another creature, it gains the following abilities until end of turn.)\nFlying, first strike', ['1', '1']),
+  ];
+  const deck = customDeck({
+    id: 'backup', name: 'Backup',
+    entries: [{ name: 'Test Skald', count: 2 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'backup', 1: 'backup' }, deckSpecs: { backup: deck },
+    hands: { 0: ['Test Skald'] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const enter = (s: GameState) => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Skald') }));
+
+  it('on another creature: two counters and the keywords until end of turn', () => {
+    let s = enter(table(['Grizzly Bears']));
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    while (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }] });
+    }
+    s = drain(passBoth(s));
+    expect(s.instances[bears]!.counters['+1/+1']).toBe(2);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect(ch.keywords.has('flying') && ch.keywords.has('first strike')).toBe(true);
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('flying')).toBe(false);
+  });
+
+  it('on itself: the counters only, its keywords being its own already', () => {
+    let s = enter(table([]));
+    const skald = find(s, 0, 'battlefield', 'Test Skald');
+    while (s.pendingChoice !== null) {
+      s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: skald }] });
+    }
+    s = drain(passBoth(s));
+    expect(s.instances[skald]!.counters['+1/+1']).toBe(2);
+    // No extra effect was made: the grant is for another creature only.
+    expect(s.effects.filter((e) => e.source === skald && e.scope.kind === 'cards')).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -51,7 +51,7 @@ import {
   stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
-import { CHOSEN_COLOR, CHOSEN_TYPE } from './effects.js';
+import { CHOSEN_COLOR, CHOSEN_TYPE, pump } from './effects.js';
 
 /**
  * Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or
@@ -883,6 +883,49 @@ function compileSingle(row: CardDataRow): Compilation {
       .test(line.replace(/\([^)]*\)/g, '').trim())) {
       compiled.push(line);
       continue;
+    }
+    /*
+      **Backup N** (D671, CR 702.165): "When this creature enters, put N +1/+1 counters on target
+      creature. If that's another creature, it gains the following abilities until end of turn."
+      Read when every line after it is a printed keyword line (Deathtouch, Lifelink, "Flying, first
+      strike") — the abilities a keyword grant can carry. The counters are the ordinary enter
+      trigger, read by the line reader from its own sentence; the grant is added to its effect, and
+      only for a target that is not the creature itself. A following line that is a triggered or
+      activated ability leaves Backup unread: handing those to another creature is a grant of a
+      different kind.
+    */
+    const backup = /^backup (\d+)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (backup !== null) {
+      const following = lines.slice(index + 1);
+      // `printedKeywords` reads a line only when every part of it is a keyword, so a list with one
+      // unknown word ("Flying, banding") comes back empty and refuses Backup.
+      const granted = following.flatMap((rest) => {
+        const words = printedKeywords(rest);
+        return words.length > 0 ? words : [null];
+      });
+      const n = Number(backup[1]);
+      const enters = n >= 1 && following.length > 0 && !granted.includes(null)
+        ? lineScriptFor(`When this creature enters, put ${n === 1 ? 'a +1/+1 counter' : `${['', '', 'two', 'three', 'four', 'five'][n] ?? n} +1/+1 counters`} on target creature.`, def.name)
+        : null;
+      const trigger = enters?.triggers?.length === 1 && Object.keys(enters).length === 1 ? enters.triggers[0]! : null;
+      if (trigger !== null) {
+        const keywords = granted as NonNullable<Parameters<typeof pump>[4]['keywords']>;
+        const backed: TriggerDef = {
+          ...trigger,
+          description: line.replace(/\([^)]*\)/g, '').trim(),
+          effect: (c) => {
+            const after = trigger.effect(c);
+            const target = c.targets[0];
+            return target === undefined || target.kind !== 'card' || target.id === c.source
+              || after.instances[target.id]?.zone !== 'battlefield'
+              ? after
+              : pump(after, [target.id], c.source, c.controller, { keywords });
+          },
+        };
+        if (merge(built, { triggers: [backed] }) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        compiled.push(line);
+        continue;
+      }
     }
     const wardList = wardInList(line, def.name);
     if (wardList !== null) {

@@ -45724,3 +45724,37 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,593, all passing
 
 Coverage: 11,142 of 31,653 cards (+29), 30,301 of 59,306 lines (+148). Staples: 186 of 244.
+
+## D671 — Backup N, with keyword abilities to hand on
+
+Backup (CR 702.165): "When this creature enters, put N +1/+1 counters on target creature. If that's
+another creature, it gains the following abilities until end of turn." It was the biggest solo
+keyword in D670's list, on 16 cards one line short.
+
+**What reads.** Backup, when every line after it is a printed keyword line: Deathtouch, Lifelink,
+Vigilance, "Flying, first strike" and so on (about ten legal cards).
+- The counters are the ordinary enter trigger, read by the line reader from the sentence the
+  keyword stands for.
+- The grant is added to that trigger's effect: the keywords, until end of turn, through `pump`.
+  This happens only when the target is another creature on the battlefield, because "the following
+  abilities" are already the creature's own.
+- `printedKeywords`' whole-line rule decides "a keyword line": a list with one unknown word, such as
+  "Flying, banding", comes back empty and refuses Backup. A first version also counted the parts
+  itself; a fault run showed that check could never change the result, so it was removed.
+
+**Not done:** Backup over a triggered or activated ability (Bola Slinger, Hangar Scrounger, the
+Sacrifice-for-damage pair). Handing another creature a trigger until end of turn is a grant of
+another kind (`grantedTriggers`), and it needs the following lines' fragments, which this loop has
+not built yet when it reaches Backup.
+
+**Tests.**
+- 2 engine tests:
+  - on another creature: two counters, flying and first strike this turn and not the next;
+  - on itself: the counters only, and no extra effect made.
+- 3 compile tests: read over Deathtouch; unread over a trigger, and over "Flying, banding".
+
+Faults injected by hand: 2 of 2 caught (the redundant check is gone, not pinned).
+
+    engine tests: 4,598, all passing
+
+Coverage: 11,153 of 31,653 cards (+11), 30,312 of 59,306 lines (+11). Staples: 186 of 244.

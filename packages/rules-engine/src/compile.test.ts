@@ -10877,6 +10877,24 @@ describe('"its mana value" needs an earlier target (D660)', () => {
   });
 });
 
+describe('Backup reads only when what it hands on is keywords (D671)', () => {
+  const backer = (text: string) => compileCard({
+    name: 'Back Thing', type_line: 'Creature — Human', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+    layout: 'normal', power: '1', toughness: '1', oracle_text: text,
+  });
+  it('reads Backup over a keyword line', () => {
+    const read = backer('Backup 1\nDeathtouch');
+    expect(read.ok && read.unread).toEqual([]);
+  });
+  it.each([
+    ['Backup 1\nWhenever this creature attacks, draw a card.', 'a triggered ability, a different kind of grant'],
+    ['Backup 1\nFlying, banding', 'a list with a keyword the engine does not have'],
+  ])('leaves "%s" with Backup unread: %s', (text) => {
+    const read = backer(text);
+    expect(read.ok && read.unread.map((u) => u.line)).toContain('Backup 1');
+  });
+});
+
 describe('deck-construction keywords are compiled and silent (D670)', () => {
   const legend = (text: string) => compileCard({
     name: 'Pair Thing', type_line: 'Legendary Creature — Human', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
