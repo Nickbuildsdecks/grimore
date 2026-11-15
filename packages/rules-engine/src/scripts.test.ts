@@ -12766,6 +12766,47 @@ describe('Transmute: discard it for a card of the same mana value (D672)', () =>
   });
 });
 
+describe('embalm and eternalize, compiled (D673)', () => {
+  const ROWS = [
+    { name: 'Test Cat', type_line: 'Creature — Cat', oracle_text: 'Lifelink\nEmbalm {W}', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Wizard', type_line: 'Creature — Human Wizard', oracle_text: 'Eternalize {3}{W}{W}', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'embalm', name: 'Embalm',
+    entries: [{ name: 'Test Cat', count: 2 }, { name: 'Test Wizard', count: 2 }, { name: 'Plains', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (yard: readonly string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'embalm', 1: 'embalm' }, deckSpecs: { embalm: deck },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of yard) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard' });
+    return s;
+  };
+  const token = (s: GameState, name: string) => ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === name && s.instances[id]!.isToken);
+
+  it('embalm exiles the card and makes a white Zombie Cat with no mana cost, lifelink kept', () => {
+    let s = table(['Test Cat']);
+    const cat = find(s, 0, 'graveyard', 'Test Cat');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: cat, abilityIndex: 0 })));
+    expect(s.instances[cat]!.zone).toBe('exile');
+    const made = token(s, 'Test Cat')!;
+    const ch = characteristicsOf(s, s.instances[made]!);
+    expect(ch.colors).toEqual(['W']);
+    expect([...ch.typeLine.subtypes].sort()).toEqual(['Cat', 'Zombie']);
+    expect(ch.keywords.has('lifelink')).toBe(true);
+  });
+
+  it('eternalize makes a black 4/4 Zombie Human Wizard', () => {
+    let s = table(['Test Wizard']);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'graveyard', 'Test Wizard'), abilityIndex: 0 })));
+    const ch = characteristicsOf(s, s.instances[token(s, 'Test Wizard')!]!);
+    expect([ch.colors, ch.power, ch.toughness]).toEqual([['B'], 4, 4]);
+    expect([...ch.typeLine.subtypes].sort()).toEqual(['Human', 'Wizard', 'Zombie']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

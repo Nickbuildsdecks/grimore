@@ -47,8 +47,8 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  classLevelAbility, enterChoiceDecision, isKeywordDeclaration, levelUpAbility, lineScriptFor, spellScriptFor,
-  stationAbility, wholeCardShapeFor, type ChoiceAim,
+  classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor,
+  spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_COLOR, CHOSEN_TYPE, pump } from './effects.js';
@@ -926,6 +926,25 @@ function compileSingle(row: CardDataRow): Compilation {
         compiled.push(line);
         continue;
       }
+    }
+    /*
+      **Embalm and eternalize** (D673): the hand-written helpers Sacred Cat and Angel of Sanctions
+      use, given the token's type line — the card's own, with Zombie put in front of its subtypes
+      (CR 702.128a, 702.129a) — which is the one thing a line reader could not know. "Eternalize—
+      {cost}, Discard a card" is the second printed shape (D579).
+    */
+    const zombie = /^(embalm|eternalize)\s*(?:[—-]\s*)?((?:\{[^}]*\})+)(,\s*discard a card)?\.?$/i
+      .exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (zombie !== null && (zombie[3] === undefined || zombie[1]!.toLowerCase() === 'eternalize')) {
+      const typed = parseTypeLine(def.typeLine);
+      const tokenLine = `Token ${[...typed.supertypes, ...typed.types].join(' ')} \u2014 ${
+        ['Zombie', ...typed.subtypes.filter((s) => s !== 'Zombie')].join(' ')}`;
+      const ability = zombie[1]!.toLowerCase() === 'embalm'
+        ? embalm(zombie[2]!, tokenLine)
+        : eternalize(zombie[2]!, tokenLine, zombie[3] !== undefined);
+      if (merge(built, { abilities: [ability] }) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+      compiled.push(line);
+      continue;
     }
     const wardList = wardInList(line, def.name);
     if (wardList !== null) {

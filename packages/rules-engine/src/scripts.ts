@@ -8359,7 +8359,7 @@ const HELLSPARK_ELEMENTAL: CardScript = {
   reminder text is what a player reads off the table and the two are not the same sentence.
 */
 
-const embalm = (cost: string, typeLine: string): AbilityDef => ({
+export const embalm = (cost: string, typeLine: string): AbilityDef => ({
   cost: { mana: cost, fromGraveyard: true, exileSelf: true },
   sorcerySpeed: true,
   description: `Embalm ${cost} (${cost}, Exile this card from your graveyard: Create a token `
@@ -8375,7 +8375,7 @@ const embalm = (cost: string, typeLine: string): AbilityDef => ({
   card", where the dash says the cost is more than mana. Sunscourge Champion is the pool's one;
   the cost is `AbilityCost.discardACard`, chosen as the ability is activated.
 */
-const eternalize = (cost: string, typeLine: string, discards = false): AbilityDef => ({
+export const eternalize = (cost: string, typeLine: string, discards = false): AbilityDef => ({
   cost: { mana: cost, fromGraveyard: true, exileSelf: true, ...(discards ? { discardACard: true as const } : {}) },
   sorcerySpeed: true,
   description: `${discards ? `Eternalize\u2014${cost}, Discard a card` : `Eternalize ${cost}`} `

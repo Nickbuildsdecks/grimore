@@ -1187,10 +1187,20 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         alone would say "move this card by hand" about a card the engine is running. (Mizzium
         Mortars was this case until D600 and D601 read its overload.)
       */
-      const angel = compiledScript('Angel of Sanctions');
-      expect(angel.script).toBeDefined();
+      /*
+        D673 read embalm, so the Angel now reads whole. The case is kept with a made-up card whose
+        enter trigger reads and whose keyword (encore) has no builder.
+      */
+      const angel = compileCard({
+        name: 'Keyword Thing', type_line: 'Creature — Angel', mana_cost: '{3}{W}{W}', cmc: 5, colors: ['W'],
+        layout: 'normal', power: '3', toughness: '4',
+        oracle_text: 'When this creature enters, draw a card.\nEncore {5}{W}',
+      });
+      expect(angel.ok && angel.script).toBeDefined();
+      if (!angel.ok) return;
       expect(angel.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
-      expect(angel.unread[0]?.line).toBe('Embalm {5}{W}');
+      expect(angel.unread[0]?.line).toBe('Encore {5}{W}');
+      expect(compiledScript('Angel of Sanctions').unread).toEqual([]);
     });
   });
   /*
@@ -10874,6 +10884,17 @@ describe('"its mana value" needs an earlier target (D660)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('embalm and eternalize agree with the hand-written cards (D673)', () => {
+  it.each([['Sacred Cat'], ['Angel of Sanctions'], ['Adorned Pouncer'], ['Sunscourge Champion']])('%s', (name) => {
+    const mine = compiledScript(name as string);
+    // Sunscourge Champion's enter trigger ("gain life equal to its power") is its own, unread, line.
+    expect(mine.unread.filter((u) => /^(embalm|eternalize)/i.test(u.line))).toEqual([]);
+    const theirs = scriptFor(name as string);
+    const describe = (abilities: unknown): string[] => ((abilities ?? []) as { description: string }[]).map((a) => a.description);
+    expect(describe((mine.script as { abilities?: unknown } | undefined)?.abilities)).toEqual(describe(theirs?.abilities));
   });
 });
 

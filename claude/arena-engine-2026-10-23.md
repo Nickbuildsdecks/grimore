@@ -28321,3 +28321,35 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,600, all passing
 
 Coverage: 11,161 of 31,653 cards (+8), 30,326 of 59,306 lines (+14). Staples: 186 of 244.
+
+## D673 — embalm and eternalize, compiled
+
+25 legal lines print "Embalm {cost}", "Eternalize {cost}" or "Eternalize—{cost}, Discard a card".
+
+**Why this was cheap.** The engine has played both since the hand-written Sacred Cat and Angel of
+Sanctions: `embalm` and `eternalize` build the graveyard ability, and `copyAsToken` makes the token
+with a replaced type line, colour and (for eternalize) size. A line reader could not use them,
+because they need the token's type line: the card's own, with Zombie put in front of its subtypes
+(CR 702.128a, 702.129a). `compile.ts` has the card definition, so it builds that line, exports the
+two helpers, and calls them.
+
+**Corrections on the way.**
+- The printed discard shape ends in a full stop ("Eternalize—{2}{W}{W}, Discard a card."). The first
+  pattern refused it; Sunscourge Champion's agreement test found that.
+- The test "counts a keyword with no builder apart from a sentence with no reader" used Angel
+  of Sanctions' "Embalm {5}{W}" as its example. The Angel now reads whole, so the test uses a
+  made-up card with a working enter trigger and Encore (still no builder), and also checks that the
+  Angel has nothing unread.
+
+**Tests.**
+- 4 compile tests: Sacred Cat, Angel of Sanctions, Adorned Pouncer and Sunscourge Champion each
+  compile their embalm or eternalize to the hand-written ability's description. Sunscourge's own
+  "gain life equal to its power" line stays unread.
+- 2 engine tests: embalm exiles the card and makes a white Zombie Cat with no mana cost that keeps
+  lifelink; eternalize makes a black 4/4 Zombie Human Wizard.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,606, all passing
+
+Coverage: 11,176 of 31,653 cards (+15), 30,353 of 59,306 lines (+27). Staples: 186 of 244.
