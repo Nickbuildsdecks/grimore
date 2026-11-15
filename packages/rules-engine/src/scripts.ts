@@ -34,7 +34,7 @@ import {
   counterUnlessPaid, createToken,
   REGENERATION, dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
-  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
@@ -12787,6 +12787,52 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     return { effect: (c) => becomeMonarch(c.state, c.controller) };
   }
 
+  /*
+    Ponder's look (D651): "Look at the top three cards of your library, then put them back in any
+    order." Every card is picked and they go back in the order picked (`chosenGoTo: 'top'`), so the
+    answer is the sequence the printed card asks for. The question is the whole effect, as scry's is.
+  */
+  const reorder = /^look at the top ([\w]+) cards of your library,? then put them back in any order$/i.exec(text);
+  if (reorder !== null) {
+    const n = countFrom(reorder[1]!);
+    if (n !== null && n >= 2) {
+      return {
+        decisions: [{
+          who: 'controller', from: 'library-top', look: n, min: n, max: n, chosenGoTo: 'top',
+          prompt: `Put the top ${reorder[1]!} cards back in any order — the first you pick goes on top`,
+        }],
+        effect: (c) => c.state,
+        appliesNothing: true,
+      };
+    }
+  }
+  // "You may shuffle." (D651): a yes-or-no after the look, which is Ponder's second sentence.
+  if (/^you may shuffle(?: your library)?$/i.test(text)) {
+    return {
+      decisions: [{ who: 'controller', prompt: 'Shuffle your library?', options: ['Keep the order', 'Shuffle'] }],
+      effect: (c) => (chosenOption(c) === 'Shuffle' ? shuffleLibrary(c.state, c.controller) : c.state),
+    };
+  }
+  /*
+    The wheel (D651): "Each player discards their hand", and with "then draws seven cards" Wheel of
+    Fortune. A whole hand is a discard of every card in it, so there is no question to ask.
+  */
+  const wheel = /^each player discards their hand(?:, then draws ([\w]+) cards)?$/i.exec(text);
+  if (wheel !== null) {
+    const n = wheel[1] === undefined ? 0 : countFrom(wheel[1]);
+    if (n !== null) {
+      return {
+        effect: (c) => {
+          let next = c.state;
+          const seats = next.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index);
+          for (const seat of seats) next = moveToGraveyard(next, listAt(next, zoneKey(seat, 'hand')));
+          if (n > 0) for (const seat of seats) next = draw(next, seat, n);
+          return next;
+        },
+      };
+    }
+  }
+
   const scried = /^scry ([\w]+)$/i.exec(text);
   if (scried !== null) {
     const n = countFrom(scried[1]!);
@@ -21176,11 +21222,20 @@ function clausesOf(line: string): readonly string[] {
     Held together past the split and handed whole to `searchClause`.
   */
   const ON_TOP = ', then shuffle and put that card on top';
+  /*
+    And two more held whole for the same reason (D651): Ponder's ", then put them back in any order"
+    has no subject of its own, and Wheel of Fortune's ", then draws seven cards" is "each player"'s
+    second verb — cut apart, neither half is a sentence.
+  */
+  const BACK = ', then put them back in any order';
   return plain(line)
     .replace(/,\s+then shuffle and put that card on top/gi, '\u0001')
+    .replace(/,\s+then put them back in any order/gi, '\u0002')
+    .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
-    .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\.\s*$/, '').trim())
+    .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
+      .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }
 
@@ -21431,7 +21486,8 @@ function digRest(words: string): NonNullable<CardsDecisionSpec['restGoTo']> | nu
  *
  * ## What is refused
  *
- * - "…then put them back in any order" — the answer is a sequence, not a set (20 lines).
+ * - "…then put them back in any order" was here until D651, which reads it as its own clause: the
+ *   answer is the order picked (`chosenGoTo: 'top'`).
  * - "You may put a land card from among them **onto the battlefield**" — a different destination.
  * - "a creature card **with power 2 or less**", "a historic card", "an Elf card" — filters
  *   `graveyardTypeTest` does not read, refused there rather than widened here.
@@ -21921,6 +21977,34 @@ function composeEffects(
     (part) => (part.decisions ?? []).length > 0 && part.appliesNothing !== true,
   );
   if (answerReaders.length > 1) return null;
+  /*
+    **Where the answer-reading part's own answers start** (D651).
+
+    The answers are one list in plan order, and until D651 every part read from index 0 — right only
+    while the reading part was the first to ask anything. Ponder is the first card with a question
+    *before* the one that reads: "Look at the top three … put them back in any order. You may
+    shuffle." The reorder asks (and applies itself), then the shuffle reads its yes-or-no — which was
+    index 1, so it read the reorder's answer and never shuffled.
+
+    So each part is handed the answers from its own offset: the number of plan entries before it. A
+    plan entry is one per decision **except** `each-player` and `each-opponent`, which expand into one
+    per seat; with one of those before the reading part the offset is not a fact of the text, and
+    the composition is refused rather than guessed.
+  */
+  const offsets = new Map<ReadEffect, number>();
+  let planned = 0;
+  let unknowable = false;
+  for (const part of parts) {
+    // Only the part that reads answers needs its start; every other part reads nothing.
+    if (answerReaders.includes(part)) {
+      if (unknowable && planned > 0) return null;
+      offsets.set(part, planned);
+    }
+    for (const spec of part.decisions ?? []) {
+      if (typeof spec === 'function' || spec.who === 'each-player' || spec.who === 'each-opponent') unknowable = true;
+      planned += 1;
+    }
+  }
 
   /*
     A composition cannot carry two pre-question halves, so a part that already has one refuses it.
@@ -22021,7 +22105,9 @@ function composeEffects(
       return slice.reduce(
         (state, part, i) => {
           const final = asFinal && i === slice.length - 1;
-          return (final ? part.effect : part.immediate ?? part.effect)({ ...c, state });
+          const offset = offsets.get(part) ?? 0;
+          const own = offset === 0 ? { ...c, state } : { ...c, state, decisions: c.decisions.slice(offset) };
+          return (final ? part.effect : part.immediate ?? part.effect)(own);
         },
         c.state,
       );
@@ -25089,6 +25175,27 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
  */
 function lootResolution(lines: readonly string[], name: string): ReadEffect | null {
   if (lines.length !== 1) return null;
+  /*
+    Brainstorm (D651): "Draw three cards, then put two cards from your hand on top of your library
+    in any order." The same order problem as the loot — the cards put back may be ones just drawn —
+    so the draw runs before the question, and they go on top in the order picked: the first picked
+    is the new top card.
+  */
+  const storm = /^draw ([\w]+) cards?, then put ([\w]+) cards? from your hand on top of your library in any order\.?$/i
+    .exec(plain(lines[0]!).trim());
+  if (storm !== null) {
+    const drawn = countFrom(storm[1]!);
+    const back = countFrom(storm[2]!);
+    if (drawn === null || back === null || drawn < 1 || back < 1) return null;
+    return {
+      beforeDecisions: (c) => draw(c.state, c.controller, drawn),
+      decisions: [{
+        who: 'controller', from: 'hand', min: back, max: back,
+        prompt: `Put ${storm[2]!} cards on top of your library — the first you pick goes on top`,
+      }],
+      effect: (c) => [...chosenCards(c)].reverse().reduce((state, id) => putOnTopOfLibrary(state, id), c.state),
+    };
+  }
   const loot = /^draw ([\w]+) cards?, then discard ([\w]+) (cards?)\.?$/i
     .exec(plain(lines[0]!).trim());
   if (loot === null) return null;

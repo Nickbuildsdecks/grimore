@@ -44973,3 +44973,55 @@ live one.
     engine tests: 4,521, all passing
 
 Coverage: 10,851 of 31,653 cards (+19), 29,665 of 59,306 lines (+26). Staples: 147 of 244.
+
+## D651 — Brainstorm, Ponder and the wheel; and answers read from their own offset
+
+Three staples, three shapes, and one latent defect found on the way.
+
+**Brainstorm.** "Draw three cards, then put two cards from your hand on top of your library in any
+order." This is the loot's order problem: the cards put back may be ones just drawn. So it is read
+by `lootResolution` beside Faithless Looting: the draw in `beforeDecisions`, a question from the
+hand, and the chosen cards put on top **in the order picked**, the first picked being the new top
+card.
+
+**Ponder.**
+- "Look at the top three cards of your library, then put them back in any order." D584 refused
+  this, because the answer is a sequence. It is now a `library-top` question with `min = max = N`
+  and the new `chosenGoTo: 'top'`: every card is picked, and they go back in pick order.
+- **A reorder is asked even when every card must be picked.** The engine answers a question itself
+  when the set is forced (`min === max === candidates`), which for a reorder would answer with the
+  order the cards already had. Two or more cards are now asked.
+- "You may shuffle" is a yes-or-no that shuffles through the new `shuffleLibrary` (seeded from the
+  game).
+
+**The wheel.** "Each player discards their hand" and Wheel of Fortune's "…, then draws seven
+cards": every seat's hand goes to the graveyard, then each draws.
+
+`clausesOf` holds ", then put them back in any order" and the wheel's ", then draws" whole, as D602
+holds "then shuffle and put that card on top": cut apart, neither half is a sentence.
+
+**The defect: answers were read from index 0.**
+- A composed resolution's answers are one list in plan order, and every part read from index 0.
+  That was right only while the answer-reading part was the first to ask anything.
+- Ponder is the first composition with a question *before* the reader. Its shuffle read the
+  reorder's answer, and never shuffled.
+- `composeEffects` now hands the reading part the answers from its own offset: the number of plan
+  entries before it.
+- An `each-player` or `each-opponent` question expands into one entry per seat, so when one comes
+  before the reader, the offset is not a fact of the text and the composition is refused.
+
+The D584 refusal row is retired with a note.
+
+**Tests.**
+- 3 engine tests:
+  - Brainstorm offers the three drawn cards and puts the two picked back, first on top;
+  - Ponder is asked the reorder, keeps the order, and draws the card picked first; shuffled, the
+    library is the same cards in another order;
+  - Wheel of Fortune empties both hands into the graveyards and deals seven each.
+
+Faults injected by hand: 7 of 7 caught, including the offset, the reorder auto-answer, and a
+shuffle that does nothing.
+
+    engine tests: 4,523, all passing
+
+Coverage: 10,876 of 31,653 cards (+25), 29,695 of 59,306 lines (+30). Staples: 150 of 244.

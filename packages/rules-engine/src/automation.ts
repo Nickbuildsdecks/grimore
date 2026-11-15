@@ -4388,7 +4388,15 @@ function askOrFinish(
       pick, and the answer is the confirmation that they have seen them.
     */
     const showsOnly = looked !== undefined && looked.length > 0 && max === 0;
-    if (!showsOnly && (max === 0 || (min === max && candidates.length === max))) {
+    /*
+      **A reorder is asked even when every card must be picked** (D651): Ponder's "put them back in
+      any order" picks all three, so the set is forced — but the answer is the *order*, and the rule
+      below would answer it with the order they already had. Two or more cards have an order worth
+      asking about; one does not.
+    */
+    const reorders = !isCountersDecision(spec) && spec.from === 'library-top' && spec.chosenGoTo === 'top'
+      && candidates.length > 1;
+    if (!showsOnly && !reorders && (max === 0 || (min === max && candidates.length === max))) {
       const ids = max === 0 ? [] : candidates;
       answers = [...answers, { seat: entry.seat, ids }];
       /*
@@ -4463,6 +4471,10 @@ function applyLibraryTop(
     if (spec.revealPicked === true) {
       for (const id of picked) next = withInstance(next, id, { revealed: true });
     }
+  } else if (picked.length > 0 && spec?.chosenGoTo === 'top') {
+    // Back on top in the order picked: the first picked is the new top card (D651).
+    const rest = listAt(next, key).filter((id) => !picked.includes(id));
+    next = withZones(next, { [key]: [...picked, ...rest] });
   } else if (picked.length > 0) {
     const rest = listAt(next, key).filter((id) => !picked.includes(id));
     next = withZones(next, { [key]: [...rest, ...picked] });

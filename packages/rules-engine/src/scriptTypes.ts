@@ -1475,7 +1475,11 @@ export interface CardsDecisionSpec {
    * prologue those lines hang off was already read, so this one field is what they were waiting
    * for.
    */
-  readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand';
+  /**
+   * `'top'` (D651) is "then put them back in any order": every card looked at is picked, and they go
+   * back on top in the order picked — the first one picked is the new top card. Ponder.
+   */
+  readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand' | 'top';
   /**
    * For `library-top`: where the cards that were looked at and **not** picked go (D584).
    *

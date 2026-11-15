@@ -11471,6 +11471,72 @@ describe('a card type a target must not have: "nonartifact" (D650)', () => {
   });
 });
 
+describe('Brainstorm, Ponder and the wheel (D651)', () => {
+  const row = (name: string, type: string, text: string) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Brainstorm', 'Instant', 'Draw three cards, then put two cards from your hand on top of your library in any order.'),
+    row('Test Ponder', 'Sorcery', 'Look at the top three cards of your library, then put them back in any order. You may shuffle.\nDraw a card.'),
+    row('Test Wheel', 'Sorcery', 'Each player discards their hand, then draws seven cards.'),
+  ];
+  const deck = customDeck({
+    id: 'cantrips', name: 'Cantrips',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 30 }, { name: 'Grizzly Bears', count: 10 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'cantrips', 1: 'cantrips' }, deckSpecs: { cantrips: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Brainstorm draws first, then puts two back with the first picked on top', () => {
+    let s = table(['Test Brainstorm']);
+    const library = ids(s, 0, 'library');
+    const drawn = library.slice(0, 3);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brainstorm') }));
+    // The three just drawn are among the cards offered: the draw happened before the question.
+    expect(drawn.every((id) => s.pendingDecision!.candidates.includes(id))).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [drawn[2]!, drawn[0]!] }));
+    expect(ids(s, 0, 'library').slice(0, 2)).toEqual([drawn[2], drawn[0]]);
+    expect(ids(s, 0, 'hand')).toContain(drawn[1]);
+  });
+
+  it('Ponder reorders the top three, may shuffle, then draws the new top card', () => {
+    let s = table(['Test Ponder']);
+    const top = ids(s, 0, 'library').slice(0, 3);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ponder') }));
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...top].sort());
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [top[2]!, top[1]!, top[0]!] });
+    expect(s.pendingDecision?.options).toEqual(['Keep the order', 'Shuffle']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Keep the order' }));
+    // Kept: the first picked was on top and is the card drawn; the other two follow in order.
+    expect(ids(s, 0, 'hand')).toContain(top[2]);
+    expect(ids(s, 0, 'library').slice(0, 2)).toEqual([top[1], top[0]]);
+    // Shuffled: the same cards, in an order the player did not set.
+    let t = table(['Test Ponder']);
+    const before = [...ids(t, 0, 'library')].sort();
+    const order = ids(t, 0, 'library').slice(0, 3);
+    t = passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Ponder') }));
+    t = apply(t, { type: 'auto:decide', by: 0, cards: [order[2]!, order[1]!, order[0]!] });
+    const reordered = ids(t, 0, 'library');
+    t = apply(t, { type: 'auto:decide', by: 0, cards: [], option: 'Shuffle' });
+    t = drain(t);
+    expect([...ids(t, 0, 'library'), ...ids(t, 0, 'hand')].filter((id) => before.includes(id)).sort()).toEqual(before);
+    expect(ids(t, 0, 'library')).not.toEqual(reordered.slice(1));
+  });
+
+  it('Wheel of Fortune discards every hand and deals each player seven', () => {
+    let s = table(['Test Wheel', 'Grizzly Bears', 'Island']);
+    const theirs = ids(s, 1, 'hand');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wheel') })));
+    expect(ids(s, 0, 'hand')).toHaveLength(7);
+    expect(ids(s, 1, 'hand')).toHaveLength(7);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(expect.arrayContaining(['Grizzly Bears', 'Island', 'Test Wheel']));
+    expect(theirs.every((id) => s.instances[id]!.zone === 'graveyard')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

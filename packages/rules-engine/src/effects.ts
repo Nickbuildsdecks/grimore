@@ -1548,6 +1548,17 @@ export function mill(state: GameState, seat: SeatIndex, count: number): GameStat
  *
  * The randomness is the engine's own seeded stream, so a replayed game discards the same cards.
  */
+/**
+ * Shuffles one seat's library (D651) — "You may shuffle" after Ponder's look, and any other effect
+ * that shuffles without searching. Seeded from the game, like every other shuffle here.
+ */
+export function shuffleLibrary(state: GameState, seat: SeatIndex): GameState {
+  const key = zoneKey(seat, 'library');
+  const seq = state.autoSeq + 1;
+  const rng = mulberry32(actionSeed(state.rngSeed, state.stateVersion + seq));
+  return { ...state, autoSeq: seq, zones: { ...state.zones, [key]: shuffled(listAt(state, key), rng) } };
+}
+
 export function discardAtRandom(state: GameState, seat: SeatIndex, count: number): GameState {
   let next = state;
   for (let i = 0; i < Math.max(0, count); i++) {

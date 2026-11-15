@@ -18206,8 +18206,8 @@ describe('the dig: what the reader takes and what it leaves (D584)', () => {
   } as never);
 
   it.each([
-    ['putting them back in an order, whose answer is a sequence',
-      'Look at the top three cards of your library, then put them back in any order.'],
+    // "…then put them back in any order" was a row here until D651, which reads the answer as a
+    // sequence (`chosenGoTo: 'top'`, the first picked on top) — see "Brainstorm, Ponder and the wheel".
     ['a land put onto the battlefield, which is another destination',
       'Look at the top five cards of your library. You may put a land card from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'],
     ['a filter with a number in it',
