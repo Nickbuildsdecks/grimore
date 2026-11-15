@@ -25974,9 +25974,23 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     cost line out. Not around the modal reader above: no printed mode measures a sacrifice, and a
     scope nothing reaches is a scope nothing checks.
   */
+  /*
+    "Shuffle ~ into its owner's library." as the spell's last sentence (D687): where the card goes
+    as it resolves, not something the resolution does, so it is taken off the end of the text and
+    becomes `CardScript.shufflesIntoLibrary`. On a line of its own or after the last full stop.
+  */
+  const recycled = new RegExp(`(?:^|\\.\\s+)Shuffle (?:${selfRef(name)}) into its owner's library\\.?$`, 'i');
+  const last = resolution.length - 1;
+  const recycles = last >= 0 && recycled.test(plain(resolution[last]!).trim());
+  // What the readers see; `resolution` stays the printed lines, which is what is reported.
+  const toRead = recycles
+    ? [...resolution.slice(0, last), plain(resolution[last]!).trim().replace(recycled, '').trim()]
+      .filter((line) => line !== '').map((line) => (/[.!]$/.test(line) ? line : `${line}.`))
+    : resolution;
   const additional = (built as Partial<CardScript>).additionalCost;
   const paidBySacrifice = additional !== undefined && 'sacrifice' in additional;
-  const read = withSacrificeInCost(paidBySacrifice, () => readResolution(resolution, name));
+  const read = withSacrificeInCost(paidBySacrifice, () => readResolution(toRead, name));
+  if (read !== null && recycles) built['shufflesIntoLibrary'] = true;
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
     return { script, compiled, unread: [...declared, ...resolution] };
@@ -26004,7 +26018,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     Overload line unread and the spell playable at its printed cost.
   */
   if (overload !== null) {
-    const rewritten = resolution.map((line) => line.replace(/\btarget\b/g, 'each').replace(/\bTarget\b/g, 'Each'));
+    const rewritten = toRead.map((line) => line.replace(/\btarget\b/g, 'each').replace(/\bTarget\b/g, 'Each'));
     const swept = withSacrificeInCost(paidBySacrifice, () => readResolution(rewritten, name));
     if (swept !== null && (swept.targets ?? []).length === 0 && swept.appliesNothing !== true) {
       built['overload'] = { cost: overload.cost, onResolve: swept.effect };

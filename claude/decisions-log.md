@@ -46213,3 +46213,31 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,648, all passing
 
 Coverage: 11,272 of 31,653 cards (+9), 30,476 of 59,306 lines (+12). Staples: 202 of 244 (+2).
+
+## D687 — "Shuffle ~ into its owner's library" as a spell resolves
+
+Green Sun's Zenith, the Beacons (Beacon of Unrest, Beacon of Tomorrows, …).
+
+How it works:
+- The sentence says where the card goes as it resolves; it is not something the resolution does.
+  `spellScriptFor` takes it off the end of the last resolution line and sets the new
+  `CardScript.shufflesIntoLibrary`. The flag is set only when the rest reads, and the printed lines
+  are still what gets reported.
+- The engine's resolution branch puts the card on top of its owner's library and shuffles it
+  (CR 608.2n). A countered or fizzled spell still goes through `spellLeavesStack` to the graveyard,
+  and flashback's exile still wins.
+- The mechanic-coverage test lists `script shufflesIntoLibrary` as compiler-only, with a note.
+
+Staples went from 202 to 203 (Green Sun's Zenith).
+
+**Tests.** 3 engine tests:
+- the line reads and carries the flag;
+- resolving puts the Zenith into the library, shuffled rather than left on top, with the Elf found;
+- a countered Zenith goes to the graveyard.
+
+Faults injected by hand: 4 of 4 caught. The no-shuffle fault survived at first and was pinned by
+the not-on-top check.
+
+    engine tests: 4,651, all passing
+
+Coverage: 11,277 of 31,653 cards (+5), 30,481 of 59,306 lines (+5). Staples: 203 of 244 (+1).

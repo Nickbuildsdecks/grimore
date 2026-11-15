@@ -45,7 +45,7 @@ import {
   suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
-  spendRegeneration, untapAll,
+  spendRegeneration, untapAll, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
@@ -5135,6 +5135,9 @@ function completeResolution(
           subject: inst.id,
           description: `cast ${def?.name ?? 'it'} from exile without paying its mana cost`,
         });
+      } else if (script?.shufflesIntoLibrary === true && object.flashback !== true) {
+        // "Shuffle ~ into its owner's library" (D687): only on resolving, and not past flashback.
+        next = shuffleLibrary(putOnTopOfLibrary(next, inst.id), inst.owner);
       } else {
         // Graveyard, or exile when it was cast with flashback, or exile on an adventure. The last
         // of the three is the only one that depends on the spell having *resolved*, which is what

@@ -3258,6 +3258,14 @@ export interface CardScript {
    * alternative cost of nothing, offered while the caster controls a commander on the battlefield.
    */
   readonly freeWithCommander?: true;
+  /**
+   * "Shuffle ~ into its owner's library" as the last sentence of a spell (D687): Green Sun's
+   * Zenith, the Beacons, Kodama's Reach's cousins that recycle. As the spell resolves, its card
+   * goes into its owner's library, which is shuffled, instead of into a graveyard (CR 608.2n). A
+   * spell countered, or one that fizzles, goes to the graveyard as usual, and flashback's exile
+   * still wins (CR 702.33a).
+   */
+  readonly shufflesIntoLibrary?: true;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

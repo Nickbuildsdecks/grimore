@@ -7879,6 +7879,10 @@ describe('deck coverage', () => {
         Swat, Flawless Maneuver, Obscuring Haze). Driven at runtime by "free if you control a commander
         (D653)": offered and cast for nothing with the commander out, refused with it in the command
         zone, and never on a card without the line.
+      - `script shufflesIntoLibrary` (D687): "Shuffle ~ into its owner's library" as a spell's last
+        sentence (Green Sun's Zenith, the Beacons). No pool deck has one. Driven at runtime by
+        "\"Shuffle ~ into its owner's library\" as a spell resolves (D687)": into the library on
+        resolving, into the graveyard when countered.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7898,6 +7902,7 @@ describe('deck coverage', () => {
       'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
+      'script shufflesIntoLibrary',
     ]);
 
     const declared = [
@@ -13551,6 +13556,57 @@ describe('colour and X in a search, and a coloured sacrifice (D686)', () => {
     const s0 = table(['Test Zenith'], []);
     const zero = resolveTo(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Zenith'), x: 0 } as Action));
     expect(zero.pendingDecision === null || choices(zero).length === 0).toBe(true);
+  });
+});
+
+describe('"Shuffle ~ into its owner\'s library" as a spell resolves (D687)', () => {
+  const ROWS = [
+    { name: 'Test Zenith', type_line: 'Sorcery', oracle_text: "Search your library for a green creature card with mana value X or less, put it onto the battlefield, then shuffle. Shuffle Test Zenith into its owner's library.", mana_cost: '{X}{G}', cmc: 1, colors: ['G'], layout: 'normal' },
+    { name: 'Test Counter', type_line: 'Instant', oracle_text: 'Counter target spell.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'recycle', name: 'Recycle',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'recycle', 1: 'recycle' }, deckSpecs: { recycle: deck.deck },
+    hands: { 0: ['Test Zenith'], 1: ['Test Counter'] }, battlefield: { 0: ['Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const zenithIn = (s: GameState, zone: 'library' | 'graveyard') => ids(s, 0, zone)
+    .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Zenith').length;
+
+  it('reads whole, and carries the flag', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.shufflesIntoLibrary).toBe(true);
+  });
+
+  it('resolving: the card goes into its owner\'s library, not the graveyard', () => {
+    const s0 = table();
+    const inLibrary = zenithIn(s0, 'library');
+    const cast = find(s0, 0, 'hand', 'Test Zenith');
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: cast, x: 1 } as Action);
+    while (s.pendingDecision === null && s.stackOrder.length > 0) s = passBoth(s);
+    s = drain(decide(s, ['Test Elf']));
+    expect(zenithIn(s, 'library')).toBe(inLibrary + 1);
+    // Shuffled in, not left on top.
+    expect(ids(s, 0, 'library')[0]).not.toBe(cast);
+    expect(zenithIn(s, 'graveyard')).toBe(0);
+    expect(ids(s, 0, 'battlefield').some((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Elf')).toBe(true);
+  });
+
+  it('countered: the card goes to the graveyard as any countered spell does', () => {
+    const s0 = table();
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Zenith'), x: 1 } as Action);
+    const zenith = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Counter'), targets: [{ kind: 'card', id: zenith }] } as Action);
+    s = passBoth(s);
+    expect(zenithIn(s, 'graveyard')).toBe(1);
+    expect(zenithIn(s, 'library')).toBe(zenithIn(s0, 'library'));
   });
 });
 
