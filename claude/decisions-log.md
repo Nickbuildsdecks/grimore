@@ -45485,3 +45485,41 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,569, all passing
 
 Coverage: 11,042 of 31,653 cards (+9), 30,001 of 59,306 lines (+13). Staples: 176 of 244 (+2).
+
+## D664 — "Choose two", "Choose one or more", and the modes they needed
+
+The work queue's seventh row was "Choose one" (198 unread lines). The modal reader (`modalScriptFor`)
+already read "Choose one" and "Choose one or both". It refused the rest of a card whenever a header
+or a single mode did not read. Staples went from 176 to 180: Kolaghan's Command, Farewell, Austere
+Command, Return of the Wildspeaker.
+
+**Headers** (`ModalDef` already supported both; only the reader refused them):
+- "Choose two —" (31 legal cards) is `min: 2, max: 2`. It needs at least three modes, or it is not
+  a choice.
+- "Choose one or more —" (18) is `min: 1, max: modes`.
+
+**Modes that blocked staples.**
+- `massScope` takes a "with mana value / power / toughness N or less/greater" tail. Mana value is the
+  printed cost (CR 202.3, X counted as 0); power and toughness are live. All are read before
+  anything moves. This gives Austere Command's two creature modes and "Exile all creatures you
+  control with toughness 2 or less".
+- `massPumpSubject` takes "(other) (non-)<Type> creatures you control", checked against the
+  creature-type list, so "attacking creatures you control" is not mistaken for a type. This gives
+  Return of the Wildspeaker's "Non-Human creatures you control get +3/+3" and "Elf creatures you
+  control gain trample".
+
+**Not done:** Akroma's Will ("Choose one. If you control a commander as you cast this spell, you may
+choose both"), Rakdos Charm's "Each creature deals 1 damage to its controller", and "attacking
+creatures you control" as a pump subject.
+
+**Tests.** 4 engine tests:
+- "Choose two" offers only pairs, refuses a single mode, and casts a destroy and a burn together;
+- Austere Command's artifacts + small creatures sweep spares the 4-drop and the enchantment;
+- "Choose one or more" offers 7 combinations of 3 modes, and all three exile everything;
+- a non-Human pump leaves the Human alone.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,573, all passing
+
+Coverage: 11,076 of 31,653 cards (+34), 30,088 of 59,306 lines (+87). Staples: 180 of 244 (+4).

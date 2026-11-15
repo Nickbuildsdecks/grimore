@@ -13243,6 +13243,25 @@ function permanentWordMatch(word: string): ((line: TypeLine) => boolean) | null 
  */
 function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | null {
   let rest = plain(phrase).trim().replace(/\.$/, '').replace(/\s+on the battlefield$/i, '');
+  /*
+    A size or a mana value on the scope (D664): "Destroy all creatures with mana value 3 or less"
+    (Austere Command), "… with power 4 or greater" (Hour of Revelation's cousins). Mana value is the
+    printed cost (CR 202.3, X as 0); power and toughness are live, read before anything moves.
+  */
+  let bound: ((state: GameState, inst: GameState["instances"][string]) => boolean) | null = null;
+  const sized = /\s+with (mana value|power|toughness) (\d+) or (less|greater)$/i.exec(rest);
+  if (sized !== null) {
+    rest = rest.slice(0, sized.index);
+    const measure = sized[1]!.toLowerCase();
+    const limit = Number(sized[2]!);
+    const atMost = sized[3]!.toLowerCase() === 'less';
+    bound = (state, inst) => {
+      const value = measure === 'mana value'
+        ? costValue(parseManaCost(state.cardDefs[inst.defKey]?.manaCost ?? ''))
+        : measure === 'power' ? characteristicsOf(state, inst).power : characteristicsOf(state, inst).toughness;
+      return atMost ? value <= limit : value >= limit;
+    };
+  }
   let who: 'you' | 'opponents' | 'any' = 'any';
   for (const [pattern, seatRule] of [
     [/\s+you control$/i, 'you'], [/\s+you don't control$/i, 'opponents'],
@@ -13279,6 +13298,7 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     if (other && id === c.source) return false;
     if (who === 'you' && inst.zoneSeat !== c.controller) return false;
     if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
+    if (bound !== null && !bound(c.state, inst)) return false;
     const { typeLine } = characteristicsOf(c.state, inst);
     return tests.some((test) => test(typeLine));
   });
@@ -13382,6 +13402,10 @@ const MASS_PUMP_SUBJECTS: string = [
   'attacking creatures',
   'blocking creatures',
   'all creatures',
+  // A creature type, or "non-" one, among your creatures (D664): "Non-Human creatures you control
+  // get +3/+3" (Return of the Wildspeaker), "Elf creatures you control gain …". Checked against the
+  // creature-type list in `massPumpSubject`, so "attacking creatures you control" is not a type.
+  "(?:other )?(?:non-)?[a-z][a-z'-]* creatures you control",
 ].join('|');
 
 /**
@@ -13476,8 +13500,22 @@ function massPumpSubject(phrase: string): {
         targets: [TARGET_PLAYER],
         holdForCombat: false,
       };
-    default:
-      return null;
+    default: {
+      const typed = /^(other )?(non-)?([a-z][a-z'-]*) creatures you control$/i.exec(phrase.trim());
+      if (typed === null) return null;
+      const word = typed[3]!.charAt(0).toUpperCase() + typed[3]!.slice(1).toLowerCase();
+      if (!isCreatureType(word)) return null;
+      const other = typed[1] !== undefined;
+      const negated = typed[2] !== undefined;
+      return {
+        ids: (c) => creaturesControlledBy(c.state, c.controller).filter((id) => {
+          if (other && id === c.source) return false;
+          const inst = c.state.instances[id];
+          return inst !== undefined && hasSubtype(characteristicsOf(c.state, inst).typeLine, word) !== negated;
+        }),
+        holdForCombat: true,
+      };
+    }
   }
 }
 
@@ -25069,7 +25107,8 @@ export interface SpellReading {
  */
 function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef } | null {
   if (lines.length < 3) return null;
-  const header = /^choose (one|one or both)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
+  // "Choose two" and "Choose one or more" too (D664): the Commands, Austere Command, Farewell.
+  const header = /^choose (one|one or both|two|one or more)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
   if (header === null) return null;
 
   const modes: ModeDef[] = [];
@@ -25113,6 +25152,9 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
   if (header[1]!.toLowerCase() === 'one or both') {
     return modes.length === 2 ? { modal: { min: 1, max: 2, modes } } : null;
   }
+  // "Choose two" needs at least three modes to be a choice; "one or more" is any non-empty set.
+  if (header[1]!.toLowerCase() === 'two') return modes.length >= 3 ? { modal: { min: 2, max: 2, modes } } : null;
+  if (header[1]!.toLowerCase() === 'one or more') return { modal: { min: 1, max: modes.length, modes } };
   return { modal: { modes } };
 }
 

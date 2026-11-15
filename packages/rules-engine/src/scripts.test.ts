@@ -12361,6 +12361,74 @@ describe('Lotus Cobra\'s mana of any color, and a choice of tokens (D663)', () =
   });
 });
 
+describe('"Choose two", "Choose one or more", and the modes they needed (D664)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Command', 'Instant', 'Choose two —\n• Target player discards a card.\n• Destroy target artifact.\n• Test Command deals 2 damage to any target.'),
+    row('Test Austere', 'Sorcery', 'Choose two —\n• Destroy all artifacts.\n• Destroy all enchantments.\n• Destroy all creatures with mana value 3 or less.\n• Destroy all creatures with mana value 4 or greater.'),
+    row('Test Farewell', 'Sorcery', 'Choose one or more —\n• Exile all artifacts.\n• Exile all creatures.\n• Exile all enchantments.'),
+    row('Test Wildspeaker', 'Instant', 'Non-Human creatures you control get +3/+3 until end of turn.'),
+    row('Test Relic', 'Artifact', ''),
+    row('Test Aura', 'Enchantment', ''),
+    { ...row('Test Ogre', 'Creature — Ogre', '', '{3}{R}', ['3', '3']), cmc: 4 },
+    row('Test Human', 'Creature — Human', '', '{W}', ['1', '1']),
+  ];
+  const deck = customDeck({
+    id: 'commands', name: 'Commands',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'commands', 1: 'commands' }, deckSpecs: { commands: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const playsOf = (s: GameState, name: string) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', name));
+
+  it('"Choose two" offers only pairs, and casts both modes', () => {
+    let s = table(['Test Command'], [], ['Test Relic']);
+    const offered = playsOf(s, 'Test Command');
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((p) => p.modes?.length === 2)).toBe(true);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Command'), modes: [1], targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Relic') }] }))
+      .not.toBeNull();
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Command'), modes: [1, 2],
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Relic') }, { kind: 'player', seat: 1 }],
+    })));
+    expect(countOf(s, 1, 'graveyard', 'Test Relic')).toBe(1);
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('Austere Command sweeps by mana value', () => {
+    let s = table(['Test Austere'], ['Grizzly Bears'], ['Test Ogre', 'Test Relic', 'Test Aura']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Austere'), modes: [0, 2] })));
+    // Artifacts and creatures of mana value 3 or less: the Bears and the Relic, not the Ogre or the Aura.
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Grizzly Bears');
+    expect(namesIn(s, 1, 'battlefield')).toEqual(expect.arrayContaining(['Test Ogre', 'Test Aura']));
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Relic');
+  });
+
+  it('"Choose one or more" casts one mode, or all of them', () => {
+    expect(playsOf(table(['Test Farewell'], []), 'Test Farewell').map((p) => p.modes?.length).sort())
+      .toEqual([1, 1, 1, 2, 2, 2, 3]);
+    let s = table(['Test Farewell'], ['Grizzly Bears'], ['Test Relic', 'Test Aura']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Farewell'), modes: [0, 1, 2] })));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Grizzly Bears');
+    expect(namesIn(s, 1, 'battlefield')).toEqual([]);
+  });
+
+  it('a non-Human team pump leaves the Human alone', () => {
+    let s = table(['Test Wildspeaker'], ['Grizzly Bears', 'Test Human']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wildspeaker') })));
+    expect(power(s, find(s, 0, 'battlefield', 'Grizzly Bears'))).toBe(5);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Human'))).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
