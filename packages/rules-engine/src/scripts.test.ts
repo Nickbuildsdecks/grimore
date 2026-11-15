@@ -14742,6 +14742,88 @@ describe('Arcane Denial: two delayed draws, one for the countered spell\'s contr
   });
 });
 
+describe('a free cast from your hand: the Expertise cycle (D708)', () => {
+  const ROWS = [
+    { name: 'Test Expertise', type_line: 'Sorcery', oracle_text: 'Draw cards equal to the greatest power among creatures you control.\nYou may cast a spell with mana value 2 or less from your hand without paying its mana cost.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Cheap', type_line: 'Sorcery', oracle_text: 'You gain 3 life.', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal' },
+    { name: 'Test Pricey', type_line: 'Sorcery', oracle_text: 'You gain 5 life.', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Adept', type_line: 'Creature — Human Wizard', oracle_text: '{T}: You may cast an instant or sorcery spell from your hand without paying its mana cost.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'expertise', name: 'Expertise',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'expertise', 1: 'expertise' }, deckSpecs: { expertise: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const life = (s: GameState) => s.seats[0]!.life;
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0], ROWS[4]]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row!.name).toEqual([]);
+    }
+  });
+
+  it('draws first, offers only a nonland spell within the limit, and casts it for nothing', () => {
+    let s = table(['Test Expertise', 'Test Cheap', 'Test Pricey', 'Forest'], ['Test Bear']);
+    const handBefore = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Expertise') }), 20);
+    // The Bear's power in cards, drawn before the question, less the Expertise itself.
+    expect(ids(s, 0, 'hand').length).toBe(handBefore - 1 + 2);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.min).toBe(0);
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => named(s, id));
+    expect(offered).toContain('Test Cheap');
+    expect(offered).not.toContain('Test Pricey');
+    expect(offered).not.toContain('Forest');
+    const cheap = find(s, 0, 'hand', 'Test Cheap');
+    // What the engine's own seat would answer: the dearest card it may, and then to cast it.
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', cards: [cheap] });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [cheap] } as Action), 20);
+    expect(s.pendingOfferedCast?.card).toBe(cheap);
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:cast', card: cheap, offered: true });
+    const before = life(s);
+    // No mana on the board at all: the cast costs nothing.
+    s = apply(s, { type: 'auto:cast', by: 0, card: cheap, offered: true } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(life(s)).toBe(before + 3);
+    expect(s.instances[cheap]!.zone).toBe('graveyard');
+  });
+
+  it('choosing nothing, or declining the offer, leaves the card in hand', () => {
+    let s = table(['Test Expertise', 'Test Cheap'], ['Test Bear']);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Expertise') }), 20);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(namesIn(s, 0, 'hand')).toContain('Test Cheap');
+
+    let t = table(['Test Expertise', 'Test Cheap'], ['Test Bear']);
+    t = drain(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Expertise') }), 20);
+    const cheap = find(t, 0, 'hand', 'Test Cheap');
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [cheap] } as Action), 20);
+    t = drain(apply(t, { type: 'auto:pass', by: 0 }), 20);
+    expect(t.pendingOfferedCast).toBeNull();
+    expect(t.instances[cheap]!.zone).toBe('hand');
+  });
+
+  it('an activated ability offers only instants and sorceries, and with no limit on mana value', () => {
+    let s = table(['Test Pricey', 'Test Cheap', 'Test Bear'], ['Test Adept']);
+    const adept = find(s, 0, 'battlefield', 'Test Adept');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: adept, abilityIndex: 0 }), 20);
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => named(s, id));
+    expect(offered).toContain('Test Pricey');
+    expect(offered).not.toContain('Test Bear');
+    // The bot takes the dearest card on offer.
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', cards: [find(s, 0, 'hand', 'Test Pricey')] });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

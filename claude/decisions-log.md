@@ -46842,3 +46842,40 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,716, all passing
 
 Coverage: 11,383 of 31,653 cards (+1), 30,680 of 59,306 lines (+2). Staples: 220 of 244 (+1).
+
+## D708 — A free cast from your hand
+
+"You may cast a spell with mana value N or less from your hand without paying its mana cost": the
+Expertise cycle, Omnispell Adept ("an instant or sorcery spell"), Maelstrom Archangel ("a spell"),
+and the same clause anywhere else an effect prints it.
+
+How it is read:
+- A question about the hand: up to one card, filtered by kind and mana value.
+  - The kinds are "a spell", "an instant or sorcery spell", "a noncreature spell", "a permanent
+    spell" and "a creature spell".
+  - Lands are never offered.
+- The chosen card then gets cascade's `pendingOfferedCast` with nothing to pay, and `stays` as a
+  miracle's does: declined, it stays in hand.
+- Choosing nothing is the "may".
+- The bot's `pick` takes the dearest eligible card. Without it, the bot answered every optional hand
+  question with nothing and wasted the card.
+- Not read yet: "mana value X or less" (Electrodominance) and "equal or lesser mana value"
+  (Reinterpret, Press the Enemy), which need a number this clause does not have.
+
+Staples went from 220 to 221 (Rishkar's Expertise).
+
+**Tests.** 4 engine tests:
+- the Expertise and the Adept read;
+- the draw happens first, only a nonland spell within the limit is offered, the bot picks it and
+  takes the offer, and it resolves with no mana on the board;
+- choosing nothing, or declining the offer, leaves the card in hand;
+- the Adept's ability offers only instants and sorceries with no mana value limit, and the bot
+  takes the dearer one.
+
+Faults injected by hand: 5 of 5 caught. A sixth, the zone re-check at resolution, cannot be
+reached because the question's filter already enforces it. The redundant filter call was dropped
+and the zone check kept as a belt.
+
+    engine tests: 4,720, all passing
+
+Coverage: 11,388 of 31,653 cards (+5), 30,688 of 59,306 lines (+8). Staples: 221 of 244 (+1).

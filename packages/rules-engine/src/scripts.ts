@@ -13389,6 +13389,62 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "You may cast a spell with mana value 5 or less from your hand without paying its mana cost"
+    (D708): the Expertise cycle, Omnispell Adept, Maelstrom Archangel, Surtland Elementalist and the
+    rest. A question about the hand, up to one card the cast could be, and then cascade's offer
+    (`pendingOfferedCast`) on that card with nothing to pay, kept in hand if declined as a
+    miracle's is (`stays`). Choosing nothing is the "may". Lands are never offered: a land is
+    played, not cast. Timing is not checked, since the cast happens while the effect resolves
+    (CR 608.2g), which the offer already allows.
+
+    "With mana value X or less" (Electrodominance) and "equal or lesser mana value" need a number
+    this clause does not have, and stay unread.
+  */
+  const freeCast = /^you may cast (a|an) (spell|instant or sorcery spell|noncreature spell|permanent spell|creature spell)(?: with mana value (\d+) or less)? from your hand without paying its mana cost$/i.exec(text);
+  if (freeCast !== null) {
+    const kind = freeCast[2]!.toLowerCase();
+    const limit = freeCast[3] === undefined ? Infinity : Number(freeCast[3]);
+    const castable = (state: GameState, id: string): boolean => {
+      const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+      const types = parseTypeLine(def?.typeLine);
+      if (hasType(types, 'land')) return false;
+      if (kind === 'instant or sorcery spell' && !hasType(types, 'instant') && !hasType(types, 'sorcery')) return false;
+      if (kind === 'noncreature spell' && hasType(types, 'creature')) return false;
+      if (kind === 'creature spell' && !hasType(types, 'creature')) return false;
+      if (kind === 'permanent spell' && (hasType(types, 'instant') || hasType(types, 'sorcery'))) return false;
+      return costValue(parseManaCost(def?.manaCost)) <= limit;
+    };
+    const words = `${freeCast[1]!} ${freeCast[2]!}${freeCast[3] === undefined ? '' : ` with mana value ${freeCast[3]} or less`}`;
+    return {
+      decisions: [{
+        who: 'controller', from: 'hand', prompt: `Cast ${words} from your hand without paying its mana cost`,
+        min: 0, max: 1,
+        filter: (state, id) => castable(state, id),
+        // The engine's own seat takes the dearest card it may, which is what the free cast saves.
+        pick: (state, _chooser, candidates) => {
+          const worth = (id: string) => costValue(parseManaCost(state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost));
+          const best = [...candidates].sort((a, b) => worth(b) - worth(a))[0];
+          return best === undefined ? [] : [best];
+        },
+      }],
+      effect: (c) => {
+        const id = chosenCards(c)[0];
+        if (id === undefined || c.state.instances[id]?.zone !== 'hand') return c.state;
+        const cardName = c.state.cardDefs[c.state.instances[id]!.defKey]?.name ?? 'it';
+        return {
+          ...c.state,
+          pendingOfferedCast: {
+            seat: c.controller,
+            card: id,
+            prompt: `${name}: you may cast ${cardName} without paying its mana cost`,
+            stays: true,
+            source: c.source,
+          },
+        };
+      },
+    };
+  }
   const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
   if (roundDiscard !== null) {
     const n = countFrom(roundDiscard[2]!);
