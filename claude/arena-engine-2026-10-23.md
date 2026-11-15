@@ -28471,3 +28471,38 @@ giving the opponent the larger hand.
     engine tests: 4,614, all passing
 
 Coverage: 11,214 of 31,653 cards (+4), 30,405 of 59,306 lines (+5). Staples: 190 of 244 (+2).
+
+## D678 — Esper Sentinel: the first noncreature spell, and a price that is its power
+
+"Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player
+pays {X}, where X is Esper Sentinel's power." Staples went from 190 to 191.
+
+**The first of a kind.** "Your first / second spell each turn" (D436) counts every spell the caster
+casts. The Sentinel counts noncreature spells only, so a creature cast first does not use it up.
+- New field `GameState.spellsCastThisTurnByKind`, keyed `<seat>:creature` and `<seat>:noncreature`.
+  It is a separate map because the werewolf conditions iterate `spellsCastThisTurnBy`'s values and
+  must see only seats. It is optional (absent counts as zero) and cleared with the rest at each
+  turn.
+- `countCast` takes the spell's kind. The cast event carries `kindNth` beside `nth`, and a face-down
+  morph counts as a creature.
+- The trigger's script field is `nthOfKind` (the question) and the event's is `kindNth` (the answer):
+  two names for the two directions, as `onNth` and `nth` are.
+- New prologue: "Whenever an opponent casts their first noncreature spell each turn".
+
+**The price.** `punisherEffect` reads "… unless that player pays {X}, where X is ~'s power".
+- The decision is a function spec, so the price is the source's live power when the question is
+  asked; a power below 0 asks for {0}.
+- A caster who cannot afford it is not asked, and the card is drawn.
+
+**Tests.** 3 engine tests:
+- a creature, then a noncreature spell, then another: only the second draws, the third does not
+  trigger;
+- the count starts afresh on the opponent's next turn;
+- with a land the caster is asked "Pay {1}", and paying stops the draw.
+
+Faults injected by hand: 4 of 4 caught. One survivor (the per-turn reset) was pinned by the
+next-turn test.
+
+    engine tests: 4,617, all passing
+
+Coverage: 11,215 of 31,653 cards (+1), 30,407 of 59,306 lines (+2). Staples: 191 of 244 (+1).

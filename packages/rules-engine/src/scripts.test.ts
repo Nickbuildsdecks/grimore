@@ -12962,6 +12962,66 @@ describe('Living Death and Windfall (D677)', () => {
   });
 });
 
+describe('Esper Sentinel: the first noncreature spell, and a price that is its power (D678)', () => {
+  const ROWS = [
+    { name: 'Test Sentinel', type_line: 'Artifact Creature — Human Soldier', oracle_text: "Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays {X}, where X is Test Sentinel's power.", mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Spark', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Pup', type_line: 'Creature — Dog', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'sentinel', name: 'Sentinel',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 40 }],
+    data: ROWS,
+  }).deck;
+  // Seat 1 is the caster; seat 0 holds the Sentinel.
+  const table = (casterLands: number) => advanceTo(arena({
+    decks: { 0: 'sentinel', 1: 'sentinel' }, deckSpecs: { sentinel: deck },
+    hands: { 1: ['Test Pup', 'Test Spark', 'Test Spark'] },
+    battlefield: { 0: ['Test Sentinel'], 1: Array.from({ length: casterLands }, () => 'Plains') }, turn: 3, firstSeat: 1,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', name) });
+  const settleAll = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 12 && (next.stackOrder.length > 0 || next.pendingDecision !== null || next.pendingChoice !== null); i++) {
+      next = next.pendingDecision !== null
+        ? apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [], option: next.pendingDecision.options![0]! })
+        : passBoth(next);
+    }
+    return next;
+  };
+
+  it('a creature first does not use it up; the first noncreature spell draws if unpaid, the second does not trigger', () => {
+    let s = table(0);
+    const hand0 = ids(s, 0, 'hand').length;
+    s = settleAll(cast(s, 'Test Pup'));
+    expect(ids(s, 0, 'hand').length).toBe(hand0);
+    s = settleAll(cast(s, 'Test Spark'));
+    expect(ids(s, 0, 'hand').length).toBe(hand0 + 1);
+    s = settleAll(cast(s, 'Test Spark'));
+    expect(ids(s, 0, 'hand').length).toBe(hand0 + 1);
+  });
+
+  it('counts afresh each turn: the opponent\'s first noncreature spell next turn triggers again', () => {
+    let s = settleAll(cast(table(0), 'Test Spark'));
+    s = nextTurn(nextTurn(s));
+    while (s.step !== 'precombat-main') s = passBoth(s);
+    const before = ids(s, 0, 'hand').length;
+    s = settleAll(cast(s, 'Test Spark'));
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+  });
+
+  it('asks the caster for {1}, the Sentinel\'s power, and paying stops the draw', () => {
+    let s = table(1);
+    const hand0 = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Spark');
+    while (s.pendingDecision === null && s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual(["Don't pay", 'Pay {1}']);
+    s = settleAll(apply(s, { type: 'auto:decide', by: 1, cards: [], option: 'Pay {1}' }));
+    expect(ids(s, 0, 'hand').length).toBe(hand0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

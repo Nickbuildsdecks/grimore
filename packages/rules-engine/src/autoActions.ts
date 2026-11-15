@@ -102,14 +102,19 @@ const statsAsItLeaves = (state: GameState, inst: CardInstance): SacrificedStats 
  * spell a seat casts in a turn, which is what `spell-cast`'s `nth` carries.
  */
 function countCast(
-  state: GameState, seat: SeatIndex,
-): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy'> {
+  state: GameState, seat: SeatIndex, kind: 'creature' | 'noncreature',
+): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy' | 'spellsCastThisTurnByKind'> {
   const key = String(seat);
+  const byKind = `${seat}:${kind}`;
   return {
     spellsCastThisTurn: state.spellsCastThisTurn + 1,
     spellsCastThisTurnBy: {
       ...state.spellsCastThisTurnBy,
       [key]: (state.spellsCastThisTurnBy[key] ?? 0) + 1,
+    },
+    spellsCastThisTurnByKind: {
+      ...(state.spellsCastThisTurnByKind ?? {}),
+      [byKind]: (state.spellsCastThisTurnByKind?.[byKind] ?? 0) + 1,
     },
   };
 }
@@ -1065,7 +1070,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // each turn" counts. Incremented as the spell goes on the stack — a spell is cast once it is
     // there with its costs paid (CR 601.2i) — and *after* the object has taken its snapshot, so a
     // storm spell never counts itself. See `countCast`.
-    ...countCast(next, action.by),
+    ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature'),
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a
@@ -1078,6 +1083,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // turn" — on the event rather than read at resolution, because by then the tally has moved on
     // (D436's rule, third time). See `GameState.spellsCastThisTurnBy`.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
+    // And among its own kind (D678): "their first noncreature spell each turn".
+    kindNth: next.spellsCastThisTurnByKind?.[`${action.by}:${spellKind}`] ?? 1,
     // D616: whose turn, where from, and kicked — for "during an opponent's turn", "from your
     // graveyard" and "a kicked spell".
     activeSeat: state.activeSeat,
@@ -1198,7 +1205,7 @@ function castFaceDown(
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
-    ...countCast(next, action.by),
+    ...countCast(next, action.by, 'creature'),
   };
   // A creature spell was cast, which is all a prowess or a "whenever an opponent casts a creature
   // spell" may know about it — the types come from the face-down profile, not from the card.
@@ -1224,6 +1231,7 @@ function castFaceDown(
     object: object.id,
     // A morph is a cast, so it is one of this caster's spells this turn like any other.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
+    kindNth: next.spellsCastThisTurnByKind?.[`${action.by}:creature`] ?? 1,
   }, action.by);
   next = resetPriority(settle(next, state), action.by);
   return {

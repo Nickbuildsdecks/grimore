@@ -841,6 +841,13 @@ export type TriggerEvent =
        */
       readonly onNth?: number;
       /**
+       * `onNth` counted among the caster's spells of this event's kind only (D678): "their first
+       * **noncreature** spell each turn". Compared with the event's `kindNth`.
+       */
+      readonly nthOfKind?: true;
+      /** This spell's ordinal among its caster's spells of the same kind this turn (D678). Engine-set. */
+      readonly kindNth?: number;
+      /**
        * Which of its caster's spells this was, this turn — 1 for the first. Set by the engine when
        * the event is raised, never by a script.
        */

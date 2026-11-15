@@ -323,9 +323,35 @@ const PLAYER_ACTION_EVENTS: ReadonlySet<string> = new Set([
 ]);
 
 function punisherEffect(
-  clause: string, reader: (text: string) => ReadEffect | null, on: readonly TriggerDef['on'][],
+  clause: string, reader: (text: string) => ReadEffect | null, on: readonly TriggerDef['on'][], name = '',
 ): ReadEffect | null {
   if (on.length === 0 || !on.every((one) => PLAYER_ACTION_EVENTS.has(one.kind))) return null;
+  /*
+    A price that is the source's power (D678): Esper Sentinel's "draw a card unless that player pays
+    {X}, where X is Esper Sentinel's power". Read as the question is asked, from the source's live
+    power, so a pumped Sentinel asks for more; a power below 0 asks for {0}.
+  */
+  const byPower = new RegExp(`^(.+?) unless that player pays \\{X\\}, where X is (?:${selfRef(name)}|its)'s? power\\.?$`, 'i').exec(clause.trim());
+  if (byPower !== null && name !== '') {
+    const words = byPower[1]!.trim();
+    const inner = reader(words);
+    if (inner === null || inner.beforeDecisions !== undefined) return null;
+    if ((inner.decisions ?? []).length > 0 || (inner.targets ?? []).length > 0) return null;
+    return {
+      decisions: [(state: GameState, source: string) => {
+        const inst = state.instances[source];
+        const power = inst === undefined ? 0 : Math.max(0, characteristicsOf(state, inst).power);
+        const pay = `Pay {${power}}`;
+        return {
+          who: 'acting-player',
+          prompt: `${pay}? If you do not, the ability's controller will ${words}.`,
+          options: [TAX_NOT_PAID, pay],
+          payIfChosen: { option: pay, cost: `{${power}}` },
+        };
+      }],
+      effect: (c) => (chosenOption(c, 0) === TAX_NOT_PAID ? inner.effect({ ...c, decisions: c.decisions.slice(1) }) : c.state),
+    };
+  }
   const tithe = /^that player may pay ((?:\{[^}]+\})+)\.\s*If (?:the|that) player doesn't, (?:you )?(.+)$/i.exec(clause.trim());
   const text = tithe === null ? clause.trim() : `${tithe[2]!.replace(/\.$/, '')} unless that player pays ${tithe[1]!}`;
   const matched = /^(.+?) unless that player pays ((?:\{[^}]+\})+)\.?$/i.exec(text);
@@ -16309,6 +16335,12 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you cast your first spell each turn, (.+)$/i,
     on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
   },
+  // Esper Sentinel (D678): the opponent's first noncreature spell, counted among their noncreature
+  // spells only — a creature cast first does not use it up.
+  {
+    prologue: () => /^Whenever an opponent casts their first noncreature spell each turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'opponent', spell: 'noncreature', onNth: 1, nthOfKind: true }],
+  },
   // "Your first spell during each opponent's turn" (D616): the first you cast that turn, on a turn
   // that is not yours — 8 cards one line short.
   {
@@ -18511,7 +18543,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       currently discriminates on nothing and is kept because it is the cheap safe direction. Every
       other caller keeps it too.
     */
-    const read = reader(clause) ?? optionalEffect(clause, reader) ?? punisherEffect(clause, reader, on);
+    const read = reader(clause) ?? optionalEffect(clause, reader) ?? punisherEffect(clause, reader, on, name);
     if (read === null) return null;
     /*
       **A trigger that divides a quantity is not emitted at all**, the third call site of

@@ -1155,6 +1155,12 @@ export interface AutomationState {
    */
   readonly spellsCastThisTurnBy: Readonly<Record<string, number>>;
   /**
+   * The same tally split by kind, keyed `<seat>:creature` / `<seat>:noncreature` (D678): Esper
+   * Sentinel's "their first noncreature spell each turn". A separate map so that readers iterating
+   * `spellsCastThisTurnBy`'s seats see only seats. Optional: absent is all zero; cleared each turn.
+   */
+  readonly spellsCastThisTurnByKind?: Readonly<Record<string, number>>;
+  /**
    * `spellsCastThisTurnBy` as it stood when the **previous** turn ended (D592).
    *
    * The werewolves' clock: "At the beginning of each upkeep, if no spells were cast last turn,

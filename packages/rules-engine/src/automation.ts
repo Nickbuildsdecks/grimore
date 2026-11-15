@@ -1002,6 +1002,7 @@ export function endTurnCleanup(state: GameState): GameState {
     spellsCastThisTurn: 0,
     // And the per-seat half of the same tally, which is what "your second spell each turn" counts.
     spellsCastThisTurnBy: {},
+    spellsCastThisTurnByKind: {},
     // But kept as last turn's first, for the werewolves' "if no spells were cast last turn" (D592).
     spellsCastLastTurnBy: next.spellsCastThisTurnBy,
     // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
@@ -1058,7 +1059,7 @@ function triggerMatches(
         tally has moved on. Counted per caster, so at a four-seat table it is your second spell and
         not the table's. See `GameState.spellsCastThisTurnBy`.
       */
-      if (want.onNth !== undefined && e.nth !== want.onNth) return false;
+      if (want.onNth !== undefined && (want.nthOfKind === true ? e.kindNth : e.nth) !== want.onNth) return false;
       // D616: the turn it was cast in, where it was cast from, and whether it was kicked.
       if (want.duringOpponentsTurn === true && (e.activeSeat === undefined || e.activeSeat === sourceSeat)) return false;
       if (want.fromZone === 'graveyard' && e.castFrom !== 'graveyard') return false;
