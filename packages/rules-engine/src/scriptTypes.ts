@@ -3266,6 +3266,17 @@ export interface CardScript {
    * still wins (CR 702.33a).
    */
   readonly shufflesIntoLibrary?: true;
+  /**
+   * "Creature spells you control can't be countered" (D688): Rhythm of the Wild, Prowling
+   * Serpopard, Cavern-style statics on a permanent. `whose` is "you control" or everybody's ("Creature
+   * spells can't be countered"); `kind` narrows to creature or noncreature spells. While the
+   * permanent is on the battlefield, `counterSpell` leaves a matching spell on the stack, as it does
+   * for a spell that says so itself (CR 101.2).
+   */
+  readonly spellsCantBeCountered?: {
+    readonly whose: 'you' | 'all';
+    readonly kind?: 'creature' | 'noncreature';
+  };
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

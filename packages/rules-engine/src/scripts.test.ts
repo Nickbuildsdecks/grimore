@@ -7883,6 +7883,9 @@ describe('deck coverage', () => {
         sentence (Green Sun's Zenith, the Beacons). No pool deck has one. Driven at runtime by
         "\"Shuffle ~ into its owner's library\" as a spell resolves (D687)": into the library on
         resolving, into the graveyard when countered.
+      - `script spellsCantBeCountered` (D688): "Creature spells you control can't be countered"
+        (Rhythm of the Wild) and "Spells can't be countered". No pool deck has one. Driven at
+        runtime by "\"Creature spells you control can't be countered\" (D688)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7903,6 +7906,7 @@ describe('deck coverage', () => {
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
+      'script spellsCantBeCountered',
     ]);
 
     const declared = [
@@ -13607,6 +13611,63 @@ describe('"Shuffle ~ into its owner\'s library" as a spell resolves (D687)', () 
     s = passBoth(s);
     expect(zenithIn(s, 'graveyard')).toBe(1);
     expect(zenithIn(s, 'library')).toBe(zenithIn(s0, 'library'));
+  });
+});
+
+describe('"Creature spells you control can\'t be countered" (D688)', () => {
+  const ROWS = [
+    { name: 'Test Rhythm', type_line: 'Enchantment', oracle_text: "Creature spells you control can't be countered.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Cavern', type_line: 'Enchantment', oracle_text: "Spells can't be countered.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Counter', type_line: 'Instant', oracle_text: 'Counter target spell.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'uncounter', name: 'Uncounter',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  // `caster` casts `spell`; the other seat answers with a Counter.
+  const fight = (caster: SeatIndex, spell: string, board: Readonly<Record<number, readonly string[]>>) => {
+    const other = (1 - caster) as SeatIndex;
+    let s = advanceTo(arena({
+      decks: { 0: 'uncounter', 1: 'uncounter' }, deckSpecs: { uncounter: deck.deck },
+      hands: { [caster]: [spell], [other]: ['Test Counter'] }, battlefield: board, turn: 3, firstSeat: caster,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: caster, card: find(s, caster, 'hand', spell) });
+    const target = s.stackOrder[0]!;
+    const life = s.seats[caster]!.life;
+    s = apply(s, { type: 'auto:pass', by: caster });
+    s = apply(s, { type: 'auto:cast', by: other, card: find(s, other, 'hand', 'Test Counter'), targets: [{ kind: 'card', id: target }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    return { s, target, life };
+  };
+  const zoneOf = (s: GameState, id: string) => s.instances[id]?.zone;
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('your creature spell resolves through a counter; your other spells and theirs do not', () => {
+    const bear = fight(0, 'Test Bear', { 0: ['Test Rhythm'] });
+    expect(zoneOf(bear.s, bear.target)).toBe('battlefield');
+    // A sorcery ends in the graveyard either way; the life says whether it resolved.
+    const spark = fight(0, 'Test Spark', { 0: ['Test Rhythm'] });
+    expect(zoneOf(spark.s, spark.target)).toBe('graveyard');
+    expect(spark.s.seats[0]!.life).toBe(spark.life);
+    const theirs = fight(1, 'Test Bear', { 0: ['Test Rhythm'] });
+    expect(zoneOf(theirs.s, theirs.target)).toBe('graveyard');
+  });
+
+  it('"Spells can\'t be countered" covers everybody\'s spells, of every kind', () => {
+    const spark = fight(0, 'Test Spark', { 1: ['Test Cavern'] });
+    expect(spark.s.seats[0]!.life).toBe(spark.life + 1);
+    const bear = fight(1, 'Test Bear', { 0: ['Test Cavern'] });
+    expect(zoneOf(bear.s, bear.target)).toBe('battlefield');
   });
 });
 

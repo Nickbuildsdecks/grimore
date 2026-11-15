@@ -24662,6 +24662,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  // "Creature spells you control can't be countered" (D688): see `CardScript.spellsCantBeCountered`.
+  const uncounterable = /^(creature |noncreature )?spells( you control)? can't be countered\.?$/i.exec(plain(line).trim());
+  if (uncounterable !== null) {
+    const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;
+    return { spellsCantBeCountered: { whose: uncounterable[2] === undefined ? 'all' : 'you', ...(kind === undefined ? {} : { kind }) } };
+  }
   // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
   if (/^untap all permanents you control during each other player's untap step\.?$/i.test(plain(line).trim())) {
     return { untapsDuringOthersUntap: true };

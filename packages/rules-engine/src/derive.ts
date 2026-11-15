@@ -42,6 +42,7 @@
 import type { CardDef } from './cards.js';
 import { compileCard, type Compilation, type UnreadLine } from './compile.js';
 import { scriptFor } from './scripts.js';
+import { useScriptLookup } from './effects.js';
 import type { CardScript } from './scriptTypes.js';
 
 /**
@@ -116,6 +117,8 @@ export function scriptForCard(def: CardDef | undefined): CardScript | undefined 
   const compiled = compilationFor(def);
   return compiled.ok ? compiled.script : undefined;
 }
+
+useScriptLookup(scriptForCard);
 
 /**
  * The printed lines of this card that nothing is running, each with a reason — or empty.

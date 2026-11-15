@@ -13,8 +13,9 @@
  * effect ran, and arrives in `ctx.decisions` the same way. An effect that picked for itself would
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
+import type { CardScript } from './scriptTypes.js';
 import {
-  characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -1039,6 +1040,36 @@ export function destroy(
 }
 
 /**
+ * The card-script lookup, handed in by `derive.ts` as it loads (D688). Importing it here would close
+ * an import cycle that leaves `scripts.ts` reading constants before they exist; the one reader that
+ * needs it is `protectedFromCounters`, which runs long after every module has loaded.
+ */
+let scriptLookup: ((def: CardDef | undefined) => CardScript | undefined) | null = null;
+export function useScriptLookup(lookup: (def: CardDef | undefined) => CardScript | undefined): void {
+  scriptLookup = lookup;
+}
+
+/**
+ * Whether a permanent on the battlefield says this spell can't be countered (D688): "Creature
+ * spells you control can't be countered" (Rhythm of the Wild) and its kin. "You control" is the
+ * permanent's controller and the spell's; the spell's kind is its card's printed type line, which is
+ * what a spell on the stack has (CR 112.1). A permanent that has lost its abilities says nothing.
+ */
+function protectedFromCounters(state: GameState, object: StackObject): boolean {
+  if (object.kind !== 'spell' || scriptLookup === null) return false;
+  const scriptForCard = scriptLookup;
+  const creature = hasType(parseTypeLine(state.cardDefs[object.cardKey]?.typeLine), 'creature');
+  return state.seats.some((seat) => listAt(state, zoneKey(seat.index, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown) return false;
+    const rule = scriptForCard(state.cardDefs[inst.defKey])?.spellsCantBeCountered;
+    if (rule === undefined || allAbilitiesLost(state, inst)) return false;
+    if (rule.whose === 'you' && seat.index !== object.controller) return false;
+    return rule.kind === undefined || (rule.kind === 'creature') === creature;
+  }));
+}
+
+/**
  * Where a spell card goes as it leaves the stack: its owner's graveyard, or exile.
  *
  * One function for the three places a spell leaves the stack — it resolved, its targets are gone,
@@ -1202,7 +1233,7 @@ export function counterSpell(
     Guarded here rather than at each caller because this is the single chokepoint: ward's unpaid
     settle, the bot, and every scripted counter go through this function.
   */
-  if (object.cantBeCountered === true) {
+  if (object.cantBeCountered === true || protectedFromCounters(state, object)) {
     return {
       ...state,
       // The note channel the engine already uses for "something happened that produced no event":

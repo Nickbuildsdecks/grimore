@@ -46241,3 +46241,34 @@ the not-on-top check.
     engine tests: 4,651, all passing
 
 Coverage: 11,277 of 31,653 cards (+5), 30,481 of 59,306 lines (+5). Staples: 203 of 244 (+1).
+
+## D688 — "Creature spells you control can't be countered"
+
+The new `CardScript.spellsCantBeCountered {whose: 'you' | 'all', kind?}`, read in `staticFromLine`
+from:
+- "(Creature |Noncreature )spells (you control) can't be countered." — Rhythm of the Wild, Prowling
+  Serpopard, Allosaurus Shepherd's kin.
+
+How it is enforced:
+- `counterSpell` is the one place every counter goes through (scripted counters, ward, the bot). It
+  now asks `protectedFromCounters`: does a permanent on the battlefield say so, with "you control"
+  meaning the spell's controller, and the kind read from the spell's printed type line?
+- A face-down permanent, or one that has lost its abilities, says nothing.
+- effects.ts cannot import derive.ts: the import closes a cycle that left scripts.ts reading
+  constants before they existed. So derive.ts hands its lookup in as it loads (`useScriptLookup`).
+- The mechanic-coverage test lists the field as compiler-only, with a note.
+
+Rhythm of the Wild's second line (granting riot) stays unread.
+
+**Tests.** 3 engine tests:
+- both lines read;
+- under Rhythm, your creature spell resolves through a counter, while your sorcery and the
+  opponent's creature are countered;
+- "Spells can't be countered" protects both seats' spells of every kind.
+
+Faults injected by hand: 5 of 5 caught. The kind-filter fault survived at first, because a sorcery
+ends in the graveyard either way; it was pinned by checking the sorcery's life gain.
+
+    engine tests: 4,654, all passing
+
+Coverage: 11,281 of 31,653 cards (+4), 30,491 of 59,306 lines (+10). Staples: 203 of 244.
