@@ -2099,6 +2099,25 @@ function searchQuantity(
 
 function searchClause(text: string, name: string): ReadEffect | null {
   /*
+    Fabled Passage (D685): "…, put it onto the battlefield tapped, then shuffle. Then if you control
+    four or more lands, untap that land." `clausesOf` moves the last sentence onto the search, where
+    "that land" is the card found; the count is taken after the land has entered.
+  */
+  const passage = /^(.+ put it onto the battlefield tapped) and untap it if you control (\w+) or more lands$/i.exec(text.trim());
+  if (passage !== null) {
+    const inner = searchClause(passage[1]!, name);
+    const atLeast = WORD_NUMBERS[passage[2]!.toLowerCase()] ?? (/^\d+$/.test(passage[2]!) ? Number(passage[2]) : undefined);
+    if (inner === null || atLeast === undefined) return null;
+    return {
+      ...inner,
+      effect: (c) => {
+        const after = inner.effect(c);
+        if (landsControlled(after, c.controller) < atLeast) return after;
+        return chosenCards(c).reduce((state, id) => tap(state, id, false), after);
+      },
+    };
+  }
+  /*
     **Somebody else's search** (D647): "target player may search their library for a basic land
     card, put it onto the battlefield, then shuffle" — which is what Path to Exile's, Assassin's
     Trophy's and Ghost Quarter's "**Its controller** may search their library …" becomes under the
@@ -21975,6 +21994,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
+    // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.
+    .replace(/(put it onto the battlefield tapped),\s+then shuffle\.\s+Then if you control (\w+) or more lands, untap that land/gi, '$1 and untap it if you control $2 or more lands, then shuffle')
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
@@ -25352,6 +25373,17 @@ function interveningConditionRows(
       && inst.owner === c.controller && inst.zone === 'battlefield' && inst.zoneSeat === c.controller);
   }
 
+  /*
+    "An opponent controls four or more lands" (D685): Tectonic Edge's activation condition, and the
+    same count asked of each opponent in turn; one is enough, and a seat out of the game is none.
+  */
+  const theirs = /^an opponent controls (\w+) or more (.+)$/i.exec(text);
+  if (theirs !== null) {
+    const atLeast = number(theirs[1]!);
+    const count = countOfThing(`${theirs[2]!} you control`, name, 'plural');
+    if (atLeast === undefined || atLeast < 1 || count === null) return null;
+    return (c) => opponentsOf(c.state, c.controller).some((seat) => count({ ...c, controller: seat }) >= atLeast);
+  }
   const several = /^you control (\w+) or more (.+)$/i.exec(text);
   if (several !== null) {
     const atLeast = number(several[1]!);

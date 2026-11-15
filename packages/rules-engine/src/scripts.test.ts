@@ -13438,6 +13438,61 @@ describe('"the owner of target permanent shuffles it into their library", and Ch
   });
 });
 
+describe('Fabled Passage\'s untap, and "an opponent controls N or more" (D685)', () => {
+  const ROWS = [
+    { name: 'Test Passage', type_line: 'Land', oracle_text: '{T}, Sacrifice Test Passage: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. Then if you control four or more lands, untap that land.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Edge', type_line: 'Land', oracle_text: '{T}: Add {C}.\n{1}, {T}, Sacrifice Test Edge: Destroy target nonbasic land. Activate only if an opponent controls four or more lands.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Waste', type_line: 'Land', oracle_text: '{T}: Add {C}.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'passage', name: 'Passage',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'passage', 1: 'passage' }, deckSpecs: { passage: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const crack = (s: GameState) => {
+    let next = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Passage'), abilityIndex: 0 });
+    while (next.pendingDecision === null && next.stackOrder.length > 0) next = passBoth(next);
+    return drain(decide(next, ['Forest']));
+  };
+  const fetched = (s: GameState, before: GameState) => ids(s, 0, 'battlefield')
+    .filter((id) => !ids(before, 0, 'battlefield').includes(id));
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('the land found comes in untapped when it is your fourth land, tapped when it is your third', () => {
+    const four = table(['Test Passage', 'Forest', 'Forest', 'Forest'], []);
+    const s4 = crack(four);
+    const [land4] = fetched(s4, four);
+    expect(s4.instances[land4!]!.tapped).toBe(false);
+    const three = table(['Test Passage', 'Forest', 'Forest'], []);
+    const s3 = crack(three);
+    const [land3] = fetched(s3, three);
+    expect(s3.instances[land3!]!.tapped).toBe(true);
+  });
+
+  it('Tectonic Edge is offered only while an opponent controls four or more lands', () => {
+    const offered = (s: GameState) => legalActions(s, 0).plays
+      .some((p) => p.card === find(s, 0, 'battlefield', 'Test Edge') && (p as { abilityIndex?: number }).abilityIndex === 1);
+    expect(offered(table(['Test Edge', 'Forest'], ['Test Waste', 'Forest', 'Forest']))).toBe(false);
+    let s = table(['Test Edge', 'Forest'], ['Test Waste', 'Forest', 'Forest', 'Forest']);
+    expect(offered(s)).toBe(true);
+    const waste = find(s, 1, 'battlefield', 'Test Waste');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Edge'), abilityIndex: 1, targets: [{ kind: 'card', id: waste }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(ids(s, 1, 'battlefield')).not.toContain(waste);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

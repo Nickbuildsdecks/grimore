@@ -28692,3 +28692,28 @@ battlefield, tail ignored, self form inert, wrong seat for the revealed permanen
     engine tests: 4,642, all passing
 
 Coverage: 11,261 of 31,653 cards (+6), 30,462 of 59,306 lines (+6). Staples: 198 of 244 (+1).
+
+## D685 — Fabled Passage's untap, and "an opponent controls N or more"
+
+What now reads:
+- `interveningConditionFor` reads "an opponent controls N or more <things>". The count is the one
+  "you control N or more" uses, asked of each opponent in turn. Tectonic Edge's activation condition
+  goes through the same reader (D623).
+- Fabled Passage's "Then if you control four or more lands, untap that land." `clausesOf` moves the
+  sentence onto the search clause, where "that land" is the card found. `searchClause` counts the
+  lands after the found land has entered, and untaps it on four or more.
+
+Staples went from 198 to 200 (Fabled Passage, Tectonic Edge).
+
+**Tests.** 3 engine tests:
+- both lines read;
+- the found land enters untapped as your fourth land and tapped as your third;
+- Tectonic Edge's ability is offered against four opposing lands, not three, and destroys the
+  target.
+
+Faults injected by hand: 5 of 5 caught (strict count, own lands counted, lands counted before the
+fetch, no untap, an off-by-one in the land count).
+
+    engine tests: 4,645, all passing
+
+Coverage: 11,263 of 31,653 cards (+2), 30,464 of 59,306 lines (+2). Staples: 200 of 244 (+2).
