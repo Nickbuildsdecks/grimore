@@ -742,7 +742,14 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     misunderstood the card, and silently dropping it would put an x on the stack object that an
     effect could read.
   */
-  const payingCost = offered ? printedCost : parseManaCost(costText);
+  /*
+    An offer with a cost of its own is that cost (D700): a madness or miracle cast is paid at the
+    offer's price, and `legalActions` sizes X off it — Welcome to the Fold is printed `{2}{U}{U}`
+    with `Madness {X}{U}{U}`, and reading the printed cost here refused the X the table had just
+    offered (sweep 56101). An empty offer — cascade — still reads the printed cost (D460).
+  */
+  const offerCost = state.pendingOfferedCast?.cost ?? '';
+  const payingCost = offered ? (offerCost === '' ? printedCost : parseManaCost(offerCost)) : parseManaCost(costText);
   if (action.x !== undefined) {
     if (!payingCost.x && !lifeX) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no X to choose`);

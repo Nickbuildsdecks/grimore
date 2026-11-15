@@ -14352,6 +14352,51 @@ describe('lands that gain basic land types tap for them (D699)', () => {
   });
 });
 
+describe('an offered cast pays the offer\'s own cost, X included (D700)', () => {
+  /*
+    Sweep 56101: Welcome to the Fold is printed {2}{U}{U} with Madness {X}{U}{U}. The table sized X
+    off the madness cost and the cast refused it against the printed one.
+  */
+  const ROWS = [
+    { name: 'Test Fold', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{2}{U}{U}', cmc: 4, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'fold', name: 'Fold',
+    entries: [{ name: 'Test Fold', count: 2 }, { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  // The card in exile with an offer of {X}{U}, as madness leaves it.
+  const offeredAt = (cost: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'fold', 1: 'fold' }, deckSpecs: { fold: deck.deck },
+      hands: { 0: ['Test Fold'] }, battlefield: { 0: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Fold');
+    return {
+      card,
+      s: {
+        ...s,
+        zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => id !== card), '0:exile': [card] },
+        instances: { ...s.instances, [card]: { ...s.instances[card]!, zone: 'exile' as const } },
+        pendingOfferedCast: { seat: 0 as SeatIndex, card, prompt: 'madness', cost, toGraveyard: true as const, source: card },
+      },
+    };
+  };
+
+  it('offers X off the offer\'s cost, and the cast takes the X it offered', () => {
+    const { s, card } = offeredAt('{X}{U}');
+    const play = legalActions(s, 0).plays.find((p) => p.card === card && (p as { offered?: boolean }).offered === true);
+    expect(play?.xMax).toBe(2);
+    const cast = apply(s, { type: 'auto:cast', by: 0, card, offered: true, x: 2 } as Action);
+    expect(cast.stackObjects[cast.stackOrder[0]!]?.x).toBe(2);
+  });
+
+  it('an empty offer (cascade) still reads the printed cost, which has no X', () => {
+    const { s, card } = offeredAt('');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, offered: true, x: 1 } as Action)).toMatch(/X/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

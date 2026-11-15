@@ -46624,3 +46624,28 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,692, all passing
 
 Coverage: 11,369 of 31,653 cards (+5), 30,665 of 59,306 lines (+6). Staples: 213 of 244 (+2).
+
+## D700 — an offered cast pays the offer's own cost, X included
+
+Sweep 56101 threw: "Welcome to the Fold has no X to choose". The card is printed {2}{U}{U} with
+Madness {X}{U}{U}.
+- `legalActions` sizes X off the cost being paid, which for an offered cast is the offer's cost
+  (D460).
+- `autoActions` checked X against the **printed** cost on every offered cast, so it refused the X
+  the table had just offered.
+
+The fix: an offer with a cost of its own (madness, miracle) is now that cost for the X check. An
+empty offer (cascade) still reads the printed cost, as D460 intended. The defect predates this
+session's increments; it surfaced because seed 56101 dealt this card.
+
+**Tests.** 2 engine tests:
+- an offer of {X}{U} on a card printed without X offers X up to 2 and the cast takes X=2;
+- an empty offer still refuses an X.
+
+Seed 56101 now finishes.
+
+Faults injected by hand: 1 of 1 caught (the old printed-cost reading).
+
+    engine tests: 4,694, all passing
+
+Coverage unchanged: 11,369 of 31,653 cards, 30,665 of 59,306 lines. Staples: 213 of 244.
