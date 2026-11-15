@@ -13022,6 +13022,45 @@ describe('Esper Sentinel: the first noncreature spell, and a price that is its p
   });
 });
 
+describe('"When ~ enters untapped" (D679)', () => {
+  const ROWS = [
+    { name: 'Test Sanctuary', type_line: 'Land — Island', oracle_text: "This land enters tapped unless you control three or more other Islands.\nWhen this land enters untapped, you may put target instant or sorcery card from your graveyard on top of your library.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'sanctuary', name: 'Sanctuary',
+    entries: [{ name: 'Test Sanctuary', count: 2 }, { name: 'Test Bolt', count: 2 }, { name: 'Island', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (islands: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'sanctuary', 1: 'sanctuary' }, deckSpecs: { sanctuary: deck },
+      hands: { 0: ['Test Sanctuary'] }, battlefield: { 0: Array.from({ length: islands }, () => 'Island') }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Bolt'), toZone: 'graveyard' });
+    return s;
+  };
+  const play = (s: GameState) => passBoth(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Test Sanctuary') }));
+
+  it('untapped (three other Islands): the trigger offers the instant back on top', () => {
+    let s = play(table(3));
+    const bolt = find(s, 0, 'graveyard', 'Test Bolt');
+    for (let i = 0; i < 6 && s.instances[bolt]!.zone === 'graveyard'; i++) {
+      if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bolt }] });
+      else if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' });
+      else s = passBoth(s);
+    }
+    expect(ids(s, 0, 'library')[0]).toBe(bolt);
+  });
+
+  it('tapped (too few Islands): no trigger at all', () => {
+    const s = drain(play(table(1)));
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Sanctuary')]!.tapped).toBe(true);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Bolt');
+    expect(s.stackOrder).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -45385,10 +45424,9 @@ describe('lands that enter tapped unless… (D587)', () => {
       const compiled = compileCard(r as never);
       expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
     }
-    // Mystic Sanctuary's tapped clause reads; its "enters untapped" trigger is a reader of its own
-    // and is not one yet, so that line — and only that line — is left for a person.
+    // Mystic Sanctuary's tapped clause reads, and since D679 so does its "enters untapped" trigger.
     const sanctuary = compileCard(SANCTUARY as never);
-    expect(sanctuary.ok && sanctuary.unread.map((u) => u.line)).toEqual([SANCTUARY.oracle_text.split('\n')[2]]);
+    expect(sanctuary.ok && sanctuary.unread.map((u) => u.line)).toEqual([]);
     const madeBy = (r: object) => {
       const compiled = compileCard(r as never);
       return (compiled.ok ? compiled.script?.abilities ?? [] : []).flatMap((a) => a.produces ?? []).sort();

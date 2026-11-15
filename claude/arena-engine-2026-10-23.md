@@ -28506,3 +28506,28 @@ next-turn test.
     engine tests: 4,617, all passing
 
 Coverage: 11,215 of 31,653 cards (+1), 30,407 of 59,306 lines (+2). Staples: 191 of 244 (+1).
+
+## D679 — "When ~ enters untapped"
+
+Mystic Sanctuary and its cycle: "When this land enters untapped, you may put target instant or
+sorcery card from your graveyard on top of your library." Staples went from 191 to 192.
+
+"Enters untapped" is a fact about the arrival, not an intervening-if. A `TriggerDef.condition` is
+asked twice (as the trigger fires and as it resolves), so a land tapped for mana in response would
+lose its trigger. The fact therefore goes on the event instead:
+- the engine sets `subjectTapped` on an entry event, from the instance as it arrived;
+- the etb event takes `untapped: true`, compared once, at match time;
+- a new prologue reads "When ~ enters untapped, …".
+
+The D587 test that pinned the Sanctuary's trigger line as its one unread line now expects none.
+
+**Tests.** 2 engine tests:
+- beside three other Islands the land enters untapped, and the trigger puts the instant from the
+  graveyard on top of the library;
+- beside one Island it enters tapped and nothing goes on the stack.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 4,619, all passing
+
+Coverage: 11,220 of 31,653 cards (+5), 30,412 of 59,306 lines (+5). Staples: 192 of 244 (+1).

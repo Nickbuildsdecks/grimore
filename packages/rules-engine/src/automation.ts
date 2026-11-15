@@ -1355,6 +1355,8 @@ function triggerMatches(
       // And the landfall half of the same question, asked the same way round: only when the
       // trigger asks for it, so nothing written before this changes meaning.
       if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
+      // "Enters untapped" (D679), asked of the arrival itself.
+      if (want.kind === 'etb' && want.untapped === true && (event as { subjectTapped?: boolean }).subjectTapped !== false) return false;
       /*
         And the two the board prints as often as "creature" (D477): "whenever an **artifact** you
         control enters", constellation's and eerie's "an **enchantment** you control enters".
@@ -1904,7 +1906,7 @@ function raise(
         subjectIsCreature: live.isCreature,
         // And whether it was a land, for the landfall templating. Only on an entry: "whenever a
         // land dies" is not a card, and a field nothing reads is a field that drifts.
-        ...(event.kind === 'etb' ? { subjectIsLand: live.isLand } : {}),
+        ...(event.kind === 'etb' ? { subjectIsLand: live.isLand, subjectTapped: inst.tapped } : {}),
         /*
           And its live card types, for the artifact and enchantment board-watchers (D477). Read off
           the characteristics' type line, so a permanent whose type was changed by an effect is

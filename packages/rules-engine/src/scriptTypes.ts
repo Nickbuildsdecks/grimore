@@ -221,6 +221,14 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event: whether the subject is a land. */
       readonly subjectIsLand?: boolean;
       /**
+       * "When ~ enters **untapped**" (D679, Mystic Sanctuary): only an arrival untapped. A fact about
+       * the event, so it is asked as the trigger fires and not again — tapping the land for mana in
+       * response does not undo it. Answered from `subjectTapped`, which the engine sets.
+       */
+      readonly untapped?: true;
+      /** Set by the engine when it raises an entry: whether the subject arrived tapped. */
+      readonly subjectTapped?: boolean;
+      /**
        * Set by the engine when it raises the event: the subject's **live** card types, lowercased.
        *
        * **Deliberately not merged with the two booleans above**, which look like the same fact and

@@ -15943,6 +15943,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'self' }],
   },
+  // Mystic Sanctuary and its cycle (D679): "When ~ enters untapped, …" — a fact about the arrival.
+  {
+    prologue: (self) => new RegExp(`^When ${self} enters untapped, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self', untapped: true }],
+  },
   // Doomed Traveler, Goblin Arsonist: `{ kind: 'dies' }`, with `who` left at its default.
   {
     prologue: (self) => new RegExp(`^When ${self} dies, (.+)$`, 'i'),
