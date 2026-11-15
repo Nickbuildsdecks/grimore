@@ -27847,3 +27847,39 @@ giving the declining player lands in hand.
 
 Coverage: 10,994 of 31,653 cards (+5), 29,894 of 59,306 lines (+7). Staples: 169 of 244 (+1,
 Fecundity).
+
+## D659 — ward in a keyword list, and a tax that is not a "may"
+
+**Ward in a list.** "Flying, ward {2}" was refused whole, so a warded flier had neither its flying
+nor its ward. In a sample of 40 lines printing "unless that player pays", every unread one was ward
+in a list or ward granted to something else.
+- `printedParts` leaves a ward part out of a list of two or more, so the rest of the list reads as
+  printed keywords.
+- `compile.ts`, `wardInList`, emits the ward trigger from each ward part. It runs before the
+  printed-line check, which would otherwise count the line compiled and emit no ward at all.
+- `cardFromData` no longer takes a ward list as keyword-only text. That reading would have been a
+  drake with flying and no ward, and the runtime test caught exactly that on its first run.
+
+**"X unless that player pays {N}"** (`punisherEffect`). The mandatory sibling of
+`mayUnlessThatPlayerPays`.
+- It applies only to triggers whose events are all a player's action, where "that player" is the
+  acting player.
+- Smothering Tithe's two sentences ("that player may pay {2}. If the player doesn't, you create a
+  Treasure token") are rewritten to this form first.
+- The question is the acting player's, with the price on the paying answer. A player who cannot
+  afford it is not asked, and the effect happens.
+- Refused: an X price (Esper Sentinel), a clause that asks or targets, and "counter it" on a cast
+  trigger, which nothing reads yet.
+
+**Tests.** 3 engine tests:
+- "Flying, ward {2}" has flying, and a removal spell from a seat with no mana is countered;
+- Smothering Tithe makes a Treasure when the drawing opponent cannot pay;
+- paying {2} prevents it and taps their lands, and declining with the mana available still makes
+  one.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 4,553, all passing
+
+Coverage: 10,999 of 31,653 cards (+5), 29,945 of 59,306 lines (+51). Staples: 170 of 244 (+1,
+Smothering Tithe).

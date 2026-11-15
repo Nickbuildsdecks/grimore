@@ -303,6 +303,52 @@ const TAX_NOT_PAID = "Don't pay";
  * `clause` is the printed words after "you may" ("draw a card"), which is what both prompts are
  * made from. The effect is handed its context with these two answers dropped, like `youMay`'s.
  */
+/**
+ * **"X unless that player pays {N}"** (D659), the mandatory sibling of `mayUnlessThatPlayerPays`:
+ * "Whenever an opponent casts a spell, counter it unless that player pays {1}", "… create a Treasure
+ * token unless that player pays {2}". Smothering Tithe prints it as two sentences — "that player may
+ * pay {2}. If the player doesn't, you create a Treasure token" — which is the same question and is
+ * rewritten to this form first.
+ *
+ * Only for a trigger whose every event is a player's action, because "that player" is the acting
+ * player (`acting-player`) and nothing else here supplies one. The price is a plain mana run: `{X}`
+ * and "where X is …" (Esper Sentinel) are refused, as the may form refuses them. The clause itself
+ * may not ask or target — the tax is the only question this shape can order.
+ */
+/** Events raised with the seat that acted, whose "that player" is that seat (`acting-player`). */
+const PLAYER_ACTION_EVENTS: ReadonlySet<string> = new Set([
+  'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
+  // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
+  'sacrifices',
+]);
+
+function punisherEffect(
+  clause: string, reader: (text: string) => ReadEffect | null, on: readonly TriggerDef['on'][],
+): ReadEffect | null {
+  if (on.length === 0 || !on.every((one) => PLAYER_ACTION_EVENTS.has(one.kind))) return null;
+  const tithe = /^that player may pay ((?:\{[^}]+\})+)\.\s*If (?:the|that) player doesn't, (?:you )?(.+)$/i.exec(clause.trim());
+  const text = tithe === null ? clause.trim() : `${tithe[2]!.replace(/\.$/, '')} unless that player pays ${tithe[1]!}`;
+  const matched = /^(.+?) unless that player pays ((?:\{[^}]+\})+)\.?$/i.exec(text);
+  if (matched === null) return null;
+  const cost = matched[2]!;
+  const parsed = parseManaCost(cost);
+  if (parsed.unsupported !== undefined || parsed.x) return null;
+  const words = matched[1]!.trim();
+  const inner = reader(words);
+  if (inner === null || inner.beforeDecisions !== undefined) return null;
+  if ((inner.decisions ?? []).length > 0 || (inner.targets ?? []).length > 0) return null;
+  const pay = `Pay ${cost}`;
+  return {
+    decisions: [{
+      who: 'acting-player',
+      prompt: `${pay}? If you do not, the ability's controller will ${words}.`,
+      options: [TAX_NOT_PAID, pay],
+      payIfChosen: { option: pay, cost },
+    }],
+    effect: (c) => (chosenOption(c, 0) === TAX_NOT_PAID ? inner.effect({ ...c, decisions: c.decisions.slice(1) }) : c.state),
+  };
+}
+
 function mayUnlessThatPlayerPays(
   cost: string, clause: string, effect: (c: EffectContext) => GameState,
 ): Pick<TriggerDef, 'decisions' | 'effect'> {
@@ -17413,11 +17459,7 @@ function eventRelativeEffect(
   */
   // `discards` and `cycles` joined in D567: both are raised with the acting seat, so "whenever an
   // opponent discards a card, ~ deals 2 damage to that player" is Megrim and reads correctly.
-  const PLAYER_ACTIONS = new Set([
-    'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
-    // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
-    'sacrifices',
-  ]);
+  const PLAYER_ACTIONS = PLAYER_ACTION_EVENTS;
   /*
     And a **death** of somebody's creature (D654): `dies` is raised with the dead creature's seat
     (`raise(…, instances[id].zoneSeat, id)`), and `fireTrigger` passes it on as `actor` whenever it
@@ -18129,7 +18171,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       currently discriminates on nothing and is kept because it is the cheap safe direction. Every
       other caller keeps it too.
     */
-    const read = reader(clause) ?? optionalEffect(clause, reader);
+    const read = reader(clause) ?? optionalEffect(clause, reader) ?? punisherEffect(clause, reader, on);
     if (read === null) return null;
     /*
       **A trigger that divides a quantity is not emitted at all**, the third call site of

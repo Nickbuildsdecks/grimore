@@ -12079,6 +12079,65 @@ describe('a "may" answered by somebody else (D658)', () => {
   });
 });
 
+describe('ward in a keyword list, and a tax that is not a "may" (D659)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Warded', 'Creature — Drake', 'Flying, ward {2} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {2}.)', '{0}', ['2', '2']),
+    row('Test Tithe', 'Enchantment', "Whenever an opponent draws a card, that player may pay {2}. If the player doesn't, you create a Treasure token."),
+    row('Test Gift', 'Sorcery', 'Target player draws a card.'),
+    row('Test Kill', 'Instant', 'Destroy target creature.'),
+  ];
+  const deck = customDeck({
+    id: 'tithe', name: 'Tithe',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'tithe', 1: 'tithe' }, deckSpecs: { tithe: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const treasures = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Treasure').length;
+  const gift = (s: GameState) => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gift'), targets: [{ kind: 'player', seat: 1 }] }));
+
+  it('"Flying, ward {2}" keeps its flying and counters an opponent\'s spell that does not pay', () => {
+    let s = table([], [], ['Test Warded']);
+    const drake = find(s, 1, 'battlefield', 'Test Warded');
+    expect(characteristicsOf(s, s.instances[drake]!).keywords.has('flying')).toBe(true);
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Kill'), toZone: 'hand' });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: drake }] });
+    // Seat 0 has no mana, so the ward cannot be paid and the Kill is countered.
+    s = drain(passBoth(s));
+    expect(s.instances[drake]!.zone).toBe('battlefield');
+    expect(countOf(s, 0, 'graveyard', 'Test Kill')).toBe(1);
+  });
+
+  it('Smothering Tithe makes a Treasure when the drawing opponent cannot pay', () => {
+    let s = table(['Test Gift'], ['Test Tithe']);
+    s = drain(gift(s));
+    expect(treasures(s)).toBe(1);
+  });
+
+  it('and none when they pay, with their mana spent', () => {
+    let s = table(['Test Gift'], ['Test Tithe'], ['Swamp', 'Swamp']);
+    s = gift(s);
+    while (s.pendingDecision === null && s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual(["Don't pay", 'Pay {2}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], option: 'Pay {2}' }));
+    expect(treasures(s)).toBe(0);
+    expect(ids(s, 1, 'battlefield').filter((id) => s.instances[id]!.tapped)).toHaveLength(2);
+    // And declining, with the mana there, still makes one.
+    let t = table(['Test Gift'], ['Test Tithe'], ['Swamp', 'Swamp']);
+    t = gift(t);
+    while (t.pendingDecision === null && t.stackOrder.length > 0) t = passBoth(t);
+    t = drain(apply(t, { type: 'auto:decide', by: 1, cards: [], option: "Don't pay" }));
+    expect(treasures(t)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

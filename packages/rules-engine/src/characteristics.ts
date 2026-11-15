@@ -574,7 +574,13 @@ function printedParts(
       Zombies" — is one part, not three: joined back into the "and from" form the part reads (D596).
     */
     const joined = line.replace(/,\s*(?:and\s+)?(?=from\s)/gi, ' and ');
+    /*
+      Ward in a list (D659): "Flying, ward {2}". Ward is a triggered ability the compiler emits
+      (`compile.ts`, `wardInList`), not a printed part, so it is left out here and the rest of the
+      list is read — before this the whole line was refused and the flying went with it.
+    */
     const parts = joined.split(/[,;]\s*/).map((part) => part.trim()).filter(Boolean)
+      .filter((part, _i, all) => !(all.length > 1 && /^ward\b/i.test(part)))
       .map((part) => printedPart(part));
     if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
     for (const part of parts) found.push(part!);

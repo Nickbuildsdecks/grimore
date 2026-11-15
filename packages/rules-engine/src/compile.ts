@@ -187,6 +187,25 @@ const ACCUMULATING = new Set(['triggers', 'abilities', 'statics']);
  * Abilities accumulate; every other field is set once. A second line setting an already-set field
  * to a different value is refused and reported, for the reason `UnreadLine.why` gives.
  */
+/**
+ * A keyword list with ward in it, as the ward triggers it needs (D659), or `null` when the line is
+ * not one: at least one other part, every other part a printed part, and every ward part read.
+ */
+function wardInList(line: string, name: string): Partial<CardScript> | null {
+  const parts = line.replace(/\([^)]*\)/g, '').split(/[,;]\s*/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const wards = parts.filter((part) => /^ward\b/i.test(part));
+  if (wards.length === 0) return null;
+  if (!parts.every((part) => /^ward\b/i.test(part) || isPrintedAbilityLine(part, name))) return null;
+  const triggers: NonNullable<CardScript['triggers']>[number][] = [];
+  for (const part of wards) {
+    const read = lineScriptFor(part, name);
+    if (read === null || Object.keys(read).some((key) => key !== 'triggers')) return null;
+    triggers.push(...(read.triggers ?? []));
+  }
+  return { triggers };
+}
+
 function merge(
   into: Record<string, unknown>,
   fragment: Partial<CardScript>,
@@ -846,6 +865,18 @@ function compileSingle(row: CardDataRow): Compilation {
       — and asking only about keywords reported River Boa's `Islandwalk` and Paladin en-Vec's
       protection as unread lines on cards the engine was already playing correctly.
     */
+    /*
+      Ward in a keyword list (D659): "Flying, ward {2}", "Trample, haste, ward {1}". The printed
+      keywords are read off the oracle text (`printedParts` skips the ward part); the ward is a
+      trigger, emitted here from the part on its own. Asked before the printed-line check, which
+      would otherwise count the line compiled and emit no ward at all.
+    */
+    const wardList = wardInList(line, def.name);
+    if (wardList !== null) {
+      if (merge(built, wardList) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+      compiled.push(line);
+      continue;
+    }
     if (isPrintedAbilityLine(line, def.name)) { compiled.push(line); continue; }
 
     /*

@@ -1119,7 +1119,9 @@ export function cardFromData(row: CardDataRow): Derivation {
     const mana: ManaLine[] = [];
     const unread: string[] = [];
     for (const line of lines) {
-      if (printedKeywords(line).length > 0) continue;
+      // Not a ward in the list (D659): "Flying, ward {2}" has a trigger in it, which `compileCard`
+      // emits; read here as keyword-only it would be a drake with no ward.
+      if (printedKeywords(line).length > 0 && !/(?:^|[,;]\s*)ward\b/i.test(line.replace(/\([^)]*\)/g, ''))) continue;
       /*
         A mana dork. The ability is read exactly as a land's is — same parser, same cross-check
         below — because a Llanowar Elves and a Hagra Broodpit print the same line, and the engine
