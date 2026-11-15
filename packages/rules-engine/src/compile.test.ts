@@ -10832,8 +10832,12 @@ describe('a mana-value clause on a target phrase (D492)', () => {
     ['Destroy target creature with mana value X or less.', 'X is chosen as this is cast'],
     ['Destroy target creature with mana value equal to the number of lands you control.',
       'a bound that is a fact about the board'],
-    ['Destroy target creature with mana value 3.',
-      'Magic prints "or less" and "or greater" here, and this reads neither alone'],
+    /*
+      "Destroy target creature with mana value 3." was refused here until D655, on the belief that
+      Magic prints only the bounded forms in this position. It prints the exact one too — Mental
+      Misstep's "target spell with mana value 1", Spell Snare's "2" — and D655 reads it as equality.
+      The reading test is "an exact mana value on a target phrase (D655)" below.
+    */
     /*
       And refused for the **phrase** rather than the clause — each is a real printing whose inner
       phrase this compiler cannot read, so the clause has nothing to attach to. The rows are here
@@ -10848,6 +10852,21 @@ describe('a mana-value clause on a target phrase (D492)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('an exact mana value on a target phrase (D655)', () => {
+  const instant = (text: string) => compileCard({
+    name: 'Exact Thing', type_line: 'Instant', mana_cost: '{U}', cmc: 1,
+    colors: ['U'], layout: 'normal', oracle_text: text,
+  });
+  it('reads "with mana value N" as exactly N, beside the bounded forms', () => {
+    for (const text of ['Destroy target creature with mana value 3.', 'Counter target spell with mana value 1.']) {
+      const read = instant(text);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toHaveLength(0);
+    }
   });
 });
 

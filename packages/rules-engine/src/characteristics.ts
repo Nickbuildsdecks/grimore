@@ -1307,6 +1307,8 @@ export interface ContinuousEffect {
   readonly scope:
     | { readonly kind: 'cards'; readonly ids: readonly string[] }
     | { readonly kind: 'controller-creatures' }
+    /** "Creature tokens you control …" (D655): the controller's creatures that are tokens. */
+    | { readonly kind: 'controller-tokens' }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2073,6 +2075,8 @@ function effectApplies(
       return effect.scope.ids.includes(instance.id);
     case 'controller-creatures':
       return creature && instance.zoneSeat === effect.controller;
+    case 'controller-tokens':
+      return creature && instance.zoneSeat === effect.controller && instance.isToken;
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':

@@ -27690,3 +27690,46 @@ giving the Pact's controller a second creature.
     engine tests: 4,532, all passing
 
 Coverage: 10,898 of 31,653 cards (+6), 29,734 of 59,306 lines (+8). Staples: 157 of 244 (+2).
+
+## D655 — token anthems, team protection, tutors to the top, an exact mana value
+
+Four small readers, chosen from the unread staples. Staples went from 157 to 163 of 244.
+
+**"Creature tokens you control get +1/+1 and have vigilance"** (Intangible Virtue).
+- A new static scope, `controller-tokens`, and a matching `ContinuousEffect` scope that requires
+  `isToken`. Being a token is a fact about the permanent (CR 111.1), not something on its type
+  line, so a scope fits better than a filter.
+- `groupStaticFromLine` reads the line. The predicate grammar is the one every other group static
+  already uses.
+
+**"Permanents you control gain X until end of turn"** (Heroic Intervention, and a Boros Charm
+mode).
+- Every permanent on the controller's battlefield, fixed at resolution (CR 611.2c).
+- Kept out of `MASS_PUMP_SUBJECTS`, so a size can never be read onto a land.
+
+**Tutors to the top.**
+- "…, then shuffle and put that card on top" no longer requires ", reveal it" (Vampiric Tutor).
+- "the card" is accepted as well as "that card" (Worldly Tutor).
+
+**"Counter target spell with mana value 1"** (Mental Misstep). `targetSpecFrom`'s mana-value clause
+now accepts an exact value as well as "N or less" and "N or greater". On the stack it uses the
+announced X, as the bounded forms do.
+
+The D492 refusal row "Destroy target creature with mana value 3." is retired. It assumed Magic
+prints only the bounded forms there; Mental Misstep and Spell Snare print the exact one. Its
+replacement is a reading test in compile.test.ts.
+
+**Tests.** 5 engine tests:
+- Intangible Virtue pumps the token and not the nontoken Bears beside it.
+- Heroic Intervention reaches the enchantment and the land and not the opponent's creature; a wrath
+  afterwards leaves its controller's side standing.
+- Vampiric Tutor puts the chosen card on top and costs 2 life.
+- Worldly Tutor offers only creatures.
+- Mental Misstep refuses a free spell and a two-drop, and counters a Bolt.
+
+Faults injected by hand: 5 of 5 caught. One survivor (an exact value read as "or less") was pinned
+by adding the free spell to the Misstep test.
+
+    engine tests: 4,537, all passing
+
+Coverage: 10,915 of 31,653 cards (+17), 29,771 of 59,306 lines (+37). Staples: 163 of 244 (+6).

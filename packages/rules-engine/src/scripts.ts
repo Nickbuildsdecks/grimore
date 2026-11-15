@@ -2056,7 +2056,8 @@ function searchClause(text: string, name: string): ReadEffect | null {
     Campus Guide. The search shuffles as it is answered (`answerDecision`, CR 701.19e) and the effect
     runs after, so moving the card to the top here is the printed order: shuffle, then on top.
   */
-  const onTop = /^search your library for (an? .+?), reveal it, then shuffle and put that card on top$/i.exec(text.trim());
+  // "…, reveal it" is optional (D655): Vampiric Tutor finds any card and shows nobody.
+  const onTop = /^search your library for (an? .+?)(?:, reveal it)?, then shuffle and put that card on top$/i.exec(text.trim());
   if (onTop !== null) {
     const filter = libraryFilter(onTop[1]!.trim(), name);
     if (filter === null) return null;
@@ -12748,6 +12749,21 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     hint stays off: haste has to arrive before attackers are declared, so "hold this for combat" would
     be the wrong advice for the most common grant of all.
   */
+  /*
+    "Permanents you control gain hexproof and indestructible until end of turn" (D655): Heroic
+    Intervention, Boros Charm's third mode, Flawless Maneuver's cousins. Every permanent, not only
+    the creatures, frozen as it resolves (CR 611.2c) like the creature grant below; kept out of
+    `MASS_PUMP_SUBJECTS` so a size can never be read onto a land.
+  */
+  const permanentsGain = /^permanents you control gain ([a-z][a-z' ]*?) until end of turn$/i.exec(text);
+  if (permanentsGain !== null) {
+    const words = grantedKeywordList(permanentsGain[1]!);
+    if (words !== null) {
+      return {
+        effect: (c) => pump(c.state, listAt(c.state, zoneKey(c.controller, 'battlefield')), c.source, c.controller, { keywords: words }),
+      };
+    }
+  }
   const teamGains = new RegExp(
     `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z' ]*?) until end of turn$`, 'i',
   ).exec(text);
@@ -18454,12 +18470,14 @@ function targetSpecFrom(
     `{X}` spell cast for six; reading the stack for both would ask a battlefield permanent for a
     value it does not have.
   */
-  const clause = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(printed);
+  // An exact value too (D655): Mental Misstep's "target spell with mana value 1".
+  const clause = /^(.*?) with mana value (\d+)(?: or (less|greater))?$/i.exec(printed);
   if (clause !== null) {
     const inner = targetSpecFrom(clause[1]!.trim(), friendly, parsed);
     if (inner === null) return null;
     const bound = Number(clause[2]!);
-    const atMost = clause[3]!.toLowerCase() === 'less';
+    const exact = clause[3] === undefined;
+    const atMost = clause[3]?.toLowerCase() === 'less';
     const onTheStack = inner.kind === 'spell' || inner.kind === 'ability'
       || inner.kind === 'spell-or-ability';
     const withinBound: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
@@ -18473,7 +18491,7 @@ function targetSpecFrom(
         if (def === undefined) return false;
         value = costValue(parseManaCost(def.manaCost));
       }
-      if (!(atMost ? value <= bound : value >= bound)) return false;
+      if (!(exact ? value === bound : atMost ? value <= bound : value >= bound)) return false;
       // The phrase's own restrictions still apply; this clause narrows them rather than replacing
       // them. `source` is threaded through because `another` reads it.
       return inner.filter === undefined || inner.filter(state, candidate, controller, source);
@@ -21258,7 +21276,8 @@ function clausesOf(line: string): readonly string[] {
   */
   const BACK = ', then put them back in any order';
   return plain(line)
-    .replace(/,\s+then shuffle and put that card on top/gi, '\u0001')
+    // "The card" is Worldly Tutor's wording of the same step (D655).
+    .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')
     .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
     .split(/\.\s+/)
@@ -23882,8 +23901,17 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   const yours = scope !== null ? null : /^(other )?(?:creatures|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) you control (get|have) (.+)$/i.exec(text);
   const everyone = /^All (?:([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*)) (get|have) (.+)$/.exec(text);
   const allCreatures = /^All creatures (get|have) (.+)$/i.exec(text);
+  /*
+    "Creature tokens you control get +1/+1 and have vigilance" (D655): Intangible Virtue, and the
+    token half of a go-wide deck. A token scope rather than a filter on the creature one, because a
+    token is a fact about the permanent (CR 111.1), not a type the type line carries.
+  */
+  const tokens = /^creature tokens you control (get|have) (.+)$/i.exec(text);
   if (scope !== null) {
     // Read above: a chosen type.
+  } else if (tokens !== null) {
+    scope = 'controller-tokens';
+    predicate = `${tokens[1]!.toLowerCase()} ${tokens[2]}`;
   } else if (allCreatures !== null) {
     scope = 'all-creatures';
     predicate = `${allCreatures[1]!.toLowerCase()} ${allCreatures[2]}`;

@@ -11730,6 +11730,115 @@ describe('death triggers about the dead creature\'s player (D654)', () => {
   });
 });
 
+describe('token anthems, team protection, tutors to the top, an exact mana value (D655)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: cost === '{0}' ? 0 : 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Virtue', 'Enchantment', 'Creature tokens you control get +1/+1 and have vigilance.'),
+    row('Test Muster', 'Sorcery', 'Create a 1/1 white Soldier creature token.'),
+    row('Test Intervention', 'Instant', 'Permanents you control gain hexproof and indestructible until end of turn.'),
+    row('Test Vampiric', 'Instant', 'Search your library for a card, then shuffle and put that card on top. You lose 2 life.'),
+    row('Test Worldly', 'Instant', 'Search your library for a creature card, reveal it, then shuffle and put the card on top.'),
+    row('Test Misstep', 'Instant', 'Counter target spell with mana value 1.'),
+    row('Test Wrath', 'Sorcery', 'Destroy all artifacts, creatures, and enchantments.'),
+    { ...row('Test Two', 'Sorcery', 'Create a 1/1 white Soldier creature token.', '{1}{R}'), cmc: 2 },
+  ];
+  const deck = customDeck({
+    id: 'virtue', name: 'Virtue',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 },
+      { name: 'Lightning Bolt', count: 4 }, { name: 'Mountain', count: 30 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'virtue', 1: 'virtue' }, deckSpecs: { virtue: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Mountain', 'Mountain', ...mine], 1: ['Mountain', ...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, extra: Partial<{ targets: Target[] }> = {}) =>
+    passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra }));
+  const keywords = (s: GameState, id: string): readonly string[] => [...characteristicsOf(s, s.instances[id]!).keywords];
+
+  it('Intangible Virtue pumps creature tokens you control and nothing else', () => {
+    let s = table(['Test Muster'], ['Test Virtue', 'Grizzly Bears'], ['Test Virtue']);
+    s = drain(cast(s, 'Test Muster'));
+    const soldier = find(s, 0, 'battlefield', 'Soldier');
+    expect([power(s, soldier), toughness(s, soldier)]).toEqual([2, 2]);
+    expect(keywords(s, soldier)).toContain('vigilance');
+    // Not the nontoken Bears beside it.
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect([power(s, bears), keywords(s, bears).includes('vigilance')]).toEqual([2, false]);
+    // And the opponent's Virtue pumps only the opponent's tokens: one Virtue's worth here.
+    expect(power(s, soldier)).toBe(2);
+  });
+
+  it('Heroic Intervention gives every permanent you control indestructible, not only creatures', () => {
+    let s = table(['Test Intervention'], ['Grizzly Bears', 'Test Virtue'], ['Grizzly Bears']);
+    s = drain(cast(s, 'Test Intervention'));
+    const enchantment = find(s, 0, 'battlefield', 'Test Virtue');
+    const land = find(s, 0, 'battlefield', 'Mountain');
+    expect(keywords(s, enchantment)).toEqual(expect.arrayContaining(['hexproof', 'indestructible']));
+    expect(keywords(s, land)).toContain('indestructible');
+    expect(keywords(s, find(s, 1, 'battlefield', 'Grizzly Bears'))).not.toContain('indestructible');
+    // And the wrath that follows takes only the opponent's side.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Wrath'), toZone: 'hand' });
+    s = drain(cast(s, 'Test Wrath'));
+    expect(namesIn(s, 0, 'battlefield')).toEqual(expect.arrayContaining(['Grizzly Bears', 'Test Virtue']));
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Grizzly Bears');
+  });
+
+  it('Vampiric Tutor puts any card on top after the shuffle, and costs 2 life', () => {
+    let s = table(['Test Vampiric']);
+    const before = life(s, 0);
+    const wanted = find(s, 0, 'library', 'Test Wrath');
+    s = cast(s, 'Test Vampiric');
+    expect(s.pendingDecision?.candidates).toContain(wanted);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [wanted] }));
+    expect(ids(s, 0, 'library')[0]).toBe(wanted);
+    expect(life(s, 0)).toBe(before - 2);
+  });
+
+  it('Worldly Tutor offers only creatures, and the found one goes on top', () => {
+    let s = table(['Test Worldly']);
+    s = cast(s, 'Test Worldly');
+    const offered = s.pendingDecision!.candidates;
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => nameOf(s, id) === 'Grizzly Bears')).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [offered[0]!] }));
+    expect(ids(s, 0, 'library')[0]).toBe(offered[0]);
+  });
+
+  it('Mental Misstep counters a one-drop and cannot target a two-drop', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'virtue', 1: 'virtue' }, deckSpecs: { virtue: deck },
+      hands: { 0: ['Lightning Bolt', 'Test Two', 'Test Muster'], 1: ['Test Misstep', 'Test Misstep'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    // Exactly one: a free spell is below it and is not a legal target either.
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Muster') });
+    const free = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Misstep'), targets: [{ kind: 'card', id: free }] }))
+      .not.toBeNull();
+    s = drain(passBoth(s));
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Two') });
+    const two = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Misstep'), targets: [{ kind: 'card', id: two }] }))
+      .not.toBeNull();
+    s = drain(passBoth(s));
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'), targets: [{ kind: 'player', seat: 1 }] });
+    const bolt = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Misstep'), targets: [{ kind: 'card', id: bolt }] });
+    const before = life(s, 1);
+    s = drain(passBoth(s));
+    expect(countOf(s, 0, 'graveyard', 'Lightning Bolt')).toBe(1);
+    expect(life(s, 1)).toBe(before);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
