@@ -154,6 +154,12 @@ export interface EffectContext {
    */
   readonly sacrificed?: SacrificedStats;
   /**
+   * The card types of each permanent the clause before this one destroyed (D682), as they were on
+   * the battlefield: Bane of Progress's "Put a +1/+1 counter on ~ for each permanent destroyed this
+   * way". Set only between the two sentences `clausesOf` holds together; see `destroyedThisWay`.
+   */
+  readonly destroyedThisWay?: readonly (readonly string[])[];
+  /**
    * The total power of the creatures tapped to pay this ability's cost, as they were (D637): a
    * Spacecraft's station puts that many charge counters on it.
    */

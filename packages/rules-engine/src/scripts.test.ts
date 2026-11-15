@@ -13194,6 +13194,95 @@ describe('mana of any color a land an opponent controls could produce (D681)', (
   });
 });
 
+describe('"for each permanent destroyed this way", and Gamble (D682)', () => {
+  const ROWS = [
+    { name: 'Test Bane', type_line: 'Creature — Elemental', oracle_text: 'When Test Bane enters, destroy all artifacts and enchantments. Put a +1/+1 counter on Test Bane for each permanent destroyed this way.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Rout', type_line: 'Sorcery', oracle_text: 'Destroy all creatures. You gain 2 life for each creature destroyed this way.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Purge', type_line: 'Sorcery', oracle_text: 'Destroy all creatures. Draw a card for each creature destroyed this way.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Gamble', type_line: 'Sorcery', oracle_text: 'Search your library for a card, put that card into your hand, discard a card at random, then shuffle.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Idol', type_line: 'Artifact Creature — Golem', oracle_text: 'Indestructible', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Shatter', type_line: 'Sorcery', oracle_text: 'Destroy all artifacts. You gain 1 life for each creature destroyed this way.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Construct', type_line: 'Artifact Creature — Construct', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Hoard', type_line: 'Creature — Dragon', oracle_text: 'When Test Hoard enters, put two +1/+1 counters on Test Hoard for each creature you control.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Pup', type_line: 'Creature — Dog', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'thisway', name: 'This way',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'thisway', 1: 'thisway' }, deckSpecs: { thisway: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) }));
+  const named = (s: GameState, seat: SeatIndex, zone: 'hand' | 'battlefield' | 'graveyard' | 'library') =>
+    ids(s, seat, zone).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name).sort();
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+    // With no "destroy all" before it, "destroyed this way" counts nothing and stays unread.
+    const lone = compileCard({ ...ROWS[1]!, name: 'Test Lone', oracle_text: 'You gain 1 life for each creature destroyed this way.' } as never);
+    expect(lone.ok && lone.unread.length).toBe(1);
+  });
+
+  it('"creature destroyed this way" counts only the creatures among what was destroyed', () => {
+    const s0 = table(['Test Shatter'], ['Test Relic', 'Test Construct'], ['Test Relic']);
+    const s = cast(s0, 'Test Shatter');
+    expect(s.seats[0]!.life).toBe(s0.seats[0]!.life + 1);
+    expect(named(s, 1, 'battlefield')).not.toContain('Test Relic');
+  });
+
+  it('a printed number of counters is a rate: two for each creature you control', () => {
+    const s = cast(table(['Test Hoard'], ['Test Pup'], ['Test Pup']), 'Test Hoard');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Hoard')]!.counters['+1/+1'] ?? 0).toBe(4);
+  });
+
+  it('Bane: a counter for each artifact and enchantment destroyed, on either side; an indestructible one is not counted', () => {
+    const s = cast(table(['Test Bane'], ['Test Relic', 'Test Idol'], ['Test Relic', 'Test Charm']), 'Test Bane');
+    const bane = find(s, 0, 'battlefield', 'Test Bane');
+    expect(s.instances[bane]!.counters['+1/+1'] ?? 0).toBe(3);
+    expect(named(s, 0, 'battlefield')).toContain('Test Idol');
+    expect(named(s, 1, 'battlefield')).not.toContain('Test Charm');
+  });
+
+  it('a creature-only count: life for each creature destroyed, the indestructible survivor excluded', () => {
+    const s0 = table(['Test Rout'], ['Test Pup', 'Test Idol', 'Test Relic'], ['Test Pup', 'Test Pup']);
+    const s = cast(s0, 'Test Rout');
+    expect(s.seats[0]!.life).toBe(s0.seats[0]!.life + 6);
+    expect(named(s, 0, 'battlefield')).toEqual(['Test Idol', 'Test Relic']);
+  });
+
+  it('draws one card for each creature destroyed, and none on an empty board', () => {
+    const s0 = table(['Test Purge', 'Test Purge'], [], ['Test Pup', 'Test Pup']);
+    const s = cast(s0, 'Test Purge');
+    expect(ids(s, 0, 'hand').length).toBe(ids(s0, 0, 'hand').length - 1 + 2);
+    const again = cast(s, 'Test Purge');
+    expect(ids(again, 0, 'hand').length).toBe(ids(s, 0, 'hand').length - 1);
+  });
+
+  it('Gamble: the searched card goes to hand, then one card of the hand is discarded at random', () => {
+    const s0 = table(['Test Gamble', 'Test Pup'], [], []);
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Gamble') });
+    while (s.pendingDecision === null && s.stackOrder.length > 0) s = passBoth(s);
+    s = drain(decide(s, ['Test Charm']));
+    // The hand without the Gamble, plus the Charm: one of those went to the graveyard at random.
+    const pool = [...named(s0, 0, 'hand').filter((n) => n !== 'Test Gamble'), 'Test Charm'].sort();
+    expect(ids(s, 0, 'hand').length).toBe(pool.length - 1);
+    const discarded = named(s, 0, 'graveyard').filter((n) => n !== 'Test Gamble');
+    expect(discarded.length).toBe(1);
+    expect([...named(s, 0, 'hand'), ...discarded].sort()).toEqual(pool);
+    expect(named(s, 0, 'graveyard')).toContain('Test Gamble');
+    expect(ids(s, 0, 'library').length).toBe(ids(s0, 0, 'library').length - 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

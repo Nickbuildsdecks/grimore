@@ -14250,6 +14250,26 @@ function selfEffect(
     };
   }
 
+  /*
+    "Put a +1/+1 counter on ~ for each permanent destroyed this way" (D682, Bane of Progress), and
+    the same with any count `countTailOf` reads ("… for each creature you control"): the printed
+    number is a rate. Counted as the clause resolves; none is placed for a count of nothing.
+  */
+  const perCount = / for each /i.test(text) ? countTailOf(text, name) : null;
+  if (perCount !== null && perCount.grammar === 'per-thing') {
+    const each = new RegExp(`^put ([\\w]+) \\+1/\\+1 counters? on (?:(${self})|it)$`, 'i').exec(perCount.body);
+    const rate = each === null ? null : countFrom(each[1]!);
+    if (each !== null && rate !== null) {
+      const named = each[2];
+      return {
+        effect: (c) => {
+          const n = rate * perCount.counted(c);
+          return n > 0 ? addCounters(c.state, itMeans(named, c), '+1/+1', n) : c.state;
+        },
+      };
+    }
+  }
+
   const counted = new RegExp(
     `^put ([\\w]+) \\+1/\\+1 counters? on (?:(${self})|it)$`, 'i',
   ).exec(text);
@@ -17022,6 +17042,23 @@ let sacrificeInCost = false;
 /** On while `composeEffects` reads a clause that follows one aiming at a card (D660). */
 let earlierCardTarget = false;
 
+/**
+ * On while `readEffect` reads the sentence after a "destroy all" (D682), the only place
+ * `EffectContext.destroyedThisWay` is set, so "for each creature destroyed this way" is never read
+ * where nothing was destroyed (which would be a count of zero, silently).
+ */
+let destroyedThisWay = false;
+
+function withDestroyedThisWay<T>(read: () => T): T {
+  const before = destroyedThisWay;
+  destroyedThisWay = true;
+  try {
+    return read();
+  } finally {
+    destroyedThisWay = before;
+  }
+}
+
 function withEarlierCardTarget<T>(on: boolean, read: () => T): T {
   const before = earlierCardTarget;
   earlierCardTarget = on;
@@ -17281,6 +17318,13 @@ function countOfThing(
   const text = thing.trim();
   const self = selfRef(name);
 
+  // "for each creature destroyed this way", "the number of permanents destroyed this way" (D682).
+  const destroyed = /^(creature|permanent|artifact|enchantment|planeswalker|land)s? destroyed this way$/i.exec(text);
+  if (destroyed !== null) {
+    if (!destroyedThisWay) return null;
+    const kind = destroyed[1]!.toLowerCase();
+    return (c) => (c.destroyedThisWay ?? []).filter((types) => kind === 'permanent' || types.includes(kind)).length;
+  }
   if (/^lands? you control$/i.test(text)) {
     return (c) => landsControlled(c.state, c.controller);
   }
@@ -21803,6 +21847,38 @@ function readEffect(
       },
     };
   }
+  /*
+    "Destroy all artifacts and enchantments. Put a +1/+1 counter on ~ for each permanent destroyed
+    this way." (D682): Bane of Progress, Rout's cousins that gain life or draw per creature.
+    `clausesOf` holds the two sentences together with a ';'. What was destroyed is what the first
+    sentence took off the battlefield, read off the battlefields around it, so an indestructible or
+    regenerated permanent is not counted. Neither sentence may ask or target: there is one list of
+    targets for the whole line and no way to say which sentence a target belongs to.
+  */
+  const thisWay = /^(destroy all [^;]+); (.+)$/i.exec(clause.trim());
+  if (thisWay !== null) {
+    const first = readEffect(thisWay[1]!, name, where);
+    const second = withDestroyedThisWay(() => readEffect(thisWay[2]!, name, where));
+    const plainOf = (r: ReadEffect | null): r is ReadEffect => r !== null && r.beforeDecisions === undefined
+      && (r.decisions ?? []).length === 0 && (r.targets ?? []).length === 0;
+    if (!plainOf(first) || first.immediate !== undefined || !plainOf(second)) return null;
+    // The second sentence's own two readings (a draw is owed last and done now otherwise) are kept.
+    const then = (spend: EffectFn): EffectFn => (c) => {
+      const onBattlefield = (state: GameState): string[] => state.seats
+        .flatMap((seat) => [...listAt(state, zoneKey(seat.index, 'battlefield'))]);
+      const types = new Map(onBattlefield(c.state).map((id) => [id,
+        characteristicsOf(c.state, c.state.instances[id]!).typeLine.types.map((t) => t.toLowerCase())]));
+      const after = first.effect(c);
+      const left = new Set(onBattlefield(after));
+      const gone = [...types].filter(([id]) => !left.has(id)).map(([, t]) => t);
+      return spend({ ...c, state: after, destroyedThisWay: gone });
+    };
+    return {
+      ...first,
+      effect: then(second.effect),
+      ...(second.immediate === undefined ? {} : { immediate: then(second.immediate) }),
+    };
+  }
   return preventionEffect(clause, name)
     ?? untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
@@ -21854,11 +21930,16 @@ function clausesOf(line: string): readonly string[] {
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
+    // Bane of Progress (D682): the second sentence counts what the first destroyed.
+    .replace(/(destroy all [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*destroyed this way)/gi, '$1\u0007$2')
+    // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
+    // same spell with the shuffle first, as the shuffle touches only the library.
+    .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
       .replace(/\u0004/g, LIFE_LOST).replace(/\u0005/g, ', and they gain haste until end of turn')
-      .replace(/\u0006/g, ', then ')
+      .replace(/\u0006/g, ', then ').replace(/\u0007/g, '; ')
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }

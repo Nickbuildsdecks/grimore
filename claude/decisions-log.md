@@ -46055,3 +46055,42 @@ pinned with a Swamp-making effect.
     engine tests: 4,626, all passing
 
 Coverage: 11,231 of 31,653 cards (+4), 30,427 of 59,306 lines (+4). Staples: 194 of 244 (+2).
+
+## D682 — "for each permanent destroyed this way", and Gamble
+
+Bane of Progress: "When ~ enters, destroy all artifacts and enchantments. Put a +1/+1 counter on ~
+for each permanent destroyed this way." Also the sweepers that gain or lose life, or draw, "for each
+creature destroyed this way".
+
+How it is read:
+- `clausesOf` glues a "destroy all …" sentence to a following sentence that counts "destroyed this
+  way", using ';'. A "can't be regenerated" rider is left out.
+- `readEffect` runs the destroy, then gives the second sentence
+  `EffectContext.destroyedThisWay`: the card types of each permanent that left the battlefield.
+  Indestructible or regenerated permanents are therefore not counted.
+- The count phrase "(creature|permanent|artifact|enchantment|planeswalker|land)(s) destroyed this
+  way" is read only inside that glue. Anywhere else it would silently count zero.
+- The second sentence keeps its immediate reading, so a draw can follow.
+
+Two more readers came with it:
+- `selfEffect` reads "put N +1/+1 counters on ~ for each <count>", with the printed number as a
+  rate.
+- Gamble: "put that card into your hand, discard a card at random, then shuffle" is the same spell
+  with the shuffle first, because the shuffle touches only the library.
+
+Staples went from 194 to 196 (Bane of Progress, Gamble).
+
+**Tests.** 7 engine tests:
+- every line reads, and a lone "destroyed this way" stays unread;
+- Bane counts 3 across both sides, with an indestructible survivor not counted;
+- a creature sweep gains 2 life for each of 3 creatures;
+- an artifact sweep counts only the artifact creature among what it destroyed;
+- the draw counts, including zero;
+- the printed counter number is a rate (two counters for each of 2 creatures is 4);
+- Gamble discards one card at random from the hand plus the found card.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 4,633, all passing
+
+Coverage: 11,242 of 31,653 cards (+11), 30,440 of 59,306 lines (+13). Staples: 196 of 244 (+2).
