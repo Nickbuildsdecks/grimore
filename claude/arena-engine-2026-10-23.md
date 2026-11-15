@@ -29553,3 +29553,32 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,734, all passing
 
 Coverage: 11,400 of 31,653 cards (+8), 30,702 of 59,306 lines (+8). Staples: 225 of 244 (+1).
+
+## D713 — Devotion as an amount of mana: Nykthos, Nyx Lotus, Karametra's Acolyte
+
+How it is read:
+- **Nykthos and Nyx Lotus.** "{2}, {T}: Choose a color. Add an amount of mana of that color equal
+  to your devotion to that color" (Nyx Lotus is the same line with a plain {T} cost).
+  - Read as five runs, one per colour, as Jeweled Lotus's are (D669).
+  - Each run has a per-run count (`ManaLine.perRun`): `devotionTo` that colour, counted as the mana
+    is made (CR 700.5).
+  - A colour with no devotion makes nothing.
+  - The mana before the tap goes through the existing cost-clause reader.
+- **Karametra's Acolyte.** "Add an amount of {G} equal to your devotion to green" is a counted sum
+  line (D662's `producesTimes`), counting devotion.
+- **Known limitation, unchanged.** The automatic payer never takes a mana ability that costs mana
+  (D669). Nykthos's devotion ability is used by activating it by hand, and the bot does not use it.
+
+Staples went from 225 to 226 (Nykthos).
+
+**Tests.** 3 engine tests:
+- both cards read;
+- Nykthos pays {2} from the pool and adds three green for {G}{G} plus a hybrid {G/U}, while black
+  adds one;
+- the Acolyte counts itself (one alone, three beside a {G}{G} creature).
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,737, all passing
+
+Coverage: 11,403 of 31,653 cards (+3), 30,705 of 59,306 lines (+3). Staples: 226 of 244 (+1).

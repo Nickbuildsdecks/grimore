@@ -83,8 +83,8 @@
  */
 import type { CardDef } from './cards.js';
 import {
-  characteristicsOf, commanderIdentity, hasSubtype, isCreatureType, parseTypeLine, hasType, printedKeywords,
-  shortName, SELF_TYPE_WORDS,
+  characteristicsOf, commanderIdentity, devotionTo, hasSubtype, isCreatureType, parseTypeLine, hasType,
+  printedKeywords, shortName, SELF_TYPE_WORDS,
 } from './characteristics.js';
 import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -293,6 +293,12 @@ interface ManaLine {
    */
   readonly mode: 'choice' | 'sum' | 'runs';
   readonly runs?: readonly (readonly ManaType[])[];
+  /**
+   * A count for each run (D713): Nykthos's "Choose a color. Add an amount of mana of that color
+   * equal to your devotion to that color" is five runs of one symbol, each made as many times as
+   * the devotion to its own colour.
+   */
+  readonly perRun?: readonly { readonly count: NonNullable<AbilityDef['producesTimes']>; readonly phrase: string }[];
   readonly produces: readonly ManaType[];
   /**
    * "Add {G} **for each creature you control**" (D662): how many times `produces` is made, and the
@@ -539,6 +545,33 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     return { ...rest, cost: { ...rest.cost, mana: lead[1]! }, printed: `${lead[1]!}, ${rest.printed}` };
   }
   /*
+    Devotion as an amount (D713). Nykthos, Shrine to Nyx: "Choose a color. Add an amount of mana of
+    that color equal to your devotion to that color" — the choice is the colour, so it is five runs
+    (as Jeweled Lotus's, D669), each one symbol made as many times as the devotion to that colour,
+    counted as the mana is made (CR 700.5). A choice whose devotion is nought makes nothing, which
+    is the card.
+  */
+  const devotionChoice = /^(\{T\}(?:,\s*[^:]+)?):\s*Choose a colou?r\.\s*Add an amount of mana of that colou?r equal to your devotion to that colou?r\.?$/i.exec(line.trim());
+  if (devotionChoice !== null) {
+    const printedCost = devotionChoice[1]!.trim();
+    let cost: ManaAbilityCost = { tap: true };
+    const extras = printedCost.split(/\s*,\s*/).slice(1).filter((c) => c !== '');
+    if (extras.length > 1) return null;
+    if (extras.length === 1) {
+      const extra = parseCostClause(extras[0]!, name);
+      if (extra === null) return null;
+      cost = extra;
+    }
+    const NAMES: Readonly<Record<string, string>> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
+    return {
+      mode: 'runs', produces: [...COLOURS], runs: COLOURS.map((colour) => [colour]), cost, printed: printedCost,
+      perRun: COLOURS.map((colour) => ({
+        count: (state: GameState, _source: string, controller: SeatIndex) => devotionTo(state, controller, new Set([colour])),
+        phrase: `point of your devotion to ${NAMES[colour]!}`,
+      })),
+    };
+  }
+  /*
     The body is matched as "anything up to the first full stop", which is safe because a mana
     symbol contains none, and it is what lets a **second sentence** be read rather than refusing the
     whole line. `rest` is empty for the ordinary `{T}: Add {G}.` and holds the pain land's damage
@@ -600,6 +633,22 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const n = WORDS[anyOne[1]!.toLowerCase()]!;
     const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
     return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
+  // "An amount of {G} equal to your devotion to green" (D713): Karametra's Acolyte's count.
+  const devoted = /^an amount of (\{[WUBRG]\}) equal to your devotion to (white|blue|black|red|green)$/i.exec(body);
+  if (devoted !== null) {
+    const symbol = parseSymbolRun(devoted[1]!);
+    const LETTERS: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+    const colour = LETTERS[devoted[2]!.toLowerCase()]!;
+    if (symbol === null || symbol.length !== 1) return null;
+    return {
+      mode: 'sum', produces: symbol, cost, printed, damage,
+      per: {
+        count: (state, _source, controller) => devotionTo(state, controller, new Set([colour])),
+        phrase: `point of your devotion to ${devoted[2]!.toLowerCase()}`,
+      },
+      ...(spendOnly === undefined ? {} : { spendOnly }),
+    };
   }
   // A count (D662): one symbol "for each" thing, read off the board as the mana is made.
   const counted = /^(\{[WUBRGC]\}) for each (.+)$/i.exec(body);
@@ -903,7 +952,10 @@ export function manaAbilitiesFromLine(line: string, name: string): readonly Abil
   const parsed = parseManaLine(line, name, true);
   if (parsed === null) return null;
   if (parsed.mode === 'runs') {
-    return (parsed.runs ?? []).map((run) => sumAbility({ ...parsed, mode: 'sum', produces: run }));
+    return (parsed.runs ?? []).map((run, i) => {
+      const per = parsed.perRun?.[i];
+      return sumAbility({ ...parsed, mode: 'sum', produces: run, ...(per === undefined ? {} : { per }) });
+    });
   }
   return parsed.mode === 'sum' ? [sumAbility(parsed)] : tapAbilities(parsed.produces, parsed);
 }

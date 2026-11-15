@@ -15095,6 +15095,68 @@ describe('choosing new targets for a spell: Deflecting Swat and Bolt Bend (D712)
   });
 });
 
+describe('devotion as an amount of mana: Nykthos and Karametra\'s Acolyte (D713)', () => {
+  const ROWS = [
+    { name: 'Test Nykthos', type_line: 'Legendary Land', oracle_text: '{T}: Add {C}.\n{2}, {T}: Choose a color. Add an amount of mana of that color equal to your devotion to that color.', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana: ['C', 'W', 'U', 'B', 'R', 'G'] },
+    { name: 'Test Acolyte', type_line: 'Creature — Human Druid', oracle_text: '{T}: Add an amount of {G} equal to your devotion to green.', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '1', toughness: '4', produced_mana: ['G'] },
+    { name: 'Test Twin', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{G}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Hybrid', type_line: 'Enchantment', oracle_text: '', mana_cost: '{G/U}{B}', cmc: 2, colors: ['G', 'U', 'B'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'nykthos', name: 'Nykthos',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'nykthos', 1: 'nykthos' }, deckSpecs: { nykthos: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const abilityFor = (s: GameState, id: string, text: RegExp) => {
+    const script = scriptForCard(s.cardDefs[s.instances[id]!.defKey]);
+    return (script?.abilities ?? []).findIndex((a) => text.test(a.description ?? ''));
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Nykthos adds one mana of the chosen colour for each point of devotion to it', () => {
+    let s = table(['Test Nykthos', 'Test Twin', 'Test Hybrid', 'Forest', 'Forest']);
+    const nykthos = find(s, 0, 'battlefield', 'Test Nykthos');
+    const green = abilityFor(s, nykthos, /\{G\}/);
+    expect(green).toBeGreaterThan(0);
+    // Two green from the Elf, one from the hybrid symbol: three. The {2} comes from the Forests.
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Forest'), abilityIndex: 0 });
+    const forests = ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Forest');
+    s = apply(s, { type: 'auto:activate', by: 0, card: forests.find((id) => !s.instances[id]!.tapped)!, abilityIndex: 0 });
+    expect(poolOf(s, 0).G ?? 0).toBe(2);
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: nykthos, abilityIndex: green }), 10);
+    expect(s.instances[nykthos]!.tapped).toBe(true);
+    expect(poolOf(s, 0).G ?? 0).toBe(3);
+    // Black: one, from the hybrid's other symbol on the same card.
+    let t = table(['Test Nykthos', 'Test Twin', 'Test Hybrid', 'Forest', 'Forest']);
+    const ny2 = find(t, 0, 'battlefield', 'Test Nykthos');
+    const black = abilityFor(t, ny2, /\{B\}/);
+    for (const id of ids(t, 0, 'battlefield').filter((x) => t.cardDefs[t.instances[x]!.defKey]!.name === 'Forest')) {
+      t = apply(t, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    t = drain(apply(t, { type: 'auto:activate', by: 0, card: ny2, abilityIndex: black }), 10);
+    expect(poolOf(t, 0).B ?? 0).toBe(1);
+    expect(poolOf(t, 0).G ?? 0).toBe(0);
+  });
+
+  it('the Acolyte counts itself, and a creature that leaves stops counting', () => {
+    let s = table(['Test Acolyte', 'Test Twin']);
+    const acolyte = find(s, 0, 'battlefield', 'Test Acolyte');
+    s = apply(s, { type: 'auto:activate', by: 0, card: acolyte, abilityIndex: 0 });
+    expect(poolOf(s, 0).G ?? 0).toBe(3);
+    let t = table(['Test Acolyte']);
+    t = apply(t, { type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Test Acolyte'), abilityIndex: 0 });
+    expect(poolOf(t, 0).G ?? 0).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
