@@ -24109,6 +24109,10 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
+  if (/^untap all permanents you control during each other player's untap step\.?$/i.test(plain(line).trim())) {
+    return { untapsDuringOthersUntap: true };
+  }
   // "You may play an additional land / two additional lands on each of your turns." (D648)
   const extra = /^you may play (an|one|two|three) additional lands? on each of your turns\.?$/i.exec(plain(line).trim());
   if (extra !== null) {
@@ -24839,6 +24843,12 @@ function interveningConditionRows(
   if (one !== null) {
     const count = countOfThing(`${one[1]!} you control`, name, 'singular');
     return count === null ? null : (c) => count(c) >= 1;
+  }
+  // "If you control no Snakes" (D661): Ophiomancer, and the count read in the plural, at zero.
+  const none = /^you control no (.+)$/i.exec(text);
+  if (none !== null) {
+    const count = countOfThing(`${none[1]!} you control`, name, 'plural');
+    return count === null ? null : (c) => count(c) === 0;
   }
   const there = /^there are (\w+) or more (.+)$/i.exec(text);
   if (there !== null) {

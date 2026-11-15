@@ -1788,11 +1788,18 @@ export function becomeMonarch(state: GameState, seat: SeatIndex): GameState {
   return { ...state, monarch: seat };
 }
 
-export function untapAll(state: GameState, seat: SeatIndex): GameState {
+export function untapAll(
+  state: GameState, seat: SeatIndex, opts: { readonly othersStep?: boolean } = {},
+): GameState {
   let next = state;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = next.instances[id];
     if (inst === undefined) continue;
+    /*
+      Seedborn Muse's untap (D661) happens in somebody else's untap step, which is not "its
+      controller's next untap step": a frozen permanent stays down and stays frozen for its own.
+    */
+    if (opts.othersStep === true && inst.frozen === true) continue;
     /*
       A frozen permanent does not untap, and is not frozen afterwards (CR 502.2).
 

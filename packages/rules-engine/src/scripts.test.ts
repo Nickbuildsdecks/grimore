@@ -7855,6 +7855,12 @@ describe('deck coverage', () => {
         the target's controller, and no maximum hand size (D646)": the same hand discards down to
         seven at cleanup without a Tower and keeps every card with one.
 
+      **And Seedborn Muse** (D661):
+
+      - `script untapsDuringOthersUntap`: "Untap all permanents you control during each other
+        player's untap step." No pool deck has one. Driven at runtime by "Seedborn Muse untaps its
+        controller's permanents in each other player's untap step (D661)".
+
       **And the land drop** (D648):
 
       - `script additionalLands`: "You may play an additional land / two additional lands on each of
@@ -7890,6 +7896,7 @@ describe('deck coverage', () => {
       'script noMaxHandSize',
       'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
+      'script untapsDuringOthersUntap',
     ]);
 
     const declared = [
@@ -12191,6 +12198,70 @@ describe('the greatest power among a group, and a target\'s mana value (D660)', 
     })));
     expect(countOf(s, 1, 'graveyard', 'Test Charm')).toBe(1);
     expect(life(s, 0)).toBe(before - 4);
+  });
+});
+
+describe('Ophiomancer\'s "if you control no Snakes", and Seedborn Muse (D661)', () => {
+  const row = (name: string, type: string, text: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Ophiomancer', 'Creature — Human Shaman', 'At the beginning of each upkeep, if you control no Snakes, create a 1/1 black Snake creature token with deathtouch.', ['2', '2']),
+    row('Test Muse', 'Creature — Spirit', "Untap all permanents you control during each other player's untap step.", ['2', '4']),
+  ];
+  const deck = customDeck({
+    id: 'muse', name: 'Muse',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (mine: readonly string[], first: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'muse', 1: 'muse' }, deckSpecs: { muse: deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: first,
+  }), 'upkeep');
+  const snakes = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Snake').length;
+  const patch = (s: GameState, id: string, fields: Partial<GameState['instances'][string]>): GameState =>
+    ({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, ...fields } } });
+  const tapLands = (s: GameState): GameState => ids(s, 0, 'battlefield')
+    .filter((id) => nameOf(s, id) === 'Forest').reduce((st, id) => patch(st, id, { tapped: true }), s);
+  const tappedCount = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+
+  it('makes a Snake each upkeep while there is none, and not while there is one', () => {
+    let s = drain(passBoth(table(['Test Ophiomancer'])));
+    expect(snakes(s)).toBe(1);
+    // The opponent's upkeep too ("each upkeep"), but a Snake is already there.
+    s = advanceTo(nextTurn(s), 'upkeep');
+    s = drain(s);
+    expect(snakes(s)).toBe(1);
+  });
+
+  it('Seedborn Muse untaps its controller\'s permanents in each other player\'s untap step', () => {
+    let s = table(['Test Muse', 'Forest', 'Forest'], 1);
+    s = nextTurn(s); // seat 0's turn
+    s = tapLands(s);
+    expect(tappedCount(s)).toBe(2);
+    s = nextTurn(s); // seat 1's turn: the Muse untaps seat 0's lands
+    expect(s.activeSeat).toBe(1);
+    expect(tappedCount(s)).toBe(0);
+    // Without the Muse they stay tapped through the other player's untap.
+    let plain = table(['Forest', 'Forest'], 1);
+    plain = nextTurn(plain);
+    plain = tapLands(plain);
+    plain = nextTurn(plain);
+    expect(tappedCount(plain)).toBe(2);
+  });
+
+  it('a frozen permanent stays down, and stays frozen for its own untap step', () => {
+    let s = table(['Test Muse', 'Forest'], 1);
+    s = nextTurn(s); // seat 0's turn
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    s = patch(tapLands(s), forest, { frozen: true });
+    s = nextTurn(s); // seat 1's untap: the Muse's untap skips it
+    expect(s.instances[forest]!.tapped).toBe(true);
+    expect(s.instances[forest]!.frozen).toBe(true);
+    s = nextTurn(s); // seat 0's own untap spends the freeze
+    expect(s.instances[forest]!.tapped).toBe(true);
+    expect(s.instances[forest]!.frozen).toBe(false);
   });
 });
 

@@ -82,6 +82,15 @@ export const MAX_HAND_SIZE = 7;
  * This seat's maximum hand size (CR 402.2): seven, or none while it controls a permanent that says
  * "You have no maximum hand size" (D646) and still has its abilities.
  */
+/** Whether a seat controls a live "untap during each other player's untap step" permanent (D661). */
+function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && !isFaceDownPermanent(inst) && !allAbilitiesLost(state, inst)
+      && scriptForCard(state.cardDefs[inst.defKey])?.untapsDuringOthersUntap === true;
+  });
+}
+
 export function maxHandSize(state: GameState, seat: SeatIndex): number {
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
@@ -737,6 +746,12 @@ function onEnterStep(state: GameState, step: Step): GameState {
   switch (step) {
     case 'untap':
       next = untapAll(next, next.activeSeat);
+      // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
+      for (const seat of next.seats) {
+        if (seat.index !== next.activeSeat && !seat.eliminated && untapsDuringOthersUntap(next, seat.index)) {
+          next = untapAll(next, seat.index, { othersStep: true });
+        }
+      }
       next = {
         ...next,
         landsPlayed: { ...next.landsPlayed, [String(next.activeSeat)]: 0 },

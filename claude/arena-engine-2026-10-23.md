@@ -27924,3 +27924,34 @@ Faults injected by hand: 8 of 8 caught. Two survivors were pinned:
 
 Coverage: 11,016 of 31,653 cards (+17), 29,966 of 59,306 lines (+21). Staples: 171 of 244 (+1, Feed
 the Swarm).
+
+## D661 — Ophiomancer's "if you control no Snakes", and Seedborn Muse
+
+Two staples. Staples went from 171 to 173.
+
+**"If you control no X"** (22 legal cards). `interveningConditionFor` already read "you control a/an
+X" and "N or more"; "no X" is the same count read in the plural, at zero. Ophiomancer's "At the
+beginning of each upkeep, if you control no Snakes, create a 1/1 black Snake …" now reads. The
+engine asks the condition both when the trigger fires and when it resolves (CR 603.4).
+
+**Seedborn Muse.**
+- New field `CardScript.untapsDuringOthersUntap`. In each untap step `onEnterStep` untaps the active
+  seat, then every other living seat that controls a live permanent with the field. Live means not
+  face down and not stripped of its abilities, the same rule as `noMaxHandSize`.
+- `untapAll` gains `othersStep`: a frozen permanent ("doesn't untap during its controller's next
+  untap step") stays tapped and stays frozen through somebody else's untap step, so it is spent in
+  its controller's own step and not before.
+- No pool deck has the Muse. It is in the mechanic-coverage test's `compilerOnly` set, with a
+  pointer to the runtime test.
+
+**Tests.** 3 engine tests:
+- Ophiomancer makes a Snake when there is none, and not in the next upkeep with one already there;
+- the Muse untaps seat 0's lands in seat 1's untap step, and without it they stay tapped;
+- a frozen land stays tapped and frozen through the other seat's untap, and the freeze is spent in
+  its controller's own untap step.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,563, all passing
+
+Coverage: 11,020 of 31,653 cards (+4), 29,970 of 59,306 lines (+4). Staples: 173 of 244 (+2).
