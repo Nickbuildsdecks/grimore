@@ -57,7 +57,7 @@ import type {
 import { isCardsDecision } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
-import type { EffectFn } from './effects.js';
+import type { EffectFn, TokenCopyProfile } from './effects.js';
 /*
   One reader of `Morph {2}`, `Megamorph {4}{G}` and `Echo {1}{R}`, shared with the whole-card path
   rather than written twice. `keywordScriptFor`'s docblock used to list those three as deliberately
@@ -20303,6 +20303,52 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    "Create a token that's a copy of target creature you control" (D695): Cackling Counterpart's
+    line and about seventy legal lines like it — Rite of Replication's base half, Electroduplicate,
+    the token doublers. The copy is of the printed card (CR 707.2), with the printed exceptions D594
+    reads for a Clone ("except it has haste", "except it isn't legendary"; `copyExceptions`). A
+    count other than one prints as a word, and a quoted ability or a changed size is refused.
+  */
+  const tokenCopy = new RegExp(
+    `^create (a|an|one|two|three|four|five) tokens? (?:that's a copy|that are copies) of (${TARGET_QUANTIFIER_PREFIX}target .+?)(?:, except (.+))?$`, 'i',
+  ).exec(text);
+  if (tokenCopy !== null) {
+    const count = WORD_NUMBERS[tokenCopy[1]!.toLowerCase()];
+    const spec = targetSpecFrom(tokenCopy[2]!, false);
+    const exceptions = copyExceptions(tokenCopy[3]);
+    if (count !== undefined && spec !== null && pointsAtAPermanent(spec) && exceptions !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => {
+          const inst = state.instances[id];
+          const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+          if (inst === undefined || inst.zone !== 'battlefield' || def === undefined) return state;
+          return copyAsToken(state, c.controller, id, count, exceptions.profile?.(def));
+        }),
+      };
+    }
+  }
+
+  /*
+    "Target instant or sorcery card in your graveyard gains flashback until end of turn. The
+    flashback cost is equal to its mana cost." (D694): Snapcaster Mage, Mission Briefing's first
+    half. The card is marked for this turn (`CardInstance.flashbackGrantedTurn`), and the engine
+    offers it from the graveyard for its mana cost, exiling it as it leaves the stack.
+  */
+  const flashbackGrant = /^(target .+? card in your graveyard) gains flashback until end of turn$/i.exec(text);
+  if (flashbackGrant !== null) {
+    const spec = targetSpecFrom(flashbackGrant[1]!, true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => (state.instances[id]?.zone === 'graveyard'
+          ? withInstance(state, id, { flashbackGrantedTurn: state.turn })
+          : state)),
+      };
+    }
+  }
+
   const toLibraryTop = new RegExp(
     `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on top of its owner's library$`, 'i',
   ).exec(text);
@@ -22051,6 +22097,9 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.
     .replace(/(put it onto the battlefield tapped),\s+then shuffle\.\s+Then if you control (\w+) or more lands, untap that land/gi, '$1 and untap it if you control $2 or more lands, then shuffle')
+    // Snapcaster Mage (D694): the second sentence says what the flashback costs, which is the one
+    // thing `flashbackGrantedTurn` already means.
+    .replace(/(gains flashback until end of turn)\.\s+The flashback cost is equal to its mana cost/gi, '$1')
     // The Pacts (D690): "Pay {3}{U}{U}. If you don't, you lose the game." is one question.
     .replace(/(pay (?:\{[^}]+\})+)\.\s+If you don't, you lose the game/gi, '$1 or lose the game')
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
@@ -25081,6 +25130,60 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
  * string after the name, so it reads the first and not the second.
  */
 /**
+ * A copy's printed exceptions (D594, shared with token copies in D695): "it's a <types> in addition
+ * to its other types", "it isn't legendary" and "it has <keywords>", joined by commas and "and".
+ * `profile` is undefined with no exceptions; `null` refuses any other exception — a quoted
+ * ability, a changed size, a name.
+ */
+function copyExceptions(
+  printed: string | undefined,
+): { readonly profile: ((copied: CardDef) => TokenCopyProfile) | undefined } | null {
+  const addTypes: string[] = [];
+  const addSubtypes: string[] = [];
+  let notLegendary = false;
+  const keywordLines: string[] = [];
+  const exceptions = printed === undefined ? [] : printed.split(/,?\s*(?:and\s+)?(?=it(?:'s| is| isn't| has)\s)/i)
+    .map((part) => part.replace(/,\s*$/, '').trim()).filter((part) => part !== '');
+  for (const exception of exceptions) {
+    const typed = /^it's an? (.+) in addition to its other types$/i.exec(exception);
+    if (typed !== null) {
+      for (const word of typed[1]!.split(/\s+/)) {
+        if (permanentWordMatch(word) === null) return null;
+        (/^[A-Z]/.test(word) ? addSubtypes : addTypes).push(word);
+      }
+      continue;
+    }
+    if (/^it isn't legendary$/i.test(exception)) { notLegendary = true; continue; }
+    const has = /^it has (.+)$/i.exec(exception);
+    if (has !== null) {
+      const keywords = grantedKeywords(has[1]!);
+      if (keywords === null) return null;
+      keywordLines.push(...keywords.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`));
+      continue;
+    }
+    return null;
+  }
+  if (exceptions.length === 0) return { profile: undefined };
+  return {
+    profile: (copied: CardDef) => {
+      const [front = '', back] = copied.typeLine.split(/\s+—\s+/);
+      const words = front.split(/\s+/).filter((w) => w !== '' && !(notLegendary && /^legendary$/i.test(w)));
+      const capital = (w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).toLowerCase()}`;
+      const supers = words.filter((w) => SUPERTYPES.includes(w.toLowerCase()));
+      const types = words.filter((w) => !SUPERTYPES.includes(w.toLowerCase()));
+      const added = addTypes.map(capital).filter((t) => !types.some((w) => w.toLowerCase() === t.toLowerCase()));
+      const subs = [...(back === undefined ? [] : back.split(/\s+/)), ...addSubtypes
+        .filter((s) => !(back ?? '').split(/\s+/).includes(s))];
+      return {
+        as: `copy-${exceptions.join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        typeLine: `${[...supers, ...added, ...types].join(' ')}${subs.length === 0 ? '' : ` — ${subs.join(' ')}`}`,
+        ...(keywordLines.length === 0 ? {} : { extraText: keywordLines.join(', ') }),
+      };
+    },
+  };
+}
+
+/**
  * "You may have ~ enter as a copy of any creature on the battlefield" — the Clone family (D594).
  *
  * Read into exactly what the pool's hand-written Clone is: a "you may" question over the whole
@@ -25126,47 +25229,10 @@ function entersAsCopyFromLine(line: string, name: string): Partial<CardScript> |
     tests.push((t) => parts.every((part) => part(t)));
   }
   const side = read[2]!.trim().toLowerCase();
-  // The exceptions, each one of three shapes or the line is refused.
-  const addTypes: string[] = [];
-  const addSubtypes: string[] = [];
-  let notLegendary = false;
-  const keywordLines: string[] = [];
-  const exceptions = read[3] === undefined ? [] : read[3].split(/,?\s*(?:and\s+)?(?=it(?:'s| is| isn't| has)\s)/i)
-    .map((part) => part.replace(/,\s*$/, '').trim()).filter((part) => part !== '');
-  for (const exception of exceptions) {
-    const typed = /^it's an? (.+) in addition to its other types$/i.exec(exception);
-    if (typed !== null) {
-      for (const word of typed[1]!.split(/\s+/)) {
-        if (permanentWordMatch(word) === null) return null;
-        (/^[A-Z]/.test(word) ? addSubtypes : addTypes).push(word);
-      }
-      continue;
-    }
-    if (/^it isn't legendary$/i.test(exception)) { notLegendary = true; continue; }
-    const has = /^it has (.+)$/i.exec(exception);
-    if (has !== null) {
-      const keywords = grantedKeywords(has[1]!);
-      if (keywords === null) return null;
-      keywordLines.push(...keywords.map((k) => `${k.charAt(0).toUpperCase()}${k.slice(1)}`));
-      continue;
-    }
-    return null;
-  }
-  const except = exceptions.length === 0 ? undefined : (copied: CardDef) => {
-    const [front = '', back] = copied.typeLine.split(/\s+—\s+/);
-    const words = front.split(/\s+/).filter((w) => w !== '' && !(notLegendary && /^legendary$/i.test(w)));
-    const capital = (w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).toLowerCase()}`;
-    const supers = words.filter((w) => SUPERTYPES.includes(w.toLowerCase()));
-    const types = words.filter((w) => !SUPERTYPES.includes(w.toLowerCase()));
-    const added = addTypes.map(capital).filter((t) => !types.some((w) => w.toLowerCase() === t.toLowerCase()));
-    const subs = [...(back === undefined ? [] : back.split(/\s+/)), ...addSubtypes
-      .filter((s) => !(back ?? '').split(/\s+/).includes(s))];
-    return {
-      as: `copy-${exceptions.join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-      typeLine: `${[...supers, ...added, ...types].join(' ')}${subs.length === 0 ? '' : ` — ${subs.join(' ')}`}`,
-      ...(keywordLines.length === 0 ? {} : { extraText: keywordLines.join(', ') }),
-    };
-  };
+  // The exceptions, each one of three shapes or the line is refused (`copyExceptions`).
+  const exceptions = copyExceptions(read[3]);
+  if (exceptions === null) return null;
+  const except = exceptions.profile;
   const creaturesOnly = alternatives.every((words) => words.some((w) => /^creature$/i.test(w)));
   return {
     ...(creaturesOnly ? { copiesACreature: true } : {}),

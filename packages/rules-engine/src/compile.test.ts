@@ -1478,7 +1478,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         describe it: it looks `TREASURE_TOKEN` up, the definition D243 wrote. A named token the
         engine has no definition for is still refused, and the test above says so.
       */
-      ["Create a token that's a copy of target creature you control."],
+      /*
+        "Create a token that's a copy of target creature you control." **left** this list (D695): a
+        copy is the printed card (CR 707.2), so it describes nothing the engine has to invent, and
+        `copyAsToken` makes it from the copied card's own definition.
+      */
       // A keyword the engine cannot read back would be a token that silently lacks it.
       ['Create a 1/1 white Spirit creature token with soaring.'],
     ])('refuses %s', (text) => {

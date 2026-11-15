@@ -28969,3 +28969,69 @@ with a readable second line that points elsewhere.
     engine tests: 4,671, all passing
 
 Coverage: 11,324 of 31,653 cards (+16), 30,585 of 59,306 lines (+32). Staples: 208 of 244 (+1).
+
+## D694 — Snapcaster Mage: flashback until end of turn, for its mana cost
+
+"When ~ enters, target instant or sorcery card in your graveyard gains flashback until end of turn.
+The flashback cost is equal to its mana cost." Snapcaster Mage, Mission Briefing's first half, and
+other "gains flashback until end of turn" grants.
+
+What was added:
+- `CardInstance.flashbackGrantedTurn`: the turn the grant was made. `relocate` clears it on any zone
+  change (CR 400.7).
+- `flashbackCostOf(state, id)` is the one place a flashback cost is read: the printed `flashback`,
+  or the card's mana cost while it is in a graveyard with a grant from this turn. The graveyard
+  offer list, the cost shown, the cast check and the cost paid all go through it. The cast is the
+  ordinary flashback cast, so the card is exiled as it leaves the stack.
+- The compiler reads the grant sentence. `clausesOf` folds the second sentence in, since the cost
+  is what the grant already means.
+
+Staples went from 208 to 209 (Snapcaster Mage).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- after Snapcaster, the Bolt in the graveyard is offered for {R}, deals 3, and is exiled;
+- two turns later it is still in the graveyard and no longer offered.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,674, all passing
+
+Coverage: 11,329 of 31,653 cards (+5), 30,593 of 59,306 lines (+8). Staples: 209 of 244 (+1).
+
+## D695 — "Create a token that's a copy of target …"
+
+"Create a token that's a copy of target creature you control" (Cackling Counterpart's line) and its
+kin, about seventy legal lines that read nothing before:
+- "… of target creature, except it has haste";
+- "… except it isn't legendary";
+- "Create two tokens that are copies of target artifact you control".
+
+How it is read:
+- D594's Clone exceptions parser is factored out as `copyExceptions`, with the Clone reader
+  unchanged in behaviour, and shared with the new token-copy reader in `targetedEffect`.
+- The copy is of the printed card (CR 707.2), made with `copyAsToken` under the caster's control.
+- A quoted ability, a changed size and "Sacrifice it at the beginning of the next end step"
+  (Kiki-Jiki) stay unread.
+
+**A process note.** Part of this increment was written while D694's gate was running, against the
+rule. That gate was stopped and D694 and D695 were gated together, as D662 and D663 were. Stopping
+it with `pkill vitest` also killed one fault of D693's break run (reported INVALID). That fault was
+re-queued on its own (`spec-d693b`).
+
+**Tests.** 5 engine tests (plus the D594 Clone tests, re-run against the refactor):
+- every line reads;
+- a copy of your own Bear is a 2/2 token under you;
+- a copy of the opponent's Bear is yours and has haste;
+- a non-legendary copy of a legend survives the legend rule beside it;
+- two copies of an artifact.
+
+The token test in compile.test.ts that kept "Create a token that's a copy of target creature you
+control." among its refusals has that row retired, with a note.
+
+Faults injected by hand: 4 of 4 caught (exceptions dropped, the target's controller gets the
+token, count ignored, "isn't legendary" ignored).
+
+    engine tests: 4,678, all passing
+
+Coverage: 11,340 of 31,653 cards (+11), 30,620 of 59,306 lines (+27). Staples: 209 of 244.

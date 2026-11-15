@@ -647,6 +647,19 @@ export function crewPlan(
  * may tap itself does so only when nothing else will — and otherwise the weakest first, crew's rule.
  */
 /** Whether this seat controls a commander on the battlefield (D653): "if you control a commander". */
+/**
+ * A card's flashback cost, printed or given (D694): its own `flashback`, or — while an effect has
+ * given it flashback this turn and it is still in a graveyard — its mana cost (Snapcaster Mage).
+ */
+export function flashbackCostOf(state: GameState, id: string): string | undefined {
+  const inst = state.instances[id];
+  if (inst === undefined) return undefined;
+  const def = state.cardDefs[inst.defKey];
+  const printed = scriptForCard(def)?.flashback?.cost;
+  if (printed !== undefined) return printed;
+  return inst.zone === 'graveyard' && inst.flashbackGrantedTurn === state.turn ? def?.manaCost ?? '' : undefined;
+}
+
 /** Colour words, for the pitch's offer (D691). */
 const COLOUR_NAMES: Readonly<Record<string, string>> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
 
@@ -1318,7 +1331,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ...listAt(state, zoneKey(seat, 'command'))
       .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
-      .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.flashback !== undefined)
+      .filter((id) => flashbackCostOf(state, id) !== undefined)
       .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     /*
       And the second narrow list over the graveyard: a card with escape (CR 702.139).
@@ -1756,7 +1769,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       nothing and madness pays a cost of its own, and both are on the offer rather than on the card.
     */
     const costShown = offered ? state.pendingOfferedCast?.cost ?? ''
-      : flashback ? script?.flashback?.cost ?? ''
+      : flashback ? flashbackCostOf(state, id) ?? ''
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of
         // what this spell costs in mana, and the card half is counted separately below.

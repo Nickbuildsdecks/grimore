@@ -13989,6 +13989,137 @@ describe('an ability word\'s upgrade: "… instead if …" (D693)', () => {
   });
 });
 
+describe('Snapcaster Mage: flashback until end of turn, for its mana cost (D694)', () => {
+  const ROWS = [
+    { name: 'Test Snap', type_line: 'Creature — Human Wizard', oracle_text: 'When Test Snap enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'snap', name: 'Snap',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  const table = () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'snap', 1: 'snap' }, deckSpecs: { snap: deck.deck },
+      hands: { 0: ['Test Snap'] }, battlefield: { 0: ['Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // One Bolt in the graveyard, out of the library.
+    const bolt = ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bolt')!;
+    return {
+      s: {
+        ...s,
+        zones: { ...s.zones, '0:library': ids(s, 0, 'library').filter((id) => id !== bolt), '0:graveyard': [bolt] },
+        instances: { ...s.instances, [bolt]: { ...s.instances[bolt]!, zone: 'graveyard' as const } },
+      },
+      bolt,
+    };
+  };
+  const flashbackPlay = (s: GameState, id: string) => legalActions(s, 0).plays
+    .find((p) => p.card === id && (p as { flashback?: boolean }).flashback === true);
+  const snapped = () => {
+    const { s: s0, bolt } = table();
+    expect(flashbackPlay(s0, bolt)).toBeUndefined();
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Snap') });
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      s = s.pendingChoice !== null
+        ? apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bolt }] } as Action)
+        : passBoth(s);
+    }
+    return { s, bolt };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('the targeted card is offered from the graveyard for its mana cost, and exiled after', () => {
+    let { s, bolt } = snapped();
+    const play = flashbackPlay(s, bolt);
+    expect(play).toBeDefined();
+    expect(play!.manaCost).toBe('{R}');
+    s = apply(s, { type: 'auto:cast', by: 0, card: bolt, flashback: true, targets: [{ kind: 'player', seat: 1 as SeatIndex }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.seats[1]!.life).toBe(20 - 3);
+    expect(s.instances[bolt]!.zone).toBe('exile');
+  });
+
+  it('only until end of turn: not offered on the next turn', () => {
+    const { s, bolt } = snapped();
+    expect(flashbackPlay(s, bolt)).toBeDefined();
+    const later = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(later.instances[bolt]!.zone).toBe('graveyard');
+    expect(flashbackPlay(later, bolt)).toBeUndefined();
+  });
+});
+
+describe('"Create a token that\'s a copy of target …" (D695)', () => {
+  const ROWS = [
+    { name: 'Test Counterpart', type_line: 'Instant', oracle_text: "Create a token that's a copy of target creature you control.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Rite', type_line: 'Sorcery', oracle_text: "Create a token that's a copy of target creature, except it has haste.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Mirror', type_line: 'Sorcery', oracle_text: "Create a token that's a copy of target creature, except it isn't legendary.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Doubler', type_line: 'Sorcery', oracle_text: 'Create two tokens that are copies of target artifact you control.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Legend', type_line: 'Legendary Creature — Human', oracle_text: '', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'copies', name: 'Copies',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (spell: string, mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'copies', 1: 'copies' }, deckSpecs: { copies: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, target: string) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: target }] } as Action);
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+  const tokensNamed = (s: GameState, seat: SeatIndex, name: string) => ids(s, seat, 'battlefield')
+    .filter((id) => s.instances[id]!.isToken && s.cardDefs[s.instances[id]!.defKey]!.name === name);
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('a copy of your own creature, under your control', () => {
+    const s0 = table('Test Counterpart', ['Test Bear']);
+    const s = cast(s0, 'Test Counterpart', find(s0, 0, 'battlefield', 'Test Bear'));
+    const [token] = tokensNamed(s, 0, 'Test Bear');
+    expect(token).toBeDefined();
+    expect([power(s, token!), toughness(s, token!)]).toEqual([2, 2]);
+  });
+
+  it('a copy of an opponent\'s creature with haste, for you', () => {
+    const s0 = table('Test Rite', [], ['Test Bear']);
+    const s = cast(s0, 'Test Rite', find(s0, 1, 'battlefield', 'Test Bear'));
+    const [token] = tokensNamed(s, 0, 'Test Bear');
+    expect(token).toBeDefined();
+    expect(characteristicsOf(s, s.instances[token!]!).keywords.has('haste')).toBe(true);
+    expect(tokensNamed(s, 1, 'Test Bear')).toEqual([]);
+  });
+
+  it('"except it isn\'t legendary": both stay through the legend rule', () => {
+    const s0 = table('Test Mirror', ['Test Legend']);
+    const s = drain(cast(s0, 'Test Mirror', find(s0, 0, 'battlefield', 'Test Legend')));
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Legend').length).toBe(2);
+  });
+
+  it('two copies of an artifact', () => {
+    const s0 = table('Test Doubler', ['Test Relic']);
+    const s = cast(s0, 'Test Doubler', find(s0, 0, 'battlefield', 'Test Relic'));
+    expect(tokensNamed(s, 0, 'Test Relic').length).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

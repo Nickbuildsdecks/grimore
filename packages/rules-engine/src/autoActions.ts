@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScrip
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, flashbackCostOf, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -267,7 +267,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     }
   }
   if (flashback) {
-    if (script?.flashback === undefined) {
+    if (flashbackCostOf(state, inst.id) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no flashback`);
     }
     // Its owner's graveyard and nobody else's: flashback is cast "from your graveyard", and the
@@ -684,7 +684,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // Flashback *replaces* the cost rather than adding to it, which is the difference between it
   // and the kicker and the reason the two cannot both be paid on one casting.
   const costText = flashback
-    ? script?.flashback?.cost
+    ? flashbackCostOf(state, inst.id)
     // Escape replaces it too, and the cards it also costs are paid below rather than here: this
     // chain is about mana, and the mana half of an escape cost is all of what `payFrom` sees.
     : escape ? script?.escape?.cost

@@ -190,6 +190,12 @@ export interface CardInstance {
    */
   readonly classLevel?: number;
   /**
+   * The turn an effect gave this card flashback "until end of turn" (D694): Snapcaster Mage,
+   * Mission Briefing. The flashback cost is the card's mana cost. Cleared when the card changes
+   * zone (CR 400.7), and only good for that turn.
+   */
+  readonly flashbackGrantedTurn?: number;
+  /**
    * What was chosen **as this permanent entered** (D641, CR 614.12): "As ~ enters, choose a creature
    * type" or "… a color". Statics that say "the chosen type" or "the chosen color" are filled in
    * from it as they are installed. Cleared when the card leaves, because the new object chooses

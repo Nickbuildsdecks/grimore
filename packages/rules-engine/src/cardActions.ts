@@ -397,6 +397,8 @@ export function relocate(
     ...(toZone === 'battlefield' ? {} : { classLevel: undefined }),
     // And what it chose as it entered (D641): the next object chooses again.
     ...(toZone === 'battlefield' ? {} : { chosen: undefined }),
+    // And flashback given until end of turn (D694), which the new object does not have.
+    ...(inst.zone === toZone ? {} : { flashbackGrantedTurn: undefined }),
     counters: toZone !== 'battlefield'
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,
