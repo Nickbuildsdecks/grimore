@@ -29320,3 +29320,30 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,709, all passing
 
 Coverage: 11,381 of 31,653 cards (+6), 30,677 of 59,306 lines (+6). Staples: 218 of 244 (+1).
+
+## D706 — "Whenever you create a token"
+
+"Whenever you create a token, …" and Mirkwood Bats' "Whenever you create or sacrifice a token, each
+opponent loses 1 life."
+
+How it is read:
+- The entry event gains a `token` filter, the opposite of D484's `nontoken`, matched against the
+  engine's `subjectIsToken`.
+- "You create a token" is read as a token entering under your control: one trigger per token, which
+  is how creating fires.
+- Mirkwood Bats' line is two events: that entry, and D570's `sacrifices` event with `what: 'token'`.
+- "One or more tokens" (a batch that fires once per event) is not this and stays unread.
+
+Staples went from 218 to 219 (Mirkwood Bats).
+
+**Tests.** 4 engine tests:
+- the Bats read;
+- two Soldier tokens drain 2 and a Bear card drains nothing;
+- sacrificing a token drains 1 more;
+- the opponent's tokens drain nothing.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,713, all passing
+
+Coverage: 11,382 of 31,653 cards (+1), 30,678 of 59,306 lines (+1). Staples: 219 of 244 (+1).

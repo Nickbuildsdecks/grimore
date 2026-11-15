@@ -16402,6 +16402,23 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^When you cast this spell, (.+)$/i,
     on: [{ kind: 'spell-cast', self: true }],
   },
+  /*
+    "Whenever you create a token" (D706), and Mirkwood Bats' "Whenever you create or sacrifice a
+    token": a token entering under your control is a token you created, one trigger for each, so
+    the entry with `token` is the reading. "One or more tokens" is a batch (once per event, not per
+    token) and is not this.
+  */
+  {
+    prologue: () => /^Whenever you create a token, (.+)$/i,
+    on: [{ kind: 'etb', who: 'any', of: 'you', what: 'permanent', token: true }],
+  },
+  {
+    prologue: () => /^Whenever you create or sacrifice a token, (.+)$/i,
+    on: [
+      { kind: 'etb', who: 'any', of: 'you', what: 'permanent', token: true },
+      { kind: 'sacrifices', by: 'you', what: 'token' },
+    ],
+  },
   // Ajani's Pridemate.
   {
     prologue: () => /^Whenever you gain life, (.+)$/i,

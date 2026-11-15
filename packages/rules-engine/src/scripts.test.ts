@@ -14631,6 +14631,56 @@ describe('Recover: back to hand when a creature of yours dies, or exiled (D705)'
   });
 });
 
+describe('"Whenever you create a token" (D706)', () => {
+  const ROWS = [
+    { name: 'Test Bats', type_line: 'Creature — Bat', oracle_text: 'Flying\nWhenever you create or sacrifice a token, each opponent loses 1 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Squad', type_line: 'Sorcery', oracle_text: 'Create two 1/1 white Soldier creature tokens.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Outlet', type_line: 'Artifact', oracle_text: 'Sacrifice a creature: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'bats', name: 'Bats',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = [], caster: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'bats', 1: 'bats' }, deckSpecs: { bats: deck.deck },
+    hands: { [caster]: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: caster,
+  }), 'precombat-main');
+  const settle = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 12 && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('a life for each token created; none for a creature card', () => {
+    const s0 = table(['Test Squad', 'Test Bear'], ['Test Bats']);
+    const s = settle(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Squad') }));
+    expect(s.seats[1]!.life).toBe(20 - 2);
+    const t = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') }));
+    expect(t.seats[1]!.life).toBe(20 - 2);
+  });
+
+  it('and one for a token sacrificed', () => {
+    let s = settle(apply(table(['Test Squad'], ['Test Bats', 'Test Outlet']), { type: 'auto:cast', by: 0, card: find(table(['Test Squad'], ['Test Bats', 'Test Outlet']), 0, 'hand', 'Test Squad') }));
+    const token = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!;
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Outlet'), abilityIndex: 0, sacrifice: token } as Action));
+    expect(s.seats[1]!.life).toBe(20 - 3);
+  });
+
+  it('an opponent\'s tokens are not yours', () => {
+    const s0 = table(['Test Squad'], ['Test Bats'], [], 1);
+    const s = settle(apply(s0, { type: 'auto:cast', by: 1, card: find(s0, 1, 'hand', 'Test Squad') }));
+    expect(s.seats[1]!.life).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -212,6 +212,11 @@ export type TriggerEvent =
        * a death — that one-word asymmetry is the whole of what blocked these lines.
        */
       readonly nontoken?: boolean;
+      /**
+       * Only a token (D706): "Whenever you create a token" (Mirkwood Bats, Chatterfang's kin), read
+       * as a token entering under your control — one trigger per token, as creating does.
+       */
+      readonly token?: true;
       /** Set by the engine when it raises the event. */
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine when it raises the event: whether the subject is a creature. */

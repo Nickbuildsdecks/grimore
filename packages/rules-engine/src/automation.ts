@@ -1352,6 +1352,8 @@ function triggerMatches(
       // events carry `subjectIsToken`, and both are printed with this word for the same reason.
       if ((want.kind === 'dies' || want.kind === 'etb') && want.nontoken === true
         && e.subjectIsToken === true) return false;
+      // And its opposite on the entry (D706): "whenever you create a token".
+      if (want.kind === 'etb' && (want as { token?: true }).token === true && e.subjectIsToken !== true) return false;
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
