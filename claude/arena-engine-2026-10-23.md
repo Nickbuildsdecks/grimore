@@ -29347,3 +29347,32 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,713, all passing
 
 Coverage: 11,382 of 31,653 cards (+1), 30,678 of 59,306 lines (+1). Staples: 219 of 244 (+1).
+
+## D707 — Arcane Denial: two delayed draws
+
+"Counter target spell. Its controller may draw up to two cards at the beginning of the next turn's
+upkeep. / You draw a card at the beginning of the next turn's upkeep."
+
+How it is read:
+- D689's delayed-sentence reader now looks twice: on the last line, then on what is left. Each
+  delayed sentence found is its own one-shot trigger, scheduled in printed order.
+- "Its controller may draw up to N cards" is a number question (0 to N) whose subject is the spell
+  the line countered, carried by the delayed trigger as Mana Drain's is (D692).
+- `referent-player` falls back to the stack object's subject when it has no card target, so the
+  countered card's owner is the one asked. For a card in the graveyard that is its owner (D537's
+  known limitation).
+- The bot draws all N unless its library is too short to.
+
+Staples went from 219 to 220 (Arcane Denial).
+
+**Tests.** 3 engine tests:
+- the card reads as two delayed triggers;
+- at the next upkeep the opponent is asked (0 to 2, bot answers 2) and draws 2, and the caster
+  draws 1, with nothing drawn before that upkeep;
+- an answer of 0 draws nothing for them while the caster still draws.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,716, all passing
+
+Coverage: 11,383 of 31,653 cards (+1), 30,680 of 59,306 lines (+2). Staples: 220 of 244 (+1).

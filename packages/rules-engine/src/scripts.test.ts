@@ -14681,6 +14681,67 @@ describe('"Whenever you create a token" (D706)', () => {
   });
 });
 
+describe('Arcane Denial: two delayed draws, one for the countered spell\'s controller (D707)', () => {
+  const ROWS = [
+    { name: 'Test Denial', type_line: 'Instant', oracle_text: "Counter target spell. Its controller may draw up to two cards at the beginning of the next turn's upkeep.\nYou draw a card at the beginning of the next turn's upkeep.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'denial', name: 'Denial',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const hand = (s: GameState, seat: SeatIndex) => ids(s, seat, 'hand').length;
+  const countered = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'denial', 1: 'denial' }, deckSpecs: { denial: deck.deck },
+      hands: { 0: ['Test Denial'], 1: ['Test Giant'] }, battlefield: { 1: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Giant') });
+    const giant = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Denial'), targets: [{ kind: 'card', id: giant }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    return s;
+  };
+
+  it('reads whole, as two delayed triggers', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.triggers?.map((t) => t.description))
+      .toEqual(['its controller may draw up to two cards', 'you draw a card']);
+  });
+
+  it('at the next upkeep the countered spell\'s controller is asked, and draws what they answer; the caster draws one', () => {
+    let s = countered();
+    const before0 = hand(s, 0);
+    const before1 = hand(s, 1);
+    // Nothing yet: the draws wait for the next turn's upkeep.
+    s = advanceTo(s, 'end');
+    expect([hand(s, 0), hand(s, 1)]).toEqual([before0, before1]);
+    s = advanceTo(nextTurn(s), 'upkeep');
+    expect(s.activeSeat).toBe(0);
+    s = drain(s, 20);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 2 });
+    expect(botAction(s, 1)).toMatchObject({ type: 'auto:decide', amount: 2 });
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], amount: 2 } as Action), 20);
+    expect(s.step).toBe('upkeep');
+    expect([hand(s, 0), hand(s, 1)]).toEqual([before0 + 1, before1 + 2]);
+  });
+
+  it('an answer of nought draws nothing, and the caster still draws', () => {
+    let s = countered();
+    const before0 = hand(s, 0);
+    const before1 = hand(s, 1);
+    s = drain(advanceTo(nextTurn(advanceTo(s, 'end')), 'upkeep'), 20);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], amount: 0 } as Action), 20);
+    expect([hand(s, 0), hand(s, 1)]).toEqual([before0 + 1, before1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

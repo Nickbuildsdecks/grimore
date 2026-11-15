@@ -26419,14 +26419,20 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     Its index in the card's `triggers` is not known while one line is being read (see `unearth`), so
     the effect finds the trigger at run time, in the script the card plays by (`scriptOfCard`).
   */
+  /*
+    Arcane Denial (D707) has one on each of its two lines, so the sentence is looked for twice: on
+    the last line, then on what is left. Each one found is its own trigger, scheduled in the order
+    the card prints them.
+  */
+  const laters: { trigger: TriggerDef; of: 'any' | 'you'; step: LaterStep; aboutTarget: boolean }[] = [];
   let laterTrigger: TriggerDef | null = null;
-  let laterOf: 'any' | 'you' = 'any';
-  let laterStep: LaterStep = 'upkeep';
-  let laterAboutTarget = false;
   let upgradedRead: ReadEffect | null = null;
   let readNow = toRead;
-  if (toRead.length > 0) {
-    const lastText = plain(toRead[toRead.length - 1]!).trim();
+  for (let pass = 0; pass < 2 && readNow.length > 0 && laters.length === pass; pass += 1) {
+    let laterOf: 'any' | 'you' = 'any';
+    let laterStep: LaterStep = 'upkeep';
+    let laterAboutTarget = false;
+    const lastText = plain(readNow[readNow.length - 1]!).trim();
     // A line that is all one delayed instruction may run to several sentences (the Pacts, D690).
     const whole = /^at the beginning of your next upkeep, .+$/i.test(lastText);
     const sentences = whole ? [lastText] : lastText.split(/(?<=\.)\s+/);
@@ -26442,7 +26448,31 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     */
     const nextMain = /^at the beginning of your next main phase, (?:you may )?add an amount of \{C\} equal to that spell's mana value$/i.exec(final);
     const body = nextTurn?.[1] ?? yourNext?.[1] ?? (nextMain === null ? undefined : 'add {C} for each mana in that spell\'s mana value');
-    const inner = nextMain !== null
+    /*
+      Arcane Denial (D707): "Its controller may draw up to two cards at the beginning of the next
+      turn's upkeep." "Its" is the spell the line countered, which the delayed trigger carries as
+      its subject; the player asked is that card's (`referent-player`, which falls back to the
+      subject when the trigger has no target), and the bot takes all of them unless its library is
+      too short to.
+    */
+    const upTo = nextTurn === null ? null : /^its controller may draw up to (one|two|three|\d+) cards?$/i.exec(nextTurn[1]!);
+    const upToMax = upTo === null ? 0 : WORD_NUMBERS[upTo[1]!.toLowerCase()] ?? Number(upTo[1]!);
+    const inner = upTo !== null && upToMax > 0
+      ? {
+        decisions: [{
+          who: 'referent-player',
+          prompt: `Draw how many cards (up to ${upToMax})?`,
+          range: () => ({ min: 0, max: upToMax }),
+          best: (state: GameState, chooser: SeatIndex) => Math.max(0,
+            Math.min(upToMax, (state.zones[zoneKey(chooser, 'library')] ?? []).length - 1)),
+        } as NumberDecisionSpec],
+        effect: (c: EffectContext) => {
+          const subject = c.subject === undefined ? undefined : c.state.instances[c.subject];
+          const n = Math.max(0, Math.min(upToMax, c.decisions[0]?.amount ?? 0));
+          return subject === undefined || n === 0 ? c.state : draw(c.state, subject.zoneSeat, n);
+        },
+      } as ReadEffect
+      : nextMain !== null
       ? { effect: (c: EffectContext) => {
         const subject = c.subject === undefined ? undefined : c.state.instances[c.subject];
         const n = subject === undefined ? 0 : c.state.cardDefs[subject.defKey]?.cmc ?? 0;
@@ -26453,7 +26483,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       && inner.beforeDecisions === undefined && inner.appliesNothing !== true) {
       laterOf = nextTurn !== null ? 'any' : 'you';
       laterStep = nextMain !== null ? 'next-main' : 'upkeep';
-      laterAboutTarget = nextMain !== null;
+      laterAboutTarget = nextMain !== null || upTo !== null;
       laterTrigger = {
         on: { kind: 'step', step: nextMain !== null ? 'precombat-main' : 'upkeep', of: laterOf },
         delayed: true,
@@ -26462,9 +26492,11 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
         ...(inner.decisions === undefined ? {} : { decisions: inner.decisions }),
       };
       const rest = sentences.slice(0, -1).join(' ').trim();
-      readNow = [...toRead.slice(0, -1), ...(rest === '' ? [] : [rest])];
+      readNow = [...readNow.slice(0, -1), ...(rest === '' ? [] : [rest])];
+      laters.unshift({ trigger: laterTrigger, of: laterOf, step: laterStep, aboutTarget: laterAboutTarget });
     }
   }
+  laterTrigger = laters.length === 0 ? null : laters[0]!.trigger;
   /*
     **An ability word's upgrade** (D693): "Threshold — Add {B}{B}{B}{B}{B} instead if there are
     seven or more cards in your graveyard." (Cabal Ritual), "Morbid — Brimstone Volley deals 5
@@ -26488,10 +26520,13 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const readMain = upgradedRead !== null ? upgradedRead : readNow.length === 0 && laterTrigger !== null
     ? { effect: (c: EffectContext) => c.state } as ReadEffect
     : withSacrificeInCost(paidBySacrifice, () => readResolution(readNow, name));
-  const read = readMain === null || laterTrigger === null || (laterAboutTarget && (readMain.targets ?? []).length === 0)
-    ? (laterTrigger === null ? readMain : null)
-    : withLaterTrigger(readMain, laterTrigger, laterOf, laterStep, laterAboutTarget);
-  if (read !== null && laterTrigger !== null) built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), laterTrigger];
+  const read = readMain === null || laters.length === 0
+    || laters.some((l) => l.aboutTarget && (readMain.targets ?? []).length === 0)
+    ? (laters.length === 0 ? readMain : null)
+    : laters.reduce((acc, l) => withLaterTrigger(acc, l.trigger, l.of, l.step, l.aboutTarget), readMain);
+  if (read !== null && laters.length > 0) {
+    built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), ...laters.map((l) => l.trigger)];
+  }
   if (read !== null && recycles) built['shufflesIntoLibrary'] = true;
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;

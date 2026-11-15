@@ -4083,9 +4083,9 @@ function decisionPlan(
     */
     if (spec.who === 'referent-player') {
       const object0 = object.targets.find((t) => t.kind === 'card');
-      const inst = object0 === undefined || object0.kind !== 'card'
-        ? undefined
-        : state.instances[object0.id];
+      // A delayed trigger has no targets but may carry what it is about (Arcane Denial, D707).
+      const referentId = object0 !== undefined && object0.kind === 'card' ? object0.id : object.subject;
+      const inst = referentId === undefined ? undefined : state.instances[referentId];
       if (inst !== undefined) plan.push({ seat: inst.zoneSeat, specIndex: i });
       continue;
     }
