@@ -13283,6 +13283,77 @@ describe('"for each permanent destroyed this way", and Gamble (D682)', () => {
   });
 });
 
+describe('reveal the top N, keep all of a kind (D683)', () => {
+  const ROWS = [
+    { name: 'Test Messenger', type_line: 'Creature — Elf', oracle_text: 'When Test Messenger enters, reveal the top four cards of your library. Put all Elf cards revealed this way into your hand and the rest on the bottom of your library in any order.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Mulch', type_line: 'Sorcery', oracle_text: 'Reveal the top four cards of your library. Put all land cards revealed this way into your hand and the rest into your graveyard.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Delve', type_line: 'Sorcery', oracle_text: 'Reveal the top three cards of your library. Put all creature and land cards revealed this way into your hand and the rest on the bottom of your library in any order.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Elf', type_line: 'Creature — Elf Druid', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Shapeshifter', type_line: 'Creature — Shapeshifter', oracle_text: 'Changeling', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spell', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'revealkeep', name: 'Reveal and keep',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const nameOfId = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  // Puts the named cards on top of seat 0's library, in that order (first is the top card).
+  const stacked = (s: GameState, top: readonly string[]): GameState => {
+    const lib = [...ids(s, 0, 'library')];
+    const chosen: string[] = [];
+    for (const name of top) {
+      const i = lib.findIndex((id) => nameOfId(s, id) === name && !chosen.includes(id));
+      chosen.push(lib.splice(i, 1)[0]!);
+    }
+    return { ...s, zones: { ...s.zones, '0:library': [...chosen, ...lib] } };
+  };
+  const table = (hand: string[], top: readonly string[]) => stacked(advanceTo(arena({
+    decks: { 0: 'revealkeep', 1: 'revealkeep' }, deckSpecs: { revealkeep: deck.deck },
+    hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), top);
+  const cast = (s: GameState, name: string) => drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) }));
+  const handNames = (s: GameState) => ids(s, 0, 'hand').map((id) => nameOfId(s, id)).sort();
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('keeps every Elf among the top four, a changeling too; the rest go to the bottom in order', () => {
+    const s0 = table(['Test Messenger'], ['Test Elf', 'Test Ogre', 'Test Shapeshifter', 'Test Spell', 'Test Elf']);
+    const hand0 = handNames(s0).filter((n) => n !== 'Test Messenger');
+    const s = cast(s0, 'Test Messenger');
+    expect(handNames(s)).toEqual([...hand0, 'Test Elf', 'Test Shapeshifter'].sort());
+    const lib = ids(s, 0, 'library').map((id) => nameOfId(s, id));
+    // The fifth card is now on top; the Ogre and the Spell are at the bottom, in revealed order.
+    expect(lib[0]).toBe('Test Elf');
+    expect(lib.slice(-2)).toEqual(['Test Ogre', 'Test Spell']);
+    expect(lib.length).toBe(ids(s0, 0, 'library').length - 2);
+    const kept = ids(s, 0, 'hand').filter((id) => nameOfId(s, id) === 'Test Elf');
+    expect(kept.some((id) => s.instances[id]!.revealed === true)).toBe(true);
+  });
+
+  it('the rest into the graveyard: lands kept, the others milled', () => {
+    const s0 = table(['Test Mulch'], ['Forest', 'Test Ogre', 'Forest', 'Test Spell']);
+    const s = cast(s0, 'Test Mulch');
+    expect(handNames(s).filter((n) => n === 'Forest').length).toBe(handNames(s0).filter((n) => n === 'Forest').length + 2);
+    expect(ids(s, 0, 'graveyard').map((id) => nameOfId(s, id)).sort()).toEqual(['Test Mulch', 'Test Ogre', 'Test Spell']);
+  });
+
+  it('"creature and land cards" keeps each card that is either', () => {
+    const s0 = table(['Test Delve'], ['Test Ogre', 'Test Spell', 'Forest']);
+    const s = cast(s0, 'Test Delve');
+    const before = handNames(s0).filter((n) => n !== 'Test Delve');
+    expect(handNames(s)).toEqual([...before, 'Forest', 'Test Ogre'].sort());
+    expect(ids(s, 0, 'library').map((id) => nameOfId(s, id)).at(-1)).toBe('Test Spell');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

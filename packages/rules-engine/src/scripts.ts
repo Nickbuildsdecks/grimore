@@ -26,7 +26,7 @@ import {
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
-import { listAt, withInstance } from './cardActions.js';
+import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
   chosenCards,
@@ -22153,6 +22153,59 @@ function digRest(words: string): NonNullable<CardsDecisionSpec['restGoTo']> | nu
 }
 
 /**
+ * **Reveal and keep** (D683): "Reveal the top four cards of your library. Put all Elf cards revealed
+ * this way into your hand and the rest on the bottom of your library in any order." Sylvan
+ * Messenger, Goblin Ringleader, Mulch, Beast Hunt, Garruk's +1 and about twenty more.
+ *
+ * Nothing is chosen, so unlike the dig (`digGroup`) it is an effect, not a question: every revealed
+ * card that matches goes to the hand, revealed, and the rest go where the second sentence says. "In
+ * any order" puts them on the bottom in the order they were revealed, as `digRest`'s `bottom` does.
+ *
+ * The filter is a card type or several ("creature and land cards" is each card that is either,
+ * read by `graveyardTypeTest`), or one subtype: a creature type, which a changeling card has too
+ * (`cardHasSubtype`), or a basic land type. Read off the printed type line, as a card in a library
+ * has. "Cards of the chosen type" and "the top X cards" are refused.
+ */
+function revealKeepGroup(
+  clauses: readonly string[], at: number,
+): { readonly read: ReadEffect; readonly consumed: number } | null {
+  const reveals = /^reveal the top ([a-z]+) cards of your library$/i.exec(clauses[at]!.trim());
+  const keeps = /^put all (.+?) cards revealed this way into your hand and the rest (.+)$/i.exec(clauses[at + 1]?.trim() ?? '');
+  if (reveals === null || keeps === null) return null;
+  const count = WORD_NUMBERS[reveals[1]!.toLowerCase()];
+  if (count === undefined || count < 2) return null;
+  const restGoTo = digRest(keeps[2]!);
+  if (restGoTo === null || restGoTo === 'bottom-random') return null;
+  const words = keeps[1]!.trim();
+  const typed = graveyardTypeTest(words.replace(/\s+and\s+/gi, ' or '));
+  const subtype = /^[A-Z][a-z]+$/.test(words) && (isCreatureType(words) || LAND_SUBTYPE_WORDS.includes(words)) ? words : null;
+  if (typed === null && subtype === null) return null;
+  const matches = (def: CardDef | undefined): boolean => (typed !== null
+    ? typed(parseTypeLine(def?.typeLine))
+    : cardHasSubtype(def, subtype!));
+  return {
+    read: {
+      effect: (c) => {
+        const key = zoneKey(c.controller, 'library');
+        const top = listAt(c.state, key).slice(0, count);
+        const kept = top.filter((id) => matches(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']));
+        const rest = top.filter((id) => !kept.includes(id));
+        let next = moveToHand(c.state, kept);
+        for (const id of kept) next = withInstance(next, id, { revealed: true });
+        if (rest.length === 0) return next;
+        if (restGoTo === 'graveyard') return moveToGraveyard(next, rest);
+        const staying = listAt(next, key).filter((id) => !rest.includes(id));
+        return withZones(next, { [key]: [...staying, ...rest] });
+      },
+    },
+    consumed: 2,
+  };
+}
+
+/** The basic land types, as the subtype a reveal-and-keep may name ("all Island cards", D683). */
+const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+
+/**
  * The dig — "Look at the top three cards of your library. Put one of them into your hand and the
  * rest on the bottom of your library in any order." — read as the one question it is (D584).
  *
@@ -22510,7 +22563,7 @@ function composeEffects(
     const impulse = impulseDraw(clause, rest[at + 1]);
     if (impulse !== null) { parts.push(impulse); at++; continue; }
     // And the dig, which is two or three sentences that are one question (D584).
-    const dug = digGroup(rest, at, name);
+    const dug = digGroup(rest, at, name) ?? revealKeepGroup(rest, at);
     if (dug !== null) { parts.push(dug.read); at += dug.consumed - 1; continue; }
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**

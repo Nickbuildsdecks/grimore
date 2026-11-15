@@ -28628,3 +28628,36 @@ Faults injected by hand: 6 of 6 caught.
     engine tests: 4,633, all passing
 
 Coverage: 11,242 of 31,653 cards (+11), 30,440 of 59,306 lines (+13). Staples: 196 of 244 (+2).
+
+## D683 — reveal the top N, keep all of a kind
+
+"Reveal the top four cards of your library. Put all Elf cards revealed this way into your hand and
+the rest on the bottom of your library in any order." Sylvan Messenger, Goblin Ringleader, Mulch,
+Beast Hunt, Garruk, Caller of Beasts, Wrenn and Seven's +1, and about twenty more.
+
+How it is read: `revealKeepGroup` sits beside `digGroup` in the composition loop. Nothing is chosen,
+so it is an effect and not a question:
+- matching cards go to the hand, marked revealed;
+- the rest go to the graveyard, or to the bottom in revealed order (`digRest`'s reading of "in any
+  order").
+
+The filter is either of:
+- card types, read by `graveyardTypeTest` ("creature and land" means either);
+- one creature type (a changeling card matches through `cardHasSubtype`) or a basic land type.
+
+Refused: "cards of the chosen type", "the top X cards", and a random bottom order.
+
+Staples went from 196 to 197 (Sylvan Messenger).
+
+**Tests.** 4 engine tests:
+- every line reads;
+- an Elf and a changeling are kept out of four cards, the rest go to the bottom in order, and the
+  fifth card becomes the top;
+- lands are kept and the rest go to the graveyard;
+- "creature and land" keeps each card that is either.
+
+Faults injected by hand: 7 of 7 caught.
+
+    engine tests: 4,637, all passing
+
+Coverage: 11,255 of 31,653 cards (+13), 30,456 of 59,306 lines (+16). Staples: 197 of 244 (+1).
