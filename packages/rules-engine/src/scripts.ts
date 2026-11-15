@@ -12396,6 +12396,22 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    "Each player loses 2 life" / "Each player gains 2 life" (D670): the symmetrical forms, every
+    living seat including the controller, in turn order (which matters to nothing here, since life
+    changes do not ask questions).
+  */
+  const everyone = /^each player (loses|gains) (\d+) life$/i.exec(text);
+  if (everyone !== null) {
+    const amount = Number(everyone[2]);
+    const losing = everyone[1]!.toLowerCase() === 'loses';
+    return {
+      effect: (c) => c.state.seats.filter((seat) => !seat.eliminated).reduce(
+        (state, seat) => (losing ? loseLife(state, seat.index, amount) : gainLife(state, seat.index, amount)),
+        c.state,
+      ),
+    };
+  }
   const drained = /^each opponent loses (\d+) life(?: and you gain (\d+) life)?$/i.exec(text);
   if (drained !== null) {
     const lost = Number(drained[1]);

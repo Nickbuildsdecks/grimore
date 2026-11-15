@@ -45690,3 +45690,37 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,587, all passing
 
 Coverage: 11,113 of 31,653 cards (+14), 30,153 of 59,306 lines (+25). Staples: 186 of 244.
+
+## D670 — deck-construction keywords, and life for every player
+
+**Chosen from a new view of the work queue.** I dumped every unread line (`VERBOSE=1`), took the
+cards exactly one line short, and grouped them by that line. The tail is flat. Its biggest rows are
+keyword declarations: Backup (16), Banding (10), Enlist, Assist and Devour (9 each), and the partner
+family. "Partner" is on 110 lines, "Choose a Background" on 30, "Doctor's companion" on 27.
+
+**Deck-construction keywords** ("Partner", "Partner—<kind>", "Choose a Background", "Doctor's
+companion"):
+- Each decides which second commander a deck may have and does nothing once the game starts.
+- `customDeck`'s `partnersLegally` (D640) already enforces them.
+- `compileCard` now counts the line compiled and emits nothing, like a printed keyword.
+- "Partner with <name>" is not one of these: its reminder text is a real enter trigger (CR
+  702.124j), so it stays unread.
+- The bare "Friends forever" wording has no corpus lines, so it is not in the pattern; "Partner—
+  Friends forever" is, through the "Partner—<kind>" arm.
+- The D583 test that pinned Yasmin Khan's "Doctor's companion" as her one unread line now expects
+  none.
+
+**"Each player loses / gains N life"**: every living seat, the controller included. Before, only
+"each opponent loses" read.
+
+**Tests.**
+- 1 engine test in a pod of three: a conceded seat is untouched, and the caster loses and gains
+  with the rest.
+- 5 compile tests: four deck-construction lines compile with no script, and "Partner with" stays
+  unread.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,593, all passing
+
+Coverage: 11,142 of 31,653 cards (+29), 30,301 of 59,306 lines (+148). Staples: 186 of 244.

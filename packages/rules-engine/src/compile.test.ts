@@ -10877,6 +10877,29 @@ describe('"its mana value" needs an earlier target (D660)', () => {
   });
 });
 
+describe('deck-construction keywords are compiled and silent (D670)', () => {
+  const legend = (text: string) => compileCard({
+    name: 'Pair Thing', type_line: 'Legendary Creature — Human', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+  it.each([
+    ['Partner (You can have two commanders if both have partner.)'],
+    ['Partner—Survivors (You can have two commanders if both have this ability.)'],
+    ['Choose a Background (You can have a Background as a second commander.)'],
+    ["Doctor's companion (You can have two commanders if the other is the Doctor.)"],
+  ])('reads "%s" with nothing emitted', (text) => {
+    const read = legend(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect(read.script).toBeUndefined();
+  });
+  it('leaves "Partner with" unread, because its reminder is a real enter trigger', () => {
+    const read = legend('Partner with Other Thing (When this creature enters, target player may put Other Thing into their hand from their library, then shuffle.)');
+    expect(read.ok && read.unread.length).toBe(1);
+  });
+});
+
 describe('a costed mana ability with a spending restriction stays unread (D669)', () => {
   it('reads Castle Garenbrig\'s line as unread, because the payer could never use it', () => {
     const read = compileCard({

@@ -12657,6 +12657,30 @@ describe('mana in words, three of any one colour, and mana by an opponent\'s han
   });
 });
 
+describe('each player loses or gains life (D670)', () => {
+  const row = (name: string, text: string) => ({
+    name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [row('Test Toll', 'Each player loses 2 life.'), row('Test Feast', 'Each player gains 3 life.')];
+  const deck = customDeck({
+    id: 'toll', name: 'Toll',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  it('touches every living seat, the caster included, and not a seat that has left', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'toll', 1: 'toll', 2: 'toll' }, deckSpecs: { toll: deck },
+      hands: { 0: ['Test Toll', 'Test Feast'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'concede', by: 2 });
+    const before = [life(s, 0), life(s, 1), life(s, 2)];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Toll') })));
+    expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0]! - 2, before[1]! - 2, before[2]]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Feast') })));
+    expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0]! + 1, before[1]! + 1, before[2]]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -43590,10 +43614,11 @@ describe('playing a card out of exile until a deadline (D583)', () => {
       const compiled = compileCard(row as never);
       expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
     }
-    // Yasmin Khan's other line is a deck-building rule with nothing to do in a game, and is the
-    // one line of hers left unread; the ability this describe is about is read.
+    // Yasmin Khan's other line is a deck-building rule with nothing to do in a game. It was the one
+    // line of hers left unread until D670 read it as compiled-and-silent (`partnersLegally`
+    // enforces it at deck building), so she now reads whole.
     const yasmin = compileCard(YASMIN as never);
-    expect(yasmin.ok && yasmin.unread.map((u) => u.line)).toEqual(["Doctor's companion"]);
+    expect(yasmin.ok && yasmin.unread.map((u) => u.line)).toEqual([]);
   });
 
   it('exiles the top two cards face up and tells the caster they may play them', () => {

@@ -871,6 +871,19 @@ function compileSingle(row: CardDataRow): Compilation {
       trigger, emitted here from the part on its own. Asked before the printed-line check, which
       would otherwise count the line compiled and emit no ward at all.
     */
+    /*
+      Deck-construction keywords (D670): "Partner", "Partner—Survivors" (and "Partner—Friends
+      forever"), "Choose a Background", "Doctor's companion". Each says which second commander a deck may have and does
+      nothing once the game starts, and `customDeck`'s `partnersLegally` (D640) is where it is
+      enforced — so the line is compiled and emits nothing, like a printed keyword. "Partner with
+      <name>" is **not** one of them: its reminder text is a real enter trigger (CR 702.124j), which
+      nothing here reads yet.
+    */
+    if (/^(?:partner|partner\s*[—-]\s*[a-z' ]+|choose a background|doctor['’]s companion)$/i
+      .test(line.replace(/\([^)]*\)/g, '').trim())) {
+      compiled.push(line);
+      continue;
+    }
     const wardList = wardInList(line, def.name);
     if (wardList !== null) {
       if (merge(built, wardList) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
