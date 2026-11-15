@@ -25697,6 +25697,29 @@ function interveningConditionRows(
     "An opponent controls four or more lands" (D685): Tectonic Edge's activation condition, and the
     same count asked of each opponent in turn; one is enough, and a seat out of the game is none.
   */
+  /*
+    Guardian Project (D701): "if it doesn't have the same name as another creature you control or
+    a creature card in your graveyard". "It" is the creature that entered (`c.subject`), named by
+    its card; the other creatures are read live, and a token copy has its original's name.
+  */
+  if (/^it doesn't have the same name as another creature you control or a creature card in your graveyard$/i.test(text)) {
+    return (c) => {
+      const subject = c.subject === undefined ? undefined : c.state.instances[c.subject];
+      if (subject === undefined) return false;
+      const named = characteristicsOf(c.state, subject).name;
+      const another = listAt(c.state, zoneKey(c.controller, 'battlefield')).some((id) => {
+        const inst = c.state.instances[id];
+        if (id === c.subject || inst === undefined) return false;
+        const ch = characteristicsOf(c.state, inst);
+        return ch.isCreature && ch.name === named;
+      });
+      const buried = listAt(c.state, zoneKey(c.controller, 'graveyard')).some((id) => {
+        const def = c.state.cardDefs[c.state.instances[id]?.defKey ?? ''];
+        return def !== undefined && def.name === named && hasType(parseTypeLine(def.typeLine), 'creature');
+      });
+      return !another && !buried;
+    };
+  }
   const theirs = /^an opponent controls (\w+) or more (.+)$/i.exec(text);
   if (theirs !== null) {
     const atLeast = number(theirs[1]!);

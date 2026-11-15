@@ -14397,6 +14397,52 @@ describe('an offered cast pays the offer\'s own cost, X included (D700)', () => 
   });
 });
 
+describe('Guardian Project: a draw for a creature with a new name (D701)', () => {
+  const ROWS = [
+    { name: 'Test Project', type_line: 'Enchantment', oracle_text: "Whenever a nontoken creature you control enters, if it doesn't have the same name as another creature you control or a creature card in your graveyard, draw a card.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Elk', type_line: 'Creature — Elk', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'project', name: 'Project',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], graveyard: string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'project', 1: 'project' }, deckSpecs: { project: deck.deck },
+      hands: { 0: ['Test Bear'] }, battlefield: { 0: ['Test Project', ...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const buried = graveyard.map((name) => ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === name)!);
+    return {
+      ...s,
+      zones: { ...s.zones, '0:library': ids(s, 0, 'library').filter((id) => !buried.includes(id)), '0:graveyard': buried },
+      instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, buried.includes(id) ? { ...inst, zone: 'graveyard' as const } : inst])),
+    };
+  };
+  const drawsFor = (s: GameState) => {
+    const before = ids(s, 0, 'hand').length;
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') });
+    for (let i = 0; i < 8 && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return ids(next, 0, 'hand').length - (before - 1);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('draws for a name not already on the battlefield or in the graveyard', () => {
+    expect(drawsFor(table(['Test Elk']))).toBe(1);
+  });
+
+  it('not when another creature you control has the name, nor a creature card in your graveyard', () => {
+    expect(drawsFor(table(['Test Bear']))).toBe(0);
+    expect(drawsFor(table([], ['Test Bear']))).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

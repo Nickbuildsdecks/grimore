@@ -46649,3 +46649,28 @@ Faults injected by hand: 1 of 1 caught (the old printed-cost reading).
     engine tests: 4,694, all passing
 
 Coverage unchanged: 11,369 of 31,653 cards, 30,665 of 59,306 lines. Staples: 213 of 244.
+
+## D701 — Guardian Project: a draw for a creature with a new name
+
+"Whenever a nontoken creature you control enters, if it doesn't have the same name as another
+creature you control or a creature card in your graveyard, draw a card."
+
+The trigger was already read; the condition is new in `interveningConditionFor`. "It" is the
+entering creature (`c.subject`). Its name is compared with:
+- the other creatures you control, read live, so a token copy carries its original's name;
+- the creature cards in your graveyard.
+
+The condition is asked as the trigger fires and again as it resolves.
+
+Staples went from 213 to 214 (Guardian Project).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- a Bear beside an Elk draws;
+- a Bear beside another Bear, or with a Bear in the graveyard, does not.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,697, all passing
+
+Coverage: 11,370 of 31,653 cards (+1), 30,666 of 59,306 lines (+1). Staples: 214 of 244 (+1).
