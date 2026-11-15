@@ -472,7 +472,7 @@ function playAction(
   */
   const COST_FLAGS = [
     "kicked", "buyback", "flashback", "escape", "retrace", "faceDown", "foretold", "offered",
-    "evoked", "dashed", "bestowed", "spectacled", "overloaded",
+    "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

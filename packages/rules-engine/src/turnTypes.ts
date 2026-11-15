@@ -1699,6 +1699,12 @@ export interface AutoCastAction {
    */
   readonly overloaded?: boolean;
   /**
+   * Cast it for nothing because its caster controls a commander (D653): "If you control a
+   * commander, you may cast this spell without paying its mana cost." Refused on a card without the
+   * line or when no commander of the caster's is on the battlefield.
+   */
+  readonly commanderFree?: boolean;
+  /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *
    * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather

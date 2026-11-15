@@ -3190,6 +3190,12 @@ export interface CardScript {
    *
    * It is dearer than printed, like the kicker, and replaces the printed cost, unlike the kicker.
    */
+  /**
+   * "If you control a commander, you may cast this spell without paying its mana cost." (D653) —
+   * Fierce Guardianship, Deflecting Swat, Deadly Rollick, Flawless Maneuver, Obscuring Haze. An
+   * alternative cost of nothing, offered while the caster controls a commander on the battlefield.
+   */
+  readonly freeWithCommander?: true;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

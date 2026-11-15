@@ -11323,6 +11323,10 @@ function notPartOfTheResolution(line: string): string | null {
 function spellStaticFromLine(line: string): Record<string, unknown> | null {
   const text = plain(line).trim();
   if (/^This spell can't be countered\.?$/i.test(text)) return { cantBeCountered: true };
+  // D653: see `CardScript.freeWithCommander`.
+  if (/^If you control a commander, you may cast this spell without paying its mana cost\.?$/i.test(text)) {
+    return { freeWithCommander: true };
+  }
   return null;
 }
 

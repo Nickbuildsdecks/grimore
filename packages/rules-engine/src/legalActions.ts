@@ -249,6 +249,8 @@ export interface LegalPlay {
    * candidates, because an overloaded spell targets nothing.
    */
   readonly overloaded?: boolean;
+  /** Set on the play that casts the card for nothing because you control a commander (D653). */
+  readonly commanderFree?: boolean;
   /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
@@ -637,6 +639,11 @@ export function crewPlan(
  * not enough. Untapped permanents of the kind, the source last — so an ability on a creature that
  * may tap itself does so only when nothing else will — and otherwise the weakest first, crew's rule.
  */
+/** Whether this seat controls a commander on the battlefield (D653): "if you control a commander". */
+export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => state.instances[id]?.isCommander === true);
+}
+
 /** The permanents whose static abilities this seat may lean on now: its own, face up, abilities intact. */
 function staticsOf(state: GameState, seat: SeatIndex): readonly CardScript[] {
   const out: CardScript[] = [];
@@ -1659,6 +1666,17 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           (CR 702.96a) leaves a spell that points at nothing, so this play asks the player no
           questions and gives a ward, a redirection or a protection trick nothing to answer.
         */
+        /*
+          And "if you control a commander, you may cast this spell without paying its mana cost"
+          (D653): an alternative cost of nothing, offered while one of the caster's commanders —
+          or anybody's commander the caster controls — is on the battlefield.
+        */
+        ...(script?.freeWithCommander !== true || !controlsACommander(state, seat) ? [] : [{
+          flag: 'commanderFree' as const,
+          cost: '{0}',
+          note: 'commander bonus (free, because you control a commander)',
+          specs: specsFor(script),
+        }]),
         ...(script?.overload === undefined ? [] : [{
           flag: 'overloaded' as const,
           cost: script.overload.cost,

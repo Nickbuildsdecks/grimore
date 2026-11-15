@@ -45079,3 +45079,38 @@ Faults injected by hand: 8 of 8 caught. The ability-loss guard survived at first
     engine tests: 4,525, all passing
 
 Coverage: 10,889 of 31,653 cards (+13), 29,718 of 59,306 lines (+23). Staples: 153 of 244.
+
+## D653 — free if you control a commander
+
+"If you control a commander, you may cast this spell without paying its mana cost." is printed on
+5 legal cards: Fierce Guardianship, Deflecting Swat, Deadly Rollick, Flawless Maneuver and Obscuring
+Haze. The first three are Commander staples.
+
+**An alternative cost of nothing**, the sixth in the family evoke, dash, bestow, spectacle and
+overload share.
+- `CardScript.freeWithCommander`, read by `spellStaticFromLine`.
+- `legalActions` offers a row, "Cast X for its commander bonus (free, because you control a
+  commander)", only while `controlsACommander`: a commander instance on the caster's battlefield.
+  The command zone does not count.
+- `AutoCastAction.commanderFree` is validated with the other five: one alternative cost per cast,
+  from the hand, on a card with the line, and refused when the condition fails. It pays `{0}`.
+- The bot passes the flag and keys the play on it. A guard test — every field a play and a cast
+  share is one the bot passes on — caught the omission before the commit.
+- The web client sends it with the row, as it sends `evoked`.
+
+**Not done:** Deflecting Swat's other line, "You may choose new targets for target spell or
+ability", which is a different reader.
+
+**Tests.**
+- 2 engine tests at a Commander table:
+  - with the commander on the battlefield the free row is offered and the cast exiles its target
+    with no mana spent;
+  - with it in the command zone the row is absent and the flag refused; a card without the line
+    is never free.
+- 1 web test.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,527, all passing
+
+Coverage: 10,892 of 31,653 cards (+3), 29,726 of 59,306 lines (+8). Staples: 155 of 244.

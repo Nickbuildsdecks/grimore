@@ -2210,6 +2210,15 @@ describe("a shock land's two rows (D587)", () => {
       .toEqual({ type: "auto:playLand", card: "grove", choose: "red" })
   })
 
+  it("sends the commander's free cast with the row that offers it (D653)", () => {
+    const freeRow = play({
+      kind: "cast", card: "rollick", name: "Deadly Rollick", manaCost: "{0}", targetSpecs: [], candidates: [],
+      description: "Cast Deadly Rollick for its commander bonus (free, because you control a commander)", commanderFree: true,
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: freeRow }).action)
+      .toMatchObject({ type: "auto:cast", card: "rollick", commanderFree: true })
+  })
+
   it("and nothing with the row that does not, so the land enters tapped", () => {
     const tapped = land({ description: "Play Blood Crypt tapped" })
     expect(arenaReducer(IDLE, { kind: "choosePlay", play: tapped }).action)

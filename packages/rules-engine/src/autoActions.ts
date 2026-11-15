@@ -53,7 +53,7 @@ import { FORETELL_COST, MORPH_COST, isChoiceDecision, type CardScript, type Targ
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -496,6 +496,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     `completeResolution` reads it.
   */
   const overloaded = action.overloaded === true;
+  // And the commander's free cast (D653), the sixth: validated with the five for the same reasons.
+  const commanderFree = action.commanderFree === true;
   /*
     And rebound, which is not an alternative cost at all and so is not validated with the five
     above: nothing is announced, nothing is chosen, and the player is not asked. It is a fact about
@@ -506,9 +508,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     not flagged, so it does not rebound again. See `StackObject.rebounding`.
   */
   const rebounding = script?.rebound === true && inst.zone === 'hand' && inst.zoneSeat === action.by;
-  if (evoked || dashed || bestowed || spectacled || overloaded) {
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
-      : spectacled ? 'spectacle' : 'overload';
+      : spectacled ? 'spectacle' : overloaded ? 'overload' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -518,17 +520,21 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
-      : bestowed ? script?.bestow : spectacled ? script?.spectacle : script?.overload) === undefined) {
+      : bestowed ? script?.bestow : spectacled ? script?.spectacle
+        : overloaded ? script?.overload : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
       && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)) {
       throw new EngineError('RULE_NOT_APPLICABLE',
         'the spectacle cost is only payable if an opponent lost life this turn');
+    }
+    if (commanderFree && !controlsACommander(state, action.by)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'you do not control a commander');
     }
     if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
@@ -680,6 +686,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // alternative cost, so it replaces rather than adds, which is the whole difference
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
+                  // And the commander's free cast (D653): nothing at all.
+                  : commanderFree ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.

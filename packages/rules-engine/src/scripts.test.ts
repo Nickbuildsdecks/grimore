@@ -7867,6 +7867,11 @@ describe('deck coverage', () => {
         Driven at runtime by "the top of the library: revealed, and its lands played (D649)": the top
         card is shown to an opponent only while Courser is out, and a land there — only the top one —
         is a land drop.
+      - `script freeWithCommander` (D653): 5 legal cards print "If you control a commander, you may
+        cast this spell without paying its mana cost" (Fierce Guardianship, Deadly Rollick, Deflecting
+        Swat, Flawless Maneuver, Obscuring Haze). Driven at runtime by "free if you control a commander
+        (D653)": offered and cast for nothing with the commander out, refused with it in the command
+        zone, and never on a card without the line.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7884,6 +7889,7 @@ describe('deck coverage', () => {
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
       'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script freeWithCommander',
     ]);
 
     const declared = [
@@ -11585,6 +11591,57 @@ describe('doubled tokens and replaced counters (D652)', () => {
     expect(addCounters(s, mine, 'regeneration', 1).instances[mine]!.counters['regeneration']).toBe(1);
     const four = addCounters(s, mine, '+1/+1', 1);
     expect(addCounters(four, mine, '+1/+1', -1).instances[mine]!.counters['+1/+1']).toBe(3);
+  });
+});
+
+describe('free if you control a commander (D653)', () => {
+  const ROWS = [
+    { name: 'Test Rollick', type_line: 'Instant', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal',
+      oracle_text: 'If you control a commander, you may cast this spell without paying its mana cost.\nExile target creature.' },
+    { name: 'Test Leader', type_line: 'Legendary Creature — Human', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal',
+      oracle_text: '', power: '2', toughness: '2' },
+    { name: 'Test Plain', type_line: 'Instant', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal', oracle_text: 'Exile target creature.' },
+  ];
+  const deck = customDeck({
+    id: 'rollick', name: 'Rollick', commander: 'Test Leader',
+    entries: [{ name: 'Test Rollick', count: 2 }, { name: 'Test Plain', count: 2 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 50 }],
+    data: ROWS,
+  }).deck;
+  const table = (leaderOut: boolean) => {
+    let s = advanceTo(arena({
+      format: 'edh', decks: { 0: 'rollick', 1: 'rollick' }, deckSpecs: { rollick: deck },
+      hands: { 0: ['Test Rollick', 'Test Plain'] }, battlefield: { 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (leaderOut) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'command', 'Test Leader'), toZone: 'battlefield' });
+    return s;
+  };
+  const free = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', name) && p.commanderFree === true);
+
+  it('is offered for nothing while your commander is out, and casts with no mana at all', () => {
+    let s = table(true);
+    const row = free(s, 'Test Rollick');
+    expect(row?.description).toBe('Cast Test Rollick for its commander bonus (free, because you control a commander)');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rollick'), commanderFree: true, targets: [{ kind: 'card', id: bears }],
+    })));
+    expect(s.instances[bears]!.zone).toBe('exile');
+  });
+
+  it('is not offered with the commander in the command zone, and refused if sent', () => {
+    const s = table(false);
+    expect(free(s, 'Test Rollick')).toBeUndefined();
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rollick'), commanderFree: true,
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }],
+    })).toMatch(/do not control a commander/);
+    // And a card without the line never casts free, commander or not.
+    const out = table(true);
+    expect(free(out, 'Test Plain')).toBeUndefined();
+    expect(refusal(out, {
+      type: 'auto:cast', by: 0, card: find(out, 0, 'hand', 'Test Plain'), commanderFree: true,
+      targets: [{ kind: 'card', id: find(out, 1, 'battlefield', 'Grizzly Bears') }],
+    })).toMatch(/has no free cast/);
   });
 });
 
