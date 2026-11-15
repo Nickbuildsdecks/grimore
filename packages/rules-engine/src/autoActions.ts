@@ -49,7 +49,7 @@ import { abilityTargetSpecs } from './scripts.js';
   with a hand-written script this is exactly `scriptFor(def.name)`, so nothing in the pool changes.
 */
 import { scriptForCard } from './derive.js';
-import { FORETELL_COST, MORPH_COST, isChoiceDecision, type CardScript, type TargetSpec } from './scriptTypes.js';
+import { FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
@@ -1965,7 +1965,9 @@ function activate(
   if (ability.produces !== undefined) {
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what
     // makes tapping a land in response to something work at all.
-    for (const type of ability.produces) next = addToPool(next, action.by, type, 1);
+    // A counted ability's mana is read now, before anything moves (D662): Gaea's Cradle.
+    const made = producedBy(state, ability, inst.id, action.by);
+    for (const type of made) next = addToPool(next, action.by, type, 1);
     /*
       **A mana ability may do more than make mana** (CR 605.1a), and until D497 this branch ran the
       mana and returned, so an `effect` beside `produces` was silently dropped. Nothing in the pool
@@ -1986,8 +1988,8 @@ function activate(
     next = settle(next, state);
     return {
       state: next,
-      message: `${seatName(state, action.by)} taps ${ch.name} for ${ability.produces.join('')}`,
-      data: { card: inst.id, produced: [...ability.produces] },
+      message: `${seatName(state, action.by)} taps ${ch.name} for ${made.length === 0 ? 'nothing' : made.join('')}`,
+      data: { card: inst.id, produced: [...made] },
     };
   }
 

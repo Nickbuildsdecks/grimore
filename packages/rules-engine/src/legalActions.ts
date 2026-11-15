@@ -30,7 +30,7 @@ import {
 import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import {
-  FORETELL_COST, MORPH_COST, isChoiceDecision, morphCostText,
+  FORETELL_COST, MORPH_COST, isChoiceDecision, morphCostText, producedBy,
   type AbilityCost, type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
 import { BESTOW_TARGET, legalTargets } from './targeting.js';
@@ -1058,9 +1058,12 @@ export function manaSources(
       */
       const energyCost = ability.cost.energy ?? 0;
       if (energyCost > 0 && energyOf(state, seat) < energyCost) continue;
+      // A counted ability (D662) offers what it would make now, and nothing when that is zero.
+      const made = producedBy(state, ability, id, seat);
+      if (made.length === 0) continue;
       usable.push({
         index: i,
-        produces: ability.produces as readonly ManaType[],
+        produces: made,
         life: cost,
         energy: energyCost,
         sacrifices: ability.cost.sacrificeSelf === true,
@@ -1191,7 +1194,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       // because a player looking at Mana Confluence already counts it as a land.
       const life = ability.cost.life ?? 0;
       if (life > 0 && (state.seats[seat]?.life ?? 0) <= life) continue;
-      for (const type of ability.produces) pool = addMana(pool, type as ManaType, 1);
+      for (const type of producedBy(state, ability, id, seat)) pool = addMana(pool, type as ManaType, 1);
     }
   }
   return pool;

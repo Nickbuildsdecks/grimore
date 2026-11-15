@@ -12161,6 +12161,48 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     has already matched would be a check that cannot fail, which this file has caught itself writing
     three times (D386, D394, D398).
   */
+  /*
+    "Add one mana of any color" out of a trigger or a spell (D663): Lotus Cobra's landfall, Birds of
+    Paradise's cousins that are not mana abilities. A question with the five colours, answered as the
+    ability resolves; the bot names the colour its hand asks for most (pips in the mana costs it
+    holds), white when nothing does.
+  */
+  if (/^add one mana of any colou?r$/i.test(text)) {
+    const words: Readonly<Record<string, ManaType>> = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G' };
+    return {
+      decisions: [{
+        who: 'controller', prompt: 'Add one mana of which color?', options: Object.keys(words),
+        best: (state, chooser) => {
+          const pips: Record<string, number> = {};
+          for (const id of listAt(state, zoneKey(chooser, 'hand'))) {
+            const cost = state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost ?? '';
+            for (const m of cost.matchAll(/\{([WUBRG])\}/g)) pips[m[1]!] = (pips[m[1]!] ?? 0) + 1;
+          }
+          const top = Object.entries(words).sort((a, b) => (pips[b[1]] ?? 0) - (pips[a[1]] ?? 0))[0];
+          return top === undefined || (pips[top[1]] ?? 0) === 0 ? undefined : top[0];
+        },
+      }],
+      effect: (c) => {
+        const colour = words[chosenOption(c) ?? ''];
+        return colour === undefined ? c.state : addToPool(c.state, c.controller, colour as Parameters<typeof addToPool>[2], 1);
+      },
+    };
+  }
+  /*
+    "Create a Food token or a Treasure token" (D663): Tireless Provisioner. Each half is read as the
+    token clause it is; the choice is the controller's, the first named by default.
+  */
+  const eitherToken = /^create an? ([A-Z]\w*) token or an? ([A-Z]\w*) token$/.exec(text);
+  if (eitherToken !== null) {
+    const halves = [eitherToken[1]!, eitherToken[2]!].map((kind) => readEffect(`create a ${kind} token`, name, null));
+    if (halves.every((half) => half !== null && (half.decisions ?? []).length === 0 && (half.targets ?? []).length === 0)) {
+      const [first, second] = halves as [ReadEffect, ReadEffect];
+      return {
+        decisions: [{ who: 'controller', prompt: 'Which token?', options: [eitherToken[1]!, eitherToken[2]!] }],
+        effect: (c) => (chosenOption(c) === eitherToken[2] ? second : first).effect({ ...c, decisions: [] }),
+      };
+    }
+  }
   const added = /^add ((?:\{[WUBRGC]\})+)$/i.exec(text);
   if (added !== null) {
     const symbols = [...added[1]!.toUpperCase().matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1]!);

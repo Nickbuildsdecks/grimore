@@ -4463,9 +4463,10 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       /*
         The regex is the validation and admits only the six symbols `addToPool` takes. `{2}` is
         generic mana, which is a thing a *cost* has and not a thing a pool holds, so the clause is
-        refused rather than read as some colour.
+        refused rather than read as some colour. "Add one mana of any color." was in this list until
+        D663, which reads it as a question with the five colours — a colour the pool can hold.
       */
-      for (const text of ['Add {2}.', 'Add {E}.', 'Add one mana of any color.']) {
+      for (const text of ['Add {2}.', 'Add {E}.']) {
         const odd = compileCard({
           name: 'Odd Source', type_line: 'Creature — Elemental', mana_cost: '{R}{G}', cmc: 2,
           colors: ['R', 'G'], power: '2', toughness: '2',

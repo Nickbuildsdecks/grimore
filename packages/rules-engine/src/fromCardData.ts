@@ -83,8 +83,10 @@
  */
 import type { CardDef } from './cards.js';
 import {
-  commanderIdentity, isCreatureType, parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
+  characteristicsOf, commanderIdentity, hasSubtype, isCreatureType, parseTypeLine, hasType, printedKeywords,
+  shortName, SELF_TYPE_WORDS,
 } from './characteristics.js';
+import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
 import { dealDamage, drawLater } from './effects.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
@@ -247,6 +249,11 @@ function isEntersTappedLine(line: string, name: string): boolean {
 interface ManaLine {
   readonly mode: 'choice' | 'sum';
   readonly produces: readonly ManaType[];
+  /**
+   * "Add {G} **for each creature you control**" (D662): how many times `produces` is made, and the
+   * printed phrase for the description. See `AbilityDef.producesTimes`.
+   */
+  readonly per?: { readonly count: NonNullable<AbilityDef['producesTimes']>; readonly phrase: string };
   /** What the ability costs, parsed from the text before the colon. */
   readonly cost: ManaAbilityCost;
   /**
@@ -503,6 +510,18 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     }
   }
 
+  // A count (D662): one symbol "for each" thing, read off the board as the mana is made.
+  const counted = /^(\{[WUBRGC]\}) for each (.+)$/i.exec(body);
+  if (counted !== null) {
+    const count = manaCount(counted[2]!.trim(), name);
+    const symbol = parseSymbolRun(counted[1]!);
+    if (count === null || symbol === null || symbol.length !== 1) return null;
+    return {
+      mode: 'sum', produces: symbol, cost, printed, damage,
+      per: { count, phrase: counted[2]!.trim() },
+      ...(spendOnly === undefined ? {} : { spendOnly }),
+    };
+  }
   // `one mana of any color` — checked first, because it contains none of the symbols below.
   if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
   // "One mana of the chosen color" (D642), alone or after one printed colour (the Thriving lands).
@@ -613,12 +632,52 @@ const painEffect = (damage?: number): Pick<AbilityDef, 'effect'> => (
     }
 );
 
+/**
+ * What a counted mana line counts (D662), as `AbilityDef.producesTimes`, or `null` for a phrase this
+ * does not read. Permanents on the battlefield by card type or capitalised subtype ("creature you
+ * control", "Elf you control", "Swamp you control", "Locus on the battlefield"), and a kind of
+ * counter on the source itself ("charge counter on ~"). Live characteristics, so an animated land is
+ * a creature and a changeling is an Elf.
+ */
+function manaCount(phrase: string, name: string): NonNullable<AbilityDef['producesTimes']> | null {
+  const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const short = shortName(name);
+  const self = `(?:${escape(name)}|${short === null ? '' : `${escape(short)}|`}this (?:artifact|creature|land|enchantment|permanent))`;
+  const counters = new RegExp(`^(charge|\\+1/\\+1|storage) counter on ${self}$`, 'i').exec(phrase);
+  if (counters !== null) {
+    const key = counters[1]!.toLowerCase();
+    return (state, source) => state.instances[source]?.counters[key] ?? 0;
+  }
+  const board = /^(creature|artifact|land|enchantment|[A-Z][A-Za-z'-]*) (you control|on the battlefield)$/.exec(phrase);
+  if (board === null) return null;
+  const word = board[1]!;
+  const typed = /^[a-z]/.test(word);
+  if (!typed && !isCreatureType(word) && !/^(Plains|Island|Swamp|Mountain|Forest|Food|Clue|Treasure|Gate|Locus)$/.test(word)) return null;
+  const yours = board[2] === 'you control';
+  return (state, _source, controller) => {
+    let n = 0;
+    for (const seat of state.seats) {
+      if (yours && seat.index !== controller) continue;
+      for (const id of state.zones?.[zoneKey(seat.index, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst === undefined) continue;
+        const line = characteristicsOf(state, inst).typeLine;
+        if (typed ? hasType(line, word) : hasSubtype(line, word)) n += 1;
+      }
+    }
+    return n;
+  };
+}
+
 /** The one ability a sum line buys: one tap, several mana, exactly as the hand-written Sol Ring. */
 function sumAbility(line: ManaLine): AbilityDef {
   return {
     cost: line.cost,
-    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`,
+    description: line.per !== undefined
+      ? `${line.printed}: Add {${line.produces[0]}} for each ${line.per.phrase}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`
+      : `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`,
     produces: [...line.produces],
+    ...(line.per === undefined ? {} : { producesTimes: line.per.count }),
     ...painEffect(line.damage),
     ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
   };

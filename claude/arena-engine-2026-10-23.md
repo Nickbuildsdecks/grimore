@@ -27955,3 +27955,67 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,563, all passing
 
 Coverage: 11,020 of 31,653 cards (+4), 29,970 of 59,306 lines (+4). Staples: 173 of 244 (+2).
+
+## D662 — mana for each thing you control
+
+"{T}: Add {G} for each creature you control" (Gaea's Cradle), "… for each Elf you control" (Elvish
+Archdruid), "… for each Elf on the battlefield" (Priest of Titania), "{T}: Add {C} for each charge
+counter on ~" (Everflowing Chalice). A mana line had a fixed list of mana until now. Staples went
+from 173 to 174 (the Cradle).
+
+**Engine.**
+- New field `AbilityDef.producesTimes`, a count read off the board.
+- New function `producedBy(state, ability, source, controller)` is the one reader. It returns
+  `produces` repeated that many times; a count below zero makes nothing.
+- Activation adds `producedBy`'s mana and logs it.
+- `manaSources` offers what the source would make now and skips it at zero, so the auto-payer never
+  taps a Cradle for nothing.
+- `potentialMana` counts it.
+
+**Compiler.** `parseManaLine` reads a single symbol followed by "for each …" as a sum line with a
+count (`ManaLine.per`). `manaCount` reads two kinds of phrase:
+- permanents by card type or capitalised subtype, "you control" or "on the battlefield", using live
+  characteristics;
+- a charge, +1/+1 or storage counter on the source itself.
+
+**Not done:** counted mana whose cost starts with mana ("{2}, {T}: Add {B} for each Swamp you
+control", Cabal Coffers; the mana-line pattern only takes a cost starting with {T}), and counts of
+cards in hand or drawn this turn.
+
+**Tests.** 3 engine tests:
+- the Cradle shows and makes three green with three creatures, the opponent's not counted;
+- it pays for a three-mana spell alone, and with no creatures it offers no mana and is not a
+  source;
+- the Chalice counts its own charge counters, and an Elder counts its controller's Elves only.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 4,566 at D662's own run (the gate ran with D663, below)
+
+Coverage: 11,033 of 31,653 cards (+13), 29,988 of 59,306 lines (+18). Staples: 174 of 244 (+1).
+
+## D663 — Lotus Cobra's mana of any color, and a choice of tokens
+
+Two clause readers in `untargetedEffect`, for a trigger or a spell (a mana ability's "Add one mana
+of any color" is read by the mana-line parser, as before). Staples went from 174 to 176: Lotus
+Cobra and Tireless Provisioner.
+
+- **"Add one mana of any color"**: a question with the five colour names, answered as the ability
+  resolves, then `addToPool`. The `best` hint names the colour with the most pips among the mana
+  costs in the chooser's hand, and none when the hand asks for nothing. The D386-era row in
+  compile.test.ts that listed this clause as "mana a pool cannot hold" is retired, because the
+  answer is a colour the pool can hold. `{2}` and `{E}` stay refused.
+- **"Create a Food token or a Treasure token"**: each half is read as the token clause it is, and
+  must ask and target nothing. The choice is the controller's, with the first named token as the
+  default.
+
+**Tests.** 3 engine tests:
+- a land drop under Lotus Cobra asks for a colour and adds exactly that;
+- the bot names blue with a {U}{U} card in hand;
+- the Provisioner makes the token named and not the other, both ways.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,569, all passing
+
+Coverage: 11,042 of 31,653 cards (+9), 30,001 of 59,306 lines (+13). Staples: 176 of 244 (+2).

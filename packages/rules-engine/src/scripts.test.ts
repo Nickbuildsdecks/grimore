@@ -12265,6 +12265,102 @@ describe('Ophiomancer\'s "if you control no Snakes", and Seedborn Muse (D661)', 
   });
 });
 
+describe('mana for each thing you control (D662)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Cradle', 'Legendary Land', '{T}: Add {G} for each creature you control.'),
+    row('Test Chalice', 'Artifact', '{T}: Add {C} for each charge counter on Test Chalice.'),
+    row('Test Elder', 'Creature — Elf Druid', '{T}: Add {G} for each Elf you control.', '{0}', ['1', '1']),
+    { ...row('Test Three', 'Sorcery', 'Draw a card.', '{2}{G}'), cmc: 3 },
+  ];
+  const deck = customDeck({
+    id: 'cradle', name: 'Cradle',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'cradle', 1: 'cradle' }, deckSpecs: { cradle: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Gaea\'s Cradle taps for one green per creature you control, counted as it is tapped', () => {
+    let s = table([], ['Test Cradle', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears'], ['Grizzly Bears']);
+    expect(potentialMana(s, 0).G).toBe(3);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Cradle'), abilityIndex: 0 });
+    expect(s.pools['0']!.G).toBe(3);
+  });
+
+  it('pays for a three-mana spell on its own, and offers nothing with no creatures', () => {
+    let s = table(['Test Three'], ['Test Cradle', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears']);
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Three'))).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Three') })));
+    expect(countOf(s, 0, 'graveyard', 'Test Three')).toBe(1);
+    const empty = table(['Test Three'], ['Test Cradle'], ['Grizzly Bears']);
+    expect(potentialMana(empty, 0).G ?? 0).toBe(0);
+    expect(manaSources(empty, 0).some((entry) => entry.key === find(empty, 0, 'battlefield', 'Test Cradle'))).toBe(false);
+  });
+
+  it('counts the source\'s own counters, and a type among your permanents only', () => {
+    let s = table([], ['Test Chalice', 'Test Elder', 'Test Elder'], ['Test Elder']);
+    const chalice = find(s, 0, 'battlefield', 'Test Chalice');
+    s = addCounters(s, chalice, 'charge', 2);
+    expect(potentialMana(s, 0).C).toBe(2);
+    // Two Elves of seat 0's, not the opponent's: two per untapped Elder that is not summoning sick.
+    s = apply(s, { type: 'auto:activate', by: 0, card: ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Test Elder')!, abilityIndex: 0 });
+    expect(s.pools['0']!.G).toBe(2);
+  });
+});
+
+describe('Lotus Cobra\'s mana of any color, and a choice of tokens (D663)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Cobra', 'Creature — Snake', 'Landfall — Whenever a land you control enters, add one mana of any color.', '{0}', ['2', '1']),
+    row('Test Provisioner', 'Creature — Elf Scout', 'Landfall — Whenever a land you control enters, create a Food token or a Treasure token.', '{0}', ['3', '2']),
+    { ...row('Test Blue', 'Sorcery', 'Draw a card.', '{U}{U}'), cmc: 2 },
+  ];
+  const deck = customDeck({
+    id: 'cobra', name: 'Cobra',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'cobra', 1: 'cobra' }, deckSpecs: { cobra: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const land = (s: GameState) => passBoth(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') }));
+
+  it('a land drop asks for a colour and adds that one mana', () => {
+    let s = land(table(['Forest'], ['Test Cobra']));
+    expect(s.pendingDecision?.options).toEqual(['White', 'Blue', 'Black', 'Red', 'Green']);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Red' });
+    expect(s.pools['0']!.R).toBe(1);
+    expect(s.pools['0']!.W ?? 0).toBe(0);
+  });
+
+  it('the bot names the colour its hand asks for', () => {
+    const s = land(table(['Forest', 'Test Blue'], ['Test Cobra']));
+    expect(botAction(s, 0)).toEqual({ type: 'auto:decide', by: 0, cards: [], option: 'Blue' });
+  });
+
+  it('Tireless Provisioner makes the token named, Food by default', () => {
+    let s = land(table(['Forest'], ['Test Provisioner']));
+    expect(s.pendingDecision?.options).toEqual(['Food', 'Treasure']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Treasure' }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Treasure');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Food');
+    let t = land(table(['Forest'], ['Test Provisioner']));
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [], option: 'Food' }));
+    expect(namesIn(t, 0, 'battlefield')).toContain('Food');
+    expect(namesIn(t, 0, 'battlefield')).not.toContain('Treasure');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

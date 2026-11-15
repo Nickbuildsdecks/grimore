@@ -2229,6 +2229,19 @@ export interface SpendRestriction {
   readonly chosenType?: true;
 }
 
+/**
+ * The mana one activation of a mana ability makes (D662): `produces`, repeated `producesTimes` times
+ * when the ability has a count. A count below zero makes nothing (CR 107.1b).
+ */
+export function producedBy(
+  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes'>, source: string, controller: SeatIndex,
+): readonly ManaType[] {
+  const once = ability.produces ?? [];
+  if (ability.producesTimes === undefined) return once;
+  const times = Math.max(0, Math.floor(ability.producesTimes(state, source, controller)));
+  return Array.from({ length: times }, () => once).flat();
+}
+
 export interface AbilityDef {
   readonly cost: AbilityCost;
   readonly description: string;
@@ -2247,6 +2260,12 @@ export interface AbilityDef {
    * (CR 605.3a) — which is what makes tapping a land for mana in response to something work.
    */
   readonly produces?: readonly ManaType[];
+  /**
+   * **How many times** `produces` is made, read off the board as the ability resolves (D662): Gaea's
+   * Cradle's "Add {G} for each creature you control", Everflowing Chalice's "Add {C} for each charge
+   * counter on ~". Absent is once. `producedBy` is the one reader, so every caller sees the same count.
+   */
+  readonly producesTimes?: (state: GameState, source: string, controller: SeatIndex) => number;
   /**
    * "Spend this mana only to …" (CR 106.6, D595): what the mana this ability makes may pay for.
    *
