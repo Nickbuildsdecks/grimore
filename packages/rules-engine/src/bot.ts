@@ -239,7 +239,13 @@ function decideCards(
     A land while it is short of them, counting the ones already in hand; otherwise the dearest
     card on offer, which is the same judgement a search of the library gets.
   */
-  if (ask.from === 'library-top' && ask.picksGoTo === 'hand') {
+  /*
+    "Put them back in any order" (D654) is the dig's question asked of every card: the answer is all
+    of them, best first, because the first picked goes on top. The scry rule below answered it with
+    the lands it would bottom — two cards to a question that asks for four — and the table stopped
+    (sweep seeds 52033 and 52036, a Ponder-style reorder late in a pod).
+  */
+  if (ask.from === 'library-top' && (ask.picksGoTo === 'hand' || ask.picksGoTo === 'top')) {
     const isLand = (id: string): boolean =>
       /land/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? '');
     const landsHeld = [...listAt(state, zoneKey(seat, 'battlefield')), ...listAt(state, zoneKey(seat, 'hand'))]

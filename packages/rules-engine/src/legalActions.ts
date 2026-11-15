@@ -425,7 +425,7 @@ export interface LegalActions {
     /** The cards being looked at, when that is more than `candidates`. See `pendingDecision.looked`. */
     readonly looked?: readonly string[];
     /** Where the picked cards go, when it is not the bottom. See `pendingDecision.picksGoTo`. */
-    readonly picksGoTo?: 'graveyard' | 'hand';
+    readonly picksGoTo?: 'graveyard' | 'hand' | 'top';
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.

@@ -1421,12 +1421,13 @@ export interface AutomationState {
     readonly looked?: readonly string[];
     /**
      * Where the picked cards go, for a `library-top` question that is not a scry: the graveyard
-     * (surveil) or the chooser's hand (D584). Absent for scry, whose picks go to the bottom.
+     * (surveil), the chooser's hand (D584), or back on top in the order picked — "put them back in
+     * any order" (D651, surfaced in D654). Absent for scry, whose picks go to the bottom.
      *
      * What the card says, so nothing a seat should not know — and the table needs it to word the
      * button, and the engine's opponent to know that picking here is taking rather than giving up.
      */
-    readonly picksGoTo?: 'graveyard' | 'hand';
+    readonly picksGoTo?: 'graveyard' | 'hand' | 'top';
     /**
      * Where they are being chosen from, which is what the table needs to draw the picker. Absent
      * for a question whose answer is a word rather than a card — see `options`.

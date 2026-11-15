@@ -11532,6 +11532,23 @@ describe('Brainstorm, Ponder and the wheel (D651)', () => {
     expect(ids(t, 0, 'library')).not.toEqual(reordered.slice(1));
   });
 
+  it('says the picks go back on top, and the bot answers with every card (D654)', () => {
+    /*
+      Sweep seeds 52033 and 52036 stopped on this question: the reorder was not marked as one, so
+      the bot gave it the scry answer — the lands it would bottom, two cards where four were asked.
+    */
+    let s = table(['Test Ponder']);
+    const top = ids(s, 0, 'library').slice(0, 3);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ponder') }));
+    expect(legalActions(s, 0).mustDecide?.picksGoTo).toBe('top');
+    const answer = botAction(s, 0);
+    if (answer?.type !== 'auto:decide') throw new Error(`expected a decision, got ${answer?.type}`);
+    expect([...(answer.cards ?? [])].sort()).toEqual([...top].sort());
+    // And the engine takes it: the next question is the shuffle.
+    s = apply(s, answer!);
+    expect(s.pendingDecision?.options).toEqual(['Keep the order', 'Shuffle']);
+  });
+
   it('Wheel of Fortune discards every hand and deals each player seven', () => {
     let s = table(['Test Wheel', 'Grizzly Bears', 'Island']);
     const theirs = ids(s, 1, 'hand');
@@ -11642,6 +11659,74 @@ describe('free if you control a commander (D653)', () => {
       type: 'auto:cast', by: 0, card: find(out, 0, 'hand', 'Test Plain'), commanderFree: true,
       targets: [{ kind: 'card', id: find(out, 1, 'battlefield', 'Grizzly Bears') }],
     })).toMatch(/has no free cast/);
+  });
+});
+
+describe('death triggers about the dead creature\'s player (D654)', () => {
+  /*
+    Grave Pact, Massacre Wurm and the death half of Fecundity all name a player through the
+    creature that died: "each other player", "that player" after "a creature an opponent controls
+    dies", "that creature's controller". The dies event is raised with the dead creature's seat as
+    its actor, so each reads against that seat.
+  */
+  const ROWS = [
+    { name: 'Test Pact', type_line: 'Enchantment', mana_cost: '{1}{B}{B}{B}', cmc: 4, colors: ['B'], layout: 'normal',
+      oracle_text: 'Whenever a creature you control dies, each other player sacrifices a creature.' },
+    { name: 'Test Wurm', type_line: 'Creature — Phyrexian Wurm', mana_cost: '{3}{B}{B}{B}', cmc: 6, colors: ['B'], layout: 'normal',
+      oracle_text: 'Whenever a creature an opponent controls dies, that player loses 2 life.', power: '6', toughness: '5' },
+    { name: 'Test Fecund', type_line: 'Enchantment', mana_cost: '{2}{G}{G}', cmc: 4, colors: ['G'], layout: 'normal',
+      oracle_text: "Whenever a creature dies, that creature's controller draws a card." },
+    { name: 'Test Kill', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target creature.' },
+  ];
+  const deck = customDeck({
+    id: 'pact', name: 'Pact',
+    entries: [{ name: 'Test Pact', count: 1 }, { name: 'Test Wurm', count: 1 }, { name: 'Test Fecund', count: 1 },
+      { name: 'Test Kill', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 49 }],
+    data: ROWS,
+  }).deck;
+  const pod = (mine: string[]) => advanceTo(arena({
+    format: 'pod', seats: 3, decks: { 0: 'pact', 1: 'pact', 2: 'pact' }, deckSpecs: { pact: deck },
+    hands: { 0: ['Test Kill'] },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Grizzly Bears'], 2: ['Grizzly Bears'] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, victim: string): GameState => {
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: victim }] });
+    return drain(s);
+  };
+
+  it('Grave Pact: each other player sacrifices when a creature of yours dies', () => {
+    let s = pod(['Test Pact', 'Grizzly Bears', 'Grizzly Bears']);
+    s = kill(s, ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Grizzly Bears')!);
+    // "Other": the Pact's controller keeps its second Bears.
+    expect(countOf(s, 0, 'battlefield', 'Grizzly Bears')).toBe(1);
+    expect(countOf(s, 1, 'battlefield', 'Grizzly Bears')).toBe(0);
+    expect(countOf(s, 2, 'battlefield', 'Grizzly Bears')).toBe(0);
+    expect(countOf(s, 1, 'graveyard', 'Grizzly Bears')).toBe(1);
+  });
+
+  it('Grave Pact: and nothing when an opponent\'s creature dies', () => {
+    let s = pod(['Test Pact', 'Grizzly Bears']);
+    s = kill(s, find(s, 1, 'battlefield', 'Grizzly Bears'));
+    expect(countOf(s, 0, 'battlefield', 'Grizzly Bears')).toBe(1);
+    expect(countOf(s, 2, 'battlefield', 'Grizzly Bears')).toBe(1);
+  });
+
+  it('Massacre Wurm: the player whose creature died loses the life, and only them', () => {
+    let s = pod(['Test Wurm']);
+    const before = [life(s, 0), life(s, 1), life(s, 2)];
+    s = kill(s, find(s, 2, 'battlefield', 'Grizzly Bears'));
+    expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0], before[1], before[2]! - 2]);
+  });
+
+  it('Fecundity: the dead creature\'s controller draws, not the enchantment\'s', () => {
+    let s = pod(['Test Fecund']);
+    const hands = [0, 1, 2].map((seat) => ids(s, seat, 'hand').length);
+    s = kill(s, find(s, 1, 'battlefield', 'Grizzly Bears'));
+    // Seat 0 spent the Kill; seat 1 drew for its Bears.
+    expect([0, 1, 2].map((seat) => ids(s, seat, 'hand').length)).toEqual([hands[0]! - 1, hands[1]! + 1, hands[2]]);
   });
 });
 

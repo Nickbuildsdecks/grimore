@@ -2123,6 +2123,14 @@ describe("the top of your library: what a tap means there (D584)", () => {
     expect(libraryTopWords({ max: 2, picksGoTo: "hand" }, 0).hint).toBe("tap 2 to put into your hand")
   })
 
+  it("a reorder places every card, the first tapped on top, and counts down to the last (D654)", () => {
+    expect(libraryTopWords({ max: 3, picksGoTo: "top" }, 0)).toEqual({
+      hint: "tap all 3 in order, the first goes on top", confirm: "3 more to place",
+    })
+    expect(libraryTopWords({ max: 3, picksGoTo: "top" }, 2).confirm).toBe("1 more to place")
+    expect(libraryTopWords({ max: 3, picksGoTo: "top" }, 3).confirm).toBe("Put them back")
+  })
+
   it("a dig with nothing takeable says so, and its button is how you say you have looked", () => {
     expect(libraryTopWords({ max: 0, picksGoTo: "hand" }, 0)).toEqual({
       hint: "none of these can be taken", confirm: "Done looking",

@@ -17355,7 +17355,16 @@ function eventRelativeEffect(
     // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
     'sacrifices',
   ]);
-  const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind));
+  /*
+    And a **death** of somebody's creature (D654): `dies` is raised with the dead creature's seat
+    (`raise(…, instances[id].zoneSeat, id)`), and `fireTrigger` passes it on as `actor` whenever it
+    is not the watcher's own — so the "watcher's own side" this docblock says of `dies` above was
+    true of the pass-through and not of the event. "Whenever a creature an opponent controls dies,
+    that player loses 2 life" is Massacre Wurm and reads the right player. Not the watcher's own
+    death (`who: 'self'`), whose "that player" means nothing printed.
+  */
+  const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind)
+    || (one.kind === 'dies' && one.who !== undefined && one.who !== 'self'));
 
   /*
     **And the other half of the same gate: the events that pass the player who was HIT** (D530).
@@ -17441,6 +17450,16 @@ function eventRelativeEffect(
       'acting-player',
     );
     if (acted !== null) return acted;
+    // "That creature's controller" on a death (D654): Fecundity's "… may draw a card".
+    if (events.every((one) => one.kind === 'dies')) {
+      const owned = referentEffect(
+        text, "that creature's controller", 'player',
+        (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
+        (swapped) => readEffect(swapped, name, null),
+        'acting-player',
+      );
+      if (owned !== null) return owned;
+    }
   }
 
   /*
@@ -21197,6 +21216,12 @@ function readEffect(
   if (leading !== null && !/ until end of turn$/i.test(leading[1]!)) {
     return readEffect(`${leading[1]!.replace(/\.$/, '')} until end of turn`, name, where);
   }
+  /*
+    "Each other player" is "each opponent" at a table with no teams (D654), which every table here
+    is: Grave Pact prints the first and the clause vocabulary reads the second.
+  */
+  const others = /^each other player (.+)$/i.exec(clause.trim());
+  if (others !== null) return readEffect(`each opponent ${others[1]}`, name, where);
   return preventionEffect(clause, name)
     ?? untargetedEffect(clause, name)
     ?? damageEffect(clause, name)

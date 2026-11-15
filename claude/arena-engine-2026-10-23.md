@@ -27648,3 +27648,45 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,527, all passing
 
 Coverage: 10,892 of 31,653 cards (+3), 29,726 of 59,306 lines (+8). Staples: 155 of 244.
+
+## D654 — death triggers that name a player; the reorder the bot could not answer
+
+**Three Commander staples name a player through the creature that died.** Grave Pact says "each
+other player sacrifices a creature", Massacre Wurm "that player loses 2 life" after "a creature an
+opponent controls dies", Fecundity "that creature's controller may draw a card". None read.
+- `eventRelativeEffect`: a `dies` trigger watching other creatures ("a creature an opponent
+  controls", "a creature you control", "a creature") is now about a player. `fireTrigger` already
+  raises the event with the dead creature's seat as its actor, so "that player" means that seat.
+- "That creature's controller" is the same referent, offered only when every event is a death.
+- `readEffect`: "each other player …" is read as "each opponent …". Every table here is a
+  free-for-all, where the two are the same seats.
+
+**Not done:** Fecundity itself. Its "may" is asked of another player, and no reader asks a
+non-controller an optional question. 289 legal cards print "that player may", "target player may"
+or similar, so it is its own increment.
+
+**The sweep found a crash in D651's reorder.** Seeds 52033 and 52036 of sweep 52001 threw
+"choose exactly 4" in a pod.
+- "Put them back in any order" was not marked as a reorder: `pendingDecision.picksGoTo` carried
+  only graveyard and hand.
+- The bot therefore gave it the scry answer (the lands it would bottom), two cards where four were
+  asked.
+- The fix: `picksGoTo` now includes `'top'`. The bot answers it as it answers a dig (all of them,
+  best first), and the web bar says "tap all N in order, the first goes on top".
+- Both seeds now finish.
+
+**Tests.**
+- 4 engine tests in a three-seat pod:
+  - Grave Pact makes both other seats sacrifice and spares its controller's second creature;
+  - Grave Pact does nothing when an opponent's creature dies;
+  - Massacre Wurm drains only the seat that lost the creature;
+  - "that creature's controller draws" draws for that seat, not the enchantment's.
+- 1 engine test: the reorder is marked `top` and the bot's answer is accepted.
+- 1 web test for the reorder's words.
+
+Faults injected by hand: 6 of 6 caught. One survivor (normalising to "each player") was pinned by
+giving the Pact's controller a second creature.
+
+    engine tests: 4,532, all passing
+
+Coverage: 10,898 of 31,653 cards (+6), 29,734 of 59,306 lines (+8). Staples: 157 of 244 (+2).

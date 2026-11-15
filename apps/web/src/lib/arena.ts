@@ -177,6 +177,14 @@ export function libraryTopWords(
       confirm: chosen === 0 ? (ask.max === 0 ? "Done looking" : "Take nothing") : `Take ${chosen}`,
     }
   }
+  // "Put them back in any order" (D654): every card is picked, and the order of the taps is the
+  // order from the top down.
+  if (ask.picksGoTo === "top") {
+    return {
+      hint: `tap all ${ask.max} in order, the first goes on top`,
+      confirm: chosen < ask.max ? `${ask.max - chosen} more to place` : "Put them back",
+    }
+  }
   const keep = `Keep ${ask.max === 1 ? "it" : "them"} on top`
   if (ask.picksGoTo === "graveyard") {
     return {

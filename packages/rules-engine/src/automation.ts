@@ -4424,7 +4424,7 @@ function askOrFinish(
         candidates, min, max, from: spec.from,
         ...(looked === undefined ? {} : { looked }),
         ...(!isCountersDecision(spec) && spec.from === 'library-top'
-          && (spec.chosenGoTo === 'graveyard' || spec.chosenGoTo === 'hand')
+          && (spec.chosenGoTo === 'graveyard' || spec.chosenGoTo === 'hand' || spec.chosenGoTo === 'top')
           ? { picksGoTo: spec.chosenGoTo }
           : {}),
         // Which shape this is, said rather than inferred: proliferate's candidates are sometimes
