@@ -1034,6 +1034,8 @@ export function manaSources(
         Add {C}" is pressed by the player, like the Familiar's.
       */
       if (ability.cost.discardACard === true) continue;
+      // Nor a sacrifice of another permanent (D666): Phyrexian Tower's creature is the player's pick.
+      if (ability.cost.sacrifice !== undefined) continue;
       /*
         Nor one that taps **other** permanents (D645): Holdout Settlement's "{T}, Tap an untapped
         creature you control: Add one mana of any color." Which creature to tap is the player's
@@ -1183,6 +1185,8 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
       // Pressed by the player, so not counted here either (D645): see `manaSources`.
       if (ability.cost.tapUntapped !== undefined) continue;
+      // And for the same reason a sacrifice of another permanent (D666): Phyrexian Tower.
+      if (ability.cost.sacrifice !== undefined) continue;
       if (ability.cost.tap) {
         // A creature's tap ability is unavailable while it is summoning sick.
         if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;

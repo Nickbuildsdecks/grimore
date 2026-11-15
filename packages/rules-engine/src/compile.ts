@@ -910,7 +910,24 @@ function compileSingle(row: CardDataRow): Compilation {
       the general reader, which would build an ability out of whatever follows the `Add` and leave
       the card producing nothing — the Coliseum failure, generalised. See `isManaAbilityLine`.
     */
-    if (isManaAbilityLine(line)) { unread.push({ line, why: 'no-reader' }); continue; }
+    /*
+      With one exception (D666): a tap ability that also sacrifices **another** permanent —
+      Phyrexian Tower's "{T}, Sacrifice a creature: Add {B}{B}." The mana-line parser refuses the
+      sacrifice (which creature is a choice it does not model), and the general reader models it:
+      it is how "Sacrifice a creature: Add {C}{C}" has always read. Taken only when every ability
+      that comes back makes mana and nothing else came back, so the Coliseum failure cannot recur.
+    */
+    if (isManaAbilityLine(line)) {
+      const sacrificing = /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
+        ? lineScriptFor(line, def.name) : null;
+      const makesMana = sacrificing !== null && Object.keys(sacrificing).every((key) => key === 'abilities')
+        && (sacrificing.abilities ?? []).length > 0
+        && (sacrificing.abilities ?? []).every((ability) => (ability.produces ?? []).length > 0 && ability.cost.sacrifice !== undefined);
+      if (!makesMana) { unread.push({ line, why: 'no-reader' }); continue; }
+      if (merge(built, sacrificing!) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+      compiled.push(line);
+      continue;
+    }
 
     const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }

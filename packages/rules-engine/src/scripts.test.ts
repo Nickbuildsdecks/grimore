@@ -12478,6 +12478,54 @@ describe('mana abilities that cost mana first: Cabal Coffers and the filter land
   });
 });
 
+describe('Phyrexian Tower\'s sacrifice for mana, and Craterhoof\'s count (D666)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Tower', 'Legendary Land', '{T}: Add {C}.\n{T}, Sacrifice a creature: Add {B}{B}.', ''),
+    row('Test Hoof', 'Creature — Beast', 'When this creature enters, creatures you control gain trample and get +X/+X until end of turn, where X is the number of creatures you control.', '{0}', ['5', '5']),
+    { ...row('Test Two', 'Sorcery', 'Draw a card.', '{B}{B}'), cmc: 2 },
+  ];
+  const deck = customDeck({
+    id: 'tower', name: 'Tower',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'tower', 1: 'tower' }, deckSpecs: { tower: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Phyrexian Tower sacrifices the creature named for {B}{B}, and is never the automatic payer\'s', () => {
+    let s = table(['Test Two'], ['Test Tower', 'Grizzly Bears']);
+    const tower = find(s, 0, 'battlefield', 'Test Tower');
+    // Only the {C} counts towards what is reachable: the Two is not offered off one land.
+    expect(potentialMana(s, 0).B ?? 0).toBe(0);
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Two'))).toBe(false);
+    // And as a source for the automatic payer it makes only the {C}.
+    expect(manaSources(s, 0).find((entry) => entry.key === tower)?.produces).toEqual(['C']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const index = (scriptForCard(s.cardDefs[s.instances[tower]!.defKey])?.abilities ?? []).findIndex((a) => a.cost.sacrifice !== undefined);
+    s = apply(s, { type: 'auto:activate', by: 0, card: tower, abilityIndex: index, sacrifice: bears });
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.pools['0']!.B).toBe(2);
+  });
+
+  it('Craterhoof counts the creatures as it resolves, itself included, and grants trample', () => {
+    let s = table(['Test Hoof'], ['Grizzly Bears', 'Grizzly Bears']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hoof') })));
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const hoof = find(s, 0, 'battlefield', 'Test Hoof');
+    expect([power(s, bears), power(s, hoof)]).toEqual([2 + 3, 5 + 3]);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('trample')).toBe(true);
+    // Fixed at resolution: a creature arriving afterwards is not pumped and does not raise X.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Grizzly Bears'), toZone: 'battlefield' });
+    expect(power(s, bears)).toBe(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

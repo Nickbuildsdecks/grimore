@@ -12793,6 +12793,36 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     same reason: Overrun's trample and its +3/+3 are one continuous effect, and two would expire
     independently.
   */
+  /*
+    **A team pump by a count** (D666): Craterhoof Behemoth's "creatures you control gain trample and
+    get +X/+X until end of turn, where X is the number of creatures you control", Overwhelming
+    Stampede's "… where X is the greatest power among creatures you control". The count is any
+    `boardCount`, read once as the clause resolves and then fixed, as a resolved pump is (CR 611.2c);
+    the keyword may be printed before the size or after it.
+  */
+  const teamX = new RegExp(
+    `^(${MASS_PUMP_SUBJECTS})(?: gain ([a-z][a-z' ]*?) and)? get \\+X\\/\\+X`
+    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn, where X is (.+)$`,
+    'i',
+  ).exec(text);
+  if (teamX !== null) {
+    const subject = massPumpSubject(teamX[1]!);
+    const granted = teamX[2] ?? teamX[3];
+    const words = granted === undefined ? [] : grantedKeywordList(granted);
+    const count = boardCount(teamX[4]!, name);
+    if (subject !== null && words !== null && count !== null && !(teamX[2] !== undefined && teamX[3] !== undefined)) {
+      return {
+        ...(subject.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => {
+          const n = count(c);
+          return pump(c.state, subject.ids(c), c.source, c.controller, {
+            power: n, toughness: n, ...(words.length === 0 ? {} : { keywords: words }),
+          });
+        },
+        ...(subject.holdForCombat ? { spellFlags: { expiresAtEndOfTurn: true } } : {}),
+      };
+    }
+  }
   const team = new RegExp(
     `^(${MASS_PUMP_SUBJECTS})`
     + ` get (-|\\+)(\\d+)\\/(-|\\+)(\\d+)`

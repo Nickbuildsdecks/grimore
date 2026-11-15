@@ -45556,3 +45556,39 @@ free-green test.
 
 Coverage: 11,086 of 31,653 cards (+10), 30,098 of 59,306 lines (+10). Staples: 181 of 244 (+1,
 Cascade Bluffs).
+
+## D666 — Phyrexian Tower's sacrifice for mana, and Craterhoof's count
+
+Staples went from 181 to 183.
+
+**"{T}, Sacrifice a creature: Add {B}{B}"** (Phyrexian Tower).
+- The mana-line parser refuses a sacrifice of another permanent, because which creature to sacrifice
+  is a choice it does not model. Then the compiler's rule "a line that promises mana and could not
+  be read is unread" made the line unread.
+- The general activated-ability reader does model that choice: it is how "Sacrifice a creature: Add
+  {C}{C}" has always read.
+- The compiler now asks the general reader for a {T}-first line with a typed sacrifice. It takes
+  the answer only when every ability returned makes mana and carries the sacrifice, and nothing
+  else came back, so the Coliseum failure (D497) cannot recur.
+- `manaSources` and `potentialMana` both skip a typed sacrifice. The Tower is pressed by the player
+  and never spent by the automatic payer, and a spell is not offered on mana it could only make by
+  sacrificing a creature the player did not pick.
+
+**A team pump by a count** (Craterhoof Behemoth, Overwhelming Stampede). "Creatures you control gain
+trample and get +X/+X until end of turn, where X is …":
+- the count is any `boardCount`, read once as the clause resolves and then fixed (CR 611.2c);
+- the keyword may come before or after the size;
+- the hold-for-combat hint is set where the subject is your own team.
+
+**Tests.** 2 engine tests:
+- the Tower: no black counts as reachable, a {B}{B} spell is not offered, its source entry makes
+  only {C}, and pressed with the Bears named it sacrifices them for {B}{B};
+- Craterhoof with two Bears: +3/+3 and trample on all three, and a creature arriving afterwards is
+  not pumped.
+
+Faults injected by hand: 5 of 5 caught. One survivor (the `manaSources` skip) was pinned by the
+source-entry assertion.
+
+    engine tests: 4,578, all passing
+
+Coverage: 11,093 of 31,653 cards (+7), 30,113 of 59,306 lines (+15). Staples: 183 of 244 (+2).
