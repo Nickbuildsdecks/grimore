@@ -51,7 +51,7 @@ import {
   spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
-import { CHOSEN_COLOR, CHOSEN_TYPE, pump } from './effects.js';
+import { CHOSEN_COLOR, CHOSEN_TYPE, KICKED, copyAsToken, pump } from './effects.js';
 
 /**
  * Which choice a card asks as it enters (D641), off its printed lines: a creature type, a colour, or
@@ -945,6 +945,35 @@ function compileSingle(row: CardDataRow): Compilation {
       if (merge(built, { abilities: [ability] }) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
       compiled.push(line);
       continue;
+    }
+    /*
+      **Offspring {N}** (D674, CR 702.175): "You may pay an additional {N} as you cast this spell.
+      If you do, when this creature enters, create a 1/1 token copy of it." Kicker's machinery, which
+      is what it is: the optional extra cost is `kicker` (the cast records `KICKED` on the permanent
+      as it arrives), and the payoff is the card's own enter trigger, conditioned on that record,
+      making a token copy whose printed size is 1/1 (`copyAsToken`'s profile, as eternalize's 4/4).
+      The enter trigger's event shape is taken from the line reader rather than written here.
+    */
+    const offspring = /^offspring\s+((?:\{[^}]*\})+)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (offspring !== null) {
+      const enters = lineScriptFor('When this creature enters, draw a card.', def.name)?.triggers?.[0];
+      if (enters !== undefined) {
+        const cost = offspring[1]!;
+        const fragment: Partial<CardScript> = {
+          kicker: { cost, description: `Offspring ${cost}` },
+          triggers: [{
+            ...enters,
+            description: 'when this creature enters, if its offspring cost was paid, create a 1/1 token copy of it',
+            condition: (c) => (c.state.instances[c.source]?.counters[KICKED] ?? 0) > 0,
+            effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield'
+              ? copyAsToken(c.state, c.controller, c.source, 1, { as: 'offspring', power: '1', toughness: '1' })
+              : c.state),
+          }],
+        };
+        if (merge(built, fragment) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        compiled.push(line);
+        continue;
+      }
     }
     const wardList = wardInList(line, def.name);
     if (wardList !== null) {

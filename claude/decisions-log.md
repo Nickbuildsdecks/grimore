@@ -45819,3 +45819,30 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,606, all passing
 
 Coverage: 11,176 of 31,653 cards (+15), 30,353 of 59,306 lines (+27). Staples: 186 of 244.
+
+## D674 — Offspring
+
+"Offspring {N}" (CR 702.175): "You may pay an additional {N} as you cast this spell. If you do, when
+this creature enters, create a 1/1 token copy of it." It is on 20 legal lines, 10 of them a card's
+only unread line.
+
+**Kicker's machinery, which is what it is.**
+- The optional extra cost is `CardScript.kicker`, described as "Offspring {N}". A kicked cast already
+  records `KICKED` on the permanent as it arrives (D561).
+- The payoff is the card's own enter trigger. Its event shape is taken from the line reader, not
+  written by hand; it is conditioned on that record and calls `copyAsToken` with a 1/1 printed-size
+  profile, the way eternalize gets its 4/4.
+- The token copy has the keyword too, but it was not cast, so it makes no token of its own.
+
+**Known gap, stated:** if the creature leaves the battlefield before the trigger resolves, no token
+is made. The rules would make the copy from last-known information.
+
+**Tests.** 2 engine tests:
+- paid: the creature plus one 1/1 token copy that keeps vigilance;
+- not paid: the creature alone.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,608, all passing
+
+Coverage: 11,186 of 31,653 cards (+10), 30,373 of 59,306 lines (+20). Staples: 186 of 244.

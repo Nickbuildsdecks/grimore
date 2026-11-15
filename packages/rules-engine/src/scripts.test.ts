@@ -12807,6 +12807,41 @@ describe('embalm and eternalize, compiled (D673)', () => {
   });
 });
 
+describe('Offspring: pay more, get a 1/1 token copy (D674)', () => {
+  const ROWS = [
+    { name: 'Test Mouse', type_line: 'Creature — Mouse Soldier', oracle_text: 'Vigilance\nOffspring {2}', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '3', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'offspring', name: 'Offspring',
+    entries: [{ name: 'Test Mouse', count: 4 }, { name: 'Plains', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = () => advanceTo(arena({
+    decks: { 0: 'offspring', 1: 'offspring' }, deckSpecs: { offspring: deck },
+    hands: { 0: ['Test Mouse'] }, battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const mice = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Mouse');
+
+  it('paid: the creature and a 1/1 token copy that keeps its abilities', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mouse'), kicked: true })));
+    const all = mice(s);
+    expect(all).toHaveLength(2);
+    const copy = all.find((id) => s.instances[id]!.isToken)!;
+    const ch = characteristicsOf(s, s.instances[copy]!);
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+    expect(ch.keywords.has('vigilance')).toBe(true);
+    // The token was not cast with the extra cost, so it makes no token of its own.
+    expect(all.filter((id) => s.instances[id]!.isToken)).toHaveLength(1);
+  });
+
+  it('not paid: the creature alone', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mouse') })));
+    expect(mice(s)).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
