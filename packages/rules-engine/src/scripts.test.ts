@@ -12727,6 +12727,45 @@ describe('Backup N with keyword abilities to hand on (D671)', () => {
   });
 });
 
+describe('Transmute: discard it for a card of the same mana value (D672)', () => {
+  const ROWS = [
+    { name: 'Test Transmuter', type_line: 'Sorcery', oracle_text: 'Draw a card.\nTransmute {1}{U}{B}', mana_cost: '{1}{U}{B}', cmc: 3, colors: ['U', 'B'], layout: 'normal' },
+    { name: 'Test Three', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'transmute', name: 'Transmute',
+    entries: [{ name: 'Test Transmuter', count: 2 }, { name: 'Test Three', count: 2 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Island', count: 20 }, { name: 'Swamp', count: 20 }],
+    data: ROWS,
+  }).deck;
+  const table = (first: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'transmute', 1: 'transmute' }, deckSpecs: { transmute: deck },
+    hands: { 0: ['Test Transmuter'] }, battlefield: { 0: ['Island', 'Swamp', 'Island'] }, turn: 3, firstSeat: first,
+  }), 'precombat-main');
+  const transmuter = (s: GameState) => find(s, 0, 'hand', 'Test Transmuter');
+  const index = (s: GameState) => (scriptForCard(s.cardDefs[s.instances[transmuter(s)]!.defKey])?.abilities ?? [])
+    .findIndex((a) => a.description.startsWith('Transmute'));
+
+  it('discards itself and finds only a card with its own mana value', () => {
+    let s = table();
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: transmuter(s), abilityIndex: index(s) }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Transmuter');
+    const offered = s.pendingDecision!.candidates;
+    expect(offered.length).toBeGreaterThan(0);
+    // Mana value 3 only: the Ogres and the other Transmuter, never a Bears or a land.
+    expect(new Set(offered.map((id) => nameOf(s, id)))).toEqual(new Set(['Test Three', 'Test Transmuter']));
+    const ogre = offered.find((id) => nameOf(s, id) === 'Test Three')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [ogre] }));
+    expect(s.instances[ogre]!.zone).toBe('hand');
+  });
+
+  it('only as a sorcery: not on the opponent\'s turn', () => {
+    const s = table(1);
+    const pass = apply(s, { type: 'auto:pass', by: s.priority! });
+    const mine = pass.priority === 0 ? pass : s;
+    expect(legalActions(mine, 0).plays.some((p) => p.card === find(mine, 0, 'hand', 'Test Transmuter') && p.abilityIndex === index(mine))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -10898,6 +10898,32 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     Magic capitalises a subtype ("Plainscycling", "Slivercycling") and the two card-type phrases
     are the only lowercase ones, which is what keeps plain "Cycling {2}" out of this branch.
   */
+  /*
+    **Transmute** (D672, CR 702.53): "<cost>, Discard this card: Search your library for a card with
+    the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only
+    as a sorcery." An ability of the card in hand, like cycling, but it is not cycling — nothing that
+    watches a card being cycled sees it. The mana value is the printed one of the card being
+    transmuted, looked up by name, which is the card that was discarded to pay for it.
+  */
+  const transmute = /^transmute\s+((?:\{[^}]*\})+)$/i.exec(text);
+  if (transmute !== null) {
+    const mana = transmute[1]!;
+    const sameValue: CardsDecisionSpec['filter'] = (state, id) => {
+      const own = Object.values(state.cardDefs).find((def) => def.name.toLowerCase() === name.toLowerCase());
+      const found = state.cardDefs[state.instances[id]?.defKey ?? ''];
+      return own !== undefined && found !== undefined
+        && costValue(parseManaCost(found.manaCost)) === costValue(parseManaCost(own.manaCost));
+    };
+    return {
+      abilities: [{
+        cost: { mana, discardSelf: true },
+        sorcerySpeed: true,
+        description: `Transmute ${mana} (${mana}, Discard this card: Search your library for a card with the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only as a sorcery.)`,
+        decisions: [searchYourLibrary('Search your library for a card with the same mana value as this card', sameValue, 1)],
+        effect: (c) => chosenCards(c).reduce((state, id) => moveToHand(state, [id]), c.state),
+      } as AbilityDef],
+    };
+  }
   const typedCycling = /^(Basic land|Artifact land|[A-Z][a-z]+)cycling\s+((?:\{[^}]*\})+)$/.exec(text);
   if (typedCycling !== null) {
     const kind = typedCycling[1]!;

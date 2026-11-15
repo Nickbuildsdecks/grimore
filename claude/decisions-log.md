@@ -45758,3 +45758,32 @@ Faults injected by hand: 2 of 2 caught (the redundant check is gone, not pinned)
     engine tests: 4,598, all passing
 
 Coverage: 11,153 of 31,653 cards (+11), 30,312 of 59,306 lines (+11). Staples: 186 of 244.
+
+## D672 — Transmute
+
+"Transmute {1}{U}{B}" (CR 702.53): "{1}{U}{B}, Discard this card: Search your library for a card with
+the same mana value as this card, reveal it, put it into your hand, then shuffle. Transmute only as
+a sorcery." It was on 8 cards one line short in D670's list, 14 lines in all.
+
+**How it reads.**
+- An ability of the card in hand, built the way typecycling is: cost `{ mana, discardSelf: true }`,
+  `sorcerySpeed`, a `searchYourLibrary` question and a move to hand.
+- It is not marked `cycling`, because transmuting a card is not cycling it (CR 702.53 versus
+  702.29f), so "whenever you cycle" does not fire.
+- The mana value matched is the printed one of the card being transmuted, looked up by name among
+  the card definitions.
+
+**Tests.** 2 engine tests:
+- activated from hand, the card goes to the graveyard, and the search offers exactly the mana value
+  3 cards (the Ogres and the other Transmuter, never a Bears or a land); the one picked goes to
+  hand;
+- it is not offered on the opponent's turn.
+
+The first draft of the first test expected only the Ogres. The library's second Transmuter is also
+mana value 3, so the engine was right and the test was corrected.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,600, all passing
+
+Coverage: 11,161 of 31,653 cards (+8), 30,326 of 59,306 lines (+14). Staples: 186 of 244.
