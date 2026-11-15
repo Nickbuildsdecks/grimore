@@ -20324,7 +20324,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           const inst = state.instances[id];
           const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
           if (inst === undefined || inst.zone !== 'battlefield' || def === undefined) return state;
-          return copyAsToken(state, c.controller, id, count, exceptions.profile?.(def));
+          const before = new Set(listAt(state, zoneKey(c.controller, 'battlefield')));
+          let next = copyAsToken(state, c.controller, id, count, exceptions.profile?.(def));
+          if (exceptions.endStep === undefined) return next;
+          for (const token of listAt(next, zoneKey(c.controller, 'battlefield')).filter((t) => !before.has(t))) {
+            next = scheduleDelayed(next, {
+              source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'any',
+              subject: token, builtin: exceptions.endStep, description: `${exceptions.endStep} ${def.name}`,
+            });
+          }
+          return next;
         }),
       };
     }
@@ -25177,7 +25186,22 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
  */
 function copyExceptions(
   printed: string | undefined,
-): { readonly profile: ((copied: CardDef) => TokenCopyProfile) | undefined } | null {
+): {
+  readonly profile: ((copied: CardDef) => TokenCopyProfile) | undefined;
+  readonly endStep?: 'sacrifice' | 'exile';
+} | null {
+  /*
+    Electroduplicate's "and "At the beginning of the end step, sacrifice this token."" (D698): the
+    token goes at the first end step, which is read as D696's engine-known delayed ability rather
+    than as a quoted trigger the copy carries. The two differ only for a token that loses its
+    abilities before then (a Humility), or is itself copied; this reading still removes it.
+  */
+  const quoted = printed === undefined ? null
+    : /^(.*?)\s*and "at the beginning of the end step, (sacrifice|exile) this (?:token|permanent)\."$/i.exec(printed.trim());
+  if (quoted !== null) {
+    const rest = copyExceptions(quoted[1]!.trim() === '' ? undefined : quoted[1]!);
+    return rest === null || rest.endStep !== undefined ? null : { ...rest, endStep: quoted[2]!.toLowerCase() as 'sacrifice' | 'exile' };
+  }
   const addTypes: string[] = [];
   const addSubtypes: string[] = [];
   let notLegendary = false;

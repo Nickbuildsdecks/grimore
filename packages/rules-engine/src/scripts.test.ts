@@ -14269,6 +14269,41 @@ describe('"Spend this mana only to cast your commander" (D697)', () => {
   });
 });
 
+describe('a copy that sacrifices itself at the end step (D698)', () => {
+  const ROWS = [
+    { name: 'Test Duplicate', type_line: 'Sorcery', oracle_text: 'Create a token that\'s a copy of target creature you control, except it has haste and "At the beginning of the end step, sacrifice this token."\nFlashback {2}{R}{R}', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'dup', name: 'Dup',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+
+  it('reads whole, flashback and all', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('the copy has haste now and is sacrificed at the end step; the original stays', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dup', 1: 'dup' }, deckSpecs: { dup: deck.deck },
+      hands: { 0: ['Test Duplicate'] }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Duplicate'), targets: [{ kind: 'card', id: bear }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    const copy = ids(s, 0, 'battlefield').find((id) => id !== bear && s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bear')!;
+    expect(copy).toBeDefined();
+    expect(characteristicsOf(s, s.instances[copy]!).keywords.has('haste')).toBe(true);
+    expect(s.delayed.some((d) => d.subject === copy && d.builtin === 'sacrifice')).toBe(true);
+    s = advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bear')).toEqual([bear]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

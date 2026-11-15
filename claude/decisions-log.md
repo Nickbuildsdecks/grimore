@@ -46565,3 +46565,30 @@ were pinned by the last two tests.
     engine tests: 4,687, all passing
 
 Coverage: 11,362 of 31,653 cards (+1), 30,656 of 59,306 lines (+1). Staples: 210 of 244 (+1).
+
+## D698 — a copy that sacrifices itself at the end step
+
+"Create a token that's a copy of target creature you control, except it has haste and "At the
+beginning of the end step, sacrifice this token."" (Electroduplicate, and the same shape with "exile
+this permanent").
+
+How it is read: `copyExceptions` peels the quoted end-step ability off the end and reports it as
+`endStep`. The token-copy reader schedules D696's engine-known delayed ability for each token it
+made.
+
+A copy carrying the quoted trigger and the delayed ability it is read as differ in only two cases:
+a token that loses its abilities before the end step (it would survive a Humility as printed), and
+a copy of the token (which would carry the trigger). That difference is recorded here rather than
+built.
+
+Staples went from 210 to 211 (Electroduplicate).
+
+**Tests.** 2 engine tests:
+- the card, flashback included, reads;
+- the copy has haste, is scheduled, and is gone after the end step while the original stays.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,689, all passing
+
+Coverage: 11,364 of 31,653 cards (+2), 30,659 of 59,306 lines (+3). Staples: 211 of 244 (+1).
