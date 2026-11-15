@@ -384,6 +384,11 @@ function fireDelayed(state: GameState, step: Step): GameState {
       next, entry.source, entry.controller, entry.abilityIndex, [], 'triggered', entry.description,
       entry.subject === undefined || !sameObject ? {} : { subject: entry.subject },
     );
+    // An engine-known ability (D696) says so on the stack object, which is how it resolves.
+    if (entry.builtin !== undefined) {
+      const top = next.stackOrder[next.stackOrder.length - 1]!;
+      next = { ...next, stackObjects: { ...next.stackObjects, [top]: { ...next.stackObjects[top]!, builtin: entry.builtin } } };
+    }
   }
   return next;
 }
@@ -5155,6 +5160,22 @@ function completeResolution(
   return { state: next, message: `${label} resolves` };
 }
 
+/**
+ * The two engine-known delayed abilities (D696). Each acts on the object it was scheduled about,
+ * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
+ * has no subject and nothing happens.
+ */
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile', Resolvable>> = {
+  sacrifice: {
+    effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
+      ? c.state : sacrifice(c.state, [c.subject])),
+  },
+  exile: {
+    effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
+      ? c.state : exileCard(c.state, c.subject)),
+  },
+};
+
 /** An activated ability and a triggered one resolve the same way: targets, then an effect. */
 interface Resolvable {
   readonly targets?: readonly TargetSpec[];
@@ -5168,6 +5189,8 @@ interface Resolvable {
 function abilityOrTrigger(
   script: CardScript | undefined, object: StackObject, defs?: GameState['cardDefs'],
 ): Resolvable | undefined {
+  // "Sacrifice it / exile it at the beginning of the next end step" (D696): the engine's own.
+  if (object.builtin !== undefined) return BUILTIN_DELAYED[object.builtin];
   if (object.abilityIndex === undefined) return undefined;
   /*
     A granted ability is defined on somebody else's card, so the holder's script is the wrong book

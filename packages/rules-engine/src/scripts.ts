@@ -21968,6 +21968,42 @@ function readEffect(
     is: Grave Pact prints the first and the clause vocabulary reads the second.
   */
   /*
+    "… Sacrifice it at the beginning of the next end step." (D696): Kiki-Jiki, Sneak Attack, Mimic
+    Vat, the hasty token makers — 109 legal lines. `clausesOf` joins the rider to the sentence that
+    put something onto the battlefield; whatever that sentence's effect added to the battlefield is
+    what the rider is about. Each gets haste until end of turn where the haste sentence was printed,
+    and an engine-known delayed ability (`DelayedTrigger.builtin`) that sacrifices or exiles it at
+    the next end step, on the stack like any other trigger.
+  */
+  const rider = /^(.+); (with haste, )?(sacrifice|exile) at the beginning of the next end step$/i.exec(clause.trim());
+  if (rider !== null) {
+    const inner = readEffect(rider[1]!, name, where);
+    if (inner === null) return null;
+    const verb = rider[3]!.toLowerCase() as 'sacrifice' | 'exile';
+    const hasty = rider[2] !== undefined;
+    const later = (run: EffectFn): EffectFn => (c) => {
+      const onBattlefield = (state: GameState): string[] => state.seats
+        .flatMap((seat) => [...listAt(state, zoneKey(seat.index, 'battlefield'))]);
+      const before = new Set(onBattlefield(c.state));
+      let next = run(c);
+      const arrived = onBattlefield(next).filter((id) => !before.has(id));
+      if (hasty && arrived.length > 0) next = pump(next, arrived, c.source, c.controller, { keywords: ['haste'] });
+      for (const id of arrived) {
+        next = scheduleDelayed(next, {
+          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'any',
+          subject: id, builtin: verb,
+          description: `${verb} ${next.cardDefs[next.instances[id]?.defKey ?? '']?.name ?? 'it'}`,
+        });
+      }
+      return next;
+    };
+    return {
+      ...inner,
+      effect: later(inner.effect),
+      ...(inner.immediate === undefined ? {} : { immediate: later(inner.immediate) }),
+    };
+  }
+  /*
     The Pacts' upkeep (D690): "pay {3}{U}{U}. If you don't, you lose the game", held together by
     `clausesOf`. One question to the controller with the price on its paying answer, which the
     engine offers only when it can be paid; the bot always pays when it can.
@@ -22097,6 +22133,10 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.
     .replace(/(put it onto the battlefield tapped),\s+then shuffle\.\s+Then if you control (\w+) or more lands, untap that land/gi, '$1 and untap it if you control $2 or more lands, then shuffle')
+    // Kiki-Jiki and Sneak Attack (D696): what the first sentence put onto the battlefield is what the
+    // rider sacrifices or exiles, so the two (and a haste sentence between them) are one clause.
+    .replace(/((?:create|put)[^.;]*?)\.\s+(?:(?:it|they|that creature|those creatures|the creature|the token|the tokens|that token|those tokens) gains? haste(?: until end of turn)?\.\s+)?(sacrifice|exile) (?:it|them|that token|those tokens|that creature|those creatures|the creature|the token|the tokens) at the beginning of the next end step/gi,
+      (_m, first: string, verb: string) => `${first}; ${/gains? haste/i.test(_m) ? 'with haste, ' : ''}${verb.toLowerCase()} at the beginning of the next end step`)
     // Snapcaster Mage (D694): the second sentence says what the flashback costs, which is the one
     // thing `flashbackGrantedTurn` already means.
     .replace(/(gains flashback until end of turn)\.\s+The flashback cost is equal to its mana cost/gi, '$1')

@@ -14120,6 +14120,81 @@ describe('"Create a token that\'s a copy of target …" (D695)', () => {
   });
 });
 
+describe('"Sacrifice it at the beginning of the next end step" (D696)', () => {
+  const ROWS = [
+    { name: 'Test Kiki', type_line: 'Legendary Creature — Goblin Shaman', oracle_text: "{T}: Create a token that's a copy of target nonlegendary creature you control, except it has haste. Sacrifice it at the beginning of the next end step.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Sneak', type_line: 'Enchantment', oracle_text: '{R}: You may put a creature card from your hand onto the battlefield. That creature gains haste. Sacrifice the creature at the beginning of the next end step.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Raid', type_line: 'Sorcery', oracle_text: 'Create two 1/1 red Goblin creature tokens. They gain haste until end of turn. Exile them at the beginning of the next end step.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Titan', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{6}', cmc: 6, colors: [], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'riders', name: 'Riders',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'riders', 1: 'riders' }, deckSpecs: { riders: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 12 && (next.stackOrder.length > 0 || next.pendingDecision !== null); i++) {
+      next = next.pendingDecision !== null ? decide(next, ['Test Titan']) : passBoth(next);
+    }
+    return next;
+  };
+  // On to this turn's end step, its delayed abilities resolved.
+  const toEnd = (s: GameState) => {
+    let next = advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    while (next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+  const named = (s: GameState, name: string) => ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === name);
+
+  it('reads every line whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('Kiki-Jiki: a hasty copy now, sacrificed at the end step; the original stays', () => {
+    let s = table([], ['Test Kiki', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Kiki'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action));
+    const copy = named(s, 'Test Bear').find((id) => id !== bear)!;
+    expect(copy).toBeDefined();
+    expect(characteristicsOf(s, s.instances[copy]!).keywords.has('haste')).toBe(true);
+    expect(s.delayed.some((d) => d.subject === copy && d.builtin === 'sacrifice')).toBe(true);
+    s = toEnd(s);
+    expect(named(s, 'Test Bear')).toEqual([bear]);
+    expect(named(s, 'Test Kiki').length).toBe(1);
+  });
+
+  it('Sneak Attack: the creature from hand gets haste and goes to the graveyard at the end step', () => {
+    let s = table(['Test Titan'], ['Test Sneak', 'Mountain']);
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Sneak'), abilityIndex: 0 }));
+    const [titan] = named(s, 'Test Titan');
+    expect(titan).toBeDefined();
+    expect(characteristicsOf(s, s.instances[titan!]!).keywords.has('haste')).toBe(true);
+    s = toEnd(s);
+    expect(named(s, 'Test Titan')).toEqual([]);
+    expect(s.instances[titan!]!.zone).toBe('graveyard');
+  });
+
+  it('a spell\'s two tokens are both exiled, and nothing is scheduled for what was already there', () => {
+    let s = table(['Test Raid'], ['Test Bear']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Raid') }));
+    expect(named(s, 'Goblin').length + ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken).length).toBeGreaterThanOrEqual(2);
+    expect(s.delayed.filter((d) => d.builtin === 'exile').length).toBe(2);
+    s = toEnd(s);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken)).toEqual([]);
+    expect(named(s, 'Test Bear').length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

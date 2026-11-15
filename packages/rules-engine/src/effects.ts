@@ -1796,6 +1796,7 @@ export function scheduleDelayed(
     readonly of: 'you' | 'any';
     readonly subject?: string;
     readonly description: string;
+    readonly builtin?: 'sacrifice' | 'exile';
   },
 ): GameState {
   const seq = state.autoSeq + 1;

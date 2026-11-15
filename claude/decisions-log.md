@@ -46501,3 +46501,32 @@ token, count ignored, "isn't legendary" ignored).
     engine tests: 4,678, all passing
 
 Coverage: 11,340 of 31,653 cards (+11), 30,620 of 59,306 lines (+27). Staples: 209 of 244.
+
+## D696 — "Sacrifice it at the beginning of the next end step"
+
+109 legal lines end with "Sacrifice it / Exile it / … them / … that token at the beginning of the
+next end step": Kiki-Jiki, Sneak Attack, Mimic Vat, and the hasty token makers.
+
+What was added:
+- **An engine-known delayed ability.** `DelayedTrigger.builtin` and `StackObject.builtin`
+  ('sacrifice' | 'exile') sit beside the card-script ones, with `abilityIndex` -1. `fireDelayed`
+  marks the stack object, and `abilityOrTrigger` answers it from `BUILTIN_DELAYED` before any script
+  is consulted. It goes on the stack like any trigger (CR 603.7). It acts only on its subject, still
+  on the battlefield as the same object (CR 400.7, the existing `subjectSeq` pin).
+- **The rider.** `clausesOf` joins it to the sentence before, which must create or put something,
+  with an optional "It gains haste (until end of turn)." between them. `readEffect` reads the first
+  sentence as before. Whatever its effect added to the battlefield gets haste, where printed, and one
+  delayed ability each at the next end step.
+
+**Tests.** 4 engine tests:
+- three cards read;
+- Kiki-Jiki's copy has haste and is sacrificed at the end step, leaving the original and Kiki;
+- Sneak Attack's Titan has haste and is in the graveyard after the end step;
+- a spell's two Goblins are each scheduled for exile and are gone after the end step, while the Bear
+  already on the battlefield is not touched.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,682, all passing
+
+Coverage: 11,361 of 31,653 cards (+21), 30,655 of 59,306 lines (+35). Staples: 209 of 244.
