@@ -2242,6 +2242,8 @@ export interface AffinityFor {
 export interface PaymentFor {
   readonly spell?: TypeLine;
   readonly abilityOf?: TypeLine;
+  /** Whether the spell is the caster's commander (D697): Jeweled Lotus's "only to cast your commander". */
+  readonly commander?: boolean;
 }
 
 /** "Spend this mana only to …", as a test of a payment, and the words, for the table. */

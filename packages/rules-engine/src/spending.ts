@@ -25,6 +25,10 @@ import type { SpendRestriction } from './scriptTypes.js';
  */
 export function spendRestriction(phrase: string): SpendRestriction | null {
   const printed = phrase.trim().replace(/\.$/, '');
+  // "Spend this mana only to cast your commander" (D697): Jeweled Lotus, Command Beacon's kin.
+  if (/^to cast (?:your|a) commanders?$/i.test(printed)) {
+    return { words: 'to cast your commander', allows: (paying) => paying.commander === true };
+  }
   /*
     "…a creature spell **of the chosen type**" (D644): Unclaimed Territory, Pillar of Origins,
     Secluded Courtyard. The words are read without the phrase, and the restriction is marked so the

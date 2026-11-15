@@ -14195,6 +14195,80 @@ describe('"Sacrifice it at the beginning of the next end step" (D696)', () => {
   });
 });
 
+describe('"Spend this mana only to cast your commander" (D697)', () => {
+  const ROWS = [
+    { name: 'Test Lotus', type_line: 'Artifact', oracle_text: '{T}, Sacrifice Test Lotus: Add three mana of any one color. Spend this mana only to cast your commander.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test General', type_line: 'Legendary Creature — Human', oracle_text: '', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Gilded', type_line: 'Artifact', oracle_text: '{T}: Add three mana of any one color.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Captain', type_line: 'Legendary Creature — Elf', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Idol', type_line: 'Artifact', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'lotus', name: 'Lotus',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'lotus', 1: 'lotus' }, deckSpecs: { lotus: deck.deck },
+      hands: { 0: ['Test General', 'Test Bear'] }, battlefield: { 0: ['Test Lotus'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const general = find(s, 0, 'hand', 'Test General');
+    return { ...s, instances: { ...s.instances, [general]: { ...s.instances[general]!, isCommander: true } } };
+  };
+  const castable = (s: GameState, name: string) => legalActions(s, 0).plays
+    .some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('pays for the commander and for nothing else', () => {
+    const s = table();
+    expect(castable(s, 'Test General')).toBe(true);
+    expect(castable(s, 'Test Bear')).toBe(false);
+    const cast = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test General') });
+    expect(cast.stackOrder.length).toBe(1);
+    expect(ids(cast, 0, 'battlefield').some((id) => cast.cardDefs[cast.instances[id]!.defKey]!.name === 'Test Lotus')).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') })).not.toBeNull();
+  });
+
+  it('"three mana of any one color" is three of the colour picked, for the auto-tapper too', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'lotus', 1: 'lotus' }, deckSpecs: { lotus: deck.deck },
+      hands: { 0: ['Test Bear'] }, battlefield: { 0: ['Test Gilded'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    expect(castable(s, 'Test Bear')).toBe(true);
+    const cast = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') });
+    expect(cast.stackOrder.length).toBe(1);
+    expect(poolOf(cast, 0).G ?? 0).toBe(0);
+  });
+
+  it('for a generic cost the three-mana tap is the one taken, and a land beside it is left alone', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'lotus', 1: 'lotus' }, deckSpecs: { lotus: deck.deck },
+      hands: { 0: ['Test Idol'] }, battlefield: { 0: ['Forest', 'Test Gilded'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const cast = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Idol') });
+    expect(cast.instances[find(cast, 0, 'battlefield', 'Forest')]!.tapped).toBe(false);
+  });
+
+  it('what the commander does not use of the restricted three is lost, not left floating', () => {
+    const s0 = advanceTo(arena({
+      decks: { 0: 'lotus', 1: 'lotus' }, deckSpecs: { lotus: deck.deck },
+      hands: { 0: ['Test Captain'] }, battlefield: { 0: ['Test Lotus'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const captain = find(s0, 0, 'hand', 'Test Captain');
+    const s = { ...s0, instances: { ...s0.instances, [captain]: { ...s0.instances[captain]!, isCommander: true } } };
+    const cast = apply(s, { type: 'auto:cast', by: 0, card: captain });
+    expect(cast.stackOrder.length).toBe(1);
+    expect(Object.values(poolOf(cast, 0)).reduce((a, b) => a + (b ?? 0), 0)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

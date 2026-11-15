@@ -863,7 +863,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   // A spell, by its live type line, so a restricted mana source may pay for it (D595).
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
-    { spell: characteristics.typeLine }, sacrificed === null ? undefined : new Set([sacrificed]));
+    { spell: characteristics.typeLine, commander: inst.isCommander === true }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);

@@ -660,6 +660,11 @@ export function flashbackCostOf(state: GameState, id: string): string | undefine
   return inst.zone === 'graveyard' && inst.flashbackGrantedTurn === state.turn ? def?.manaCost ?? '' : undefined;
 }
 
+/** What a spell's mana is being spent on, for a restricted source (D595, D697). */
+function payingFor(state: GameState, id: string, def: CardDef | undefined): PaymentFor {
+  return { spell: parseTypeLine(def?.typeLine), commander: state.instances[id]?.isCommander === true };
+}
+
 /** Colour words, for the pitch's offer (D691). */
 const COLOUR_NAMES: Readonly<Record<string, string>> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
 
@@ -1165,9 +1170,17 @@ export function manaSources(
       });
       continue;
     }
+    /*
+      Rows that are each a run of one colour, all the same length (D697): "Add three mana of any one
+      color" is five rows of three. A choice of colour, then the whole run — not one mana.
+    */
+    const run = usable[0]!.produces.length;
+    const runs = run > 1 && usable.every((u) => u.produces.length === run && new Set(u.produces).size === 1);
     bucket.push({
       key: id,
-      produces: usable.flatMap((u) => u.produces),
+      produces: runs ? [...new Set(usable.map((u) => u.produces[0]!))] : usable.flatMap((u) => u.produces),
+      ...(runs ? { chooseRun: run } : {}),
+      ...(runs && usable.every((u) => u.restricted === true) ? { restricted: true as const } : {}),
       abilityIndex: usable[0]!.index,
       ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
       choose: true,
@@ -1916,7 +1929,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     if ((!offered || costShown !== '') && convoked === null
       && !canAfford(poolOf(state, seat), payable, restrictedMana
         // A restricted mana source counts for a spell its restriction allows (D595).
-        ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) })
+        ? manaSources(state, seat, payingFor(state, id, def))
         : sources)) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
@@ -1926,7 +1939,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       (sweep 47815): `castSpell` pays with the sacrificed permanent kept out of the sources.
     */
     if (victims.length > 0 && convoked === null && (!offered || costShown !== '')) {
-      const all = restrictedMana ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) }) : sources;
+      const all = restrictedMana ? manaSources(state, seat, payingFor(state, id, def)) : sources;
       victims = victims.filter((victim) => canAfford(poolOf(state, seat), payable, all.filter((source) => source.key !== victim)));
       if (victims.length === 0) {
         why(id, 'everything it could sacrifice is needed for its mana');
@@ -2049,7 +2062,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       const full = costChangeFor(state, seat, def, id, []);
       const fullAffordable = full.generic === change.generic || (script?.delve !== true && tapRule === null
         && canAfford(poolOf(state, seat), withCostChange(taxed, full.generic), restrictedMana
-          ? manaSources(state, seat, { spell: parseTypeLine(def?.typeLine) })
+          ? manaSources(state, seat, payingFor(state, id, def))
           : sources));
       const at = fullAffordable ? -1 : open.findIndex((list) => list.some((t) => earns(state, seat, t, id)));
       if (at >= 0) candidates = open.map((list, i) => (i === at ? list.filter((t) => earns(state, seat, t, id)) : list));

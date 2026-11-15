@@ -29064,3 +29064,38 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,682, all passing
 
 Coverage: 11,361 of 31,653 cards (+21), 30,655 of 59,306 lines (+35). Staples: 209 of 244.
+
+## D697 — Jeweled Lotus, and "three mana of any one color" for the auto-tapper
+
+Two parts:
+
+**"Spend this mana only to cast your commander"** (Jeweled Lotus). It is a new `spendRestriction`
+phrase. `PaymentFor` gains `commander`, set from the casting card's `isCommander`. It is filled
+where a spell's restricted sources are asked for (`payingFor` in legalActions) and where the cast is
+paid (autoActions).
+
+**A defect from D669, found while testing it.** "Add three mana of any one color" is five abilities
+of three mana each. `manaSources` collapses several rows on one permanent into a single "choose one"
+source, and sized that source at **one** mana. So Gilded Lotus paid for one mana in auto-pay, and a
+Jeweled Lotus (restricted, so never pressed by hand) could pay for nothing. The fix:
+- rows that are each a single-colour run of the same length now become one source with the new
+  `ManaSource.chooseRun`;
+- `solveTap` sizes it at the run's length and adds the whole run of the colour it picks;
+- the source keeps `restricted` when every row is restricted, so mana the payment does not use is
+  lost (D595).
+
+Staples went from 209 to 210 (Jeweled Lotus).
+
+**Tests.** 5 engine tests:
+- the Lotus reads;
+- it pays for the commander and refuses a non-commander of the same cost;
+- a Gilded Lotus alone pays a three-mana spell;
+- for a generic three, the Lotus is tapped and the Forest beside it is not;
+- a two-mana commander paid with the Lotus leaves nothing floating.
+
+Faults injected by hand: 7 of 7 caught. The sizing and restricted-flag faults survived at first and
+were pinned by the last two tests.
+
+    engine tests: 4,687, all passing
+
+Coverage: 11,362 of 31,653 cards (+1), 30,656 of 59,306 lines (+1). Staples: 210 of 244 (+1).

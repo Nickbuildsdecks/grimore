@@ -285,6 +285,11 @@ export interface ManaSource {
   /** One of `produces`, picked when it is tapped, rather than all of them. */
   readonly choose?: boolean;
   /**
+   * With `choose`: the colour picked comes this many times (D697) — "Add three mana of any one
+   * color" (Gilded Lotus, Jeweled Lotus) is a choice of colour, then three of it.
+   */
+  readonly chooseRun?: number;
+  /**
    * Life the tap costs, for a land that charges you for the colour.
    *
    * The solver does not weigh it — it only carries it through to the pick, so whoever taps the
@@ -461,7 +466,7 @@ export function solveTap(
       let best = -1;
       let bestSize = 0;
       for (let i = 0; i < left.length; i++) {
-        const size = left[i]!.choose === true ? 1 : left[i]!.produces.length;
+        const size = left[i]!.choose === true ? left[i]!.chooseRun ?? 1 : left[i]!.produces.length;
         const fits = size <= short;
         const better = best < 0
           || (fits && (bestSize > short || size > bestSize))
@@ -477,7 +482,7 @@ export function solveTap(
     const source = left.splice(index, 1)[0]!;
     // A choice source adds the one colour it was tapped for; anything else adds all of its mana.
     const types = source.choose === true
-      ? [wanted ?? source.produces[0]!]
+      ? Array.from({ length: source.chooseRun ?? 1 }, () => wanted ?? source.produces[0]!)
       : source.produces;
     for (const type of types) working = addMana(working, type, 1);
     chosen.push({
