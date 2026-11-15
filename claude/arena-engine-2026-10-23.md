@@ -29413,3 +29413,36 @@ and the zone check kept as a belt.
     engine tests: 4,720, all passing
 
 Coverage: 11,388 of 31,653 cards (+5), 30,688 of 59,306 lines (+8). Staples: 221 of 244 (+1).
+
+## D709 — Myriad Landscape: basic land cards that share a land type
+
+"Search your library for up to two basic land cards that share a land type, put them onto the
+battlefield tapped, then shuffle."
+
+How it is read:
+- A basic land card has one basic land type, so "share a land type" means "all of one type".
+- The type is asked first. Only the types the library's basic land cards have are offered, with all
+  five as the fallback for an empty library.
+- Then come five library questions, one per type, each asked only if its type was the answer
+  (`askOnlyIfChosen`). Their answers are merged and handed to the plain search's effect.
+- No engine change was needed.
+- The bot's `best` is the type the library holds most of.
+
+Also a D706 follow-up. The D706 break run left one fault uncaught: the plain "Whenever you create a
+token" shape counting an opponent's tokens. No test covered that shape, because the hand-run
+faults hit only the Mirkwood Bats shape. A new test (Test Witness: yours count, an opponent's do
+not) pins it, and that fault was confirmed caught.
+
+Staples went from 221 to 222 (Myriad Landscape).
+
+**Tests.** 3 engine tests for Myriad Landscape, plus the D706 pin:
+- the card reads;
+- the type question offers the library's types and the bot answers the commonest;
+- only that type is offered as up to two, a mixed pair is refused, and the two enter tapped;
+- finding nothing is allowed.
+
+Faults injected by hand: 6 of 6 caught, including the D706 one.
+
+    engine tests: 4,724, all passing
+
+Coverage: 11,389 of 31,653 cards (+1), 30,689 of 59,306 lines (+1). Staples: 222 of 244 (+1).

@@ -14637,6 +14637,7 @@ describe('"Whenever you create a token" (D706)', () => {
     { name: 'Test Squad', type_line: 'Sorcery', oracle_text: 'Create two 1/1 white Soldier creature tokens.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
     { name: 'Test Outlet', type_line: 'Artifact', oracle_text: 'Sacrifice a creature: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
     { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Witness', type_line: 'Creature — Human', oracle_text: 'Whenever you create a token, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
   ];
   const deck = customDeck({
     id: 'bats', name: 'Bats',
@@ -14678,6 +14679,16 @@ describe('"Whenever you create a token" (D706)', () => {
     const s0 = table(['Test Squad'], ['Test Bats'], [], 1);
     const s = settle(apply(s0, { type: 'auto:cast', by: 1, card: find(s0, 1, 'hand', 'Test Squad') }));
     expect(s.seats[1]!.life).toBe(20);
+  });
+
+  it('the plain "whenever you create a token" counts yours, and not an opponent\'s (D709)', () => {
+    expect(compileCard(ROWS[4] as never)).toMatchObject({ ok: true, unread: [] });
+    const mine0 = table(['Test Squad'], ['Test Witness']);
+    const mine = settle(apply(mine0, { type: 'auto:cast', by: 0, card: find(mine0, 0, 'hand', 'Test Squad') }));
+    expect(mine.seats[0]!.life).toBe(22);
+    const theirs0 = table(['Test Squad'], ['Test Witness'], [], 1);
+    const theirs = settle(apply(theirs0, { type: 'auto:cast', by: 1, card: find(theirs0, 1, 'hand', 'Test Squad') }));
+    expect(theirs.seats[0]!.life).toBe(20);
   });
 });
 
@@ -14821,6 +14832,65 @@ describe('a free cast from your hand: the Expertise cycle (D708)', () => {
     expect(offered).not.toContain('Test Bear');
     // The bot takes the dearest card on offer.
     expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', cards: [find(s, 0, 'hand', 'Test Pricey')] });
+  });
+});
+
+describe('Myriad Landscape: basic land cards that share a land type (D709)', () => {
+  const ROWS = [
+    { name: 'Test Landscape', type_line: 'Land', oracle_text: '{2}, {T}, Sacrifice Test Landscape: Search your library for up to two basic land cards that share a land type, put them onto the battlefield tapped, then shuffle.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'landscape', name: 'Landscape',
+    entries: [{ name: 'Test Landscape', count: 2 }, { name: 'Forest', count: 20 }, { name: 'Plains', count: 8 }, { name: 'Island', count: 12 }],
+    data: ROWS,
+  });
+  const activated = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'landscape', 1: 'landscape' }, deckSpecs: { landscape: deck.deck },
+      battlefield: { 0: ['Test Landscape', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const landscape = find(s, 0, 'battlefield', 'Test Landscape');
+    s = apply(s, { type: 'auto:activate', by: 0, card: landscape, abilityIndex: 0 });
+    s = drain(s, 20);
+    expect(s.instances[landscape]!.zone).toBe('graveyard');
+    return s;
+  };
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks the type first, offering the types the library holds, then only that type\'s cards', () => {
+    let s = activated();
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect([...(s.pendingDecision?.options ?? [])].sort()).toEqual(['Forest', 'Island', 'Plains']);
+    // The bot takes the type the library holds most of.
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', option: 'Forest' });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Forest' } as Action), 20);
+    const offered = s.pendingDecision?.candidates ?? [];
+    expect(offered.length).toBeGreaterThan(1);
+    expect(offered.every((id) => named(s, id) === 'Forest')).toBe(true);
+    expect(s.pendingDecision?.max).toBe(2);
+    const plains = find(s, 0, 'library', 'Plains');
+    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [offered[0]!, plains] } as Action)).toBeTruthy();
+    const two = offered.slice(0, 2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: two } as Action), 20);
+    for (const id of two) {
+      expect(s.instances[id]!.zone).toBe('battlefield');
+      expect(s.instances[id]!.tapped).toBe(true);
+    }
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Forest')).toHaveLength(2);
+  });
+
+  it('finding nothing is allowed', () => {
+    let s = activated();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Island' } as Action), 20);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Island')).toHaveLength(2);
   });
 });
 

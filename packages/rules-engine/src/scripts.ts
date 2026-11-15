@@ -2118,6 +2118,54 @@ function searchClause(text: string, name: string): ReadEffect | null {
     };
   }
   /*
+    Myriad Landscape (D709): "Search your library for up to two basic land cards that share a land
+    type, put them onto the battlefield tapped, then shuffle." A basic land card has one basic land
+    type, so "share a land type" is "all of one type": the type is asked first, offering the types
+    the library's basic land cards have, and then one library question per type, each asked only
+    if its type was the answer (`askOnlyIfChosen`). The plain search's effect gets the cards found.
+    The bot takes the type the library holds most of.
+  */
+  const sharing = /^search your library for up to (two|three) basic land cards that share a land type, (.+)$/i.exec(text.trim());
+  if (sharing !== null) {
+    const inner = searchClause(`search your library for up to ${sharing[1]!} basic land cards, ${sharing[2]!}`, name);
+    const question = inner?.decisions?.length === 1 ? inner.decisions[0]! : undefined;
+    if (inner === null || inner.targets !== undefined || question === undefined
+      || typeof question === 'function' || !isCardsDecision(question) || question.from !== 'library') return null;
+    const TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
+    const ofType = (state: GameState, id: string, type: string): boolean =>
+      hasSubtype(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), type);
+    const countsIn = (state: GameState, chooser: SeatIndex) => TYPES.map((type) => listAt(state, zoneKey(chooser, 'library'))
+      .filter((id) => (question.filter === undefined || question.filter(state, id, chooser)) && ofType(state, id, type)).length);
+    return {
+      decisions: [
+        {
+          who: 'controller', prompt: 'Choose a basic land type', options: [...TYPES],
+          optionsFor: (state, chooser) => {
+            const counts = countsIn(state, chooser);
+            const present = TYPES.filter((_, i) => counts[i]! > 0);
+            return present.length === 0 ? [...TYPES] : present;
+          },
+          best: (state, chooser) => {
+            const counts = countsIn(state, chooser);
+            const most = Math.max(...counts);
+            return most === 0 ? undefined : TYPES[counts.indexOf(most)];
+          },
+        },
+        ...TYPES.map((type): CardsDecisionSpec => ({
+          ...question,
+          prompt: `${question.prompt} (${type})`,
+          askOnlyIfChosen: type,
+          filter: (state, id, chooser) => (question.filter === undefined || question.filter(state, id, chooser))
+            && ofType(state, id, type),
+        })),
+      ],
+      effect: (c) => {
+        const found = TYPES.flatMap((_, i) => chosenCards(c, i + 1));
+        return inner.effect({ ...c, decisions: [{ seat: c.controller, ids: found }] });
+      },
+    };
+  }
+  /*
     **Somebody else's search** (D647): "target player may search their library for a basic land
     card, put it onto the battlefield, then shuffle" — which is what Path to Exile's, Assassin's
     Trophy's and Ghost Quarter's "**Its controller** may search their library …" becomes under the
