@@ -12919,6 +12919,49 @@ describe('Reanimate and Insurrection (D676)', () => {
   });
 });
 
+describe('Living Death and Windfall (D677)', () => {
+  const row = (name: string, text: string) => ({
+    name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Living Death', 'Each player exiles all creature cards from their graveyard, then sacrifices all creatures they control, then puts all cards they exiled this way onto the battlefield.'),
+    row('Test Windfall', 'Each player discards their hand, then draws cards equal to the greatest number of cards a player discarded this way.'),
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{5}', cmc: 5, colors: [], layout: 'normal', power: '5', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'death', name: 'Death',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'death', 1: 'death' }, deckSpecs: { death: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('Living Death swaps each graveyard\'s creatures for each battlefield\'s', () => {
+    let s = table(['Test Living Death'], ['Grizzly Bears'], ['Grizzly Bears']);
+    const giant = find(s, 1, 'library', 'Test Giant');
+    s = apply(s, { type: 'card:move', by: 1, card: giant, toZone: 'graveyard' });
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Living Death') })));
+    expect([s.instances[giant]!.zone, s.instances[giant]!.zoneSeat]).toEqual(['battlefield', 1]);
+    // What died in the second step stays dead: it was not among the cards exiled in the first.
+    expect([s.instances[mine]!.zone, s.instances[theirs]!.zone]).toEqual(['graveyard', 'graveyard']);
+  });
+
+  it('Windfall: everyone discards, then draws the largest hand discarded', () => {
+    let s = table(['Test Windfall', 'Swamp'], []);
+    // The opponent holds the most: six cards against the caster's one after the cast.
+    for (let i = 0; i < 6; i++) s = apply(s, { type: 'card:move', by: 1, card: ids(s, 1, 'library')[0]!, toZone: 'hand' });
+    const theirs = ids(s, 1, 'hand').length;
+    const mine = ids(s, 0, 'hand').length - 1;
+    expect(theirs).toBeGreaterThan(mine);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Windfall') })));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([theirs, theirs]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

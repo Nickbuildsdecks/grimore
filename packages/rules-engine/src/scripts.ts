@@ -32,7 +32,7 @@ import {
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
-  REGENERATION, dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
+  REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
@@ -13069,6 +13069,53 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     The wheel (D651): "Each player discards their hand", and with "then draws seven cards" Wheel of
     Fortune. A whole hand is a discard of every card in it, so there is no question to ask.
   */
+  /*
+    Windfall (D677): "Each player discards their hand, then draws cards equal to the greatest number
+    of cards a player discarded this way." The hand sizes are read before anything moves, and every
+    living seat draws the largest of them.
+  */
+  if (/^each player discards their hand, then draws cards equal to the greatest number of cards a player discarded this way$/i.test(text)) {
+    return {
+      effect: (c) => {
+        let next = c.state;
+        const seats = next.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index);
+        const most = Math.max(0, ...seats.map((seat) => listAt(next, zoneKey(seat, 'hand')).length));
+        for (const seat of seats) next = moveToGraveyard(next, listAt(next, zoneKey(seat, 'hand')));
+        if (most > 0) for (const seat of seats) next = draw(next, seat, most);
+        return next;
+      },
+    };
+  }
+  /*
+    Living Death (D677): "Each player exiles all creature cards from their graveyard, then sacrifices
+    all creatures they control, then puts all cards they exiled this way onto the battlefield." Three
+    steps over every living seat, in that order: the exiled cards are remembered per seat, so what
+    dies in the second step stays in the graveyard and what comes back is only what was exiled.
+  */
+  if (/^each player exiles all creature cards from their graveyard, then sacrifices all creatures they control, then puts all cards they exiled this way onto the battlefield$/i.test(text)) {
+    return {
+      effect: (c) => {
+        let next = c.state;
+        const seats = next.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index);
+        const exiled = new Map<SeatIndex, string[]>();
+        for (const seat of seats) {
+          const cards = listAt(next, zoneKey(seat, 'graveyard')).filter((id) => {
+            const def = next.cardDefs[next.instances[id]?.defKey ?? ''];
+            return def !== undefined && hasType(parseTypeLine(def.typeLine), 'creature');
+          });
+          exiled.set(seat, cards);
+          next = cards.reduce(exileCard, next);
+        }
+        for (const seat of seats) next = sacrifice(next, creaturesControlledBy(next, seat));
+        for (const seat of seats) {
+          for (const id of exiled.get(seat) ?? []) {
+            if (next.instances[id]?.zone === 'exile') next = putOntoBattlefield(next, id, seat);
+          }
+        }
+        return next;
+      },
+    };
+  }
   const wheel = /^each player discards their hand(?:, then draws ([\w]+) cards)?$/i.exec(text);
   if (wheel !== null) {
     const n = wheel[1] === undefined ? 0 : countFrom(wheel[1]);
@@ -21764,6 +21811,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')
     .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
+    // Living Death (D677): three steps, one sentence, every "they" the same seat.
+    .replace(/(each player exiles all creature cards from their graveyard),\s+then (sacrifices all creatures they control),\s+then (puts all cards they exiled this way onto the battlefield)/gi, '$1\u0006$2\u0006$3')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
@@ -21772,6 +21821,7 @@ function clausesOf(line: string): readonly string[] {
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
       .replace(/\u0004/g, LIFE_LOST).replace(/\u0005/g, ', and they gain haste until end of turn')
+      .replace(/\u0006/g, ', then ')
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }

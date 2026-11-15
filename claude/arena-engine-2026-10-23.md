@@ -28442,3 +28442,32 @@ Faults injected by hand: 2 of 2 caught.
     engine tests: 4,612, all passing
 
 Coverage: 11,210 of 31,653 cards (+11), 30,400 of 59,306 lines (+14). Staples: 188 of 244 (+2).
+
+## D677 — Living Death and Windfall
+
+Two staples, each one sentence whose later clauses refer back to the first. Staples went from 188
+to 190.
+
+- **Windfall.** "Each player discards their hand, then draws cards equal to the greatest number of
+  cards a player discarded this way." The wheel's glue (D651) already held the sentence whole, so
+  only a reader was needed. Every living seat's hand size is read before anything moves; all discard;
+  each draws the largest of those sizes.
+- **Living Death.** "Each player exiles all creature cards from their graveyard, then sacrifices all
+  creatures they control, then puts all cards they exiled this way onto the battlefield."
+  - `clausesOf` now holds the three clauses together.
+  - The exiled cards are remembered per seat, so a creature that dies in the second step stays in
+    the graveyard, and only what was exiled returns, under its owner's control.
+  - The worker was restarted during D676's first gate, which was then rerun in full before D676 was
+    pushed.
+
+**Tests.** 2 engine tests:
+- Living Death returns the opponent's graveyard Giant under their control, and both Bears that died
+  in the swap stay dead;
+- Windfall with the opponent holding six cards against the caster's one: both end with six.
+
+Faults injected by hand: 3 of 3 caught. One survivor (counting the caster's hand only) was pinned by
+giving the opponent the larger hand.
+
+    engine tests: 4,614, all passing
+
+Coverage: 11,214 of 31,653 cards (+4), 30,405 of 59,306 lines (+5). Staples: 190 of 244 (+2).
