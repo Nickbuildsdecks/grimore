@@ -7889,6 +7889,9 @@ describe('deck coverage', () => {
       - `script pitch` (D691): Force of Will, Force of Negation and the one-card pitch spells. No pool
         deck has one. Driven at runtime by "a pitch cost: exile a card of the colour instead of the
         mana (D691)".
+      - `script grantsRiot` (D711): "Nontoken creatures you control have riot" (Rhythm of the Wild).
+        No pool deck has one. Driven at runtime by "\"Nontoken creatures you control have riot\":
+        Rhythm of the Wild (D711)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7911,6 +7914,7 @@ describe('deck coverage', () => {
       'script shufflesIntoLibrary',
       'script spellsCantBeCountered',
       'script pitch',
+      'script grantsRiot',
     ]);
 
     const declared = [
@@ -14949,6 +14953,63 @@ describe('Victimize: sacrifice a creature, and if you do, two back (D710)', () =
     expect(s.pendingDecision).toBeNull();
     expect(namesIn(s, 0, 'graveyard')).toEqual(expect.arrayContaining(['Test Giant', 'Test Bear', 'Test Victimize']));
     expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Giant');
+  });
+});
+
+describe('"Nontoken creatures you control have riot": Rhythm of the Wild (D711)', () => {
+  const ROWS = [
+    { name: 'Test Rhythm', type_line: 'Enchantment', oracle_text: "Creature spells you control can't be countered.\nNontoken creatures you control have riot.", mana_cost: '{0}', cmc: 0, colors: ['R', 'G'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'rhythm', name: 'Rhythm',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = [], caster: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'rhythm', 1: 'rhythm' }, deckSpecs: { rhythm: deck.deck },
+    hands: { [caster]: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: caster,
+  }), 'precombat-main');
+  // Riot's two answers, as `RIOT` in scripts.ts words them.
+  const COUNTER = '+1/+1 counter';
+  const HASTE = 'Haste';
+  const castBear = (s: GameState, by: SeatIndex) => {
+    let next = apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', 'Test Bear') });
+    for (let i = 0; i < 6 && next.stackOrder.length > 0 && next.pendingDecision === null; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature cast under it is asked riot\'s question, and enters with the answer', () => {
+    let s = castBear(table(['Test Bear'], ['Test Rhythm']), 0);
+    expect(s.pendingDecision?.options).toEqual([COUNTER, HASTE]);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: COUNTER } as Action), 20);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(1);
+
+    let t = castBear(table(['Test Bear'], ['Test Rhythm']), 0);
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [], option: HASTE } as Action), 20);
+    const hasty = find(t, 0, 'battlefield', 'Test Bear');
+    expect(t.instances[hasty]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(characteristicsOf(t, t.instances[hasty]!).keywords.has('haste')).toBe(true);
+  });
+
+  it('not without it, not under an opponent\'s, and not for a noncreature spell', () => {
+    // A permanent of another kind grants nothing.
+    const none = castBear(table(['Test Bear'], ['Forest']), 0);
+    expect(none.pendingDecision).toBeNull();
+    expect(namesIn(none, 0, 'battlefield')).toContain('Test Bear');
+    const theirs = castBear(table(['Test Bear'], [], ['Test Rhythm'], 0), 0);
+    expect(theirs.pendingDecision).toBeNull();
+    let spark = table(['Test Spark'], ['Test Rhythm']);
+    spark = apply(spark, { type: 'auto:cast', by: 0, card: find(spark, 0, 'hand', 'Test Spark') });
+    spark = passBoth(spark);
+    expect(spark.pendingDecision).toBeNull();
   });
 });
 

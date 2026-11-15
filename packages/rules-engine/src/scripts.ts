@@ -2978,7 +2978,7 @@ const fabricateTrigger = (count: number): TriggerDef => {
 
 /** Riot's question (CR 702.136a). The counter first: see `ENTERS_COUNTER_OPTION`. */
 export const RIOT_HASTE_OPTION = 'Haste';
-const RIOT: Partial<CardScript> = {
+export const RIOT: Partial<CardScript> = {
   entersChoice: 'riot',
   decisions: [{
     who: 'controller', prompt: 'Riot — enter with a +1/+1 counter, or with haste?',
@@ -25141,6 +25141,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;
     return { spellsCantBeCountered: { whose: uncounterable[2] === undefined ? 'all' : 'you', ...(kind === undefined ? {} : { kind }) } };
   }
+  // Rhythm of the Wild (D711): see `CardScript.grantsRiot`.
+  if (/^nontoken creatures you control have riot\.?$/i.test(plain(line).trim())) return { grantsRiot: true };
   // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
   if (/^untap all permanents you control during each other player's untap step\.?$/i.test(plain(line).trim())) {
     return { untapsDuringOthersUntap: true };

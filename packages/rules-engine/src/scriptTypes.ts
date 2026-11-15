@@ -3301,6 +3301,14 @@ export interface CardScript {
     readonly whose: 'you' | 'all';
     readonly kind?: 'creature' | 'noncreature';
   };
+  /**
+   * "Nontoken creatures you control have riot" (D711): Rhythm of the Wild. While the permanent is on
+   * the battlefield, a nontoken creature spell its controller casts asks riot's question as it
+   * resolves and enters with the answer, as a creature that prints riot does (`scriptOnStack`).
+   * Only a spell that asks nothing else, and only a cast creature: riot's question belongs to a
+   * resolving spell, so a creature put onto the battlefield is asked nothing (D559's limitation).
+   */
+  readonly grantsRiot?: true;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

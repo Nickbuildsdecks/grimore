@@ -46941,3 +46941,36 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,727, all passing
 
 Coverage: 11,391 of 31,653 cards (+2), 30,692 of 59,306 lines (+3). Staples: 223 of 244 (+1).
+
+## D711 — Rhythm of the Wild: "Nontoken creatures you control have riot"
+
+How it is read:
+- A new script field, `grantsRiot`, is set by the line.
+- `scriptOnStack` hands a nontoken creature spell riot's question and its `entersChoice: 'riot'`
+  (the exported `RIOT` piece) while its controller controls an untouched permanent with
+  `grantsRiot`. Both the question at resolution and the counter or haste on arrival then come from
+  the existing riot code.
+- **Not granted:**
+  - to a copy (it would be a token);
+  - to a spell that already asks a question, or already has riot;
+  - to a card the engine cannot play.
+- A vanilla creature has no script, and the grant gives it an empty one to carry the question.
+- **Limitation.** A creature put onto the battlefield without being cast is asked nothing. Riot's
+  question belongs to a resolving spell: D559's limitation, unchanged.
+
+Staples went from 223 to 224 (Rhythm of the Wild).
+
+**Tests.** 3 engine tests, plus the mechanic-coverage entry:
+- the card reads;
+- a creature cast under it is asked, and enters with a +1/+1 counter or with haste;
+- no question without it (another permanent instead), under an opponent's, or for a sorcery.
+
+The D559 refusal row for "Nontoken creatures you control have riot." is retired, since the line
+now reads.
+
+Faults injected by hand: 5 of 5 caught. The fifth (any permanent grants) was caught only after the
+"without it" case was given a Forest on the battlefield.
+
+    engine tests: 4,729, all passing
+
+Coverage: 11,392 of 31,653 cards (+1), 30,694 of 59,306 lines (+2). Staples: 224 of 244 (+1).

@@ -23,7 +23,7 @@
  */
 import {
   allAbilitiesLost, characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
-  isLegendary,
+  isLegendary, parseTypeLine,
   type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
@@ -56,7 +56,7 @@ import {
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
-import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, scriptFor, soleTargetSpecOf } from './scripts.js';
+import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, RIOT, scriptFor, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
@@ -459,8 +459,30 @@ const scriptOnStack = (state: GameState, object: StackObject): CardScript | unde
     cycling cost discards the card as it is activated, so by the time this runs the only thing left
     is `cardDefs[object.cardKey]`. That is exactly what `scriptForCard` takes.
   */
-  return scriptForCard(state.cardDefs[object.cardKey]);
+  const def = state.cardDefs[object.cardKey];
+  const script = scriptForCard(def);
+  // A creature with no rules text has no script and nothing to automate, which riot changes (D711).
+  const own = script ?? (def !== undefined && def.oracleText.trim() === '' ? { name: def.name } as CardScript : undefined);
+  return riotGranted(state, object, own) ? { ...own!, ...RIOT } as CardScript : script;
 };
+
+/**
+ * Riot from a permanent's static (D711, `CardScript.grantsRiot`): a nontoken creature spell —
+ * not a copy, which would become a token — whose controller controls an untouched Rhythm of the
+ * Wild, and whose own script asks nothing (one that already has riot, or another question, keeps
+ * its own). A card the engine cannot play has no script and is left alone; a vanilla creature
+ * also has none, and is given an empty one to carry the question.
+ */
+function riotGranted(state: GameState, object: StackObject, script: CardScript | undefined): boolean {
+  if (object.kind !== 'spell' || script === undefined || object.copyOf !== undefined) return false;
+  if (script.entersChoice !== undefined || (script.decisions ?? []).length > 0) return false;
+  if (!hasType(parseTypeLine(state.cardDefs[object.cardKey]?.typeLine), 'creature')) return false;
+  return listAt(state, zoneKey(object.controller, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
+    return scriptForCard(state.cardDefs[inst.defKey])?.grantsRiot === true;
+  });
+}
 
 /**
  * An **activated** ability a continuous effect handed a permanent, looked up from the reference

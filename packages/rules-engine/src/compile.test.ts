@@ -17652,7 +17652,7 @@ describe('the Fabricate, Riot and Unleash keyword lines (D559)', () => {
     ['a fabricate with no count', 'Fabricate'],
     ['a fabricate with a letter for a count', 'Fabricate X'],
     ['a line that only starts with fabricate', 'Fabricate 1 if you control an artifact'],
-    ['riot granted to other creatures', 'Nontoken creatures you control have riot.'],
+    // 'Nontoken creatures you control have riot.' reads since D711 (Rhythm of the Wild).
     ['riot with a number it does not print', 'Riot 2'],
     ['unleash granted to other creatures', 'Other Dogs you control have unleash.'],
     ['a spell that merely starts with the word', 'Unleash Shell deals 5 damage to target creature or planeswalker and 2 damage to that permanent\'s controller.'],
