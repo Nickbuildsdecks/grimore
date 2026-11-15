@@ -13671,6 +13671,57 @@ describe('"Creature spells you control can\'t be countered" (D688)', () => {
   });
 });
 
+describe('a draw at the beginning of the next upkeep (D689)', () => {
+  const ROWS = [
+    { name: 'Test Slowtrip', type_line: 'Instant', oracle_text: "You gain 1 life. Draw a card at the beginning of the next turn's upkeep.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Later', type_line: 'Instant', oracle_text: 'You gain 1 life. At the beginning of your next upkeep, draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'slowtrip', name: 'Slowtrip',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (spell: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'slowtrip', 1: 'slowtrip' }, deckSpecs: { slowtrip: deck.deck },
+      hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) }));
+  };
+  const toMain = (s: GameState) => advanceTo(nextTurn(s), 'precombat-main');
+  const hand = (s: GameState) => ids(s, 0, 'hand').length;
+
+  it('reads whole, with a delayed trigger on the card', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+      expect(read.ok && (read.script?.triggers ?? []).filter((t) => t.delayed === true).length, row.name).toBe(1);
+    }
+  });
+
+  it('"the next turn\'s upkeep": nothing now, one card on the opponent\'s upkeep, and only once', () => {
+    const s0 = table('Test Slowtrip');
+    expect(s0.seats[0]!.life).toBe(20 + 1);
+    const now = hand(s0);
+    const theirs = toMain(s0);
+    expect(hand(theirs)).toBe(now + 1);
+    const mine = toMain(theirs);
+    // My own draw step only.
+    expect(hand(mine)).toBe(now + 2);
+    expect(hand(toMain(mine))).toBe(now + 2);
+  });
+
+  it('"your next upkeep": not on the opponent\'s turn, and on mine as well as the draw step', () => {
+    const s0 = table('Test Later');
+    const now = hand(s0);
+    const theirs = toMain(s0);
+    expect(hand(theirs)).toBe(now);
+    const mine = toMain(theirs);
+    expect(hand(mine)).toBe(now + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

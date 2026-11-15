@@ -46272,3 +46272,34 @@ ends in the graveyard either way; it was pinned by checking the sorcery's life g
     engine tests: 4,654, all passing
 
 Coverage: 11,281 of 31,653 cards (+4), 30,491 of 59,306 lines (+10). Staples: 203 of 244.
+
+## D689 — a draw at the beginning of the next upkeep
+
+"Draw a card at the beginning of the next turn's upkeep." ends 40-odd Mirage and Ice Age spells.
+"At the beginning of your next upkeep, <effect>" is its sibling.
+
+How it is read: `spellScriptFor` takes the final sentence off the last resolution line and reads its
+body. Provided the body does not target (the spell's targets are gone by then), it becomes a
+one-shot `delayed` upkeep trigger appended to the card's `triggers`:
+- "the next turn's" upkeep is `of: 'any'`;
+- "your next" upkeep is `of: 'you'`.
+
+`withLaterTrigger` wraps the rest of the resolution so the trigger is scheduled once it has
+resolved.
+
+A compiled card's trigger index is not known while one line is read (unearth's problem), so the
+effect finds the trigger at run time. It looks in the script the card plays by, through effects.ts's
+new `scriptOfCard` (the lookup D688 injected), by identity or by description.
+
+**Tests.** 3 engine tests:
+- both spells read, each with one delayed trigger;
+- "the next turn's upkeep" draws nothing at once, one card on the opponent's upkeep, and never
+  again;
+- "your next upkeep" waits for your own turn.
+
+Faults injected by hand: 4 of 4 caught (not one-shot, always "any" seat, never scheduled, trigger
+not on the card).
+
+    engine tests: 4,657, all passing
+
+Coverage: 11,298 of 31,653 cards (+17), 30,525 of 59,306 lines (+34). Staples: 203 of 244.

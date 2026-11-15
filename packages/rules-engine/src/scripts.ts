@@ -42,7 +42,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, scheduleDelayed, EVOKED, KICKED, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, recordExpiry, pairCreatures,
@@ -22303,6 +22303,30 @@ function revealKeepGroup(
   };
 }
 
+/**
+ * A spell's resolution, followed by scheduling its delayed upkeep trigger (D689). The trigger is
+ * found by identity in the card's own script, or by its description if the script was rebuilt.
+ */
+function withLaterTrigger(read: ReadEffect, trigger: TriggerDef, of: 'any' | 'you'): ReadEffect {
+  const schedule = (c: EffectContext, state: GameState): GameState => {
+    const inst = state.instances[c.source];
+    const script = scriptOfCard(inst === undefined ? undefined : state.cardDefs[inst.defKey]);
+    const index = (script?.triggers ?? [])
+      .findIndex((t) => t === trigger || (t.delayed === true && t.description === trigger.description));
+    if (index < 0) return state;
+    return scheduleDelayed(state, {
+      source: c.source, controller: c.controller, abilityIndex: index, step: 'upkeep', of,
+      description: trigger.description,
+    });
+  };
+  return {
+    ...read,
+    effect: (c) => schedule(c, read.appliesNothing === true ? c.state : read.effect(c)),
+    appliesNothing: undefined,
+    ...(read.immediate === undefined ? {} : { immediate: (c: EffectContext) => schedule(c, read.immediate!(c)) }),
+  } as ReadEffect;
+}
+
 /** Chaos Warp's tail, as `clausesOf` hands it on (D684). */
 const CHAOS_WARP_TAIL = ', and reveals the top card of their library, putting it onto the battlefield if it is a permanent card';
 
@@ -25993,9 +26017,49 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     ? [...resolution.slice(0, last), plain(resolution[last]!).trim().replace(recycled, '').trim()]
       .filter((line) => line !== '').map((line) => (/[.!]$/.test(line) ? line : `${line}.`))
     : resolution;
+  /*
+    **A delayed draw** (D689): "Draw a card at the beginning of the next turn's upkeep." — the Mirage
+    and Ice Age cantrips, 40-odd spells — and "At the beginning of your next upkeep, <effect>". The
+    sentence is taken off the end and read as a one-shot `delayed` upkeep trigger on the card,
+    scheduled once the rest of the spell has resolved. "The next turn's" upkeep is whoever's turn
+    comes next (`of: 'any'`); "your next upkeep" is yours. The delayed part may not target: the
+    spell's targets are gone by then.
+
+    Its index in the card's `triggers` is not known while one line is being read (see `unearth`), so
+    the effect finds the trigger at run time, in the script the card plays by (`scriptOfCard`).
+  */
+  let laterTrigger: TriggerDef | null = null;
+  let laterOf: 'any' | 'you' = 'any';
+  let readNow = toRead;
+  if (toRead.length > 0) {
+    const lastText = plain(toRead[toRead.length - 1]!).trim();
+    const sentences = lastText.split(/(?<=\.)\s+/);
+    const final = sentences[sentences.length - 1]!.replace(/\.$/, '').trim();
+    const nextTurn = /^(.+) at the beginning of the next turn's upkeep$/i.exec(final);
+    const yourNext = /^at the beginning of your next upkeep, (.+)$/i.exec(final);
+    const body = nextTurn?.[1] ?? yourNext?.[1];
+    const inner = body === undefined ? null : readResolution([`${body.charAt(0).toUpperCase()}${body.slice(1)}.`], name);
+    if (inner !== null && body !== undefined && (inner.targets ?? []).length === 0
+      && inner.beforeDecisions === undefined && inner.appliesNothing !== true) {
+      laterOf = nextTurn !== null ? 'any' : 'you';
+      laterTrigger = {
+        on: { kind: 'step', step: 'upkeep', of: laterOf },
+        delayed: true,
+        description: body.charAt(0).toLowerCase() + body.slice(1),
+        effect: inner.effect,
+        ...(inner.decisions === undefined ? {} : { decisions: inner.decisions }),
+      };
+      const rest = sentences.slice(0, -1).join(' ').trim();
+      readNow = [...toRead.slice(0, -1), ...(rest === '' ? [] : [rest])];
+    }
+  }
   const additional = (built as Partial<CardScript>).additionalCost;
   const paidBySacrifice = additional !== undefined && 'sacrifice' in additional;
-  const read = withSacrificeInCost(paidBySacrifice, () => readResolution(toRead, name));
+  const readMain = readNow.length === 0 && laterTrigger !== null
+    ? { effect: (c: EffectContext) => c.state } as ReadEffect
+    : withSacrificeInCost(paidBySacrifice, () => readResolution(readNow, name));
+  const read = readMain === null || laterTrigger === null ? readMain : withLaterTrigger(readMain, laterTrigger, laterOf);
+  if (read !== null && laterTrigger !== null) built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), laterTrigger];
   if (read !== null && recycles) built['shufflesIntoLibrary'] = true;
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;

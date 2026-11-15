@@ -1049,6 +1049,11 @@ export function useScriptLookup(lookup: (def: CardDef | undefined) => CardScript
   scriptLookup = lookup;
 }
 
+/** The script a card plays by, through the same lookup (D689); undefined before derive.ts loads. */
+export function scriptOfCard(def: CardDef | undefined): CardScript | undefined {
+  return scriptLookup === null ? undefined : scriptLookup(def);
+}
+
 /**
  * Whether a permanent on the battlefield says this spell can't be countered (D688): "Creature
  * spells you control can't be countered" (Rhythm of the Wild) and its kin. "You control" is the
