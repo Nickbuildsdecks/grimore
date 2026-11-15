@@ -28189,3 +28189,38 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,583, all passing
 
 Coverage: 11,099 of 31,653 cards (+3), 30,128 of 59,306 lines (+8). Staples: 186 of 244 (+1).
+
+## D669 — mana in words, three of any one colour, and mana by an opponent's hand
+
+**Mana lines.**
+- "Add six {G}" (Castle Garenbrig's body): a number word before one symbol is a sum of that many.
+- "Add three mana of any one color" (Gilded Lotus, Jeweled Lotus's body): five answers of three
+  each, never a mix, read as D665's runs.
+
+**Refused on purpose: a mana cost together with a spending restriction.** Castle Garenbrig's
+"{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells …" read on the first
+pass. But restricted mana is made only by the automatic payer while it pays for something allowed,
+and that payer never takes an ability that costs mana. The land would have read and never been
+usable, so the line stays unread. A compile test pins this.
+
+**Jeweled Lotus** stays unread for a different reason: "Spend this mana only to cast your commander"
+needs the spell's commander status, and `SpendRestriction.allows` sees only type lines.
+
+**Spell-side.** "Add {R} for each card in target opponent's hand" (Jeska's Will's first mode): the
+targeted player's hand size as the spell resolves. A mode may now carry `makesMana`; the modal
+reader drops that hint with its cost stated (the bot may undervalue a mana mode), where before it
+refused the whole card. Jeska's Will now reads in full.
+
+**Tests.**
+- 3 engine tests:
+  - "Add three {G}" shows and makes three;
+  - "three mana of any one color" is exactly WWW/UUU/BBB/RRR/GGG, and the red one makes three red
+    and nothing else;
+  - the hand-count mode makes one red per card in the target's hand.
+- 1 compile test: the Castle's costed, restricted line is unread.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,587, all passing
+
+Coverage: 11,113 of 31,653 cards (+14), 30,153 of 59,306 lines (+25). Staples: 186 of 244.

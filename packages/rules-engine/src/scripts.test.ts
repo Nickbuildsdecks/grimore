@@ -12611,6 +12611,52 @@ describe('the Will cycle: both modes while you control a commander (D668)', () =
   });
 });
 
+describe('mana in words, three of any one colour, and mana by an opponent\'s hand (D669)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}') => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Grove', 'Land', '{T}: Add three {G}.', ''),
+    row('Test Lotus', 'Artifact', '{T}: Add three mana of any one color.'),
+    row('Test Jeska', 'Sorcery', "Choose one —\n• Add {R} for each card in target opponent's hand.\n• Draw a card."),
+  ];
+  const deck = customDeck({
+    id: 'words', name: 'Words',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 6 }, { name: 'Forest', count: 40 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'words', 1: 'words' }, deckSpecs: { words: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const abilities = (s: GameState, id: string) => scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.abilities ?? [];
+
+  it('"Add three {G}" makes three green from one tap', () => {
+    let s = table([], ['Test Grove']);
+    expect(potentialMana(s, 0).G).toBe(3);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Grove'), abilityIndex: 0 });
+    expect(s.pools['0']!.G).toBe(3);
+  });
+
+  it('"three mana of any one color" is five answers of three, never a mix', () => {
+    let s = table([], ['Test Lotus']);
+    const lotus = find(s, 0, 'battlefield', 'Test Lotus');
+    const offered = abilities(s, lotus).map((a) => (a.produces ?? []).join(''));
+    expect(offered).toEqual(['WWW', 'UUU', 'BBB', 'RRR', 'GGG']);
+    s = apply(s, { type: 'auto:activate', by: 0, card: lotus, abilityIndex: offered.indexOf('RRR') });
+    expect([s.pools['0']!.R, s.pools['0']!.G ?? 0]).toEqual([3, 0]);
+  });
+
+  it('adds one red for each card in the targeted opponent\'s hand', () => {
+    let s = table(['Test Jeska'], []);
+    for (let i = 0; i < 3; i++) s = apply(s, { type: 'card:move', by: 1, card: ids(s, 1, 'library')[0]!, toZone: 'hand' });
+    const cards = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Jeska'), modes: [0], targets: [{ kind: 'player', seat: 1 }] }));
+    expect(cards).toBeGreaterThan(0);
+    expect(s.pools['0']!.R).toBe(cards);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

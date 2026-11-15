@@ -483,6 +483,13 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   if (lead !== null) {
     const rest = parseManaLine(lead[2]!, name, chosenOk);
     if (rest === null || !rest.cost.tap || rest.cost.mana !== undefined) return null;
+    /*
+      Not with a spending restriction (D669): restricted mana is made only while paying for what it
+      may pay for, by the automatic payer, which never takes an ability that costs mana — so Castle
+      Garenbrig's "{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells …" would
+      read and never be usable. Unread is the honest answer until the payer can chain the two.
+    */
+    if (rest.spendOnly !== undefined) return null;
     return { ...rest, cost: { ...rest.cost, mana: lead[1]! }, printed: `${lead[1]!}, ${rest.printed}` };
   }
   /*
@@ -530,6 +537,24 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     }
   }
 
+  /*
+    A number in words (D669): "Add six {G}" (Castle Garenbrig), and "Add three mana of any one color"
+    (Jeweled Lotus, Gilded Lotus) — five answers of three, read as the filter lands' runs (D665).
+  */
+  const WORDS: Readonly<Record<string, number>> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const worded = /^(two|three|four|five|six|seven|eight|nine|ten) (\{[WUBRGC]\})$/i.exec(body);
+  if (worded !== null) {
+    const one = parseSymbolRun(worded[2]!);
+    if (one === null) return null;
+    const n = WORDS[worded[1]!.toLowerCase()]!;
+    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
+  const anyOne = /^(two|three|four|five) mana of any one colou?r$/i.exec(body);
+  if (anyOne !== null) {
+    const n = WORDS[anyOne[1]!.toLowerCase()]!;
+    const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
+    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   // A count (D662): one symbol "for each" thing, read off the board as the mana is made.
   const counted = /^(\{[WUBRGC]\}) for each (.+)$/i.exec(body);
   if (counted !== null) {

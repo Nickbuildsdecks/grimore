@@ -12199,6 +12199,23 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       }).reduce((state, id) => gainControl(state, id, state.instances[id]!.owner), c.state),
     };
   }
+  /*
+    "Add {R} for each card in target opponent's hand" (D669): Jeska's Will's first mode. The count is
+    the targeted player's hand as the spell resolves.
+  */
+  const handMana = /^add \{([WUBRGC])\} for each card in target (opponent|player)'s hand$/i.exec(text);
+  if (handMana !== null) {
+    const symbol = handMana[1]!.toUpperCase() as Parameters<typeof addToPool>[2];
+    return {
+      targets: [handMana[2]!.toLowerCase() === 'opponent' ? TARGET_OPPONENT : TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        if (seat === null) return c.state;
+        return addToPool(c.state, c.controller, symbol, listAt(c.state, zoneKey(seat, 'hand')).length);
+      },
+      spellFlags: { makesMana: true },
+    };
+  }
   if (/^add one mana of any colou?r$/i.test(text)) {
     const words: Readonly<Record<string, ManaType>> = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G' };
     return {
@@ -25218,6 +25235,13 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     delete flags['preventsDamage'];
     // See the docblock: this one is structurally redundant on a mode, the rest are not.
     delete flags['removesACreature'];
+    /*
+      And `makesMana` (D669), dropped with its cost stated: it is a whole-spell hint ("a Dark Ritual
+      is worth casting into nothing") and `ModeDef` has nowhere to put it. A mode that adds mana —
+      Jeska's Will's first — is then judged by the position after it like any other, which can make
+      the bot undervalue it. A play-quality gap, not a rules one; the mana is made exactly.
+    */
+    delete flags['makesMana'];
     if (Object.keys(flags).length > 0) return null;
     modes.push({
       description: printed,

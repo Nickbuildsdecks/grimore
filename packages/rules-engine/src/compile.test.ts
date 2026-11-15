@@ -10877,6 +10877,18 @@ describe('"its mana value" needs an earlier target (D660)', () => {
   });
 });
 
+describe('a costed mana ability with a spending restriction stays unread (D669)', () => {
+  it('reads Castle Garenbrig\'s line as unread, because the payer could never use it', () => {
+    const read = compileCard({
+      name: 'Garden Keep', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: '{T}: Add {G}.\n{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of creatures.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual(['{2}{G}{G}, {T}: Add six {G}. Spend this mana only to cast creature spells or activate abilities of creatures.']);
+  });
+});
+
 describe('an exact mana value on a target phrase (D655)', () => {
   const instant = (text: string) => compileCard({
     name: 'Exact Thing', type_line: 'Instant', mana_cost: '{U}', cmc: 1,
