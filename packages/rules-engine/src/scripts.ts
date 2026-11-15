@@ -17388,7 +17388,7 @@ function countOfThing(
   if (destroyed !== null) {
     if (!destroyedThisWay) return null;
     const kind = destroyed[1]!.toLowerCase();
-    return (c) => (c.destroyedThisWay ?? []).filter((types) => kind === 'permanent' || types.includes(kind)).length;
+    return (c) => (c.destroyedThisWay ?? []).filter((gone) => kind === 'permanent' || gone.types.includes(kind)).length;
   }
   if (/^lands? you control$/i.test(text)) {
     return (c) => landsControlled(c.state, c.controller);
@@ -22065,22 +22065,34 @@ function readEffect(
     regenerated permanent is not counted. Neither sentence may ask or target: there is one list of
     targets for the whole line and no way to say which sentence a target belongs to.
   */
-  const thisWay = /^(destroy all [^;]+); (.+)$/i.exec(clause.trim());
+  /*
+    And a destroy that targets (D704): Terastodon's "you may destroy up to three target noncreature
+    permanents. For each permanent put into a graveyard this way, its controller creates a 3/3 green
+    Elephant creature token." The targets are the first sentence's alone; the second may not have
+    any of its own.
+  */
+  const thisWay = /^((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^;]+); (.+)$/i.exec(clause.trim());
   if (thisWay !== null) {
     const first = readEffect(thisWay[1]!, name, where);
     const second = withDestroyedThisWay(() => readEffect(thisWay[2]!, name, where));
-    const plainOf = (r: ReadEffect | null): r is ReadEffect => r !== null && r.beforeDecisions === undefined
-      && (r.decisions ?? []).length === 0 && (r.targets ?? []).length === 0;
-    if (!plainOf(first) || first.immediate !== undefined || !plainOf(second)) return null;
+    const plainOf = (r: ReadEffect | null, aims: boolean): r is ReadEffect => r !== null && r.beforeDecisions === undefined
+      && (r.decisions ?? []).length === 0 && (aims || (r.targets ?? []).length === 0);
+    if (!plainOf(first, true) || first.immediate !== undefined || !plainOf(second, false)) return null;
     // The second sentence's own two readings (a draw is owed last and done now otherwise) are kept.
     const then = (spend: EffectFn): EffectFn => (c) => {
       const onBattlefield = (state: GameState): string[] => state.seats
         .flatMap((seat) => [...listAt(state, zoneKey(seat.index, 'battlefield'))]);
-      const types = new Map(onBattlefield(c.state).map((id) => [id,
-        characteristicsOf(c.state, c.state.instances[id]!).typeLine.types.map((t) => t.toLowerCase())]));
+      const was = new Map(onBattlefield(c.state).map((id) => [id, {
+        types: characteristicsOf(c.state, c.state.instances[id]!).typeLine.types.map((t) => t.toLowerCase()),
+        controller: c.state.instances[id]!.zoneSeat,
+      }]));
       const after = first.effect(c);
       const left = new Set(onBattlefield(after));
-      const gone = [...types].filter(([id]) => !left.has(id)).map(([, t]) => t);
+      const gone = [...was].filter(([id]) => !left.has(id)).map(([id, w]) => ({
+        ...w,
+        // A token put into a graveyard ceases to exist there, and was still put there (CR 111.7).
+        toGraveyard: after.instances[id] === undefined || after.instances[id]?.zone === 'graveyard',
+      }));
       return spend({ ...c, state: after, destroyedThisWay: gone });
     };
     return {
@@ -22088,6 +22100,27 @@ function readEffect(
       effect: then(second.effect),
       ...(second.immediate === undefined ? {} : { immediate: then(second.immediate) }),
     };
+  }
+  /*
+    "For each permanent put into a graveyard this way, its controller creates a 3/3 green Elephant
+    creature token." (D704): a token for each one's controller as it left. Only inside the glue
+    above, where `destroyedThisWay` is set.
+  */
+  const theirTokens = destroyedThisWay
+    ? /^for each (creature|permanent|artifact|enchantment|land) (destroyed|put into a graveyard) this way, (?:its|that (?:creature|permanent)'s) controller creates (.+)$/i.exec(clause.trim())
+    : null;
+  if (theirTokens !== null) {
+    const made = tokenFrom(`create ${theirTokens[3]!}`);
+    const count = made === null ? undefined : WORD_NUMBERS[made.printed.toLowerCase()];
+    if (made !== null && count !== undefined) {
+      const kind = theirTokens[1]!.toLowerCase();
+      const buried = theirTokens[2]!.toLowerCase().startsWith('put');
+      return {
+        effect: (c) => (c.destroyedThisWay ?? [])
+          .filter((gone) => (kind === 'permanent' || gone.types.includes(kind)) && (!buried || gone.toGraveyard))
+          .reduce((state, gone) => createToken(state, gone.controller, made.token, count), c.state),
+      };
+    }
   }
   return preventionEffect(clause, name)
     ?? untargetedEffect(clause, name)
@@ -22154,7 +22187,7 @@ function clausesOf(line: string): readonly string[] {
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
-    .replace(/(destroy all [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*destroyed this way)/gi, '$1\u0007$2')
+    .replace(/((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
     // same spell with the shuffle first, as the shuffle touches only the library.
     .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')

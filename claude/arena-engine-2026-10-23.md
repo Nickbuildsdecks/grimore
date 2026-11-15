@@ -29259,3 +29259,33 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,703, all passing
 
 Coverage: 11,373 of 31,653 cards (+2), 30,669 of 59,306 lines (+2). Staples: 216 of 244 (+1).
+
+## D704 — Terastodon: a token for each destroyed permanent's controller
+
+"When ~ enters, you may destroy up to three target noncreature permanents. For each permanent put
+into a graveyard this way, its controller creates a 3/3 green Elephant creature token." The same
+shape appears on a handful of removal spells ("Destroy target creature. For each creature destroyed
+this way, its controller creates …").
+
+D682's "destroyed this way" glue is widened:
+- The first sentence may now be a targeted destroy ("you may destroy up to three target …",
+  "destroy target …"), not only "destroy all". Its targets are its own, and the second sentence
+  still may not have any.
+- Each entry in `EffectContext.destroyedThisWay` now records the permanent's controller as it left
+  and whether it reached a graveyard (a token counts; CR 111.7).
+- A new reader, read only inside the glue: "For each <kind> destroyed / put into a graveyard this
+  way, its controller creates <token>". It makes the token for each entry's controller.
+
+Staples went from 216 to 217 (Terastodon).
+
+**Tests.** 2 engine tests, plus D682's run against the change:
+- the card reads;
+- aimed at my enchantment, their artifact and their indestructible artifact, it destroys the first
+  two, and each controller gets one Elephant.
+
+Faults injected by hand: 3 of 3 caught. The "left the battlefield" filter fault is caught by D682's
+tests, since the graveyard check makes it redundant for Terastodon's own wording.
+
+    engine tests: 4,705, all passing
+
+Coverage: 11,375 of 31,653 cards (+2), 30,671 of 59,306 lines (+2). Staples: 217 of 244 (+1).

@@ -14525,6 +14525,51 @@ describe('Field of the Dead: seven lands with different names (D703)', () => {
   });
 });
 
+describe('Terastodon: a token for each destroyed permanent\'s controller (D704)', () => {
+  const ROWS = [
+    { name: 'Test Tera', type_line: 'Creature — Elephant', oracle_text: 'When Test Tera enters, you may destroy up to three target noncreature permanents. For each permanent put into a graveyard this way, its controller creates a 3/3 green Elephant creature token.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '9', toughness: '9' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Idol', type_line: 'Artifact', oracle_text: 'Indestructible', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'tera', name: 'Tera',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const elephants = (s: GameState, seat: SeatIndex) => ids(s, seat, 'battlefield')
+    .filter((id) => s.instances[id]!.isToken).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('one of theirs and one of mine destroyed: an Elephant for each controller, none for the indestructible', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tera', 1: 'tera' }, deckSpecs: { tera: deck.deck },
+      hands: { 0: ['Test Tera'] }, battlefield: { 0: ['Test Charm'], 1: ['Test Relic', 'Test Idol'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const aims = [find(s, 0, 'battlefield', 'Test Charm'), find(s, 1, 'battlefield', 'Test Relic'), find(s, 1, 'battlefield', 'Test Idol')];
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tera') });
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingChoice !== null || s.pendingDecision !== null); i++) {
+      if (s.pendingChoice !== null) {
+        s = apply(s, { type: 'auto:choose', by: 0, targets: aims.map((id) => ({ kind: 'card', id })) } as Action);
+      } else if (s.pendingDecision !== null) {
+        s = apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [], option: s.pendingDecision.options?.[0] ?? 'Yes' });
+      } else {
+        s = passBoth(s);
+      }
+    }
+    expect(s.instances[aims[0]!]!.zone).toBe('graveyard');
+    expect(s.instances[aims[1]!]!.zone).toBe('graveyard');
+    expect(s.instances[aims[2]!]!.zone).toBe('battlefield');
+    expect(elephants(s, 0)).toBe(1);
+    expect(elephants(s, 1)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

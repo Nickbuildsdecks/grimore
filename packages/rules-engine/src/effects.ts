@@ -159,7 +159,13 @@ export interface EffectContext {
    * the battlefield: Bane of Progress's "Put a +1/+1 counter on ~ for each permanent destroyed this
    * way". Set only between the two sentences `clausesOf` holds together; see `destroyedThisWay`.
    */
-  readonly destroyedThisWay?: readonly (readonly string[])[];
+  readonly destroyedThisWay?: readonly {
+    readonly types: readonly string[];
+    /** Who controlled it as it left (D704): Terastodon's "its controller creates …". */
+    readonly controller: SeatIndex;
+    /** Whether it reached a graveyard, for "put into a graveyard this way" (D704). */
+    readonly toGraveyard: boolean;
+  }[];
   /**
    * The total power of the creatures tapped to pay this ability's cost, as they were (D637): a
    * Spacecraft's station puts that many charge counters on it.
