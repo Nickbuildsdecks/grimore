@@ -18,7 +18,7 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  cardHasSubtype, characteristicsOf, conditionHolds, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
+  cardHasSubtype, characteristicsOf, conditionHolds, devotionTo, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
   isLegendary,
   parseTypeLine,
   printedKeywords,
@@ -11744,7 +11744,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -11854,7 +11854,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     the plural, which is what this grammar prints.
   */
   const drawEqual = new RegExp(
-    `^(?:you )?draw cards equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (drawEqual !== null) {
     const counted = boardCount(drawEqual[1]!, name);
@@ -11877,7 +11877,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     };
   }
   const lifeEqual = new RegExp(
-    `^you (gain|lose) life equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (lifeEqual !== null) {
     const counted = boardCount(lifeEqual[2]!, name);
@@ -16624,6 +16624,8 @@ const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
 function boardCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
   const paid = sacrificedMeasure(plain(phrase).trim().replace(/\.$/, ''));
   if (paid !== null) return paid;
+  const devoted = devotionCount(plain(phrase).trim().replace(/\.$/, ''));
+  if (devoted !== null) return devoted;
   const announced = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
   return announced === null ? null : countOfThing(announced[1]!, name, 'plural');
 }
@@ -16656,6 +16658,23 @@ function withSacrificeInCost<T>(on: boolean, read: () => T): T {
     sacrificeInCost = before;
   }
 }
+
+/**
+ * **Devotion** (D657): "your devotion to black", "your devotion to white and black" — the number of
+ * mana symbols of those colours in the mana costs of the permanents you control (CR 700.5). A hybrid
+ * symbol counts once if it is either colour (CR 700.5a); Phyrexian symbols count by their colour;
+ * generic, colourless and snow symbols never do. Read as the effect resolves, like every board count.
+ */
+const DEVOTION_COLOURS: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+
+function devotionCount(phrase: string): ((c: EffectContext) => number) | null {
+  const matched = /^your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?$/i.exec(phrase);
+  if (matched === null) return null;
+  const colours = new Set([matched[1]!, matched[2]].filter((w): w is string => w !== undefined)
+    .map((w) => DEVOTION_COLOURS[w.toLowerCase()]!));
+  return (c) => devotionTo(c.state, c.controller, colours);
+}
+
 
 /** The printed spellings of a measure of what was sacrificed, as a regex source. See below. */
 const SACRIFICED_MEASURE = "the sacrificed (?:creature|artifact|permanent)'s (?:power|toughness|mana value)"
@@ -19506,7 +19525,7 @@ function countedDamageFrom(
   const flat = clause.trim().replace(/\.\s*$/, '');
 
   const announced = new RegExp(
-    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (announced !== null) {
     const amount = boardCount(announced[2]!, name);
@@ -19514,7 +19533,7 @@ function countedDamageFrom(
   }
 
   const equalTo = new RegExp(
-    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (equalTo !== null) {
     const amount = boardCount(equalTo[2]!, name);
@@ -23601,6 +23620,8 @@ function thresholdPredicate(predicate: string): PumpOptions | null {
     if (isKeyword(word)) { keywords.push(word); continue; }
     if (has !== null) return null;
     if (low === "can't block") { out = { ...out, cantBlock: true }; continue; }
+    // "isn't a creature" (D657): the Theros gods' condition takes the type away (layer 4).
+    if (low === "isn't a creature") { out = { ...out, removeTypes: ['Creature'] }; continue; }
     if (low === "can't be blocked") { out = { ...out, cantBeBlocked: true }; continue; }
     if (low === 'attacks each combat if able') { out = { ...out, mustAttack: true }; continue; }
     return null;
@@ -23875,6 +23896,15 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   // quality this does not count.
   const subtype = /^you control an? ([A-Z][A-Za-z'-]*)$/.exec(text);
   if (subtype !== null) return { kind: 'controller-subtype', subtype: subtype[1]!, atLeast: 1 };
+  // Devotion (D657): the Theros gods' "your devotion to red is less than five".
+  const devotion = /^your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))? is less than (\S+)$/i.exec(text);
+  if (devotion !== null) {
+    const below = n(devotion[3]!);
+    if (below === null) return null;
+    const colours = [devotion[1]!, devotion[2]].filter((w): w is string => w !== undefined)
+      .map((w) => DEVOTION_COLOURS[w.toLowerCase()]!);
+    return { kind: 'controller-devotion', colours, below };
+  }
   if (/^it's not your turn$/i.test(text)) return { kind: 'turn', yours: false };
   if (/^it's your turn$/i.test(text)) return { kind: 'turn', yours: true };
   return null;

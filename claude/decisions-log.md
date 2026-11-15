@@ -45237,3 +45237,37 @@ conceded seat.
     engine tests: 4,541, all passing
 
 Coverage: 10,974 of 31,653 cards (+59), 29,854 of 59,306 lines (+83). Staples: 166 of 244 (+3).
+
+## D657 — devotion, as a count and as the gods' condition
+
+64 legal cards mention devotion (CR 700.5). Staples went from 166 to 168: Gray Merchant and
+Purphoros.
+
+**The count.**
+- `devotionTo(state, seat, colours)`, in characteristics.ts: mana symbols of those colours in the
+  printed mana costs of the seat's permanents. A hybrid symbol counts once if either half matches
+  (CR 700.5a); generic, colourless and snow never do.
+- Printed costs only, so it can be asked inside `characteristicsOf` without re-entering it.
+- "Your devotion to X (and Y)" is a `boardCount`, so it reads everywhere a board count does: "where
+  X is", "draw cards equal to", "gain/lose life equal to", "deals damage equal to", and "+X/+X".
+
+**The gods.** "As long as your devotion to red is less than five, Purphoros isn't a creature."
+- `staticCondition` reads it as a `controller-devotion` condition with a `below` bound.
+- `thresholdPredicate` reads "isn't a creature" as a new layer-4 field, `removeTypes`. It applies in
+  effect order with `addTypes`, so a later "becomes a creature" puts the type back.
+- `withAddedTypes` returns the printed line untouched unless something was added or removed, so the
+  hot path is unchanged.
+
+**Tests.** 4 engine tests:
+- a Merchant drains by black symbols, with hybrid counted once;
+- a green count beside black permanents counts only the green;
+- a two-colour devotion counts each hybrid once and never generic;
+- a god is an enchantment below five and a 6/5 creature at five, and stops being one when the
+  devotion goes again.
+
+Faults injected by hand: 6 of 6 caught. One survivor (a count fixed to black) was pinned by the green
+count.
+
+    engine tests: 4,545, all passing
+
+Coverage: 10,989 of 31,653 cards (+15), 29,887 of 59,306 lines (+33). Staples: 168 of 244 (+2).

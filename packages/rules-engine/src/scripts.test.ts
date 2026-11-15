@@ -17,7 +17,7 @@ import {
   KEYWORDS, STEPS,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock, evaluate,
   destroy, forcedAttackers,
-  characteristicsOf, commanderTaxFor, customDeck,
+  characteristicsOf, commanderTaxFor, customDeck, devotionTo,
   hasType,
   lastLogEntry,
   legalActions,
@@ -11913,6 +11913,76 @@ describe('lands from hand, graveyard cards to the top, drain and gain (D656)', (
     gone = apply(gone, { type: 'card:move', by: 0, card: find(gone, 0, 'library', 'Test Merchant'), toZone: 'hand' });
     gone = drain(passBoth(apply(gone, { type: 'auto:cast', by: 0, card: find(gone, 0, 'hand', 'Test Merchant') })));
     expect(life(gone, 0)).toBe(start + 2);
+  });
+});
+
+describe('devotion: a count, and the gods that need it (D657)', () => {
+  const row = (name: string, type: string, text: string, cost: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Merchant', 'Creature — Zombie', 'When this creature enters, each opponent loses X life, where X is your devotion to black. You gain life equal to the life lost this way.', '{B}', ['2', '4']),
+    row('Test Shade', 'Enchantment', '', '{1}{B}{B}'),
+    row('Test Hybrid', 'Enchantment', '', '{B/G}'),
+    row('Test Mixed', 'Enchantment', '', '{W}{B}{W/B}{2}'),
+    row('Test God', 'Legendary Enchantment Creature — God', 'Indestructible\nAs long as your devotion to red is less than five, Test God isn\'t a creature.', '{3}{R}', ['6', '5']),
+    row('Test Altar', 'Enchantment', '', '{R}{R}{R}{R}'),
+    row('Test Grower', 'Creature — Elf', 'When this creature enters, you gain life equal to your devotion to green.', '{G}', ['1', '1']),
+  ];
+  const deck = customDeck({
+    id: 'devoted', name: 'Devoted',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 30 }, { name: 'Forest', count: 10 }],
+    data: ROWS,
+  }).deck;
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'devoted', 1: 'devoted' }, deckSpecs: { devoted: deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Swamp', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const isCreature = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).isCreature;
+
+  it('Gray Merchant drains by the black symbols on your permanents, hybrid counted once', () => {
+    let s = table(['Test Merchant'], ['Test Shade', 'Test Hybrid']);
+    const before = [life(s, 0), life(s, 1)];
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Merchant') })));
+    // {B} on the Merchant, {B}{B} on the Shade, {B/G} on the Hybrid; the Swamp has no cost.
+    expect([life(s, 0), life(s, 1)]).toEqual([before[0]! + 4, before[1]! - 4]);
+  });
+
+  it('counts the colour it names: green beside black permanents', () => {
+    let s = table(['Test Grower'], ['Forest', 'Test Shade', 'Test Hybrid']);
+    const before = life(s, 0);
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Grower') })));
+    // {G} on the Grower and the green half of {B/G}; the Shade's {B}{B} are not green.
+    expect(life(s, 0)).toBe(before + 2);
+  });
+
+  it('counts a two-colour devotion with each hybrid symbol once, and never generic mana', () => {
+    const s = table([], ['Test Mixed']);
+    expect(devotionTo(s, 0, new Set(['W', 'B']))).toBe(3);
+    expect(devotionTo(s, 0, new Set(['W']))).toBe(2);
+    expect(devotionTo(s, 0, new Set(['G']))).toBe(0);
+  });
+
+  it('a god is not a creature below its devotion, and is one at it', () => {
+    let s = table([], ['Test God']);
+    const god = find(s, 0, 'battlefield', 'Test God');
+    // {R} on the god alone: one, below five.
+    expect(isCreature(s, god)).toBe(false);
+    // So the turn has no attackers to declare at all: combat is skipped.
+    s = advanceTo(s, 'end');
+    expect(s.combat.attacks).toEqual([]);
+    // Four more red symbols: five, and it is a 6/5 creature.
+    let lit = table([], ['Test God', 'Test Altar']);
+    const awake = find(lit, 0, 'battlefield', 'Test God');
+    expect(isCreature(lit, awake)).toBe(true);
+    expect(power(lit, awake)).toBe(6);
+    // And the enchantment type stays either way.
+    expect(characteristicsOf(lit, lit.instances[awake]!).typeLine.types.map((t) => t.toLowerCase())).toContain('enchantment');
+    lit = apply(lit, { type: 'card:move', by: 0, card: find(lit, 0, 'battlefield', 'Test Altar'), toZone: 'graveyard' });
+    expect(isCreature(lit, awake)).toBe(false);
   });
 });
 

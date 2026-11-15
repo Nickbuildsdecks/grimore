@@ -2449,6 +2449,8 @@ export interface PumpOptions {
   readonly losesAllAbilities?: boolean;
   /** See `ContinuousEffect.addTypes` — layer 4, "becomes a creature". */
   readonly addTypes?: readonly string[];
+  /** See `ContinuousEffect.removeTypes` — layer 4, "isn't a creature" (D657). */
+  readonly removeTypes?: readonly string[];
   readonly addSubtypes?: readonly string[];
   /** See `ContinuousEffect.setCreatureTypes` — "becomes a Frog". */
   readonly setCreatureTypes?: readonly string[];
@@ -2522,6 +2524,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.setToughness === undefined ? {} : { setToughness: opts.setToughness }),
     ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),
     ...(opts.addTypes ? { addTypes: opts.addTypes } : {}),
+    ...(opts.removeTypes ? { removeTypes: opts.removeTypes } : {}),
     ...(opts.addSubtypes ? { addSubtypes: opts.addSubtypes } : {}),
     ...(opts.setCreatureTypes ? { setCreatureTypes: opts.setCreatureTypes } : {}),
     ...(opts.allCreatureTypes ? { allCreatureTypes: true } : {}),

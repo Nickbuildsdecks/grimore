@@ -204,6 +204,24 @@ function bestowTypeLine(printed: TypeLine, instance: CardInstance): TypeLine {
   };
 }
 
+/**
+ * **Devotion** (CR 700.5, D657): the mana symbols of these colours (letters) in the printed mana costs
+ * of the permanents a seat controls. A hybrid symbol counts once if either half is one of them
+ * (CR 700.5a); generic, colourless and snow never count. Printed costs only, so it can be asked
+ * inside `characteristicsOf` without re-entering it.
+ */
+export function devotionTo(state: GameState, seat: SeatIndex, colours: ReadonlySet<string>): number {
+  let sum = 0;
+  for (const id of state.zones?.[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    const cost = inst === undefined ? '' : state.cardDefs[inst.defKey]?.manaCost ?? '';
+    for (const m of cost.matchAll(/\{([^}]+)\}/g)) {
+      if (m[1]!.toUpperCase().split('/').some((part) => colours.has(part))) sum += 1;
+    }
+  }
+  return sum;
+}
+
 export const hasType = (line: TypeLine, type: string): boolean =>
   line.types.some((t) => t.toLowerCase() === type.toLowerCase());
 export const hasSubtype = (line: TypeLine, sub: string): boolean =>
@@ -1625,6 +1643,12 @@ export interface ContinuousEffect {
    * you control" pumps it (CR 613.1c runs before 613.1g).
    */
   readonly addTypes?: readonly string[];
+  /**
+   * Card types this effect **takes away**, same layer (D657): "As long as your devotion to red is
+   * less than five, Purphoros isn't a creature" (CR 700.5, the Theros gods). Applied in effect order
+   * with `addTypes`, so a later "becomes a creature" puts the type back.
+   */
+  readonly removeTypes?: readonly string[];
   /** Subtypes this effect adds, for the same layer. */
   readonly addSubtypes?: readonly string[];
   /**
@@ -1750,6 +1774,12 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
     /** "You have N or more life". */
     | { readonly kind: 'controller-life'; readonly atLeast: number }
+    /**
+     * "As long as your devotion to red is less than five" (D657): mana symbols of these colours in
+     * the **printed** mana costs of the controller's permanents (CR 700.5), which is what makes it
+     * answerable inside `characteristicsOf` — see `devotionTo`.
+     */
+    | { readonly kind: 'controller-devotion'; readonly colours: readonly string[]; readonly atLeast?: number; readonly below?: number }
     /** "It's your turn" / "it's not your turn". */
     | { readonly kind: 'turn'; readonly yours: boolean };
   /**
@@ -1961,6 +1991,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     — Galvanic Blast's count — runs while a spell resolves rather than inside this computation, so
     it reads live and is not subject to this.
   */
+  if (cond.kind === 'controller-devotion') {
+    const devotion = devotionTo(state, effect.controller, new Set(cond.colours));
+    return devotion >= (cond.atLeast ?? 0) && (cond.below === undefined || devotion < cond.below);
+  }
   if (cond.kind === 'source-class-level') {
     const source = state.instances[effect.source];
     return source !== undefined && source.zone === 'battlefield' && (source.classLevel ?? 1) >= cond.atLeast;
@@ -2270,6 +2304,7 @@ function withAddedTypes(
   state: GameState, instance: CardInstance, printed: TypeLine, printedCreature: boolean,
 ): TypeLine {
   let types: string[] | null = null;
+  let removed: Set<string> | null = null;
   // The subtypes as they stand so far, or `null` while nothing has touched the printed ones.
   let subtypes: string[] | null = null;
   const add = (sub: string): void => {
@@ -2277,13 +2312,19 @@ function withAddedTypes(
     subtypes = [...(subtypes ?? printed.subtypes), sub];
   };
   for (const effect of state.effects ?? []) {
-    if (effect.addTypes === undefined && effect.addSubtypes === undefined
+    if (effect.addTypes === undefined && effect.addSubtypes === undefined && effect.removeTypes === undefined
       && effect.setCreatureTypes === undefined && effect.allCreatureTypes !== true) continue;
     if (silenced(state, effect.source)) continue;
     if (!effectApplies(state, effect, instance, printedCreature, printed)) continue;
     for (const type of effect.addTypes ?? []) {
+      removed?.delete(type.toLowerCase());
       if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
       types = [...(types ?? []), type];
+    }
+    // And taken away (D657), in the same order: a type removed here and added by a later effect is back.
+    for (const type of effect.removeTypes ?? []) {
+      removed = new Set([...(removed ?? []), type.toLowerCase()]);
+      if (types !== null) types = types.filter((t) => t.toLowerCase() !== type.toLowerCase());
     }
     /*
       "Becomes a Frog" (D577): the creature types go and these replace them. In effect order, which
@@ -2299,10 +2340,11 @@ function withAddedTypes(
     for (const sub of effect.addSubtypes ?? []) add(sub);
     if (effect.allCreatureTypes === true) for (const sub of CREATURE_TYPES) add(sub);
   }
-  if (types === null && subtypes === null) return printed;
+  if (types === null && subtypes === null && (removed === null || removed.size === 0)) return printed;
+  const all = types === null ? printed.types : [...printed.types, ...types];
   return {
     supertypes: printed.supertypes,
-    types: types === null ? printed.types : [...printed.types, ...types],
+    types: removed === null ? all : all.filter((t) => !removed!.has(t.toLowerCase())),
     subtypes: subtypes ?? printed.subtypes,
   };
 }
