@@ -28556,3 +28556,36 @@ Faults injected by hand: 4 of 4 caught (threshold fixed at one, kind ignored, st
     engine tests: 4,622, all passing
 
 Coverage: 11,227 of 31,653 cards (+7), 30,423 of 59,306 lines (+11). Staples: 192 of 244.
+
+## D681 — Fellwar Stone and Exotic Orchard
+
+"{T}: Add one mana of any color that a land an opponent controls could produce." These are read the
+way Command Tower is (D617): one ability per colour, each with an `activateOnlyIf`.
+`opponentLandColours(state, seat)` in fromCardData.ts answers which colours are possible, following
+CR 106.7:
+- every land the seat's opponents control counts, tapped or not;
+- its script abilities count, and so does the mana its current basic land types give it (a land
+  another effect made a Swamp counts for black);
+- each land's own colour restriction still holds, so an opponent's Command Tower counts only for
+  its own commander's colours;
+- abilities of the same kind are ignored, so two Orchards facing each other make nothing;
+- colourless is not a colour.
+
+The answer is cached per state object.
+
+Staples went from 192 to 194.
+
+**Tests.** 4 engine tests:
+- the line reads whole on a land and on an artifact;
+- with a Forest, a tapped Island and a colourless land opposite, the Orchard and the Stone make G
+  and U;
+- nothing comes from an opponent's own Orchard, from a creature that makes mana, from your own
+  lands, or from a table with no opposing land;
+- an opponent's Tower counts for its own commander's colours only.
+
+Faults injected by hand: 6 of 6 caught. The type-changed-land fault survived at first, and was
+pinned with a Swamp-making effect.
+
+    engine tests: 4,626, all passing
+
+Coverage: 11,231 of 31,653 cards (+4), 30,427 of 59,306 lines (+4). Staples: 194 of 244 (+2).

@@ -88,7 +88,8 @@ import {
 } from './characteristics.js';
 import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
-import { dealDamage, drawLater } from './effects.js';
+import { dealDamage, drawLater, opponentsOf } from './effects.js';
+import { scriptForCard } from './derive.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
 import { spendRestriction } from './spending.js';
 import type { ManaType } from './mana.js';
@@ -187,6 +188,45 @@ export function intrinsicManaAbilities(subtypes: readonly string[]): readonly Ab
     .map((s) => BASIC_LAND_MANA[s.toLowerCase()])
     .filter((t): t is ManaType => t !== undefined && t !== 'C'))];
   return kinds.map((t) => ({ cost: { tap: true }, description: `{T}: Add {${t}}.`, produces: [t] }));
+}
+
+/** The abilities that read "a land an opponent controls could produce" (D681). */
+const READS_OPPONENT_LANDS = new WeakSet<AbilityDef>();
+const OPPONENT_LAND_COLOURS = new WeakMap<GameState, Map<SeatIndex, Set<ManaType>>>();
+
+/**
+ * The colours the lands this seat's opponents control could produce (D681): Fellwar Stone and
+ * Exotic Orchard. Tapped or not, the question is what the land's mana abilities could make
+ * (CR 106.7). A land's own colour restriction still holds (an opponent's Command Tower makes only
+ * its controller's identity colours), and an ability of the same kind is ignored, so two Exotic
+ * Orchards facing each other make nothing (CR 106.7). Colourless is not a colour.
+ */
+export function opponentLandColours(state: GameState, seat: SeatIndex): ReadonlySet<ManaType> {
+  // Asked once per colour per source each time mana is counted; a state never changes, so keep it.
+  let bySeat = OPPONENT_LAND_COLOURS.get(state);
+  if (bySeat === undefined) OPPONENT_LAND_COLOURS.set(state, bySeat = new Map());
+  const known = bySeat.get(seat);
+  if (known !== undefined) return known;
+  const out = new Set<ManaType>();
+  bySeat.set(seat, out);
+  for (const other of opponentsOf(state, seat)) {
+    for (const id of state.zones[zoneKey(other, 'battlefield')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isLand) continue;
+      const abilities = [
+        ...(scriptForCard(state.cardDefs[inst.defKey])?.abilities ?? []),
+        ...intrinsicManaAbilities(ch.typeLine.subtypes),
+      ];
+      for (const ability of abilities) {
+        if (ability.produces === undefined || READS_OPPONENT_LANDS.has(ability)) continue;
+        if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, other)) continue;
+        for (const t of ability.produces) if (t !== 'C') out.add(t);
+      }
+    }
+  }
+  return out;
 }
 
 const MANA_SYMBOLS: Readonly<Record<string, ManaType>> = {
@@ -303,6 +343,12 @@ interface ManaLine {
    * without one (CR 903.4f).
    */
   readonly identity?: true;
+  /**
+   * "…one mana of any color that a land an opponent controls could produce" (D681): Fellwar Stone
+   * and Exotic Orchard. Each colour's ability is offered only while some opponent controls a land
+   * that could make that colour. See `opponentLandColours`.
+   */
+  readonly opponentLands?: true;
   /**
    * "…one mana of the chosen color" (D642): each colour's ability is offered only while that is the
    * colour the permanent chose as it entered (`CardInstance.chosen`). `fixed` is the colour printed
@@ -580,6 +626,10 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
+  // Fellwar Stone and Exotic Orchard (D681).
+  if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
@@ -640,6 +690,17 @@ function tapAbilities(
   const printed = line?.printed ?? '{T}';
   return produces.map((type) => {
     const damage = damageFor === undefined ? line?.damage : damageFor.get(type);
+    if (line?.opponentLands === true) {
+      const ability: AbilityDef = {
+        cost,
+        description: `${printed}: Add {${type}}.${spentOn(line.spendOnly)}`,
+        produces: [type],
+        ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
+        activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => opponentLandColours(state, controller).has(type),
+      };
+      READS_OPPONENT_LANDS.add(ability);
+      return ability;
+    }
     return {
       cost,
       description: `${printed}: Add {${type}}.${hurtsYou(damage)}${spentOn(line?.spendOnly)}`,

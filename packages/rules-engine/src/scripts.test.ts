@@ -42,6 +42,7 @@ import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo } from './
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
+import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
@@ -13112,6 +13113,84 @@ describe('"if you\'ve cast a … spell this turn" (D680)', () => {
     expect(toEnd(s).seats[0]!.life).toBe(s.seats[0]!.life);
     s = cast(s, 'Test Pup');
     expect(toEnd(s).seats[0]!.life).toBe(s.seats[0]!.life + 5);
+  });
+});
+
+describe('mana of any color a land an opponent controls could produce (D681)', () => {
+  /*
+    Fellwar Stone and Exotic Orchard: one ability per colour, each offered only while an opponent
+    controls a land that could make it. Tapped lands count; colourless does not; an opponent's
+    Command Tower makes only its own identity colours; two Orchards ignore each other (CR 106.7).
+  */
+  const ORCHARD = { name: 'Test Orchard', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add one mana of any color that a land an opponent controls could produce.' };
+  const STONE = { name: 'Test Stone', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add one mana of any color that a land an opponent controls could produce.' };
+  const TOWER = { name: 'Test Tower', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: "{T}: Add one mana of any color in your commander's color identity." };
+  const IZZET = { name: 'Test Izzet', type_line: 'Legendary Creature — Weird', mana_cost: '{U}{R}', cmc: 2, colors: ['U', 'R'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const WASTE = { name: 'Test Waste', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add {C}.' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf Druid', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{T}: Add {B}.' };
+  const ROWS = [ORCHARD, STONE, TOWER, IZZET, WASTE, ELF];
+  const deck = customDeck({
+    id: 'orchards', name: 'Orchards',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 46 }, { name: 'Island', count: 2 }, { name: 'Test Waste', count: 2 }],
+    data: ROWS as never[],
+  });
+  const table = (theirs: string[], patch?: (s: GameState) => GameState): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'orchards', 1: 'orchards' }, deckSpecs: { orchards: deck.deck },
+      battlefield: { 0: ['Test Orchard', 'Test Stone', 'Forest'], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return patch === undefined ? s : patch(s);
+  };
+  const colours = (s: GameState, name: string): string[] => manaSources(s, 0)
+    .filter((source) => source.key === find(s, 0, 'battlefield', name))
+    .flatMap((source) => [...source.produces]).sort();
+
+  it('reads the line whole, on a land and on an artifact', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ORCHARD, STONE]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('makes the colours of the opponent\'s lands, tapped or not, and not colourless', () => {
+    const s = table(['Forest', 'Island', 'Test Waste'], (t) => {
+      const island = find(t, 1, 'battlefield', 'Island');
+      return { ...t, instances: { ...t.instances, [island]: { ...t.instances[island]!, tapped: true } } };
+    });
+    expect(colours(s, 'Test Orchard')).toEqual(['G', 'U']);
+    expect(colours(s, 'Test Stone')).toEqual(['G', 'U']);
+    expect(opponentLandColours(s, 0)).toEqual(new Set(['G', 'U']));
+    // Seat 1 sees seat 0's Forest; seat 0's Orchard reads seat 1's lands, so it counts for nothing.
+    expect(opponentLandColours(s, 1)).toEqual(new Set(['G']));
+  });
+
+  it('nothing from an opponent\'s own Orchard, a creature that makes mana, or your own lands', () => {
+    expect(colours(table(['Test Orchard']), 'Test Orchard')).toEqual([]);
+    expect(colours(table(['Test Elf']), 'Test Orchard')).toEqual([]);
+    // A land an effect has made a Swamp could make black, though nothing printed says so (CR 305.7).
+    const swamped = table(['Test Waste'], (t) => ({
+      ...t,
+      effects: [...t.effects, {
+        id: 'swampify', createdTurn: t.turn, source: 'test', controller: 1 as SeatIndex,
+        scope: { kind: 'cards' as const, ids: [find(t, 1, 'battlefield', 'Test Waste')] },
+        addSubtypes: ['Swamp'], duration: 'end-of-turn' as const,
+      }],
+    }));
+    expect(colours(swamped, 'Test Orchard')).toEqual(['B']);
+    expect(colours(table([]), 'Test Stone')).toEqual([]);
+    const none = table([]);
+    const stone = find(none, 0, 'battlefield', 'Test Stone');
+    expect(legalActions(none, 0).plays.some((p) => p.card === stone)).toBe(false);
+  });
+
+  it('an opponent\'s Command Tower counts for its own commander\'s colours only', () => {
+    const s = table(['Test Tower', 'Test Izzet'], (t) => {
+      const id = find(t, 1, 'battlefield', 'Test Izzet');
+      return { ...t, instances: { ...t.instances, [id]: { ...t.instances[id]!, isCommander: true } } };
+    });
+    expect(colours(s, 'Test Orchard')).toEqual(['R', 'U']);
+    expect(colours(table(['Test Tower']), 'Test Orchard')).toEqual([]);
   });
 });
 
