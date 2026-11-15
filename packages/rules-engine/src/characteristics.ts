@@ -318,7 +318,27 @@ type PrintedPart =
   | { readonly kind: 'blocker-ban'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocks-ban'; readonly clauses: readonly BlockerClause[] }
-  | { readonly kind: 'blocks-only'; readonly clauses: readonly BlockerClause[] };
+  | { readonly kind: 'blocks-only'; readonly clauses: readonly BlockerClause[] }
+  /**
+   * "If an effect would create one or more tokens under your control, it creates twice that many of
+   * those tokens instead." (D652) — Anointed Procession, Parallel Lives, Doubling Season's first line.
+   * A replacement on the controller's token creation, read off the printed card by `tokenMultiplier`.
+   */
+  | { readonly kind: 'token-doubler' }
+  /**
+   * "If one or more +1/+1 counters would be put on a creature you control, that many plus one … are
+   * put on it instead" (Hardened Scales), "… twice that many …" (Corpsejack Menace), and Doubling
+   * Season's "If an effect would put one or more counters on a permanent you control, it puts twice
+   * that many …" (D652, CR 614.1a). `counter` is the kind or null for any; `what` is the any-of list
+   * of type words the permanent must have, or `self`; `anyone` drops "you control" (Primal Vigor).
+   */
+  | {
+      readonly kind: 'counter-replacement';
+      readonly counter: string | null;
+      readonly what: readonly string[] | 'self';
+      readonly anyone: boolean;
+      readonly op: 'double' | 'plus-one';
+    };
 
 /**
  * One part of a printed ability line, or `null` if this engine has nothing for it.
@@ -511,6 +531,9 @@ function printedParts(
     if (!line) continue;
     // A level band and everything under it: not this card's abilities. See `LEVEL_BAND_HEADER`.
     if (LEVEL_BAND_HEADER.test(line)) break;
+    if (TOKEN_DOUBLER.test(line)) { found.push({ kind: 'token-doubler' }); continue; }
+    const replaced = counterReplacementLine(line, name);
+    if (replaced !== null) { found.push(replaced); continue; }
     const combat = printedCombatLine(line, name);
     if (combat !== null) { found.push(combat); continue; }
     const blockers = printedBlockerLine(line, name);
@@ -551,6 +574,96 @@ function printedParts(
  * `printedKeywords` alone, so River Boa's `Islandwalk` and Paladin en-Vec's protection were
  * reported as unread lines on cards the engine was already playing correctly.
  */
+const TOKEN_DOUBLER = /^If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead\.?$/i;
+
+/**
+ * How many times over a token this seat would create is made (D652, CR 614.1a): two for each
+ * token doubler it controls — face up and with its abilities — so two Parallel Lives make four.
+ * Read live from the board each time, like every other printed ability here.
+ */
+export function tokenMultiplier(state: GameState, seat: SeatIndex): number {
+  let times = 1;
+  for (const id of state.zones?.[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+    const def = state.cardDefs[inst.defKey];
+    const doublers = printedParts(def?.oracleText, def?.name).filter((part) => part.kind === 'token-doubler').length;
+    times *= 2 ** doublers;
+  }
+  return times;
+}
+
+/** One printed counter replacement (D652), or null. See the `counter-replacement` part. */
+function counterReplacementLine(line: string, name?: string): PrintedPart | null {
+  const text = line.trim().replace(/\.$/, '');
+  if (/^If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead$/i.test(text)) {
+    return { kind: 'counter-replacement', counter: null, what: ['permanent'], anyone: false, op: 'double' };
+  }
+  const m = /^If one or more (?:(\+1\/\+1|charge) )?counters would be put on (.+?)( you control)?, (twice that many|that many plus one)(?: of each of those kinds of| (?:\+1\/\+1|charge))? counters are put on (?:it|that creature|that permanent) instead$/i.exec(text);
+  if (m === null) return null;
+  const subject = m[2]!.trim();
+  const selfWords = [name?.toLowerCase(), '~'].filter((w): w is string => w !== undefined);
+  let what: readonly string[] | 'self';
+  if (selfWords.includes(subject.toLowerCase())) {
+    what = 'self';
+  } else {
+    const words = subject.replace(/^an? /i, '').split(/,\s*(?:or\s+)?|\s+or\s+/).map((w) => w.trim()).filter(Boolean);
+    if (words.length === 0) return null;
+    for (const word of words) {
+      if (!/^(creature|artifact|permanent|enchantment|land|planeswalker|[A-Z][A-Za-z'-]*)$/.test(word)) return null;
+    }
+    what = words;
+  }
+  // "On a creature" with no owner is everyone's (Primal Vigor); a self reference needs no owner.
+  if (m[3] === undefined && what !== 'self' && !/^a creature$/i.test(subject)) return null;
+  return {
+    kind: 'counter-replacement',
+    counter: m[1] ?? null,
+    what,
+    anyone: m[3] === undefined && what !== 'self',
+    op: /^twice/i.test(m[4]!) ? 'double' : 'plus-one',
+  };
+}
+
+/**
+ * How many counters actually go on a permanent when an effect puts `amount` of `key` on it (D652):
+ * every counter replacement on the battlefield that applies — its controller's for "you control",
+ * anybody's for Primal Vigor — with the "plus one"s before the doublings, the order a controller
+ * choosing (CR 616.1) would pick for the most counters. Read live: the permanent's type line now,
+ * and only replacements from permanents face up with their abilities.
+ */
+export function countersAfterReplacement(
+  state: GameState, target: CardInstance, key: string, amount: number,
+): number {
+  if (amount <= 0) return amount;
+  let plus = 0;
+  let times = 1;
+  let line: TypeLine | null = null;
+  for (const seat of state.seats ?? []) {
+    for (const id of state.zones?.[zoneKey(seat.index, 'battlefield')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      const def = state.cardDefs[inst.defKey];
+      for (const part of printedParts(def?.oracleText, def?.name)) {
+        if (part.kind !== 'counter-replacement') continue;
+        if (part.counter !== null && part.counter !== key) continue;
+        if (part.what === 'self') {
+          if (inst.id !== target.id) continue;
+        } else {
+          if (!part.anyone && inst.zoneSeat !== target.zoneSeat) continue;
+          line ??= characteristicsOf(state, target).typeLine;
+          const typed = line;
+          const fits = part.what.some((word) => (word === 'permanent' ? true
+            : /^[a-z]/.test(word) ? hasType(typed, word) : hasSubtype(typed, word)));
+          if (!fits) continue;
+        }
+        if (part.op === 'plus-one') plus += 1; else times *= 2;
+      }
+    }
+  }
+  return (amount + plus) * times;
+}
+
 export function isPrintedAbilityLine(line: string, name?: string): boolean {
   return printedParts(line, name).length > 0;
 }

@@ -45025,3 +45025,57 @@ shuffle that does nothing.
     engine tests: 4,523, all passing
 
 Coverage: 10,876 of 31,653 cards (+25), 29,695 of 59,306 lines (+30). Staples: 150 of 244.
+
+## D652 — doubled tokens and replaced counters
+
+Three staples: Anointed Procession, Parallel Lives, Doubling Season. The same table needed
+Hardened Scales, Corpsejack Menace, Branching Evolution, Ozolith, Benevolent Hydra, Mowu and
+Optimization Annex, about 20 legal cards.
+
+**Read like a printed keyword, not compiled into a script.**
+- These lines are replacement effects on events that happen everywhere in the engine. A token is
+  made by `addTokens` from dozens of call sites, and counters go on through `addCounters`. A script
+  field would have to be reached from each of those.
+- So they are **printed parts**, read off the card's oracle text the way protection and landwalk
+  are (`printedParts`). The compiler counts the lines as read through `isPrintedAbilityLine`, and
+  the two primitives ask the board live:
+  - `tokenMultiplier(state, seat)`: ×2 for each token doubler the creating seat controls;
+  - `countersAfterReplacement(state, target, key, amount)`: every counter replacement that
+    applies.
+- `effects.ts` can reach `characteristics.ts`, and could not reach the scripts without an import
+  cycle. That decided where these live.
+
+**The counter replacements.**
+- One parser reads both wordings. The common one is "If one or more [+1/+1|charge] counters would
+  be put on [list] [you control], twice that many / that many plus one … are put on it instead".
+  Doubling Season's own is "If an effect would put one or more counters on a permanent you
+  control, it puts twice that many …".
+- `what` is an any-of list of type words, matched on the target's **live** type line, or `self`
+  (Mowu).
+- "You control" is required, except for Primal Vigor's "a creature", which is anybody's.
+- Order (CR 616.1): every "plus one" before every doubling — the order its controller would choose,
+  so Hardened Scales plus Doubling Season makes 1 → 4.
+
+**Exclusions.**
+- Never a marker the engine keeps as a counter (a regeneration shield, "kicked").
+- Never a removal: costs only remove counters.
+- Never a Saga's lore counter, which arrives by turn-based action rather than by an effect.
+- A face-down or ability-less doubler does nothing.
+
+**Not done**, and named in the guide: Doubling Season doubling a planeswalker's starting loyalty
+(`relocate` writes it directly); Primal Vigor's token half ("If one or more tokens would be
+created", anybody's); Winding Constrictor-style "of each of those kinds" on several types; Pir's
+"your team".
+
+**Tests.**
+- 2 engine tests:
+  - one Soldier, two with Parallel Lives, four with Lives and Season; an opponent's Lives does
+    nothing; a Lives without abilities does nothing;
+  - Scales plus Season: one +1/+1 counter becomes four, a charge counter two; an opponent's
+    creature, a regeneration shield and a removal are untouched.
+
+Faults injected by hand: 8 of 8 caught. The ability-loss guard survived at first and was pinned.
+
+    engine tests: 4,525, all passing
+
+Coverage: 10,889 of 31,653 cards (+13), 29,718 of 59,306 lines (+23). Staples: 153 of 244.

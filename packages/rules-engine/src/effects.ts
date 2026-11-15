@@ -14,7 +14,7 @@
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
 import {
-  characteristicsOf, hasType, parseTypeLine, printedColors, protectedFrom, type ContinuousEffect,
+  characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -1903,6 +1903,15 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
     this same function.
   */
   if ((key === '+1/+1' || key === '-1/-1') && inst.zone !== 'battlefield') return state;
+  /*
+    Hardened Scales, Corpsejack Menace, Doubling Season (D652): counters put on a permanent are
+    replaced by more. Not a marker the engine keeps as a counter (a regeneration shield, "kicked"),
+    and only counters put **on** — removing them is a cost or an effect nothing here replaces.
+  */
+  // Nor a Saga's lore counter, which arrives by turn-based action rather than by an effect (CR 714.3b).
+  if (amount > 0 && inst.zone === 'battlefield' && !MARKERS.has(key) && key !== 'lore') {
+    amount = countersAfterReplacement(state, inst, key, amount);
+  }
   const value = clampValue((inst.counters[key] ?? 0) + amount);
   const counters = { ...inst.counters };
   if (value === 0) delete counters[key];
@@ -2283,7 +2292,9 @@ export function addTokens(
   const instances = { ...state.instances };
   let seq = state.instanceSeq;
   const created: string[] = [];
-  for (let i = 0; i < Math.max(0, count); i++) {
+  // Doubled for each Parallel Lives the creating seat controls (D652).
+  const made = Math.max(0, count) * tokenMultiplier(state, seat);
+  for (let i = 0; i < made; i++) {
     seq += 1;
     const id = `t${seat}_${seq}`;
     instances[id] = {

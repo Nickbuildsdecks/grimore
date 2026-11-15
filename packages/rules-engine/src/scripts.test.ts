@@ -11537,6 +11537,57 @@ describe('Brainstorm, Ponder and the wheel (D651)', () => {
   });
 });
 
+describe('doubled tokens and replaced counters (D652)', () => {
+  const row = (name: string, type: string, text: string, pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Lives', 'Enchantment', 'If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.'),
+    row('Test Scales', 'Enchantment', 'If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead.'),
+    row('Test Season', 'Enchantment', 'If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.\nIf an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead.'),
+    row('Test Muster', 'Sorcery', 'Create a 1/1 white Soldier creature token.'),
+  ];
+  const deck = customDeck({
+    id: 'doublers', name: 'Doublers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 30 }],
+    data: ROWS,
+  }).deck;
+  const table = (mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'doublers', 1: 'doublers' }, deckSpecs: { doublers: deck },
+    hands: { 0: ['Test Muster'] }, battlefield: { 0: ['Plains', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const soldiers = (s: GameState, seat: SeatIndex) => namesIn(s, seat, 'battlefield').filter((n) => n === 'Soldier').length;
+  const muster = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Muster') })));
+
+  it('doubles tokens once per doubler its creator controls, and not for an opponent’s', () => {
+    expect(soldiers(muster(table([])), 0)).toBe(1);
+    expect(soldiers(muster(table(['Test Lives'])), 0)).toBe(2);
+    expect(soldiers(muster(table(['Test Lives', 'Test Season'])), 0)).toBe(4);
+    expect(soldiers(muster(table([], ['Test Lives'])), 0)).toBe(1);
+    // A doubler that has lost its abilities doubles nothing.
+    let quiet = table(['Test Lives']);
+    const lives = find(quiet, 0, 'battlefield', 'Test Lives');
+    quiet = pump(quiet, [lives], lives, 1, { losesAllAbilities: true });
+    expect(soldiers(muster(quiet), 0)).toBe(1);
+  });
+
+  it('adds one, then doubles, a counter put on a creature its controller controls', () => {
+    const s = table(['Grizzly Bears', 'Test Scales', 'Test Season'], ['Grizzly Bears']);
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    // One counter: plus one is two, doubled is four — the order a player would choose.
+    expect(addCounters(s, mine, '+1/+1', 1).instances[mine]!.counters['+1/+1']).toBe(4);
+    // Doubling Season doubles any counter on a permanent; Scales only +1/+1 on a creature.
+    expect(addCounters(s, mine, 'charge', 1).instances[mine]!.counters['charge']).toBe(2);
+    // Not on an opponent's creature, and never a regeneration shield or a removal.
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(addCounters(s, theirs, '+1/+1', 1).instances[theirs]!.counters['+1/+1']).toBe(1);
+    expect(addCounters(s, mine, 'regeneration', 1).instances[mine]!.counters['regeneration']).toBe(1);
+    const four = addCounters(s, mine, '+1/+1', 1);
+    expect(addCounters(four, mine, '+1/+1', -1).instances[mine]!.counters['+1/+1']).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
