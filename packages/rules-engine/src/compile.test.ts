@@ -35,18 +35,21 @@ for (const deck of Object.values(STARTER_DECKS)) {
 /**
  * A pool card that is **partly** read: some lines compile and at least one does not.
  *
- * Named rather than searched for, so the test below says which card it is about. Willbender prints
- * a morph cost, which this compiler reads, and "When Willbender is turned face up, change the target
- * of target spell or ability with a single target.", which it does not.
+ * Named rather than searched for, so the test below says which card it is about. Dragonsguard Elite
+ * prints "Magecraft — Whenever you cast or copy an instant or sorcery spell, put a +1/+1 counter on
+ * Dragonsguard Elite.", which this compiler reads, and "{4}{G}{G}: Double the number of +1/+1
+ * counters on Dragonsguard Elite.", which it does not. (Not a card whose read lines are only
+ * printed keywords: that card's script source is `printed-only`, not `lines`.)
  *
- * **It is expected to stop being true**, and it has three times. D447 moved it off Mystic Remora,
+ * **It is expected to stop being true**, and it has four times. D447 moved it off Mystic Remora,
  * whose sentence that increment learned to read; D528 moved it off **Contagion Clasp**, whose only
  * unread line was "{4}, {T}: Proliferate." until proliferate joined the clause vocabulary; D641 moved
  * it off **Obelisk of Urd**, when "as it enters, choose a creature type" and "the chosen type" were
- * both read. Each time the test failed loudly, which is the right failure: whoever reads the line
- * moves this constant to another partly-read card and says so.
+ * both read; D712 moved it off **Willbender**, when "change the target of target spell or ability
+ * with a single target" was read. Each time the test failed loudly, which is the right failure:
+ * whoever reads the line moves this constant to another partly-read card and says so.
  */
-const PARTLY_READ_CARD = 'Willbender';
+const PARTLY_READ_CARD = 'Dragonsguard Elite';
 
 /** A card's own printed data, as the row an importer would hand over. */
 function rowFor(name: string): CardDataRow {

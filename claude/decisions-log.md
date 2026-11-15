@@ -46974,3 +46974,48 @@ Faults injected by hand: 5 of 5 caught. The fifth (any permanent grants) was cau
     engine tests: 4,729, all passing
 
 Coverage: 11,392 of 31,653 cards (+1), 30,694 of 59,306 lines (+2). Staples: 224 of 244 (+1).
+
+## D712 — Choosing new targets for a spell: Deflecting Swat, Bolt Bend
+
+**"You may choose new targets for target spell or ability"** (Deflecting Swat, Redirect):
+- The target is a spell or ability with one target and somewhere else for it to go
+  (`redirectable`, as Willbender's).
+- The new target is asked as the spell resolves, with the copy effects' `TargetDecisionSpec`
+  pointed at the target rather than at a copy.
+- `retarget` applies it, and keeps the old target if the new one is not legal for that object.
+- Declining is an answer.
+- Not offered: a spell or ability with several targets, since choosing new targets for each is a
+  question the engine has no shape for.
+
+**"Change the target of target spell or ability with a single target"** (Bolt Bend, Misdirection,
+and the printed text of the hand-written Willbender and Swerve):
+- Read exactly as those two are written: the spell and where it goes are both targets chosen as it
+  is cast, and the effect is `redirect`.
+- An earlier draft asked the new target at resolution with a non-declinable question. It gave
+  Willbender and Swerve a compiled reading that disagreed with the written one (a new
+  compiled-vs-written row). The table's rule is to settle such a row, not add it, and 29 tests plus
+  the play-table help describe the cast-time flow. So the compiled reading takes the written shape,
+  and the draft's engine and bot changes for a mandatory re-aim were reverted unused.
+
+**Also:** `soleTargetSpecOf` looked spells up only in the hand-written registry, so a **compiled**
+spell or ability could not be redirected at all, by these or by Willbender. It now uses the
+injected `scriptOfCard` with the registry as fallback, which closes the gap D485 left documented.
+
+`compile.test.ts`'s partly-read example card moves from Willbender (now fully read) to Dragonsguard
+Elite. Sigarda was tried first, but its read lines are only printed keywords, so its source is
+`printed-only`.
+
+Staples went from 224 to 225 (Deflecting Swat).
+
+**Tests.** 5 engine tests:
+- both cards read;
+- a compiled Bolt is re-aimed at the opponent by the "may" question;
+- declining leaves it where it was;
+- "change" takes both targets at cast, with no question, and agrees with the hand-written shape;
+- a spell with no target cannot be chosen.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,734, all passing
+
+Coverage: 11,400 of 31,653 cards (+8), 30,702 of 59,306 lines (+8). Staples: 225 of 244 (+1).

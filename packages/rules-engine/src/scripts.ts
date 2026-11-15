@@ -6687,9 +6687,9 @@ export function abilityTargetSpecs(
    * read. It cannot be imported here — `derive.ts` imports this module, so the dependency only runs
    * one way — so the two callers that matter pass it in. They both import it already.
    *
-   * `soleTargetSpecOf` below keeps the default on purpose, which leaves one narrow gap stated
-   * rather than hidden: a **compiled** card's ability is not redirectable by a Spellskite. That is
-   * a card doing less than it could, not a table that cannot continue.
+   * `soleTargetSpecOf` below kept the default until D712, which left a compiled card's spell and
+   * ability unredirectable. It now passes the injected lookup (`scriptOfCard`), which `derive.ts`
+   * installs and so needs no import from there.
    */
   resolve: (def: CardDef | undefined) => CardScript | undefined = (def) => scriptFor(def?.name),
 ): readonly TargetSpec[] {
@@ -6736,9 +6736,12 @@ export function abilityTargetSpecs(
 export function soleTargetSpecOf(state: GameState, id: string): TargetSpec | null {
   const object = state.stackObjects[id];
   if (object === undefined || object.targets.length !== 1) return null;
+  // The compiled script as well as the hand-written one (D712): a compiled Lightning Bolt is as
+  // redirectable as a written one.
+  const lookup = (def: CardDef | undefined): CardScript | undefined => scriptOfCard(def) ?? scriptFor(def?.name);
   if (object.kind === 'spell') {
     const inst = state.instances[id];
-    const script = scriptFor(state.cardDefs[inst?.defKey ?? '']?.name);
+    const script = inst === undefined ? undefined : lookup(state.cardDefs[inst.defKey]);
     if (script === undefined || script.modal !== undefined) return null;
     const specs = script.targets ?? [];
     if (specs.length === 1) return specs[0] ?? null;
@@ -6752,7 +6755,7 @@ export function soleTargetSpecOf(state: GameState, id: string): TargetSpec | nul
   }
   // An activated or triggered ability. Its source is a permanent — or a token that has ceased to
   // exist, in which case there is no script to read and the ability is simply not redirectable.
-  const specs = abilityTargetSpecs(state, object);
+  const specs = abilityTargetSpecs(state, object, lookup);
   return specs.length === 1 ? specs[0] ?? null : null;
 }
 
@@ -22153,6 +22156,57 @@ function readEffect(
     sacrificed — the card chosen has left the battlefield. With no creature to sacrifice there is
     no answer, and nothing comes back.
   */
+  /*
+    "You may choose new targets for target spell or ability" (D712): Deflecting Swat, Redirect. The
+    target is a spell or ability with one target and somewhere else for it to go (`redirectable`,
+    as Willbender's); the new target is asked as the spell resolves, with the copy effects'
+    question (`TargetDecisionSpec`) pointed at the target rather than at a copy, and applied by
+    `retarget`, which keeps the old target when the new one is not legal for that object.
+    Declining is an answer.
+
+    A spell or ability with several targets is not offered: choosing new targets for each of them
+    is a question the engine has no shape for, and a target that cannot be changed is one the card
+    would be wasted on.
+  */
+  const newTargets = /^(?:you may )?choose new targets for target (spell or ability|spell|activated or triggered ability)$/i.exec(clause.trim());
+  if (newTargets !== null) {
+    const kind = newTargets[1]!.toLowerCase();
+    const spec = redirectable(kind === 'spell' ? 'spell' : 'spell-or-ability', `target ${kind}`,
+      kind === 'activated or triggered ability' ? (state, id) => state.stackObjects[id]?.kind !== 'spell' : undefined);
+    return {
+      targets: [spec],
+      decisions: [{
+        who: 'controller',
+        prompt: 'Choose a new target for it?',
+        retargets: (_state, object) => {
+          const aimed = object.targets[0];
+          return aimed === undefined || aimed.kind === 'player' ? undefined : aimed.id;
+        },
+        optional: true,
+      } as TargetDecisionSpec],
+      effect: (c) => {
+        const aimed = c.targets[0];
+        const next = c.decisions[0]?.target;
+        if (aimed === undefined || aimed.kind === 'player' || next === undefined) return c.state;
+        const sole = soleTargetSpecOf(c.state, aimed.id);
+        return sole === null ? c.state : retarget(c.state, aimed.id, next, sole) ?? c.state;
+      },
+    };
+  }
+  /*
+    And "Change the target of target spell or ability with a single target" (D712): Bolt Bend,
+    Misdirection, and the printed text of the hand-written Willbender and Swerve. Read exactly as
+    those two are written — the spell and where it goes, both chosen as it is cast, and `redirect`
+    — so the compiled and the written readings agree and the change is made rather than offered.
+  */
+  const changeTarget = /^change the target of target (spell or ability|spell) with a single target$/i.exec(clause.trim());
+  if (changeTarget !== null) {
+    const kind = changeTarget[1]!.toLowerCase();
+    return {
+      targets: [redirectable(kind === 'spell' ? 'spell' : 'spell-or-ability', `target ${kind} with a single target`), NEW_TARGET],
+      effect: redirect,
+    };
+  }
   const sacrificeThen = /^sacrifice a creature and if you do (.+)$/i.exec(clause.trim());
   if (sacrificeThen !== null) {
     const cost = readEffect('sacrifice a creature', name, where);

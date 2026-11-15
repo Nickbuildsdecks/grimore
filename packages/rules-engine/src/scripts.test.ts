@@ -15013,6 +15013,88 @@ describe('"Nontoken creatures you control have riot": Rhythm of the Wild (D711)'
   });
 });
 
+describe('choosing new targets for a spell: Deflecting Swat and Bolt Bend (D712)', () => {
+  const ROWS = [
+    { name: 'Test Swat', type_line: 'Instant', oracle_text: 'You may choose new targets for target spell or ability.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bend', type_line: 'Instant', oracle_text: 'Change the target of target spell or ability with a single target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'swat', name: 'Swat',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  // Seat 1 bolts seat 0, and seat 0 answers with the redirect.
+  const answered = (redirect: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'swat', 1: 'swat' }, deckSpecs: { swat: deck.deck },
+      hands: { 0: [redirect], 1: ['Test Bolt'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 0 }] } as Action);
+    const bolt = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', redirect), targets: [{ kind: 'card', id: bolt }] } as Action);
+    s = passBoth(s);
+    return { s, bolt };
+  };
+  const finish = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.stackOrder.length > 0 && next.pendingDecision === null; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a compiled spell is re-aimed at the new target', () => {
+    let { s } = answered('Test Swat');
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.min).toBe(0);
+    expect(s.pendingDecision?.targetChoices).toEqual(expect.arrayContaining([{ kind: 'player', seat: 1 }]));
+    s = finish(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'player', seat: 1 } } as Action));
+    expect(s.seats[1]!.life).toBe(17);
+    expect(s.seats[0]!.life).toBe(20);
+  });
+
+  it('declining leaves it where it was', () => {
+    let { s } = answered('Test Swat');
+    s = finish(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action));
+    expect(s.seats[0]!.life).toBe(17);
+  });
+
+  it('"change the target" is read as Willbender and Swerve are written: both chosen as it is cast', () => {
+    const bend = compileCard(ROWS[1] as never);
+    expect(bend.ok && bend.script?.targets?.length).toBe(2);
+    expect(bend.ok && bend.script?.decisions).toBeUndefined();
+    let s = advanceTo(arena({
+      decks: { 0: 'swat', 1: 'swat' }, deckSpecs: { swat: deck.deck },
+      hands: { 0: ['Test Bend'], 1: ['Test Bolt'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 0 }] } as Action);
+    const bolt = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bend'), targets: [{ kind: 'card', id: bolt }, { kind: 'player', seat: 1 }] } as Action);
+    s = finish(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.seats[1]!.life).toBe(17);
+    expect(s.seats[0]!.life).toBe(20);
+  });
+
+  it('a spell with no target is not a target for it', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'swat', 1: 'swat' }, deckSpecs: { swat: deck.deck },
+      hands: { 0: ['Test Swat'], 1: ['Test Spark'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Spark') });
+    const spark = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Swat'), targets: [{ kind: 'card', id: spark }] } as Action)).toBeTruthy();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
