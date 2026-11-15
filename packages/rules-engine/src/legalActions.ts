@@ -1929,7 +1929,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
     // cards" offers only the draw when the board is empty.
-    const combinations = modeCombinations(script);
+    const combinations = modeCombinations(script, state, seat);
     if (combinations.length > 0) {
       for (const modes of combinations) {
         const chosen = modesOf(script, modes);

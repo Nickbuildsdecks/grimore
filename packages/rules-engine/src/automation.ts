@@ -3902,11 +3902,16 @@ function payFrom(
  * of four is six. Each comes back as sorted indices, because the modes of a modal spell apply in
  * the order they are printed whatever order the player picked them in (CR 601.2b).
  */
-export function modeCombinations(script: CardScript | undefined): number[][] {
+export function modeCombinations(
+  script: CardScript | undefined, state?: GameState, seat?: SeatIndex,
+): number[][] {
   const modal = script?.modal;
   if (modal === undefined || modal.modes.length === 0) return [];
   const total = modal.modes.length;
-  const max = Math.min(modal.max ?? 1, total);
+  // The Will cycle (D668): more modes while the caster controls a commander on the battlefield.
+  const commanded = modal.maxWithCommander !== undefined && state !== undefined && seat !== undefined
+    && Object.values(state.instances).some((inst) => inst.isCommander && inst.zone === 'battlefield' && inst.zoneSeat === seat);
+  const max = Math.min(commanded ? modal.maxWithCommander! : modal.max ?? 1, total);
   const min = Math.min(Math.max(modal.min ?? 1, 1), max);
   const out: number[][] = [];
   const walk = (start: number, picked: number[]): void => {

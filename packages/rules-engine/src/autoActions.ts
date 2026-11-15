@@ -372,7 +372,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // A modal spell's modes are announced as it is cast (CR 601.2b), before its targets, and the
   // modes decide what it may point at — so they are validated first and the target specs come
   // from them. A combination the card does not offer is refused rather than trimmed.
-  const combinations = modeCombinations(script);
+  const combinations = modeCombinations(script, state, action.by);
   let modes: readonly number[] | undefined;
   if (combinations.length > 0) {
     const asked = [...(action.modes ?? [])].sort((a, b) => a - b);

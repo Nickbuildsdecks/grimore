@@ -2462,6 +2462,12 @@ export interface ModalDef {
   readonly modes: readonly ModeDef[];
   readonly min?: number;
   readonly max?: number;
+  /**
+   * "Choose one. If you control a commander as you cast this spell, you may choose both" (D668): the
+   * Will cycle. The maximum while the caster controls a commander on the battlefield as the spell is
+   * cast, which is when `modeCombinations` is asked with the state.
+   */
+  readonly maxWithCommander?: number;
 }
 
 export interface CardScript {

@@ -12570,6 +12570,47 @@ describe('Tectonic Edge\'s margin, Rakdos Charm\'s self-damage, Homeward Path (D
   });
 });
 
+describe('the Will cycle: both modes while you control a commander (D668)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}', pt: [string, string] | null = null) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+    ...(pt === null ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    row('Test Will', 'Instant', "Choose one. If you control a commander as you cast this spell, you may choose both.\n• Creatures you control gain flying, vigilance, and double strike until end of turn.\n• Creatures you control gain lifelink, indestructible, and protection from each color until end of turn."),
+    row('Test Leader', 'Legendary Creature — Angel', '', '{0}', ['3', '3']),
+  ];
+  const deck = customDeck({
+    id: 'will', name: 'Will', commander: 'Test Leader',
+    entries: [{ name: 'Test Will', count: 2 }, { name: 'Grizzly Bears', count: 6 }, { name: 'Plains', count: 50 }],
+    data: ROWS,
+  }).deck;
+  const table = (leaderOut: boolean) => {
+    let s = advanceTo(arena({
+      format: 'edh', decks: { 0: 'will', 1: 'will' }, deckSpecs: { will: deck },
+      hands: { 0: ['Test Will'] }, battlefield: { 0: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (leaderOut) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'command', 'Test Leader'), toZone: 'battlefield' });
+    return s;
+  };
+  const combos = (s: GameState) => legalActions(s, 0).plays
+    .filter((p) => p.card === find(s, 0, 'hand', 'Test Will')).map((p) => [...(p.modes ?? [])]);
+
+  it('offers one mode at a time without a commander out, and both with one', () => {
+    expect(combos(table(false))).toEqual([[0], [1]]);
+    expect(combos(table(true))).toEqual([[0], [1], [0, 1]]);
+    const s = table(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Will'), modes: [0, 1] })).not.toBeNull();
+  });
+
+  it('both modes: three keywords from the first, and protection from every colour from the second', () => {
+    let s = table(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Will'), modes: [0, 1] })));
+    const ch = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Grizzly Bears')]!);
+    expect(['flying', 'vigilance', 'double strike', 'lifelink', 'indestructible'].every((k) => (ch.keywords as ReadonlySet<string>).has(k))).toBe(true);
+    expect([...ch.protectionFrom].sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

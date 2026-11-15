@@ -12915,15 +12915,24 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
   const teamGains = new RegExp(
-    `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z' ]*?) until end of turn$`, 'i',
+    `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z', ]*?) until end of turn$`, 'i',
   ).exec(text);
   if (teamGains !== null) {
     const subject = massPumpSubject(teamGains[1]!);
-    const words = grantedKeywordList(teamGains[2]!);
+    /*
+      "… and protection from each color" at the end of a list (D668): Akroma's Will's second mode.
+      Protection from all five colours, which is what the printed Etched Champion stores (D83).
+    */
+    const everyColour = /^(.*?),?\s*(?:and\s+)?protection from (?:each|all) colou?rs?$/i.exec(teamGains[2]!.trim());
+    const words = everyColour === null ? grantedKeywordList(teamGains[2]!)
+      : everyColour[1]!.trim() === '' ? [] : grantedKeywordList(everyColour[1]!);
     if (subject !== null && words !== null) {
       return {
         ...(subject.targets === undefined ? {} : { targets: subject.targets }),
-        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, { keywords: words }),
+        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, {
+          keywords: words,
+          ...(everyColour === null ? {} : { protectionFrom: ['W', 'U', 'B', 'R', 'G'] }),
+        }),
       };
     }
   }
@@ -13626,8 +13635,9 @@ function pumpAndGrant(
  * refused here, reported unread, played by hand (D362).
  */
 function grantedKeywordList(granted: string): Keyword[] | null {
-  const words = granted.trim().toLowerCase().split(/\s+and\s+/).map((word) => word.trim());
-  if (words.length === 0 || words.length > 2) return null;
+  // A list too (D668): "flying, vigilance, and double strike" — Akroma's Will.
+  const words = granted.trim().toLowerCase().split(/,\s*(?:and\s+)?|\s+and\s+/).map((word) => word.trim());
+  if (words.length === 0 || words.length > 4) return null;
   if (!words.every((word) => word !== '' && isKeyword(word))) return null;
   return words as Keyword[];
 }
@@ -25174,7 +25184,11 @@ export interface SpellReading {
 function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef } | null {
   if (lines.length < 3) return null;
   // "Choose two" and "Choose one or more" too (D664): the Commands, Austere Command, Farewell.
-  const header = /^choose (one|one or both|two|one or more)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
+  // And the Will cycle's (D668): one, or both while you control a commander as you cast it.
+  const willHeader = /^choose one\. if you control a commander as you cast this spell, you may choose both(?: instead)?\.?$/i
+    .test(plain(lines[0]!).trim());
+  const header = willHeader ? ['', 'one'] as unknown as RegExpExecArray
+    : /^choose (one|one or both|two|one or more)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
   if (header === null) return null;
 
   const modes: ModeDef[] = [];
@@ -25214,6 +25228,7 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
       ...(prevents ? { preventsDamage: true } : {}),
     });
   }
+  if (willHeader) return modes.length === 2 ? { modal: { modes, maxWithCommander: 2 } } : null;
   // "one or both" is two modes by definition; a header that says it over three is not a card.
   if (header[1]!.toLowerCase() === 'one or both') {
     return modes.length === 2 ? { modal: { min: 1, max: 2, modes } } : null;

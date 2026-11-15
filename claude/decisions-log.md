@@ -45622,3 +45622,36 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,581, all passing
 
 Coverage: 11,096 of 31,653 cards (+3), 30,120 of 59,306 lines (+7). Staples: 185 of 244 (+2).
+
+## D668 — the Will cycle: both modes while you control a commander
+
+"Choose one. If you control a commander as you cast this spell, you may choose both" (Akroma's Will,
+Jeska's Will, Kamahl's Will and about seven more). Staples went from 185 to 186: Akroma's Will.
+
+**Engine.**
+- New field `ModalDef.maxWithCommander`.
+- `modeCombinations` takes the state and the casting seat, and uses that maximum while the seat
+  controls a commander on the battlefield.
+- Both callers pass them, so the combination is checked as the spell is cast: the offer in
+  `legalActions`, and the validation in `autoActions`.
+
+**Compiler.**
+- The modal header accepts the Will wording, with or without "instead", over exactly two modes.
+- `grantedKeywordList` reads a list of up to four keywords ("flying, vigilance, and double strike").
+- The team grant reads "… and protection from each color" at the end of its list as protection
+  from all five colours, as Etched Champion stores it (D83).
+
+**Not done:** Jeska's Will's modes ("Add {R} for each card in target opponent's hand", and playing
+the exiled cards this turn). Molten Collapse's "if you descended this turn" header and Disciple of
+Perdition's are other conditions on the same idea, not read.
+
+**Tests.** 2 engine tests:
+- without a commander out the Will offers [0] and [1] and refuses both; with one out it also offers
+  [0, 1];
+- cast with both modes, a Bears has all five keywords and protection from every colour.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,583, all passing
+
+Coverage: 11,099 of 31,653 cards (+3), 30,128 of 59,306 lines (+8). Staples: 186 of 244 (+1).
