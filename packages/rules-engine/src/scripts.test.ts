@@ -14570,6 +14570,67 @@ describe('Terastodon: a token for each destroyed permanent\'s controller (D704)'
   });
 });
 
+describe('Recover: back to hand when a creature of yours dies, or exiled (D705)', () => {
+  const ROWS = [
+    { name: 'Test Harvest', type_line: 'Instant', oracle_text: 'Return target creature card from your graveyard to your hand.\nRecover {2}{B}', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal' },
+    { name: 'Test Kill', type_line: 'Sorcery', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'recover', name: 'Recover',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  // The Harvest in seat 0's graveyard; a Bear on `whose` side, killed by seat 0.
+  const killing = (whose: SeatIndex, lands: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'recover', 1: 'recover' }, deckSpecs: { recover: deck.deck },
+      hands: { 0: ['Test Kill'] },
+      battlefield: whose === 0
+        ? { 0: [...Array.from({ length: lands }, () => 'Swamp'), 'Test Bear'] }
+        : { 0: Array.from({ length: lands }, () => 'Swamp'), 1: ['Test Bear'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const harvest = ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Harvest')!;
+    s = {
+      ...s,
+      zones: { ...s.zones, '0:library': ids(s, 0, 'library').filter((id) => id !== harvest), '0:graveyard': [harvest] },
+      instances: { ...s.instances, [harvest]: { ...s.instances[harvest]!, zone: 'graveyard' as const } },
+    };
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, whose, 'battlefield', 'Test Bear') }] } as Action);
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return { s, harvest };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.unread).toEqual([]);
+  });
+
+  it('paying the cost returns it to hand', () => {
+    let { s, harvest } = killing(0, 3);
+    expect(s.pendingDecision?.options).toEqual(["Don't pay", 'Pay {2}{B}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {2}{B}' }));
+    expect(s.instances[harvest]!.zone).toBe('hand');
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(3);
+  });
+
+  it('unable to pay, it is exiled', () => {
+    let { s, harvest } = killing(0, 0);
+    if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: "Don't pay" }));
+    else s = drain(s);
+    expect(s.instances[harvest]!.zone).toBe('exile');
+  });
+
+  it('an opponent\'s creature dying does nothing to it', () => {
+    let { s, harvest } = killing(1, 3);
+    s = drain(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.instances[harvest]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

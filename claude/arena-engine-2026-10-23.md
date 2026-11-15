@@ -29289,3 +29289,34 @@ tests, since the graveyard check makes it redundant for Terastodon's own wording
     engine tests: 4,705, all passing
 
 Coverage: 11,375 of 31,653 cards (+2), 30,671 of 59,306 lines (+2). Staples: 217 of 244 (+1).
+
+## D705 — Recover: back to hand when a creature of yours dies, or exiled
+
+"Recover {2}{B} (When a creature is put into your graveyard from the battlefield, you may pay {2}{B}.
+If you do, return this card from your graveyard to your hand. Otherwise, exile this card.)" (CR
+702.59). Grim Harvest, Krovikan Rot, and the other mana-cost Recover cards.
+
+How it is read: `keywordScriptFor` builds one trigger that works from the graveyard
+(`inGraveyard`):
+- it fires on a card arriving in a graveyard from the battlefield;
+- its condition asks for a creature card whose owner is this card's controller, which is "your
+  graveyard";
+- it asks one question with the price on its paying answer. The engine offers "Pay" only when it is
+  affordable and pays it, and the bot pays.
+
+Paid, the card goes to its owner's hand; unpaid, it is exiled. A card that has already left the
+graveyard is left alone. Non-mana costs ("Recover—Pay half your life") stay unread.
+
+Staples went from 217 to 218 (Grim Harvest).
+
+**Tests.** 4 engine tests:
+- Grim Harvest reads;
+- with three Swamps the question is asked, and paying taps them and returns it;
+- with no lands it is exiled;
+- an opponent's creature dying asks nothing and leaves it in the graveyard.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 4,709, all passing
+
+Coverage: 11,381 of 31,653 cards (+6), 30,677 of 59,306 lines (+6). Staples: 218 of 244 (+1).

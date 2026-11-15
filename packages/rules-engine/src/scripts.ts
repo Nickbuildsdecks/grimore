@@ -10983,6 +10983,45 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     watches a card being cycled sees it. The mana value is the printed one of the card being
     transmuted, looked up by name, which is the card that was discarded to pay for it.
   */
+  /*
+    **Recover** (D705, CR 702.59): "When a creature is put into your graveyard from the battlefield,
+    you may pay <cost>. If you do, return this card from your graveyard to your hand. Otherwise,
+    exile this card." Grim Harvest, Krovikan Rot, Garza's Assassin's mana cousins. A trigger that
+    works from the graveyard (`inGraveyard`) on a card arriving there from the battlefield, asked
+    only of a creature card its owner is this card's controller — "your graveyard" — and one
+    question with the price on its paying answer, which the engine pays. Unpaid, the card is exiled.
+    Only a mana cost: "Recover—Pay half your life" stays unread.
+  */
+  const recover = /^recover\s+((?:\{[^}]*\})+)$/i.exec(text);
+  if (recover !== null) {
+    const cost = recover[1]!;
+    const parsed = parseManaCost(cost);
+    if (parsed.unsupported !== undefined || parsed.x) return null;
+    const pay = `Pay ${cost}`;
+    return {
+      triggers: [{
+        on: { kind: 'to-graveyard', who: 'any', from: 'battlefield' },
+        inGraveyard: true,
+        description: `recover: pay ${cost} to return this card to your hand, or exile it`,
+        condition: (c) => {
+          const died = c.subject === undefined ? undefined : c.state.instances[c.subject];
+          if (died === undefined || died.owner !== c.controller || died.id === c.source) return false;
+          return hasType(parseTypeLine(c.state.cardDefs[died.defKey]?.typeLine), 'creature');
+        },
+        decisions: [{
+          who: 'controller',
+          prompt: `${pay} to return ${name} to your hand? If you do not, it is exiled.`,
+          options: [TAX_NOT_PAID, pay],
+          payIfChosen: { option: pay, cost },
+          best: () => pay,
+        }],
+        effect: (c) => {
+          if (c.state.instances[c.source]?.zone !== 'graveyard') return c.state;
+          return chosenOption(c, 0) === pay ? moveToHand(c.state, [c.source]) : exileCard(c.state, c.source);
+        },
+      }],
+    };
+  }
   const transmute = /^transmute\s+((?:\{[^}]*\})+)$/i.exec(text);
   if (transmute !== null) {
     const mana = transmute[1]!;
