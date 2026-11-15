@@ -5340,6 +5340,8 @@ function applyStatics(
       : entry.scope === 'self' ? { kind: 'cards', ids: [id] }
       : entry.scope === 'controller-creatures' ? { kind: 'controller-creatures' }
       : entry.scope === 'controller-tokens' ? { kind: 'controller-tokens' }
+      : entry.scope === 'controller-lands' ? { kind: 'controller-lands' }
+      : entry.scope === 'all-lands' ? { kind: 'all-lands' }
       : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
       : { kind: 'all-creatures' };
     next = {

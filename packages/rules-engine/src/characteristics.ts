@@ -1333,6 +1333,10 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-creatures' }
     /** "Creature tokens you control …" (D655): the controller's creatures that are tokens. */
     | { readonly kind: 'controller-tokens' }
+    /** "Lands you control are every basic land type …" (D699, Dryad of the Ilysian Grove). */
+    | { readonly kind: 'controller-lands' }
+    /** "Each land is a Swamp in addition to its other land types." (D699, Urborg). */
+    | { readonly kind: 'all-lands' }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2117,6 +2121,10 @@ function effectApplies(
       return creature && instance.zoneSeat === effect.controller;
     case 'controller-tokens':
       return creature && instance.zoneSeat === effect.controller && instance.isToken;
+    case 'controller-lands':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat === effect.controller;
+    case 'all-lands':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'land');
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':

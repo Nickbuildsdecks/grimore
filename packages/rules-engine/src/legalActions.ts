@@ -660,6 +660,19 @@ export function flashbackCostOf(state: GameState, id: string): string | undefine
   return inst.zone === 'graveyard' && inst.flashbackGrantedTurn === state.turn ? def?.manaCost ?? '' : undefined;
 }
 
+/**
+ * The `{T}: Add {X}` a basic land type gives a land (CR 305.6), for the types it has now (D699).
+ * Kept here rather than imported from `fromCardData`, whose own copy reads printed type lines,
+ * because importing that module here closes an import cycle.
+ */
+const BASIC_TYPE_MANA: Readonly<Record<string, ManaType>> = {
+  plains: 'W', island: 'U', swamp: 'B', mountain: 'R', forest: 'G',
+};
+function typeGrantedMana(subtypes: readonly string[]): AbilityDef[] {
+  return [...new Set(subtypes.map((s) => BASIC_TYPE_MANA[s.toLowerCase()]).filter((t): t is ManaType => t !== undefined))]
+    .map((t) => ({ cost: { tap: true }, description: `{T}: Add {${t}}.`, produces: [t] }));
+}
+
 /** What a spell's mana is being spent on, for a restricted source (D595, D697). */
 function payingFor(state: GameState, id: string, def: CardDef | undefined): PaymentFor {
   return { spell: parseTypeLine(def?.typeLine), commander: state.instances[id]?.isCommander === true };
@@ -1025,6 +1038,17 @@ export function manaSources(
         const ability = grantedAbilityFor(state, ref);
         return ability === undefined ? [] : [{ ability, index: ref.index, grantedBy: ref }];
       }),
+      /*
+        And the mana a basic land type gives a land that has the type only because an effect says so
+        (D699, CR 305.7): a Forest under Urborg taps for {B}, and every land under Dryad of the
+        Ilysian Grove for any colour. The printed ones are in the script already; these are the
+        types the land has now that its script does not make. Index -1: the solver's pick adds the
+        mana itself, and nothing activates a source by index.
+      */
+      ...(ch.isLand ? typeGrantedMana(ch.typeLine.subtypes)
+        .filter((granted) => !(script?.abilities ?? []).some((own) => own.cost.tap && own.cost.mana === undefined
+          && (own.produces ?? []).length === 1 && own.produces![0] === granted.produces![0]))
+        .map((ability) => ({ ability, index: -1 })) : []),
     ];
     let usable: {
       index: number; produces: readonly ManaType[]; life: number; energy: number; sacrifices: boolean;

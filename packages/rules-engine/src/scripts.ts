@@ -24871,6 +24871,21 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  /*
+    Land types added to lands (D699): "Each land is a Swamp in addition to its other land types."
+    (Urborg, Tomb of Yawgmoth, Yavimaya's cousins) and "Lands you control are every basic land type
+    in addition to their other types." (Dryad of the Ilysian Grove, Prismatic Omen's land half). The
+    lands tap for what the types give them (CR 305.7), through `manaSources`.
+  */
+  const landTyped = /^(each land is an?|lands you control are) (plains|island|swamp|mountain|forest|every basic land type) in addition to (?:its|their) other (?:land )?types\.?$/i.exec(plain(line).trim());
+  if (landTyped !== null) {
+    const which = landTyped[2]!.toLowerCase();
+    const addSubtypes = which === 'every basic land type'
+      ? ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']
+      : [`${which.charAt(0).toUpperCase()}${which.slice(1)}`];
+    const scope = /^each land/i.test(landTyped[1]!) ? 'all-lands' as const : 'controller-lands' as const;
+    return { statics: [{ scope, effect: { addSubtypes } }] };
+  }
   // "Creature spells you control can't be countered" (D688): see `CardScript.spellsCantBeCountered`.
   const uncounterable = /^(creature |noncreature )?spells( you control)? can't be countered\.?$/i.exec(plain(line).trim());
   if (uncounterable !== null) {

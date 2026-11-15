@@ -3453,6 +3453,8 @@ export interface CardScript {
       | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
       /** "Creature tokens you control get +1/+1" (D655): Intangible Virtue, Divine Visitation's kin. */
       | 'controller-tokens'
+      /** Lands, for land types added in layer 4 (D699): Dryad of the Ilysian Grove, Urborg. */
+      | 'controller-lands' | 'all-lands'
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
       | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean }
       /**

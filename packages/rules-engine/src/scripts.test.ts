@@ -14304,6 +14304,54 @@ describe('a copy that sacrifices itself at the end step (D698)', () => {
   });
 });
 
+describe('lands that gain basic land types tap for them (D699)', () => {
+  const ROWS = [
+    { name: 'Test Urborg', type_line: 'Legendary Land', oracle_text: 'Each land is a Swamp in addition to its other land types.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Dryad', type_line: 'Enchantment Creature — Nymph Dryad', oracle_text: 'Lands you control are every basic land type in addition to their other types.', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '4' },
+    { name: 'Test Shade', type_line: 'Creature — Shade', oracle_text: '', mana_cost: '{B}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Sprite', type_line: 'Creature — Faerie', oracle_text: '', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'landtypes', name: 'Land types',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 20 }, { name: 'Mountain', count: 20 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'landtypes', 1: 'landtypes' }, deckSpecs: { landtypes: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castable = (s: GameState, name: string) => legalActions(s, 0).plays
+    .some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+  const subtypes = (s: GameState, seat: SeatIndex, name: string) =>
+    characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!).typeLine.subtypes;
+
+  it('reads both lines whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread, row.name).toEqual([]);
+    }
+  });
+
+  it('Urborg: every land is a Swamp, its own and the opponent\'s, and they tap for black', () => {
+    const s = table(['Test Shade'], ['Test Urborg', 'Forest'], ['Mountain']);
+    expect(subtypes(s, 0, 'Forest')).toContain('Swamp');
+    expect(subtypes(s, 1, 'Mountain')).toContain('Swamp');
+    expect(castable(s, 'Test Shade')).toBe(true);
+    const cast = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shade') });
+    expect(cast.stackOrder.length).toBe(1);
+    expect(castable(table(['Test Shade'], ['Forest', 'Forest']), 'Test Shade')).toBe(false);
+  });
+
+  it('Dryad: your lands are every basic type and tap for any colour; the opponent\'s are not', () => {
+    const s = table(['Test Sprite'], ['Test Dryad', 'Forest'], ['Mountain']);
+    expect(subtypes(s, 0, 'Forest')).toEqual(expect.arrayContaining(['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']));
+    expect(subtypes(s, 1, 'Mountain')).not.toContain('Island');
+    expect(castable(s, 'Test Sprite')).toBe(true);
+    expect(castable(table(['Test Sprite'], ['Forest']), 'Test Sprite')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

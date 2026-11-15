@@ -29126,3 +29126,35 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,689, all passing
 
 Coverage: 11,364 of 31,653 cards (+2), 30,659 of 59,306 lines (+3). Staples: 211 of 244 (+1).
+
+## D699 — lands that gain basic land types tap for them
+
+"Each land is a Swamp in addition to its other land types." (Urborg, Tomb of Yawgmoth) and "Lands you
+control are every basic land type in addition to their other types." (Dryad of the Ilysian Grove).
+
+What was added:
+- Two static scopes, `controller-lands` and `all-lands`, in `CardScript.statics`, in
+  `ContinuousEffect.scope` and in `effectApplies`. The layer-4 pass adds the subtypes through the
+  existing `addSubtypes`. `staticFromLine` reads both sentences, with one basic type or all five.
+- `manaSources` now gives a land the `{T}: Add` its **current** basic land types grant (CR 305.6,
+  305.7), beside its script's abilities, unless the script already has that row. The local helper
+  `typeGrantedMana` avoids importing fromCardData into legalActions, which would close an import
+  cycle. The rows carry index -1: the solver's pick adds the mana itself, and nothing activates a
+  source by index.
+
+Not built: tapping such a land **by hand** for a colour it only has from the effect. The table's
+payments use it; the land's own pressable rows are still its printed ones.
+
+Staples went from 211 to 213 (Urborg, Dryad of the Ilysian Grove).
+
+**Tests.** 3 engine tests:
+- both lines read;
+- under Urborg, a Forest and an opponent's Mountain are Swamps, and Urborg plus the Forest pay
+  {B}{B}, which two plain Forests cannot;
+- under the Dryad, a Forest pays {U} while an opponent's Mountain stays as it was.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,692, all passing
+
+Coverage: 11,369 of 31,653 cards (+5), 30,665 of 59,306 lines (+6). Staples: 213 of 244 (+2).
