@@ -29613,3 +29613,41 @@ because one move is the rule.
     engine tests: 4,740, all passing
 
 Coverage: 11,404 of 31,653 cards (+1), 30,706 of 59,306 lines (+1). Staples: 227 of 244 (+1).
+
+## D715 — "If this spell was cast from a graveyard": Sevinne's Reclamation and the flashback upgrades
+
+How it is read:
+- `EffectContext.resolving` carries the spell's own stack object while it resolves.
+- `castFromAGraveyard` reads `resolving.castFrom === 'graveyard'`, which every graveyard cast
+  records. It is never true for a copy, which was not cast (CR 707.10).
+- The condition is also an intervening-condition row, so "… instead if this spell was cast from a
+  graveyard" reads.
+- **"X instead."** "If this spell was cast from a graveyard, X instead." as the last sentence of a
+  one-line spell is turned around into D693's "X instead if …" second line, and read by
+  `insteadIfUpgrade` (Plunder the Trollshaws).
+- **An added effect.** "If this spell was cast from a graveyard, <effect>." runs the effect only
+  then. One that asks or targets is refused, since it would be asked either way.
+- **Sevinne's Reclamation.** "…, you may copy this spell and may choose a new target for the copy":
+  - The new target is asked as the spell resolves, about the spell itself, and only when a copy will
+    be made.
+  - The effect puts the popped object back for `copySpellOnStack` and takes it off again.
+  - The copy goes on top and resolves next.
+- **Still unread in the family.** Increasing Devotion, Increasing Savagery, Secrets of the Key,
+  Increasing Confusion and Ruthless Negotiation fail on their own wording or targets, not on the
+  condition.
+
+Staples went from 227 to 228 (Sevinne's Reclamation).
+
+**Tests.** 4 engine tests:
+- both cards read;
+- cast with flashback, Sevinne's returns the Bear, asks for the copy's target, and the copy returns
+  the Relic and copies nothing;
+- cast from hand, nothing is asked or copied;
+- Plunder draws one from hand and two with flashback.
+
+Faults injected by hand: 6 of 6 caught. "A copy copies itself" was caught only after the test
+checked the stack right after the copy resolved: the extra copy otherwise fizzles silently.
+
+    engine tests: 4,744, all passing
+
+Coverage: 11,406 of 31,653 cards (+2), 30,708 of 59,306 lines (+2). Staples: 228 of 244 (+1).

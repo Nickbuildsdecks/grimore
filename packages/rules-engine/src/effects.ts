@@ -46,6 +46,12 @@ export interface EffectContext {
   /** Whether this spell's kicker was paid (CR 702.32a). False for everything without one. */
   readonly kicked: boolean;
   /**
+   * The spell itself, while it resolves (D715): "if this spell was cast from a graveyard" reads its
+   * `castFrom`, and Sevinne's Reclamation copies it. Absent for abilities. The object has already
+   * left the stack by the time the effect runs.
+   */
+  readonly resolving?: StackObject;
+  /**
    * "It can't be regenerated." — set for the whole of **one resolution**, and read by every destroy
    * that resolution performs (D535).
    *

@@ -4917,6 +4917,8 @@ function completeResolution(
     x: object.x ?? 0,
     decisions: answers,
     kicked: object.kicked === true,
+    // The spell itself, for "if this spell was cast from a graveyard" (D715).
+    ...(object.kind === 'spell' ? { resolving: object } : {}),
     attacked: object.attacked,
     /*
       Which permanent it is about, for a trigger that has to say "that creature" — and which
