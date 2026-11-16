@@ -15667,6 +15667,93 @@ describe('Necropotence: no draw step, discards exiled, and a card a turn for lif
   });
 });
 
+describe('"Search your library and/or graveyard": Finale of Devastation (D720)', () => {
+  const ROWS = [
+    { name: 'Test Finale', type_line: 'Sorcery', oracle_text: 'Search your library and/or graveyard for a creature card with mana value X or less and put it onto the battlefield. If you search your library this way, shuffle. If X is 10 or more, creatures you control get +X/+X and gain haste until end of turn.', mana_cost: '{X}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Moogle', type_line: 'Creature — Moogle', oracle_text: 'When this creature enters, search your library and/or graveyard for an artifact card with mana value 2 or less, reveal it, and put it into your hand. If you search your library this way, shuffle it.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: '', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+    { name: 'Test Dryad', type_line: 'Creature — Dryad', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'finale', name: 'Finale',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (lands: number, graveyard: string[] = [], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'finale', 1: 'finale' }, deckSpecs: { finale: deck.deck },
+    hands: { 0: ['Test Finale'] }, graveyard: { 0: graveyard },
+    battlefield: { 0: [...mine, ...Array.from({ length: lands }, () => 'Forest')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, x: number) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Finale'), x } as Action);
+    while (next.pendingDecision === null && next.stackOrder.length > 0) next = passBoth(next);
+    return next;
+  };
+  const zone = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads whole, and so does the hand-destination wording', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks which zone, then searches the library for a creature with mana value X or less', () => {
+    let s = cast(table(2, ['Test Dryad']), 2);
+    expect(s.pendingDecision?.options).toEqual(['Library', 'Graveyard']);
+    s = zone(s, 'Library');
+    expect(s.pendingDecision?.from).toBe('library');
+    expect([...new Set(choices(s))].sort()).toEqual(['Test Dryad', 'Test Elf']);
+    s = drain(decide(s, ['Test Elf']));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Elf');
+    // The graveyard was not searched.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Dryad');
+  });
+
+  it('or the graveyard, bounded by X the same way', () => {
+    let s = cast(table(1, ['Test Dryad', 'Test Elf']), 1);
+    s = zone(s, 'Graveyard');
+    expect(s.pendingDecision?.from).toBe('graveyard');
+    expect(choices(s)).toEqual(['Test Elf']);
+    s = drain(decide(s, ['Test Elf']));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Elf');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Test Dryad', 'Test Finale']);
+  });
+
+  it('with X of 10 or more the team gets +X/+X and haste; with less, nothing', () => {
+    let s = cast(table(10, [], ['Test Dryad']), 10);
+    s = zone(s, 'Library');
+    s = drain(decide(s, ['Test Wurm']));
+    const wurm = find(s, 0, 'battlefield', 'Test Wurm');
+    const dryad = find(s, 0, 'battlefield', 'Test Dryad');
+    expect(characteristicsOf(s, s.instances[wurm]!).power).toBe(16);
+    expect(characteristicsOf(s, s.instances[dryad]!).power).toBe(12);
+    expect(characteristicsOf(s, s.instances[wurm]!).keywords.has('haste')).toBe(true);
+
+    let t = cast(table(9, [], ['Test Dryad']), 9);
+    t = zone(t, 'Library');
+    t = drain(decide(t, ['Test Wurm']));
+    expect(characteristicsOf(t, t.instances[find(t, 0, 'battlefield', 'Test Dryad')]!).power).toBe(2);
+  });
+
+  it('the bot searches its library, and its graveyard only when the library has nothing', () => {
+    const s = cast(table(2, ['Test Dryad']), 2);
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', option: 'Library' });
+    // A library of Forests has no creature for the search to find; the one Dryad starts in the graveyard.
+    const bare = customDeck({
+      id: 'finale-bare', name: 'Finale bare',
+      entries: [{ name: 'Test Finale', count: 1 }, { name: 'Test Dryad', count: 1 }, { name: 'Forest', count: 40 }],
+      data: ROWS,
+    });
+    let t = advanceTo(arena({
+      decks: { 0: 'fb', 1: 'fb' }, deckSpecs: { fb: bare.deck },
+      hands: { 0: ['Test Finale'] }, graveyard: { 0: ['Test Dryad'] },
+      battlefield: { 0: ['Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    t = cast(t, 2);
+    expect(botAction(t, 0)).toMatchObject({ type: 'auto:decide', option: 'Graveyard' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

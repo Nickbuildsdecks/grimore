@@ -47306,3 +47306,52 @@ was numbered. The figures below are against its head, 02cda68 (11,440 cards, 30,
     engine tests: 4,764, all passing
 
 Coverage: 11,445 of 31,653 cards (+5), 30,795 of 59,306 lines (+18). Staples: 232 of 244 (+1).
+
+## D720 — "Search your library and/or graveyard": Finale of Devastation
+
+"Search your library and/or graveyard for a creature card with mana value X or less and put it onto
+the battlefield. If you search your library this way, shuffle. If X is 10 or more, creatures you
+control get +X/+X and gain haste until end of turn."
+
+How it is read:
+- **Two zones.** Read as Myriad Landscape's search is (D709): the zone is asked first ("Library" or
+  "Graveyard"), then one question in that zone, each asked only if its zone was the answer
+  (`askOnlyIfChosen`). The plain search does the rest, so the filter, the X bound (D686) and the
+  destination are ones it already reads. Hand or battlefield, with or without "reveal it", and
+  "you may".
+- **"If you search your library this way, shuffle."** `clausesOf` folds it away. A library question
+  already shuffles as it is answered (CR 701.19e), and only when the library is the zone searched,
+  which is exactly what the sentence says.
+- **Simplification, recorded.** The rules let a player look through both zones and then take one
+  card from either. Here the zone is chosen first. The graveyard is public, so the only thing lost
+  is looking through the library and then settling for a graveyard card.
+- **"+X/+X" with no "where X is".** The team-pump-by-a-count reader (D666) now takes it as the X the
+  spell was cast with.
+- **"If X is N or more, …".** A new condition in front of an effect. The effect runs only when the
+  spell's X is at least N. It isn't taken in front of an effect that asks a question or chooses a
+  target, for the reason the cast-from-a-graveyard condition gives (D715).
+- **The bot** searches its library, and its graveyard only when its library has no card the search
+  could find.
+- Delivery Moogle reads whole as well. Sanctum of All's and Runeforge Champion's search lines now
+  read, though each card has another line that doesn't. Most of the family, 18 legal lines, names
+  another card ("a card named Command Tower"), which no filter here reads yet.
+
+Staples went from 232 to 233 (Finale of Devastation).
+
+**Tests.** 5 engine tests:
+- Finale and Delivery Moogle read;
+- the zone is asked first, and the library offers only creatures with mana value X or less, while
+  the graveyard is left alone;
+- the graveyard is searched with the same bound;
+- with X of 10 the team gets +X/+X and haste, and with X of 9 nothing;
+- the bot searches its library, or its graveyard when the library has nothing to find.
+
+Faults injected by script: 8 of 8 caught. The first attempt at this run was cut short by a worker
+restart with a fault still injected (the shuffle-folding line deleted). It was found by checking
+every fault's original text against the tree, restored, and the run repeated in full.
+
+    engine tests: 4,769, all passing
+
+Coverage: 11,447 of 31,653 cards (+2), 30,799 of 59,306 lines (+4). Staples: 233 of 244 (+1).
+Pod sweeps 58001–58040 and 58101–58140 (D717 and D719 builds): 40 of 40 finished in each, no
+throw and no stall.

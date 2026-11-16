@@ -4519,7 +4519,7 @@ const GUARDIANS_OF_AKRASA: CardDef = {
   colors: ['W'],
 };
 
-const CLOUDFIN_RAPTOR: CardDef = {
+const CLOUD720_RAPTOR: CardDef = {
   name: 'Cloudfin Raptor',
   typeLine: 'Creature — Bird Mutant',
   manaCost: '{U}',
@@ -5885,7 +5885,7 @@ export const HOLLOW_TIDE: DeckSpec = {
       honest reading: the swap costs this deck nothing, and nothing is all a new keyword's card
       has to cost.
     */
-    { card: CLOUDFIN_RAPTOR, count: 1 },
+    { card: CLOUD720_RAPTOR, count: 1 },
     /*
       The Eldest Reborn for the second Wall of Air, and the card this deck has been missing.
 
