@@ -37,7 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
+  DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -2584,12 +2584,16 @@ export function stateBasedActions(state: GameState): GameState {
         */
         if (hasSubtype(ch.typeLine, 'aura')) {
           const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
-          const enchant = inst.bestowed === true
-            ? BESTOW_TARGET
-            : scriptForCard(next.cardDefs[inst.defKey])?.aura?.target;
+          const auraDef = scriptForCard(next.cardDefs[inst.defKey])?.aura;
+          const enchant = inst.bestowed === true ? BESTOW_TARGET : auraDef?.target;
+          /*
+            Animate Dead's enchant ability on the battlefield is "enchant creature put onto the
+            battlefield with ~" (D720): the creature it animated, and only while that is a creature.
+          */
           const illegalHost = host !== undefined && host.zone === 'battlefield'
-            && enchant !== undefined
-            && !isLegalAttachment(next, enchant, host.id, inst.zoneSeat, inst.id);
+            && (inst.bestowed !== true && auraDef?.reanimates === true
+              ? host.animatedBy !== inst.id || !characteristicsOf(next, host).isCreature
+              : enchant !== undefined && !isLegalAttachment(next, enchant, host.id, inst.zoneSeat, inst.id));
           if (host === undefined || host.zone !== 'battlefield' || illegalHost) {
             /*
               Unless it was **bestowed**, in which case it stops being an Aura and becomes a
@@ -5125,6 +5129,14 @@ function completeResolution(
       }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');
+        // Animate Dead (D720): the card comes back first, under the Aura's controller, and is the host.
+        if (host && host.kind === 'card' && script.aura.reanimates === true) {
+          const card = next.instances[host.id];
+          if (card !== undefined && card.zone === 'graveyard') {
+            next = putOntoBattlefield(next, host.id, object.controller);
+            next = withInstance(next, host.id, { animatedBy: inst.id });
+          }
+        }
         if (host && host.kind === 'card') {
           next = withInstance(next, inst.id, { attachedTo: host.id });
           next = addAuraEffect(next, inst.id, object.controller, host.id, script);

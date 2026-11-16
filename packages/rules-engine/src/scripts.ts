@@ -15127,6 +15127,46 @@ export function attachmentScriptFor(
       .map((line) => /^enchant ([a-z][a-z' ]*)$/i.exec(plain(line).trim()))
       .find((m) => m !== null);
     if (enchant === undefined || enchant === null) return null;
+    /*
+      **Animate Dead and Dance of the Dead** (D720): "Enchant creature card in a graveyard" with
+      "When ~ enters, if it's on the battlefield, it loses 'enchant creature card in a graveyard' and
+      gains 'enchant creature put onto the battlefield with ~.' Return enchanted creature card to
+      the battlefield under your control and attach ~ to it. When ~ leaves the battlefield, that
+      creature's controller sacrifices it." The pair is one mechanic: the Aura targets a creature
+      card in any graveyard, brings it back attached as it resolves (`AuraDef.reanimates`), and
+      sacrifices it when the Aura leaves. Its bonus line, when it reads, applies to the creature.
+    */
+    if (enchant[1]!.trim().toLowerCase() === 'creature card in a graveyard') {
+      const animateLine = lines.find((line) => {
+        const m = /^When (.+?) enters, if it's on the battlefield, it loses "enchant creature card in a graveyard" and gains "enchant creature put onto the battlefield with (.+?)\." Return enchanted creature card to the battlefield under your control and attach (.+?) to it\. When (.+?) leaves the battlefield, that creature's controller sacrifices it\.?$/i.exec(plain(line).trim());
+        return m !== null && m[1] === m[2] && m[2] === m[3] && m[3] === m[4];
+      });
+      const spec = animateLine === undefined ? null : targetSpecFrom(graveyardPhrase('target creature card', 'a'), false);
+      if (animateLine === undefined || spec === null) return null;
+      return {
+        fragment: {
+          aura: {
+            target: { ...spec, description: 'enchant creature card in a graveyard', friendly: true },
+            effect: { ...(read?.bonus ?? {}) },
+            reanimates: true,
+          },
+          triggers: [{
+            on: { kind: 'leaves' },
+            description: "that creature's controller sacrifices it",
+            effect: (c) => {
+              const animated = Object.keys(c.state.instances).filter((id) => {
+                const inst = c.state.instances[id]!;
+                return inst.zone === 'battlefield' && inst.animatedBy === c.source;
+              });
+              return animated.length === 0 ? c.state : sacrifice(c.state, animated);
+            },
+          }],
+        },
+        claimed: read === null || read.grantedTriggers !== undefined || read.grantedAbilities !== undefined
+          ? [enchant[0]!, animateLine]
+          : [enchant[0]!, animateLine, staticLine!],
+      };
+    }
     const declared = enchant[0]!;
     const thing = enchant[1]!.trim().toLowerCase();
     if (thing === 'player') return null;

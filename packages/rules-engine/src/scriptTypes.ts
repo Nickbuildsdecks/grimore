@@ -2453,6 +2453,13 @@ export interface AbilityDef {
 export interface AuraDef {
   readonly target: TargetSpec;
   readonly effect: PumpOptions;
+  /**
+   * Animate Dead and Dance of the Dead (D720): the target is a creature card in a graveyard, and
+   * as the Aura resolves that card is put onto the battlefield under the Aura's controller with the
+   * Aura attached to it, recorded on the creature as `animatedBy`. The card's own "if it's on the
+   * battlefield" check, and its change of enchant ability, are folded into that one step.
+   */
+  readonly reanimates?: true;
 }
 
 /** One mode of a modal spell: what it says, what it points at, and what it does. */

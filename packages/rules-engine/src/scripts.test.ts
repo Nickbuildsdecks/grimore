@@ -15551,6 +15551,83 @@ describe('The One Ring: protection from everything, burden counters (D718)', () 
   });
 });
 
+describe('Animate Dead: an Aura that brings its creature back, and takes it away (D720)', () => {
+  const ROWS = [
+    { name: 'Test Animate', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature card in a graveyard\nWhen Test Animate enters, if it\'s on the battlefield, it loses "enchant creature card in a graveyard" and gains "enchant creature put onto the battlefield with Test Animate." Return enchanted creature card to the battlefield under your control and attach Test Animate to it. When Test Animate leaves the battlefield, that creature\'s controller sacrifices it.\nEnchanted creature gets -1/-0.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' },
+    { name: 'Test Disenchant', type_line: 'Instant', oracle_text: 'Destroy target enchantment.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'animate', name: 'Animate',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const animated = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'animate', 1: 'animate' }, deckSpecs: { animate: deck.deck },
+      hands: { 0: ['Test Animate', 'Test Disenchant'] }, graveyard: { 1: ['Test Giant', 'Test Relic'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const giant = find(s, 1, 'graveyard', 'Test Giant');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Animate'), targets: [{ kind: 'card', id: giant }] } as Action);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return { s, giant, aura: find(s, 0, 'battlefield', 'Test Animate') };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('returns an opponent\'s creature card under your control, enchanted, with the bonus', () => {
+    const { s, giant, aura } = animated();
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+    expect(s.instances[giant]!.zoneSeat).toBe(0);
+    expect(s.instances[aura]!.attachedTo).toBe(giant);
+    expect(power(s, giant)).toBe(3);
+    expect(toughness(s, giant)).toBe(4);
+  });
+
+  it('only a creature card in a graveyard can be chosen', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'animate', 1: 'animate' }, deckSpecs: { animate: deck.deck },
+      hands: { 0: ['Test Animate'] }, graveyard: { 1: ['Test Relic'] }, battlefield: { 1: ['Test Giant'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Animate');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: find(s, 1, 'graveyard', 'Test Relic') }] } as Action)).toBeTruthy();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Giant') }] } as Action)).toBeTruthy();
+  });
+
+  it('when the Aura leaves, the creature is sacrificed into its owner\'s graveyard', () => {
+    let { s, giant, aura } = animated();
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Disenchant'), targets: [{ kind: 'card', id: aura }] } as Action);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[aura]!.zone).toBe('graveyard');
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(s.instances[giant]!.zoneSeat).toBe(1);
+  });
+
+  it('the Aura may enchant only the creature it animated', () => {
+    let { s, giant, aura } = animated();
+    // A creature the Aura did not put there (here, the record of it removed) is not one it may enchant.
+    s = { ...s, instances: { ...s.instances, [giant]: { ...s.instances[giant]!, animatedBy: undefined } } };
+    s = passBoth(s);
+    expect(s.instances[aura]!.zone).toBe('graveyard');
+  });
+
+  it('a creature that left and came back is not sacrificed, and the Aura falls off', () => {
+    let { s, giant, aura } = animated();
+    // Blinked: a new object, no longer the one the Aura animated.
+    s = apply(s, { type: 'card:move', by: 0, card: giant, toZone: 'exile' });
+    s = apply(s, { type: 'card:move', by: 0, card: giant, toZone: 'battlefield' });
+    s = passBoth(s);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    // The Aura has nothing it may enchant and falls off; its leaving sacrifices nothing.
+    expect(s.instances[aura]!.zone).toBe('graveyard');
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

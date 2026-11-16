@@ -29790,3 +29790,48 @@ test catches.
     engine tests: 4,758, all passing (after merging the other session's Chrome Mox, D717)
 
 Coverage: 11,436 of 31,653 cards (+27), 30,765 of 59,306 lines (+49). Staples: 230 of 244 (+1).
+
+## D720 — Animate Dead: an Aura that brings its creature back, and takes it away
+
+"Enchant creature card in a graveyard / When Animate Dead enters, if it's on the battlefield, it
+loses 'enchant creature card in a graveyard' and gains 'enchant creature put onto the battlefield
+with Animate Dead.' Return enchanted creature card to the battlefield under your control and attach
+Animate Dead to it. When Animate Dead leaves the battlefield, that creature's controller sacrifices
+it. / Enchanted creature gets -1/-0."
+
+How it is read:
+- **One mechanic, read as a pair.** In `attachmentScriptFor`'s Aura branch, the enchant line and the
+  long arrival line are read together:
+  - the target is a creature card in any graveyard;
+  - `AuraDef.reanimates` marks the Aura;
+  - the bonus line applies to the creature.
+- **On resolution.** `completeResolution` puts the targeted card onto the battlefield under the
+  Aura's controller, records `animatedBy` (the Aura's id) on it, and attaches the Aura. The card's
+  "if it's on the battlefield" check and its change of enchant ability are folded into that one
+  step.
+- **Its enchant ability on the battlefield.** The state-based attachment check reads "enchant
+  creature put onto the battlefield with ~": a host is legal only while it is a creature whose
+  `animatedBy` is this Aura. `relocate` clears `animatedBy` on any zone change, so a blinked
+  creature is a new object, and the Aura falls off.
+- **Leaving.** A leaves trigger sacrifices the creature this Aura animated, if it is still that
+  object.
+- **Not read yet.** Necromancy, which is not an Aura until it enters, and Dance of the Dead, whose
+  other lines are refused.
+
+Staples went from 231 to 232 (Animate Dead).
+
+**Tests.** 6 engine tests:
+- the card reads;
+- an opponent's Giant returns under your control, enchanted, as a 3/4;
+- only a creature card in a graveyard can be targeted;
+- destroying the Aura sacrifices the Giant into its owner's graveyard;
+- a host the Aura did not animate is not legal, and the Aura falls off;
+- a blinked Giant is not sacrificed and the Aura falls off.
+
+Faults injected by hand: 6 of 6 caught. The legality guard was caught only after the direct "only
+the creature it animated" test was added.
+
+    engine tests: 4,764, all passing
+
+Coverage: 11,440 of 31,653 cards, 30,778 of 59,306 lines (merged head, Forge corpus as measured
+here). Staples: 232 of 244.

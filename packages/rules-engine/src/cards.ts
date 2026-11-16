@@ -196,6 +196,11 @@ export interface CardInstance {
    */
   readonly flashbackGrantedTurn?: number;
   /**
+   * The Aura that put this creature onto the battlefield (D720, `AuraDef.reanimates`), which
+   * sacrifices it as it leaves. Cleared on any zone change: a new object is not the one animated.
+   */
+  readonly animatedBy?: string;
+  /**
    * What was chosen **as this permanent entered** (D641, CR 614.12): "As ~ enters, choose a creature
    * type" or "… a color". Statics that say "the chosen type" or "the chosen color" are filled in
    * from it as they are installed. Cleared when the card leaves, because the new object chooses
