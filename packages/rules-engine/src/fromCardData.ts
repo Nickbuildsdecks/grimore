@@ -192,6 +192,23 @@ export function intrinsicManaAbilities(subtypes: readonly string[]): readonly Ab
 
 /** The abilities that read "a land an opponent controls could produce" (D681). */
 const READS_OPPONENT_LANDS = new WeakSet<AbilityDef>();
+/**
+ * The printed colours of the cards in exile imprinted on this permanent (D715,
+ * `CardInstance.imprintedOn`): Chrome Mox's "any of the exiled card's colors". Only an imprint
+ * made by the permanent as it is now counts, so a Mox that left and came back has none
+ * (CR 400.7). A colourless card gives nothing.
+ */
+export function imprintedColours(state: GameState, source: string): ReadonlySet<ManaType> {
+  const out = new Set<ManaType>();
+  const seq = state.instances[source]?.objectSeq ?? 0;
+  for (const id of Object.keys(state.instances)) {
+    const inst = state.instances[id]!;
+    if (inst.zone !== 'exile' || inst.imprintedOn?.id !== source || inst.imprintedOn.seq !== seq) continue;
+    for (const colour of state.cardDefs[inst.defKey]?.colors ?? []) out.add(colour as ManaType);
+  }
+  return out;
+}
+
 const OPPONENT_LAND_COLOURS = new WeakMap<GameState, Map<SeatIndex, Set<ManaType>>>();
 
 /**
@@ -361,6 +378,11 @@ interface ManaLine {
    * beside it — a Thriving land's "Add {G} or one mana of the chosen color" — which is always on.
    */
   readonly chosen?: { readonly fixed?: ManaType };
+  /**
+   * "…one mana of any of the exiled card's colors" (D715): Chrome Mox. Each colour's ability is
+   * offered only while the card this permanent imprinted is that colour. See `imprintedColours`.
+   */
+  readonly imprinted?: true;
 }
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
@@ -675,6 +697,11 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
+  // Chrome Mox (D715): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
+  if (/^one\s+mana\s+of\s+any\s+of\s+the\s+exiled\s+card['’]s\s+colou?rs$/i.test(body)) {
+    if (!chosenOk) return null;
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   // Fellwar Stone and Exotic Orchard (D681).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
@@ -761,6 +788,9 @@ function tapAbilities(
         : {}),
       ...(line?.chosen !== undefined && line.chosen.fixed !== type
         ? { activateOnlyIf: (state: GameState, source: string) => state.instances[source]?.chosen?.color === type }
+        : {}),
+      ...(line?.imprinted === true
+        ? { activateOnlyIf: (state: GameState, source: string) => imprintedColours(state, source).has(type) }
         : {}),
     };
   });

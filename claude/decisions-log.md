@@ -47079,3 +47079,67 @@ because one move is the rule.
     engine tests: 4,740, all passing
 
 Coverage: 11,404 of 31,653 cards (+1), 30,706 of 59,306 lines (+1). Staples: 227 of 244 (+1).
+
+## Session restart on 7e927cd: services, gate, sweep, break runs
+
+The container was replaced again. Postgres 16 and Redis were restarted, the workspace was installed
+and built, and the corpus was rebuilt from Forge (`scripts/corpus/legality.mjs`, then
+`from-forge.mjs`) at Forge commit 0f82b4f. Still 34,234 rows and 31,653 legal cards, but Forge's text
+has moved slightly, so the baseline on 7e927cd is now 11,405 cards and 30,708 lines (was 11,404 and
+30,706). D715's figures are measured against that.
+
+- **Gate on 7e927cd:** `GATE OK`. rules-engine 4,740, api 326, web 270, realtime 61, shared 120,
+  and every other package green.
+- **Pod sweeps 57701–57740 and 57801–57840 (7e927cd's build):** 40 of 40 finished in each, no
+  throw and no stall.
+- **Break run for D711–D714, re-run in full:** 12 of 14 caught. Both misses were D711's, both real:
+  - deleting the guard that leaves a creature with its own question alone still passed;
+  - deleting the guard that keeps riot off a copy of a creature spell still passed.
+
+  Pinned with two tests in the D711 block: a creature with "As it enters, choose a color" under
+  Rhythm of the Wild is asked for its colour and not riot, and a copy of a creature spell resolves
+  without a question while the card itself is still asked. Re-run: 2 of 2 caught, so 14 of 14.
+
+## D715 — Chrome Mox: an imprint from hand, and mana of the exiled card's colours
+
+"Imprint — When Chrome Mox enters, you may exile a nonartifact, nonland card from your hand.
+{T}: Add one mana of any of the exiled card's colors."
+
+How it is read:
+- **The imprint.** "You may exile a(n) <card> from your hand" is a new clause reader. It asks a
+  question about the hand, up to one card; choosing none is the "may". The card chosen is exiled
+  and linked to the permanent that exiled it (`CardInstance.imprintedOn`, CR 607.2a). "Imprint —"
+  is already stripped as an ability word.
+- **The link is to the object, not the card.** It records the Mox's id and its `objectSeq`, so a
+  Mox that leaves and comes back has no imprint (CR 400.7). `relocate` clears it when the exiled
+  card itself changes zone.
+- **The mana.** "One mana of any of the exiled card's colors" reads as five colour abilities, each
+  offered only while an imprinted card has that colour (`imprintedColours`). It is taken only by
+  the line-by-line reader, as "the chosen color" is (D642), so a card can't be read as having it
+  without the line that gives it a card. A colourless imprint makes nothing.
+- **"Non" in a card filter.** `cardWordMatch` now reads a `non` prefix as the negation of the word
+  ("nonland", "nonartifact"). A comma list made only of "non" words with no "or" is one card that
+  is all of them, not a list of alternatives. Guardian Sunmare's "a nonland permanent card with
+  mana value 3 or less" reads as a result. Its case in `compile.test.ts` was moved from the unread
+  list to the read list.
+- **The bot** imprints its dearest coloured card. It never picks a colourless one, which would make
+  no mana.
+- The same reader takes Isochron Scepter's and Spellbinder's imprint lines ("an instant card with
+  mana value 2 or less"). Neither card is finished: "copy the exiled card" doesn't read yet.
+
+Staples went from 227 to 228 (Chrome Mox).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- only nonartifact, nonland cards are offered (the artifact and the land are not), and the Mox
+  makes exactly the exiled card's colours: green or white for a green-white creature, red refused;
+- with nothing exiled it makes no mana; a Mox bounced and recast has no imprint; and an imprinted
+  card that leaves exile and comes straight back no longer counts;
+- the bot imprints the dearest coloured card.
+
+Faults injected by script: 8 of 9 caught. The miss, `relocate` keeping the link on a card that left
+exile, is pinned by the third test's last case. Re-run: 1 of 1 caught.
+
+    engine tests: 4,746, all passing
+
+Coverage: 11,408 of 31,653 cards (+3), 30,718 of 59,306 lines (+10). Staples: 228 of 244 (+1).
