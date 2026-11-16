@@ -2606,7 +2606,7 @@ export function stateBasedActions(state: GameState): GameState {
           const enchant = inst.bestowed === true ? BESTOW_TARGET : auraDef?.target;
           /*
             Animate Dead's enchant ability on the battlefield is "enchant creature put onto the
-            battlefield with ~" (D720): the creature it animated, and only while that is a creature.
+            battlefield with ~" (D721): the creature it animated, and only while that is a creature.
           */
           const illegalHost = host !== undefined && host.zone === 'battlefield'
             && (inst.bestowed !== true && auraDef?.reanimates === true
@@ -5148,7 +5148,7 @@ function completeResolution(
       }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');
-        // Animate Dead (D720): the card comes back first, under the Aura's controller, and is the host.
+        // Animate Dead (D721): the card comes back first, under the Aura's controller, and is the host.
         if (host && host.kind === 'card' && script.aura.reanimates === true) {
           const card = next.instances[host.id];
           if (card !== undefined && card.zone === 'graveyard') {

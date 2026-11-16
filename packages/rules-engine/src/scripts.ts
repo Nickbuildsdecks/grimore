@@ -2166,6 +2166,42 @@ function searchClause(text: string, name: string): ReadEffect | null {
     };
   }
   /*
+    "Search your library and/or graveyard for a creature card with mana value X or less and put it
+    onto the battlefield" (D720): Finale of Devastation, Invasion of Ikoria, Delivery Moogle, Sanctum
+    of All and the rest. Read as Myriad Landscape's search is: the zone is asked first, then one
+    question in that zone, each asked only if its zone was the answer (`askOnlyIfChosen`). The
+    plain search's own question and effect do the rest, so the filter, the X bound and the
+    destination are the ones it already reads; a library question shuffles as it is answered, which
+    is the folded-away "If you search your library this way, shuffle".
+
+    **The simplification, stated.** The rules let a player look through both zones and then take
+    one card from either. Here the zone is chosen first. The graveyard is public, so all that is
+    lost is looking through the library and then settling for a graveyard card. The bot searches its
+    graveyard only when its library has no card the search could find.
+  */
+  const both = /^(?:you may )?search your library and\/or graveyard for (an? .+?)(?:,? reveal it,?)? and put it (into your hand|onto the battlefield)$/i.exec(text.trim());
+  if (both !== null) {
+    const inner = searchClause(`search your library for ${both[1]!}, put it ${both[2]!}`, name);
+    const question = inner?.decisions?.length === 1 ? inner.decisions[0]! : undefined;
+    if (inner === null || inner.targets !== undefined || question === undefined
+      || typeof question === 'function' || !isCardsDecision(question) || question.from !== 'library') return null;
+    const ZONES = ['Library', 'Graveyard'] as const;
+    const matches = (state: GameState, chooser: SeatIndex, zone: 'library' | 'graveyard') => listAt(state, zoneKey(chooser, zone))
+      .filter((id) => question.filter === undefined || question.filter(state, id, chooser)).length;
+    return {
+      decisions: [
+        {
+          who: 'controller', prompt: 'Search your library or your graveyard?', options: [...ZONES],
+          best: (state, chooser) => (matches(state, chooser, 'library') === 0 && matches(state, chooser, 'graveyard') > 0
+            ? 'Graveyard' : 'Library'),
+        },
+        { ...question, askOnlyIfChosen: 'Library' },
+        { ...question, from: 'graveyard', prompt: question.prompt.replace(/^Search your library/, 'Search your graveyard'), askOnlyIfChosen: 'Graveyard' },
+      ],
+      effect: (c) => inner.effect({ ...c, decisions: [{ seat: c.controller, ids: [...chosenCards(c, 1), ...chosenCards(c, 2)] }] }),
+    };
+  }
+  /*
     **Somebody else's search** (D647): "target player may search their library for a basic land
     card, put it onto the battlefield, then shuffle" — which is what Path to Exile's, Assassin's
     Trophy's and Ghost Quarter's "**Its controller** may search their library …" becomes under the
@@ -6644,7 +6680,7 @@ const evolveTrigger = (name: string): TriggerDef => ({
   effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
 });
 
-const CLOUDFIN_RAPTOR: CardScript = {
+const CLOUD720_RAPTOR: CardScript = {
   name: 'Cloudfin Raptor',
   triggers: [evolveTrigger('Cloudfin Raptor')],
 };
@@ -10910,7 +10946,7 @@ const ALL: readonly CardScript[] = [
   STROMKIRK_CAPTAIN, KNIGHT_EXEMPLAR, IMPERIOUS_PERFECT,
   ZOMBIE_CUTTHROAT, HIDDEN_DRAGONSLAYER,
   WILLBENDER, SWERVE,
-  GUARDIANS_OF_AKRASA, CLOUDFIN_RAPTOR,
+  GUARDIANS_OF_AKRASA, CLOUD720_RAPTOR,
   SQUELCH, DISALLOW,
   OBELISK_OF_URD, VOICE_OF_ALL,
   IMPASSIONED_ORATOR, BLOODTHIRSTY_AERIALIST, CRUEL_CELEBRANT, REVITALIZE, VRASKAS_CONTEMPT,
@@ -13133,14 +13169,16 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   */
   const teamX = new RegExp(
     `^(${MASS_PUMP_SUBJECTS})(?: gain ([a-z][a-z' ]*?) and)? get \\+X\\/\\+X`
-    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn, where X is (.+)$`,
+    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn(?:, where X is (.+))?$`,
     'i',
   ).exec(text);
   if (teamX !== null) {
     const subject = massPumpSubject(teamX[1]!);
     const granted = teamX[2] ?? teamX[3];
     const words = granted === undefined ? [] : grantedKeywordList(granted);
-    const count = boardCount(teamX[4]!, name);
+    // With no "where X is", X is the X the spell or ability was paid with (D720): Finale of
+    // Devastation's "+X/+X".
+    const count = teamX[4] === undefined ? (c: EffectContext) => c.x : boardCount(teamX[4], name);
     if (subject !== null && words !== null && count !== null && !(teamX[2] !== undefined && teamX[3] !== undefined)) {
       return {
         ...(subject.targets === undefined ? {} : { targets: subject.targets }),
@@ -15142,7 +15180,7 @@ export function attachmentScriptFor(
       .find((m) => m !== null);
     if (enchant === undefined || enchant === null) return null;
     /*
-      **Animate Dead and Dance of the Dead** (D720): "Enchant creature card in a graveyard" with
+      **Animate Dead and Dance of the Dead** (D721): "Enchant creature card in a graveyard" with
       "When ~ enters, if it's on the battlefield, it loses 'enchant creature card in a graveyard' and
       gains 'enchant creature put onto the battlefield with ~.' Return enchanted creature card to
       the battlefield under your control and attach ~ to it. When ~ leaves the battlefield, that
@@ -22414,6 +22452,21 @@ function readEffect(
       || inner.beforeDecisions !== undefined) return null;
     return { ...inner, effect: (c) => (castFromAGraveyard(c) ? inner.effect(c) : c.state) };
   }
+  /*
+    "If X is 10 or more, creatures you control get +X/+X and gain haste until end of turn" (D720):
+    Finale of Devastation's last sentence. The X the spell was cast with, compared as it resolves;
+    the effect runs only then. Not one that asks a question or chooses a target of its own, for
+    the reason the cast-from-a-graveyard condition above gives.
+  */
+  const xAtLeast = /^if X is (\d+) or (?:more|greater), (.+)$/i.exec(clause.trim());
+  if (xAtLeast !== null) {
+    const inner = readEffect(xAtLeast[2]!, name, where);
+    if (inner === null || (inner.targets ?? []).length > 0 || (inner.decisions ?? []).length > 0
+      || inner.beforeDecisions !== undefined) return null;
+    const least = Number(xAtLeast[1]!);
+    const { immediate: _immediate, ...rest } = inner;
+    return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
+  }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -22662,6 +22715,12 @@ function clausesOf(line: string): readonly string[] {
     */
     .replace(/choose (\w+(?: \w+)?) target ([^.]+?) cards in your graveyard\.\s+Sacrifice a creature\.\s+If you do, return the chosen cards to the battlefield( tapped)?/gi,
       (_m, count: string, kind: string, tapped: string | undefined) => `sacrifice a creature and if you do return ${count} target ${kind} cards from your graveyard to the battlefield${tapped ?? ''}`)
+    /*
+      "Search your library and/or graveyard for …. If you search your library this way, shuffle."
+      (D720): the second sentence is what a library search already does as it is answered
+      (CR 701.19e), and only when the library is the zone searched, so it is folded away.
+    */
+    .replace(/(search your library and\/or graveyard [^.]+)\.\s+If you search(?:ed)? your library this way, shuffle(?: it)?(?=\.|$)/gi, '$1')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
     // same spell with the shuffle first, as the shuffle touches only the library.
     .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')

@@ -196,7 +196,7 @@ export interface CardInstance {
    */
   readonly flashbackGrantedTurn?: number;
   /**
-   * The Aura that put this creature onto the battlefield (D720, `AuraDef.reanimates`), which
+   * The Aura that put this creature onto the battlefield (D721, `AuraDef.reanimates`), which
    * sacrifices it as it leaves. Cleared on any zone change: a new object is not the one animated.
    */
   readonly animatedBy?: string;
