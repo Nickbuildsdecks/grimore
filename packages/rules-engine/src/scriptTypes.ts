@@ -3309,6 +3309,15 @@ export interface CardScript {
    * resolving spell, so a creature put onto the battlefield is asked nothing (D559's limitation).
    */
   readonly grantsRiot?: true;
+  /**
+   * "If Mox Diamond would enter, you may discard a land card instead. If you do, put Mox Diamond
+   * onto the battlefield. If you don't, put it into its owner's graveyard." (D714). The card's
+   * one question (`decisions[0]`, a land card from hand, up to one) is asked as the spell resolves;
+   * with a land discarded it arrives, and without one it goes to the graveyard instead. Only a cast
+   * Mox Diamond is asked, as riot's question is (D559): put onto the battlefield by an effect, it
+   * arrives without discarding.
+   */
+  readonly entersByDiscarding?: 'land';
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

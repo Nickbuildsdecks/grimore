@@ -29582,3 +29582,34 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 4,737, all passing
 
 Coverage: 11,403 of 31,653 cards (+3), 30,705 of 59,306 lines (+3). Staples: 226 of 244 (+1).
+
+## D714 — Mox Diamond: discard a land card, or it goes to the graveyard
+
+"If Mox Diamond would enter, you may discard a land card instead. If you do, put Mox Diamond onto
+the battlefield. If you don't, put it into its owner's graveyard."
+
+How it is read:
+- A new script field, `entersByDiscarding: 'land'`, with the card's one question: a land card from
+  hand, up to one.
+- The question is asked as the spell resolves, as riot's is.
+- `completeResolution` discards the chosen land and lets the Mox arrive. With none chosen, or no
+  land card to choose, it moves the Mox to its owner's graveyard instead, and the non-permanent
+  branch is skipped so the card moves once.
+- **Limitation, as riot's (D559).** Only a cast Mox Diamond is asked. Put onto the battlefield by an
+  effect, it arrives without discarding.
+
+Staples went from 226 to 227 (Mox Diamond).
+
+**Tests.** 3 engine tests, plus the mechanic-coverage entry:
+- the card reads;
+- only land cards are offered, and discarding the Forest puts the Mox onto the battlefield;
+- declining, or having no land card, puts it into the graveyard exactly once.
+
+Faults injected by hand: 3 of 4 caught. The fourth, the guard on the non-permanent branch, is not
+observable today: the second move is graveyard to graveyard, and the trigger that would see it
+("whenever a card is put into your graveyard from anywhere") does not read yet. The guard is kept
+because one move is the rule.
+
+    engine tests: 4,740, all passing
+
+Coverage: 11,404 of 31,653 cards (+1), 30,706 of 59,306 lines (+1). Staples: 227 of 244 (+1).

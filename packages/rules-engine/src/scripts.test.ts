@@ -7891,7 +7891,9 @@ describe('deck coverage', () => {
         mana (D691)".
       - `script grantsRiot` (D711): "Nontoken creatures you control have riot" (Rhythm of the Wild).
         No pool deck has one. Driven at runtime by "\"Nontoken creatures you control have riot\":
-        Rhythm of the Wild (D711)".
+        Rhythm of the Wild (D711)".      - `script entersByDiscarding` (D714): Mox Diamond's "If ~ would enter, you may discard a land
+        card instead". No pool deck has one. Driven at runtime by "Mox Diamond: discard a land card,
+        or it goes to the graveyard (D714)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7915,6 +7917,7 @@ describe('deck coverage', () => {
       'script spellsCantBeCountered',
       'script pitch',
       'script grantsRiot',
+      'script entersByDiscarding',
     ]);
 
     const declared = [
@@ -15154,6 +15157,56 @@ describe('devotion as an amount of mana: Nykthos and Karametra\'s Acolyte (D713)
     let t = table(['Test Acolyte']);
     t = apply(t, { type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Test Acolyte'), abilityIndex: 0 });
     expect(poolOf(t, 0).G ?? 0).toBe(1);
+  });
+});
+
+describe('Mox Diamond: discard a land card, or it goes to the graveyard (D714)', () => {
+  const ROWS = [
+    { name: 'Test Diamond', type_line: 'Artifact', oracle_text: "If Test Diamond would enter, you may discard a land card instead. If you do, put Test Diamond onto the battlefield. If you don't, put it into its owner's graveyard.\n{T}: Add one mana of any color.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', produced_mana: ['W', 'U', 'B', 'R', 'G'] },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'diamond', name: 'Diamond',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Spark', count: 40 }, { name: 'Forest', count: 1 }],
+    data: ROWS,
+  });
+  // A library of sorceries and one Forest, so no other land card can be drawn into the hand.
+  const cast = (hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'diamond', 1: 'diamond' }, deckSpecs: { diamond: deck.deck },
+      hands: { 0: hand }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Diamond') });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks for a land card; discarding one puts it onto the battlefield', () => {
+    let s = cast(['Test Diamond', 'Forest', 'Test Spark']);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect((s.pendingDecision?.candidates ?? []).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name)).toEqual(['Forest']);
+    const forest = find(s, 0, 'hand', 'Forest');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [forest] } as Action), 20);
+    expect(s.instances[forest]!.zone).toBe('graveyard');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Diamond');
+  });
+
+  it('declining, or having no land card, puts it into the graveyard instead, once', () => {
+    let s = cast(['Test Diamond', 'Forest']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Diamond');
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Test Diamond')).toHaveLength(1);
+    expect(namesIn(s, 0, 'hand')).toContain('Forest');
+
+    const none = drain(cast(['Test Diamond', 'Test Spark']), 20);
+    expect(none.pendingDecision).toBeNull();
+    expect(namesIn(none, 0, 'battlefield')).not.toContain('Test Diamond');
+    expect(namesIn(none, 0, 'graveyard')).toContain('Test Diamond');
   });
 });
 

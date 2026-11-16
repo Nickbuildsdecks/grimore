@@ -4969,7 +4969,22 @@ function completeResolution(
     // A modal spell's effect is its chosen modes, in printed order; everything else has one.
     else if (modes.length > 0) next = runModes(next, modes, { ...ctx, state: next });
     else if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
-    if (isPermanent && inst !== undefined) {
+    /*
+      Mox Diamond (D714, `CardScript.entersByDiscarding`): the land chosen is discarded and the
+      permanent arrives; with none, it goes to its owner's graveyard instead of the battlefield.
+    */
+    let replacedArrival = false;
+    if (isPermanent && inst !== undefined && script?.entersByDiscarding === 'land') {
+      const land = ctx.decisions[0]?.ids[0];
+      const landInst = land === undefined ? undefined : next.instances[land];
+      if (landInst !== undefined && landInst.zone === 'hand' && landInst.zoneSeat === object.controller) {
+        next = relocate(next, landInst, 'graveyard', landInst.owner, 'bottom');
+      } else {
+        next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+        replacedArrival = true;
+      }
+    }
+    if (isPermanent && inst !== undefined && !replacedArrival) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
       /*
         And that it was cast, and from where (D607): see `GameState.castPermanents`. Before the
@@ -5134,7 +5149,7 @@ function completeResolution(
       // this permanent's own statics are installed — see the arrivals loop there. Applying them
       // here as well was the bug: a permanent that arrived any *other* way got none.
 
-    } else if (inst !== undefined) {
+    } else if (inst !== undefined && !replacedArrival) {
       /*
         Rebound, which is a third destination and a promise (CR 702.88a): the card goes to exile
         rather than to a graveyard, and a delayed trigger for its controller's **next upkeep**

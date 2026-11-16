@@ -25195,6 +25195,18 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;
     return { spellsCantBeCountered: { whose: uncounterable[2] === undefined ? 'all' : 'you', ...(kind === undefined ? {} : { kind }) } };
   }
+  // Mox Diamond (D714): see `CardScript.entersByDiscarding`.
+  const discarding = /^If (.+?) would enter(?: the battlefield)?, you may discard a land card instead\. If you do, put (.+?) onto the battlefield\. If you don't, put it into its owner's graveyard\.?$/i.exec(plain(line).trim());
+  if (discarding !== null && discarding[1] === discarding[2]) {
+    return {
+      entersByDiscarding: 'land',
+      decisions: [{
+        who: 'controller', from: 'hand', min: 0, max: 1,
+        prompt: `Discard a land card to put ${discarding[1]!} onto the battlefield?`,
+        filter: (state, id) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land'),
+      }],
+    };
+  }
   // Rhythm of the Wild (D711): see `CardScript.grantsRiot`.
   if (/^nontoken creatures you control have riot\.?$/i.test(plain(line).trim())) return { grantsRiot: true };
   // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
