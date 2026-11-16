@@ -96,7 +96,7 @@ function satisfies(
       && spec.kind !== 'player-or-planeswalker') return false;
     const seat = state.seats[candidate.seat];
     if (seat === undefined || seat.eliminated) return false;
-    // Protection from everything (D717): no spell or ability may target them, their own included.
+    // Protection from everything (D718): no spell or ability may target them, their own included.
     if (!forAttachment && playerProtected(state, candidate.seat)) return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }

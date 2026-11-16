@@ -165,7 +165,7 @@ export interface TypeLine {
 const EM_DASH = /\s[—-]\s/;
 
 /** Splits `Legendary Creature — Goblin Warrior` into its three parts. */
-/** Whether a player has protection from everything right now (D717). */
+/** Whether a player has protection from everything right now (D718). */
 export function playerProtected(state: GameState, seat: SeatIndex): boolean {
   return state.effects.some((e) => e.playerProtection === true && e.scope.kind === 'seat' && e.scope.seat === seat);
 }
@@ -1604,7 +1604,7 @@ export interface ContinuousEffect {
    */
   readonly preventsDamageAmount?: number;
   /**
-   * "You gain protection from everything until your next turn" (D717): The One Ring, Teferi's
+   * "You gain protection from everything until your next turn" (D718): The One Ring, Teferi's
    * Protection. On a `seat` scope: that player can't be targeted by any spell or ability and damage
    * that would be dealt to them is prevented (CR 702.16b, e). Read by `isLegalTarget` and
    * `dealDamage` through `playerProtected`.

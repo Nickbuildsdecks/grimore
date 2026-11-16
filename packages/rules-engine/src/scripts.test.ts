@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo, poolOf } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, poolOf } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
@@ -15017,6 +15017,43 @@ describe('"Nontoken creatures you control have riot": Rhythm of the Wild (D711)'
     spark = passBoth(spark);
     expect(spark.pendingDecision).toBeNull();
   });
+
+  /*
+    Pinned after the re-run of D711's break run, which missed both of these: deleting either guard
+    in `riotGranted` left every test above green.
+  */
+  it('a creature that asks its own question keeps it', () => {
+    const CHOOSER = { name: 'Test Chooser', type_line: 'Creature — Shapeshifter', oracle_text: 'As Test Chooser enters, choose a color.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' };
+    const withChooser = customDeck({
+      id: 'rhythm-chooser', name: 'Rhythm chooser',
+      entries: [...[...ROWS, CHOOSER].map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+      data: [...ROWS, CHOOSER],
+    });
+    expect(withChooser.unknown).toEqual([]);
+    let s = advanceTo(arena({
+      decks: { 0: 'rc', 1: 'rc' }, deckSpecs: { rc: withChooser.deck },
+      hands: { 0: ['Test Chooser'] }, battlefield: { 0: ['Test Rhythm'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chooser') });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0 && s.pendingDecision === null; i++) s = passBoth(s);
+    expect(s.pendingDecision?.options ?? []).not.toContain(COUNTER);
+    expect(s.pendingDecision?.options ?? []).not.toContain(HASTE);
+  });
+
+  it('a copy of a creature spell is not asked: it becomes a token, which riot does not reach', () => {
+    let s = table(['Test Bear'], ['Test Rhythm']);
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 0, card: bear });
+    s = copySpellOnStack(s, bear, 0);
+    expect(s.stackOrder).toHaveLength(2);
+    // The copy is on top and resolves first, with nothing to ask.
+    s = passBoth(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.stackOrder).toEqual([bear]);
+    // And then the card itself is asked.
+    s = passBoth(s);
+    expect(s.pendingDecision?.options).toEqual([COUNTER, HASTE]);
+  });
 });
 
 describe('choosing new targets for a spell: Deflecting Swat and Bolt Bend (D712)', () => {
@@ -15362,7 +15399,97 @@ describe('Glacial Chasm: life upkeep, no attacking, and no damage to you (D716)'
   });
 });
 
-describe('The One Ring: protection from everything, burden counters (D717)', () => {
+describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colours (D717)', () => {
+  const ROWS = [
+    { name: 'Test Mox', type_line: 'Artifact', oracle_text: "Imprint — When Test Mox enters, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card's colors.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', produced_mana: ['W', 'U', 'B', 'R', 'G'] },
+    { name: 'Test Hydra', type_line: 'Creature — Hydra', oracle_text: '', mana_cost: '{2}{G}{W}', cmc: 4, colors: ['G', 'W'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Bolt', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{3}{U}', cmc: 4, colors: ['U'], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'chrome', name: 'Chrome',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Spark', count: 40 }, { name: 'Forest', count: 1 }],
+    data: ROWS,
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'chrome', 1: 'chrome' }, deckSpecs: { chrome: deck.deck },
+    hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // Casts the Mox and passes until its entry trigger asks, or everything has resolved.
+  const castMox = (s: GameState) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mox') });
+    for (let i = 0; i < 8 && next.stackOrder.length > 0 && next.pendingDecision === null; i++) next = passBoth(next);
+    return next;
+  };
+  const named = (s: GameState, list: readonly string[]) => list.map((id) => s.cardDefs[s.instances[id]!.defKey]!.name);
+  // Which colours the Mox's abilities may be activated for, as `activateOnlyIf` answers.
+  const colours = (s: GameState, mox: string) => {
+    const script = scriptForCard(s.cardDefs[s.instances[mox]!.defKey]);
+    return (script?.abilities ?? [])
+      .filter((a) => a.produces !== undefined && (a.activateOnlyIf === undefined || a.activateOnlyIf(s, mox, 0)))
+      .flatMap((a) => a.produces!);
+  };
+
+  it('reads whole, and "a nonartifact, nonland card" is both at once', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offers only nonartifact, nonland cards; the one exiled gives the Mox its colours', () => {
+    let s = castMox(table(['Test Mox', 'Test Hydra', 'Test Bolt', 'Test Relic', 'Forest']));
+    expect(s.pendingDecision?.seat).toBe(0);
+    // The turn's draw is a colourless Test Spark, which is a nonartifact, nonland card too.
+    const offered = new Set(named(s, s.pendingDecision?.candidates ?? []));
+    expect([...offered].sort()).toEqual(['Test Bolt', 'Test Hydra', 'Test Spark']);
+    const hydra = find(s, 0, 'hand', 'Test Hydra');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [hydra] } as Action), 20);
+    expect(s.instances[hydra]!.zone).toBe('exile');
+    const mox = find(s, 0, 'battlefield', 'Test Mox');
+    expect(colours(s, mox).sort()).toEqual(['G', 'W']);
+    const green = (scriptForCard(s.cardDefs[s.instances[mox]!.defKey])?.abilities ?? []).findIndex((a) => a.produces?.[0] === 'G');
+    const red = (scriptForCard(s.cardDefs[s.instances[mox]!.defKey])?.abilities ?? []).findIndex((a) => a.produces?.[0] === 'R');
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: mox, abilityIndex: red })).not.toBeNull();
+    s = apply(s, { type: 'auto:activate', by: 0, card: mox, abilityIndex: green });
+    expect(poolOf(s, 0).G ?? 0).toBe(1);
+  });
+
+  it('with nothing exiled it makes no mana, and a Mox that comes back has no imprint', () => {
+    let s = castMox(table(['Test Mox', 'Test Bolt']));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    const mox = find(s, 0, 'battlefield', 'Test Mox');
+    expect(colours(s, mox)).toEqual([]);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bolt');
+
+    let t = castMox(table(['Test Mox', 'Test Bolt']));
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [find(t, 0, 'hand', 'Test Bolt')] } as Action), 20);
+    const first = find(t, 0, 'battlefield', 'Test Mox');
+    expect(colours(t, first)).toEqual(['R']);
+    // Bounced and cast again: a new object, whose imprint is whatever it exiles now (CR 400.7).
+    t = bounceToHand(t, first);
+    t = castMox(t);
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [] } as Action), 20);
+    expect(colours(t, find(t, 0, 'battlefield', 'Test Mox'))).toEqual([]);
+
+    // And an imprinted card that leaves exile, even to come straight back, is a new object the
+    // Mox never exiled (pinned by D717's break run).
+    let u = castMox(table(['Test Mox', 'Test Bolt']));
+    const bolt = find(u, 0, 'hand', 'Test Bolt');
+    u = drain(apply(u, { type: 'auto:decide', by: 0, cards: [bolt] } as Action), 20);
+    const moxU = find(u, 0, 'battlefield', 'Test Mox');
+    expect(colours(u, moxU)).toEqual(['R']);
+    u = exileCard(bounceToHand(u, bolt), bolt);
+    expect(u.instances[bolt]!.zone).toBe('exile');
+    expect(colours(u, moxU)).toEqual([]);
+  });
+
+  it('the bot imprints its dearest coloured card', () => {
+    const s = castMox(table(['Test Mox', 'Test Hydra', 'Test Bolt']));
+    expect(botAction(s, 0)).toEqual({ type: 'auto:decide', by: 0, cards: [find(s, 0, 'hand', 'Test Hydra')] });
+  });
+});
+
+describe('The One Ring: protection from everything, burden counters (D718)', () => {
   const ROWS = [
     { name: 'Test Ring', type_line: 'Legendary Artifact', oracle_text: 'Indestructible\nWhen Test Ring enters, if you cast it, you gain protection from everything until your next turn.\nAt the beginning of your upkeep, you lose 1 life for each burden counter on Test Ring.\n{T}: Put a burden counter on Test Ring, then draw a card for each burden counter on Test Ring.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
     { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },

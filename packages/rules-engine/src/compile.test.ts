@@ -10668,6 +10668,11 @@ describe('a mana-value clause, and the word permanent, in a search filter (D491)
       an arm that applied the clause per-body would leave this one searching the whole library.
     */
     'Search your library for a card with mana value 6 or greater, put it into your hand, then shuffle',
+    /*
+      Guardian Sunmare's "a nonland permanent card", left unread here until D717 taught
+      `cardWordMatch` the `non` prefix: not a land, and a permanent card, both at once.
+    */
+    'Search your library for a nonland permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',
   ])('reads "%s"', (text) => {
     const read = tutor(text as string);
     expect(read.ok).toBe(true);
@@ -10702,8 +10707,6 @@ describe('a mana-value clause, and the word permanent, in a search filter (D491)
       And the vocabulary still missing, each a real printing, each left unread rather than read
       loosely. These are the next increment in this family, not oversights.
     */
-    ['Search your library for a nonland permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',
-      'Guardian Sunmare: a `non` negation in a card filter'],
     ['Search your library for a colorless creature card with mana value 7 or greater, put it into your hand, then shuffle',
       'Conduit of Ruin: a colour word in a card filter'],
     ['Search your library for a nonlegendary green creature card with mana value 3 or less, put it onto the battlefield, then shuffle',

@@ -462,7 +462,7 @@ export function dealDamage(
   if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
   // And "prevent all damage that would be dealt to you" (D716, `CardScript.preventsDamageToYou`).
   if (target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
-  // And a player with protection from everything (D717): damage to them is prevented.
+  // And a player with protection from everything (D718): damage to them is prevented.
   if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
@@ -2649,7 +2649,7 @@ export function pump(
  * turn, or that forced an attack without sending it elsewhere, would be a different and much worse
  * card. `controller` is the goading player, and every part of the effect is read relative to them.
  */
-/** "You gain protection from everything until your next turn" (D717). See `playerProtection`. */
+/** "You gain protection from everything until your next turn" (D718). See `playerProtection`. */
 export function protectPlayer(state: GameState, seat: SeatIndex, source: string): GameState {
   return pushEffect(state, {
     source,

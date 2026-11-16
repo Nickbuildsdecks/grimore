@@ -2434,6 +2434,12 @@ function cardFilterBody(
     basicOnly = true;
     list = list.replace(/^basic\s+/i, '').trim();
   }
+  /*
+    "A nonartifact, nonland card" (D717) is one card that is both, not a list of alternatives: a
+    comma between "non" words with no "or" is a conjunction, as Magic prints it. So it is read as
+    one alternative whose words are AND-ed.
+  */
+  if (/^non[a-z]+(?:\s*,\s*non[a-z]+)+$/.test(list)) list = list.replace(/\s*,\s*/g, ' ');
   const alternatives = list.split(/\s*,\s*or\s+|\s*,\s*|\s+or\s+/i)
     .map((part) => part.trim()).filter((part) => part !== '');
   if (alternatives.length > 1 || alternatives.some((part) => part.includes(' ')) || basicOnly) {
@@ -2498,6 +2504,16 @@ function cardWordMatch(word: string): ((line: TypeLine) => boolean) | null {
   if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
   const lower = word.toLowerCase();
   if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
+  /*
+    "Non" in front of a type or supertype (D717): "a nonland card", "a nonartifact, nonland card"
+    (Chrome Mox). The word's own reading, negated; a "non" word whose rest is not one this function
+    can name stays unread, as the rest would.
+  */
+  const negated = /^non([a-z]+)$/.exec(word);
+  if (negated !== null) {
+    const inner = cardWordMatch(negated[1]!);
+    return inner === null ? null : (line) => !inner(line);
+  }
   /*
     **`permanent` is not a type**, and reading it as one is the bug this function's own docblock
     records from its first draft: "a permanent card" compiled to a filter asking for a type line
@@ -13461,6 +13477,44 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     is asked once and a player with no such card is not asked at all. Without "may" the answer is
     one card whenever there is one (the bound is clamped to what the hand holds).
   */
+  /*
+    "You may exile a nonartifact, nonland card from your hand" (D717): an imprint, Chrome Mox's
+    entry trigger, and Isochron Scepter's "an instant card with mana value 2 or less". A question about the hand, up to one card; the card chosen is exiled and linked
+    to the permanent whose ability exiled it (`CardInstance.imprintedOn`, CR 607.2a), which is what
+    "the exiled card's colors" reads. Choosing nothing is the "may".
+
+    The engine's own seat imprints the coloured card it can spare most: its dearest, the one least
+    likely to be cast soon. A colourless card is offered but never picked, as it makes no mana.
+  */
+  const imprint = /^you may exile (a|an) (.+? card(?: with mana value \d+ or (?:less|greater))?) from your hand$/i.exec(text);
+  if (imprint !== null) {
+    const filter = libraryFilter(`${imprint[1]!} ${imprint[2]!}`, name);
+    if (filter !== null && filter.xBound !== true) {
+      return {
+        decisions: [{
+          who: 'controller', from: 'hand', prompt: `Exile ${imprint[1]!} ${imprint[2]!} from your hand`,
+          min: 0, max: 1,
+          ...(filter.filter === null ? {} : { filter: filter.filter }),
+          pick: (state, _chooser, candidates) => {
+            const def = (id: string) => state.cardDefs[state.instances[id]?.defKey ?? ''];
+            const coloured = candidates.filter((id) => (def(id)?.colors ?? []).length > 0);
+            const worth = (id: string) => costValue(parseManaCost(def(id)?.manaCost));
+            const best = [...coloured].sort((a, b) => worth(b) - worth(a))[0];
+            return best === undefined ? [] : [best];
+          },
+        }],
+        effect: (c) => {
+          const id = chosenCards(c)[0];
+          if (id === undefined || c.state.instances[id]?.zone !== 'hand') return c.state;
+          const seq = c.state.instances[c.source]?.objectSeq ?? 0;
+          const next = exileCard(c.state, id);
+          return next.instances[id]?.zone !== 'exile'
+            ? next
+            : withInstance(next, id, { imprintedOn: { id: c.source, seq } });
+        },
+      };
+    }
+  }
   const fromHand = /^(you may )?put (a|an|up to one|up to two|any number of) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(text);
   if (fromHand !== null) {
     const quantity = fromHand[2]!.toLowerCase();
@@ -17596,7 +17650,7 @@ function countOfThing(
     return (c) => (c.destroyedThisWay ?? []).filter((gone) => kind === 'permanent' || gone.types.includes(kind)).length;
   }
   /*
-    "for each burden counter on The One Ring" (D717): a kind of counter on the card itself, read
+    "for each burden counter on The One Ring" (D718): a kind of counter on the card itself, read
     live, so a counter added earlier in the same ability ("put a burden counter on it, then draw a
     card for each") is counted.
   */
@@ -22306,7 +22360,7 @@ function readEffect(
       || inner.beforeDecisions !== undefined) return null;
     return { ...inner, effect: (c) => (castFromAGraveyard(c) ? inner.effect(c) : c.state) };
   }
-  // The One Ring, Teferi's Protection (D717): see `ContinuousEffect.playerProtection`.
+  // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
   }

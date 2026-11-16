@@ -219,6 +219,14 @@ export interface CardInstance {
    */
   readonly exiledBy?: string;
   /**
+   * The permanent this card was exiled with by an imprint (D717; linked abilities, CR 607.2a):
+   * Chrome Mox's "you may exile a nonartifact, nonland card from your hand", read later by "the
+   * exiled card's colors". Unlike `exiledBy` nothing gives it back. Keyed to the permanent's
+   * `objectSeq` as well as its id, because a Mox that leaves and returns is a new object with no
+   * imprint (CR 400.7); and cleared when this card leaves exile, by `relocate`.
+   */
+  readonly imprintedOn?: { readonly id: string; readonly seq: number };
+  /**
    * The other half of a **soulbond** pair (CR 702.95): the creature this one is paired with.
    *
    * The first link in this engine between two permanents that is not an attachment, and the two
