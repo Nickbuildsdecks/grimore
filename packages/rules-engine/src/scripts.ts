@@ -9445,7 +9445,8 @@ const BEASTBREAKER_OF_BALA_GED: CardScript = {
  * Unlike echo there is **no flag and no once**: cumulative upkeep is asked every upkeep for as long
  * as the permanent is there, which is the whole of what the keyword is.
  */
-function cumulativeUpkeepTrigger(cost: string): TriggerDef {
+function cumulativeUpkeepTrigger(cost: string, life?: number): TriggerDef {
+  if (life !== undefined) return cumulativeUpkeepLifeTrigger(life);
   return {
     on: { kind: 'step', step: 'upkeep' },
     description: `Cumulative upkeep ${cost} — an age counter, then pay for each or sacrifice this`,
@@ -9466,6 +9467,41 @@ function cumulativeUpkeepTrigger(cost: string): TriggerDef {
     effect: (c) => (chosenOption(c)?.startsWith('Pay ') === true
       ? c.state
       : moveToGraveyard(c.state, [c.source])),
+  };
+}
+
+/**
+ * Cumulative upkeep paid in life (D716): Glacial Chasm's "Cumulative upkeep—Pay 2 life". The same
+ * age counter and the same climb, with life for mana. Paying is offered only when the life total
+ * covers it (CR 119.4): a player who cannot pay sacrifices. The bot keeps paying while it would be
+ * left on five or more.
+ */
+function cumulativeUpkeepLifeTrigger(life: number): TriggerDef {
+  const priceOf = (state: GameState, source: string): number =>
+    life * Math.max(1, state.instances[source]?.counters['age'] ?? 1);
+  return {
+    on: { kind: 'step', step: 'upkeep' },
+    description: `Cumulative upkeep — pay ${life} life for each age counter or sacrifice this`,
+    beforeDecisions: (c) => addCounters(c.state, c.source, 'age', 1),
+    decisions: [(state, source) => {
+      const price = priceOf(state, source);
+      const owner = state.instances[source]?.zoneSeat;
+      const total = owner === undefined ? 0 : state.seats[owner]?.life ?? 0;
+      const pay = `Pay ${price} life`;
+      return {
+        who: 'controller',
+        prompt: `Cumulative upkeep: pay ${price} life, or sacrifice this?`,
+        options: total >= price ? ['Sacrifice it', pay] : ['Sacrifice it'],
+        best: () => (total - price >= 5 ? pay : 'Sacrifice it'),
+      };
+    }],
+    effect: (c) => {
+      const price = priceOf(c.state, c.source);
+      if (chosenOption(c) === `Pay ${price} life` && (c.state.seats[c.controller]?.life ?? 0) >= price) {
+        return loseLife(c.state, c.controller, price);
+      }
+      return moveToGraveyard(c.state, [c.source]);
+    },
   };
 }
 
@@ -11150,6 +11186,12 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     return { triggers: [ward(name, lifeWard[1] ?? '', Number(lifeWard[2]))] };
   }
 
+  // Cumulative upkeep paid in life (D716): Glacial Chasm.
+  const lifeUpkeep = /^cumulative upkeep\s*[—-]\s*pay (\d+) life\.?$/i.exec(text);
+  if (lifeUpkeep !== null) {
+    const life = Number(lifeUpkeep[1]);
+    return { cumulativeUpkeep: { cost: '', life }, triggers: [cumulativeUpkeepTrigger('', life)] };
+  }
   const cost = /^(ward|replicate|cumulative upkeep)\s*[—-]?\s*(\{[^\n]+\})$/i.exec(text);
   if (cost !== null) {
     const which = cost[1]!.toLowerCase();
@@ -25244,6 +25286,19 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (uncounterable !== null) {
     const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;
     return { spellsCantBeCountered: { whose: uncounterable[2] === undefined ? 'all' : 'you', ...(kind === undefined ? {} : { kind }) } };
+  }
+  // Glacial Chasm (D716): see `CardScript.preventsDamageToYou`.
+  if (/^prevent all damage that would be dealt to you\.?$/i.test(plain(line).trim())) return { preventsDamageToYou: true };
+  // And "Creatures you control can't attack" (D716): a static on your creatures, as an anthem is.
+  const cantFight = /^(other )?creatures you control can't (attack|block|attack or block)\.?$/i.exec(plain(line).trim());
+  if (cantFight !== null) {
+    const what = cantFight[2]!.toLowerCase();
+    return {
+      statics: [{
+        scope: cantFight[1] === undefined ? 'controller-creatures' : 'other-controller-creatures',
+        effect: { ...(what !== 'block' ? { cantAttack: true } : {}), ...(what !== 'attack' ? { cantBlock: true } : {}) },
+      }],
+    };
   }
   // Mox Diamond (D714): see `CardScript.entersByDiscarding`.
   const discarding = /^If (.+?) would enter(?: the battlefield)?, you may discard a land card instead\. If you do, put (.+?) onto the battlefield\. If you don't, put it into its owner's graveyard\.?$/i.exec(plain(line).trim());

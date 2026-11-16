@@ -29651,3 +29651,37 @@ checked the stack right after the copy resolved: the extra copy otherwise fizzle
     engine tests: 4,744, all passing
 
 Coverage: 11,406 of 31,653 cards (+2), 30,708 of 59,306 lines (+2). Staples: 228 of 244 (+1).
+
+## D716 — Glacial Chasm: life upkeep, no attacking, and no damage to you
+
+How it is read:
+- **"Cumulative upkeep—Pay 2 life."** The keyword's age counter and climb, priced in life
+  (`cumulativeUpkeepLifeTrigger`, and `cumulativeUpkeep.life` on the script):
+  - "Pay N life" is offered only when the life total covers it (CR 119.4), so a player who cannot
+    pay sacrifices;
+  - paying is `loseLife`;
+  - the bot pays while it would be left on 5 or more.
+- **"Creatures you control can't attack."** Also "can't block", "can't attack or block", and the
+  "other creatures" forms: a static on your creatures with `cantAttack` and/or `cantBlock`. With
+  nothing able to attack, the engine skips the declaration.
+- **"Prevent all damage that would be dealt to you."** A new script field, `preventsDamageToYou`.
+  `dealDamage` prevents damage to the controller of an untouched such permanent before anything
+  else reads it: no life lost, no commander damage, no lifelink. Their permanents still take
+  damage.
+
+Staples went from 228 to 229 (Glacial Chasm).
+
+**Tests.** 4 engine tests, plus the mechanic-coverage entry:
+- the card reads;
+- a Bolt at you is prevented, a Bolt at your creature is not, a Bolt at the opponent is not, and
+  without the Chasm the Bolt hurts;
+- your creature cannot attack and combat passes with no attack;
+- upkeep asks 2 then 4 life and the bot pays, while at 1 life only "Sacrifice it" is offered and the
+  Chasm goes.
+
+Faults injected by hand: 7 of 7 caught. "Always seat 0" and "offered when unaffordable" were caught
+only after the opponent's Bolt and the options check were added.
+
+    engine tests: 4,748, all passing
+
+Coverage: 11,409 of 31,653 cards (+3), 30,716 of 59,306 lines (+8). Staples: 229 of 244 (+1).
