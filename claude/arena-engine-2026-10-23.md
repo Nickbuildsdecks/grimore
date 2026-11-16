@@ -29685,3 +29685,38 @@ only after the opponent's Bolt and the options check were added.
     engine tests: 4,748, all passing
 
 Coverage: 11,409 of 31,653 cards (+3), 30,716 of 59,306 lines (+8). Staples: 229 of 244 (+1).
+
+## D717 — The One Ring: protection from everything, burden counters
+
+How it is read:
+- **"You gain protection from everything until your next turn."** `protectPlayer` pushes a
+  seat-scoped `ContinuousEffect` with `playerProtection`, lasting `until-controllers-next-turn`
+  (goad's duration). `playerProtected` is read in two places:
+  - `isLegalTarget` refuses that player as a target of any spell or ability, their own included
+    (attachments aside);
+  - `dealDamage` prevents damage to them (CR 702.16b, e).
+- **The counted lines.** "for each <kind> counter on <this card>" is a new `countOfThing` row: the
+  counters on the source, read live. That makes "put a burden counter on it, then draw a card for
+  each burden counter" count the counter just added. It also reads the upkeep drain, and lines on
+  27 cards in all.
+  - Once the card has left the battlefield, the row reads the counters it had as it left
+    (`subjectCounters`, CR 608.2h). The first draft read the live (empty) card, which the existing
+    Chasm Skulker test caught: its Squids are counted from the counters it died with.
+- **Teferi's Protection** still needs "your life total can't change" and phasing out. The
+  protection half is ready for it.
+
+Staples went from 229 to 230 (The One Ring).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- cast, the opponent's Bolt cannot target you, untargeted damage is prevented, and the protection
+  ends as your next turn begins;
+- put onto the battlefield without casting, nobody is protected;
+- the tap draws 1 then 2, and the upkeep costs 1 life per burden counter.
+
+Faults injected by hand: 6 of 6 caught, including the last-known branch, which the Chasm Skulker
+test catches.
+
+    engine tests: 4,752, all passing
+
+Coverage: 11,436 of 31,653 cards (+27), 30,765 of 59,306 lines (+49). Staples: 230 of 244 (+1).

@@ -15,7 +15,7 @@
  */
 import type { CardScript } from './scriptTypes.js';
 import {
-  allAbilitiesLost, characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -462,6 +462,8 @@ export function dealDamage(
   if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
   // And "prevent all damage that would be dealt to you" (D716, `CardScript.preventsDamageToYou`).
   if (target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
+  // And a player with protection from everything (D717): damage to them is prevented.
+  if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
 
@@ -2647,6 +2649,17 @@ export function pump(
  * turn, or that forced an attack without sending it elsewhere, would be a different and much worse
  * card. `controller` is the goading player, and every part of the effect is read relative to them.
  */
+/** "You gain protection from everything until your next turn" (D717). See `playerProtection`. */
+export function protectPlayer(state: GameState, seat: SeatIndex, source: string): GameState {
+  return pushEffect(state, {
+    source,
+    controller: seat,
+    scope: { kind: 'seat', seat },
+    playerProtection: true,
+    duration: 'until-controllers-next-turn',
+  });
+}
+
 export function goad(
   state: GameState, ids: readonly string[], source: string, controller: SeatIndex,
 ): GameState {

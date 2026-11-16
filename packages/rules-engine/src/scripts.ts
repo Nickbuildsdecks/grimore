@@ -36,7 +36,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
+  gainControl, gainLife, goad, loseLife, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -17595,6 +17595,21 @@ function countOfThing(
     const kind = destroyed[1]!.toLowerCase();
     return (c) => (c.destroyedThisWay ?? []).filter((gone) => kind === 'permanent' || gone.types.includes(kind)).length;
   }
+  /*
+    "for each burden counter on The One Ring" (D717): a kind of counter on the card itself, read
+    live, so a counter added earlier in the same ability ("put a burden counter on it, then draw a
+    card for each") is counted.
+  */
+  const ownCounters = new RegExp(`^([+\\-\\w/]+) counters? on (?:${self}|it)$`, 'i').exec(text);
+  if (ownCounters !== null) {
+    const kind = ownCounters[1]!.toLowerCase();
+    // Gone from the battlefield, it is the counters it had as it left (CR 608.2h): Chasm Skulker.
+    return (c) => {
+      const inst = c.state.instances[c.source];
+      if ((inst === undefined || inst.zone !== 'battlefield') && c.subjectCounters !== undefined) return c.subjectCounters[kind] ?? 0;
+      return inst?.counters[kind] ?? 0;
+    };
+  }
   if (/^lands? you control$/i.test(text)) {
     return (c) => landsControlled(c.state, c.controller);
   }
@@ -22290,6 +22305,10 @@ function readEffect(
     if (inner === null || (inner.targets ?? []).length > 0 || (inner.decisions ?? []).length > 0
       || inner.beforeDecisions !== undefined) return null;
     return { ...inner, effect: (c) => (castFromAGraveyard(c) ? inner.effect(c) : c.state) };
+  }
+  // The One Ring, Teferi's Protection (D717): see `ContinuousEffect.playerProtection`.
+  if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
+    return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
   }
   const sacrificeThen = /^sacrifice a creature and if you do (.+)$/i.exec(clause.trim());
   if (sacrificeThen !== null) {

@@ -41,7 +41,7 @@ import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './sc
 import { REGENERATION, becomeCopyOf, createToken, dealDamage, equipTo, poolOf } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
-import { colourIdentity, commanderIdentity, grantedAbilitiesOn } from './characteristics.js';
+import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
 import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
@@ -15359,6 +15359,68 @@ describe('Glacial Chasm: life upkeep, no attacking, and no damage to you (D716)'
     if (low.pendingDecision !== null) low = drain(apply(low, { type: 'auto:decide', by: 0, option: 'Sacrifice it' } as Action), 20);
     expect(namesIn(low, 0, 'battlefield')).not.toContain('Test Chasm');
     expect(low.seats[0]!.life).toBe(1);
+  });
+});
+
+describe('The One Ring: protection from everything, burden counters (D717)', () => {
+  const ROWS = [
+    { name: 'Test Ring', type_line: 'Legendary Artifact', oracle_text: 'Indestructible\nWhen Test Ring enters, if you cast it, you gain protection from everything until your next turn.\nAt the beginning of your upkeep, you lose 1 life for each burden counter on Test Ring.\n{T}: Put a burden counter on Test Ring, then draw a card for each burden counter on Test Ring.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'ring', name: 'Ring',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand0: string[], hand1: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'ring', 1: 'ring' }, deckSpecs: { ring: deck.deck },
+    hands: { 0: hand0, 1: hand1 }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast, it protects you until your next turn: not a target, and no damage', () => {
+    let s = settle(apply(table(['Test Ring'], ['Test Bolt']), { type: 'auto:cast', by: 0, card: find(table(['Test Ring'], ['Test Bolt']), 0, 'hand', 'Test Ring') }));
+    expect(playerProtected(s, 0)).toBe(true);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 0 }] } as Action)).toBeTruthy();
+    // Damage that does not target is prevented as well.
+    expect(dealDamage(s, { kind: 'player', seat: 0 }, 5, { source: find(s, 1, 'hand', 'Test Bolt') }).seats[0]!.life).toBe(20);
+    // And it ends as your next turn begins.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(playerProtected(s, 0)).toBe(false);
+  });
+
+  it('put onto the battlefield without casting, it protects nobody', () => {
+    const s = table([], [], ['Test Ring']);
+    expect(playerProtected(s, 0)).toBe(false);
+  });
+
+  it('the tap adds a burden and draws one per burden; the upkeep costs one life per burden', () => {
+    let s = table([], [], ['Test Ring']);
+    const ring = find(s, 0, 'battlefield', 'Test Ring');
+    const hand = () => ids(s, 0, 'hand').length;
+    let before = hand();
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: 0 }));
+    expect(s.instances[ring]!.counters['burden']).toBe(1);
+    expect(hand()).toBe(before + 1);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = drain(advanceTo(nextTurn(s), 'precombat-main'), 20);
+    expect(s.seats[0]!.life).toBe(19);
+    before = hand();
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: 0 }));
+    expect(s.instances[ring]!.counters['burden']).toBe(2);
+    expect(hand()).toBe(before + 2);
   });
 });
 

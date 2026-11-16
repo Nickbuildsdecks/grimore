@@ -6,7 +6,7 @@
  * makes killing the creature in response to a bolt work. Doing the check in one place means both
  * moments agree about what "legal" means, which is the only way that rule stays correct.
  */
-import { characteristicsOf, hasType, parseTypeLine, protectionApplies } from './characteristics.js';
+import { characteristicsOf, hasType, parseTypeLine, playerProtected, protectionApplies } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { zoneKey } from './cards.js';
 import type { TargetSpec } from './scriptTypes.js';
@@ -96,6 +96,8 @@ function satisfies(
       && spec.kind !== 'player-or-planeswalker') return false;
     const seat = state.seats[candidate.seat];
     if (seat === undefined || seat.eliminated) return false;
+    // Protection from everything (D717): no spell or ability may target them, their own included.
+    if (!forAttachment && playerProtected(state, candidate.seat)) return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 
