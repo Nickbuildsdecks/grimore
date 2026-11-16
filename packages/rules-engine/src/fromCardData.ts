@@ -193,7 +193,7 @@ export function intrinsicManaAbilities(subtypes: readonly string[]): readonly Ab
 /** The abilities that read "a land an opponent controls could produce" (D681). */
 const READS_OPPONENT_LANDS = new WeakSet<AbilityDef>();
 /**
- * The printed colours of the cards in exile imprinted on this permanent (D716,
+ * The printed colours of the cards in exile imprinted on this permanent (D717,
  * `CardInstance.imprintedOn`): Chrome Mox's "any of the exiled card's colors". Only an imprint
  * made by the permanent as it is now counts, so a Mox that left and came back has none
  * (CR 400.7). A colourless card gives nothing.
@@ -379,7 +379,7 @@ interface ManaLine {
    */
   readonly chosen?: { readonly fixed?: ManaType };
   /**
-   * "…one mana of any of the exiled card's colors" (D716): Chrome Mox. Each colour's ability is
+   * "…one mana of any of the exiled card's colors" (D717): Chrome Mox. Each colour's ability is
    * offered only while the card this permanent imprinted is that colour. See `imprintedColours`.
    */
   readonly imprinted?: true;
@@ -697,7 +697,7 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
-  // Chrome Mox (D716): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
+  // Chrome Mox (D717): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
   if (/^one\s+mana\s+of\s+any\s+of\s+the\s+exiled\s+card['’]s\s+colou?rs$/i.test(body)) {
     if (!chosenOk) return null;
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };

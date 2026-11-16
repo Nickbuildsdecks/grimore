@@ -7893,7 +7893,9 @@ describe('deck coverage', () => {
         No pool deck has one. Driven at runtime by "\"Nontoken creatures you control have riot\":
         Rhythm of the Wild (D711)".      - `script entersByDiscarding` (D714): Mox Diamond's "If ~ would enter, you may discard a land
         card instead". No pool deck has one. Driven at runtime by "Mox Diamond: discard a land card,
-        or it goes to the graveyard (D714)".
+        or it goes to the graveyard (D714)".      - `script preventsDamageToYou` (D716): Glacial Chasm's "Prevent all damage that would be dealt
+        to you". No pool deck has one. Driven at runtime by "Glacial Chasm: life upkeep, no
+        attacking, and no damage to you (D716)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7918,6 +7920,7 @@ describe('deck coverage', () => {
       'script pitch',
       'script grantsRiot',
       'script entersByDiscarding',
+      'script preventsDamageToYou',
     ]);
 
     const declared = [
@@ -15313,7 +15316,90 @@ describe('"if this spell was cast from a graveyard": Sevinne\'s Reclamation and 
   });
 });
 
-describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colours (D716)', () => {
+describe('Glacial Chasm: life upkeep, no attacking, and no damage to you (D716)', () => {
+  const ROWS = [
+    { name: 'Test Chasm', type_line: 'Land', oracle_text: "Cumulative upkeep—Pay 2 life.\nCreatures you control can't attack.\nPrevent all damage that would be dealt to you.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '4' },
+  ];
+  const deck = customDeck({
+    id: 'chasm', name: 'Chasm',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], theirHand: string[] = [], first: SeatIndex = 1) => advanceTo(arena({
+    decks: { 0: 'chasm', 1: 'chasm' }, deckSpecs: { chasm: deck.deck },
+    battlefield: { 0: mine }, hands: { 1: theirHand }, turn: 3, firstSeat: first,
+  }), 'precombat-main');
+  const bolt = (s: GameState, target: Target) => {
+    let next = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [target] } as Action);
+    for (let i = 0; i < 4 && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('prevents damage to you, and not to your creatures', () => {
+    const s = bolt(table(['Test Chasm', 'Test Bear'], ['Test Bolt']), { kind: 'player', seat: 0 });
+    expect(s.seats[0]!.life).toBe(20);
+    const t0 = table(['Test Chasm', 'Test Bear'], ['Test Bolt']);
+    const bear = find(t0, 0, 'battlefield', 'Test Bear');
+    const t = bolt(t0, { kind: 'card', id: bear });
+    expect(t.instances[bear]!.damage).toBe(3);
+    // Without it, the same Bolt hurts — and it does not shield the opponent.
+    expect(bolt(table(['Test Bear'], ['Test Bolt']), { kind: 'player', seat: 0 }).seats[0]!.life).toBe(17);
+    expect(bolt(table(['Test Chasm'], ['Test Bolt']), { kind: 'player', seat: 1 }).seats[1]!.life).toBe(17);
+  });
+
+  it('your creatures cannot attack', () => {
+    // Seat 0's own upkeep asks for the Chasm's life first.
+    let s = drain(advanceTo(arena({
+      decks: { 0: 'chasm', 1: 'chasm' }, deckSpecs: { chasm: deck.deck },
+      battlefield: { 0: ['Test Chasm', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'upkeep'), 20);
+    s = advanceTo(apply(s, { type: 'auto:decide', by: 0, option: 'Pay 2 life' } as Action), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    // Nothing can attack, so the engine does not stop for a declaration at all.
+    expect(characteristicsOf(s, s.instances[bear]!).cantAttack).toBe(true);
+    s = advanceTo(s, 'postcombat-main');
+    expect(s.turn).toBe(3);
+    expect(s.combat.attacks).toEqual([]);
+    let t = table(['Test Bear'], [], 0);
+    const free = find(t, 0, 'battlefield', 'Test Bear');
+    t = advanceTo(t, 'declare-attackers');
+    t = apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: free, defender: 1 }] });
+    expect(t.combat.attacks.map((a) => a.attacker)).toEqual([free]);
+  });
+
+  it('upkeep asks two life, then four; paying loses it, and a short life total can only sacrifice', () => {
+    let s = table(['Test Chasm'], [], 1);
+    const chasm = find(s, 0, 'battlefield', 'Test Chasm');
+    s = drain(advanceTo(nextTurn(s), 'upkeep'), 20);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay 2 life']);
+    expect(botAction(s, 0)).toMatchObject({ option: 'Pay 2 life' });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay 2 life' } as Action), 20);
+    expect(s.seats[0]!.life).toBe(18);
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'upkeep'), 20);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay 4 life']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay 4 life' } as Action), 20);
+    expect(s.seats[0]!.life).toBe(14);
+    expect(s.instances[chasm]!.zone).toBe('battlefield');
+
+    let low = table(['Test Chasm'], [], 1);
+    low = { ...low, seats: low.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 1 } : seat)) };
+    low = drain(advanceTo(nextTurn(low), 'upkeep'), 20);
+    // One life cannot pay two: sacrificing is the only answer (CR 119.4).
+    expect(low.pendingDecision?.options ?? ['Sacrifice it']).toEqual(['Sacrifice it']);
+    if (low.pendingDecision !== null) low = drain(apply(low, { type: 'auto:decide', by: 0, option: 'Sacrifice it' } as Action), 20);
+    expect(namesIn(low, 0, 'battlefield')).not.toContain('Test Chasm');
+    expect(low.seats[0]!.life).toBe(1);
+  });
+});
+
+describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colours (D717)', () => {
   const ROWS = [
     { name: 'Test Mox', type_line: 'Artifact', oracle_text: "Imprint — When Test Mox enters, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card's colors.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', produced_mana: ['W', 'U', 'B', 'R', 'G'] },
     { name: 'Test Hydra', type_line: 'Creature — Hydra', oracle_text: '', mana_cost: '{2}{G}{W}', cmc: 4, colors: ['G', 'W'], layout: 'normal', power: '4', toughness: '4' },
@@ -15386,7 +15472,7 @@ describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colou
     expect(colours(t, find(t, 0, 'battlefield', 'Test Mox'))).toEqual([]);
 
     // And an imprinted card that leaves exile, even to come straight back, is a new object the
-    // Mox never exiled (pinned by D716's break run).
+    // Mox never exiled (pinned by D717's break run).
     let u = castMox(table(['Test Mox', 'Test Bolt']));
     const bolt = find(u, 0, 'hand', 'Test Bolt');
     u = drain(apply(u, { type: 'auto:decide', by: 0, cards: [bolt] } as Action), 20);

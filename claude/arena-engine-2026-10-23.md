@@ -29652,13 +29652,47 @@ checked the stack right after the copy resolved: the extra copy otherwise fizzle
 
 Coverage: 11,406 of 31,653 cards (+2), 30,708 of 59,306 lines (+2). Staples: 228 of 244 (+1).
 
+## D716 — Glacial Chasm: life upkeep, no attacking, and no damage to you
+
+How it is read:
+- **"Cumulative upkeep—Pay 2 life."** The keyword's age counter and climb, priced in life
+  (`cumulativeUpkeepLifeTrigger`, and `cumulativeUpkeep.life` on the script):
+  - "Pay N life" is offered only when the life total covers it (CR 119.4), so a player who cannot
+    pay sacrifices;
+  - paying is `loseLife`;
+  - the bot pays while it would be left on 5 or more.
+- **"Creatures you control can't attack."** Also "can't block", "can't attack or block", and the
+  "other creatures" forms: a static on your creatures with `cantAttack` and/or `cantBlock`. With
+  nothing able to attack, the engine skips the declaration.
+- **"Prevent all damage that would be dealt to you."** A new script field, `preventsDamageToYou`.
+  `dealDamage` prevents damage to the controller of an untouched such permanent before anything
+  else reads it: no life lost, no commander damage, no lifelink. Their permanents still take
+  damage.
+
+Staples went from 228 to 229 (Glacial Chasm).
+
+**Tests.** 4 engine tests, plus the mechanic-coverage entry:
+- the card reads;
+- a Bolt at you is prevented, a Bolt at your creature is not, a Bolt at the opponent is not, and
+  without the Chasm the Bolt hurts;
+- your creature cannot attack and combat passes with no attack;
+- upkeep asks 2 then 4 life and the bot pays, while at 1 life only "Sacrifice it" is offered and the
+  Chasm goes.
+
+Faults injected by hand: 7 of 7 caught. "Always seat 0" and "offered when unaffordable" were caught
+only after the opponent's Bolt and the options check were added.
+
+    engine tests: 4,748, all passing
+
+Coverage: 11,409 of 31,653 cards (+3), 30,716 of 59,306 lines (+8). Staples: 229 of 244 (+1).
+
 ## Session restart on 7e927cd: services, gate, sweep, break runs
 
 The container was replaced again. Postgres 16 and Redis were restarted, the workspace was installed
 and built, and the corpus was rebuilt from Forge (`scripts/corpus/legality.mjs`, then
 `from-forge.mjs`) at Forge commit 0f82b4f. Still 34,234 rows and 31,653 legal cards, but Forge's text
 has moved slightly, so the baseline on 7e927cd is now 11,405 cards and 30,708 lines (was 11,404 and
-30,706). D716's figures are measured against that.
+30,706). D717's figures are measured against that.
 
 - **Gate on 7e927cd:** `GATE OK`. rules-engine 4,740, api 326, web 270, realtime 61, shared 120,
   and every other package green.
@@ -29672,7 +29706,7 @@ has moved slightly, so the baseline on 7e927cd is now 11,405 cards and 30,708 li
   Rhythm of the Wild is asked for its colour and not riot, and a copy of a creature spell resolves
   without a question while the card itself is still asked. Re-run: 2 of 2 caught, so 14 of 14.
 
-## D716 — Chrome Mox: an imprint from hand, and mana of the exiled card's colours
+## D717 — Chrome Mox: an imprint from hand, and mana of the exiled card's colours
 
 "Imprint — When Chrome Mox enters, you may exile a nonartifact, nonland card from your hand.
 {T}: Add one mana of any of the exiled card's colors."
@@ -29699,7 +29733,7 @@ How it is read:
 - The same reader takes Isochron Scepter's and Spellbinder's imprint lines ("an instant card with
   mana value 2 or less"). Neither card is finished: "copy the exiled card" doesn't read yet.
 
-Staples went from 228 to 229 (Chrome Mox).
+Staples went from 229 to 230 (Chrome Mox).
 
 **Tests.** 4 engine tests:
 - the card reads;
@@ -29712,12 +29746,12 @@ Staples went from 228 to 229 (Chrome Mox).
 Faults injected by script: 8 of 9 caught. The miss, `relocate` keeping the link on a card that left
 exile, is pinned by the third test's last case. Re-run: 1 of 1 caught.
 
-**Merged with D715.** Another session pushed D715 (Sevinne's Reclamation) to the branch while this
-was being gated. It was merged in, not rewritten, and this entry was renumbered from D715 to D716.
-Measured alone on 7e927cd, D716 added 3 cards and 10 lines. The figures below are for the merged
-tree, on the rebuilt corpus.
+**Merged with D715 and D716.** The other session on this branch pushed D715 (Sevinne's
+Reclamation) and then D716 (Glacial Chasm) while this was being gated. Both were merged in, not
+rewritten, and this entry was renumbered from D715 to D717. Measured alone on 7e927cd, D717 added
+3 cards and 10 lines. The figures below are for the merged tree, on the rebuilt corpus.
 
-    engine tests: 4,750, all passing
+    engine tests: 4,754, all passing
 
-Coverage: 11,410 of 31,653 cards (+5 over 7e927cd on the rebuilt corpus: D715 +2, D716 +3),
-30,720 of 59,306 lines (+12). Staples: 229 of 244 (+1).
+Coverage: 11,413 of 31,653 cards (+8 over 7e927cd on the rebuilt corpus, D715–D717 together),
+30,728 of 59,306 lines (+20). Staples: 230 of 244 (+1).

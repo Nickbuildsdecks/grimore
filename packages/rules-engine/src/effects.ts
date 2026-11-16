@@ -460,6 +460,8 @@ export function dealDamage(
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
   if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
+  // And "prevent all damage that would be dealt to you" (D716, `CardScript.preventsDamageToYou`).
+  if (target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
 
@@ -1072,6 +1074,16 @@ export function scriptOfCard(def: CardDef | undefined): CardScript | undefined {
  * permanent's controller and the spell's; the spell's kind is its card's printed type line, which is
  * what a spell on the stack has (CR 112.1). A permanent that has lost its abilities says nothing.
  */
+function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {
+  if (scriptLookup === null) return false;
+  const lookup = scriptLookup;
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+    return lookup(state.cardDefs[inst.defKey])?.preventsDamageToYou === true;
+  });
+}
+
 function protectedFromCounters(state: GameState, object: StackObject): boolean {
   if (object.kind !== 'spell' || scriptLookup === null) return false;
   const scriptForCard = scriptLookup;

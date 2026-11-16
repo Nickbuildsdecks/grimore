@@ -2914,6 +2914,8 @@ export interface CardScript {
   readonly cumulativeUpkeep?: {
     /** One lot of the upkeep cost, in the printed `{1}` form; the climb multiplies it. */
     readonly cost: string;
+    /** Or one lot of life (D716): Glacial Chasm's "Pay 2 life". `cost` is then empty. */
+    readonly life?: number;
   };
   /**
    * Split second: while this spell is on the stack, nobody may cast a spell or activate an ability
@@ -3318,6 +3320,13 @@ export interface CardScript {
    * arrives without discarding.
    */
   readonly entersByDiscarding?: 'land';
+  /**
+   * "Prevent all damage that would be dealt to you." (D716): Glacial Chasm. While the permanent is
+   * on the battlefield and has its abilities, damage to its controller is prevented in `dealDamage`
+   * before anything else reads it, so it is never dealt: no life lost, no commander damage, no
+   * lifelink for the source. Damage to the controller's permanents is not prevented.
+   */
+  readonly preventsDamageToYou?: true;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;
