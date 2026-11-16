@@ -1091,7 +1091,12 @@ export type TriggerEvent =
    * "Cycle or discard" needs no second event because cycling **is** discarding: the printed ruling
    * on Drake Haven is that the ability triggers once when you cycle a card, not twice.
    */
-  | { readonly kind: 'discards'; readonly by?: 'you' | 'opponent' | 'any' }
+  | {
+      readonly kind: 'discards';
+      readonly by?: 'you' | 'opponent' | 'any';
+      /** Set by the engine (D719): which card was discarded, for "exile that card". */
+      readonly subject?: string;
+    }
   /**
    * "Whenever you **sacrifice** a permanent" — the act, not the death (D570).
    *
@@ -3334,6 +3339,13 @@ export interface CardScript {
    * lifelink for the source. Damage to the controller's permanents is not prevented.
    */
   readonly preventsDamageToYou?: true;
+  /**
+   * "Skip your draw step." (D719): Necropotence, Damia, Solitary Confinement and a dozen more.
+   * While the permanent is on the battlefield and has its abilities, its controller's draw step
+   * does not happen at all (CR 614.10): no draw, no priority in it, and nothing that triggers "at
+   * the beginning of your draw step". `advanceStep` goes from upkeep straight to the main phase.
+   */
+  readonly skipsDrawStep?: true;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

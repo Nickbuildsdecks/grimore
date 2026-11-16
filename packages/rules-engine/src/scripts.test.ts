@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, poolOf } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, poolOf, putOnTopOfLibrary } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
@@ -7896,6 +7896,9 @@ describe('deck coverage', () => {
         or it goes to the graveyard (D714)".      - `script preventsDamageToYou` (D716): Glacial Chasm's "Prevent all damage that would be dealt
         to you". No pool deck has one. Driven at runtime by "Glacial Chasm: life upkeep, no
         attacking, and no damage to you (D716)".
+      - `script skipsDrawStep` (D719): Necropotence's "Skip your draw step". No pool deck has one.
+        Driven at runtime by "Necropotence: no draw step, discards exiled, and a card a turn for
+        life (D719)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7921,6 +7924,7 @@ describe('deck coverage', () => {
       'script grantsRiot',
       'script entersByDiscarding',
       'script preventsDamageToYou',
+      'script skipsDrawStep',
     ]);
 
     const declared = [
@@ -15548,6 +15552,118 @@ describe('The One Ring: protection from everything, burden counters (D718)', () 
     s = settle(apply(s, { type: 'auto:activate', by: 0, card: ring, abilityIndex: 0 }));
     expect(s.instances[ring]!.counters['burden']).toBe(2);
     expect(hand()).toBe(before + 2);
+  });
+});
+
+describe('Necropotence: no draw step, discards exiled, and a card a turn for life (D719)', () => {
+  const ROWS = [
+    { name: 'Test Necro', type_line: 'Enchantment', oracle_text: 'Skip your draw step.\nWhenever you discard a card, exile that card from your graveyard.\nPay 1 life: Exile the top card of your library face down. Put that card into your hand at the beginning of your next end step.', mana_cost: '{B}{B}{B}', cmc: 3, colors: ['B'], layout: 'normal' },
+    { name: 'Test Ponder', type_line: 'Enchantment', oracle_text: 'At the beginning of your draw step, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Toss', type_line: 'Sorcery', oracle_text: 'Discard a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'necro', name: 'Necro',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Spark', count: 40 }, { name: 'Swamp', count: 10 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], hand: string[] = [], step: Step = 'precombat-main', theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'necro', 1: 'necro' }, deckSpecs: { necro: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), step);
+  const necroAbility = (s: GameState, id: string) => (scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.abilities ?? [])
+    .findIndex((a) => /face down/i.test(a.description ?? ''));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('skips the draw step: no draw, and nothing at the beginning of it triggers', () => {
+    const control = table(['Test Ponder'], [], 'upkeep');
+    const lifeBefore = life(control, 0);
+    const handBefore = ids(control, 0, 'hand').length;
+    let c = passBoth(control);
+    expect(c.step).toBe('draw');
+    c = drain(c, 10);
+    expect(ids(c, 0, 'hand').length).toBe(handBefore + 1);
+    expect(life(c, 0)).toBe(lifeBefore + 1);
+
+    const s = table(['Test Necro', 'Test Ponder'], [], 'upkeep');
+    const handNow = ids(s, 0, 'hand').length;
+    const t = drain(passBoth(s), 10);
+    expect(t.step).toBe('precombat-main');
+    expect(ids(t, 0, 'hand').length).toBe(handNow);
+    expect(life(t, 0)).toBe(life(s, 0));
+    // An opponent's Necropotence skips only its controller's draw step.
+    const theirs = drain(passBoth(table(['Test Ponder'], [], 'upkeep', ['Test Necro'])), 10);
+    expect(ids(theirs, 0, 'hand').length).toBe(handBefore + 1);
+  });
+
+  it('a card its controller discards is exiled from the graveyard', () => {
+    // Two cards left in hand, so the discard is a question rather than forced.
+    let s = table(['Test Necro'], ['Test Toss', 'Test Spark', 'Swamp']);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Toss') });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0 && s.pendingDecision === null; i++) s = passBoth(s);
+    const spark = s.pendingDecision!.candidates.find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Spark')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [spark] } as Action), 20);
+    expect(s.instances[spark]!.zone).toBe('exile');
+    // Without it, the discarded card stays in the graveyard.
+    let t = table([], ['Test Toss', 'Test Spark', 'Swamp']);
+    t = apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Toss') });
+    for (let i = 0; i < 6 && t.stackOrder.length > 0 && t.pendingDecision === null; i++) t = passBoth(t);
+    const kept = t.pendingDecision!.candidates.find((id) => t.cardDefs[t.instances[id]!.defKey]!.name === 'Test Spark')!;
+    t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [kept] } as Action), 20);
+    expect(t.instances[kept]!.zone).toBe('graveyard');
+  });
+
+  it('pays 1 life to exile the top card face down, and puts it into hand at the next end step', () => {
+    let s = table(['Test Necro']);
+    const necro = find(s, 0, 'battlefield', 'Test Necro');
+    const top = ids(s, 0, 'library')[0]!;
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: necro, abilityIndex: necroAbility(s, necro) })), 10);
+    expect(life(s, 0)).toBe(before - 1);
+    expect(s.instances[top]!.zone).toBe('exile');
+    expect(s.instances[top]!.faceDown).toBe(true);
+    // Its owner may look at it; the opponent sees a face-down card and not which one.
+    expect(viewFor(s, 0).cards[top]?.card).toBeDefined();
+    expect(viewFor(s, 1).cards[top]?.card).toBeUndefined();
+    // On to the end step: the delayed ability goes on the stack there and resolves.
+    for (let i = 0; i < 20 && s.step !== 'end'; i++) s = passBoth(s);
+    expect(s.step).toBe('end');
+    s = drain(passBoth(s), 10);
+    expect(s.instances[top]!.zone).toBe('hand');
+    expect(s.instances[top]!.faceDown).toBe(false);
+  });
+
+  it('a card that left exile first is not fetched back', () => {
+    let s = table(['Test Necro']);
+    const necro = find(s, 0, 'battlefield', 'Test Necro');
+    const top = ids(s, 0, 'library')[0]!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: necro, abilityIndex: necroAbility(s, necro) })), 10);
+    expect(s.delayed).toHaveLength(1);
+    // Shuffled away, say: it is in the library now, and the ability finds nothing in exile.
+    s = putOnTopOfLibrary(s, top);
+    for (let i = 0; i < 20 && s.step !== 'end'; i++) s = passBoth(s);
+    s = drain(passBoth(s), 10);
+    expect(s.instances[top]!.zone).toBe('library');
+  });
+
+  it('the bot takes a few cards and keeps its life above 10, rather than paying it all', () => {
+    // Before the bot was told, a probe of this position paid 19 life in one main phase.
+    let s = table(['Test Necro']);
+    let activations = 0;
+    for (let i = 0; i < 60 && s.step === 'precombat-main'; i++) {
+      const seat = (s.pendingDecision?.seat ?? s.priority ?? s.activeSeat) as SeatIndex;
+      const action = botAction(s, seat);
+      if (action === null) break;
+      if (action.type === 'auto:activate' && action.by === 0) activations++;
+      s = apply(s, action);
+    }
+    expect(activations).toBeGreaterThan(0);
+    expect(activations).toBeLessThanOrEqual(5);
+    expect(life(s, 0)).toBeGreaterThanOrEqual(10);
   });
 });
 
