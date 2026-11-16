@@ -10669,7 +10669,7 @@ describe('a mana-value clause, and the word permanent, in a search filter (D491)
     */
     'Search your library for a card with mana value 6 or greater, put it into your hand, then shuffle',
     /*
-      Guardian Sunmare's "a nonland permanent card", left unread here until D715 taught
+      Guardian Sunmare's "a nonland permanent card", left unread here until D716 taught
       `cardWordMatch` the `non` prefix: not a land, and a permanent card, both at once.
     */
     'Search your library for a nonland permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',

@@ -15247,7 +15247,73 @@ describe('Mox Diamond: discard a land card, or it goes to the graveyard (D714)',
   });
 });
 
-describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colours (D715)', () => {
+describe('"if this spell was cast from a graveyard": Sevinne\'s Reclamation and the flashback upgrades (D715)', () => {
+  const ROWS = [
+    { name: 'Test Reclamation', type_line: 'Sorcery', oracle_text: 'Return target permanent card with mana value 3 or less from your graveyard to the battlefield. If this spell was cast from a graveyard, you may copy this spell and may choose a new target for the copy.\nFlashback {0}', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Plunder', type_line: 'Sorcery', oracle_text: 'Draw a card. If this spell was cast from a graveyard, draw two cards instead.\nFlashback {0}', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'reclaim', name: 'Reclaim',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], graveyard: string[]) => advanceTo(arena({
+    decks: { 0: 'reclaim', 1: 'reclaim' }, deckSpecs: { reclaim: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: graveyard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const hand = (s: GameState) => ids(s, 0, 'hand').length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast from the graveyard, the copy returns a second card', () => {
+    let s = table([], ['Test Reclamation', 'Test Bear', 'Test Relic']);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    const relic = find(s, 0, 'graveyard', 'Test Relic');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Reclamation'), flashback: true, targets: [{ kind: 'card', id: bear }] } as Action);
+    s = passBoth(s);
+    expect(s.pendingDecision?.targetChoices).toEqual(expect.arrayContaining([{ kind: 'card', id: relic }]));
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: relic } } as Action);
+    // The original has resolved and left one copy, which was not cast and so copies nothing.
+    expect(s.stackOrder).toHaveLength(1);
+    s = passBoth(s);
+    expect(s.stackOrder).toEqual([]);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[relic]!.zone).toBe('battlefield');
+    // The copy did not copy itself: one copy, then nothing on the stack.
+    expect(s.stackOrder).toEqual([]);
+    expect(namesIn(s, 0, 'exile')).toContain('Test Reclamation');
+  });
+
+  it('cast from the hand, nothing is asked and nothing is copied', () => {
+    let s = table(['Test Reclamation'], ['Test Bear', 'Test Relic']);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    const relic = find(s, 0, 'graveyard', 'Test Relic');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Reclamation'), targets: [{ kind: 'card', id: bear }] } as Action);
+    s = passBoth(s);
+    expect(s.pendingDecision).toBeNull();
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[relic]!.zone).toBe('graveyard');
+  });
+
+  it('an "instead" upgrade applies only when cast from a graveyard', () => {
+    let s = table(['Test Plunder'], []);
+    let before = hand(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Plunder') })));
+    expect(hand(s)).toBe(before - 1 + 1);
+    const card = find(s, 0, 'graveyard', 'Test Plunder');
+    before = hand(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, flashback: true })));
+    expect(hand(s)).toBe(before + 2);
+  });
+});
+
+describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colours (D716)', () => {
   const ROWS = [
     { name: 'Test Mox', type_line: 'Artifact', oracle_text: "Imprint — When Test Mox enters, you may exile a nonartifact, nonland card from your hand.\n{T}: Add one mana of any of the exiled card's colors.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', produced_mana: ['W', 'U', 'B', 'R', 'G'] },
     { name: 'Test Hydra', type_line: 'Creature — Hydra', oracle_text: '', mana_cost: '{2}{G}{W}', cmc: 4, colors: ['G', 'W'], layout: 'normal', power: '4', toughness: '4' },
@@ -15320,7 +15386,7 @@ describe('Chrome Mox: an imprint from hand, and mana of the exiled card\'s colou
     expect(colours(t, find(t, 0, 'battlefield', 'Test Mox'))).toEqual([]);
 
     // And an imprinted card that leaves exile, even to come straight back, is a new object the
-    // Mox never exiled (pinned by D715's break run).
+    // Mox never exiled (pinned by D716's break run).
     let u = castMox(table(['Test Mox', 'Test Bolt']));
     const bolt = find(u, 0, 'hand', 'Test Bolt');
     u = drain(apply(u, { type: 'auto:decide', by: 0, cards: [bolt] } as Action), 20);

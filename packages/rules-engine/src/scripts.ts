@@ -2435,7 +2435,7 @@ function cardFilterBody(
     list = list.replace(/^basic\s+/i, '').trim();
   }
   /*
-    "A nonartifact, nonland card" (D715) is one card that is both, not a list of alternatives: a
+    "A nonartifact, nonland card" (D716) is one card that is both, not a list of alternatives: a
     comma between "non" words with no "or" is a conjunction, as Magic prints it. So it is read as
     one alternative whose words are AND-ed.
   */
@@ -2505,7 +2505,7 @@ function cardWordMatch(word: string): ((line: TypeLine) => boolean) | null {
   const lower = word.toLowerCase();
   if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
   /*
-    "Non" in front of a type or supertype (D715): "a nonland card", "a nonartifact, nonland card"
+    "Non" in front of a type or supertype (D716): "a nonland card", "a nonartifact, nonland card"
     (Chrome Mox). The word's own reading, negated; a "non" word whose rest is not one this function
     can name stays unread, as the rest would.
   */
@@ -13436,7 +13436,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     one card whenever there is one (the bound is clamped to what the hand holds).
   */
   /*
-    "You may exile a nonartifact, nonland card from your hand" (D715): an imprint, Chrome Mox's
+    "You may exile a nonartifact, nonland card from your hand" (D716): an imprint, Chrome Mox's
     entry trigger, and Isochron Scepter's "an instant card with mana value 2 or less". A question about the hand, up to one card; the card chosen is exiled and linked
     to the permanent whose ability exiled it (`CardInstance.imprintedOn`, CR 607.2a), which is what
     "the exiled card's colors" reads. Choosing nothing is the "may".
@@ -22261,6 +22261,48 @@ function readEffect(
       effect: redirect,
     };
   }
+  /*
+    Sevinne's Reclamation (D715): "If this spell was cast from a graveyard, you may copy this spell
+    and may choose a new target for the copy." The spell is off the stack as its effect runs, so it
+    is put back for the copy to be made from (`copySpellOnStack`) and taken off again; the copy goes
+    on top and resolves next. The new target is asked as the spell resolves — about the spell itself,
+    which is still on the stack then — and only when there will be a copy. A copy was not cast, so a
+    copy never copies itself.
+  */
+  if (/^if this spell was cast from a graveyard, you may copy this spell and may choose a new target for the copy$/i.test(clause.trim())) {
+    return {
+      decisions: [{
+        who: 'controller',
+        prompt: 'Choose a new target for the copy?',
+        retargets: (_state, object) => {
+          const spell = object as { id: string; castFrom?: string; copyOf?: string };
+          return spell.castFrom === 'graveyard' && spell.copyOf === undefined ? spell.id : undefined;
+        },
+        optional: true,
+      } as TargetDecisionSpec],
+      effect: (c) => {
+        const spell = c.resolving;
+        if (spell === undefined || !castFromAGraveyard(c)) return c.state;
+        const withSpell = { ...c.state, stackObjects: { ...c.state.stackObjects, [spell.id]: spell } };
+        const copied = copySpellOnStack(withSpell, spell.id, c.controller, c.decisions[0]?.target);
+        const objects = { ...copied.stackObjects };
+        delete objects[spell.id];
+        return { ...copied, stackObjects: objects };
+      },
+    };
+  }
+  /*
+    And the same condition in front of an effect that adds to the spell (D715): "If this spell was
+    cast from a graveyard, draw a card." The effect runs only then. Not one that asks a question or
+    chooses a target of its own, which would be asked whether or not it applies.
+  */
+  const fromGraveyard = /^if this spell was cast from a graveyard, (.+)$/i.exec(clause.trim());
+  if (fromGraveyard !== null && !/ instead$/i.test(fromGraveyard[1]!)) {
+    const inner = readEffect(fromGraveyard[1]!, name, where);
+    if (inner === null || (inner.targets ?? []).length > 0 || (inner.decisions ?? []).length > 0
+      || inner.beforeDecisions !== undefined) return null;
+    return { ...inner, effect: (c) => (castFromAGraveyard(c) ? inner.effect(c) : c.state) };
+  }
   const sacrificeThen = /^sacrifice a creature and if you do (.+)$/i.exec(clause.trim());
   if (sacrificeThen !== null) {
     const cost = readEffect('sacrifice a creature', name, where);
@@ -22848,6 +22890,14 @@ function insteadIfUpgrade(baseLine: string, upgradeLine: string, name: string): 
     appliesNothing: undefined,
   } as ReadEffect;
 }
+
+/**
+ * "This spell was cast from a graveyard" (D715): the resolving spell's own `castFrom` — flashback,
+ * jump-start, escape, harmonize and the rest all record it — and never a copy, which was not cast
+ * at all (CR 707.10).
+ */
+const castFromAGraveyard = (c: EffectContext): boolean =>
+  c.resolving?.castFrom === 'graveyard' && c.resolving.copyOf === undefined;
 
 /** When a delayed spell trigger fires (D689, D692). */
 type LaterStep = 'upkeep' | 'next-main';
@@ -25908,6 +25958,8 @@ function interveningConditionRows(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
   const text = plain(printed).trim();
+  // "If this spell was cast from a graveyard" (D715): see `castFromAGraveyard`.
+  if (/^this spell was cast from a graveyard$/i.test(text)) return castFromAGraveyard;
   /*
     "If you cast it" and "if you cast it from your hand" (D607): read off `GameState.castPermanents`,
     which the resolving spell writes with the object's sequence number. A permanent that arrived any
@@ -26785,6 +26837,18 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     the same order, which is what lets one set of chosen targets serve whichever runs. Anything
     else — a question on either line, a different target, a condition nobody reads — stays unread.
   */
+  /*
+    "Draw a card. If this spell was cast from a graveyard, draw two cards instead." (D715): the
+    flashback and harmonize upgrades print the condition first. Turned around into the "… instead
+    if …" sentence the upgrade above reads, as the second of two lines.
+  */
+  if (laterTrigger === null && readNow.length === 1) {
+    const sentences = plain(readNow[0]!).trim().split(/(?<=\.)\s+/);
+    const tail = /^If this spell was cast from a graveyard, (.+) instead\.?$/i.exec(sentences[sentences.length - 1] ?? '');
+    if (sentences.length >= 2 && tail !== null) {
+      readNow = [sentences.slice(0, -1).join(' '), `${tail[1]!.charAt(0).toUpperCase()}${tail[1]!.slice(1)} instead if this spell was cast from a graveyard.`];
+    }
+  }
   if (laterTrigger === null && readNow.length === 2) {
     const upgrade = insteadIfUpgrade(readNow[0]!, readNow[1]!, name);
     if (upgrade !== null) readNow = [];

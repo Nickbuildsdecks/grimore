@@ -219,7 +219,7 @@ export interface CardInstance {
    */
   readonly exiledBy?: string;
   /**
-   * The permanent this card was exiled with by an imprint (D715; linked abilities, CR 607.2a):
+   * The permanent this card was exiled with by an imprint (D716; linked abilities, CR 607.2a):
    * Chrome Mox's "you may exile a nonartifact, nonland card from your hand", read later by "the
    * exiled card's colors". Unlike `exiledBy` nothing gives it back. Keyed to the permanent's
    * `objectSeq` as well as its id, because a Mox that leaves and returns is a new object with no

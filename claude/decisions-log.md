@@ -47080,13 +47080,51 @@ because one move is the rule.
 
 Coverage: 11,404 of 31,653 cards (+1), 30,706 of 59,306 lines (+1). Staples: 227 of 244 (+1).
 
+## D715 — "If this spell was cast from a graveyard": Sevinne's Reclamation and the flashback upgrades
+
+How it is read:
+- `EffectContext.resolving` carries the spell's own stack object while it resolves.
+- `castFromAGraveyard` reads `resolving.castFrom === 'graveyard'`, which every graveyard cast
+  records. It is never true for a copy, which was not cast (CR 707.10).
+- The condition is also an intervening-condition row, so "… instead if this spell was cast from a
+  graveyard" reads.
+- **"X instead."** "If this spell was cast from a graveyard, X instead." as the last sentence of a
+  one-line spell is turned around into D693's "X instead if …" second line, and read by
+  `insteadIfUpgrade` (Plunder the Trollshaws).
+- **An added effect.** "If this spell was cast from a graveyard, <effect>." runs the effect only
+  then. One that asks or targets is refused, since it would be asked either way.
+- **Sevinne's Reclamation.** "…, you may copy this spell and may choose a new target for the copy":
+  - The new target is asked as the spell resolves, about the spell itself, and only when a copy will
+    be made.
+  - The effect puts the popped object back for `copySpellOnStack` and takes it off again.
+  - The copy goes on top and resolves next.
+- **Still unread in the family.** Increasing Devotion, Increasing Savagery, Secrets of the Key,
+  Increasing Confusion and Ruthless Negotiation fail on their own wording or targets, not on the
+  condition.
+
+Staples went from 227 to 228 (Sevinne's Reclamation).
+
+**Tests.** 4 engine tests:
+- both cards read;
+- cast with flashback, Sevinne's returns the Bear, asks for the copy's target, and the copy returns
+  the Relic and copies nothing;
+- cast from hand, nothing is asked or copied;
+- Plunder draws one from hand and two with flashback.
+
+Faults injected by hand: 6 of 6 caught. "A copy copies itself" was caught only after the test
+checked the stack right after the copy resolved: the extra copy otherwise fizzles silently.
+
+    engine tests: 4,744, all passing
+
+Coverage: 11,406 of 31,653 cards (+2), 30,708 of 59,306 lines (+2). Staples: 228 of 244 (+1).
+
 ## Session restart on 7e927cd: services, gate, sweep, break runs
 
 The container was replaced again. Postgres 16 and Redis were restarted, the workspace was installed
 and built, and the corpus was rebuilt from Forge (`scripts/corpus/legality.mjs`, then
 `from-forge.mjs`) at Forge commit 0f82b4f. Still 34,234 rows and 31,653 legal cards, but Forge's text
 has moved slightly, so the baseline on 7e927cd is now 11,405 cards and 30,708 lines (was 11,404 and
-30,706). D715's figures are measured against that.
+30,706). D716's figures are measured against that.
 
 - **Gate on 7e927cd:** `GATE OK`. rules-engine 4,740, api 326, web 270, realtime 61, shared 120,
   and every other package green.
@@ -47100,7 +47138,7 @@ has moved slightly, so the baseline on 7e927cd is now 11,405 cards and 30,708 li
   Rhythm of the Wild is asked for its colour and not riot, and a copy of a creature spell resolves
   without a question while the card itself is still asked. Re-run: 2 of 2 caught, so 14 of 14.
 
-## D715 — Chrome Mox: an imprint from hand, and mana of the exiled card's colours
+## D716 — Chrome Mox: an imprint from hand, and mana of the exiled card's colours
 
 "Imprint — When Chrome Mox enters, you may exile a nonartifact, nonland card from your hand.
 {T}: Add one mana of any of the exiled card's colors."
@@ -47127,7 +47165,7 @@ How it is read:
 - The same reader takes Isochron Scepter's and Spellbinder's imprint lines ("an instant card with
   mana value 2 or less"). Neither card is finished: "copy the exiled card" doesn't read yet.
 
-Staples went from 227 to 228 (Chrome Mox).
+Staples went from 228 to 229 (Chrome Mox).
 
 **Tests.** 4 engine tests:
 - the card reads;
@@ -47140,6 +47178,12 @@ Staples went from 227 to 228 (Chrome Mox).
 Faults injected by script: 8 of 9 caught. The miss, `relocate` keeping the link on a card that left
 exile, is pinned by the third test's last case. Re-run: 1 of 1 caught.
 
-    engine tests: 4,746, all passing
+**Merged with D715.** Another session pushed D715 (Sevinne's Reclamation) to the branch while this
+was being gated. It was merged in, not rewritten, and this entry was renumbered from D715 to D716.
+Measured alone on 7e927cd, D716 added 3 cards and 10 lines. The figures below are for the merged
+tree, on the rebuilt corpus.
 
-Coverage: 11,408 of 31,653 cards (+3), 30,718 of 59,306 lines (+10). Staples: 228 of 244 (+1).
+    engine tests: 4,750, all passing
+
+Coverage: 11,410 of 31,653 cards (+5 over 7e927cd on the rebuilt corpus: D715 +2, D716 +3),
+30,720 of 59,306 lines (+12). Staples: 229 of 244 (+1).

@@ -399,7 +399,7 @@ export function relocate(
     ...(toZone === 'battlefield' ? {} : { chosen: undefined }),
     // And flashback given until end of turn (D694), which the new object does not have.
     ...(inst.zone === toZone ? {} : { flashbackGrantedTurn: undefined }),
-    // And an imprint (D715): a card that leaves exile is no longer the one the permanent exiled.
+    // And an imprint (D716): a card that leaves exile is no longer the one the permanent exiled.
     ...(inst.zone === toZone ? {} : { imprintedOn: undefined }),
     counters: toZone !== 'battlefield'
       ? {}
