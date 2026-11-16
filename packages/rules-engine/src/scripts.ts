@@ -22427,6 +22427,7 @@ function readEffect(
     const { immediate: _immediate, ...rest } = inner;
     return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
   }
+  if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -22681,6 +22682,8 @@ function clausesOf(line: string): readonly string[] {
       (CR 701.19e), and only when the library is the zone searched, so it is folded away.
     */
     .replace(/(search your library and\/or graveyard [^.]+)\.\s+If you search(?:ed)? your library this way, shuffle(?: it)?(?=\.|$)/gi, '$1')
+    // Sylvan Library (D721): three sentences, one question chain. See `sylvanLibrary`.
+    .replace(/you may draw two additional cards\.\s+If you do, choose two cards in your hand drawn this turn\.\s+For each of those cards, pay 4 life or put the card on top of your library/gi, 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
     // same spell with the shuffle first, as the shuffle touches only the library.
     .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')
@@ -22882,6 +22885,59 @@ function impulseDraw(first: string, second: string | undefined): ReadEffect | nu
   const through = IMPULSE_PLAY.find(([shape]) => shape.test(second.trim()))?.[1];
   if (through === undefined) return null;
   return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
+}
+
+/**
+ * Sylvan Library (D721): "You may draw two additional cards. If you do, choose two cards in your
+ * hand drawn this turn. For each of those cards, pay 4 life or put the card on top of your library."
+ *
+ * Two questions. The first is the "may". The second is asked only on a yes, and draws the two cards
+ * as it is reached (`CardsDecisionSpec.onReach`), so it can offer what was drawn. It asks which
+ * cards drawn this turn go back on top (`CardInstance.drawnTurn`). Of the two the card has the
+ * player choose (fewer if fewer were drawn), each one not put back costs 4 life. That is the
+ * printed choice with the two picks folded into one: choosing two cards and then, for each, paying
+ * or putting it back is the same as choosing which go back and paying for the rest. A player can't
+ * pay life they don't have (CR 119.4), so the least they must put back is set by their life. Two
+ * put back go on top in the order chosen, the first chosen on top.
+ *
+ * The bot always draws. It keeps one card for 4 life at 16 life or more, and puts back the cards
+ * worth least.
+ */
+function sylvanLibrary(): ReadEffect {
+  const DRAW = 'Draw two more';
+  const drawnNow = (state: GameState, seat: SeatIndex) => listAt(state, zoneKey(seat, 'hand'))
+    .filter((id) => state.instances[id]?.drawnTurn === state.turn);
+  const lifeOf = (state: GameState, seat: SeatIndex) => state.seats[seat]?.life ?? 0;
+  const mustPutBack = (state: GameState, seat: SeatIndex) => Math.max(0, 2 - Math.floor(Math.max(0, lifeOf(state, seat)) / 4));
+  return {
+    decisions: [
+      { who: 'controller', prompt: 'Draw two additional cards?', options: [DRAW, "Don't"], best: () => DRAW },
+      (state, source) => {
+        const seat = state.instances[source]?.zoneSeat ?? 0;
+        return {
+          who: 'controller', from: 'hand', askOnlyIfChosen: DRAW,
+          prompt: 'Put back cards drawn this turn; each of the two you keep costs 4 life',
+          min: mustPutBack(state, seat), max: 2,
+          filter: (s, id) => s.instances[id]?.drawnTurn === s.turn,
+          onReach: (s, controller) => draw(s, controller, 2),
+          pick: (s, chooser, candidates) => {
+            const keep = lifeOf(s, chooser) >= 16 ? 1 : 0;
+            const back = Math.min(candidates.length, Math.max(mustPutBack(s, chooser), Math.min(2, candidates.length) - keep));
+            const worth = (id: string) => costValue(parseManaCost(s.cardDefs[s.instances[id]?.defKey ?? '']?.manaCost));
+            return [...candidates].sort((a, b) => worth(a) - worth(b)).slice(0, back);
+          },
+        };
+      },
+    ],
+    effect: (c) => {
+      if (c.decisions[0]?.option !== DRAW) return c.state;
+      const back = chosenCards(c, 1).filter((id) => c.state.instances[id]?.zone === 'hand');
+      const owed = Math.max(0, Math.min(2, drawnNow(c.state, c.controller).length) - back.length);
+      let next = [...back].reverse().reduce((state, id) => putOnTopOfLibrary(state, id), c.state);
+      if (owed > 0) next = loseLife(next, c.controller, 4 * owed);
+      return next;
+    },
+  };
 }
 
 /**

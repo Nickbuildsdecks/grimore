@@ -29889,3 +29889,55 @@ every fault's original text against the tree, restored, and the run repeated in 
 Coverage: 11,447 of 31,653 cards (+2), 30,799 of 59,306 lines (+4). Staples: 233 of 244 (+1).
 Pod sweeps 58001–58040 and 58101–58140 (D717 and D719 builds): 40 of 40 finished in each, no
 throw and no stall.
+
+## D721 — Sylvan Library, and a step of the effect between two questions
+
+"At the beginning of your draw step, you may draw two additional cards. If you do, choose two cards
+in your hand drawn this turn. For each of those cards, pay 4 life or put the card on top of your
+library."
+
+**The infrastructure: `CardsDecisionSpec.onReach`.** A card's answers were applied together by the
+effect at the end. That is right for "each player sacrifices a creature", and it is why Sylvan
+Library could not be read: it draws between its two questions, and the second question is about
+what was drawn. `onReach` is a step of the effect that runs as the plan reaches that question,
+before it is asked, and only if the question isn't skipped (`askOnlyIfChosen`, `askOnlyIf`).
+`askOrFinish` reaches each plan entry once, so the step runs once. A resumed resolution starts after
+the answered entry. The same hook is what a reveal-then-split card (Fact or Fiction) needs.
+
+**"Drawn this turn": `CardInstance.drawnTurn`.** `drawFromLibrary` stamps it, and `relocate`
+clears it when the card changes zone again. Only a card still in the hand it was drawn into
+carries it.
+
+How the card is read:
+- `clausesOf` joins the three sentences into one clause.
+- The first question is the "may". The second is asked only on a yes: it draws the two cards as it
+  is reached, then asks which cards drawn this turn go back on top. The turn's own draw counts, as
+  printed: it is drained before the trigger resolves.
+- The two picks are folded into one. Choosing two cards and then, for each, paying 4 life or
+  putting it back is the same as choosing which go back and paying for the rest. Of the two the
+  card has the player choose (fewer if fewer were drawn), each one not put back costs 4 life.
+- A player can't pay life they don't have (CR 119.4), so the least they must put back is set by
+  their life: one at 5 to 7 life, both below 4.
+- Two cards put back go on top in the order chosen, the first chosen on top.
+- **The bot** always draws. It keeps one card for 4 life at 16 life or more, and puts back the
+  cards worth least.
+
+Staples went from 233 to 234 (Sylvan Library).
+
+**Tests.** 8 engine tests:
+- the card reads;
+- a yes draws two, and offers only the three cards drawn this turn, not the card already in hand;
+- putting two back costs nothing, and they go on top in the order chosen;
+- each of the two not put back costs 4 life (16 with one kept, 12 with none);
+- a no draws nothing and costs nothing;
+- at 5 life one card must go back, at 3 both;
+- a card that left the hand it was drawn into is no longer "drawn this turn";
+- the bot draws, puts back two at 12 life, and keeps one at 20, paying 4.
+
+Faults injected by script: 8 of 9 caught. The miss, `relocate` keeping the stamp, is pinned by the
+seventh test. Re-run: 1 of 1 caught.
+
+    engine tests: 4,777, all passing
+
+Coverage: 11,448 of 31,653 cards (+1), 30,800 of 59,306 lines (+1). Staples: 234 of 244 (+1).
+Pod sweep 58201–58240 (D720's build): 40 of 40 finished, no throw and no stall.

@@ -4299,6 +4299,10 @@ function askOrFinish(
       answers = [...answers, { seat: entry.seat, ids: [] }];
       continue;
     }
+    // And the step of the effect that happens as the question is reached (D721): Sylvan Library's
+    // two cards are drawn before it asks which go back. See `CardsDecisionSpec.onReach`.
+    const onReach = 'onReach' in spec ? spec.onReach : undefined;
+    if (onReach !== undefined) state = onReach(state, object.controller, object.source);
     // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
     // the effect at the end, not as the questions are asked — which is right, because "each player
     // sacrifices a creature" is simultaneous and the second player must not see the first's
