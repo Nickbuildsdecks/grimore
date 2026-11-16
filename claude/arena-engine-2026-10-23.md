@@ -29790,3 +29790,53 @@ test catches.
     engine tests: 4,758, all passing (after merging the other session's Chrome Mox, D717)
 
 Coverage: 11,436 of 31,653 cards (+27), 30,765 of 59,306 lines (+49). Staples: 230 of 244 (+1).
+
+## D719 — Necropotence: no draw step, discards exiled, and a card for 1 life
+
+"Skip your draw step. Whenever you discard a card, exile that card from your graveyard. Pay 1 life:
+Exile the top card of your library face down. Put that card into your hand at the beginning of your
+next end step."
+
+How it is read:
+- **"Skip your draw step."** A new script field, `skipsDrawStep`. While its controller has the
+  permanent face up and with its abilities, `advanceStep` goes from upkeep straight to the main
+  phase. The draw step doesn't happen at all (CR 614.10): no draw, no priority in it, and nothing
+  that triggers "at the beginning of your draw step". The phrase is printed on 15 legal cards (Damia, Solitary
+  Confinement, Necrodominance's first line and others).
+- **The discard trigger.** The `discards` event now carries the card discarded as its subject, and
+  hands it to the ability on the stack. A new clause, "exile that card from your graveyard", exiles
+  the subject while it is still in its controller's graveyard.
+- **The life ability.** Its two sentences are read as one effect, as impulse draw's are (D583). The
+  top card is exiled face down, so only its owner can see it (`view.ts` already hides a face-down
+  card in exile). A third engine-known delayed ability, `to-hand`, joins D696's `sacrifice` and
+  `exile`. It puts the card into its owner's hand at the beginning of the controller's next end
+  step, on the stack like any other trigger. It finds nothing if the card has left exile in the
+  meantime (CR 400.7).
+- **The bot.** A first probe had the bot pay 19 life in one main phase: a card that arrives later
+  scores nothing in its search, and the activation was always legal. The ability now carries
+  `buysNothingIf`. It is spent once the bot would drop below 10 life, or once it already has a card
+  coming (waiting, or still on the stack) for each 2 life above 10, up to 5 at a time.
+
+Staples went from 231 to 232 (Necropotence).
+
+**Tests.** 6 engine tests, plus the mechanic-coverage entry for `skipsDrawStep`:
+- the card reads;
+- the draw step is skipped, with no draw and no "beginning of your draw step" trigger, while an
+  opponent's Necropotence skips nothing of yours;
+- a card its controller discards is exiled, and without Necropotence it stays in the graveyard;
+- paying 1 life exiles the top card face down, visible to its owner and not to the opponent, and
+  puts it into hand at the next end step, face up;
+- a card that left exile first is not fetched back;
+- the bot takes between 1 and 5 cards in a main phase and stays at 10 life or more.
+
+Faults injected by script: 11 of 12 caught. The twelfth, the `to-hand` ability's "only from exile"
+guard, isn't observable: a card that leaves exile is a new object, so `fireDelayed` already
+withholds the subject before the guard is reached. It is kept because the ability means a card in
+exile.
+
+**Merged first.** The other session's D718 (The One Ring) was fast-forwarded in before this entry
+was numbered. The figures below are against its head, 02cda68 (11,440 cards, 30,777 lines).
+
+    engine tests: 4,764, all passing
+
+Coverage: 11,445 of 31,653 cards (+5), 30,795 of 59,306 lines (+18). Staples: 232 of 244 (+1).

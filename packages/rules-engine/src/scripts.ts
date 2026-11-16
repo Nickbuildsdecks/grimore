@@ -13486,6 +13486,20 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     The engine's own seat imprints the coloured card it can spare most: its dearest, the one least
     likely to be cast soon. A colourless card is offered but never picked, as it makes no mana.
   */
+  /*
+    "Exile that card from your graveyard" (D719): Necropotence's discard trigger. "That card" is the
+    event's subject — the card discarded, or the one put into a graveyard — and only while it is
+    still in its controller's graveyard; anywhere else, there is nothing to exile.
+  */
+  if (/^exile that card from your graveyard$/i.test(text)) {
+    return {
+      effect: (c) => {
+        const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+        if (inst === undefined || inst.zone !== 'graveyard' || inst.zoneSeat !== c.controller) return c.state;
+        return exileCard(c.state, inst.id);
+      },
+    };
+  }
   const imprint = /^you may exile (a|an) (.+? card(?: with mana value \d+ or (?:less|greater))?) from your hand$/i.exec(text);
   if (imprint !== null) {
     const filter = libraryFilter(`${imprint[1]!} ${imprint[2]!}`, name);
@@ -22812,6 +22826,54 @@ function impulseDraw(first: string, second: string | undefined): ReadEffect | nu
 }
 
 /**
+ * "Exile the top card of your library face down. Put that card into your hand at the beginning of
+ * your next end step." (D719) — Necropotence's ability, two sentences read as the one effect they
+ * are, for `impulseDraw`'s reason: the second is a fact about the card the first moved.
+ *
+ * The card is exiled face down, so only its owner may look at it (`view.ts` hides a face-down card
+ * in exile from everyone else), and an engine-known delayed ability (`DelayedTrigger.builtin`
+ * `to-hand`) puts it into its owner's hand at the beginning of the controller's next end step. That
+ * ability uses the stack like any other trigger (CR 603.7), and finds nothing to move if the card
+ * has left exile since (CR 400.7). An empty library exiles nothing and schedules nothing.
+ */
+function exileToHandLater(first: string, second: string | undefined): ReadEffect | null {
+  if (second === undefined) return null;
+  if (!/^exile the top card of your library face down$/i.test(first.trim())) return null;
+  if (!/^put (?:that card|it) into your hand at the beginning of your next end step$/i.test(second.trim())) return null;
+  return {
+    effect: (c) => {
+      const top = listAt(c.state, zoneKey(c.controller, 'library'))[0];
+      if (top === undefined) return c.state;
+      let next = exileCard(c.state, top);
+      if (next.instances[top]?.zone !== 'exile') return next;
+      next = withInstance(next, top, { faceDown: true });
+      return scheduleDelayed(next, {
+        source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'you',
+        subject: top, builtin: 'to-hand', description: 'put the card exiled face down into your hand',
+      });
+    },
+    /*
+      The engine's own seat would otherwise pay its whole life total in one main phase: the search
+      scores a card it gets later at nothing and still finds the activation legal (a probe paid 19
+      life on turn 3). So it is told the activation buys nothing once it would go below 10 life,
+      or once it already has a card waiting for each 2 life above 10, up to 5 a turn.
+    */
+    abilityFlags: {
+      buysNothingIf: (state, source, controller) => {
+        const life = state.seats[controller]?.life ?? 0;
+        // Cards waiting, and activations of this permanent still on the stack, which will be.
+        const waiting = state.delayed.filter((d) => d.builtin === 'to-hand' && d.source === source).length
+          + state.stackOrder.filter((id) => {
+            const object = state.stackObjects[id];
+            return object?.kind === 'activated' && object.source === source;
+          }).length;
+        return life - 1 < 10 || waiting >= Math.min(5, Math.floor((life - 10) / 2));
+      },
+    },
+  };
+}
+
+/**
  * Where a dig puts the cards it did not take, from the words after "the rest" (D584).
  *
  * "On the bottom of your library" with no order named is read as "in any order": it is printed
@@ -23336,6 +23398,9 @@ function composeEffects(
     // Two sentences that are one effect, wherever in the sequence they sit (D583).
     const impulse = impulseDraw(clause, rest[at + 1]);
     if (impulse !== null) { parts.push(impulse); at++; continue; }
+    // And Necropotence's face-down exile, returned to hand at the next end step (D719).
+    const later = exileToHandLater(clause, rest[at + 1]);
+    if (later !== null) { parts.push(later); at++; continue; }
     // And the dig, which is two or three sentences that are one question (D584).
     const dug = digGroup(rest, at, name) ?? revealKeepGroup(rest, at);
     if (dug !== null) { parts.push(dug.read); at += dug.consumed - 1; continue; }
@@ -25362,6 +25427,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   }
   // Glacial Chasm (D716): see `CardScript.preventsDamageToYou`.
   if (/^prevent all damage that would be dealt to you\.?$/i.test(plain(line).trim())) return { preventsDamageToYou: true };
+  // "Skip your draw step." (D719): see `CardScript.skipsDrawStep`.
+  if (/^skip your draw step\.?$/i.test(plain(line).trim())) return { skipsDrawStep: true };
   // And "Creatures you control can't attack" (D716): a static on your creatures, as an anthem is.
   const cantFight = /^(other )?creatures you control can't (attack|block|attack or block)\.?$/i.exec(plain(line).trim());
   if (cantFight !== null) {

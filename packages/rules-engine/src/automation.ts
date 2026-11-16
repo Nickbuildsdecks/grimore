@@ -467,6 +467,18 @@ const scriptOnStack = (state: GameState, object: StackObject): CardScript | unde
 };
 
 /**
+ * Whether this seat's draw step is skipped (D719, `CardScript.skipsDrawStep`): it controls a
+ * permanent that says so, face up and with its abilities.
+ */
+function skipsDrawStep(state: GameState, seat: SeatIndex): boolean {
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
+    return scriptForCard(state.cardDefs[inst.defKey])?.skipsDrawStep === true;
+  });
+}
+
+/**
  * Riot from a permanent's static (D711, `CardScript.grantsRiot`): a nontoken creature spell —
  * not a copy, which would become a token — whose controller controls an untouched Rhythm of the
  * Wild, and whose own script asks nothing (one that already has riot, or another question, keeps
@@ -646,6 +658,8 @@ function advanceStep(state: GameState): GameState {
     if (step === 'declare-blockers' && next.combat.attacks.length === 0) step = 'end-combat';
     // CR 510.4: the first-strike damage step only exists if something has first or double strike.
     if (step === 'first-strike-damage' && !needsFirstStrikeStep(next, next.combat)) step = 'combat-damage';
+    // "Skip your draw step" (D719, CR 614.10): the step does not happen, so nothing in it does.
+    if (step === 'draw' && skipsDrawStep(next, next.activeSeat)) step = 'precombat-main';
 
     next = { ...next, step };
     next = onEnterStep(next, step);
@@ -1774,7 +1788,9 @@ function fireTrigger(
         // And the creature that dealt the damage, for "put a +1/+1 counter on **that creature**".
         // Added with `who: 'any'` (D439): while the event was its own permanent's business the
         // subject was always the watcher, so a card had no "that creature" to mean.
-        || event.kind === 'combat-damage')
+        || event.kind === 'combat-damage'
+        // And the card discarded, for Necropotence's "exile that card" (D719).
+        || event.kind === 'discards')
       ? {}
       : { subject }),
     // The attacker a block was against, for "that creature". Its own field rather than the
@@ -1842,7 +1858,9 @@ function raise(
       // And the two damage events (D566): the permanent that was dealt it, or that dealt it.
       || event.kind === 'damaged' || event.kind === 'deals-damage'
       // And the card that was cycled (D567), and the permanent that was sacrificed (D570).
-      || event.kind === 'cycles' || event.kind === 'sacrifices')) {
+      || event.kind === 'cycles' || event.kind === 'sacrifices'
+      // And the card that was discarded (D719).
+      || event.kind === 'discards')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -3375,7 +3393,8 @@ function settle(state: GameState, before: GameState): GameState {
     */
     for (const id of thrown) {
       const owner = next.instances[id]?.owner;
-      if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner);
+      // With the card as its subject (D719): Necropotence's "exile that card from your graveyard".
+      if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner, id);
     }
     for (const { card, seat } of cycledNow) next = raise(next, { kind: 'cycles' }, seat, card);
     /*
@@ -5206,7 +5225,12 @@ function completeResolution(
  * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
  * has no subject and nothing happens.
  */
-const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile', Resolvable>> = {
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand', Resolvable>> = {
+  // Necropotence's card, exiled face down and put into its owner's hand (D719). Only from exile.
+  'to-hand': {
+    effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'exile'
+      ? c.state : moveToHand(c.state, [c.subject])),
+  },
   sacrifice: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
       ? c.state : sacrifice(c.state, [c.subject])),
