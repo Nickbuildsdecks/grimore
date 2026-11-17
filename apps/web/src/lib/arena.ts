@@ -484,6 +484,8 @@ function playAction(
   const COST_FLAGS = [
     "kicked", "buyback", "flashback", "escape", "retrace", "faceDown", "foretold", "offered",
     "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree", "pitchCast",
+    // Casualty (D923): its creature is the play's `sacrificeOptions`, chosen like any sacrifice.
+    "casualty",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

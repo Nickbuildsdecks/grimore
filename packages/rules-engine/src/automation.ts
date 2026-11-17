@@ -37,6 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
+  createToken,
   DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
   recordExpiry,
@@ -147,6 +148,16 @@ export function bottomOwed(state: GameState, seat: SeatIndex): number {
  * Empty when the cost asks for no sacrifice, which is also how `legalActions` tells an ability
  * that needs one from an ability that does not.
  */
+/** Casualty N's sacrifices (D923): creatures this seat controls with power N or greater, by live power. */
+export function casualtyOptions(state: GameState, seat: SeatIndex, source: string, n: number): string[] {
+  return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || id === source) return false;
+    const ch = characteristicsOf(state, inst);
+    return ch.isCreature && ch.power >= n;
+  });
+}
+
 export function sacrificeOptions(
   state: GameState, seat: SeatIndex, source: string, cost: AbilityCost,
 ): string[] {
@@ -5109,6 +5120,14 @@ function completeResolution(
       permanent arrives; with none, it goes to its owner's graveyard instead of the battlefield.
     */
     let replacedArrival = false;
+    /*
+      A copy of a permanent spell resolves into a token that is a copy of it (CR 707.10f, D923): a
+      casualty copy of Rooftop Nuisance is a second Nuisance. The copy has no card, so the token is
+      made from the card's own definition, under its key, so it has the same script.
+    */
+    if (object.copyOf !== undefined && inst === undefined && def !== undefined && isPermanentCard(def)) {
+      next = createToken(next, object.controller, def, 1, object.cardKey);
+    }
     if (isPermanent && inst !== undefined && script?.entersByDiscarding === 'land') {
       const land = ctx.decisions[0]?.ids[0];
       const landInst = land === undefined ? undefined : next.instances[land];

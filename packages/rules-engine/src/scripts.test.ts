@@ -7909,6 +7909,7 @@ describe('deck coverage', () => {
       - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
         runtime by "sunburst and converge (D917)".
       - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
+      - `script casualty` (D923): casualty. No pool deck has one. Driven at runtime by "casualty (D923)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7939,6 +7940,7 @@ describe('deck coverage', () => {
       'script castAsThoughFlash',
       'script sunburst',
       'script plot',
+      'script casualty',
     ]);
 
     const declared = [
@@ -17788,6 +17790,74 @@ describe('plot (D922)', () => {
     const quick = advanceTo(seated('Test Quick Plot'), 'begin-combat');
     const qid = find(quick, 0, 'hand', 'Test Quick Plot');
     expect(legalActions(quick, 0).plays.some((p) => p.card === qid && p.kind === 'plot')).toBe(false);
+  });
+});
+
+describe('casualty (D923)', () => {
+  const ROWS = [
+    { name: 'Test Chat', type_line: 'Sorcery', oracle_text: 'Casualty 2\nDraw two cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Nuisance', type_line: 'Creature — Rogue', oracle_text: 'Casualty 1', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Mouse', type_line: 'Creature — Mouse', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd923', name: 'Casualty',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (spell: string, mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd923', 1: 'd923' }, deckSpecs: { d923: deck.deck }, hands: { 0: [spell] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const plays = (s: GameState, spell: string) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', spell) && p.kind === 'cast');
+  const resolve = (s: GameState, action: Action) => {
+    let next = drain(apply(s, action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered only with a creature of power N or greater, which is what it may sacrifice', () => {
+    let s = seated('Test Chat', ['Test Bear', 'Test Mouse']);
+    const casualty = plays(s, 'Test Chat').filter((p) => p.casualty === true);
+    expect(casualty.length).toBe(1);
+    expect(casualty[0]!.sacrificeOptions.map((id) => nameOf(s, id))).toEqual(['Test Bear']);
+    s = seated('Test Chat', ['Test Mouse']);
+    expect(plays(s, 'Test Chat').filter((p) => p.casualty === true)).toEqual([]);
+    expect(plays(s, 'Test Chat').length).toBe(1);
+  });
+
+  it('paid: the creature is sacrificed as it is cast, and the copy draws two more', () => {
+    const s = seated('Test Chat', ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const hand = ids(s, 0, 'hand').length;
+    const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chat'), casualty: true, sacrifice: bear } as Action);
+    expect(after.instances[bear]!.zone).toBe('graveyard');
+    expect(ids(after, 0, 'hand').length).toBe(hand - 1 + 4);
+  });
+
+  it('not paid: no sacrifice and no copy', () => {
+    const s = seated('Test Chat', ['Test Bear']);
+    const hand = ids(s, 0, 'hand').length;
+    const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chat') } as Action);
+    expect(namesIn(after, 0, 'battlefield')).toContain('Test Bear');
+    expect(ids(after, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('refused with a creature too small, or one not yours', () => {
+    const s = seated('Test Chat', ['Test Mouse']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chat'), casualty: true, sacrifice: find(s, 0, 'battlefield', 'Test Mouse') } as Action))
+      .toMatch(/power 2 or greater/);
+  });
+
+  it('a creature spell: the copy is a token of it', () => {
+    const s = seated('Test Nuisance', ['Test Mouse']);
+    const mouse = find(s, 0, 'battlefield', 'Test Mouse');
+    const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Nuisance'), casualty: true, sacrifice: mouse } as Action);
+    expect(namesIn(after, 0, 'battlefield').filter((n) => n === 'Test Nuisance').length).toBe(2);
   });
 });
 

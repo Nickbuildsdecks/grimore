@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt } from './cardActions.js';
 import {
   allAbilitiesLost, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import {
+import { casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
   discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, sacrificeWords, stackTop, unblockedAttackersOf,
 } from './automation.js';
@@ -129,6 +129,8 @@ export interface LegalPlay {
   readonly fromGraveyard?: boolean;
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
+  /** Set on the play that pays casualty (D923): `sacrificeOptions` are the creatures it may take. */
+  readonly casualty?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -2192,6 +2194,26 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       ...(half === undefined ? {} : { half }),
       isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
     });
+
+    /*
+      Casualty (D923): the same cast again, with a creature of power N or greater to sacrifice as it
+      is cast, and a copy for it. Only beside a cast with no sacrifice of its own to make.
+    */
+    if (script?.casualty !== undefined && victims.length === 0 && !offered) {
+      const fodder = casualtyOptions(state, seat, id, script.casualty);
+      if (fodder.length > 0) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, casualty: true,
+          description: `${castLabel} with casualty ${script.casualty} (sacrifice a creature with power ${script.casualty} or greater, and copy it)`,
+          manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
+          targetSpecs: specs, candidates,
+          ...(flashback ? { flashback: true } : {}),
+          ...(foretold ? { foretold: true } : {}),
+          ...(half === undefined ? {} : { half }),
+          isManaAbility: false, sacrificeOptions: fodder, ...pitchOn,
+        });
+      }
+    }
 
     /*
       Kicker: a second play, offered only when the whole thing can be paid for.

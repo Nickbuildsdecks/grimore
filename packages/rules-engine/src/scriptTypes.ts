@@ -3895,6 +3895,12 @@ export interface CardScript {
    */
   readonly plot?: { readonly cost: string };
   /**
+   * Casualty N (D923, CR 702.153a): "As you cast this spell, you may sacrifice a creature with power N
+   * or greater. When you do, copy this spell." A second cast play (`casualty: true`) carries the
+   * sacrifice, paid as the spell is cast; the copy is the card's own cast trigger, as replicate's is.
+   */
+  readonly casualty?: number;
+  /**
    * Dredge: a draw you may replace by milling this many cards and taking this card back
    * (CR 702.52a).
    *

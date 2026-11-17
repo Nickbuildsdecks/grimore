@@ -30989,3 +30989,41 @@ Faults injected by hand: 9 of 9 caught. The plot offer's own timing was pinned b
     engine tests: 4,910, all passing
 
 Coverage: 11,891 of 31,743 cards (+15), 31,567 of 59,509 lines (+33). Staples: 238 of 244.
+
+## D923 — Casualty, and a copied permanent spell becomes a token
+
+"Casualty N (As you cast this spell, you may sacrifice a creature with power N or greater. When you
+do, copy this spell.)" (CR 702.153a), from Streets of New Capenna: A Little Chat, Make Disappear,
+Rooftop Nuisance, Join the Maestros and others.
+
+How it is read:
+- **`CardScript.casualty N`** and a self cast trigger, `CASUALTY_COPY`, which copies the spell
+  when `StackObject.casualtyPaid` says the cost was paid. It is replicate's shape (copy with
+  `copySpellOnStack`, keeping the original's targets, CR 707.10).
+- **A second cast play** (`casualty: true`) is offered beside the printed one when the caster
+  controls a creature of power N or greater. Its `sacrificeOptions` are those creatures, so the
+  table asks for the sacrifice as it does for any sacrifice cost, and the creature is gone as the
+  spell is cast.
+  - It is not offered beside a spell whose own additional cost already sacrifices.
+  - The cast refuses a creature that is too small or not yours.
+- **The plumbing:** the computer passes the flag on, and the shared-fields test caught the first
+  version that did not. The web table forwards it among its cost flags.
+- **New engine rule:** a copy of a permanent spell resolves into a **token** that is a copy of it
+  (CR 707.10f). Before, a copy had no card and a permanent copy resolved into nothing. Every copied
+  spell takes this path. Rooftop Nuisance with casualty is two Nuisances.
+
+Not read: "Casualty X" (Ob Nixilis), and the copy's printed exceptions ("The copy isn't legendary").
+
+**Tests.** 6 engine tests:
+- both printings read;
+- the casualty play is offered only with a creature of power N or greater, and offers only those;
+- paid, the creature is sacrificed and the copy draws two more;
+- not paid, no sacrifice and no copy;
+- a creature too small is refused;
+- a creature spell's copy is a token of it.
+
+Faults injected by hand: 7 of 7 caught.
+
+    engine tests: 4,916, all passing
+
+Coverage: 11,898 of 31,743 cards (+7), 31,581 of 59,509 lines (+14). Staples: 238 of 244.
