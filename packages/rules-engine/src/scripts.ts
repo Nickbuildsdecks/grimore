@@ -11371,6 +11371,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Blitz (D933): dash's path with haste, a granted dies draw, and a sacrifice. See `CardScript.dash.blitz`.
   const blitz = /^blitz ((?:\{[^}]+\})+)$/i.exec(text);
   if (blitz !== null) return { dash: { cost: blitz[1]!, blitz: true }, triggers: [blitzSacrifice(), BLITZ_DIES_DRAW] };
+  // Prototype {cost} — P/T (D934): see `CardScript.prototype`.
+  const prototype = /^prototype ((?:\{[^}]+\})+)\s*[—–-]\s*(\d+)\/(\d+)$/i.exec(text);
+  if (prototype !== null) return { prototype: { cost: prototype[1]!, power: Number(prototype[2]), toughness: Number(prototype[3]) } };
   // Awaken N—{cost} (D932): see `CardScript.awaken`.
   const awaken = /^awaken (\d+)\s*[—–-]\s*((?:\{[^}]+\})+)$/i.exec(text);
   if (awaken !== null) return { awaken: { cost: awaken[2]!, n: Number(awaken[1]) } };

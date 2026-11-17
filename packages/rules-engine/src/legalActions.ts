@@ -138,6 +138,8 @@ export interface LegalPlay {
   readonly emerged?: boolean;
   /** Set on the play that casts for the awaken cost (D932): its last target spec is the land. */
   readonly awakened?: boolean;
+  /** Set on the play that casts the card as a prototype (D934). */
+  readonly prototyped?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -1824,6 +1826,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
             note: `alternative cost (exile a ${COLOUR_NAMES[script.pitch.colour]} card from your hand${script.pitch.life === undefined ? '' : ` and pay ${script.pitch.life} life`})`,
             specs: specsFor(script),
           }]),
+        // Prototype (D934): the smaller, cheaper card.
+        ...(script?.prototype === undefined ? [] : [{
+          flag: 'prototyped' as const,
+          cost: script.prototype.cost,
+          note: `prototype cost (${script.prototype.cost}, as a ${script.prototype.power}/${script.prototype.toughness})`,
+          specs: specsFor(script),
+        }]),
         // Awaken (D932): the spell's own targets, then the land to awaken.
         ...(script?.awaken === undefined ? [] : [{
           flag: 'awakened' as const,

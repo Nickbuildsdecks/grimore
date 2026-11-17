@@ -7915,6 +7915,7 @@ describe('deck coverage', () => {
       - `script conspire` (D926): conspire. No pool deck has one. Driven at runtime by "conspire (D926)".
       - `script emerge` (D929): emerge. No pool deck has one. Driven at runtime by "emerge (D929)".
       - `script awaken` (D932): awaken. No pool deck has one. Driven at runtime by "awaken (D932)".
+      - `script prototype` (D934): prototype. No pool deck has one. Driven at runtime by "prototype (D934)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7950,6 +7951,7 @@ describe('deck coverage', () => {
       'script conspire',
       'script emerge',
       'script awaken',
+      'script prototype',
     ]);
 
     const declared = [
@@ -18539,6 +18541,55 @@ describe('blitz (D933)', () => {
     s = drain(sacrifice(s, [card]), 30);
     for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
     expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
+describe('prototype (D934)', () => {
+  const ROWS = [
+    { name: 'Test Prototype', type_line: 'Artifact Creature — Construct', oracle_text: 'Prototype {1}{R} — 3/2', mana_cost: '{6}', cmc: 6, colors: [], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'd934', name: 'Prototype',
+    entries: [{ name: 'Test Prototype', count: 4 }, { name: 'Mountain', count: 56 }],
+    data: ROWS as never[],
+  });
+  const cast = (prototyped: boolean, lands: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd934', 1: 'd934' }, deckSpecs: { d934: deck.deck }, hands: { 0: ['Test Prototype'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Mountain') }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Prototype');
+    const offered = legalActions(s, 0).plays.filter((p) => p.card === card && p.prototyped === true).map((p) => p.manaCost);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, ...(prototyped ? { prototyped: true } : {}) } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, card, offered };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast as a prototype: the cost, the size and the colour are the prototype\'s', () => {
+    const { s, card, offered } = cast(true, 2);
+    expect(offered).toEqual(['{1}{R}']);
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 2]);
+    expect(ch.colors).toEqual(['R']);
+  });
+
+  it('anywhere but the battlefield it is the whole card again', () => {
+    let { s, card } = cast(true, 2);
+    s = drain(sacrifice(s, [card]), 30);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(s.instances[card]!.prototype).toBeUndefined();
+  });
+
+  it('cast for its printed cost: the printed size', () => {
+    const { s, card } = cast(false, 6);
+    const ch = characteristicsOf(s, s.instances[card]!);
+    expect([ch.power, ch.toughness]).toEqual([6, 6]);
+    expect(ch.colors).toEqual([]);
   });
 });
 

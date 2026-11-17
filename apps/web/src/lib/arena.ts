@@ -492,6 +492,8 @@ function playAction(
     "emerged",
     // Awaken (D932): its land is the play's last target spec, chosen like any target.
     "awakened",
+    // Prototype (D934).
+    "prototyped",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

@@ -2897,8 +2897,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     and loses to a later setting effect — which in practice is every one of them, because the band's
     timestamp is the permanent's own arrival. A Turn to Frog on a level-seven Student makes a 1/1.
   */
-  const base = setPower ?? band?.power ?? definedPower ?? numeric(def?.power);
-  const baseToughness = setToughness ?? band?.toughness ?? definedToughness ?? numeric(def?.toughness);
+  const base = setPower ?? band?.power ?? definedPower ?? instance.prototype?.power ?? numeric(def?.power);
+  const baseToughness = setToughness ?? band?.toughness ?? definedToughness ?? instance.prototype?.toughness ?? numeric(def?.toughness);
   const power = base + modPower + plus - minus;
   const toughness = baseToughness + modToughness + plus - minus;
 
@@ -2908,7 +2908,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   return {
     name: def?.name ?? 'a card',
     typeLine,
-    colors: setColors ?? printedColors(def),
+    colors: setColors ?? instance.prototype?.colors ?? printedColors(def),
     power,
     toughness,
     keywords,

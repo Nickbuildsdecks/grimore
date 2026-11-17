@@ -31400,3 +31400,32 @@ Faults injected by hand: 4 of 4 caught. The marker condition was pinned by the l
     engine tests: 4,966, all passing
 
 Coverage: 11,994 of 31,743 cards (+7), 31,738 of 59,509 lines (+15). Staples: 239 of 244.
+
+## D934 — Prototype
+
+"Prototype {cost} — P/T (You may cast this spell with different mana cost, color, and size. It
+keeps its abilities and types.)" (CR 702.160, CR 718), from The Brothers' War. Eight legal cards now
+read whole.
+
+How it is read:
+- **A third alternative cost on bestow's path.** `CardScript.prototype` holds the cost and the
+  size; the cast play carries `prototyped`, the cost chain pays the prototype cost, and the
+  computer and the web table forward the flag.
+- **The card instance remembers it.** On casting, the instance gains `prototype` (power,
+  toughness, and the colours of the prototype cost, CR 718.3b). Characteristics read that size and
+  colour beneath any setting or counting effect, so a pump or "becomes" still applies on top.
+- **Only on the stack and the battlefield** (CR 718.4): moving the card anywhere else clears it,
+  so a prototyped creature that dies is the whole card in the graveyard.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- cast as a prototype, it costs the prototype cost and is the prototype's size and colour;
+- once it leaves the battlefield it is the whole card again;
+- cast for its printed cost, it is the printed size.
+
+Faults injected by hand: 5 of 5 caught (the base size, the colours, the clearing on a move, the
+cost chain, the prototype cost's colours).
+
+    engine tests: 4,970, all passing
+
+Coverage: 12,002 of 31,743 cards (+8), 31,756 of 59,509 lines (+18). Staples: 239 of 244.

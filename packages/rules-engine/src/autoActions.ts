@@ -39,7 +39,7 @@ import {
   untapPermanent,
 } from './effects.js';
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
-import { reducedCostText, canPay, parseManaCost, type ManaCost } from './mana.js';
+import { costColors, reducedCostText, canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
 import { blockRequirementIssue } from './combat.js';
 /*
@@ -543,9 +543,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const rebounding = script?.rebound === true && inst.zone === 'hand' && inst.zoneSeat === action.by;
   // Awaken (D932): an alternative cost, validated with the others.
   const awakened = action.awakened === true;
-  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened) {
+  // And prototype (D934).
+  const prototyped = action.prototyped === true;
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened || prototyped) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
-      : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : awakened ? 'awaken' : 'free cast';
+      : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : awakened ? 'awaken'
+        : prototyped ? 'prototype' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -555,12 +558,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
       : bestowed ? script?.bestow : spectacled ? script?.spectacle
-        : overloaded ? script?.overload : pitchCast ? script?.pitch : awakened ? script?.awaken : script?.freeWithCommander) === undefined) {
+        : overloaded ? script?.overload : pitchCast ? script?.pitch : awakened ? script?.awaken
+          : prototyped ? script?.prototype : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     // Surge (D928) is spectacle's flag with its own condition: another spell cast this turn.
@@ -777,6 +781,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
             : bestowed ? script?.bestow?.cost
             // And awaken (D932), another that replaces the printed cost.
             : awakened ? script?.awaken?.cost
+            : prototyped ? script?.prototype?.cost
               // And spectacle, the fifth and last of the chain: cheaper again, and the only one
               // whose availability is a fact about the turn rather than about the card.
               : spectacled ? script?.spectacle?.cost
@@ -1059,6 +1064,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     zone change, and setting it first would have it cleared on the way in.
   */
   if (bestowed) next = withInstance(next, inst.id, { bestowed: true });
+  // A prototype (D934): its size and its cost's colours, read by `characteristicsOf` from here on.
+  if (prototyped && script?.prototype !== undefined) {
+    next = withInstance(next, inst.id, { prototype: {
+      power: script.prototype.power, toughness: script.prototype.toughness,
+      colors: costColors(parseManaCost(script.prototype.cost)),
+    } });
+  }
   // The modes are named in the stack description, because both players can see what was chosen
   // and the one deciding whether to respond needs to know which half of the Charm is coming.
   const modeText = modes === undefined

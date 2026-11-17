@@ -1675,6 +1675,8 @@ export interface AutoCastAction {
   readonly emerged?: boolean;
   /** Cast for the awaken cost (D932): the last of `targets` is the land you control to awaken. */
   readonly awakened?: boolean;
+  /** Cast as a prototype (D934). */
+  readonly prototyped?: boolean;
   /**
    * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
    * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an

@@ -3949,6 +3949,12 @@ export interface CardScript {
    */
   readonly awaken?: { readonly cost: string; readonly n: number };
   /**
+   * Prototype (D934, CR 702.160a): "Prototype {cost} — P/T". An alternative cost (`prototyped`)
+   * that casts the card with that cost's colours and that size; the cast writes
+   * `CardInstance.prototype`, which `characteristicsOf` reads as its base.
+   */
+  readonly prototype?: { readonly cost: string; readonly power: number; readonly toughness: number };
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and

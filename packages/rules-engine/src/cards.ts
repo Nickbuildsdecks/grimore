@@ -21,6 +21,7 @@
  * A redacted view is a fraction of the full state, which is what travels over the socket.
  */
 import type { SeatIndex } from './types.js';
+import type { Color } from './mana.js';
 
 /** `library` index 0 is the top of the deck. `stack` is shared and not owned by a seat. */
 export type ZoneId = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command' | 'stack';
@@ -324,6 +325,12 @@ export interface CardInstance {
    * lives for exactly the one step between. See `CardScript.payLifeToEnterUntapped`.
    */
   readonly paidToEnterUntapped?: true;
+  /**
+   * Cast as a prototype (D934, CR 702.160): the smaller size and the prototype cost's colours, which
+   * replace the printed ones on the stack and on the battlefield (CR 702.160b). Kept as bestow's bit
+   * is, and cleared the same way: anywhere but the stack and the battlefield it is the whole card.
+   */
+  readonly prototype?: { readonly power: number; readonly toughness: number; readonly colors: readonly Color[] };
   /**
    * Set while this card is being cast — and then while it is on the battlefield — **as an Aura
    * rather than as a creature**, because its bestow cost was paid (CR 702.103b).
