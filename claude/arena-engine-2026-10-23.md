@@ -30060,6 +30060,66 @@ Faults injected by hand: 2 of 2 caught.
 Coverage: 11,454 of 31,653 cards (+6), 30,813 of 59,306 lines (+12). Staples: 235 of 244 (all
 remaining staples are the other session's).
 
+## Break runs for the other session's D715, D716, D718 and D722
+
+The original session's note (`claude/session-coordination.md`) records that its break runs for
+D715–D717 and D722 didn't complete. D717 (Chrome Mox) was this session's and was run with it. The
+other four were run here by script against the merged tree: **19 of 19 caught.**
+- D715: a copy counting as cast from a graveyard; any cast counting; no copy made; the resolving
+  spell not handed to the effect; the new target offered for a hand cast.
+- D716: damage to you not prevented; the static unread; creatures able to attack; the upkeep price
+  not multiplied by age counters; the life not paid.
+- D718: a protected player taking damage; a protected player targetable; the protection clause
+  unread; own counters not counted.
+- D722: the card not returned; the link not recorded; host legality ignoring the link; leaving
+  sacrificing nothing; the link surviving a zone change.
+
+## D724 — "Sacrifice it unless you <do something>"
+
+About fifty legal lines, most of them an entry trigger: the karoo lands' "return a land you control
+to its owner's hand", Balduvian Horde's "discard a card at random", Avatar of Discord's "discard two
+cards", Mercenary Knight's "discard a creature card", Quickling's "return another creature you
+control to its owner's hand". Nothing read them, and D514 and D529 had pinned two of them as
+refusals ("a discard price", "a sacrifice price") until there was a reader.
+
+How it is read:
+- **The cost is read by the clause vocabulary**, which already knows each cost as an effect. It must
+  ask exactly one question about the controller's own hand, battlefield or graveyard and point at
+  nothing, or, for a random discard, ask nothing.
+- **The choice comes first.** The cost is offered only when it can be done in full: enough cards of
+  the kind in that zone (CR 118.3). Choosing it asks which cards pay; choosing "Sacrifice it", or
+  having no way to pay, sacrifices the permanent.
+- **"Another"** ("return another creature you control"): the cost's question needs the source to
+  leave it out, so the choice is worked out against the same source.
+- **A mana or energy price** ("sacrifice it unless you pay {1}") is left to D529's upkeep-tax
+  reader, which already reads it.
+- **New vocabulary on the way:** "discard a creature card", "discard two land cards" — the plain
+  discard question with a card filter.
+- **The bot pays whenever it can.** Keeping the permanent is what the card was played for.
+- Still unread in the family: "sacrifice a Forest" and "return an untapped Mountain you control"
+  (their cost clauses don't read yet), "return a non-Lair land" (a hyphenated subtype negation), and
+  "unless {U} was spent to cast it".
+
+**Tests.** 6 engine tests, and the D514 and D529 refusal lists lose the cases that now read:
+- every shape reads;
+- a creature card pays, and the Spark in hand doesn't count;
+- with no way to pay, or by choice, it is sacrificed, and declining asks nothing more;
+- two cards are chosen, and one is discarded at random;
+- "return another creature" never offers itself, and alone it is sacrificed;
+- the bot pays.
+
+Faults injected by script: 7 of 8 caught. The miss, the cost question asked after "Sacrifice it",
+was invisible because the test hand had only one card that could pay, and a forced answer is taken
+without asking. Pinned with a two-card discard over a three-card hand. Re-run: 1 of 1 caught.
+
+**Merged first.** The original session's D901 (counts beyond three) and its merge of D723 were
+fast-forwarded in. The figures below are against its head, e859fde (11,482 cards, 30,856 lines).
+
+    engine tests: 4,793, all passing
+
+Coverage: 11,505 of 31,653 cards (+23), 30,884 of 59,306 lines (+28). Staples: 235 of 244.
+Pod sweep 58401–58440 (D723's build): 40 of 40 finished, no throw and no stall.
+
 ## D902 — A size that is a count: the commonest "*" bodies
 
 "~'s power and toughness are each equal to the number of …" (Maro, Dungrove Elder, Crusader of
@@ -30099,6 +30159,44 @@ Faults injected by hand: 5 of 5 caught.
 
 Coverage: 11,532 of 31,743 cards (+78), 31,013 of 59,509 lines (+200). Staples: 235 of 244.
 
+## D725 — Chain Lightning: the player it hit may pay to copy it back
+
+"Chain Lightning deals 3 damage to any target. Then that player or that permanent's controller may
+pay {R}{R}. If the player does, they may copy this spell and may choose a new target for that
+copy."
+
+How it is read:
+- **A new chooser, `target-or-its-controller`.** The seat the spell's first target is, or the
+  controller of the permanent it is, read in whatever zone the permanent is now (as
+  `referent-player` reads its card). Nobody is asked with no target. `TargetDecisionSpec` takes it
+  too, and now accepts `askOnlyIfChosen`, so a new target can be asked only of a player who paid.
+- **Two questions to that player.** Pay or decline, with {R}{R} on the paying answer
+  (`payIfChosen`, so it is offered only to a player who can pay). Then, only after paying, a new
+  target for the copy. `clausesOf` joins the two sentences, since the payment and the copy are one
+  offer.
+- **The copy is theirs.** It is made from the resolving spell the way Sevinne's Reclamation's is
+  (D715) and goes on the stack under the payer's control. It is the same card, so it makes the same
+  offer to whoever it hits: the chain the card is named for.
+- **The bot pays whenever it can.** Three damage back for {R}{R} is why a player holds the mana.
+
+Staples went from 235 to 236 (Chain Lightning).
+
+**Tests.** 5 engine tests:
+- the card reads;
+- the player it hit is asked, and declining ends it (17 life, nothing on the stack);
+- paying taps both Mountains, and the copy goes on the stack under their control, aimed where they
+  choose; it hits the caster, who can't pay to send it back;
+- a player who can't pay isn't asked, and the controller of a creature it hit is the one asked;
+- the bot pays when it can.
+
+Faults injected by script: 8 of 8 caught.
+
+    engine tests: 4,801, all passing
+
+Coverage: 11,557 of 31,743 cards (+1), 31,044 of 59,509 lines (+1). Staples: 236 of 244 (+1).
+The denominator grew with the other session's D902 ("a size that is a count"), which made `*/*`
+creatures measurable; the baseline is the merged head e37f376 (11,556 cards, 31,043 lines).
+
 ## D903 — "That many" after a combat-damage trigger is the damage dealt
 
 "Whenever ~ deals combat damage to a player, draw that many cards", and the rest of the 101 legal
@@ -30137,6 +30235,7 @@ that test's "reads the quote" list. A granted trigger's source is the creature t
 
 Faults injected by hand: 5 of 5 caught.
 
-    engine tests: 4,797, all passing
+    engine tests: 4,805, all passing (merged with the other session's D724 and D725, whose Chain Lightning
+    reader sits beside this one)
 
 Coverage: 11,544 of 31,743 cards (+12), 31,035 of 59,509 lines (+22). Staples: 235 of 244.

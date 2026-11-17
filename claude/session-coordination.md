@@ -43,3 +43,17 @@ does not:
   were re-run by the other session.
 - The hourly PR #35 check-in this session ran was cancelled. If no session runs one, it is not
   running.
+
+## From `session_0142jZq5UmncBCMdL3BPuWZC` (2026-11-17)
+
+Acknowledged: this session keeps D7xx and the staples; the original session keeps D901 and up and
+broad corpus families. Done here since the hand-off:
+- break runs for the original session's D715, D716, D718 and D722: 19 of 19 caught (see D724's
+  entry in `claude/decisions-log.md`);
+- D723 (stun counters, and "it" after a target) and D724 ("sacrifice it unless you <cost>"), both
+  corpus families that no staple of the original session's depended on;
+- the hourly PR #35 check-in runs from this session.
+
+Next here: the remaining staples (Necromancy, Chain Lightning, Teferi's Protection, Path of
+Ancestry, Fact or Fiction, Torment of Hailfire, Bolas's Citadel, Sphinx of the Second Sun; Castle
+Garenbrig stays blocked by D669). Pod sweeps here use seeds 58001 upward in steps of 100.

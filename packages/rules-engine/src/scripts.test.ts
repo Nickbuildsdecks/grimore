@@ -16111,6 +16111,168 @@ describe('a size that is a count: the commonest "*" bodies (D902)', () => {
   });
 });
 
+describe('"Sacrifice it unless you <do something>" (D724)', () => {
+  const creature = (name: string, cost: string) => ({ name, type_line: 'Creature — Soldier', oracle_text: `When ${name} enters, sacrifice it unless you ${cost}.`, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '4', toughness: '4' });
+  const ROWS = [
+    creature('Test Knight', 'discard a creature card'),
+    creature('Test Horde', 'discard a card at random'),
+    creature('Test Avatar', 'discard two cards'),
+    creature('Test Quickling', 'return another creature you control to its owner\'s hand'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'unless', name: 'Unless',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Spark', count: 40 }],
+    data: ROWS,
+  });
+  // Only the cards the test places, and a library of sorceries, so the turn's draw never pays.
+  const enter = (card: string, hand: string[], mine: string[] = []) => {
+    const placed = [card, ...hand, ...mine];
+    const only = customDeck({
+      id: 'unless-only', name: 'Unless only',
+      entries: [...new Set([...placed, 'Test Spark'])].map((n) => ({
+        name: n, count: placed.filter((p) => p === n).length + (n === 'Test Spark' ? 40 : 0),
+      })),
+      data: ROWS,
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'uo', 1: 'unless' }, deckSpecs: { uo: only.deck, unless: deck.deck },
+      hands: { 0: [card, ...hand] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) });
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const choose = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads every shape', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('pays with a creature card from hand, and only a creature card counts', () => {
+    let s = enter('Test Knight', ['Test Bear', 'Test Spark']);
+    expect(s.pendingDecision?.options).toEqual(['Discard a creature card', 'Sacrifice it']);
+    s = choose(s, 'Discard a creature card');
+    // The Spark is not offered, so the one creature card is the whole answer and is taken.
+    s = drain(s, 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Knight');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Bear');
+  });
+
+  it('with no way to pay, or by choice, it is sacrificed', () => {
+    const none = drain(enter('Test Knight', ['Test Spark']), 20);
+    expect(namesIn(none, 0, 'battlefield')).not.toContain('Test Knight');
+    expect(namesIn(none, 0, 'graveyard')).toContain('Test Knight');
+    let declined = enter('Test Knight', ['Test Bear']);
+    declined = drain(choose(declined, 'Sacrifice it'), 20);
+    expect(namesIn(declined, 0, 'graveyard')).toContain('Test Knight');
+    expect(namesIn(declined, 0, 'hand')).toContain('Test Bear');
+    // And declining asks nothing more, even with cards that could pay (pinned by D724's break run).
+    const avatar = choose(enter('Test Avatar', ['Test Bear', 'Test Spark', 'Test Spark']), 'Sacrifice it');
+    expect(avatar.pendingDecision).toBeNull();
+  });
+
+  it('two cards, chosen; one card at random', () => {
+    let s = enter('Test Avatar', ['Test Bear', 'Test Spark']);
+    const before = ids(s, 0, 'hand').length;
+    s = choose(s, 'Discard two cards');
+    expect(s.pendingDecision?.min).toBe(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Avatar');
+    expect(ids(s, 0, 'hand').length).toBe(before - 2);
+    let r = enter('Test Horde', ['Test Bear']);
+    const held = ids(r, 0, 'hand').length;
+    r = drain(choose(r, 'Discard a card at random'), 20);
+    expect(namesIn(r, 0, 'battlefield')).toContain('Test Horde');
+    expect(ids(r, 0, 'hand').length).toBe(held - 1);
+  });
+
+  it('"return another creature": never itself, and alone it is sacrificed', () => {
+    let s = enter('Test Quickling', [], ['Test Bear']);
+    s = drain(choose(s, "Return another creature you control to its owner's hand"), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Quickling');
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bear');
+    const alone = drain(enter('Test Quickling', []), 20);
+    expect(namesIn(alone, 0, 'battlefield')).not.toContain('Test Quickling');
+  });
+
+  it('the bot pays when it can', () => {
+    const s = enter('Test Knight', ['Test Bear']);
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', option: 'Discard a creature card' });
+  });
+});
+
+describe('Chain Lightning: the player it hit may pay to copy it back (D725)', () => {
+  const ROWS = [
+    { name: 'Test Chain', type_line: 'Sorcery', oracle_text: "Test Chain deals 3 damage to any target. Then that player or that permanent's controller may pay {R}{R}. If the player does, they may copy this spell and may choose a new target for that copy.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'chain', name: 'Chain',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  const PAY = 'Pay {R}{R} and copy it';
+  const table = (theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'chain', 1: 'chain' }, deckSpecs: { chain: deck.deck },
+    hands: { 0: ['Test Chain'] }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, target: Target) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chain'), targets: [target] } as Action);
+    for (let i = 0; i < 6 && next.pendingDecision === null && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the player it hit is asked, and declining ends it', () => {
+    let s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual([PAY, 'Decline']);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], option: 'Decline' } as Action), 20);
+    expect(life(s, 1)).toBe(17);
+    expect(life(s, 0)).toBe(20);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('paying copies it under their control, aimed where they choose', () => {
+    let s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [], option: PAY } as Action);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [], target: { kind: 'player', seat: 0 } } as Action);
+    // The {R}{R} is paid as the answers are applied: both Mountains are tapped.
+    expect(ids(s, 1, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+    expect(s.stackOrder).toHaveLength(1);
+    const copy = s.stackObjects[s.stackOrder[0]!]!;
+    expect(copy.controller).toBe(1);
+    // The copy resolves and hits seat 0, who has no {R}{R} to send it back.
+    s = drain(s, 20);
+    expect(life(s, 0)).toBe(17);
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('a player who cannot pay is not asked, and a creature\'s controller is the one asked', () => {
+    const broke = drain(cast(table([]), { kind: 'player', seat: 1 }), 20);
+    expect(life(broke, 1)).toBe(17);
+    expect(broke.stackOrder).toEqual([]);
+    const s = table(['Test Bear', 'Mountain', 'Mountain']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const asked = cast(s, { kind: 'card', id: bear });
+    expect(asked.pendingDecision?.seat).toBe(1);
+    expect(asked.instances[bear]!.damage).toBe(3);
+  });
+
+  it('the bot pays when it can', () => {
+    const s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    expect(botAction(s, 1)).toMatchObject({ type: 'auto:decide', option: PAY });
+  });
+});
+
 describe('"that many" after a combat-damage trigger is the damage dealt (D903)', () => {
   const ROWS = [
     { name: 'Test Scholar', type_line: 'Creature — Human Rogue', oracle_text: 'Whenever Test Scholar deals combat damage to a player, draw that many cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '3', toughness: '3' },
