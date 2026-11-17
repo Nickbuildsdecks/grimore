@@ -29985,3 +29985,30 @@ the creature it animated" test was added.
     engine tests: 4,783, all passing (after merging the other session's D719 Necropotence, D720 Finale of Devastation and D721 Sylvan Library)
 
 Coverage on the merged head: 11,448 of 31,653 cards, 30,801 of 59,306 lines. Staples: 235 of 244.
+
+## D901 — Counts beyond three, and "investigate twice"
+
+(D901 and up is the original session's numbering from here on; see `claude/session-coordination.md`.)
+
+How it is read:
+- **"Put N +1/+1 (or -1/-1) counters on <target>."** The count is any number word `WORD_NUMBERS`
+  knows, up to ten, or digits. It stopped at three, and 103 legal lines print four to ten.
+- **"Investigate twice / three times / four times."** One Clue per investigation (CR 701.33a).
+- **The flashback upgrades.** With those two, D715's "If this spell was cast from a graveyard, …
+  instead" reads Increasing Savagery (five counters, or ten) and Secrets of the Key (one Clue, or
+  two).
+
+**Tests.** 3 engine tests:
+- both cards read;
+- five counters from hand, then ten more with flashback;
+- one Clue from hand, then two with flashback.
+
+The refusal row for "Put four +1/+1 counters on target creature." ("a count past what the corpus
+prints") is retired.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 4,785, all passing
+
+Coverage: 11,454 of 31,653 cards (+6), 30,813 of 59,306 lines (+12). Staples: 235 of 244 (all
+remaining staples are the other session's).

@@ -15926,6 +15926,47 @@ describe('Animate Dead: an Aura that brings its creature back, and takes it away
   });
 });
 
+describe('counts beyond three, and "investigate twice" (D901)', () => {
+  const ROWS = [
+    { name: 'Test Savagery', type_line: 'Sorcery', oracle_text: 'Put five +1/+1 counters on target creature. If this spell was cast from a graveyard, put ten +1/+1 counters on that creature instead.\nFlashback {0}', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Secrets', type_line: 'Instant', oracle_text: 'Investigate. If this spell was cast from a graveyard, investigate twice instead.\nFlashback {0}', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'counts', name: 'Counts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'counts', 1: 'counts' }, deckSpecs: { counts: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const clues = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Clue').length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('five counters from the hand, ten with flashback', () => {
+    let s = table(['Test Savagery'], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Savagery'), targets: [{ kind: 'card', id: bear }] } as Action)));
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(5);
+    const card = find(s, 0, 'graveyard', 'Test Savagery');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, flashback: true, targets: [{ kind: 'card', id: bear }] } as Action)));
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(15);
+  });
+
+  it('one Clue from the hand, two with flashback', () => {
+    let s = table(['Test Secrets']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Secrets') })));
+    expect(clues(s)).toBe(1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Secrets'), flashback: true })));
+    expect(clues(s)).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

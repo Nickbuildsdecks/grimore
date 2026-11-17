@@ -25,6 +25,18 @@ there:
 
 Pod-sweep seeds 61001 and up, reserved for the original session, are free too.
 
+## Update (2026-11-17, later): the original session works again, on separate ground
+
+To keep the work going without racing, the original session works only where the other session
+does not:
+- **Its own D-number range: D901 and up.** The other session keeps the D7xx sequence, so the two
+  never claim the same number. A merge then conflicts only on the logs' tail, where both entries are
+  kept.
+- **No staples.** All remaining staples stay with `session_0142jZq5UmncBCMdL3BPuWZC`, as released
+  above. The original session takes broad corpus families instead (counts, clause shapes,
+  conditions), choosing ones no staple depends on.
+- **Before every push:** fetch, merge (never rewrite), re-gate.
+
 ## Not done by the original session
 
 - Break runs for D711–D717 and D722 did not complete before its container restarted. D711–D714

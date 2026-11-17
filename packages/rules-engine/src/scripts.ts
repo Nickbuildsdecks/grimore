@@ -12439,6 +12439,12 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   if (/^investigate$/i.test(text)) {
     return { effect: (c) => createToken(c.state, c.controller, CLUE_TOKEN) };
   }
+  // "Investigate twice" / "three times" (D901): one Clue per investigation (CR 701.33a).
+  const investigations = /^investigate (twice|three times|four times)$/i.exec(text);
+  if (investigations !== null) {
+    const n = { twice: 2, 'three times': 3, 'four times': 4 }[investigations[1]!.toLowerCase() as 'twice'];
+    return { effect: (c) => createToken(c.state, c.controller, CLUE_TOKEN, n) };
+  }
 
   /*
     Mana out of a trigger: "Add {R}{G}" — Burning-Tree Emissary, whose whole ability this is.
@@ -22120,14 +22126,15 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     phrases of its own, and the family comes along with it: "another target creature you control",
     "up to one target creature", "target Merfolk you control", "target land you control".
 
-    The count stops at three because that is what the corpus prints. `X` and "that many" are
-    refused: both name a number from somewhere else in the sentence, and a reader that guessed one
-    would be wrong rather than silent (D362).
+    The count is any number word `WORD_NUMBERS` knows, or digits (D901: it stopped at three, and 103
+    legal lines print four to ten — Increasing Savagery's five and ten among them). `X` and "that
+    many" are refused: both name a number from somewhere else in the sentence, and a reader that
+    guessed one would be wrong rather than silent (D362).
   */
-  const COUNT_WORDS: Readonly<Record<string, number>> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
-  const countered = /^put (a|an|one|two|three) (\+1\/\+1|-1\/-1) counters? on (.+)$/i.exec(text);
+  const countered = /^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (\+1\/\+1|-1\/-1) counters? on (.+)$/i.exec(text);
   if (countered !== null) {
-    const many = COUNT_WORDS[countered[1]!.toLowerCase()];
+    const word = countered[1]!.toLowerCase();
+    const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
     const kind = countered[2]!.startsWith('+') ? '+1/+1' : '-1/-1';
     const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1');
     if (spec !== null && many !== undefined) {
