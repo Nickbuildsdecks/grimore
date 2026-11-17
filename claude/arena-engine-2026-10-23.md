@@ -31753,3 +31753,43 @@ Faults injected by hand: 8 of 8 caught, after the second round. The first missed
     engine tests: 5,029, all passing
 
 Coverage: 12,239 of 31,743 cards (+15), 32,170 of 59,509 lines (+20). Staples: 239 of 244.
+
+## D943 — Activation caps, stronger-only blockers, and Arrest
+
+Three shapes from the corpus tally of single unread lines.
+
+**"Activate no more than twice each turn."** (CR 602.5f, 5 cards with it as their last unread line,
+"three times" alongside). `AbilityDef.timesEachTurn` is the once-each-turn rule with a number:
+- the activation records a count on the new `CardInstance.abilityUseCount`, beside the turn
+  `abilityUsedTurn` already keeps;
+- one function, `usesLeftThisTurn`, answers both limits for the offer and for the activation, so
+  the two cannot disagree;
+- the count starts again on a new turn, because it only counts while the recorded turn is the
+  current one.
+
+**"Creatures with power less than ~'s power can't block it."** (5 cards): a printed combat static,
+`weakerCantBlock`. `canBlock` compares the two powers as they are now, and equal power may block.
+
+**Arrest's rider**, "Enchanted creature can't attack or block, and its activated abilities can't be
+activated." (CR 602.5a). A new continuous-effect field, `cantActivate`:
+- it is read as the Aura rider and is harmful, so the computer aims it at the other side;
+- the permanent is skipped in every activation offer and refused in the activation path;
+- its mana abilities are switched off too: `manaSources` and the potential-mana count skip it, so
+  the Elf under Arrest pays for nothing.
+
+Six Arrest-family Auras now read. "… unless they're mana abilities" (Faith's Fetters) and detain,
+which is the same effect until your next turn, are not read yet.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- twice, then neither offered nor accepted, and again on another turn;
+- a Bear cannot block the 4-power creature and an Ogre can;
+- Arrest stops attacking, blocking, the mana ability and its activation.
+
+Faults injected by hand: 13 of 13 caught. Two assertions in the first draft read a field that does
+not exist (`legalActions(...).abilities`) and passed vacuously. They now read `plays` and fail when
+they should.
+
+    engine tests: 5,033, all passing
+
+Coverage: 12,260 of 31,743 cards (+21), 32,202 of 59,509 lines (+32). Staples: 239 of 244.

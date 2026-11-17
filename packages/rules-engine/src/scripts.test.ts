@@ -19431,6 +19431,75 @@ describe('blocking more than one attacker (D942)', () => {
   });
 });
 
+describe('activation caps, the stronger-only blockers, and Arrest (D943)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2', cost = '{0}') => ({
+    name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: cost, cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Pumper', '{R}: Test Pumper gets +1/+0 until end of turn. Activate no more than twice each turn.'),
+    C('Test Stomper', "Creatures with power less than Test Stomper's power can't block it.", '4', '4'),
+    C('Test Elf', '{T}: Add {G}.', '1', '1'),
+    C('Test Ogre', '', '4', '4'),
+    C('Test Bear', ''),
+    { name: 'Test Arrest', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block, and its activated abilities can't be activated.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd943', name: 'Caps and bans',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 42 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[], theirs: string[] = [], hand: string[] = [], step: Step = 'precombat-main') => advanceTo(arena({
+    decks: { 0: 'd943', 1: 'd943' }, deckSpecs: { d943: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), step);
+  const withRed = (s: GameState): GameState => ({ ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 } } });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0]!, ROWS[1]!, ROWS[5]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"no more than twice each turn": twice, then neither offered nor accepted, and again next turn', () => {
+    let s = withRed(seated(['Test Pumper']));
+    const pumper = find(s, 0, 'battlefield', 'Test Pumper');
+    const pump1 = { type: 'auto:activate', by: 0, card: pumper, abilityIndex: 0 } as Action;
+    for (let i = 0; i < 2; i++) {
+      expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === pumper)).toBe(true);
+      s = drain(apply(s, pump1), 12);
+      for (let j = 0; j < 4 && s.stackOrder.length > 0; j++) s = drain(passBoth(s), 12);
+    }
+    expect(characteristicsOf(s, s.instances[pumper]!).power).toBe(4);
+    expect(refusal(s, pump1)).toMatch(/2 times this turn/);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === pumper)).toBe(false);
+    // Another turn: the count starts again.
+    const later = withRed({ ...s, turn: s.turn + 2 });
+    expect(refusal(later, pump1)).toBeNull();
+  });
+
+  it('"creatures with power less than its power can\'t block it": a Bear cannot, an Ogre can', () => {
+    let s = seated(['Test Stomper'], ['Test Bear', 'Test Ogre'], [], 'declare-attackers');
+    const stomper = find(s, 0, 'battlefield', 'Test Stomper');
+    s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: stomper, defender: 1 }] }), 12), 'declare-blockers');
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Bear'), stomper, 1)?.reason).toMatch(/less power/);
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Ogre'), stomper, 1)).toBeNull();
+  });
+
+  it('Arrest: no attacking or blocking, and not even its mana ability', () => {
+    let s = seated(['Mountain'], ['Test Elf', 'Test Bear'], ['Test Arrest']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    expect(manaSources(s, 1).some((m) => m.key === elf)).toBe(true);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Arrest'), targets: [{ kind: 'card', id: elf }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const ch = characteristicsOf(s, s.instances[elf]!);
+    expect(ch.cantActivate).toBe(true);
+    expect(ch.cantBlock).toBe(true);
+    expect(manaSources(s, 1).some((m) => m.key === elf)).toBe(false);
+    const turn = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(legalActions(turn, 1).plays.some((p) => p.kind === 'activate' && p.card === elf)).toBe(false);
+    expect(refusal(turn, { type: 'auto:activate', by: 1, card: elf, abilityIndex: 0 } as Action)).toMatch(/can't be activated/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

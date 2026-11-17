@@ -15741,6 +15741,10 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
   if (/^blocks each combat if able$/i.test(rider)) return { bonus: { mustBlock: true }, harmful: true };
   if (/^must be blocked(?: each combat)? if able$/i.test(rider)) return { bonus: { mustBeBlocked: true }, harmful: false };
   if (/^can't be blocked$/i.test(rider)) return { bonus: { cantBeBlocked: true }, harmful: false };
+  // Arrest (D943): the whole rider, which is one printed list.
+  if (/^can't attack or block,? and its activated abilities can't be activated$/i.test(rider)) {
+    return { bonus: { cantAttack: true, cantBlock: true, cantActivate: true }, harmful: true };
+  }
   // D937: a restriction on the count of blockers, menace's opposite.
   if (/^can't be blocked by more than one creature$/i.test(rider)) return { bonus: { blockedByOne: true }, harmful: false };
   if (/^loses all abilities$/i.test(rider)) return { bonus: { losesAllAbilities: true }, harmful: true };
@@ -25207,6 +25211,7 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
 interface ActivationFlags {
   sorcerySpeed?: true;
   onceEachTurn?: true;
+  timesEachTurn?: number;
   timing?: ActivationTiming;
   activateOnlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
 }
@@ -25214,6 +25219,11 @@ interface ActivationFlags {
 function activationRestriction(
   text: string, name: string,
 ): { readonly rest: string; readonly flags: ActivationFlags } | null {
+  // "Activate no more than twice each turn." (D943), its own sentence: see `AbilityDef.timesEachTurn`.
+  const capped = /^(.*?)\.?\s*Activate no more than (twice|three times) each turn\.?\s*$/i.exec(text);
+  if (capped !== null) {
+    return { rest: capped[1]!, flags: { timesEachTurn: capped[2]!.toLowerCase() === 'twice' ? 2 : 3 } };
+  }
   const found = /^(.*?)\.?\s*Activate only\s+(.+?)\.?\s*$/i.exec(text);
   if (found === null) return { rest: text, flags: {} };
   const flags: ActivationFlags = {};

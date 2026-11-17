@@ -2395,6 +2395,11 @@ export interface AbilityDef {
    */
   readonly onceEachTurn?: true;
   /**
+   * "Activate no more than twice each turn." (D943, CR 602.5f): `onceEachTurn` with a number,
+   * recorded on `CardInstance.abilityUseCount` beside the turn. See `activationsLeft`.
+   */
+  readonly timesEachTurn?: number;
+  /**
    * "Activate only during your turn / your upkeep / your turn, before attackers are declared."
    * — CR 602.5d, and **32 legal corpus cards across the three clauses** (18, 8 and 6), measured
    * the same way D508's 38 were and recorded under D509 in `claude/decisions-log.md`.
