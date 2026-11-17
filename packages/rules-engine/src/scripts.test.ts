@@ -17248,6 +17248,76 @@ describe('more blocking requirements: a pump that draws blockers, a taunting att
   });
 });
 
+describe('exert (D915)', () => {
+  const ROWS = [
+    { name: 'Test Exerter', type_line: 'Creature — Human', oracle_text: 'You may exert Test Exerter as it attacks. When you do, it gets +2/+2 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Crasher', type_line: 'Creature — Human', oracle_text: "You may exert Test Crasher as it attacks. When you do, target creature can't block this turn.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Seer', type_line: 'Creature — Human', oracle_text: 'You may exert Test Seer as it attacks. When you do, scry 2.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'kw915', name: 'Exert',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }],
+    data: ROWS as never[],
+  });
+  const attackWith = (name: string, exert: boolean) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw915', 1: 'kw915' }, deckSpecs: { kw915: deck.deck },
+      battlefield: { 0: [name], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const me = find(s, 0, 'battlefield', name);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: me, defender: 1 }] }), 12);
+    if (s.pendingChoice !== null) s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] }), 12);
+    const options = s.pendingDecision?.options ?? [];
+    expect(options.length).toBe(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: exert ? options[0]! : options[1]! } as Action), 12);
+    return { s, me, bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 2), ROWS[3]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('exerted: the effect happens and the creature stays tapped through its next untap step', () => {
+    let { s, me } = attackWith('Test Exerter', true);
+    expect(characteristicsOf(s, s.instances[me]!).power).toBe(4);
+    expect(s.instances[me]!.frozen).toBe(true);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[me]!.tapped).toBe(true);
+  });
+
+  it('not exerted: no effect, and it untaps as usual', () => {
+    let { s, me } = attackWith('Test Exerter', false);
+    expect(characteristicsOf(s, s.instances[me]!).power).toBe(2);
+    expect(s.instances[me]!.frozen ?? false).toBe(false);
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[me]!.tapped).toBe(false);
+  });
+
+  it('a "when you do" that asks its own question: the scry is asked only after exerting', () => {
+    let r = attackWith('Test Seer', true);
+    expect(r.s.pendingDecision).not.toBeNull();
+    // The exert is part of the same resolution, done once the scry is answered.
+    const scried = drain(apply(r.s, { type: 'auto:decide', by: 0, cards: [] } as Action), 12);
+    expect(scried.instances[r.me]!.frozen).toBe(true);
+    r = attackWith('Test Seer', false);
+    expect(r.s.pendingDecision).toBeNull();
+    expect(r.s.instances[r.me]!.frozen ?? false).toBe(false);
+  });
+
+  it('a targeted "when you do": the target is affected only if the creature was exerted', () => {
+    let r = attackWith('Test Crasher', true);
+    expect(characteristicsOf(r.s, r.s.instances[r.bear]!).cantBlock).toBe(true);
+    expect(r.s.instances[r.me]!.frozen).toBe(true);
+    r = attackWith('Test Crasher', false);
+    expect(characteristicsOf(r.s, r.s.instances[r.bear]!).cantBlock).toBe(false);
+    expect(r.s.instances[r.me]!.frozen ?? false).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

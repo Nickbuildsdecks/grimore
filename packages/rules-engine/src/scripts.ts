@@ -19322,6 +19322,40 @@ function triggerRestriction(text: string): { readonly rest: string; readonly onc
  * behaviour rather than by this string.
  */
 function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
+  /*
+    Exert (D915, CR 701.39): "You may exert ~ as it attacks. When you do, <effect>." Read as the
+    attack trigger "you may exert ~. If you do, <effect>", which D472's reader already composes: the
+    exert asks nothing and is `freezeNextUntap` on the card, so the effect happens only if it did.
+    **The timing, stated:** the rules exert as the attack is declared and the reflexive trigger is
+    put on the stack after; here the choice is made as the trigger resolves. No card of the family
+    can tell the two apart except by a response between them, and a "when you do" with a target is
+    refused by that reader anyway.
+  */
+  const exerted = new RegExp(`^You may exert (?:${selfRef(name)}) as it attacks\\. When you do, (.+)$`, 'i')
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (exerted !== null) {
+    const composed = triggerFromLine(`Whenever ${name} attacks, you may exert ${name}. If you do, ${exerted[1]!}`, name);
+    if (composed !== null) return composed;
+    /*
+      A "when you do" with a target (Glorybringer, Ahn-Crop Crasher), which D472's reader refuses:
+      the effect is read as the plain attack trigger and the exert asked in front of it, with the
+      targets chosen as the trigger goes on the stack. Only when the effect asks nothing itself, so
+      the one question is the exert.
+    */
+    const plainAttack = triggerFromLine(`Whenever ${name} attacks, ${exerted[1]!}`, name);
+    const trigger = plainAttack?.triggers?.length === 1 ? plainAttack.triggers[0]! : null;
+    if (trigger === null || (trigger.decisions ?? []).length > 0 || trigger.beforeDecisions !== undefined
+      || Object.keys(plainAttack!).some((key) => key !== 'triggers')) return null;
+    const EXERT = 'Exert';
+    return {
+      triggers: [{
+        ...trigger,
+        description: `you may exert this creature; when you do, ${trigger.description}`,
+        decisions: [{ who: 'controller', prompt: `Exert ${name}?`, options: [EXERT, "Don't exert"], best: () => EXERT }],
+        effect: (c) => (chosenOption(c, 0) === EXERT ? trigger.effect({ ...c, state: freezeNextUntap(c.state, c.source) }) : c.state),
+      }],
+    };
+  }
   // The ability word comes off first: "Battalion — Whenever ~ and at least two other creatures
   // attack, …" is a trigger whose prologue begins after the dash (CR 207.2c).
   const restriction = triggerRestriction(withoutAbilityWord(plain(line).trim()));
@@ -23116,6 +23150,10 @@ function readEffect(
       }],
       effect: (c) => (chosenOption(c, 0) === pay ? c.state : loseTheGame(c.state, c.controller)),
     };
+  }
+  // Exert (D915): the card won't untap during its controller's next untap step. See `triggerFromLine`.
+  if (new RegExp(`^exert (?:${selfRef(name)})$`, 'i').test(clause.trim())) {
+    return { effect: (c) => freezeNextUntap(c.state, c.source) };
   }
   const others = /^each other player (.+)$/i.exec(clause.trim());
   if (others !== null) return readEffect(`each opponent ${others[1]}`, name, where);

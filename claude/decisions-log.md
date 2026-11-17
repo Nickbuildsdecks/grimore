@@ -48166,3 +48166,41 @@ Faults injected by hand: 6 of 6 caught.
     engine tests: 4,865, all passing
 
 Coverage: 11,751 of 31,743 cards (+6), 31,354 of 59,509 lines (+6). Staples: 238 of 244.
+
+## D915 — Exert
+
+"You may exert ~ as it attacks. When you do, <effect>." (CR 701.39): Glorybringer, the Amonkhet
+cycle and others. 21 legal cards print it.
+
+How it is read (`triggerFromLine`):
+- **First, as D472's "you may X. If you do, Y":** the line becomes the attack trigger "you may exert
+  ~. If you do, <effect>". The new clause "exert ~" asks nothing and is `freezeNextUntap` on the
+  card, so the effect happens only if it did. An effect that asks its own question (a scry) rides
+  the same gate.
+- **A targeted "when you do"** (Glorybringer, Ahn-Crop Crasher), which D472 refuses. The effect is
+  read as the plain attack trigger and an Exert / Don't exert question goes in front of it. The
+  targets are chosen as the trigger goes on the stack, and the effect runs only after "Exert". This
+  is taken only when the effect asks nothing itself.
+- **The timing, stated:** the rules exert as the attack is declared and then put the reflexive
+  trigger on the stack. Here the choice is made as the trigger resolves. Nothing in the family can
+  tell the two apart except a response in between.
+
+Not read:
+- "Whenever you exert a creature" (no exert event yet);
+- "If ~ hasn't been exerted this turn";
+- the activated "Exert ~" cost;
+- "When you do, you may …", a second "may".
+
+**Tests.** 5 engine tests:
+- three printings read;
+- exerted, the pump happens and the creature stays tapped through its next untap step;
+- not exerted, nothing happens and it untaps;
+- the targeted form affects the target only if the creature was exerted;
+- the scry is asked only after exerting, and the exert lands with it.
+
+Faults injected by hand: 5 of 5 caught. The D472 path was missed at first: the new wrap covers
+every effect that asks nothing. The scry test pinned it.
+
+    engine tests: 4,870, all passing
+
+Coverage: 11,766 of 31,743 cards (+15), 31,369 of 59,509 lines (+15). Staples: 238 of 244.
