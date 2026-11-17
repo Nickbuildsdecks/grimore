@@ -11543,6 +11543,39 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     };
   }
   // Afflict N, Mobilize N and Ingest (D905).
+  // Devour N and Amplify N (D907): see `CardScript.entersCounting`.
+  const devour = /^devour\s+(\d+)$/i.exec(text);
+  if (devour !== null) {
+    return {
+      entersCounting: { kind: 'devour', n: Number(devour[1]) },
+      decisions: [{
+        who: 'controller', from: 'battlefield', min: 0, max: ANY_NUMBER,
+        prompt: `Devour ${devour[1]}: sacrifice any number of creatures`,
+        filter: (state, id) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'creature'),
+        pick: () => [],
+      }],
+    };
+  }
+  const amplify = /^amplify\s+(\d+)$/i.exec(text);
+  if (amplify !== null) {
+    return {
+      entersCounting: { kind: 'amplify', n: Number(amplify[1]) },
+      decisions: [{
+        who: 'controller', from: 'hand', min: 0, max: ANY_NUMBER,
+        prompt: `Amplify ${amplify[1]}: reveal any number of cards that share a creature type with it`,
+        filter: (state, id, chooser) => {
+          // The spell on the stack is the card amplified: its creature types against the card's.
+          const spell = state.stackOrder.map((s) => state.stackObjects[s]).reverse()
+            .find((o) => o?.kind === 'spell' && o.controller === chooser && state.cardDefs[o.cardKey]?.oracleText?.match(/^Amplify \d+/im));
+          const mine = parseTypeLine(state.cardDefs[spell?.cardKey ?? '']?.typeLine).subtypes;
+          const theirs = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+          return hasType(theirs, 'creature') && theirs.subtypes.some((t) => mine.includes(t));
+        },
+        // Revealing costs nothing, so the bot reveals everything it may.
+        pick: (_state, _chooser, candidates) => [...candidates],
+      }],
+    };
+  }
   const afflict = /^afflict\s+(\d+)$/i.exec(text);
   if (afflict !== null) return { triggers: [afflictTrigger(Number(afflict[1]))] };
   const mobilize = /^mobilize\s+(\d+)$/i.exec(text);
