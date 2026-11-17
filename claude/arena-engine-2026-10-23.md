@@ -31863,3 +31863,20 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 12,270 of 31,743 cards (+1), 32,214 of 59,509 lines (+1), against 958aade. Staples: 240
 of 244 (+1).
+
+## D945 — "target creatures your opponents control"
+
+The target reader's controller suffixes were " you control", " you don't control" and " an
+opponent controls". The plural phrase's own spelling, " your opponents control" ("up to two target
+creatures your opponents control"), was missing, so every such phrase refused its line. Added as an
+opponents' suffix beside the other two. Plural nouns were already read. Four legal cards now read
+whole, among them the two detain cards D944 left (Archon of the Triumvirate, Azorius Justiciar).
+
+**Tests.** 1 engine test: Azorius Justiciar's shape reads; its trigger offers only the opponent's
+creatures and refuses the caster's own; it takes two; and both are detained.
+
+Faults injected by hand: 2 of 2 caught (the suffix removed, and read as the caster's own side).
+
+    engine tests: 5,037, all passing
+
+Coverage: 12,272 of 31,743 cards (+4), 32,215 of 59,509 lines (+4). Staples: 239 of 244.

@@ -19565,6 +19565,41 @@ describe('detain, and Faith\'s Fetters sparing mana abilities (D944)', () => {
   });
 });
 
+describe('"target creatures your opponents control" (D945)', () => {
+  const ROWS = [
+    { name: 'Test Justiciar', type_line: 'Creature — Human Wizard', oracle_text: 'When Test Justiciar enters, detain up to two target creatures your opponents control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd945', name: 'Plural opponents',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 54 }],
+    data: ROWS as never[],
+  });
+
+  it('reads, aims only at the other side, up to two, and detains both', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd945', 1: 'd945' }, deckSpecs: { d945: deck.deck }, hands: { 0: ['Test Justiciar'] },
+      battlefield: { 0: ['Plains', 'Test Bear'], 1: ['Test Bear', 'Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const [a, b] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Justiciar') } as Action), 30);
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      if (s.pendingChoice !== null) {
+        const offered = (legalActions(s, 0).mustChoose?.candidates ?? []).flat().map((t) => (t.kind === 'card' ? t.id : null));
+        expect(offered).toContain(a!);
+        expect(offered).not.toContain(mine);
+        expect(refusal(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: mine }] })).not.toBeNull();
+        s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }] }), 30);
+      } else s = drain(passBoth(s), 30);
+    }
+    expect(characteristicsOf(s, s.instances[a!]!).cantBlock).toBe(true);
+    expect(characteristicsOf(s, s.instances[b!]!).cantBlock).toBe(true);
+    expect(characteristicsOf(s, s.instances[mine]!).cantBlock).toBe(false);
+  });
+});
+
 describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D729)', () => {
   const ROWS = [
     { name: 'Test Path', type_line: 'Land', oracle_text: "Test Path enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
