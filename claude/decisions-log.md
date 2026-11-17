@@ -47881,3 +47881,29 @@ reached: the question's candidates already come from the right zone. It is kept 
     engine tests: 4,825, all passing
 
 Coverage: 11,660 of 31,743 cards (+16), 31,200 of 59,509 lines (+28). Staples: 237 of 244.
+
+## D908 — Jump-start: flashback for its mana cost and a discard
+
+"You may cast this card from your graveyard by discarding a card in addition to paying its other
+costs. Then exile this card." (CR 702.133a)
+
+How it is read:
+- The keyword is `flashback` with two new flags:
+  - `ownManaCost`: `flashbackCostOf` charges the card's own mana cost;
+  - `discard`: D585's "discard a card" additional cost, asked only of the graveyard casting.
+- Both the offer (`legalActions`: the play carries its `discardOptions`, and is not offered with no
+  other card in hand) and the cast (`castSpell`: the chosen card is checked and discarded) honour
+  the flag only when `flashback` is the play. From hand the spell asks for nothing, and a discard
+  sent with it is refused.
+- The exile afterwards is flashback's own.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- from the graveyard a discard is required, and with one the spell draws and is exiled;
+- with an empty hand it is not offered from the graveyard, and from hand a discard is refused.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,828, all passing
+
+Coverage: 11,667 of 31,743 cards (+7), 31,212 of 59,509 lines (+12). Staples: 237 of 244.

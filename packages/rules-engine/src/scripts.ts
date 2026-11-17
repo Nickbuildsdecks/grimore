@@ -11140,6 +11140,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
 
   // ── The keywords whose line is the whole instruction ──────────────────────────────────────────
   if (word === 'cascade') return { triggers: [cascade()] };
+  // Jump-start (D908): see `CardScript.flashback.discard`.
+  if (word === 'jump-start') return { flashback: { cost: '', ownManaCost: true, discard: true } };
   if (word === 'storm') return { triggers: [storm()] };
   if (word === 'extort') return { triggers: [extort()] };
   if (word === 'undying') return { triggers: comesBackWithACounter('undying') };

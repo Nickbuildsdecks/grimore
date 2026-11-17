@@ -3091,6 +3091,14 @@ export interface CardScript {
   readonly flashback?: {
     /** The whole cost of the flashback casting, in the printed `{2}{U}` form. */
     readonly cost: string;
+    /**
+     * Jump-start (D908, CR 702.133a): "You may cast this card from your graveyard by discarding a
+     * card in addition to paying its other costs. Then exile this card." Flashback for the card's
+     * own mana cost, with D585's discard asked of the graveyard casting only.
+     */
+    readonly discard?: true;
+    /** Jump-start's cost is the card's own mana cost (D908), read by `flashbackCostOf`. */
+    readonly ownManaCost?: true;
   };
   /**
    * Escape: cast this from your graveyard for a cost that is partly mana and partly cards

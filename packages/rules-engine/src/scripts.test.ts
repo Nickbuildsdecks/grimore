@@ -16654,6 +16654,53 @@ describe('devour and amplify (D907)', () => {
   });
 });
 
+describe('jump-start: flashback for its mana cost and a discard (D908)', () => {
+  const ROWS = [
+    { name: 'Test Idea', type_line: 'Instant', oracle_text: 'Draw a card.\nJump-start', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'jump', name: 'Jump',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], graveyard: string[]) => advanceTo(arena({
+    decks: { 0: 'jump', 1: 'jump' }, deckSpecs: { jump: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: graveyard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('from the graveyard it asks for a discard, draws, and is exiled', () => {
+    let s = table(['Test Spark'], ['Test Idea']);
+    const idea = find(s, 0, 'graveyard', 'Test Idea');
+    const spark = find(s, 0, 'hand', 'Test Spark');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: idea, flashback: true } as Action)).toMatch(/discard/);
+    const before = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: idea, flashback: true, discarded: spark } as Action)), 10);
+    expect(s.instances[spark]!.zone).toBe('graveyard');
+    expect(s.instances[idea]!.zone).toBe('exile');
+    // One card discarded, one drawn.
+    expect(ids(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('with nothing else in hand it is not offered from the graveyard; from the hand it asks nothing', () => {
+    const empty = table([], ['Test Idea']);
+    const idea = find(empty, 0, 'graveyard', 'Test Idea');
+    const hand = ids(empty, 0, 'hand');
+    // The turn's draw is in hand, so empty the hand first.
+    const bare = { ...empty, zones: { ...empty.zones, '0:hand': [], '0:library': [...hand, ...ids(empty, 0, 'library')] } };
+    expect(legalActions(bare, 0).plays.some((p) => p.card === idea)).toBe(false);
+
+    const s = table(['Test Idea', 'Test Spark'], []);
+    const fromHand = find(s, 0, 'hand', 'Test Idea');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: fromHand, discarded: find(s, 0, 'hand', 'Test Spark') } as Action)).toMatch(/does not ask for a discard/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

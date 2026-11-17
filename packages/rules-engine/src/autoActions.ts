@@ -629,7 +629,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `retrace asks you to discard a land card from your hand`);
     }
     discardedForCost = action.discarded;
-  } else if (script?.additionalCost !== undefined && 'discard' in script.additionalCost) {
+  } else if ((script?.additionalCost !== undefined && 'discard' in script.additionalCost)
+    // Jump-start's discard (D908), asked only of the graveyard casting.
+    || (flashback && script?.flashback?.discard === true)) {
     const options = discardOptions(state, action.by, inst.id);
     if (options.length === 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', `you have no card to discard for ${characteristics.name}`);

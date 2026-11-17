@@ -655,7 +655,10 @@ export function flashbackCostOf(state: GameState, id: string): string | undefine
   const inst = state.instances[id];
   if (inst === undefined) return undefined;
   const def = state.cardDefs[inst.defKey];
-  const printed = scriptForCard(def)?.flashback?.cost;
+  const flashback = scriptForCard(def)?.flashback;
+  // Jump-start pays the card's own mana cost (D908).
+  if (flashback?.ownManaCost === true) return def?.manaCost ?? '';
+  const printed = flashback?.cost;
   if (printed !== undefined) return printed;
   return inst.zone === 'graveyard' && inst.flashbackGrantedTurn === state.turn ? def?.manaCost ?? '' : undefined;
 }
@@ -1853,7 +1856,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       `discardOptions`, the way an ability's do. A printed life payment needs more life than it
       costs, which is the line every life cost here draws.
     */
-    const discardAsked = script?.additionalCost !== undefined && 'discard' in script.additionalCost;
+    const discardAsked = (script?.additionalCost !== undefined && 'discard' in script.additionalCost)
+      // Jump-start's (D908): only when this play is the graveyard casting.
+      || (flashback === true && script?.flashback?.discard === true);
     // Retrace's discard is a land card (D599); with a printed discard as well it would be two, which
     // nothing prints and nothing here can ask.
     if (retrace && discardAsked) continue;
