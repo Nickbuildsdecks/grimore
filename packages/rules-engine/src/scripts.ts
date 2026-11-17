@@ -26049,6 +26049,64 @@ function staticFromLine(line: string): Partial<CardScript> | null {
       }],
     };
   }
+  // Necromancy (D727): see `CardScript.castAsThoughFlash`.
+  const asFlash = /^You may cast (.+?) as though it had flash\. If you cast it any time a sorcery couldn't have been cast, the controller of the permanent it becomes sacrifices it at the beginning of the next cleanup step\.?$/i.exec(plain(line).trim());
+  if (asFlash !== null) return { castAsThoughFlash: 'sacrifice-at-cleanup' };
+  /*
+    Necromancy's entry (D727): "When ~ enters, if it's on the battlefield, it becomes an Aura with
+    'enchant creature put onto the battlefield with ~.' Put target creature card from a graveyard
+    onto the battlefield under your control and attach ~ to it. When ~ leaves the battlefield, that
+    creature's controller sacrifices it."
+
+    Animate Dead's mechanic (D722) arriving by a different road. Necromancy is cast as an
+    enchantment with no target, so it is never an Aura spell; the target is the entry trigger's,
+    chosen as the trigger goes on the stack, and only "if it's on the battlefield" (an intervening
+    if). As the trigger resolves the card comes back under its controller, recorded as `animatedBy`,
+    Necromancy becomes an Aura (a static adding the subtype to itself) and is attached to it. As an
+    Aura with no `script.aura`, the state-based check bins it when its host leaves, which is the
+    "enchant creature put onto the battlefield with ~" that matters. With no creature card in any
+    graveyard the trigger has no target and does nothing: Necromancy stays an enchantment that
+    does nothing, as the rules leave it.
+  */
+  const necro = /^When (.+?) enters, if it's on the battlefield, it becomes an Aura with "enchant creature put onto the battlefield with (.+?)\." Put target creature card from a graveyard onto the battlefield under your control and attach (.+?) to it\. When (.+?) leaves the battlefield, that creature's controller sacrifices it\.?$/i.exec(plain(line).trim());
+  if (necro !== null && necro[1] === necro[2] && necro[2] === necro[3] && necro[3] === necro[4]) {
+    const spec = targetSpecFrom(graveyardPhrase('target creature card', 'a'), false);
+    if (spec !== null) {
+      return {
+        triggers: [
+          {
+            on: { kind: 'etb', who: 'self' },
+            description: 'put target creature card from a graveyard onto the battlefield, enchanted by this',
+            condition: (c) => c.state.instances[c.source]?.zone === 'battlefield',
+            targets: [{ ...spec, friendly: true }],
+            effect: (c) => {
+              const target = c.targets[0];
+              const self = c.state.instances[c.source];
+              if (target?.kind !== 'card' || self === undefined || self.zone !== 'battlefield') return c.state;
+              let next = staticEffect(c.state, c.source, c.controller, { kind: 'cards', ids: [c.source] }, { addSubtypes: ['Aura'] });
+              const card = next.instances[target.id];
+              if (card === undefined || card.zone !== 'graveyard') return next;
+              next = putOntoBattlefield(next, target.id, c.controller);
+              if (next.instances[target.id]?.zone !== 'battlefield') return next;
+              next = withInstance(next, target.id, { animatedBy: c.source });
+              return withInstance(next, c.source, { attachedTo: target.id });
+            },
+          },
+          {
+            on: { kind: 'leaves' },
+            description: "that creature's controller sacrifices it",
+            effect: (c) => {
+              const animated = Object.keys(c.state.instances).filter((id) => {
+                const inst = c.state.instances[id]!;
+                return inst.zone === 'battlefield' && inst.animatedBy === c.source;
+              });
+              return animated.length === 0 ? c.state : sacrifice(c.state, animated);
+            },
+          },
+        ],
+      };
+    }
+  }
   // Mox Diamond (D714): see `CardScript.entersByDiscarding`.
   const discarding = /^If (.+?) would enter(?: the battlefield)?, you may discard a land card instead\. If you do, put (.+?) onto the battlefield\. If you don't, put it into its owner's graveyard\.?$/i.exec(plain(line).trim());
   if (discarding !== null && discarding[1] === discarding[2]) {

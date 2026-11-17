@@ -38,10 +38,10 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, untapPermanent } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
-import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
+import { colourIdentity, commanderIdentity, grantedAbilitiesOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
@@ -7903,6 +7903,9 @@ describe('deck coverage', () => {
         life (D719)".
       - `script entersCounting` (D907): devour and amplify. No pool deck has one. Driven at runtime
         by "devour and amplify (D907)".
+      - `script castAsThoughFlash` (D727): Necromancy's "You may cast ~ as though it had flash". No
+        pool deck has one. Driven at runtime by "Necromancy: flash, an Aura it becomes, and a
+        cleanup sacrifice (D727)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7930,6 +7933,7 @@ describe('deck coverage', () => {
       'script preventsDamageToYou',
       'script skipsDrawStep',
       'script entersCounting',
+      'script castAsThoughFlash',
     ]);
 
     const declared = [
@@ -16651,6 +16655,70 @@ describe('devour and amplify (D907)', () => {
     const amp = find(s, 0, 'battlefield', 'Test Amplifier');
     expect(s.instances[amp]!.counters['+1/+1']).toBe(dragons.length);
     expect(namesIn(s, 0, 'hand')).toContain('Test Dragon');
+  });
+});
+
+describe('Necromancy: flash, an Aura it becomes, and a cleanup sacrifice (D727)', () => {
+  const ROWS = [
+    { name: 'Test Necro', type_line: 'Enchantment', oracle_text: 'You may cast Test Necro as though it had flash. If you cast it any time a sorcery couldn\'t have been cast, the controller of the permanent it becomes sacrifices it at the beginning of the next cleanup step.\nWhen Test Necro enters, if it\'s on the battlefield, it becomes an Aura with "enchant creature put onto the battlefield with Test Necro." Put target creature card from a graveyard onto the battlefield under your control and attach Test Necro to it. When Test Necro leaves the battlefield, that creature\'s controller sacrifices it.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'necromancy', name: 'Necromancy',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const table = (theirGraveyard: string[], step: Step = 'precombat-main') => advanceTo(arena({
+    decks: { 0: 'necromancy', 1: 'necromancy' }, deckSpecs: { necromancy: deck.deck },
+    hands: { 0: ['Test Necro'] }, graveyard: { 1: theirGraveyard }, turn: 3, firstSeat: 0,
+  }), step);
+  const cast = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Necro') })), 20);
+  const isAura = (s: GameState, id: string) => hasSubtype(characteristicsOf(s, s.instances[id]!).typeLine, 'aura');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast in a main phase, it takes a creature from an opponent\'s graveyard and becomes its Aura', () => {
+    const s = cast(table(['Test Bear']));
+    const necro = find(s, 0, 'battlefield', 'Test Necro');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(s.instances[bear]!.owner).toBe(1);
+    expect(s.instances[necro]!.attachedTo).toBe(bear);
+    expect(isAura(s, necro)).toBe(true);
+    expect(s.delayed).toEqual([]);
+  });
+
+  it('when it leaves, the creature is sacrificed; when the creature leaves, it goes too', () => {
+    let s = cast(table(['Test Bear']));
+    const necro = find(s, 0, 'battlefield', 'Test Necro');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(sacrifice(s, [necro]), 20);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    let t = cast(table(['Test Bear']));
+    t = drain(destroy(t, find(t, 0, 'battlefield', 'Test Bear')), 20);
+    expect(namesIn(t, 0, 'battlefield')).not.toContain('Test Necro');
+  });
+
+  it('cast when a sorcery could not be, both are sacrificed in that turn\'s cleanup step', () => {
+    let s = table(['Test Bear'], 'end');
+    s = cast(s);
+    expect(namesIn(s, 0, 'battlefield')).toEqual(expect.arrayContaining(['Test Necro', 'Test Bear']));
+    expect(s.delayed).toHaveLength(1);
+    for (let i = 0; i < 10 && namesIn(s, 0, 'battlefield').includes('Test Necro'); i++) s = drain(passBoth(s), 5);
+    expect(s.turn).toBe(3);
+    expect(s.step).toBe('cleanup');
+    s = drain(passBoth(s), 10);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Bear');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Bear');
+  });
+
+  it('with no creature card in any graveyard, it stays an enchantment that does nothing', () => {
+    const s = cast(table([]));
+    const necro = find(s, 0, 'battlefield', 'Test Necro');
+    expect(isAura(s, necro)).toBe(false);
+    expect(s.instances[necro]!.attachedTo).toBeNull();
   });
 });
 

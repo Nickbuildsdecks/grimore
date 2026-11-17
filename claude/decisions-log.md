@@ -47821,6 +47821,56 @@ Faults injected by hand: 4 of 4 caught.
 Coverage: 11,627 of 31,743 cards (+23 since D904's measure), 31,150 of 59,509 lines. Staples: 237
 of 244.
 
+## D727 — Necromancy, and a cleanup step that gives priority to a delayed ability
+
+**A correction first.** A delayed ability scheduled for the cleanup step fired there and was then
+carried into the next turn: it resolved in the next player's upkeep. CR 514.3a gives the players
+priority in the cleanup step when anything triggers there, and then runs the cleanup step again.
+The engine already did that for a discard to hand size (`cleanupHolds`, `finishCleanup`). Entering
+the step didn't check it, and nothing scheduled a cleanup ability until Necromancy, so nothing had
+shown it. `advanceStep` now hands out priority in the cleanup step when `cleanupHolds` says so.
+
+"You may cast Necromancy as though it had flash. If you cast it any time a sorcery couldn't have
+been cast, the controller of the permanent it becomes sacrifices it at the beginning of the next
+cleanup step. When Necromancy enters, if it's on the battlefield, it becomes an Aura with 'enchant
+creature put onto the battlefield with Necromancy.' Put target creature card from a graveyard onto
+the battlefield under your control and attach Necromancy to it. When Necromancy leaves the
+battlefield, that creature's controller sacrifices it."
+
+How it is read:
+- **The flash line** is a new script field, `castAsThoughFlash`. It is a permission to cast at any
+  time a player has priority, not the keyword, so "creatures with flash" don't see it. A cast when a
+  sorcery couldn't have been cast is recorded on the stack object (`castOutsideSorceryTiming`). As
+  the permanent arrives, an engine-known delayed `sacrifice` is scheduled for the next cleanup step.
+- **The entry** is D722's Animate Dead mechanism by a different road:
+  - Necromancy is cast as an enchantment with no target, so it is never an Aura spell;
+  - the target is the trigger's, a creature card in any graveyard, and the trigger asks "if it's on
+    the battlefield" (an intervening if);
+  - as it resolves, the card comes back under Necromancy's controller (recorded as `animatedBy`),
+    Necromancy becomes an Aura (a static adding the subtype to itself), and it is attached;
+  - when Necromancy leaves, the creature is sacrificed;
+  - as an Aura with no `script.aura`, the state-based check bins it when its host leaves.
+- **With no creature card in any graveyard**, the trigger has no target and Necromancy stays an
+  enchantment that does nothing, as the rules leave it.
+
+Staples went from 237 to 238 (Necromancy).
+
+**Tests.** 5 engine tests, plus the mechanic-coverage entry for `castAsThoughFlash`:
+- the card reads;
+- cast in a main phase, it takes a creature from an opponent's graveyard, controls it, and becomes
+  its Aura, with nothing scheduled;
+- when it leaves, the creature is sacrificed, and when the creature leaves, it goes too;
+- cast in the end step, both are sacrificed in that turn's own cleanup step (turn 3, step cleanup),
+  and the creature ends in its owner's graveyard;
+- with no creature card in any graveyard, it stays a plain enchantment.
+
+Faults injected by script: 8 of 8 caught, including the cleanup correction.
+
+    engine tests: 4,827, all passing (on the tree merged with the other session's D906)
+
+Coverage: 11,635 of 31,743 cards (+7), 31,163 of 59,509 lines (+11), against d1d70f9 (the other
+session's D904 and D905). Staples: 238 of 244 (+1).
+
 ## D906 — Scavenge and Reinforce
 
 Two more keyword builders, both activated abilities that pay with the card itself.
@@ -47904,6 +47954,6 @@ How it is read:
 
 Faults injected by hand: 4 of 4 caught.
 
-    engine tests: 4,828, all passing
+    engine tests: 4,833, all passing (merged with the other session's D727)
 
 Coverage: 11,667 of 31,743 cards (+7), 31,212 of 59,509 lines (+12). Staples: 237 of 244.

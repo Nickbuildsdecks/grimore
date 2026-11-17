@@ -3389,6 +3389,15 @@ export interface CardScript {
    * the beginning of your draw step". `advanceStep` goes from upkeep straight to the main phase.
    */
   readonly skipsDrawStep?: true;
+  /**
+   * "You may cast ~ as though it had flash. If you cast it any time a sorcery couldn't have been
+   * cast, the controller of the permanent it becomes sacrifices it at the beginning of the next
+   * cleanup step." (D727): Necromancy. Cast at any time a player has priority, without having flash
+   * (CR 702.8 is not granted, so "creatures with flash" do not see it). A cast outside sorcery
+   * timing is recorded on the stack object (`castOutsideSorceryTiming`), and the permanent it
+   * becomes is sacrificed by an engine-known delayed ability at the next cleanup step.
+   */
+  readonly castAsThoughFlash?: 'sacrifice-at-cleanup';
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;

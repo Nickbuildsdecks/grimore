@@ -333,7 +333,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // your own main phase with an empty stack.
   const instantSpeed =
     characteristics.typeLine.types.some((t) => t.toLowerCase() === 'instant') ||
-    characteristics.keywords.has('flash');
+    characteristics.keywords.has('flash') ||
+    // "As though it had flash" (D727), which is a permission and not the keyword.
+    script?.castAsThoughFlash !== undefined;
   /*
     An offered cast ignores the timing, because the thing offering it said when (CR 702.85a).
 
@@ -1044,6 +1046,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     castNumber: state.spellsCastThisTurn,
     // And where it was cast from (D607): `inst` is the card before it moved to the stack.
     castFrom: inst.zone,
+    // And whether a sorcery could have been cast just now (D727), for Necromancy's cleanup sacrifice.
+    ...(atSorcerySpeed(state, action.by) ? {} : { castOutsideSorceryTiming: true as const }),
     ...(action.x === undefined ? {} : { x: action.x }),
     /*
       "This spell can't be countered", settled now rather than when something tries to counter it.
