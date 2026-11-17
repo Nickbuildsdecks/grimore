@@ -7908,6 +7908,7 @@ describe('deck coverage', () => {
         cleanup sacrifice (D727)".
       - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
         runtime by "sunburst and converge (D917)".
+      - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7937,6 +7938,7 @@ describe('deck coverage', () => {
       'script entersCounting',
       'script castAsThoughFlash',
       'script sunburst',
+      'script plot',
     ]);
 
     const declared = [
@@ -17591,6 +17593,201 @@ describe('historic and subtypes in a card filter (D919)', () => {
     expect(refusal(s, { type: 'auto:cast', by: 0, card: recall, targets: [{ kind: 'card', id: bear }] } as Action)).not.toBeNull();
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: recall, targets: [{ kind: 'card', id: goblin }] } as Action)), 40);
     expect(s.instances[goblin]!.zone).toBe('hand');
+  });
+});
+
+describe('a mana land that stays tapped through the next untap step (D920)', () => {
+  const ROWS = [
+    { name: 'Test Marsh', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana: ['C', 'B', 'R'],
+      oracle_text: "{T}: Add {C}.\n{T}: Add {B} or {R}. Test Marsh doesn't untap during your next untap step." },
+  ];
+  const deck = customDeck({
+    id: 'd920', name: 'Depletion-free',
+    entries: [{ name: 'Test Marsh', count: 4 }, { name: 'Swamp', count: 56 }],
+    data: ROWS as never[],
+  });
+  const tapFor = (type: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd920', 1: 'd920' }, deckSpecs: { d920: deck.deck },
+      battlefield: { 0: ['Test Marsh'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const marsh = find(s, 0, 'battlefield', 'Test Marsh');
+    const abilities = scriptForCard(s.cardDefs[s.instances[marsh]!.defKey])?.abilities ?? [];
+    const index = abilities.findIndex((a) => a.produces?.length === 1 && a.produces[0] === type);
+    expect(index).toBeGreaterThanOrEqual(0);
+    s = apply(s, { type: 'auto:activate', by: 0, card: marsh, abilityIndex: index } as Action);
+    return { s, marsh };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('tapped for a colour: the mana, and the land stays down through its next untap step', () => {
+    let { s, marsh } = tapFor('B');
+    expect(s.pools['0']!.B).toBe(1);
+    expect(s.instances[marsh]!.frozen).toBe(true);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[marsh]!.tapped).toBe(true);
+    // And the turn after that it untaps: the freeze is spent by the one step.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[marsh]!.tapped).toBe(false);
+  });
+
+  it('the rider must be about the land itself', () => {
+    const other = compileCard({ ...ROWS[0], name: 'Test Other',
+      oracle_text: "{T}: Add {C}.\n{T}: Add {B} or {R}. Target land doesn't untap during your next untap step." } as never);
+    expect(other.ok && other.unread.length > 0).toBe(true);
+  });
+
+  it('tapped for colourless: no rider', () => {
+    let { s, marsh } = tapFor('C');
+    expect(s.instances[marsh]!.frozen ?? false).toBe(false);
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[marsh]!.tapped).toBe(false);
+  });
+});
+
+describe('a mana line with "Activate only if …" (D921)', () => {
+  const L = (name: string, oracle_text: string, produced_mana: string[]) => ({ name, type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana, oracle_text });
+  const ROWS = [
+    L('Test Verge', '{T}: Add {B}.\n{T}: Add {R}. Activate only if you control a Swamp or a Mountain.', ['B', 'R']),
+    L('Test Lair', '{T}: Add {U} or {B}. Activate only if this land entered this turn or if your control a basic land.', ['U', 'B']),
+    L('Test Temple', '{T}: Add {C}{C}. Activate only if you control five or more lands.', ['C']),
+    L('Test Spire', '{T}: Add {C}.\n{T}: Add {G}. Activate only if you control an artifact.', ['C', 'G']),
+    { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' },
+    { name: 'Test Wastes', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana: ['C'], oracle_text: '{T}: Add {C}.' },
+  ];
+  const deck = customDeck({
+    id: 'd921', name: 'Conditional mana',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 18 }, { name: 'Swamp', count: 18 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd921', 1: 'd921' }, deckSpecs: { d921: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Whether the land's ability for `type` may be activated now. */
+  const can = (s: GameState, land: string, type: string): boolean => {
+    const id = find(s, 0, 'battlefield', land);
+    const abilities = scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.abilities ?? [];
+    const index = abilities.findIndex((a) => (a.produces ?? []).includes(type as never));
+    expect(index).toBeGreaterThanOrEqual(0);
+    return refusal(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: index } as Action) === null;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Verge: the second colour only with a Swamp or a Mountain', () => {
+    expect(can(table(['Test Verge']), 'Test Verge', 'B')).toBe(true);
+    expect(can(table(['Test Verge']), 'Test Verge', 'R')).toBe(false);
+    expect(can(table(['Test Verge', 'Mountain']), 'Test Verge', 'R')).toBe(true);
+    expect(can(table(['Test Verge', 'Swamp']), 'Test Verge', 'R')).toBe(true);
+  });
+
+  it('"entered this turn or if you control a basic land"', () => {
+    const s = table(['Test Lair', 'Test Wastes']);
+    // Placed at the start of the game, so it did not enter this turn, and Test Wastes is not basic.
+    expect(can(s, 'Test Lair', 'U')).toBe(false);
+    expect(can(table(['Test Lair', 'Swamp']), 'Test Lair', 'U')).toBe(true);
+    const lair = find(s, 0, 'battlefield', 'Test Lair');
+    const fresh = { ...s, instances: { ...s.instances, [lair]: { ...s.instances[lair]!, enteredTurn: s.turn } } };
+    expect(can(fresh, 'Test Lair', 'U')).toBe(true);
+  });
+
+  it('a count of lands binds a mana sum too (Temple of the False God)', () => {
+    expect(can(table(['Test Temple', 'Swamp', 'Swamp', 'Swamp']), 'Test Temple', 'C')).toBe(false);
+    expect(can(table(['Test Temple', 'Swamp', 'Swamp', 'Swamp', 'Swamp']), 'Test Temple', 'C')).toBe(true);
+  });
+
+  it('a card type: only with an artifact', () => {
+    expect(can(table(['Test Spire']), 'Test Spire', 'G')).toBe(false);
+    expect(can(table(['Test Spire', 'Test Trinket']), 'Test Spire', 'G')).toBe(true);
+    expect(can(table(['Test Spire']), 'Test Spire', 'C')).toBe(true);
+  });
+});
+
+describe('plot (D922)', () => {
+  const ROWS = [
+    { name: 'Test Plotter', type_line: 'Sorcery', oracle_text: 'Draw three cards.\nPlot {1}', mana_cost: '{4}{U}', cmc: 5, colors: ['U'], layout: 'normal' },
+    { name: 'Test Quick Plot', type_line: 'Instant', oracle_text: 'You gain 4 life.\nPlot {1}', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd922', name: 'Plot',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 28 }, { name: 'Plains', count: 28 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd922', 1: 'd922' }, deckSpecs: { d922: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const plotted = (card: string) => {
+    let s = seated(card);
+    const id = find(s, 0, 'hand', card);
+    s = apply(s, { type: 'auto:plot', by: 0, card: id } as Action);
+    return { s, id };
+  };
+  const castPlays = (s: GameState, id: string) => legalActions(s, 0).plays.filter((p) => p.card === id && p.kind === 'cast');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered from hand at sorcery speed, for the plot cost; the card goes face up into exile', () => {
+    const s0 = seated('Test Plotter');
+    const id0 = find(s0, 0, 'hand', 'Test Plotter');
+    expect(legalActions(s0, 0).plays.some((p) => p.card === id0 && p.kind === 'plot')).toBe(true);
+    const { s, id } = plotted('Test Plotter');
+    expect(s.instances[id]!.zone).toBe('exile');
+    expect(s.instances[id]!.faceDown ?? false).toBe(false);
+    expect(s.instances[id]!.playFromExile).toMatchObject({ by: 0, through: 'plotted' });
+    // The Island paid for it.
+    expect(s.instances[find(s, 0, 'battlefield', 'Island')]!.tapped).toBe(true);
+  });
+
+  it('not castable the turn it was plotted', () => {
+    const { s, id } = plotted('Test Plotter');
+    expect(castPlays(s, id)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: id } as Action)).toMatch(/later turn/);
+  });
+
+  it('on a later turn: cast free, at sorcery speed', () => {
+    let { s, id } = plotted('Test Plotter');
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    // Every land tapped: it costs nothing.
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([k, v]) => [k, v.zone === 'battlefield' ? { ...v, tapped: true } : v])) };
+    expect(castPlays(s, id).length).toBe(1);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 3);
+    expect(s.instances[id]!.zone).toBe('graveyard');
+  });
+
+  it('an instant plotted is still cast as a sorcery', () => {
+    let { s, id } = plotted('Test Quick Plot');
+    s = advanceTo(nextTurn(nextTurn(s)), 'begin-combat');
+    expect(s.priority).toBe(0);
+    expect(castPlays(s, id)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: id } as Action)).toMatch(/as a sorcery/);
+  });
+
+  it('plot itself only as a sorcery', () => {
+    // Its own turn, holding priority, but in combat rather than a main phase.
+    const s = advanceTo(seated('Test Plotter'), 'begin-combat');
+    expect(s.priority).toBe(0);
+    const id = find(s, 0, 'hand', 'Test Plotter');
+    expect(legalActions(s, 0).plays.some((p) => p.card === id && p.kind === 'plot')).toBe(false);
+    expect(refusal(s, { type: 'auto:plot', by: 0, card: id } as Action)).toMatch(/only as a sorcery/);
+    // An instant with plot is castable in combat, and still not plotted there.
+    const quick = advanceTo(seated('Test Quick Plot'), 'begin-combat');
+    const qid = find(quick, 0, 'hand', 'Test Quick Plot');
+    expect(legalActions(quick, 0).plays.some((p) => p.card === qid && p.kind === 'plot')).toBe(false);
   });
 });
 

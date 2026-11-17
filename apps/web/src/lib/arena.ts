@@ -511,6 +511,10 @@ function playAction(
   if (play.kind === "suspend") {
     return { type: "auto:suspend", card: play.card }
   }
+  // And plotting (D922): the card's plot cost, and it waits face up in exile to be cast free later.
+  if (play.kind === "plot") {
+    return { type: "auto:plot", card: play.card }
+  }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast. And so does a

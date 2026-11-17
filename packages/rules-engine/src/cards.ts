@@ -314,7 +314,8 @@ export interface CardInstance {
   readonly playFromExile?: {
     readonly by: SeatIndex;
     readonly grantedTurn: number;
-    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step';
+    /** `plotted` (D922): no deadline; free, at sorcery speed, on a turn after `grantedTurn`. */
+    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted';
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the

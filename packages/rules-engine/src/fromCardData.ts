@@ -88,7 +88,7 @@ import {
 } from './characteristics.js';
 import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
-import { dealDamage, drawLater, opponentsOf } from './effects.js';
+import { dealDamage, drawLater, freezeNextUntap, opponentsOf } from './effects.js';
 import { scriptForCard } from './derive.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
 import { spendRestriction } from './spending.js';
@@ -356,6 +356,22 @@ interface ManaLine {
    */
   readonly damage?: number;
   /**
+   * "~ doesn't untap during your next untap step" (D920): the other effect a mana line prints after
+   * its mana, on ten legal lands (the Ice Age and Alliances depletion-free duals and their kin). Part
+   * of the same mana ability's effect, as the pain land's damage is (CR 605.3a), so it happens as
+   * the mana is made and nobody can respond in between. `CardInstance.frozen`.
+   */
+  readonly freezes?: true;
+  /**
+   * "Activate only if …" after the mana (D921): the Verges ("you control a Swamp or a Mountain"), the
+   * Tainted lands ("you control a Swamp"), and the Dominaria lands ("this land entered this turn or
+   * if you control a basic land"). The ability is not offered, and the auto-tapper cannot use it,
+   * while the condition is false. See `manaCondition`.
+   */
+  readonly onlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
+  /** The condition's sentence as printed, for the ability's own `description`. */
+  readonly onlyIfWords?: string;
+  /**
    * "Spend this mana only to …" — the other second sentence a mana line prints (D595). See
    * `AbilityDef.spendOnly` and `spending.ts`.
    */
@@ -532,6 +548,74 @@ function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
  * land deals the damage to **you**, and a reader loose about the subject would be one that read
  * somebody else's damage as its controller's.
  */
+const BASIC_LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+
+/** Whether `controller` controls a land with a basic land type among `types`, or a basic land (D921). */
+function controlsLand(state: GameState, controller: SeatIndex, test: (line: ReturnType<typeof parseTypeLine>) => boolean): boolean {
+  for (const id of state.zones?.[zoneKey(controller, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst !== undefined && test(characteristicsOf(state, inst).typeLine)) return true;
+  }
+  return false;
+}
+
+/**
+ * A mana line's "Activate only if …" (D921), as a test, or `null` for a condition this does not read.
+ * Read live, so a land that became a Swamp counts and one that stopped being one does not.
+ */
+function manaCondition(sentence: string, name: string): ((state: GameState, source: string, controller: SeatIndex) => boolean) | null {
+  const text = sentence.trim().replace(/\.$/, '');
+  const selves = [name, shortName(name), ...SELF_TYPE_WORDS.map((word) => `this ${word.toLowerCase()}`)]
+    .filter((x): x is string => x !== null && x !== undefined).map((x) => x.toLowerCase());
+  // "Activate only if Mirrex entered this turn."
+  const entered = /^Activate only if (.+) entered this turn$/.exec(text);
+  if (entered !== null && selves.includes(entered[1]!.toLowerCase())) {
+    return (state, source) => state.instances[source]?.enteredTurn === state.turn;
+  }
+  // "Activate only if you control an artifact" (Spire of Industry), "… a Dragon" (Mox Jasper).
+  const one = /^Activate only if you control an? (artifact|creature|enchantment|planeswalker|[A-Z][a-z'-]+)$/.exec(text);
+  if (one !== null && !BASIC_LAND_TYPES.includes(one[1]!)) {
+    const word = one[1]!;
+    const typed = /^[a-z]/.test(word);
+    if (!typed && !isCreatureType(word)) return null;
+    return (state, _source, controller) => controlsLand(state, controller, (line) => (typed ? hasType(line, word) : hasSubtype(line, word)));
+  }
+  // "Activate only if you control five or more lands" (Temple of the False God).
+  const many = /^Activate only if you control (two|three|four|five|six|seven) or more (lands|artifacts|creatures)$/.exec(text);
+  if (many !== null) {
+    const n = ({ two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 } as Record<string, number>)[many[1]!]!;
+    const kind = many[2]!.slice(0, -1);
+    return (state, _source, controller) => {
+      let count = 0;
+      for (const id of state.zones?.[zoneKey(controller, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst !== undefined && hasType(characteristicsOf(state, inst).typeLine, kind)) count += 1;
+      }
+      return count >= n;
+    };
+  }
+  const verge = /^Activate only if you control an? (Plains|Island|Swamp|Mountain|Forest)(?: or an? (Plains|Island|Swamp|Mountain|Forest))?$/.exec(text);
+  if (verge !== null) {
+    const types = [verge[1]!, ...(verge[2] === undefined ? [] : [verge[2]])];
+    return (state, _source, controller) => controlsLand(state, controller, (line) => types.some((t) => hasSubtype(line, t)));
+  }
+  // "…or if your control a basic land": Scryfall's own text has the typo, and the card means "you".
+  if (/^Activate only if this land entered this turn or if your? control a basic land$/.test(text)) {
+    return (state, source, controller) => state.instances[source]?.enteredTurn === state.turn
+      || controlsLand(state, controller, (line) => line.supertypes.some((t) => t.toLowerCase() === 'basic'));
+  }
+  return null;
+}
+
+/** `Lake of the Dead doesn't untap during your next untap step` (D920), of the card itself. */
+function selfFreezeSentence(sentence: string, name: string): boolean {
+  const match = /^(.+?) doesn't untap during your next untap step\.?$/i.exec(sentence.trim());
+  if (match === null) return false;
+  const subject = match[1]!.trim().toLowerCase();
+  return [name.toLowerCase(), shortName(name)?.toLowerCase(), ...SELF_TYPE_WORDS.map((word) => `this ${word.toLowerCase()}`)]
+    .includes(subject);
+}
+
 function selfDamageSentence(sentence: string, name: string): number | undefined {
   const match = /^(.+?) deals (\d+) damage to you\.?$/i.exec(sentence.trim());
   if (match === null) return undefined;
@@ -620,7 +704,9 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   // A chosen type only the line reader may take, for the reason `chosenOk` says (D644).
   if (spendOnly?.chosenType === true && !chosenOk) return null;
   const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
-  if (rest !== '' && damage === undefined && spendOnly === undefined) return null;
+  const freezes = rest !== '' && restriction === null && damage === undefined && selfFreezeSentence(rest, name);
+  const onlyIf = rest !== '' && restriction === null && damage === undefined && !freezes ? manaCondition(rest, name) : null;
+  if (rest !== '' && damage === undefined && spendOnly === undefined && !freezes && onlyIf === null) return null;
 
   let cost: ManaAbilityCost = { tap: true };
   if (!/^\{T\}/i.test(printed)) {
@@ -648,13 +734,13 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const one = parseSymbolRun(worded[2]!);
     if (one === null) return null;
     const n = WORDS[worded[1]!.toLowerCase()]!;
-    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   const anyOne = /^(two|three|four|five) mana of any one colou?r$/i.exec(body);
   if (anyOne !== null) {
     const n = WORDS[anyOne[1]!.toLowerCase()]!;
     const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
-    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // "An amount of {G} equal to your devotion to green" (D713): Karametra's Acolyte's count.
   const devoted = /^an amount of (\{[WUBRG]\}) equal to your devotion to (white|blue|black|red|green)$/i.exec(body);
@@ -664,7 +750,7 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const colour = LETTERS[devoted[2]!.toLowerCase()]!;
     if (symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage,
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       per: {
         count: (state, _source, controller) => devotionTo(state, controller, new Set([colour])),
         phrase: `point of your devotion to ${devoted[2]!.toLowerCase()}`,
@@ -679,20 +765,20 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const symbol = parseSymbolRun(counted[1]!);
     if (count === null || symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage,
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       per: { count, phrase: counted[2]!.trim() },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   // "One mana of the chosen color" (D642), alone or after one printed colour (the Thriving lands).
   const chosenColour = /^(?:\{([WUBRG])\}\s+or\s+)?one\s+mana\s+of\s+the\s+chosen\s+colou?r$/i.exec(body);
   if (chosenColour !== null) {
     if (!chosenOk) return null;
     const fixed = chosenColour[1] as ManaType | undefined;
     return {
-      mode: 'choice', produces: COLOURS, cost, printed, damage,
+      mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       chosen: fixed === undefined ? {} : { fixed },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
@@ -700,15 +786,15 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   // Chrome Mox (D717): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
   if (/^one\s+mana\s+of\s+any\s+of\s+the\s+exiled\s+card['’]s\s+colou?rs$/i.test(body)) {
     if (!chosenOk) return null;
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Fellwar Stone and Exotic Orchard (D681).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
 
   /*
@@ -732,14 +818,14 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   if (runs.some((r) => r.length !== 1)) {
     // The filter lands (D665): every answer the same size, at least two of them.
     if (!runs.every((r) => r.length === runs[0]!.length)) return null;
-    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
-  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -779,9 +865,9 @@ function tapAbilities(
     }
     return {
       cost,
-      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${spentOn(line?.spendOnly)}`,
+      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${staysDown(line?.freezes)}${spentOn(line?.spendOnly)}${line?.onlyIfWords === undefined ? '' : ` ${line.onlyIfWords}.`}`,
       produces: [type],
-      ...painEffect(damage),
+      ...painEffect(damage, line?.freezes),
       ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
       ...(line?.identity === true
         ? { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => commanderIdentity(state, controller).includes(type) }
@@ -792,6 +878,8 @@ function tapAbilities(
       ...(line?.imprinted === true
         ? { activateOnlyIf: (state: GameState, source: string) => imprintedColours(state, source).has(type) }
         : {}),
+      // A printed condition (D921). No line prints it beside the three above, so it stands alone.
+      ...(line?.onlyIf === undefined ? {} : { activateOnlyIf: line.onlyIf }),
     };
   });
 }
@@ -811,15 +899,22 @@ const hurtsYou = (damage?: number): string =>
  * actions are checked, which is the rule: one ability, resolving immediately, whose effect is both
  * halves (CR 605.3a). See `ManaLine.damage` for why it is neither a cost nor a trigger.
  */
-const painEffect = (damage?: number): Pick<AbilityDef, 'effect'> => (
-  damage === undefined
+const painEffect = (damage?: number, freezes?: boolean): Pick<AbilityDef, 'effect'> => (
+  damage === undefined && freezes !== true
     ? {}
     : {
-      effect: (c) => dealDamage(
-        c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source },
-      ),
+      effect: (c) => {
+        const hurt = damage === undefined ? c.state
+          : dealDamage(c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source });
+        // And the depletion-free duals' rider (D920): the land stays down through the next untap.
+        return freezes === true ? freezeNextUntap(hurt, c.source) : hurt;
+      },
     }
 );
+
+/** The frozen rider's sentence, for the ability's own `description` (D920). */
+const staysDown = (freezes?: boolean): string =>
+  freezes === true ? " It doesn't untap during your next untap step." : '';
 
 /**
  * What a counted mana line counts (D662), as `AbilityDef.producesTimes`, or `null` for a phrase this
@@ -869,6 +964,8 @@ function sumAbility(line: ManaLine): AbilityDef {
     ...(line.per === undefined ? {} : { producesTimes: line.per.count }),
     ...painEffect(line.damage),
     ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
+    // A printed condition (D921) binds a sum as it binds a single mana.
+    ...(line.onlyIf === undefined ? {} : { activateOnlyIf: line.onlyIf }),
   };
 }
 
@@ -891,6 +988,11 @@ function foldManaLines(
   parsed: readonly ManaLine[],
 ): { abilities: AbilityDef[]; produces: ManaType[] } | { why: string } {
   if (parsed.some((p) => p.mode === 'runs')) return { why: `${name}: it adds one of several mana runs, read only line by line` };
+  // The frozen rider and a printed condition are facts about one line, which the fold below groups by
+  // damage alone (D920, D921).
+  if (parsed.some((p) => p.freezes === true || p.onlyIf !== undefined) && (parsed.length > 1 || intrinsic.length > 0)) {
+    return { why: `${name}: a line that keeps it tapped is read only line by line` };
+  }
   const sums = parsed.filter((p) => p.mode === 'sum');
   if (sums.length > 0) {
     if (parsed.length > 1 || intrinsic.length > 0) {

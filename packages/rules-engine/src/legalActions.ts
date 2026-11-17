@@ -48,6 +48,7 @@ const PLAY_FROM_EXILE_UNTIL: Readonly<Record<
   'this-turn': 'this turn only',
   'your-next-turn': 'until the end of your next turn',
   'your-next-end-step': 'until your next end step',
+  plotted: 'plotted, without paying its mana cost',
 };
 
 /** One thing a player could do, with everything the UI needs to offer it. */
@@ -57,7 +58,7 @@ export interface LegalPlay {
    * is exactly why it is its own kind — it uses no stack, so a table that drew it as an ability
    * would be promising a window to respond that does not exist.
    */
-  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell' | 'suspend';
+  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell' | 'suspend' | 'plot';
   readonly card: string;
   readonly name: string;
   readonly description: string;
@@ -1435,6 +1436,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => state.instances[id]?.playFromExile?.by === seat)
+      // A plotted card is cast on a later turn than the one it was plotted on (D922).
+      .filter((id) => state.instances[id]?.playFromExile?.through !== 'plotted'
+        || state.turn > state.instances[id]!.playFromExile!.grantedTurn)
       .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: true, offered: false })),
     /*
       And the sixth: the one card somebody has been told they may cast for nothing (CR 702.85a).
@@ -1617,6 +1621,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       why(id, 'sorcery speed: your own main phase, with nothing on the stack');
       continue;
     }
+    // A plotted card is cast "as a sorcery", an instant included (D922).
+    const plottedCast = impulse && inst.playFromExile?.through === 'plotted';
+    if (plottedCast && !sorcerySpeed) {
+      why(id, 'a plotted card is cast as a sorcery: your own main phase, with nothing on the stack');
+      continue;
+    }
 
     /*
       Foretell: the special action that hides the card, offered beside its ordinary cast.
@@ -1659,6 +1669,20 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Suspend ${ch.name} (${script.suspend.cost}, ${counters} time counter`
             + `${counters === 1 ? '' : 's'} in exile)`,
           manaCost: script.suspend.cost, targetSpecs: [], candidates: [],
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+    }
+
+    // And plot (D922), suspend's sibling: the card's own cost, from hand, as a sorcery.
+    if (script?.plot !== undefined && inst.zone === 'hand' && !flashback && !escape && !retrace && !fromCommand
+      && !foretold && !fromAdventure && sorcerySpeed) {
+      const cost = parseManaCost(script.plot.cost);
+      if (cost.unsupported === undefined && canAfford(poolOf(state, seat), cost, sources)) {
+        out.push({
+          kind: 'plot', card: id, name: ch.name,
+          description: `Plot ${ch.name} (${script.plot.cost}; cast it free on a later turn)`,
+          manaCost: script.plot.cost, targetSpecs: [], candidates: [],
           isManaAbility: false, sacrificeOptions: [],
         });
       }
@@ -1820,6 +1844,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       nothing and madness pays a cost of its own, and both are on the offer rather than on the card.
     */
     const costShown = offered ? state.pendingOfferedCast?.cost ?? ''
+      // A plotted card is cast without paying its mana cost (D922).
+      : plottedCast ? ''
       : flashback ? flashbackCostOf(state, id) ?? ''
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of

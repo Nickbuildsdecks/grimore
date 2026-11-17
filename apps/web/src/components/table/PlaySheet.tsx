@@ -95,6 +95,9 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                 ? 'foretell'
                 : play.kind === 'suspend'
                 ? 'suspend'
+                // And plot (D922), a fifth.
+                : play.kind === 'plot'
+                ? 'plot'
                 : play.faceDown === true
                 ? 'facedown'
                 : play.modes === undefined

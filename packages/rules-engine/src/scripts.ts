@@ -11224,6 +11224,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     const n = Number(annihilator[1]);
     return triggerFromLine(`Whenever ${name} attacks, defending player sacrifices ${n === 1 ? 'a permanent' : `${n} permanents`}.`, name);
   }
+  // Plot (D922): see `CardScript.plot`.
+  const plotted = /^plot ((?:\{[^}]+\})+)$/i.exec(text);
+  if (plotted !== null) return { plot: { cost: plotted[1]! } };
   // Sunburst (D917): see `CardScript.sunburst`.
   if (word === 'sunburst') return { sunburst: { counter: 'auto', n: 1 } };
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };

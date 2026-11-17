@@ -2407,6 +2407,11 @@ function candidateActions(
       out.push({ action: { type: 'auto:suspend', by: seat, card: play.card } });
       continue;
     }
+    // Plot (D922), offered and dropped by the same rule: the payoff is a turn away.
+    if (play.kind === 'plot') {
+      out.push({ action: { type: 'auto:plot', by: seat, card: play.card } });
+      continue;
+    }
     for (const aim of aimings(state, seat, play, opts)) {
       const targets = aim.targets;
       if (play.kind === 'cast') {
@@ -4359,7 +4364,7 @@ const foretells = (state: GameState, action: Action): boolean =>
  * an opponent knows.
  */
 function specialIsSpareMana(state: GameState, seat: SeatIndex, action: Action): boolean {
-  if (action.type !== 'auto:foretell' && action.type !== 'auto:suspend') return false;
+  if (action.type !== 'auto:foretell' && action.type !== 'auto:suspend' && action.type !== 'auto:plot') return false;
   const plays = legalActions(state, seat).plays;
   /*
     Anything else worth doing with the mana, where "else" means **another card**.
@@ -5468,7 +5473,8 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       one is three damage on turn two, and the search sees a card gone and a mana spent for nothing.
       Same fact, same function — spend it when the mana had no better home.
     */
-    if (filtersOn && option.action.type === 'auto:suspend'
+    // And plot (D922), whose payoff is a free cast a turn away: the same bargain, the same rule.
+    if (filtersOn && (option.action.type === 'auto:suspend' || option.action.type === 'auto:plot')
       && !specialIsSpareMana(state, seat, option.action)) {
       dropped += 1;
       continue;

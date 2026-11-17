@@ -60,7 +60,7 @@ import {
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
-  type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction,
+  type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction, type AutoPlotAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -205,6 +205,23 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   const fromAdventure = backFromAdventure
     || (inst.zone === 'exile' && inst.playFromExile?.by === action.by);
+  /*
+    A plotted card (D922): cast "as a sorcery on a later turn without paying its mana cost". The
+    permission is the D583 one with no deadline; these are the two things it adds.
+  */
+  const plotCast = inst.zone === 'exile' && inst.playFromExile?.by === action.by
+    && inst.playFromExile.through === 'plotted';
+  if (plotCast) {
+    if (state.turn <= inst.playFromExile!.grantedTurn) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a plotted card is cast on a later turn than the one it was plotted on');
+    }
+    if (!atSorcerySpeed(state, action.by)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a plotted card is cast as a sorcery: your own main phase, with nothing on the stack');
+    }
+    if (action.x !== undefined && action.x !== 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'X is 0 when a spell is cast without paying its mana cost');
+    }
+  }
   /*
     Foretell, the fourth zone a spell is cast from here (CR 702.143b).
 
@@ -715,7 +732,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
                   // And the commander's free cast (D653): nothing at all.
-                  : commanderFree || pitchCast ? '{0}'
+                  // And a plotted card's later cast (D922): without paying its mana cost.
+                  : commanderFree || pitchCast || plotCast ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.
@@ -1322,6 +1340,38 @@ function foretell(state: GameState, action: AutoForetellAction): Outcome {
     // opponent can count it in exile without knowing what it is.
     message: `${seatName(state, action.by)} foretells a card`,
     data: { card: inst.id, tapped: [...paid.tapped], foretold: true },
+  };
+}
+
+/**
+ * Plotting a card from your hand (D922, CR 702.170a): a special action, as a sorcery, paying the
+ * card's plot cost. The card goes to exile **face up** with a permission to cast it on a later turn,
+ * at sorcery speed, without paying its mana cost: D583's `playFromExile` with `through: 'plotted'`,
+ * which no cleanup expires and `relocate` clears if the card leaves exile.
+ */
+function plot(state: GameState, action: AutoPlotAction): Outcome {
+  requireAutomated(state);
+  requirePriority(state, action.by);
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  }
+  const def = state.cardDefs[inst.defKey];
+  const script = scriptForCard(def);
+  if (script?.plot === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no plot`);
+  }
+  if (!atSorcerySpeed(state, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'plot only as a sorcery: your own main phase, with nothing on the stack');
+  }
+  const paid = payFrom(state, action.by, script.plot.cost, 0, 0);
+  let next = relocate(paid.state, requireInstance(paid.state, inst.id), 'exile', action.by, 'bottom');
+  next = withInstance(next, inst.id, { playFromExile: { by: action.by, grantedTurn: state.turn, through: 'plotted' } });
+  next = resetPriority(settle(next, state), action.by);
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} plots ${def?.name ?? 'a card'}`,
+    data: { card: inst.id, tapped: [...paid.tapped], plotted: true },
   };
 }
 
@@ -3397,6 +3447,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:turnUp': return turnUp(state, action);
     case 'auto:foretell': return foretell(state, action);
     case 'auto:suspend': return suspend(state, action);
+    case 'auto:plot': return plot(state, action);
     case 'auto:dredge': return dredgeDraw(state, action);
     case 'auto:dredgeStops': return setDredgeStops(state, action);
     default: {
