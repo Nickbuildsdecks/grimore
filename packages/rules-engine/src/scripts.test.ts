@@ -17854,7 +17854,7 @@ describe('Fact or Fiction: an opponent splits the top five, the caster takes a p
     expect(split?.type === 'auto:decide' ? split.cards : null).toHaveLength(1);
     const worth = (id: string) => (s.cardDefs[s.instances[id]!.defKey]!.cmc);
     const best = [...top].sort((a, b) => worth(b) - worth(a))[0]!;
-    expect(split?.type === 'auto:decide' ? split.cards[0] : null).toBe(best);
+    expect(split?.type === 'auto:decide' ? split.cards?.[0] : null).toBe(best);
     const asked = apply(s, split!);
     const answer = botAction(asked, 0);
     expect(answer).toMatchObject({ type: 'auto:decide' });
