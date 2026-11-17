@@ -371,6 +371,11 @@ export interface StackObject {
   readonly castNumber?: number;
   /** The zone this spell was cast from (D607), for "if you cast it from your hand". */
   readonly castFrom?: ZoneId;
+  /**
+   * How many colours of mana were spent to cast this spell (D917, CR 702.44a sunburst, converge).
+   * Absent for none: a copy and a spell cast without paying its mana cost spent nothing.
+   */
+  readonly coloursSpent?: number;
   /** Cast when a sorcery couldn't have been (D727): Necromancy's flash, and its cleanup sacrifice. */
   readonly castOutsideSorceryTiming?: true;
   /**

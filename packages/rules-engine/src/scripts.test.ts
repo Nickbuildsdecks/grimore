@@ -7906,6 +7906,8 @@ describe('deck coverage', () => {
       - `script castAsThoughFlash` (D727): Necromancy's "You may cast ~ as though it had flash". No
         pool deck has one. Driven at runtime by "Necromancy: flash, an Aura it becomes, and a
         cleanup sacrifice (D727)".
+      - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
+        runtime by "sunburst and converge (D917)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7934,6 +7936,7 @@ describe('deck coverage', () => {
       'script skipsDrawStep',
       'script entersCounting',
       'script castAsThoughFlash',
+      'script sunburst',
     ]);
 
     const declared = [
@@ -17374,6 +17377,87 @@ describe('the chosen discard, exiled instead (D916)', () => {
       expect(namesIn(s, 1, 'hand')).toContain('Swamp');
     });
   }
+});
+
+describe('sunburst and converge (D917)', () => {
+  const ROWS = [
+    { name: 'Test Sunburst', type_line: 'Artifact Creature — Construct', oracle_text: 'Sunburst', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '0', toughness: '0' },
+    { name: 'Test Sunburst Relic', type_line: 'Artifact', oracle_text: 'Sunburst', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' },
+    { name: 'Test Wanderer', type_line: 'Creature — Elemental', oracle_text: 'Converge — Test Wanderer enters with a +1/+1 counter on it for each color of mana spent to cast it.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Spectrum', type_line: 'Sorcery', oracle_text: 'Converge — Draw X cards, where X is the number of colors of mana spent to cast this spell.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' },
+    { name: 'Test Twin', type_line: 'Creature — Elemental', oracle_text: 'Test Twin enters with two +1/+1 counters on it for each color of mana spent to cast it.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '0', toughness: '0' },
+  ];
+  const deck = customDeck({
+    id: 'd917', name: 'Converge',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 18 }, { name: 'Island', count: 17 }, { name: 'Swamp', count: 17 }],
+    data: ROWS as never[],
+  });
+  const cast = (spell: string, lands: string[], pool?: Record<string, number>) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd917', 1: 'd917' }, deckSpecs: { d917: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: lands }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    if (pool !== undefined) s = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0, ...pool } } };
+    const hand = ids(s, 0, 'hand').length;
+    const card = find(s, 0, 'hand', spell);
+    return { s: drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card } as Action)), 30), card, hand };
+  };
+  const three = ['Plains', 'Island', 'Swamp'];
+  const mono = ['Plains', 'Plains', 'Plains'];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('sunburst on a creature: a +1/+1 counter for each colour spent', () => {
+    let r = cast('Test Sunburst', three);
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(3);
+    r = cast('Test Sunburst', mono);
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('sunburst on a noncreature: charge counters', () => {
+    const r = cast('Test Sunburst Relic', three);
+    expect(r.s.instances[r.card]!.counters['charge']).toBe(3);
+    expect(r.s.instances[r.card]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('converge, entering: the counters as printed', () => {
+    const r = cast('Test Wanderer', three);
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(3);
+    expect(characteristicsOf(r.s, r.s.instances[r.card]!).power).toBe(4);
+  });
+
+  it('converge, resolving: X is the colours spent', () => {
+    let r = cast('Test Spectrum', three);
+    // The spell left the hand and three cards came in.
+    expect(ids(r.s, 0, 'hand').length).toBe(r.hand - 1 + 3);
+    r = cast('Test Spectrum', mono);
+    expect(ids(r.s, 0, 'hand').length).toBe(r.hand - 1 + 1);
+  });
+
+  it('only the colours spent count: not one left in the pool, and not colourless', () => {
+    // Four colours floating for a {3} spell: three are spent, and the fourth stays in the pool.
+    let r = cast('Test Sunburst', [], { W: 1, U: 1, B: 1, G: 1 });
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(3);
+    // White and two colourless: one colour.
+    r = cast('Test Sunburst', [], { W: 1, C: 2 });
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('"two +1/+1 counters for each color": twice the colours', () => {
+    const r = cast('Test Twin', three);
+    expect(r.s.instances[r.card]!.counters['+1/+1']).toBe(6);
+  });
+
+  it('put onto the battlefield without being cast, it has no counters', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd917', 1: 'd917' }, deckSpecs: { d917: deck.deck },
+      battlefield: { 0: ['Test Wanderer'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Wanderer')]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
 });
 
 describe('the tenth deck: the life total that goes up', () => {

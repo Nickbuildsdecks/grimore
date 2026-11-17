@@ -3976,7 +3976,7 @@ function payFrom(
    * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
    */
   exclude?: ReadonlySet<string>,
-): { state: GameState; tapped: readonly string[] } {
+): { state: GameState; tapped: readonly string[]; coloursSpent: number } {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
   const printed = typeof costText === 'object' && costText !== null
@@ -4015,6 +4015,16 @@ function payFrom(
     }
   }
   const result = payCost(poolOf(next, seat), cost, x);
+  /*
+    How many colours this payment spent (D917), for sunburst and converge: a colour counts when the
+    pool holds less of it after the payment than before. Which mana pays the generic part is
+    `payCost`'s choice, and which lands are tapped `solveTap`'s; neither aims at more colours, so a
+    player who could have spent more gets the count of what was spent.
+  */
+  const beforePaying = poolOf(next, seat);
+  const coloursSpent = result.paid
+    ? COLOR_SYMBOLS.filter((type) => (beforePaying[type] ?? 0) > ((result.pool as ManaPool)[type] ?? 0)).length
+    : 0;
   if (!result.paid) {
     const asText = typeof costText === 'string' || costText === undefined ? costText : null;
     const shown = asText === null
@@ -4034,8 +4044,11 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped };
+  return { state: setPool(next, seat, left), tapped, coloursSpent };
 }
+
+/** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */
+const COLOR_SYMBOLS: readonly ManaType[] = ['W', 'U', 'B', 'R', 'G'];
 
 // ── Modal spells ─────────────────────────────────────────────────────────────────────────────────
 
@@ -5160,6 +5173,13 @@ function completeResolution(
         });
         if (kind === 'devour' && chosen.length > 0) next = sacrifice(next, chosen);
         if (chosen.length > 0) next = addCounters(next, inst.id, '+1/+1', n * chosen.length);
+      }
+      // Sunburst and converge (D917): counters for each colour of mana spent on this spell.
+      if (script?.sunburst !== undefined && (object.coloursSpent ?? 0) > 0) {
+        const arrived = next.instances[inst.id];
+        const creature = arrived !== undefined && characteristicsOf(next, arrived).isCreature;
+        const counter = script.sunburst.counter === 'auto' ? (creature ? '+1/+1' : 'charge') : script.sunburst.counter;
+        next = addCounters(next, inst.id, counter, script.sunburst.n * object.coloursSpent!);
       }
       /*
         And kicked, which is the same record for the same reason (D561): the trigger that asks

@@ -1047,6 +1047,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     castNumber: state.spellsCastThisTurn,
     // And where it was cast from (D607): `inst` is the card before it moved to the stack.
     castFrom: inst.zone,
+    // And how many colours of mana were spent on it (D917), for sunburst and converge.
+    ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent } : {}),
     // And whether a sorcery could have been cast just now (D727), for Necromancy's cleanup sacrifice.
     ...(atSorcerySpeed(state, action.by) ? {} : { castOutsideSorceryTiming: true as const }),
     ...(action.x === undefined ? {} : { x: action.x }),

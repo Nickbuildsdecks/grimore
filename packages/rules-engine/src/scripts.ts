@@ -11217,6 +11217,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
+  // Sunburst (D917): see `CardScript.sunburst`.
+  if (word === 'sunburst') return { sunburst: { counter: 'auto', n: 1 } };
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
   if (word === 'training') return { triggers: [TRAINING_TRIGGER] };
   if (word === 'melee') return { triggers: [MELEE_TRIGGER] };
@@ -18131,6 +18133,13 @@ function countOfThing(
     if (!destroyedThisWay) return null;
     const kind = destroyed[1]!.toLowerCase();
     return (c) => (c.destroyedThisWay ?? []).filter((gone) => kind === 'permanent' || gone.types.includes(kind)).length;
+  }
+  /*
+    Converge (D917): "where X is the number of colors of mana spent to cast this spell", read off the
+    spell resolving. A copy, or a spell cast without paying its mana cost, spent none.
+  */
+  if (/^colors of mana spent to cast (?:this spell|it)$/i.test(text)) {
+    return (c) => c.resolving?.coloursSpent ?? 0;
   }
   /*
     "for each burden counter on The One Ring" (D718): a kind of counter on the card itself, read
@@ -26587,6 +26596,19 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
 const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice'];
 
 function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
+  /*
+    Converge's counters (D917): "~ enters with a +1/+1 counter on it for each color of mana spent to
+    cast it" (Woodland Wanderer), or "two +1/+1 counters", with or without the ability word. See
+    `CardScript.sunburst`.
+  */
+  const perColour = new RegExp(
+    `^${selfRef(name)} ${ENTERS} with (a|an|one|two|three|\\d+) \\+1/\\+1 counters? on it for each color of mana spent to cast it$`,
+    'i',
+  ).exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
+  if (perColour !== null) {
+    const n = countFrom(perColour[1]!.toLowerCase() === 'an' ? 'a' : perColour[1]!);
+    return n === null ? null : { sunburst: { counter: '+1/+1', n } };
+  }
   const matched = new RegExp(
     `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ([\\w+/]+) counters? on it$`,
     'i',
@@ -27826,10 +27848,15 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const last = resolution.length - 1;
   const recycles = last >= 0 && recycled.test(plain(resolution[last]!).trim());
   // What the readers see; `resolution` stays the printed lines, which is what is reported.
-  const toRead = recycles
+  /*
+    And without an ability word (D917): "Converge — Draw X cards, …" is the sentence after the dash.
+    An ability word has no rules meaning (CR 207.2c) and every one restates its condition in the
+    sentence it labels, which is why the permanent path has always dropped it (`triggerFromLine`).
+  */
+  const toRead = (recycles
     ? [...resolution.slice(0, last), plain(resolution[last]!).trim().replace(recycled, '').trim()]
       .filter((line) => line !== '').map((line) => (/[.!]$/.test(line) ? line : `${line}.`))
-    : resolution;
+    : resolution).map((line) => withoutAbilityWord(line));
   /*
     **A delayed draw** (D689): "Draw a card at the beginning of the next turn's upkeep." — the Mirage
     and Ice Age cantrips, 40-odd spells — and "At the beginning of your next upkeep, <effect>". The

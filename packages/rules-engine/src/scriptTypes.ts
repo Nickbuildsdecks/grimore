@@ -3394,6 +3394,14 @@ export interface CardScript {
    */
   readonly entersCounting?: { readonly kind: 'devour' | 'amplify'; readonly n: number };
   /**
+   * Sunburst and converge's counters (D917): "This enters with a +1/+1 counter on it for each color
+   * of mana spent to cast it" (CR 702.44a). `n` counters per colour, read off the stack object's
+   * `coloursSpent` as the spell resolves, so a permanent put onto the battlefield any other way
+   * enters with none. `'auto'` is sunburst's own rule: +1/+1 counters on a creature, charge
+   * counters on anything else, decided as it enters.
+   */
+  readonly sunburst?: { readonly counter: '+1/+1' | 'auto'; readonly n: number };
+  /**
    * "Prevent all damage that would be dealt to you." (D716): Glacial Chasm. While the permanent is
    * on the battlefield and has its abilities, damage to its controller is prevented in `dealDamage`
    * before anything else reads it, so it is never dealt: no life lost, no commander damage, no

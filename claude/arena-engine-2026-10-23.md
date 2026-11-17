@@ -30767,3 +30767,52 @@ Faults injected by hand: 5 of 5 caught. Two were missed at first and pinned by t
     engine tests: 4,875, all passing
 
 Coverage: 11,771 of 31,743 cards (+5), 31,375 of 59,509 lines (+6). Staples: 238 of 244.
+
+## D917 — Colours of mana spent: sunburst and converge
+
+Sunburst (CR 702.44a) and converge both count the colours of mana spent to cast a spell. The engine
+did not record that, so 53 printed sentences could not be played.
+
+The engine:
+- `payFrom` reports `coloursSpent`: the colours the pool holds less of after the payment than before.
+  Mana left floating does not count, and neither does colourless.
+- `castSpell` records it on the stack object. A copy, or a spell cast without paying its mana cost,
+  has none.
+- **The approximation, stated:** which mana pays the generic part is `payCost`'s choice, and which
+  lands tap is `solveTap`'s. Neither aims at more colours. A player who wants every colour counted
+  floats the mana first, and the guide says so.
+
+Read:
+- **Sunburst**: the keyword, as the new `CardScript.sunburst {counter: 'auto', n: 1}`. It gives
+  +1/+1 counters on a creature and charge counters otherwise, decided as it enters.
+- **"~ enters with a (two) +1/+1 counter(s) on it for each color of mana spent to cast it"**
+  (converge creatures), as `sunburst {counter: '+1/+1', n}`.
+- **"where X is the number of colors of mana spent to cast this spell"**, a count read off the
+  resolving spell.
+- **Ability words on spells now come off** before the resolution is read. "Converge — Draw X cards,
+  …" is the sentence after the dash. An ability word has no rules meaning (CR 207.2c), and the
+  permanent path has always dropped them. This added a few cards beyond converge, and every
+  existing test still passes.
+
+Not read:
+- "Modular—Sunburst";
+- spells that gain sunburst (Lux Artillery, Solar Array);
+- other kinds of counter per colour (Prism Array's crystal counters);
+- the converge spells whose other sentences don't read yet ("discards X cards").
+
+**Tests.** 8 engine tests:
+- the printings read;
+- sunburst gives 3 counters for three colours and 1 for one colour;
+- a noncreature gets charge counters;
+- a converge creature gets its counters;
+- a converge draw draws 3 or 1;
+- a pool with a colour left over, or with colourless, counts only the colours spent;
+- "two counters for each color" doubles;
+- put onto the battlefield without being cast, it has none.
+
+Faults injected by hand: 7 of 8 caught. The miss is converge's +1/+1 against sunburst's automatic
+choice, which differs only on a noncreature printing +1/+1 converge, and no card does.
+
+    engine tests: 4,883, all passing
+
+Coverage: 11,790 of 31,743 cards (+19), 31,404 of 59,509 lines (+29). Staples: 238 of 244.
