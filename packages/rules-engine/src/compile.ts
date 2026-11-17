@@ -48,7 +48,7 @@ import {
 } from './fromCardData.js';
 import {
   classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor,
-  spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
+  manaSpentScryTrigger, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_COLOR, CHOSEN_TYPE, KICKED, copyAsToken, pump } from './effects.js';
@@ -1023,6 +1023,24 @@ function compileSingle(row: CardDataRow): Compilation {
 
       Order is the whole fix. Asked after, the general reader wins and the mana is lost again.
     */
+    /*
+      Path of Ancestry (D729): a mana line, then "When that mana is spent to cast a creature spell
+      that shares a creature type with your commander, scry 1." The mana reads as the line before
+      the rider, and the rider is a trigger the cast puts on the stack (`TriggerDef.whenManaSpent`).
+    */
+    const spentRider = /^(.+?\.)\s+When that mana is spent to cast a creature spell that shares a creature type with your commander, scry (\d+)\.?$/i.exec(line.trim());
+    if (spentRider !== null) {
+      const manaPart = manaAbilitiesFromLine(spentRider[1]!, def.name);
+      const rider = manaSpentScryTrigger(Number(spentRider[2]!), def.name);
+      if (manaPart !== null && rider !== null) {
+        if (merge(built, { abilities: [...manaPart], triggers: [rider] }) === 'conflict') {
+          unread.push({ line, why: 'field-conflict' });
+          continue;
+        }
+        compiled.push(line);
+        continue;
+      }
+    }
     const mana = manaAbilitiesFromLine(line, def.name);
     // Mana "of the chosen color" on a card that never chose a colour would tap for nothing (D642).
     if (mana !== null && ((/\bthe chosen colou?r\b/i.test(line) && enterChoice?.kind !== 'color')

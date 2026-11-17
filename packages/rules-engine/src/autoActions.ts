@@ -13,7 +13,7 @@ import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPaid, withInstance } from './cardActions.js';
 import {
-  characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
+  characteristicsOf, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
@@ -1262,6 +1262,26 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // Which card, so the spell can watch its own cast from the stack: cascade, and the family of
     // keywords printed as "when you cast this spell". See the `self` field on the trigger.
   }, action.by, inst.id);
+  /*
+    "When that mana is spent to cast a creature spell that shares a creature type with your
+    commander" (D729, Path of Ancestry): a source this payment tapped whose script has the rider,
+    and a creature spell sharing a creature type with one of the caster's commanders, puts the
+    rider's trigger on the stack above the spell. See `TriggerDef.whenManaSpent`.
+  */
+  if (spellKind === 'creature') {
+    const commanderTypes = new Set(Object.values(next.instances)
+      .filter((c) => c.isCommander === true && c.owner === action.by)
+      .flatMap((c) => parseTypeLine(next.cardDefs[c.defKey]?.typeLine).subtypes.map((t) => t.toLowerCase())));
+    const shares = [...commanderTypes].some((t) => hasSubtype(characteristics.typeLine, t));
+    if (shares) {
+      for (const source of paid.tapped) {
+        const sourceInst = next.instances[source];
+        const triggers = sourceInst === undefined ? [] : scriptForCard(next.cardDefs[sourceInst.defKey])?.triggers ?? [];
+        const index = triggers.findIndex((t) => t.whenManaSpent === 'creature-sharing-commander-type');
+        if (index >= 0) next = pushAbility(next, source, action.by, index, [], 'triggered', triggers[index]!.description);
+      }
+    }
+  }
   // And ward, off the same cast, for everything the spell took aim at. After the cast triggers
   // rather than before: both happen as the spell is cast and go on the stack together, and this is
   // the order a player watched them in — the spell, then what it is pointed at answering.
