@@ -1744,6 +1744,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           cost: script.dash.cost,
           note: script.dash.warp === true
             ? `warp cost (${script.dash.cost}, exiled at end of turn; cast it from exile on a later turn)`
+            : script.dash.blitz === true
+            ? `blitz cost (${script.dash.cost}, hasty, draws a card when it dies, sacrificed at end of turn)`
             : `dash cost (${script.dash.cost}, hasty, back to your hand at end of turn)`,
           specs: specsFor(script),
         }]),

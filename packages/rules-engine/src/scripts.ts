@@ -28,6 +28,7 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
+  BLITZED,
   SURGED,
   SQUADDED,
   addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
@@ -3668,6 +3669,26 @@ const warpExile = (): TriggerDef => ({
     return withInstance(exiled, inst.id, { playFromExile: { by: inst.owner, grantedTurn: c.state.turn, through: 'warped' } });
   },
 });
+
+/** Blitz's end step (D933): sacrifice it, guarded as dash's return is. */
+const blitzSacrifice = (): TriggerDef => ({
+  on: { kind: 'step', step: 'end', of: 'any' },
+  delayed: true,
+  description: 'sacrifice it',
+  effect: (c) => {
+    const id = c.subject;
+    if (id === undefined || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+    return sacrifice(c.state, [id]);
+  },
+});
+
+/** Blitz's draw (D933): "When this creature dies, draw a card", only if it was blitzed. */
+const BLITZ_DIES_DRAW: TriggerDef = {
+  on: { kind: 'dies' },
+  description: 'when this creature dies, draw a card (blitz)',
+  condition: (c) => (c.subjectCounters?.[BLITZED] ?? c.state.instances[c.source]?.counters[BLITZED] ?? 0) > 0,
+  effect: (c) => draw(c.state, c.controller, 1),
+};
 
 /**
  * Ninjutsu, written out as the activated ability the keyword abbreviates (CR 702.49a).
@@ -11347,6 +11368,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Warp (D931): dash's alternative cost and end-step trigger, ending in exile. See `CardScript.dash.warp`.
   const warp = /^warp ((?:\{[^}]+\})+)$/i.exec(text);
   if (warp !== null) return { dash: { cost: warp[1]!, warp: true }, triggers: [warpExile()] };
+  // Blitz (D933): dash's path with haste, a granted dies draw, and a sacrifice. See `CardScript.dash.blitz`.
+  const blitz = /^blitz ((?:\{[^}]+\})+)$/i.exec(text);
+  if (blitz !== null) return { dash: { cost: blitz[1]!, blitz: true }, triggers: [blitzSacrifice(), BLITZ_DIES_DRAW] };
   // Awaken N—{cost} (D932): see `CardScript.awaken`.
   const awaken = /^awaken (\d+)\s*[—–-]\s*((?:\{[^}]+\})+)$/i.exec(text);
   if (awaken !== null) return { awaken: { cost: awaken[2]!, n: Number(awaken[1]) } };

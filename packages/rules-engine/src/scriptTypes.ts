@@ -3267,6 +3267,14 @@ export interface CardScript {
      * from exile on a later turn (`playFromExile` `through: 'warped'`, for its printed cost).
      */
     readonly warp?: true;
+    /**
+     * Blitz (D933, CR 702.152a): dash's alternative cost with haste, "When this creature dies, draw
+     * a card", and a **sacrifice** at the next end step rather than the return to hand. The draw is
+     * the card's own dies trigger asking the `blitzed` marker as the creature last was on the
+     * battlefield (CR 603.10a), because an ability granted to the permanent is not seen once it
+     * has left.
+     */
+    readonly blitz?: true;
   };
   /**
    * Bestow: cast this creature as an **Aura** for a different cost, and get the creature back when

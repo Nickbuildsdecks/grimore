@@ -37,6 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
+  BLITZED,
   SURGED,
   SQUADDED,
   createToken,
@@ -5309,7 +5310,11 @@ function completeResolution(
       */
       if (object.dashed === true) {
         // Warp (D931) takes dash's path without the haste or the marker; its trigger exiles.
-        if (script?.dash?.warp !== true) {
+        if (script?.dash?.blitz === true) {
+          // Blitz (D933): haste, and the marker its dies draw asks.
+          next = addCounters(next, inst.id, BLITZED, 1);
+          next = pump(next, [inst.id], inst.id, object.controller, { keywords: ['haste'], duration: 'permanent' });
+        } else if (script?.dash?.warp !== true) {
           next = addCounters(next, inst.id, DASHED, 1);
           next = pump(next, [inst.id], inst.id, object.controller, { keywords: ['haste'] });
         }
@@ -5325,7 +5330,8 @@ function completeResolution(
             // end of *that* one, which is what the printed card says.
             of: 'any',
             subject: inst.id,
-            description: script?.dash?.warp === true ? `exile ${def?.name ?? 'it'} (warp)` : `return ${def?.name ?? 'it'} to its owner's hand`,
+            description: script?.dash?.warp === true ? `exile ${def?.name ?? 'it'} (warp)`
+              : script?.dash?.blitz === true ? `sacrifice ${def?.name ?? 'it'} (blitz)` : `return ${def?.name ?? 'it'} to its owner's hand`,
           });
         }
       }

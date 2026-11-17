@@ -886,6 +886,9 @@ export const SQUADDED = 'squad';
 /** A permanent cast for its surge cost (D928), recorded as it arrives. See `CardScript.spectacle.surge`. */
 export const SURGED = 'surged';
 
+/** A permanent cast for its blitz cost (D933), for its dies draw. See `CardScript.dash.blitz`. */
+export const BLITZED = 'blitzed';
+
 /**
  * The marker on a **myriad** token, which is the thing that remembers to exile it (CR 702.111a).
  *
@@ -950,7 +953,8 @@ export const RENOWNED = 'renowned';
  * shield, a creature that was kicked twice. And a permanent carrying only a marker was offered as a
  * thing with counters on it.
  */
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED]);
+// And the records D924, D928 and D933 write: squad's count, a surge and a blitz.
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED]);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).

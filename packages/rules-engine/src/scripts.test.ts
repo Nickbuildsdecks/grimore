@@ -18476,6 +18476,72 @@ describe('awaken (D932)', () => {
   });
 });
 
+describe('blitz (D933)', () => {
+  const ROWS = [
+    { name: 'Test Blitzer', type_line: 'Creature — Devil', oracle_text: 'Blitz {R}', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd933', name: 'Blitz',
+    entries: [{ name: 'Test Blitzer', count: 4 }, { name: 'Mountain', count: 56 }],
+    data: ROWS as never[],
+  });
+  const cast = (blitzed: boolean) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd933', 1: 'd933' }, deckSpecs: { d933: deck.deck }, hands: { 0: ['Test Blitzer'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Blitzer');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, ...(blitzed ? { dashed: true } : {}) } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, card };
+  };
+  const toEnd = (s: GameState) => {
+    // A hasty creature makes the engine wait for a declaration: attack with nothing.
+    let next = advanceTo(s, 'declare-attackers');
+    next = drain(apply(next, { type: 'auto:attack', by: 0, attackers: [] }), 30);
+    next = drain(advanceTo(next, 'end'), 30);
+    for (let i = 0; i < 8 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('blitzed: haste, sacrificed at the end step, and its death draws a card', () => {
+    let { s, card } = cast(true);
+    expect(characteristicsOf(s, s.instances[card]!).keywords.has('haste')).toBe(true);
+    const hand = ids(s, 0, 'hand').length;
+    s = toEnd(s);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('blitzed and killed before the end step: it still draws', () => {
+    let { s, card } = cast(true);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(sacrifice(s, [card]), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('cast for its printed cost: no haste, and it stays', () => {
+    let { s, card } = cast(false);
+    expect(characteristicsOf(s, s.instances[card]!).keywords.has('haste')).toBe(false);
+    s = toEnd(s);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+
+  it('cast for its printed cost and killed: no draw', () => {
+    let { s, card } = cast(false);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(sacrifice(s, [card]), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

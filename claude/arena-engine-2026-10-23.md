@@ -31369,3 +31369,34 @@ Faults injected by hand: 7 of 7 caught.
     engine tests: 4,961, all passing
 
 Coverage: 11,987 of 31,743 cards (+12), 31,723 of 59,509 lines (+15). Staples: 239 of 244.
+
+## D933 — Blitz
+
+"Blitz {cost} (If you cast this spell for its blitz cost, it gains haste and 'When this creature
+dies, draw a card.' Sacrifice it at the beginning of the next end step.)" (CR 702.152a), from Streets
+of New Capenna. Seven legal cards now read whole.
+
+How it is read:
+- **Dash's path a third time**, after warp (D931). `CardScript.dash` gained `blitz`, and the play,
+  flag, validation, computer and web table are dash's; the offer says "blitz".
+- **On arrival** it gains haste and the `blitzed` marker. Its delayed end-step trigger
+  **sacrifices** it rather than returning it.
+- **The draw is the card's own dies trigger**, conditioned on the marker as the creature last was
+  on the battlefield (`subjectCounters`, CR 603.10a). The first version granted the ability to the
+  permanent (backup's mechanism, D927), and the test showed a granted ability is not seen once the
+  permanent has left the battlefield, so a blitzed creature's death drew nothing.
+- **Markers kept as markers:** `squad`, `surged` and `blitzed` (D924, D928, D933) joined
+  `MARKERS`, so they are not shown as counters or proliferated.
+
+**Tests.** 5 engine tests:
+- the card reads;
+- blitzed, it has haste, is sacrificed at the end step, and its death draws a card;
+- blitzed and killed earlier, it still draws;
+- cast for its printed cost, it has no haste and stays;
+- cast for its printed cost and killed, it draws nothing.
+
+Faults injected by hand: 4 of 4 caught. The marker condition was pinned by the last test.
+
+    engine tests: 4,966, all passing
+
+Coverage: 11,994 of 31,743 cards (+7), 31,738 of 59,509 lines (+15). Staples: 239 of 244.
