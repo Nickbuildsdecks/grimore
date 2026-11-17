@@ -1438,6 +1438,9 @@ function triggerMatches(
       // Dethrone's (D911): the attack was declared against the player with the most life.
       if (want.kind === 'attacks' && want.mostLife === true
         && (event as { mostLife?: boolean }).mostLife !== true) return false;
+      // Training's (D912): another attacker in the declaration had greater power.
+      if (want.kind === 'attacks' && want.stronger === true
+        && (event as { stronger?: boolean }).stronger !== true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
       // a non-creature permanent still fires for its own arrival. Anything in combat is a creature
@@ -1821,6 +1824,9 @@ function fireTrigger(
     ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged')
       && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
+    // And for an attack, how many opponents the declaration attacked, for melee (D912).
+    ...(event.kind === 'attacks' && event.opponentsAttacked !== undefined
+      ? { eventAmount: event.opponentsAttacked } : {}),
     ...(answering === undefined ? {} : { answering }),
     ...(subject === undefined
       || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'

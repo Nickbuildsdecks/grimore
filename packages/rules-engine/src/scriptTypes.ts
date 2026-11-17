@@ -520,6 +520,17 @@ export type TriggerEvent =
        */
       readonly mostLife?: boolean;
       /**
+       * Training's clause (D912, CR 702.149a): "whenever this creature attacks **with another
+       * creature with greater power**". Asked as `true` by the trigger, written by the engine at
+       * the declaration from the attackers' live power.
+       */
+      readonly stronger?: boolean;
+      /**
+       * Set by the engine (D912): how many opponents were attacked in this declaration, players
+       * only, for melee (CR 702.121a). It reaches the resolution as `eventAmount`.
+       */
+      readonly opponentsAttacked?: number;
+      /**
        * "Whenever a **Dragon** you control attacks" (D635): the attacker's live subtypes, any of
        * these, compared as the board events' `ofSubtypes` is (D479).
        */

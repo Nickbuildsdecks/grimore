@@ -3015,6 +3015,30 @@ const plural = (count: number, one: string, many: string): string =>
  * happened. It is also why the effect asks where the source is instead of trusting the answer.
  */
 /**
+ * Training (CR 702.149a, D912): "Whenever this creature attacks with another creature with greater
+ * power, put a +1/+1 counter on this creature." See `TriggerEvent.stronger`.
+ */
+const TRAINING_TRIGGER: TriggerDef = {
+  on: { kind: 'attacks', stronger: true },
+  description: 'put a +1/+1 counter on this creature (training)',
+  effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+};
+
+/**
+ * Melee (CR 702.121a, D912): "Whenever this creature attacks, it gets +1/+1 until end of turn for
+ * each opponent you attacked with a creature this combat." The count is the declaration's, carried
+ * on the event, so an attacker removed from combat before this resolves still counts.
+ */
+const MELEE_TRIGGER: TriggerDef = {
+  on: { kind: 'attacks' },
+  description: 'it gets +1/+1 until end of turn for each opponent you attacked this combat (melee)',
+  effect: (c) => {
+    const n = c.eventAmount ?? 0;
+    return n <= 0 ? c.state : pump(c.state, [c.source], c.source, c.controller, { power: n, toughness: n });
+  },
+};
+
+/**
  * Dethrone (CR 702.105a, D911): "Whenever this creature attacks the player with the most life or
  * tied for most life, put a +1/+1 counter on this creature." See `TriggerEvent.mostLife`.
  */
@@ -11169,6 +11193,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
+  if (word === 'training') return { triggers: [TRAINING_TRIGGER] };
+  if (word === 'melee') return { triggers: [MELEE_TRIGGER] };
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
   if (word === 'riot') return RIOT;
   if (word === 'unleash') return UNLEASH;

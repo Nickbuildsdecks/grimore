@@ -16960,6 +16960,67 @@ describe('dethrone (D911)', () => {
   });
 });
 
+describe('training and melee (D912)', () => {
+  const ROWS = [
+    { name: 'Test Trainee', type_line: 'Creature — Human', oracle_text: 'Training', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Melee', type_line: 'Creature — Human', oracle_text: 'Melee', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Ox', type_line: 'Creature — Ox', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Squire', type_line: 'Creature — Human', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: Draw a card.', mana_cost: '{9}', cmc: 9, colors: ['W'], layout: 'normal', power: null, toughness: null, loyalty: '5' },
+  ];
+  const deck = customDeck({
+    id: 'kw912', name: 'Training and melee',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 40 }],
+    data: ROWS as never[],
+  });
+  // `plan`: [card name, defender seat, attack the defender's planeswalker?]
+  const attack = (mine: string[], plan: [string, number, boolean?][], seats = 2) => {
+    const decks = Object.fromEntries(Array.from({ length: seats }, (_, i) => [i, 'kw912']));
+    let s = advanceTo(arena({
+      ...(seats > 2 ? { format: 'pod', seats } : {}),
+      decks, deckSpecs: { kw912: deck.deck },
+      battlefield: { 0: mine, 1: ['Test Walker'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const used = new Set<string>();
+    const attackers = plan.map(([name, defender, walker]) => {
+      const id = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === name && !used.has(i))!;
+      used.add(id);
+      return { attacker: id, defender, ...(walker ? { planeswalker: find(s, 1, 'battlefield', 'Test Walker') } : {}) };
+    });
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers } as Action), 12);
+    return { s, ids: attackers.map((a) => a.attacker) };
+  };
+  const plus = (s: GameState, id: string) => s.instances[id]!.counters['+1/+1'] ?? 0;
+  const power = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).power;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('training: a counter attacking beside a creature with greater power, and only then', () => {
+    let r = attack(['Test Trainee', 'Test Ox'], [['Test Trainee', 1], ['Test Ox', 1]]);
+    expect(plus(r.s, r.ids[0]!)).toBe(1);
+    r = attack(['Test Trainee', 'Test Ox'], [['Test Trainee', 1]]);
+    expect(plus(r.s, r.ids[0]!)).toBe(0);
+    // Equal power is not greater.
+    r = attack(['Test Trainee', 'Test Squire'], [['Test Trainee', 1], ['Test Squire', 1]]);
+    expect(plus(r.s, r.ids[0]!)).toBe(0);
+  });
+
+  it('melee: +1/+1 for each opponent attacked, players only', () => {
+    let r = attack(['Test Melee'], [['Test Melee', 1]]);
+    expect(power(r.s, r.ids[0]!)).toBe(3);
+    r = attack(['Test Melee', 'Test Squire'], [['Test Melee', 1], ['Test Squire', 2]], 3);
+    expect(power(r.s, r.ids[0]!)).toBe(4);
+    // Two attackers at the same opponent count that opponent once.
+    r = attack(['Test Melee', 'Test Squire'], [['Test Melee', 1], ['Test Squire', 1]], 3);
+    expect(power(r.s, r.ids[0]!)).toBe(3);
+    r = attack(['Test Melee'], [['Test Melee', 1, true]]);
+    expect(power(r.s, r.ids[0]!)).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

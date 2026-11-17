@@ -30577,3 +30577,30 @@ Faults injected by hand: 6 of 6 caught.
     engine tests: 4,847, all passing
 
 Coverage: 11,701 of 31,743 cards (+5), 31,259 of 59,509 lines (+9). Staples: 238 of 244.
+
+## D912 — Training and melee
+
+Two more attack keywords, each a fact about the declaration that the engine now writes on the
+attack event, for `alone`'s reason: by the time the trigger resolves, an attacker may be gone.
+
+- **Training** (CR 702.149a): "Whenever this creature attacks with another creature with greater
+  power, put a +1/+1 counter on this creature." The event's `stronger` field is true when another
+  attacker in the declaration has greater live power, and the trigger asks for it.
+- **Melee** (CR 702.121a): "Whenever this creature attacks, it gets +1/+1 until end of turn for each
+  opponent you attacked with a creature this combat." The event carries `opponentsAttacked`
+  (players only, not planeswalkers), and it reaches the resolution as `eventAmount`.
+- **Not read:** the grants, such as Adriana's "Other creatures you control have melee", and "whenever
+  ~ trains".
+
+**Tests.** 3 engine tests:
+- both keywords read;
+- training gives a counter beside a stronger attacker, and not alone or beside equal power;
+- melee gives +1/+1 per opponent attacked, counts an opponent once however many creatures attack it,
+  and gives nothing for a planeswalker attacked.
+
+Faults injected by hand: 7 of 7 caught. An eighth found a guard that could never matter (this
+attacker's power is never greater than its own), and the guard was removed.
+
+    engine tests: 4,850, all passing
+
+Coverage: 11,708 of 31,743 cards (+7), 31,283 of 59,509 lines (+24). Staples: 238 of 244.

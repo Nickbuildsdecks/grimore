@@ -2454,11 +2454,25 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     resolves *after* the declaration, by which time the creature may be dead and the attack gone
     from combat. Looking it up then would be reading a board that no longer says so.
   */
+  /*
+    Training's and melee's facts about the declaration (D912), read here for `alone`'s reason: by the
+    time the trigger resolves an attacker may be gone. Power is the live power as attackers are
+    declared; "opponents you attacked" are the players attacked, not planeswalkers (CR 702.121a).
+  */
+  const powerOf = (id: string): number => {
+    const inst = next.instances[id];
+    return inst === undefined ? 0 : characteristicsOf(next, inst).power ?? 0;
+  };
+  const opponentsAttacked = new Set(attacks
+    .filter((a) => a.planeswalker === undefined && a.defender !== action.by).map((a) => a.defender)).size;
   for (const attack of attacks) {
     next = raise(
       next,
       {
         kind: 'attacks',
+        // No need to leave this attacker out: its power is never greater than its own.
+        stronger: attacks.some((other) => powerOf(other.attacker) > powerOf(attack.attacker)),
+        opponentsAttacked,
         subjectSeat: action.by,
         // "Attacks alone": one creature in the whole declaration (CR 702.90b). Read here because
         // this is the only place that knows — by the time an exalted trigger resolves, a second
