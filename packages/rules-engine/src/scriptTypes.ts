@@ -3359,6 +3359,15 @@ export interface CardScript {
    */
   readonly entersByDiscarding?: 'land';
   /**
+   * Devour N and Amplify N (D907): "As this enters, you may sacrifice any number of creatures. It
+   * enters with N times that many +1/+1 counters" (CR 702.82a), and "As this enters, put N +1/+1
+   * counters on it for each card you reveal that shares a creature type with it" (CR 702.38a). The
+   * card's question (`decisions[0]`) is asked as the spell resolves, as riot's is, so only a cast
+   * creature is asked (D559's limitation). Devoured creatures are sacrificed; amplified cards are
+   * only revealed.
+   */
+  readonly entersCounting?: { readonly kind: 'devour' | 'amplify'; readonly n: number };
+  /**
    * "Prevent all damage that would be dealt to you." (D716): Glacial Chasm. While the permanent is
    * on the battlefield and has its abilities, damage to its controller is prevented in `dealDamage`
    * before anything else reads it, so it is never dealt: no life lost, no commander damage, no

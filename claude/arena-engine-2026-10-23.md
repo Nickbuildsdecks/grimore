@@ -30380,3 +30380,38 @@ opponent's-turn case gave seat 0 priority first: without it, the refusal came fr
     engine tests: 4,822, all passing
 
 Coverage: 11,644 of 31,743 cards (+17), 31,172 of 59,509 lines (+22). Staples: 237 of 244.
+
+## D907 — Devour and Amplify
+
+Two "as this enters, choose some, and it enters with N counters for each" keywords. Each blocked
+about 7 to 9 legal cards on its own.
+
+How they are read:
+- **The shared machinery.** A new script field, `entersCounting: { kind, n }`, plus the card's one
+  question, asked as the spell resolves (riot's and Mox Diamond's path, so only a cast creature is
+  asked: D559's limitation). As the creature arrives, `completeResolution` counts the chosen cards
+  and adds N +1/+1 counters for each.
+- **Devour N** (CR 702.82a):
+  - any number of your creatures may be chosen, and they are sacrificed;
+  - the bot devours nothing.
+- **Amplify N** (CR 702.38a):
+  - any number of creature cards in your hand that share a creature type with the spell may be
+    chosen;
+  - they are only revealed, and stay in hand;
+  - the bot reveals everything it may, since revealing costs nothing.
+- **Still unread.** Skullmulcher's "draw a card for each creature it devoured".
+
+Also: two earlier mechanic-coverage notes (D714, D716) had been joined onto the line before them by
+a missing newline. They are inside a comment, so nothing ran differently; they are fixed.
+
+**Tests.** 3 engine tests, plus the mechanic-coverage entry:
+- both cards read;
+- devour 2 eats two Goblins for four counters and leaves the Dragon;
+- amplify offers the Dragon and not the Goblin, and the card stays in hand.
+
+Faults injected by hand: 3 of 4 caught. The fourth, a zone re-check at resolution, cannot be
+reached: the question's candidates already come from the right zone. It is kept as a belt.
+
+    engine tests: 4,825, all passing
+
+Coverage: 11,660 of 31,743 cards (+16), 31,200 of 59,509 lines (+28). Staples: 237 of 244.

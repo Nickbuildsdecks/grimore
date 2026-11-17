@@ -7891,14 +7891,18 @@ describe('deck coverage', () => {
         mana (D691)".
       - `script grantsRiot` (D711): "Nontoken creatures you control have riot" (Rhythm of the Wild).
         No pool deck has one. Driven at runtime by "\"Nontoken creatures you control have riot\":
-        Rhythm of the Wild (D711)".      - `script entersByDiscarding` (D714): Mox Diamond's "If ~ would enter, you may discard a land
+        Rhythm of the Wild (D711)".
+      - `script entersByDiscarding` (D714): Mox Diamond's "If ~ would enter, you may discard a land
         card instead". No pool deck has one. Driven at runtime by "Mox Diamond: discard a land card,
-        or it goes to the graveyard (D714)".      - `script preventsDamageToYou` (D716): Glacial Chasm's "Prevent all damage that would be dealt
+        or it goes to the graveyard (D714)".
+      - `script preventsDamageToYou` (D716): Glacial Chasm's "Prevent all damage that would be dealt
         to you". No pool deck has one. Driven at runtime by "Glacial Chasm: life upkeep, no
         attacking, and no damage to you (D716)".
       - `script skipsDrawStep` (D719): Necropotence's "Skip your draw step". No pool deck has one.
         Driven at runtime by "Necropotence: no draw step, discards exiled, and a card a turn for
         life (D719)".
+      - `script entersCounting` (D907): devour and amplify. No pool deck has one. Driven at runtime
+        by "devour and amplify (D907)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7925,6 +7929,7 @@ describe('deck coverage', () => {
       'script entersByDiscarding',
       'script preventsDamageToYou',
       'script skipsDrawStep',
+      'script entersCounting',
     ]);
 
     const declared = [
@@ -16593,6 +16598,59 @@ describe('scavenge and reinforce (D906)', () => {
     s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 10);
     expect(s.instances[card]!.zone).toBe('graveyard');
     expect(s.instances[bear]!.counters['+1/+1']).toBe(2);
+  });
+});
+
+describe('devour and amplify (D907)', () => {
+  const ROWS = [
+    { name: 'Test Devourer', type_line: 'Creature — Lizard', oracle_text: 'Devour 2', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Amplifier', type_line: 'Creature — Dragon', oracle_text: 'Amplify 1', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Dragon', type_line: 'Creature — Dragon', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'kw907', name: 'Keywords 907',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  const cast = (hand: string[], mine: string[], name: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw907', 1: 'kw907' }, deckSpecs: { kw907: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('devour 2: two creatures sacrificed, four counters', () => {
+    let s = cast(['Test Devourer'], ['Test Goblin', 'Test Goblin', 'Test Dragon'], 'Test Devourer');
+    expect(s.pendingDecision?.candidates).toHaveLength(3);
+    const goblins = (s.pendingDecision?.candidates ?? []).filter((id) => named(s, id) === 'Test Goblin');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: goblins } as Action), 20);
+    const devourer = find(s, 0, 'battlefield', 'Test Devourer');
+    expect(s.instances[devourer]!.counters['+1/+1']).toBe(4);
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Test Goblin')).toHaveLength(2);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Dragon');
+  });
+
+  it('amplify 1: a Dragon in hand is offered and revealed, a Goblin is not; the card stays in hand', () => {
+    let s = cast(['Test Amplifier', 'Test Dragon', 'Test Goblin'], [], 'Test Amplifier');
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => named(s, id));
+    expect(offered).toContain('Test Dragon');
+    expect(offered).not.toContain('Test Goblin');
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide' });
+    const dragons = (s.pendingDecision?.candidates ?? []);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: dragons } as Action), 20);
+    const amp = find(s, 0, 'battlefield', 'Test Amplifier');
+    expect(s.instances[amp]!.counters['+1/+1']).toBe(dragons.length);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Dragon');
   });
 });
 

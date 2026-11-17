@@ -5123,6 +5123,17 @@ function completeResolution(
         triggers (CR 603.4). A counter written afterwards would be a counter written too late.
       */
       if (object.evoked === true) next = addCounters(next, inst.id, EVOKED, 1);
+      // Devour and amplify (D907): what was chosen as the spell resolved, counted onto it as it arrives.
+      if (script?.entersCounting !== undefined) {
+        const { kind, n } = script.entersCounting;
+        const chosen = (ctx.decisions[0]?.ids ?? []).filter((id) => {
+          const card = next.instances[id];
+          return card !== undefined && card.zoneSeat === object.controller
+            && card.zone === (kind === 'devour' ? 'battlefield' : 'hand') && id !== inst.id;
+        });
+        if (kind === 'devour' && chosen.length > 0) next = sacrifice(next, chosen);
+        if (chosen.length > 0) next = addCounters(next, inst.id, '+1/+1', n * chosen.length);
+      }
       /*
         And kicked, which is the same record for the same reason (D561): the trigger that asks
         "if it was kicked" resolves from the battlefield, after this stack object has gone.
