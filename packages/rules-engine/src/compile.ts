@@ -897,19 +897,39 @@ function compileSingle(row: CardDataRow): Compilation {
     const backup = /^backup (\d+)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
     if (backup !== null) {
       const following = lines.slice(index + 1);
+      /*
+        What "the following abilities" are (D927): each line below Backup is keywords, one triggered
+        ability, or one activated ability. Keywords ride the pump; a trigger or an ability is put on
+        the card's `grantedTriggers` / `grantedAbilities` and handed over by index (`grants`,
+        `grantsAbilities`), the mechanism soulbond's grants use, so the creature backed up has them
+        until end of turn. Any other line refuses Backup. The card's own copies of those lines are
+        still read below as its own abilities, which is what "this creature" has printed.
+      */
       // `printedKeywords` reads a line only when every part of it is a keyword, so a list with one
       // unknown word ("Flying, banding") comes back empty and refuses Backup.
-      const granted = following.flatMap((rest) => {
+      const keywordsOf: string[] = [];
+      const grantedTriggers: TriggerDef[] = [];
+      const grantedAbilities: NonNullable<CardScript['grantedAbilities']>[number][] = [];
+      let readable = following.length > 0;
+      for (const rest of following) {
         const words = printedKeywords(rest);
-        return words.length > 0 ? words : [null];
-      });
+        if (words.length > 0) { keywordsOf.push(...words); continue; }
+        const read = lineScriptFor(rest, def.name);
+        const keys = read === null ? [] : Object.keys(read);
+        if (read?.triggers?.length === 1 && keys.length === 1) { grantedTriggers.push(read.triggers[0]!); continue; }
+        if (read?.abilities?.length === 1 && keys.length === 1) { grantedAbilities.push(read.abilities[0]!); continue; }
+        readable = false;
+        break;
+      }
       const n = Number(backup[1]);
-      const enters = n >= 1 && following.length > 0 && !granted.includes(null)
+      const enters = n >= 1 && readable
         ? lineScriptFor(`When this creature enters, put ${n === 1 ? 'a +1/+1 counter' : `${['', '', 'two', 'three', 'four', 'five'][n] ?? n} +1/+1 counters`} on target creature.`, def.name)
         : null;
       const trigger = enters?.triggers?.length === 1 && Object.keys(enters).length === 1 ? enters.triggers[0]! : null;
       if (trigger !== null) {
-        const keywords = granted as NonNullable<Parameters<typeof pump>[4]['keywords']>;
+        const keywords = keywordsOf as NonNullable<Parameters<typeof pump>[4]['keywords']>;
+        const grants = grantedTriggers.map((_t, i) => i);
+        const grantsAbilities = grantedAbilities.map((_a, i) => i);
         const backed: TriggerDef = {
           ...trigger,
           description: line.replace(/\([^)]*\)/g, '').trim(),
@@ -919,10 +939,19 @@ function compileSingle(row: CardDataRow): Compilation {
             return target === undefined || target.kind !== 'card' || target.id === c.source
               || after.instances[target.id]?.zone !== 'battlefield'
               ? after
-              : pump(after, [target.id], c.source, c.controller, { keywords });
+              : pump(after, [target.id], c.source, c.controller, {
+                ...(keywords.length > 0 ? { keywords } : {}),
+                ...(grants.length > 0 ? { grants } : {}),
+                ...(grantsAbilities.length > 0 ? { grantsAbilities } : {}),
+              });
           },
         };
-        if (merge(built, { triggers: [backed] }) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        const fragment: Partial<CardScript> = {
+          triggers: [backed],
+          ...(grantedTriggers.length > 0 ? { grantedTriggers } : {}),
+          ...(grantedAbilities.length > 0 ? { grantedAbilities } : {}),
+        };
+        if (merge(built, fragment) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
         compiled.push(line);
         continue;
       }

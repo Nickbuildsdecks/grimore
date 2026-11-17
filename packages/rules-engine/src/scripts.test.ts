@@ -18088,6 +18088,66 @@ describe('conspire (D926)', () => {
   });
 });
 
+describe('backup grants triggered and activated abilities (D927)', () => {
+  const ROWS = [
+    { name: 'Test Backer', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Backup 1 (When this creature enters, put a +1/+1 counter on target creature. If that\'s another creature, it gains the following ability until end of turn.)\nWhenever this creature attacks, you gain 2 life.' },
+    { name: 'Test Pumper', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Backup 1\n{0}: This creature gets +1/+0 until end of turn.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd927', name: 'Backup',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** Casts `card` aimed at the Bear (or at itself), resolving its backup trigger. */
+  const backUp = (card: string, atSelf = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd927', 1: 'd927' }, deckSpecs: { d927: deck.deck }, hands: { 0: [card] }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const cardId = find(s, 0, 'hand', card);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: cardId } as Action)), 30);
+    if (s.pendingChoice !== null) s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: atSelf ? cardId : bear }] }), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, bear, cardId };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a triggered ability: the creature backed up has it until end of turn', () => {
+    let { s, bear } = backUp('Test Backer');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(1);
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[0]!.life;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 20);
+    expect(s.seats[0]!.life).toBe(life + 2);
+    // Gone by the next turn.
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    const later = s.seats[0]!.life;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 20);
+    expect(s.seats[0]!.life).toBe(later);
+  });
+
+  it('an activated ability: offered on the creature backed up', () => {
+    const { s, bear } = backUp('Test Pumper');
+    expect(legalActions(s, 0).plays.some((p) => p.card === bear && p.kind === 'activate')).toBe(true);
+  });
+
+  it('aimed at itself: only the counter', () => {
+    const { s, bear, cardId } = backUp('Test Backer', true);
+    expect(s.instances[cardId]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[bear]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(legalActions(s, 0).plays.some((p) => p.card === bear && p.kind === 'activate')).toBe(false);
+    // And no second copy of its own trigger handed to itself.
+    expect(s.effects.filter((fx) => fx.grants !== undefined && fx.scope.kind === 'cards' && fx.scope.ids.includes(cardId))).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -10884,8 +10884,13 @@ describe('Backup reads only when what it hands on is keywords (D671)', () => {
     const read = backer('Backup 1\nDeathtouch');
     expect(read.ok && read.unread).toEqual([]);
   });
+  // A triggered or activated ability is handed on since D927 (see "backup grants …" in scripts.test).
+  it('reads Backup over a triggered ability line (D927)', () => {
+    const read = backer('Backup 1\nWhenever this creature attacks, draw a card.');
+    expect(read.ok && read.unread).toEqual([]);
+  });
   it.each([
-    ['Backup 1\nWhenever this creature attacks, draw a card.', 'a triggered ability, a different kind of grant'],
+    ['Backup 1\nThis creature can\'t be blocked by creatures with power 2 or less.', 'a static line this reader does not hand on'],
     ['Backup 1\nFlying, banding', 'a list with a keyword the engine does not have'],
   ])('leaves "%s" with Backup unread: %s', (text) => {
     const read = backer(text);

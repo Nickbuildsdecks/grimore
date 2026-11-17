@@ -31165,3 +31165,33 @@ Faults injected by hand: 7 of 7 caught. The untapped check was pinned by the tap
 
 Coverage: 11,924 of 31,743 cards (+9), 31,618 of 59,509 lines (+11). Staples: 238 of 244.
 On the merged head (with D728): 11,926 cards, 31,621 lines.
+
+## D927 — Backup hands on triggered and activated abilities
+
+"Backup N (When this creature enters, put N +1/+1 counters on target creature. If that's another
+creature, it gains the following abilities until end of turn.)" (CR 702.165a). D671 read Backup only
+when every line below it was keywords. Now each following line may also be **one triggered
+ability** or **one activated ability**:
+- The line goes on the card's `grantedTriggers` or `grantedAbilities`, and the backup trigger's pump
+  hands it over by index (`grants`, `grantsAbilities`), soulbond's mechanism, until end of turn.
+- The card still has its own copy of each line, read as its own ability.
+- Aimed at itself, the card gets only the counters, and no second copy of its own abilities.
+
+D671's refusal row for a triggered ability now asserts the line reads. A static line it does not
+hand on ("can't be blocked by creatures with power 2 or less", Chomping Kavu) stands in its place.
+
+Not read: static lines below Backup, and lines that do not read on their own.
+
+**Tests.** 4 engine tests:
+- both printings read;
+- the Bear backed up gains "whenever this creature attacks, you gain 2 life" this turn, and not on
+  the next;
+- a granted activated ability is offered on the Bear;
+- aimed at itself, only the counter: no grant to itself and no ability on the Bear.
+
+Faults injected by hand: 5 of 5 caught. The self-aim guard was pinned by asserting no grant lands
+on the card.
+
+    engine tests: 4,938, all passing
+
+Coverage: 11,930 of 31,743 cards (+4), 31,625 of 59,509 lines (+4). Staples: 239 of 244.
