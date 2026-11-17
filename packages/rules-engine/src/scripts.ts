@@ -14653,7 +14653,8 @@ function selfEffect(
 
     Refused: the kinds the rules or the engine give a meaning of their own (`RULES_COUNTERS`), where
     laying one on with no other machinery would be a wrong reading — a lore counter is a Saga's
-    chapter, a stun counter stops an untap, a time counter is a suspend or vanishing countdown.
+    chapter, a time counter is a suspend or vanishing countdown. A stun counter has its machinery
+    since D723 (`untapPermanent`, CR 122.1d), so it is placed like any other.
   */
   const kinded = new RegExp(`^put (an?|[\\w]+) ([a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
   // A keyword counter ("a flying counter", CR 122.1b) grants its keyword, which nothing here applies
@@ -14673,11 +14674,12 @@ function selfEffect(
 /**
  * Counter kinds with a meaning of their own in the rules or in this engine (D603), so a sentence that
  * merely places one is not the whole of what it does: loyalty and defense (CR 306.5b, CR 310.4),
- * lore (CR 714.2), time and fade (suspend, vanishing, fading), stun (CR 122.1d), shield (CR 122.1c),
- * finality, and the player counters. Everything else is a name another line of the card reads.
+ * lore (CR 714.2), time and fade (suspend, vanishing, fading), shield (CR 122.1c), finality, and the
+ * player counters. Everything else is a name another line of the card reads, or, for stun
+ * (D723, CR 122.1d), a counter `untapPermanent` already knows.
  */
 const RULES_COUNTERS: readonly string[] = [
-  'loyalty', 'defense', 'lore', 'time', 'fade', 'stun', 'shield', 'finality', 'poison', 'energy',
+  'loyalty', 'defense', 'lore', 'time', 'fade', 'shield', 'finality', 'poison', 'energy',
   'experience', 'rad', 'ticket', 'age', 'level',
 ];
 
@@ -22131,11 +22133,12 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     many" are refused: both name a number from somewhere else in the sentence, and a reader that
     guessed one would be wrong rather than silent (D362).
   */
-  const countered = /^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (\+1\/\+1|-1\/-1) counters? on (.+)$/i.exec(text);
+  // And stun (D723, CR 122.1d), which harms as a -1/-1 counter does: it keeps a creature tapped.
+  const countered = /^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (\+1\/\+1|-1\/-1|stun) counters? on (.+)$/i.exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
-    const kind = countered[2]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    const kind = countered[2]!.startsWith('+') ? '+1/+1' : countered[2]!.toLowerCase() === 'stun' ? 'stun' : '-1/-1';
     const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1');
     if (spec !== null && many !== undefined) {
       return {
@@ -23588,10 +23591,17 @@ function composeEffects(
       earlier part targets a card (not a player, not "any target").
     */
     const earlier = parts.find((part) => part.targets !== undefined)?.targets?.[0];
-    const read = withEarlierCardTarget(
-      earlier !== undefined && earlier.kind !== 'player' && earlier.kind !== 'any',
-      () => readEffect(clause, name, where),
-    );
+    /*
+      **After a target, a bare "it" is the target** (D723). "Tap target creature an opponent
+      controls and put a stun counter on it" was read by the plain clause vocabulary, where "it" is
+      the source, so the counter went on the creature that entered rather than the one it tapped: a
+      wrong card, not an unread one, and every "tap target … and put a +1/+1 counter on it" had it.
+      So when an earlier clause aimed at a card and this one says "it", the borrow below is tried
+      first, and the plain reading only if no borrow reads.
+    */
+    const cardAimed = earlier !== undefined && earlier.kind !== 'player' && earlier.kind !== 'any';
+    const pronounFirst = cardAimed && /\bit\b/i.test(clause);
+    const read = pronounFirst ? null : withEarlierCardTarget(cardAimed, () => readEffect(clause, name, where));
     if (read !== null) { parts.push(read); continue; }
     let borrowed: ReadEffect | null = null;
     /*
@@ -23666,7 +23676,38 @@ function composeEffects(
       else possessive = true;
       break;
     }
-    if (borrowed === null) return null;
+    /*
+      And a counter on a card target of any kind (D723): Miraculous Recovery's "Return target
+      creature card from your graveyard to the battlefield. Put a +1/+1 counter on it." The target
+      is a graveyard card, a kind no pronoun swap reads, and by now it is on the battlefield. The
+      counter goes on the one object the earlier clause chose; `addCounters` puts nothing on a card
+      that is not a permanent, so a return that failed adds nothing.
+    */
+    // Only with one earlier targeting part that aims at one object, so "it" has one thing to mean.
+    const aimingParts = parts.filter((part) => part.targets !== undefined);
+    const oneObject = aimingParts.length === 1 && aimingParts[0]!.targets!.length === 1
+      && ((earlier as { readonly count?: number } | undefined)?.count ?? 1) === 1;
+    const onIt = pronounFirst && borrowed === null && oneObject
+      ? /^put (a|an|one|two|three) (\+1\/\+1|-1\/-1|stun) counters? on it$/i.exec(clause.trim())
+      : null;
+    if (onIt !== null) {
+      const many = /^(a|an|one)$/i.test(onIt[1]!) ? 1 : onIt[1]!.toLowerCase() === 'two' ? 2 : 3;
+      const kind = onIt[2]!.toLowerCase();
+      parts.push({
+        effect: (c) => {
+          const first = c.targets[0];
+          return first === undefined || first.kind !== 'card' ? c.state : addCounters(c.state, first.id, kind, many);
+        },
+      });
+      continue;
+    }
+    if (borrowed === null) {
+      // No borrow read, so "it" was the source after all: the plain reading, as before D723.
+      const plainRead = pronounFirst ? withEarlierCardTarget(true, () => readEffect(clause, name, where)) : null;
+      if (plainRead === null) return null;
+      parts.push(plainRead);
+      continue;
+    }
     parts.push(borrowed);
   }
   if (parts.length === 0) return null;
