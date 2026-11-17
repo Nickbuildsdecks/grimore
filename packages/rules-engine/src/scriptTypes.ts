@@ -3309,6 +3309,12 @@ export interface CardScript {
   readonly spectacle?: {
     /** The whole cost of a spectacle casting, in the printed `{R}` form. */
     readonly cost: string;
+    /**
+     * Surge (D928, CR 702.117a): the same alternative cost under a different condition, "if you've
+     * cast another spell this turn" (no teammates at this table). The play, the flag and the
+     * validation are spectacle's; only the condition and the words differ.
+     */
+    readonly surge?: true;
   };
   /**
    * Overload: pay more and the spell stops pointing at one thing and happens to everything

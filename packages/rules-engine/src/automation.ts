@@ -37,6 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
+  SURGED,
   SQUADDED,
   createToken,
   DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
@@ -5241,6 +5242,8 @@ function completeResolution(
       if (object.escaped === true && (script?.escape?.counters ?? 0) > 0) {
         next = addCounters(next, inst.id, '+1/+1', script!.escape!.counters!);
       }
+      // Surge (D928): cast for its surge cost, for "if its surge cost was paid".
+      if (object.spectacled === true && script?.spectacle?.surge === true) next = addCounters(next, inst.id, SURGED, 1);
       // Squad (D924): how many times its cost was paid, for its entry trigger to read.
       if (script?.squad !== undefined && (object.replicated ?? 0) > 0) {
         next = addCounters(next, inst.id, SQUADDED, object.replicated!);

@@ -18148,6 +18148,64 @@ describe('backup grants triggered and activated abilities (D927)', () => {
   });
 });
 
+describe('surge (D928)', () => {
+  const ROWS = [
+    { name: 'Test Surger', type_line: 'Sorcery', oracle_text: "Surge {R}\nDraw a card. If this spell's surge cost was paid, draw two cards.", mana_cost: '{4}{R}', cmc: 5, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bushwhacker', type_line: 'Creature — Goblin', oracle_text: 'Surge {R}\nWhen Test Bushwhacker enters, if its surge cost was paid, other creatures you control get +1/+0 until end of turn.', mana_cost: '{4}{R}', cmc: 5, colors: ['R'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd928', name: 'Surge',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** One Mountain, so only the surge cost is affordable; `cast` spells already cast this turn. */
+  const seated = (card: string, cast: number) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd928', 1: 'd928' }, deckSpecs: { d928: deck.deck }, hands: { 0: [card] }, battlefield: { 0: ['Mountain', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, spellsCastThisTurnBy: { ...s.spellsCastThisTurnBy, '0': cast } };
+  };
+  const surgePlays = (s: GameState, card: string) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', card) && p.spectacled === true);
+  const resolve = (s: GameState, card: string, surged: boolean) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(surged ? { spectacled: true } : {}) } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered, and allowed, only after another spell this turn', () => {
+    expect(surgePlays(seated('Test Surger', 0), 'Test Surger')).toEqual([]);
+    expect(surgePlays(seated('Test Surger', 1), 'Test Surger').map((p) => p.manaCost)).toEqual(['{R}']);
+    const s = seated('Test Surger', 0);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Surger'), spectacled: true } as Action)).toMatch(/surge cost/);
+  });
+
+  it('"if this spell\'s surge cost was paid": the rider happens only then', () => {
+    const s = seated('Test Surger', 1);
+    const hand = ids(s, 0, 'hand').length;
+    expect(ids(resolve(s, 'Test Surger', true), 0, 'hand').length).toBe(hand - 1 + 3);
+    // For its printed cost, with the mana floating: the one card only.
+    const rich = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 } } };
+    expect(ids(resolve(rich, 'Test Surger', false), 0, 'hand').length).toBe(hand - 1 + 1);
+  });
+
+  it('"when it enters, if its surge cost was paid": the others get +1/+0 only when surged', () => {
+    let s = resolve(seated('Test Bushwhacker', 1), 'Test Bushwhacker', true);
+    let bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(3);
+    const rich = seated('Test Bushwhacker', 1);
+    // Cast for its printed cost instead, with mana floating.
+    s = resolve({ ...rich, pools: { ...rich.pools, '0': { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 } } }, 'Test Bushwhacker', false);
+    bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

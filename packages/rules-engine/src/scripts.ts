@@ -28,6 +28,7 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
+  SURGED,
   SQUADDED,
   addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
   chosenCards,
@@ -11527,7 +11528,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     what the card is; either half alone is a card that does less than it reads.
   */
   const alternative =
-    /^(flashback|madness|miracle|foretell|spectacle|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
+    /^(flashback|madness|miracle|foretell|spectacle|surge|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
       .exec(text);
   if (alternative !== null) {
     const mana = alternative[2]!;
@@ -11537,6 +11538,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       case 'miracle': return { miracle: { cost: mana } };
       case 'foretell': return { foretell: { cost: mana } };
       case 'spectacle': return { spectacle: { cost: mana } };
+      // Surge (D928): spectacle's alternative cost with another condition. See `CardScript.spectacle`.
+      case 'surge': return { spectacle: { cost: mana, surge: true } };
       case 'dash': return { dash: { cost: mana }, triggers: [dashReturn()] };
       case 'ninjutsu': return { ninjutsu: { cost: mana }, abilities: [ninjutsuAbility(mana)] };
       // The one of the eight that stores its printed line as well, as Capsize does.
@@ -19480,6 +19483,27 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     can tell the two apart except by a response between them, and a "when you do" with a target is
     refused by that reader anyway.
   */
+  /*
+    "When ~ enters, if its surge cost was paid, <effect>" (D928): Reckless Bushwhacker, Tyrant of
+    Valakut. The enters trigger with an intervening if (CR 603.4) on the `surged` marker the arrival
+    wrote, as "if it was kicked" reads `KICKED`.
+  */
+  const surgeIf = new RegExp(`^(When (?:${selfRef(name)}) enters), if its surge cost was paid, (.+)$`, 'i')
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (surgeIf !== null) {
+    const read = triggerFromLine(`${surgeIf[1]!}, ${surgeIf[2]!}`, name);
+    const inner = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
+    if (inner === null) return null;
+    const surged: NonNullable<TriggerDef['condition']> = (c) => (c.state.instances[c.source]?.counters[SURGED] ?? 0) > 0;
+    const own = inner.condition;
+    return {
+      triggers: [{
+        ...inner,
+        description: `if its surge cost was paid, ${inner.description}`,
+        condition: own === undefined ? surged : (c) => surged(c) && own(c),
+      }],
+    };
+  }
   const exerted = new RegExp(`^You may exert (?:${selfRef(name)}) as it attacks\\. When you do, (.+)$`, 'i')
     .exec(withoutAbilityWord(plain(line).trim()));
   if (exerted !== null) {
@@ -23333,6 +23357,22 @@ function readEffect(
       }],
       effect: (c) => (chosenOption(c, 0) === pay ? c.state : loseTheGame(c.state, c.controller)),
     };
+  }
+  /*
+    "If this spell's surge cost was paid, <effect>" (D928): Crush of Tentacles' rider, read off the
+    spell resolving.
+  */
+  const surgeRider = /^if this spell's surge cost was paid, (.+)$/i.exec(clause.trim());
+  if (surgeRider !== null) {
+    const inner = readEffect(surgeRider[1]!, name, where);
+    if (inner !== null && (inner.targets ?? []).length === 0 && (inner.decisions ?? []).length === 0
+      && inner.beforeDecisions === undefined) {
+      const gate = (fn: EffectFn): EffectFn => (c) => (c.resolving?.spectacled === true ? fn(c) : c.state);
+      return {
+        effect: gate(inner.effect),
+        ...(inner.immediate === undefined ? {} : { immediate: gate(inner.immediate) }),
+      };
+    }
   }
   // Exert (D915): the card won't untap during its controller's next untap step. See `triggerFromLine`.
   if (new RegExp(`^exert (?:${selfRef(name)})$`, 'i').test(clause.trim())) {

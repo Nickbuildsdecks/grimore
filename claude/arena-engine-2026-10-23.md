@@ -31195,3 +31195,36 @@ on the card.
     engine tests: 4,938, all passing
 
 Coverage: 11,930 of 31,743 cards (+4), 31,625 of 59,509 lines (+4). Staples: 239 of 244.
+
+## D928 — Surge
+
+"Surge {cost} (You may cast this spell for its surge cost if you or a teammate has cast another
+spell this turn.)" (CR 702.117a), from Oath of the Gatewatch: Reckless Bushwhacker, Crush of
+Tentacles, Tyrant of Valakut and others.
+
+How it is read:
+- **Spectacle's alternative cost with another condition.** `CardScript.spectacle` gained `surge`;
+  the play, the `spectacled` flag, the validation, the computer and the web table are all
+  spectacle's.
+  - The condition is this seat's spell count this turn, before this spell. There are no teammates
+    at this table.
+  - The offer and the refusal say "surge".
+- **"When ~ enters, if its surge cost was paid, …"** is the enters trigger with an intervening if,
+  on the new `surged` marker the arrival writes, as "if it was kicked" reads `KICKED`.
+- **"If this spell's surge cost was paid, …"** is a spell rider gated on the resolving spell's
+  flag.
+
+Not read: Fall of the Titans' "X damage to each of up to two targets".
+
+**Tests.** 4 engine tests:
+- both printings read;
+- the surge play is offered only after another spell this turn, for the surge cost, and refused
+  before;
+- the spell rider draws its extra two only when surged, and the card alone for the printed cost;
+- the creature pumps the others only when surged.
+
+Faults injected by hand: 6 of 6 caught. The spell rider's gate was pinned by the printed-cost cast.
+
+    engine tests: 4,942, all passing
+
+Coverage: 11,940 of 31,743 cards (+10), 31,639 of 59,509 lines (+14). Staples: 239 of 244.

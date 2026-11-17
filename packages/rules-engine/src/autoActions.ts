@@ -556,7 +556,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
         : overloaded ? script?.overload : pitchCast ? script?.pitch : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
-    if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
+    // Surge (D928) is spectacle's flag with its own condition: another spell cast this turn.
+    if (spectacled && script?.spectacle?.surge === true) {
+      if ((state.spellsCastThisTurnBy[String(action.by)] ?? 0) < 1) {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'the surge cost is only payable if you have cast another spell this turn');
+      }
+    } else if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
       && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)) {
       throw new EngineError('RULE_NOT_APPLICABLE',
         'the spectacle cost is only payable if an opponent lost life this turn');

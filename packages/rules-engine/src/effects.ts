@@ -883,6 +883,9 @@ export const KICKED = 'kicked';
 /** How many times a squad cost was paid (D924), recorded as the permanent arrives. See `CardScript.squad`. */
 export const SQUADDED = 'squad';
 
+/** A permanent cast for its surge cost (D928), recorded as it arrives. See `CardScript.spectacle.surge`. */
+export const SURGED = 'surged';
+
 /**
  * The marker on a **myriad** token, which is the thing that remembers to exile it (CR 702.111a).
  *

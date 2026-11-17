@@ -1762,13 +1762,18 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           on anybody but you pays for it.
         */
         ...(script?.spectacle === undefined
-          || !state.seats.some((other) => other.index !== seat && !other.eliminated
-            && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)
+          || (script.spectacle.surge === true
+            // Surge (D928): another spell of this seat's this turn, before this one.
+            ? (state.spellsCastThisTurnBy[String(seat)] ?? 0) < 1
+            : !state.seats.some((other) => other.index !== seat && !other.eliminated
+              && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0))
           ? []
           : [{
               flag: 'spectacled' as const,
               cost: script.spectacle.cost,
-              note: `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
+              note: script.spectacle.surge === true
+                ? `surge cost (${script.spectacle.cost}, because you have cast another spell this turn)`
+                : `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
               specs: specsFor(script),
             }]),
         /*
