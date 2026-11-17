@@ -17909,6 +17909,55 @@ describe('squad (D924)', () => {
   });
 });
 
+describe('enlist (D925)', () => {
+  const C = (name: string, text: string, p: string) => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: p, toughness: '3' });
+  // The Runner has vigilance, so it attacks untapped: only the nonattacking rule keeps it out.
+  const ROWS = [C('Test Enlister', 'Enlist', '2'), C('Test Ogre', '', '3'), C('Test Rookie', '', '4'), C('Test Runner', 'Vigilance', '1')];
+  const deck = customDeck({
+    id: 'd925', name: 'Enlist',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }],
+    data: ROWS as never[],
+  });
+  // Seat 0 attacks with the Enlister (and the Runner); the Rookie arrived this turn.
+  const attack = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd925', 1: 'd925' }, deckSpecs: { d925: deck.deck },
+      battlefield: { 0: ['Test Enlister', 'Test Ogre', 'Test Rookie', 'Test Runner'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const rookie = find(s, 0, 'battlefield', 'Test Rookie');
+    s = { ...s, instances: { ...s.instances, [rookie]: { ...s.instances[rookie]!, enteredTurn: s.turn } } };
+    const enlister = find(s, 0, 'battlefield', 'Test Enlister');
+    const runner = find(s, 0, 'battlefield', 'Test Runner');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: enlister, defender: 1 }, { attacker: runner, defender: 1 }] }), 12);
+    return { s, enlister, ogre: find(s, 0, 'battlefield', 'Test Ogre') };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('only an untapped, nonattacking creature without summoning sickness may be enlisted', () => {
+    const { s } = attack();
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id))).toEqual(['Test Ogre']);
+  });
+
+  it('enlisted: it taps and its power is added until end of turn', () => {
+    let { s, enlister, ogre } = attack();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [ogre] } as Action), 12);
+    expect(s.instances[ogre]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[enlister]!).power).toBe(5);
+  });
+
+  it('none chosen: nothing taps and nothing is added', () => {
+    let { s, enlister, ogre } = attack();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 12);
+    expect(s.instances[ogre]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[enlister]!).power).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
