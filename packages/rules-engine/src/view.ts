@@ -518,6 +518,8 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
         && ask.candidates.includes(inst.id);
     }
     case 'library': {
+      // Cards a resolving spell revealed to the table (D728, Fact or Fiction): everybody sees them.
+      if ((state.revealed ?? []).includes(inst.id)) return true;
       // A top card revealed to the table (D649, Courser of Kruphix): everybody, owner included.
       if (topRevealedFor(state, inst.zoneSeat) && listAt(state, zoneKey(inst.zoneSeat, 'library'))[0] === inst.id) {
         return true;
@@ -719,6 +721,13 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
       const inst = state.instances[top];
       if (inst !== undefined) cards[top] = redact(state, inst, viewer);
     }
+  }
+
+  // Cards a resolving spell revealed to the table (D728, Fact or Fiction), sent to every seat and
+  // to spectators, as cards without their library's list.
+  for (const id of state.revealed ?? []) {
+    const inst = state.instances[id];
+    if (inst !== undefined) cards[id] = redact(state, inst, viewer);
   }
 
   // The handful of cards a scry is about, sent to the seat being asked and to nobody else. They

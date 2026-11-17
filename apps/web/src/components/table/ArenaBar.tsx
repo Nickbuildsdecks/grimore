@@ -361,6 +361,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             {mode.ask.counters === true
               ? "tap the permanents and players to give another counter"
               : mode.ask.from === "library" ? "tap a card in your library below"
+                : mode.ask.from === "revealed" ? "tap the revealed cards below"
                 : mode.ask.from === "library-top" ? libraryTopWords(mode.ask, mode.chosen.length).hint
                   : `tap a card in your ${mode.ask.from ?? "hand"}`}
           </span>

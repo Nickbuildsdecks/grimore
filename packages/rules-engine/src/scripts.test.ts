@@ -17960,6 +17960,76 @@ describe('enlist (D925)', () => {
   });
 });
 
+describe('Fact or Fiction: an opponent splits the top five, the caster takes a pile (D728)', () => {
+  const ROWS = [
+    { name: 'Test Fiction', type_line: 'Instant', oracle_text: 'Reveal the top five cards of your library. An opponent separates those cards into two piles. Put one pile into your hand and the other into your graveyard.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: '', mana_cost: '{4}{G}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'fiction', name: 'Fiction',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const cast = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'fiction', 1: 'fiction' }, deckSpecs: { fiction: deck.deck },
+      hands: { 0: ['Test Fiction'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const top = ids(s, 0, 'library').slice(0, 5);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fiction') });
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return { s, top };
+  };
+  const pick = (s: GameState, by: SeatIndex, cards: string[]) => apply(s, { type: 'auto:decide', by, cards } as Action);
+  const choose = (s: GameState, option: string) => drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the top five are revealed to both seats, and the opponent makes the first pile from them', () => {
+    const { s, top } = cast();
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.from).toBe('revealed');
+    expect([...s.pendingDecision!.candidates].sort()).toEqual([...top].sort());
+    for (const id of top) {
+      expect(viewFor(s, 0).cards[id]?.card).toBeDefined();
+      expect(viewFor(s, 1).cards[id]?.card).toBeDefined();
+    }
+  });
+
+  it('the caster takes the pile they choose and the other goes to the graveyard', () => {
+    const { s: asked, top } = cast();
+    let s = pick(asked, 1, [top[0]!]);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toHaveLength(2);
+    const hand = ids(s, 0, 'hand').length;
+    s = choose(s, s.pendingDecision!.options![1]!);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 4);
+    expect(s.instances[top[0]!]!.zone).toBe('graveyard');
+    expect(s.revealed).toBeUndefined();
+
+    let t = pick(cast().s, 1, []);
+    const first = t.pendingDecision!.options![0]!;
+    expect(first).toBe('First pile: nothing');
+    t = choose(t, first);
+    expect(namesIn(t, 0, 'graveyard').filter((n) => n !== 'Test Fiction')).toHaveLength(5);
+  });
+
+  it('the bot splits off its best card, and takes the pile worth more', () => {
+    const { s, top } = cast();
+    const split = botAction(s, 1);
+    expect(split?.type === 'auto:decide' ? split.cards : null).toHaveLength(1);
+    const worth = (id: string) => (s.cardDefs[s.instances[id]!.defKey]!.cmc);
+    const best = [...top].sort((a, b) => worth(b) - worth(a))[0]!;
+    expect(split?.type === 'auto:decide' ? split.cards?.[0] : null).toBe(best);
+    const asked = apply(s, split!);
+    const answer = botAction(asked, 0);
+    expect(answer).toMatchObject({ type: 'auto:decide' });
+  });
+});
+
 describe('conspire (D926)', () => {
   const C = (name: string, colors: string[], p: string) => ({ name, type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{9}', cmc: 9, colors, layout: 'normal', power: p, toughness: '1' });
   const ROWS = [

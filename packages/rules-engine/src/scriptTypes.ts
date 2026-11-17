@@ -19,7 +19,7 @@ import type { Keyword, TypeLine } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { Color, ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
-import type { ActivationTiming, AttackedTarget, DecisionZone, Step, Target } from './turnTypes.js';
+import type { ActivationTiming, AttackedTarget, DecisionAnswer, DecisionZone, Step, Target } from './turnTypes.js';
 
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
@@ -1452,7 +1452,9 @@ export interface CardsDecisionSpec {
    * go back. Run once, by `askOrFinish`, when the plan reaches this entry and the question is not
    * skipped (`askOnlyIfChosen`, `askOnlyIf`); the question is then asked of the state it made.
    */
-  readonly onReach?: (state: GameState, controller: SeatIndex, source: string) => GameState;
+  readonly onReach?: (
+    state: GameState, controller: SeatIndex, source: string, answers: readonly DecisionAnswer[],
+  ) => GameState;
   /**
    * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
    * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
@@ -1484,7 +1486,7 @@ export interface CardsDecisionSpec {
    * controller to discard.
    */
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' | 'an-opponent';
   /**
    * Which zone. From the chooser's own side unless `fromSeat` says otherwise. `library` is a
    * search: the chooser may look through the whole library while deciding, as they would at a
@@ -1656,7 +1658,7 @@ export interface ChoiceDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' | 'an-opponent';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];
@@ -1668,6 +1670,10 @@ export interface ChoiceDecisionSpec {
    * which everybody can see. `options` is still the fallback for a reader with no state.
    */
   readonly optionsFor?: (state: GameState, chooser: SeatIndex) => readonly string[];
+  /** A step of the effect as this question is reached (D728). See `CardsDecisionSpec.onReach`. */
+  readonly onReach?: (
+    state: GameState, controller: SeatIndex, source: string, answers: readonly DecisionAnswer[],
+  ) => GameState;
   /**
    * Which word the engine's own opponent picks, written by the card.
    *
@@ -1765,7 +1771,7 @@ export interface NumberDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' | 'an-opponent';
   readonly prompt: string;
   /** The numbers on offer, inclusive, read off the board when the question is asked. */
   readonly range: (state: GameState, chooser: SeatIndex) => { readonly min: number; readonly max: number };
