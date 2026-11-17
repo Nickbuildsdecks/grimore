@@ -1966,6 +1966,14 @@ export interface TriggerDef {
    */
   readonly delayed?: true;
   /**
+   * A trigger put on the stack as a spell is cast with this permanent's mana (D729): Path of
+   * Ancestry's "When that mana is spent to cast a creature spell that shares a creature type with
+   * your commander, scry 1". Always `delayed` too, so no event fires it; the cast does, when the
+   * payment tapped this permanent and the spell is a creature sharing a type with a commander of
+   * its caster. Mana tapped by hand and left floating has lost its source, and does not trigger it.
+   */
+  readonly whenManaSpent?: 'creature-sharing-commander-type';
+  /**
    * "This ability triggers only once each turn." — the printed restriction, and **143 legal corpus
    * printings across 140 cards carry it** (8 of those cards were one line away on nothing else; the
    * rest are blocked by a second reader too). Measured by compiling rather than by matching clauses — see D532 in

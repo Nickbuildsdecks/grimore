@@ -28008,6 +28008,25 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
   };
 }
 
+/**
+ * Path of Ancestry's rider (D729), as a trigger the cast puts on the stack: "When that mana is spent
+ * to cast a creature spell that shares a creature type with your commander, scry N." See
+ * `TriggerDef.whenManaSpent`. `null` when "scry N" does not read.
+ */
+export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null {
+  const scry = readEffect(`scry ${n}`, name, null);
+  if (scry === null || scry.targets !== undefined) return null;
+  return {
+    on: { kind: 'spell-cast' },
+    delayed: true,
+    whenManaSpent: 'creature-sharing-commander-type',
+    description: `scry ${n}`,
+    ...(scry.decisions === undefined ? {} : { decisions: scry.decisions }),
+    ...(scry.beforeDecisions === undefined ? {} : { beforeDecisions: scry.beforeDecisions }),
+    effect: scry.effect,
+  };
+}
+
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)

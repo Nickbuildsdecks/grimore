@@ -19737,6 +19737,57 @@ describe('umbra armor (D947)', () => {
   });
 });
 
+describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D729)', () => {
+  const ROWS = [
+    { name: 'Test Path', type_line: 'Land', oracle_text: "Test Path enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Lord', type_line: 'Legendary Creature — Elf Druid', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Elf', type_line: 'Creature — Elf Warrior', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'ancestry', name: 'Ancestry',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'ancestry', 1: 'ancestry' }, deckSpecs: { ancestry: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: ['Test Path', 'Test Lord'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const lord = find(s, 0, 'battlefield', 'Test Lord');
+    s = { ...s, instances: { ...s.instances, [lord]: { ...s.instances[lord]!, isCommander: true } } };
+    return s;
+  };
+  const cast = (s: GameState, name: string) => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('paying for a creature that shares a type with the commander puts a scry 1 on the stack above it', () => {
+    let s = cast(table(['Test Elf']), 'Test Elf');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Path')]!.tapped).toBe(true);
+    expect(stackNames(s)).toHaveLength(2);
+    const top = s.stackObjects[s.stackOrder[s.stackOrder.length - 1]!]!;
+    expect(top.kind).toBe('triggered');
+    expect(top.description).toMatch(/scry 1/);
+    s = passBoth(s);
+    expect(s.pendingDecision?.from).toBe('library-top');
+  });
+
+  it('not for a creature of another kind, and not for mana tapped by hand first', () => {
+    const bear = cast(table(['Test Bear']), 'Test Bear');
+    expect(bear.stackOrder).toHaveLength(1);
+    let s = table(['Test Elf']);
+    const path = find(s, 0, 'battlefield', 'Test Path');
+    const green = (scriptForCard(s.cardDefs[s.instances[path]!.defKey])?.abilities ?? []).findIndex((a) => a.produces?.[0] === 'G');
+    s = apply(s, { type: 'auto:activate', by: 0, card: path, abilityIndex: green });
+    s = cast(s, 'Test Elf');
+    expect(s.stackOrder).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
