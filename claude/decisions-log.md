@@ -49079,3 +49079,36 @@ the newer Aura.
     engine tests: 5,007, all passing
 
 Coverage: 12,064 of 31,743 cards (+18), 31,872 of 59,509 lines (+33). Staples: 239 of 244.
+
+## D939 — Auras that tap their host, and narrower creatures to enchant
+
+Two Aura shapes from the corpus tally.
+
+**"When ~ enters, tap enchanted creature"** (33 legal lines, mostly on Pacifism-style Auras), with
+"untap enchanted creature" for the few meant for your own. Read as a clause on the source's
+`attachedTo`, beside the host pump D624 reads. A host that leaves the battlefield detaches its
+Auras, so the host is always there when the trigger resolves.
+
+**Narrower creatures to enchant**: "Enchant creature without flying", "… tapped creature", "…
+creature with power 3 or less", "… legendary creature", "… nonblack creature".
+- The Aura host was limited to the exact phrases (D469). It now also reads the parsed target
+  vocabulary, but keeps the result only when it is still a creature spec. So the refusals D469 keeps
+  (a planeswalker, a land you control, a player) stay refusals.
+- The restriction is the same spec CR 704.5m checks, so a host that gains flying sheds Roots.
+- Superseded row: D512's Leyline Immersion test listed "Enchant legendary creature" as unread. It
+  now reads, and the row says so.
+- Still unread: "red or green creature" and "non-Wall creature", which the target reader does not
+  parse.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- tap: the host is tapped as the Aura enters;
+- untap: the host is untapped;
+- "without flying": a flier is neither offered nor accepted, and a host that gains flying sheds the
+  Aura.
+
+Faults injected by hand: 4 of 5 caught. The miss was a redundant zone check, which was removed.
+
+    engine tests: 5,011, all passing
+
+Coverage: 12,091 of 31,743 cards (+27), 31,944 of 59,509 lines (+72). Staples: 239 of 244.

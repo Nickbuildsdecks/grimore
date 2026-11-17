@@ -13122,10 +13122,9 @@ describe('a quoted activated ability an Aura or Equipment grants (D512)', () => 
       'Leyline Immersion');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    // Two unread lines, not one: `Enchant legendary creature` is a restriction this compiler does
-    // not read either, which the row says out loud rather than asserting a count that hides it.
+    // One unread line: `Enchant legendary creature` reads since D939 (a narrower creature, read
+    // through the parsed target vocabulary), so the quoted ability is the only line refused.
     expect(read.unread.map((u) => u.line)).toEqual([
-      'Enchant legendary creature',
       'Enchanted creature has ward {2} and "{T}: Add five mana in any combination of colors. '
         + 'Spend this mana only to cast spells."',
     ]);

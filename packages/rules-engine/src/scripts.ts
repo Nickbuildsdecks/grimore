@@ -15204,6 +15204,24 @@ function selfEffect(
     }
   }
 
+  /*
+    "When ~ enters, tap enchanted creature" (D939): 33 legal Auras, most of them the Pacifism kind
+    that also stop it untapping or attacking, and "untap enchanted creature" for the few on your
+    own. The host is the source's `attachedTo`, as in the pump above; an Aura attached to nothing
+    taps nothing.
+  */
+  const tapsHost = /^(tap|untap) (?:enchanted|equipped) (?:creature|permanent|artifact|land)$/i.exec(text);
+  if (tapsHost !== null) {
+    const untaps = tapsHost[1]!.toLowerCase() === 'untap';
+    return {
+      effect: (c) => {
+        // A host that leaves the battlefield detaches its Auras, so an `attachedTo` is always there.
+        const host = c.state.instances[c.source]?.attachedTo ?? undefined;
+        return host === undefined ? c.state : tap(c.state, host, !untaps);
+      },
+    };
+  }
+
   const grown = new RegExp(
     `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
     'i',
@@ -15907,7 +15925,17 @@ export function attachmentScriptFor(
     const controlLine = lines.find((line) =>
       /^you control enchanted (?:creature|permanent|artifact|land|enchantment|artifact creature)\.?$/i.test(plain(line).trim()));
     // `false`: an Aura's host vocabulary is the switch's exact phrases only. See `targetSpecFrom`.
-    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful && controlLine === undefined, false);
+    const kindly = read !== null && !read.harmful && controlLine === undefined;
+    /*
+      **Except a narrower creature** (D939): "Enchant creature without flying", "… red or green
+      creature", "… creature with power 3 or less", "… non-Wall creature". Read through the parsed
+      vocabulary and kept only when what comes back is still a creature spec, so the refusals
+      D469 keeps (a planeswalker, a land you control) stay refusals. The restriction holds after
+      the Aura is attached as well, because CR 704.5m is checked against this same spec.
+    */
+    const parsedHost = targetSpecFrom(`target ${thing}`, kindly, true);
+    const host = targetSpecFrom(`target ${thing}`, kindly, false)
+      ?? (parsedHost?.kind === 'creature' ? parsedHost : null);
     if (host === null) return null;
     /*
       **The one trigger that does say whose creature the Aura wants (D575).**

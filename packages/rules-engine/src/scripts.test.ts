@@ -19124,6 +19124,70 @@ describe('"You control enchanted creature" (D938)', () => {
   });
 });
 
+describe('Auras that tap or untap their host, and narrower creatures to enchant (D939)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Enchantment — Aura', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const ROWS = [
+    A('Test Pacifist', "Enchant creature\nWhen Test Pacifist enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step."),
+    A('Test Waker', 'Enchant creature\nWhen Test Waker enters, untap enchanted creature.\nEnchanted creature gets +1/+1.'),
+    A('Test Roots', "Enchant creature without flying\nEnchanted creature doesn't untap during its controller's untap step."),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bird', type_line: 'Creature — Bird', oracle_text: 'Flying', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd939', name: 'Tapping Auras',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 45 }],
+    data: ROWS as never[],
+  });
+  const seated = (aura: string, theirs: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd939', 1: 'd939' }, deckSpecs: { d939: deck.deck }, hands: { 0: [aura] },
+    battlefield: { 0: ['Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castOn = (s: GameState, aura: string, host: string) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: host }] } as Action), 30);
+    for (let i = 0; i < 8 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"when it enters, tap enchanted creature": the host is tapped', () => {
+    const s = seated('Test Pacifist', ['Test Bear']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    expect(s.instances[bear]!.tapped).toBe(false);
+    const t = castOn(s, 'Test Pacifist', bear);
+    expect(t.instances[find(t, 0, 'battlefield', 'Test Pacifist')]!.attachedTo).toBe(bear);
+    expect(t.instances[bear]!.tapped).toBe(true);
+  });
+
+  it('"untap enchanted creature": the host is untapped', () => {
+    let s = seated('Test Waker', [], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, tapped: true } } };
+    const t = castOn(s, 'Test Waker', bear);
+    expect(t.instances[bear]!.tapped).toBe(false);
+    expect(characteristicsOf(t, t.instances[bear]!).power).toBe(3);
+  });
+
+  it('"enchant creature without flying": a flier cannot be enchanted, and a host that gains flying sheds it', () => {
+    const s = seated('Test Roots', ['Test Bear', 'Test Bird']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const bird = find(s, 1, 'battlefield', 'Test Bird');
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Roots'));
+    const aims = (play?.candidates ?? []).flat().map((t) => (t.kind === 'card' ? t.id : null));
+    expect(aims).toContain(bear);
+    expect(aims).not.toContain(bird);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Roots'), targets: [{ kind: 'card', id: bird }] } as Action)).not.toBeNull();
+    let t = castOn(s, 'Test Roots', bear);
+    const roots = find(t, 0, 'battlefield', 'Test Roots');
+    expect(t.instances[roots]!.attachedTo).toBe(bear);
+    t = engineSettle(pump(t, [bear], bear, 1, { keywords: ['flying'] }), t);
+    expect(t.instances[roots]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
