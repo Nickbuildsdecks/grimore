@@ -49565,3 +49565,39 @@ never put on the stack object, and the phrase read without the sacrifice context
     engine tests: 5,061, all passing
 
 Coverage: 12,344 of 31,743 cards (+1), 32,316 of 59,509 lines (+1). Staples: 240 of 244.
+
+## D951 — "You may exile it. If you do / When you do", from the graveyard
+
+The listing of "When you do" lines still unread showed second halves the reader already reads
+("return target creature card from your graveyard to your hand"); the first halves were the gap.
+The commonest is a card exiling itself from where its trigger left it: "When ~ dies, you may exile
+it. If you do, …" (18 legal lines with it as their only unread line).
+
+How it is read:
+- **"Exile it" / "exile this card" / "exile ~"**, a clause beside D466's "return it to its owner's
+  hand", with that reader's zone guard: the card is exiled only if it is still where the trigger's
+  subject zone says. A card that moved on is a new object and stays (CR 400.7).
+- **"If you do" may now point at something** when the first half asks nothing. The ability's
+  targets are chosen as it goes on the stack (CR 603.3d), before the yes or no, which is when a
+  trigger chooses them here. With a first half that asks a question, the order of the two still
+  cannot be stated, so that stays refused.
+- **"If you do" means it was done.** A question-less first half used to count as done the moment
+  "yes" was given. Now it counts only if it changed the board. "You may exile it" when the card has
+  already left returns the board untouched, and then the second half does not happen either
+  (CR 608.2c). No earlier test relied on the old meaning.
+
+16 legal cards now read whole.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- yes: exiled and the draw follows; no: it stays and nothing is drawn;
+- gone from the graveyard before it resolves: nothing exiled, so nothing drawn;
+- "If you do" with a target: the target is asked as it triggers, before the yes or no, and comes
+  back.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 5,071, all passing
+
+Coverage: 12,360 of 31,743 cards (+16), 32,341 of 59,509 lines (+25). Staples: 241 of 244 (the
+other session's Torment of Hailfire, merged after D950).

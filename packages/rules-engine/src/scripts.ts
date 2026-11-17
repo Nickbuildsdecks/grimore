@@ -15074,6 +15074,22 @@ function selfEffect(
   }
 
   /*
+    "Exile it" / "exile this card" (D951): a card exiling itself from where its trigger left it,
+    mostly the graveyard of a dies trigger ("When ~ dies, you may exile it. If you do, …"). The
+    zone guard is `picksItselfUp`'s: a card that has moved on since is a new object and stays.
+  */
+  const exilesItself = new RegExp(`^exile (?:(${self})|it|this card)$`, 'i').exec(text);
+  if (exilesItself !== null && where !== null) {
+    const named = exilesItself[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        return c.state.instances[id]?.zone === where ? exileCard(c.state, id) : c.state;
+      },
+    };
+  }
+
+  /*
     "Sacrifice it" — the card eating itself, which is the Illusion drawback (D514).
 
     **15 legal cards** print `When ~ becomes the target of a spell or ability, sacrifice it`, 13 of
@@ -19515,13 +19531,20 @@ function optionalEffect(
     if (x === null || y === null) return null;
     const xAsks = (x.decisions ?? []).length;
     const yAsks = (y.decisions ?? []).length;
-    if ((x.targets ?? []).length > 0 || (y.targets ?? []).length > 0) return null;
+    /*
+      Y may point at something (D951) when X asks nothing: the targets of the whole ability are
+      chosen as it goes on the stack (CR 603.3d), whatever the yes-or-no turns out to be, which is
+      exactly when a trigger chooses them here. With X asking a question the order of the two could
+      not be stated, so that stays refused.
+    */
+    if ((x.targets ?? []).length > 0 || ((y.targets ?? []).length > 0 && xAsks > 0)) return null;
     if (xAsks > 1) return null;
     if (xAsks === 1 && yAsks > 0) return null;
     const xEffect = x.immediate ?? x.effect;
     return {
       prompt: `${xText} — ${yText}`,
       read: {
+        ...(y.targets === undefined ? {} : { targets: y.targets }),
         decisions: [...(x.decisions ?? []), ...(y.decisions ?? [])],
         effect: (c) => {
           const after = xEffect(c);
@@ -19531,7 +19554,12 @@ function optionalEffect(
             asked happened only if its answer named something. A board with nothing to sacrifice
             answers empty (CR 608.2 — as much as it can), and then Y must not happen.
           */
-          const did = xAsks === 0 || chosenCards(c).length > 0;
+          /*
+            And a question-less X that could do nothing at all (D951) did not happen: "you may exile
+            it" when it has already left the graveyard returns the board untouched, and then Y
+            must not happen either (CR 608.2c). An X that acted always returns a new board.
+          */
+          const did = xAsks === 0 ? after !== c.state : chosenCards(c).length > 0;
           return did ? y.effect({ ...c, state: after }) : after;
         },
       },

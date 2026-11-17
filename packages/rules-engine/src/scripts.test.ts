@@ -20108,6 +20108,78 @@ describe('Torment of Hailfire: X rounds of lose 3, sacrifice or discard (D730)',
   });
 });
 
+describe('"you may exile it. If you do / When you do" from the graveyard (D951)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Spirit', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Ghost', 'When Test Ghost dies, you may exile it. If you do, draw a card.'),
+    C('Test Shade', 'When Test Shade dies, you may exile it. If you do, return target creature card from your graveyard to your hand.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd951', name: 'Exile itself',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** `card` on the battlefield and a Bear in the graveyard; `card` is destroyed and its trigger asks. */
+  const died = (card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd951', 1: 'd951' }, deckSpecs: { d951: deck.deck },
+      battlefield: { 0: ['Swamp', card, 'Test Bear'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = destroy(s, bear);
+    const id = find(s, 0, 'battlefield', card);
+    s = drain(apply(destroy(s, id), { type: 'auto:pass', by: 0 } as Action), 30);
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.pendingChoice === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, id, bear };
+  };
+  const say = (s: GameState, yes: boolean) => {
+    const no = (s.pendingDecision?.options ?? []).find((o) => o !== 'Yes')!;
+    let next = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: yes ? 'Yes' : no } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('yes: it is exiled from the graveyard and the draw follows; no: it stays and nothing is drawn', () => {
+    const a = died('Test Ghost');
+    const hand = ids(a.s, 0, 'hand').length;
+    const yes = say(a.s, true);
+    expect(yes.instances[a.id]!.zone).toBe('exile');
+    expect(ids(yes, 0, 'hand').length).toBe(hand + 1);
+    const no = say(a.s, false);
+    expect(no.instances[a.id]!.zone).toBe('graveyard');
+    expect(ids(no, 0, 'hand').length).toBe(hand);
+  });
+
+  it('gone from the graveyard before it resolves: nothing is exiled, so nothing is drawn', () => {
+    const a = died('Test Ghost');
+    const hand = ids(a.s, 0, 'hand').length;
+    const moved = relocate(a.s, a.s.instances[a.id]!, 'hand', 0, 'top');
+    const t = say(moved, true);
+    expect(t.instances[a.id]!.zone).toBe('hand');
+    expect(ids(t, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('"If you do" with a target: the target is chosen as it triggers, before the yes or no', () => {
+    const a = died('Test Shade');
+    // Asked for the target first: the trigger is waiting on it, and nobody has been asked "may" yet.
+    expect(a.s.pendingChoice).not.toBeNull();
+    expect(a.s.pendingDecision).toBeNull();
+    let s = drain(apply(a.s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: a.bear }] }), 30);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const t = say(s, true);
+    expect(t.instances[a.id]!.zone).toBe('exile');
+    expect(t.instances[a.bear]!.zone).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
