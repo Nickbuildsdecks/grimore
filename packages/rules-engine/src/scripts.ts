@@ -20735,6 +20735,8 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     [' you control', 'yours'],
     [" you don't control", 'opponents'],
     [' an opponent controls', 'opponents'],
+    // The plural's own spelling (D945): "up to two target creatures your opponents control".
+    [' your opponents control', 'opponents'],
   ] as const) {
     if (!body.toLowerCase().endsWith(clause)) continue;
     if (side === 'yours') yours = true; else opponents = true;
