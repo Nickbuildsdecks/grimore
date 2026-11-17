@@ -32034,3 +32034,41 @@ Faults injected by script: 9 of 9 caught.
 
 Coverage: 12,328 of 31,743 cards (+2), 32,294 of 59,509 lines (+2), against 5e56eeb. Staples: 241
 of 244 (+1).
+
+## D949 — "You may sacrifice another creature", and "sacrifice it. When you do"
+
+Two first halves D948 could not take.
+
+**"You may sacrifice another creature"**, with "If you do" or "When you do" after it. The sacrifice
+reader asks its question through a function, because "another" needs the source and a filter is
+not handed one. `optionalEffect` refused any function-shaped question, because it gates a question
+by adding `askOnlyIfChosen` to it and could not see inside a function. It now wraps the function, so
+what it returns carries the gate, and declining still asks nothing. The same change covers every
+other "another" question behind a "may".
+
+**"Sacrifice it. When you do, …"**: the one first half without a "may", on the enchantments that
+sacrifice themselves as they enter (the tri-colour land fetchers) or on their last plan counter. The
+reflexive trigger is queued only if the permanent was on the battlefield to be sacrificed.
+
+Still unread: "that creature's power" in the second half (Bolg's and others' sacrificed creature),
+which needs the sacrificed creature remembered into the reflexive trigger.
+
+18 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- sacrifice another creature: never itself, and then the reflexive target is destroyed;
+- declined: with two candidates the sacrifice is never asked about, and nothing is aimed;
+- "If you do" with sacrifice another creature: the draw comes with the sacrifice;
+- "sacrifice it. When you do": it goes, and then the draw.
+
+Superseded row: D465's "still cannot read 'you may return another'" (#337, Aviary Mechanic) now asserts the
+reading.
+
+Faults injected by hand: 4 of 4 caught. The gate on the wrapped question was missed until the
+decline test had two candidates: with one, the engine answers the question itself, which hid
+whether it was ever asked.
+
+    engine tests: 5,060, all passing
+
+Coverage: 12,343 of 31,743 cards (+18), 32,315 of 59,509 lines (+25). Staples: 240 of 244.

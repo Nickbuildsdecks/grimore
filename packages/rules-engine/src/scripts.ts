@@ -54,7 +54,7 @@ import {
 import { spendRestriction } from './spending.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ChoiceDecisionSpec,
-  CountersDecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
+  CountersDecisionSpec, DecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
   SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 import { isCardsDecision } from './scriptTypes.js';
@@ -19338,7 +19338,7 @@ function optionalEffect(
     a discard, a plain yes), and the second half is any clause the reader reads, targets and
     questions included, because those now belong to a trigger of their own.
   */
-  const reflex = /^(you may [^.]+)\.\s*When you do, (.+)$/i.exec(clause);
+  const reflex = /^(you may [^.]+|sacrifice it)\.\s*When you do, (.+)$/i.exec(clause);
   if (reflex !== null) {
     if (!allowReflexive) return null;
     const yText = reflex[2]!.trim();
@@ -19353,7 +19353,18 @@ function optionalEffect(
         }],
       }),
     };
-    const first = optionalEffect(`${reflex[1]!}. If you do, ${yText}`, (text) => (text.trim() === yText ? queue : reader(text)));
+    /*
+      "Sacrifice it. When you do, …" (D949): the one first half without a "may", on enchantments
+      that sacrifice themselves as they enter or on their last counter. Done only if the permanent
+      was there to sacrifice.
+    */
+    const first = /^sacrifice it$/i.test(reflex[1]!)
+      ? {
+        effect: (c: EffectContext) => (c.state.instances[c.source]?.zone !== 'battlefield'
+          ? c.state
+          : queue.effect({ ...c, state: sacrifice(c.state, [c.source]) })),
+      }
+      : optionalEffect(`${reflex[1]!}. If you do, ${yText}`, (text) => (text.trim() === yText ? queue : reader(text)));
     if (first === null) return null;
     return {
       ...first,
@@ -19561,9 +19572,14 @@ function optionalEffect(
     be added to whatever it returns, which cannot be checked here. Neither appears in the family
     this increment is for: every search in the corpus is a literal `CardsDecisionSpec`.
   */
-  const gatable = (spec: DecisionSpecOf):
-    spec is CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec => typeof spec !== 'function'
-      && (spec.from !== undefined || spec.options !== undefined || spec.range !== undefined);
+  /*
+    A function spec (D949) is gated by wrapping it: what it returns gets the flag, and one that
+    returns a question the flag cannot sit on is answered as it would have been. "Sacrifice another
+    creature" is the shape that needs it: the filter must be handed the source, so its question
+    is a function of the board.
+  */
+  const gatable = (spec: DecisionSpecOf): boolean => typeof spec === 'function'
+    || spec.from !== undefined || spec.options !== undefined || spec.range !== undefined;
   /*
     The `may !== null || charged !== null` disjunct D447 wrote here is gone, and that is a deletion
     rather than a loosening: it existed to let a clause that read **whole** through untouched, and
@@ -19615,7 +19631,9 @@ function optionalEffect(
     function — not by assuming one shape.
   */
   const gatedOn = (word: string): readonly DecisionSpecOf[] =>
-    (read.decisions ?? []).filter(gatable).map((spec) => ({ ...spec, askOnlyIfChosen: word }));
+    (read.decisions ?? []).filter(gatable).map((spec): DecisionSpecOf => (typeof spec === 'function'
+      ? (state: GameState, source: string) => ({ ...spec(state, source), askOnlyIfChosen: word }) as DecisionSpec
+      : { ...spec, askOnlyIfChosen: word } as DecisionSpec));
   /*
     **The inner effect must not see this reader's own question.**
 
