@@ -1574,6 +1574,12 @@ function triggerMatches(
       left is whether this is the chapter that number means. A Saga with chapters I, II and III
       sees all three events over three turns and each ability answers to exactly one.
     */
+    /*
+      A reflexive trigger (D948). Nothing raises this event: `settle` hands it straight to the one
+      trigger it found on the card by key, so there is nothing left to compare here.
+    */
+    case 'reflexive':
+      return true;
     case 'chapter': {
       const e = event as Extract<TriggerEvent, { kind: 'chapter' }>;
       return isSubject && e.n === want.n;
@@ -3339,7 +3345,9 @@ function settle(state: GameState, before: GameState): GameState {
         werewolf turning over at an upkeep, with nothing else happening, never fired its
         "transforms into" trigger at all.
       */
-      || (next.transformed ?? []).length > 0 || (next.copied ?? []).length > 0);
+      || (next.transformed ?? []).length > 0 || (next.copied ?? []).length > 0
+      // And the reflexive triggers an effect queued (D948).
+      || (next.reflexive ?? []).length > 0);
     pass++
   ) {
     /*
@@ -3433,8 +3441,11 @@ function settle(state: GameState, before: GameState): GameState {
       attached to nothing. See `GameState.detached`.
     */
     const detached = next.detached;
+    // And the reflexive triggers (D948): "when you do" has been done, so each goes on the stack now.
+    const reflexive = next.reflexive ?? [];
     next = {
       ...next,
+      reflexive: [],
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
       copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [], countersPut: [], leftGraveyard: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
@@ -3442,6 +3453,19 @@ function settle(state: GameState, before: GameState): GameState {
       // that asks about it.
       discarded: [],
     };
+    // The reflexive triggers (D948): each found on its card by key and put on the stack, targets asked.
+    for (const entry of reflexive) {
+      const inst = next.instances[entry.source];
+      if (inst === undefined) continue;
+      const triggers = scriptForCard(next.cardDefs[inst.defKey])?.triggers ?? [];
+      const index = triggers.findIndex((t) => t.on.kind === 'reflexive' && t.on.key === entry.key);
+      if (index < 0) continue;
+      next = fireTrigger(
+        next, triggers[index]!, entry.source, inst, index, { kind: 'reflexive', key: entry.key },
+        // The first half's subject, so "it" and "that creature" in the second mean the same thing.
+        entry.controller, entry.subject, false,
+      );
+    }
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,
       and only then do state-based actions notice what it killed. Both triggers go on the stack

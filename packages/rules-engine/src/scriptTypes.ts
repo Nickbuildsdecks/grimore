@@ -1392,7 +1392,13 @@ export type TriggerEvent =
    * `n` is the chapter the ability is printed as: I is 1. Two chapters may share a number only by
    * being written as one ability, the way the printed cards do ("I, II — ...").
    */
-  | { readonly kind: 'chapter'; readonly n: number };
+  | { readonly kind: 'chapter'; readonly n: number }
+  /**
+   * A reflexive trigger (D948, CR 603.12), "When you do, …": raised by nothing on the board, only
+   * queued by its own card's effect (`GameState.reflexive`) and fired by `settle`. `key` is the
+   * printed text of its effect, which is what ties the queue entry to this trigger.
+   */
+  | { readonly kind: 'reflexive'; readonly key: string };
 
 /**
  * A question a card asks *while it is resolving* (CR 608.2).
