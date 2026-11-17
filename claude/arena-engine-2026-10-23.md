@@ -30950,3 +30950,42 @@ Faults injected by hand: 7 of 7 caught.
     engine tests: 4,904, all passing
 
 Coverage: 11,876 of 31,743 cards (+23), 31,534 of 59,509 lines (+25). Staples: 238 of 244.
+
+## D922 — Plot
+
+"Plot {cost} (You may pay {cost} and exile this card from your hand. Cast it as a sorcery on a later
+turn without paying its mana cost. Plot only as a sorcery.)" (CR 702.170). The Outlaws of Thunder
+Junction mechanic: 14 legal cards were held back by the keyword alone.
+
+How it is built, on what was there:
+- **`CardScript.plot {cost}`**, read from the keyword line.
+- **The special action `auto:plot`**, suspend's sibling. It is offered from hand at sorcery speed,
+  for the card's own cost, beside its cast. The card goes to exile **face up**. No stack, nothing
+  to respond to.
+- **The wait in exile is D583's `playFromExile`** with a new deadline kind, `through: 'plotted'`.
+  No cleanup expires it, and `relocate` clears it if the card leaves exile. What it adds:
+  - the cast is offered and allowed only on a turn after the plot;
+  - only at sorcery speed, an instant included ("cast it as a sorcery");
+  - with no mana cost, so X is 0.
+- **The computer** is offered the plot like a suspend, and drops it by the same rule
+  (`specialIsSpareMana`): it plots only when the mana had nothing better to do. It casts a plotted
+  card like any other cast on offer.
+- **The web table:** `arena.ts` maps the `plot` play to `auto:plot`, the play sheet gives it its own
+  row id, and the table's help lists it.
+
+Not read: "Whenever you plot a card", and the cards that plot something else ("exile … it becomes
+plotted").
+
+**Tests.** 6 engine tests:
+- both printings read;
+- plot is offered from hand and the card goes face up into exile, paid by the Island;
+- it is not castable the turn it was plotted;
+- on the next turn it is cast with every land tapped and draws its three;
+- an instant plotted is still cast only as a sorcery;
+- plot itself is refused, and not offered, outside a main phase, an instant with plot included.
+
+Faults injected by hand: 9 of 9 caught. The plot offer's own timing was pinned by the instant case.
+
+    engine tests: 4,910, all passing
+
+Coverage: 11,891 of 31,743 cards (+15), 31,567 of 59,509 lines (+33). Staples: 238 of 244.

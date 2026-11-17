@@ -1797,6 +1797,10 @@ export interface AutoCastAction {
 export interface AutoSuspendAction {
   readonly type: 'auto:suspend'; readonly by: SeatIndex; readonly card: string;
 }
+/** Plot (D922): the special action that exiles a card from hand to cast for free on a later turn. */
+export interface AutoPlotAction {
+  readonly type: 'auto:plot'; readonly by: SeatIndex; readonly card: string;
+}
 
 export interface AutoForetellAction {
   readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
@@ -1921,13 +1925,13 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoDredgeAction
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoPlotAction | AutoDredgeAction
   | AutoDredgeStopsAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend',
+  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend', 'auto:plot',
   'auto:dredge', 'auto:dredgeStops',
 ]);
 

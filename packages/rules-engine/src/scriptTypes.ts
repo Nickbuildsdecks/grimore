@@ -3888,6 +3888,13 @@ export interface CardScript {
    */
   readonly suspend?: { readonly cost: string; readonly counters: number };
   /**
+   * Plot (D922, CR 702.170): "You may pay <cost> and exile this card from your hand. Cast it as a
+   * sorcery on a later turn without paying its mana cost. Plot only as a sorcery." The special
+   * action is `auto:plot`; the card waits in exile face up with `CardInstance.playFromExile`
+   * `through: 'plotted'`, which never expires and is cast free, at sorcery speed, on a later turn.
+   */
+  readonly plot?: { readonly cost: string };
+  /**
    * Dredge: a draw you may replace by milling this many cards and taking this card back
    * (CR 702.52a).
    *

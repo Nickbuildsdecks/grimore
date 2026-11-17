@@ -7908,6 +7908,7 @@ describe('deck coverage', () => {
         cleanup sacrifice (D727)".
       - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
         runtime by "sunburst and converge (D917)".
+      - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7937,6 +7938,7 @@ describe('deck coverage', () => {
       'script entersCounting',
       'script castAsThoughFlash',
       'script sunburst',
+      'script plot',
     ]);
 
     const declared = [
@@ -17706,6 +17708,86 @@ describe('a mana line with "Activate only if …" (D921)', () => {
     expect(can(table(['Test Spire']), 'Test Spire', 'G')).toBe(false);
     expect(can(table(['Test Spire', 'Test Trinket']), 'Test Spire', 'G')).toBe(true);
     expect(can(table(['Test Spire']), 'Test Spire', 'C')).toBe(true);
+  });
+});
+
+describe('plot (D922)', () => {
+  const ROWS = [
+    { name: 'Test Plotter', type_line: 'Sorcery', oracle_text: 'Draw three cards.\nPlot {1}', mana_cost: '{4}{U}', cmc: 5, colors: ['U'], layout: 'normal' },
+    { name: 'Test Quick Plot', type_line: 'Instant', oracle_text: 'You gain 4 life.\nPlot {1}', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd922', name: 'Plot',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 28 }, { name: 'Plains', count: 28 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd922', 1: 'd922' }, deckSpecs: { d922: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const plotted = (card: string) => {
+    let s = seated(card);
+    const id = find(s, 0, 'hand', card);
+    s = apply(s, { type: 'auto:plot', by: 0, card: id } as Action);
+    return { s, id };
+  };
+  const castPlays = (s: GameState, id: string) => legalActions(s, 0).plays.filter((p) => p.card === id && p.kind === 'cast');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered from hand at sorcery speed, for the plot cost; the card goes face up into exile', () => {
+    const s0 = seated('Test Plotter');
+    const id0 = find(s0, 0, 'hand', 'Test Plotter');
+    expect(legalActions(s0, 0).plays.some((p) => p.card === id0 && p.kind === 'plot')).toBe(true);
+    const { s, id } = plotted('Test Plotter');
+    expect(s.instances[id]!.zone).toBe('exile');
+    expect(s.instances[id]!.faceDown ?? false).toBe(false);
+    expect(s.instances[id]!.playFromExile).toMatchObject({ by: 0, through: 'plotted' });
+    // The Island paid for it.
+    expect(s.instances[find(s, 0, 'battlefield', 'Island')]!.tapped).toBe(true);
+  });
+
+  it('not castable the turn it was plotted', () => {
+    const { s, id } = plotted('Test Plotter');
+    expect(castPlays(s, id)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: id } as Action)).toMatch(/later turn/);
+  });
+
+  it('on a later turn: cast free, at sorcery speed', () => {
+    let { s, id } = plotted('Test Plotter');
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    // Every land tapped: it costs nothing.
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([k, v]) => [k, v.zone === 'battlefield' ? { ...v, tapped: true } : v])) };
+    expect(castPlays(s, id).length).toBe(1);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 3);
+    expect(s.instances[id]!.zone).toBe('graveyard');
+  });
+
+  it('an instant plotted is still cast as a sorcery', () => {
+    let { s, id } = plotted('Test Quick Plot');
+    s = advanceTo(nextTurn(nextTurn(s)), 'begin-combat');
+    expect(s.priority).toBe(0);
+    expect(castPlays(s, id)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: id } as Action)).toMatch(/as a sorcery/);
+  });
+
+  it('plot itself only as a sorcery', () => {
+    // Its own turn, holding priority, but in combat rather than a main phase.
+    const s = advanceTo(seated('Test Plotter'), 'begin-combat');
+    expect(s.priority).toBe(0);
+    const id = find(s, 0, 'hand', 'Test Plotter');
+    expect(legalActions(s, 0).plays.some((p) => p.card === id && p.kind === 'plot')).toBe(false);
+    expect(refusal(s, { type: 'auto:plot', by: 0, card: id } as Action)).toMatch(/only as a sorcery/);
+    // An instant with plot is castable in combat, and still not plotted there.
+    const quick = advanceTo(seated('Test Quick Plot'), 'begin-combat');
+    const qid = find(quick, 0, 'hand', 'Test Quick Plot');
+    expect(legalActions(quick, 0).plays.some((p) => p.card === qid && p.kind === 'plot')).toBe(false);
   });
 });
 
