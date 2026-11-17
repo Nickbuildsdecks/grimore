@@ -8929,6 +8929,20 @@ const DISTORTION_STRIKE: CardScript = {
  * new targets for the copies and this engine does not, which is the narrower reading and the one
  * that cannot be wrong in the player's favour (CR 707.10).
  */
+/**
+ * Casualty's copy (D923): "When you do, copy this spell", the card's own cast trigger, as replicate's
+ * is. The copy keeps the original's targets, for replicate's reason (CR 707.10).
+ */
+const CASUALTY_COPY: TriggerDef = {
+  on: { kind: 'spell-cast', self: true },
+  description: 'Casualty — copy this spell',
+  effect: (c) => {
+    const id = c.answering;
+    if (id === undefined || c.state.stackObjects[id]?.casualtyPaid !== true) return c.state;
+    return copySpellOnStack(c.state, id, c.controller);
+  },
+};
+
 function replicate(): TriggerDef {
   return {
     on: { kind: 'spell-cast', self: true },
@@ -11224,6 +11238,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     const n = Number(annihilator[1]);
     return triggerFromLine(`Whenever ${name} attacks, defending player sacrifices ${n === 1 ? 'a permanent' : `${n} permanents`}.`, name);
   }
+  // Casualty N (D923): see `CardScript.casualty`.
+  const casualty = /^casualty (\d+)$/i.exec(text);
+  if (casualty !== null) return { casualty: Number(casualty[1]), triggers: [CASUALTY_COPY] };
   // Plot (D922): see `CardScript.plot`.
   const plotted = /^plot ((?:\{[^}]+\})+)$/i.exec(text);
   if (plotted !== null) return { plot: { cost: plotted[1]! } };

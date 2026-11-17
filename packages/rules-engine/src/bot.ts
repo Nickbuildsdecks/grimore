@@ -2528,6 +2528,9 @@ function candidateActions(
             // to discard rides along on what the engine reads as a cast from hand, and the card
             // is in a graveyard. Sweep 46821 threw on exactly that, with Glamerdye.
             ...(play.retrace === true ? { retrace: true } : {}),
+            // And casualty (D923): sent without it, the chosen sacrifice rides on a spell with no
+            // additional cost, which the engine refuses.
+            ...(play.casualty === true ? { casualty: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -4885,6 +4888,8 @@ const playKey = (play: LegalPlay): string =>
   + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
   + `${play.overloaded === true ? 'o' : ''}`
   + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}`
+  // And casualty (D923): the cast that sacrifices and copies is a different play from the one that does not.
+  + `${play.casualty === true ? 'c' : ''}`
   // And replicate's count, for the same reason one step further: the three castings of a Pyromatics
   // are three plays, and a key that could not tell them apart would read "x2 is still on offer"
   // after the printed one had been cast.

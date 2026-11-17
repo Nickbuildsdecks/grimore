@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPai
 import {
   characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import {
+import { casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
   cleanupHolds, finishCleanup,
   attackAimIssue, grantedAbilityFor,
@@ -631,6 +631,19 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `that ${fodder} cannot be sacrificed for this`);
     }
     sacrificed = action.sacrifice;
+    if (action.casualty === true) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} already sacrifices for its additional cost`);
+    }
+  } else if (action.casualty === true) {
+    // Casualty (D923): a creature with power N or greater, sacrificed as the spell is cast.
+    if (script?.casualty === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no casualty`);
+    }
+    if (action.sacrifice === undefined
+      || !casualtyOptions(state, action.by, inst.id, script.casualty).includes(action.sacrifice)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `casualty ${script.casualty} needs a creature you control with power ${script.casualty} or greater`);
+    }
+    sacrificed = action.sacrifice;
   } else if (action.sacrifice !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no additional cost to pay`);
   }
@@ -1067,6 +1080,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     castFrom: inst.zone,
     // And how many colours of mana were spent on it (D917), for sunburst and converge.
     ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent } : {}),
+    // And whether casualty was paid (D923), for its copy.
+    ...(action.casualty === true ? { casualtyPaid: true as const } : {}),
     // And whether a sorcery could have been cast just now (D727), for Necromancy's cleanup sacrifice.
     ...(atSorcerySpeed(state, action.by) ? {} : { castOutsideSorceryTiming: true as const }),
     ...(action.x === undefined ? {} : { x: action.x }),
