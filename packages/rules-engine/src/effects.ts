@@ -880,6 +880,9 @@ export const DASHED = 'dashed';
  */
 export const KICKED = 'kicked';
 
+/** How many times a squad cost was paid (D924), recorded as the permanent arrives. See `CardScript.squad`. */
+export const SQUADDED = 'squad';
+
 /**
  * The marker on a **myriad** token, which is the thing that remembers to exile it (CR 702.111a).
  *

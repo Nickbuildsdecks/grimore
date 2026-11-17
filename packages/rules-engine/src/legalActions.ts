@@ -2301,7 +2301,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         if (!canAfford(poolOf(state, seat), cost, sources)) break;
         out.push({
           kind: 'cast', card: id, name: ch.name, replicate: times,
-          description: `Cast ${ch.name} with replicate x${times}`,
+          // Squad pays the same way (D924), and buys token copies rather than spell copies.
+          description: script?.squad !== undefined
+            ? `Cast ${ch.name} with squad x${times} (${times} token cop${times === 1 ? 'y' : 'ies'})`
+            : `Cast ${ch.name} with replicate x${times}`,
           manaCost: text, ...taxOn,
           targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });

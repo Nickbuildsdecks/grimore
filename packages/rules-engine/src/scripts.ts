@@ -28,6 +28,7 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
+  SQUADDED,
   addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
   chosenCards,
   counterSpell, putOnTopOfLibrary,
@@ -8943,6 +8944,25 @@ const CASUALTY_COPY: TriggerDef = {
   },
 };
 
+/**
+ * Squad's copies (D924): "When this creature enters, create that many tokens that are copies of it."
+ * The count is the `squad` marker the arrival recorded; the copies are made from the card's own
+ * definition, and arrive with no marker, so their own squad trigger makes nothing.
+ */
+const SQUAD_TRIGGER: TriggerDef = {
+  on: { kind: 'etb' },
+  description: 'Squad — create that many tokens that are copies of it',
+  effect: (c) => {
+    const inst = c.state.instances[c.source];
+    const n = inst?.counters[SQUADDED] ?? 0;
+    if (inst === undefined || n <= 0) return c.state;
+    const def = c.state.cardDefs[inst.defKey];
+    if (def === undefined) return c.state;
+    const unmarked = addCounters(c.state, inst.id, SQUADDED, -n);
+    return createToken(unmarked, c.controller, def, n, inst.defKey);
+  },
+};
+
 function replicate(): TriggerDef {
   return {
     on: { kind: 'spell-cast', self: true },
@@ -11238,6 +11258,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     const n = Number(annihilator[1]);
     return triggerFromLine(`Whenever ${name} attacks, defending player sacrifices ${n === 1 ? 'a permanent' : `${n} permanents`}.`, name);
   }
+  // Squad (D924): see `CardScript.squad`. Paid as replicate is.
+  const squad = /^squad ((?:\{[^}]+\})+)$/i.exec(text);
+  if (squad !== null) return { replicate: { cost: squad[1]! }, squad: { cost: squad[1]! }, triggers: [SQUAD_TRIGGER] };
   // Casualty N (D923): see `CardScript.casualty`.
   const casualty = /^casualty (\d+)$/i.exec(text);
   if (casualty !== null) return { casualty: Number(casualty[1]), triggers: [CASUALTY_COPY] };
