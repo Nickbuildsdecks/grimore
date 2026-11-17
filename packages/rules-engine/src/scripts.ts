@@ -20605,6 +20605,10 @@ const TARGET_QUANTIFIERS: Readonly<Record<string, {
   'up to three': { optional: true, count: 3 },
   'each of up to two': { optional: true, count: 2 },
   'each of up to three': { optional: true, count: 3 },
+  // Support's own phrase (D946): "each of up to two other target creatures".
+  'up to three other': { optional: true, count: 3, another: true },
+  'each of up to two other': { optional: true, count: 2, another: true },
+  'each of up to three other': { optional: true, count: 3, another: true },
   two: { count: 2 },
   three: { count: 3 },
 };
@@ -20683,7 +20687,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     capital is a subtype (CR 205.3) and lower case is a card type off an allow-list.
   */
   const whole = printed.trim();
-  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three|each of up to two|each of up to three|two|three)?\s*target\s+(.+)$/i
+  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|two|three)?\s*target\s+(.+)$/i
     .exec(whole);
   if (opened === null) return null;
   const quantifier = TARGET_QUANTIFIERS[(opened[1] ?? '').trim().toLowerCase()];
@@ -23277,6 +23281,20 @@ function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   /*
+    **Support N** (D946, CR 701.32): "put a +1/+1 counter on each of up to N other target
+    creatures" — "other" only matters on a creature, and on a spell there is no permanent to
+    exclude, so it is read the same everywhere. The counter clause is read as printed for two and
+    its spec given N.
+  */
+  const supports = /^support (\d+)$/i.exec(clause.trim());
+  if (supports !== null) {
+    const n = Number(supports[1]);
+    const inner = readEffect('put a +1/+1 counter on each of up to two other target creatures', name, where);
+    const spec = inner?.targets?.[0];
+    if (inner === null || spec === undefined || inner.targets!.length !== 1 || n < 1) return null;
+    return { ...inner, targets: [{ ...spec, count: n, description: `up to ${n} other target creatures` }] };
+  }
+  /*
     "Until end of turn, target creature gets +1/+0 and gains indestructible" (D606): the same
     sentence as "… until end of turn" with the duration printed first, which is how 99 legal lines
     put it. Read as the trailing form, which every pump and grant reader already handles; a clause
@@ -24802,6 +24820,19 @@ function composeEffects(
       object on the battlefield. `any` and `player` are excluded for the reason D530 excludes `any`:
       whether such a target holds a permanent is a fact about the game, not about the text.
     */
+    /*
+      **The plural freeze** (D946): "Those creatures don't untap during their controller's next
+      untap step", "… their controllers' next untap steps", "They don't untap …". Every object the
+      one earlier targeting clause chose is frozen (`foldCardTargets`), which is what the plural
+      says and what the singular borrow below cannot do: it supplies one object.
+    */
+    if (aimed !== null && (aimed.kind === 'creature' || aimed.kind === 'permanent')
+      && parts.filter((part) => part.targets !== undefined).length === 1
+      && /^(?:those (?:creatures|permanents|lands|artifacts)|they) don['\u2019]t untap during their controllers?['\u2019]?s?['\u2019]? next untap steps?$/i
+        .test(clause.trim())) {
+      parts.push({ effect: (c) => foldCardTargets(c, freezeNextUntap) });
+      continue;
+    }
     const offered = aimed === null ? [] : REFERENT_PRONOUNS.filter(
       ([, kind, supply]) => (supply === 'controller'
         ? CONTROLLABLE_KINDS.has(aimed.kind)

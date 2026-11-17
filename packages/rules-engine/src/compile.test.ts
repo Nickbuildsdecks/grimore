@@ -15789,35 +15789,20 @@ describe('the freeze: "doesn\'t untap during its controller\'s next untap step" 
     ]);
   });
 
-  it('refuses the plural referent, rather than freezing the first of two creatures', () => {
+  it('reads the plural referent since D946, and a plural with no targeting clause before it stays unread', () => {
     /*
-      Frost Breath taps **up to two** and then says "Those creatures". `referentEffect` supplies
-      exactly one borrowed object, so a reader that accepted the plural would tap both and freeze
-      one — the half-read card `foldCardTargets`' docblock calls worse than an unread line, because
-      an unread line is badged for a human and a half-read one is not (D259, D362).
-
-      18 printings wait on this: "Those creatures don't untap during their controller's next untap
-      step" (11), "...their controllers' next untap steps" (4) and "They don't untap..." (3). The
-      plural referent is a combinator rather than a row, and is its own increment.
+      This row refused Frost Breath until D946, because the singular borrow supplies one object and
+      would have frozen one of two. D946 reads the plural as its own case, freezing every object the
+      one earlier targeting clause chose; D946's engine test holds that both stay tapped.
     */
     const read = row('Frost Breath', 'Instant',
       'Tap up to two target creatures. '
       + "Those creatures don't untap during their controller's next untap step.");
     expect(read.ok).toBe(true);
-    if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual([
-      'Tap up to two target creatures. '
-      + "Those creatures don't untap during their controller's next untap step.",
-    ]);
-
-    /*
-      The discriminating half: "up to two target creatures" is a phrase the tap reader has read
-      since D469, so the refusal above is about the plural **referent** and not about the count.
-      Without this row the test would also pass on a compiler that had never learnt to tap two.
-    */
-    const counted = row('Probe Breath', 'Instant', 'Tap up to two target creatures.');
-    expect(counted.ok).toBe(true);
-    if (counted.ok) expect(counted.unread.map((u) => u.line)).toEqual([]);
+    if (read.ok) expect(read.unread).toEqual([]);
+    // Still refused: a plural with nothing before it to mean.
+    const alone = row('Probe Chill', 'Instant', "Those creatures don't untap during their controller's next untap step.");
+    expect(alone.ok && alone.unread.length).toBe(1);
   });
 
   it('requires the word "next", which is the whole duration', () => {

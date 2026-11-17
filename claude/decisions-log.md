@@ -49308,3 +49308,37 @@ Faults injected by hand: 2 of 2 caught (the suffix removed, and read as the cast
     engine tests: 5,037, all passing
 
 Coverage: 12,272 of 31,743 cards (+4), 32,215 of 59,509 lines (+4). Staples: 239 of 244.
+
+## D946 — Support, and "those creatures don't untap"
+
+**Support N** (CR 701.32): "put a +1/+1 counter on each of up to N other target creatures".
+- Read by the existing counter clause, for two, with N given to its spec. "Support 2", "3" and
+  "6" are the printed values.
+- "Other" is kept on spells too, where there is no permanent of the spell's own to exclude, so the
+  reading is the same everywhere.
+- The quantifier table gained "each of up to two other", "each of up to three other" and "up to
+  three other", and the target reader accepts them.
+
+**The plural freeze**: "Those creatures don't untap during their controller's next untap step",
+"… their controllers' next untap steps", "They don't untap …". D481's singular reader left these
+unread on purpose, because the referent borrow supplies one object. They are now read as their own
+case: when the clause before is the line's only targeting clause, every object it chose is frozen
+(`foldCardTargets` over `freezeNextUntap`).
+
+17 legal cards with either now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read, and support 3 asks for three;
+- support 2 offers the two other creatures and never itself, and puts a counter on each;
+- both tapped creatures stay tapped through their controller's next untap step, and untap at the
+  one after.
+
+Superseded row: D538's Frost Breath refusal now asserts the reading, and that a plural with no
+targeting clause before it stays unread.
+
+Faults injected by hand: 4 of 4 caught, after support 3 was pinned (the first round missed a reading
+that kept the count at two).
+
+    engine tests: 5,040, all passing
+
+Coverage: 12,293 of 31,743 cards (+21), 32,244 of 59,509 lines (+29). Staples: 239 of 244.
