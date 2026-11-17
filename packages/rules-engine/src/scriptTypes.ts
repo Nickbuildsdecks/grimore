@@ -513,6 +513,13 @@ export type TriggerEvent =
       /** Set by the engine: how many creatures were declared as attackers in this declaration. */
       readonly declared?: number;
       /**
+       * Dethrone's clause (D911, CR 702.105a): "whenever this creature attacks **the player with the
+       * most life or tied for most life**". Asked as `true` by the trigger and written by the engine
+       * at the declaration, because it is a trigger condition and not an intervening if: life that
+       * changes before the trigger resolves does not take the counter away.
+       */
+      readonly mostLife?: boolean;
+      /**
        * "Whenever a **Dragon** you control attacks" (D635): the attacker's live subtypes, any of
        * these, compared as the board events' `ofSubtypes` is (D479).
        */

@@ -2468,6 +2468,10 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
         // And the size of it, for the cards that count rather than ask for one. Same reason:
         // by the time a battalion trigger resolves, two of the three attackers may be gone.
         declared: attacks.length,
+        // Dethrone's question (D911), asked at the declaration as the trigger condition is
+        // (CR 702.105a): a player, not a planeswalker, with no living player above them on life.
+        mostLife: attack.planeswalker === undefined && next.seats.every((seat) => seat.eliminated
+          || seat.life <= (next.seats[attack.defender]?.life ?? -Infinity)),
         attacked: {
           defender: attack.defender,
           ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),

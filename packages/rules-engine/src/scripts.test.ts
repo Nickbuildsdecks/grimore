@@ -16812,6 +16812,154 @@ describe('"reveal a <type> card from your hand or pay", and behold (D909)', () =
   });
 });
 
+describe('"If a creature dealt damage this way would die this turn, exile it instead" (D910)', () => {
+  const ROWS = [
+    { name: 'Anger of the Gods', type_line: 'Sorcery', mana_cost: '{1}{R}{R}', cmc: 3, colors: ['R'], layout: 'normal',
+      oracle_text: 'Anger of the Gods deals 3 damage to each creature. If a creature dealt damage this way would die this turn, exile it instead.' },
+    { name: 'Test Spray', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Spray deals 1 damage to any target. If a creature dealt damage this way would die this turn, exile it instead.' },
+    { name: 'Test Hazard', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Hazard deals 1 damage to any target. If a permanent dealt damage this way would die this turn, exile it instead.' },
+    { name: 'Test Zenith', type_line: 'Sorcery', mana_cost: '{X}{R}', cmc: 1, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Zenith deals X damage to any target. If a creature dealt damage this way would die this turn, exile it instead.' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal',
+      power: null, toughness: null, loyalty: '1', oracle_text: '+1: Draw a card.' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal',
+      power: '4', toughness: '4', oracle_text: '' },
+  ];
+  const deck = customDeck({
+    id: 'd910', name: 'Exiled if damaged',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Doom Blade', count: 2 }, { name: 'Grizzly Bears', count: 4 },
+      { name: 'Swamp', count: 20 }, { name: 'Mountain', count: 20 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], theirs: string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'd910', 1: 'd910' }, deckSpecs: { d910: deck.deck },
+    hands: { 0: hand },
+    battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Swamp', 'Swamp'], 1: theirs },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const cast = (s: GameState, card: string, targets: Target[] = [], x?: number): GameState => drain(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets, ...(x === undefined ? {} : { x }),
+  } as Action), 60);
+  const theirs = (s: GameState, name: string) => ids(s, 1 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === name);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a sweep: what it kills goes to exile, and what survives keeps the replacement for the turn', () => {
+    let s = table(['Anger of the Gods', 'Doom Blade'], ['Grizzly Bears', 'Test Giant']);
+    const [bears] = theirs(s, 'Grizzly Bears');
+    const [giant] = theirs(s, 'Test Giant');
+    s = cast(s, 'Anger of the Gods');
+    expect(s.instances[bears!]?.zone).toBe('exile');
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Grizzly Bears');
+    expect(s.instances[giant!]?.zone).toBe('battlefield');
+    expect(s.instances[giant!]?.damage).toBe(3);
+    // Dealt damage this way, so its death later this turn is replaced too.
+    s = cast(s, 'Doom Blade', [{ kind: 'card', id: giant! }]);
+    expect(s.instances[giant!]?.zone).toBe('exile');
+  });
+
+  it('only what was dealt damage: a creature the spell missed dies normally', () => {
+    let s = table(['Test Spray', 'Doom Blade', 'Doom Blade'], ['Grizzly Bears', 'Test Giant']);
+    const [bears] = theirs(s, 'Grizzly Bears');
+    const [giant] = theirs(s, 'Test Giant');
+    s = cast(s, 'Test Spray', [{ kind: 'card', id: giant! }]);
+    // The unnamed one first: an effect scoped to a card leaves with it (see D539's test).
+    s = cast(s, 'Doom Blade', [{ kind: 'card', id: bears! }]);
+    expect(s.instances[bears!]?.zone).toBe('graveyard');
+    s = cast(s, 'Doom Blade', [{ kind: 'card', id: giant! }]);
+    expect(s.instances[giant!]?.zone).toBe('exile');
+  });
+
+  it('a creature already damaged and not damaged again is not one of them', () => {
+    let s = table(['Test Spray', 'Doom Blade'], ['Grizzly Bears', 'Test Giant']);
+    const [bears] = theirs(s, 'Grizzly Bears');
+    const [giant] = theirs(s, 'Test Giant');
+    s = { ...s, instances: { ...s.instances, [bears!]: { ...s.instances[bears!]!, damage: 1 } } };
+    s = cast(s, 'Test Spray', [{ kind: 'card', id: giant! }]);
+    s = cast(s, 'Doom Blade', [{ kind: 'card', id: bears! }]);
+    expect(s.instances[bears!]?.zone).toBe('graveyard');
+  });
+
+  it('an X spell: the X damage is wrapped too', () => {
+    let s = table(['Test Zenith'], ['Grizzly Bears', 'Grizzly Bears']);
+    const [bears, other] = theirs(s, 'Grizzly Bears');
+    s = cast(s, 'Test Zenith', [{ kind: 'card', id: bears! }], 2);
+    expect(s.instances[bears!]?.zone).toBe('exile');
+    expect(s.instances[other!]?.zone).toBe('battlefield');
+  });
+
+  it('"a permanent" takes a planeswalker; "a creature" does not', () => {
+    const withWalker = (hand: string[]): [GameState, string] => {
+      const s = table(hand, ['Test Walker']);
+      const [walker] = theirs(s, 'Test Walker');
+      return [{ ...s, instances: { ...s.instances, [walker!]: { ...s.instances[walker!]!, counters: { loyalty: 1 } } } }, walker!];
+    };
+    let [s, walker] = withWalker(['Test Hazard']);
+    s = cast(s, 'Test Hazard', [{ kind: 'card', id: walker }]);
+    expect(s.instances[walker]?.zone).toBe('exile');
+    [s, walker] = withWalker(['Test Spray']);
+    s = cast(s, 'Test Spray', [{ kind: 'card', id: walker }]);
+    expect(s.instances[walker]?.zone).toBe('graveyard');
+  });
+});
+
+describe('dethrone (D911)', () => {
+  const ROWS = [
+    { name: 'Test Dethroner', type_line: 'Creature — Human', oracle_text: 'Dethrone', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: Draw a card.', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: null, toughness: null, loyalty: '5' },
+  ];
+  const deck = customDeck({
+    id: 'kw911', name: 'Dethrone',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const counters = (s: GameState, id: string) => s.instances[id]!.counters['+1/+1'] ?? 0;
+  const attack = (lives: number[], opts: { walker?: boolean; seats?: number; eliminated?: number; after?: number } = {}) => {
+    const seats = opts.seats ?? 2;
+    const decks = Object.fromEntries(Array.from({ length: seats }, (_, i) => [i, 'kw911']));
+    let s = advanceTo(arena({
+      ...(seats > 2 ? { format: 'pod', seats } : {}),
+      decks, deckSpecs: { kw911: deck.deck },
+      battlefield: { 0: ['Test Dethroner'], 1: opts.walker ? ['Test Walker'] : [] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    s = { ...s, seats: s.seats.map((seat, i) => ({ ...seat, life: lives[i] ?? seat.life, ...(i === opts.eliminated ? { eliminated: true } : {}) })) };
+    const attacker = find(s, 0, 'battlefield', 'Test Dethroner');
+    const walker = opts.walker ? find(s, 1, 'battlefield', 'Test Walker') : undefined;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1, ...(walker === undefined ? {} : { planeswalker: walker }) }] } as Action);
+    if (opts.after !== undefined) s = { ...s, seats: s.seats.map((seat, i) => (i === 1 ? { ...seat, life: opts.after! } : seat)) };
+    return counters(drain(s, 10), attacker);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a counter attacking the player with the most life, or tied for it', () => {
+    expect(attack([20, 20])).toBe(1);
+    expect(attack([10, 20])).toBe(1);
+    expect(attack([20, 19])).toBe(0);
+  });
+
+  it('not attacking a planeswalker, whoever controls it', () => {
+    expect(attack([10, 20], { walker: true })).toBe(0);
+  });
+
+  it('a player who has lost is not counted', () => {
+    expect(attack([10, 15, 30], { seats: 3 })).toBe(0);
+    expect(attack([10, 15, 30], { seats: 3, eliminated: 2 })).toBe(1);
+  });
+
+  it('decided at the declaration: life lost before it resolves does not take the counter away', () => {
+    expect(attack([20, 20], { after: 1 })).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

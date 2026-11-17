@@ -15959,13 +15959,13 @@ describe('"If that creature would die this turn, exile it instead" (D539)', () =
     ]);
   });
 
-  it('refuses the sweeper form, which needs the set the sibling clause damaged', () => {
+  it('reads the sweeper form since D910, over the set the sibling clause damaged', () => {
     /*
       Anger of the Gods, 8 printings: "If **a creature dealt damage this way** would die this turn,
-      exile it instead". The subject is every creature the clause *before* it damaged, and nothing
-      in `composeEffects` hands a clause what its sibling touched — that is a channel to build, not
-      a phrase to match, and reading it as anything else would arm the replacement over the wrong
-      set.
+      exile it instead". Refused here until D910 built the channel this row asked for:
+      `clausesOf` holds the two sentences together and `exiledIfDamagedThisWay` arms the replacement
+      over the creatures whose marked damage the first sentence raised. The table test is D910's in
+      `scripts.test.ts`.
     */
     const read = row('Anger of the Gods', 'Sorcery',
       'Anger of the Gods deals 3 damage to each creature. '
@@ -15973,10 +15973,7 @@ describe('"If that creature would die this turn, exile it instead" (D539)', () =
       { mana_cost: '{1}{R}{R}', cmc: 3, colors: ['R'] });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual([
-      'Anger of the Gods deals 3 damage to each creature. '
-      + 'If a creature dealt damage this way would die this turn, exile it instead.',
-    ]);
+    expect(read.unread).toEqual([]);
   });
 
   it('refuses the board-wide form, whose scope has to be read live', () => {

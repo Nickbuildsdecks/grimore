@@ -1435,6 +1435,9 @@ function triggerMatches(
       // And battalion's: at least N creatures in the declaration, counted where it happened.
       if (want.kind === 'attacks' && want.withAtLeast !== undefined
         && (e.declared ?? 0) < want.withAtLeast) return false;
+      // Dethrone's (D911): the attack was declared against the player with the most life.
+      if (want.kind === 'attacks' && want.mostLife === true
+        && (event as { mostLife?: boolean }).mostLife !== true) return false;
       // "a *creature* you control enters" is what the board-watchers say, and an enchantment
       // arriving is not that. Only asked for when the trigger asks for it, so a `self` trigger on
       // a non-creature permanent still fires for its own arrival. Anything in combat is a creature

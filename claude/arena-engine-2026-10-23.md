@@ -30519,3 +30519,61 @@ Faults injected by hand: 4 of 4 caught.
 
 Coverage on the merged head (with the other session's D727): 11,686 of 31,743 cards, 31,239 of 59,509
 lines. Staples: 238 of 244.
+
+## D910 — "If a creature dealt damage this way would die this turn, exile it instead"
+
+Anger of the Gods, Magma Spray, Red Sun's Zenith, Pillar of Flame, Yamabushi's Flame and their
+cousins. The second sentence is about what the first one damaged, so `clausesOf` now holds the two
+together, and `exiledIfDamagedThisWay` wraps the damage.
+
+How it is read:
+- The creatures dealt damage this way are those whose marked damage the first sentence raised, read
+  off the battlefield around it. A creature whose damage was prevented is not one of them and dies
+  normally.
+- Each one gets D539's `exiledInsteadOfDying` until end of turn, scoped to that creature. It is
+  exiled whether it dies to the damage or to something else later in the turn.
+- "A permanent dealt damage this way" (Spikefield Hazard, Underworld Fires) adds planeswalkers,
+  where damage is loyalty removed.
+- The X form (Demonfire, Red Sun's Zenith) is wrapped in `xSpellResolution` the same way.
+- The compile.test row that refused Anger of the Gods "until a channel is built" now asserts the
+  line reads.
+- **Not counted:** damage that is not marked (wither, infect). No card of this family deals it.
+
+**Tests.** 6 engine tests:
+- the four printings read;
+- a sweep exiles what it kills, and a survivor is exiled when it dies later that turn;
+- a creature the spell missed dies normally;
+- a creature already damaged and not damaged again is not counted;
+- X damage is wrapped;
+- "a permanent" takes a planeswalker and "a creature" does not.
+
+Faults injected by hand: 5 of 5 caught. A sixth, an end-of-turn duration spelled out, changes
+nothing and passes, as it should.
+
+Coverage: 11,696 of 31,743 cards (+10), 31,250 of 59,509 lines (+11).
+
+## D911 — Dethrone
+
+"Whenever this creature attacks the player with the most life or tied for most life, put a +1/+1
+counter on this creature" (CR 702.105a). Marchesa's Emissary, Treasonous Ogre, Grenzo's Cutthroat
+and others.
+
+How it is read:
+- It is a trigger condition and not an intervening if, so the question is asked once, at the
+  declaration. The engine writes `mostLife` on each attack event, and the `attacks` event's new
+  `mostLife` filter asks for it.
+- A planeswalker attacked is not a player. A player who has lost is not counted.
+- Life that changes before the trigger resolves does not take the counter away.
+
+**Tests.** 5 engine tests:
+- the keyword reads;
+- tied or highest gets a counter, and lower does not;
+- attacking a planeswalker gets none;
+- in a three-player pod, a higher seat counts until it is eliminated;
+- life lost after the declaration does not undo it.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 4,847, all passing
+
+Coverage: 11,701 of 31,743 cards (+5), 31,259 of 59,509 lines (+9). Staples: 238 of 244.

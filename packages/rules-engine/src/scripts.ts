@@ -3015,6 +3015,16 @@ const plural = (count: number, one: string, many: string): string =>
  * happened. It is also why the effect asks where the source is instead of trusting the answer.
  */
 /**
+ * Dethrone (CR 702.105a, D911): "Whenever this creature attacks the player with the most life or
+ * tied for most life, put a +1/+1 counter on this creature." See `TriggerEvent.mostLife`.
+ */
+const DETHRONE_TRIGGER: TriggerDef = {
+  on: { kind: 'attacks', mostLife: true },
+  description: 'put a +1/+1 counter on this creature (dethrone)',
+  effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+};
+
+/**
  * Afflict N (CR 702.130a, D905): "Whenever this creature becomes blocked, defending player loses N
  * life." The defending player is the one its attack is against, read off the combat.
  */
@@ -11158,6 +11168,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'improvise') return { improvise: true };
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
+  if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
   if (word === 'riot') return RIOT;
   if (word === 'unleash') return UNLEASH;
@@ -21098,12 +21109,12 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     creature cannot carry one either. It stays the narrow wording because "would die" **is** going
     to a graveyard from the battlefield, not because a test holds it.
 
-    **Two rows are refused.** "If **a creature dealt damage this way** would die this turn, exile it
-    instead" (8 printings, Anger of the Gods) needs the set of creatures the *sibling* clause
-    damaged, and nothing in the composition hands a clause what the clause before it touched — that
-    is a channel to build, not a phrase to match. "If **a** creature would die this turn, exile it
-    instead" (2, Flaying Tendrils) wants every creature including ones that arrive later, and the
-    engine snapshots until-end-of-turn scopes on purpose (CR 611.2c, #280).
+    "If **a creature dealt damage this way** would die this turn, exile it instead" (Anger of the
+    Gods) is not read here: it needs the set of creatures the *sibling* clause damaged, which
+    `clausesOf` and `exiledIfDamagedThisWay` supply since D910. **One row is refused.** "If **a**
+    creature would die this turn, exile it instead" (2, Flaying Tendrils) wants every creature
+    including ones that arrive later, and the engine snapshots until-end-of-turn scopes on purpose
+    (CR 611.2c, #280).
   */
   const dieInstead = /^if (.+?) would die this turn, exile (.+?) instead$/i.exec(text);
   if (dieInstead !== null) {
@@ -23037,6 +23048,27 @@ function readEffect(
     };
   }
   /*
+    "~ deals 3 damage to each creature. If a creature dealt damage this way would die this turn,
+    exile it instead." (D910): Anger of the Gods, Magma Spray, Fiery Cannonade's cousins. `clausesOf`
+    holds the two sentences together with a ';'. The creatures dealt damage this way are the ones
+    whose marked damage the first sentence raised, read off the battlefield around it, so a creature
+    whose damage was prevented is not one of them (CR 615) and keeps dying normally. Each gets D539's
+    `exiledInsteadOfDying` until end of turn, scoped to that creature, which is what "this turn" and
+    "it" both mean. Damage that is not marked (wither, infect) is not counted: no card of this family
+    deals it.
+  */
+  const exiledIfDamaged = EXILED_IF_DAMAGED.exec(clause.trim());
+  if (exiledIfDamaged !== null) {
+    const first = readEffect(exiledIfDamaged[1]!, name, where);
+    if (first === null) return null;
+    const permanents = exiledIfDamaged[2]!.toLowerCase() === 'permanent';
+    return {
+      ...first,
+      effect: exiledIfDamagedThisWay(first.effect, permanents),
+      ...(first.immediate === undefined ? {} : { immediate: exiledIfDamagedThisWay(first.immediate, permanents) }),
+    };
+  }
+  /*
     "For each permanent put into a graveyard this way, its controller creates a 3/3 green Elephant
     creature token." (D704): a token for each one's controller as it left. Only inside the glue
     above, where `destroyedThisWay` is set.
@@ -23083,6 +23115,39 @@ function readEffect(
  *
  * The apostrophes are flattened here, at the one door every clause comes through — see `plain`.
  */
+/** The rider `clausesOf` glues onto a damage sentence (D910); see `exiledIfDamagedThisWay`. */
+const EXILED_IF_DAMAGED = /^(.*\bdamage\b.*); if a (creature|permanent) dealt damage this way would die this turn, exile it instead$/i;
+
+/**
+ * "If a creature dealt damage this way would die this turn, exile it instead" (D910), around the
+ * damage it is about. The creatures dealt damage this way are the ones whose marked damage `deal`
+ * raised, read off the battlefield around it, so a creature whose damage was prevented is not one of
+ * them (CR 615) and dies normally. "A permanent" (Underworld Fires, Spikefield Hazard) adds the
+ * planeswalkers, for which damage is loyalty counters removed (CR 120.3c), and "die" covers them too
+ * (CR 700.4). Each gets D539's `exiledInsteadOfDying` until end of turn, scoped to that permanent,
+ * which is what "this turn" and "it" both mean. Damage that is not marked (wither, infect) is not
+ * counted: no card of this family deals it.
+ */
+function exiledIfDamagedThisWay(deal: EffectFn, permanents: boolean): EffectFn {
+  const hurt = (state: GameState): Map<string, number> => new Map(state.seats
+    .flatMap((seat) => [...listAt(state, zoneKey(seat.index, 'battlefield'))])
+    .flatMap((id): [string, number][] => {
+      const inst = state.instances[id]!;
+      const line = characteristicsOf(state, inst).typeLine;
+      if (hasType(line, 'creature')) return [[id, inst.damage]];
+      if (permanents && hasType(line, 'planeswalker')) return [[id, -(inst.counters?.loyalty ?? 0)]];
+      return [];
+    }));
+  return (c) => {
+    const before = hurt(c.state);
+    const after = deal(c);
+    const damaged = [...hurt(after)]
+      .filter(([id, now]) => before.has(id) && now > before.get(id)!)
+      .map(([id]) => id);
+    return pump(after, damaged, c.source, c.controller, { exiledInsteadOfDying: true });
+  };
+}
+
 function clausesOf(line: string): readonly string[] {
   /*
     "…, reveal it, then shuffle and put that card on top" is one step and not two (D602): cut at its
@@ -23136,6 +23201,11 @@ function clausesOf(line: string): readonly string[] {
       (CR 701.19e), and only when the library is the zone searched, so it is folded away.
     */
     .replace(/(search your library and\/or graveyard [^.]+)\.\s+If you search(?:ed)? your library this way, shuffle(?: it)?(?=\.|$)/gi, '$1')
+    /*
+      Anger of the Gods and Magma Spray (D910): "If a creature dealt damage this way would die this
+      turn, exile it instead" is about what the sentence before it damaged, so the two are one clause.
+    */
+    .replace(/([^.;]*\bdamage\b[^.;]*)\.\s+If a (creature|permanent) dealt damage this way would die this turn, exile it instead(?=\.|$)/gi, '$1; if a $2 dealt damage this way would die this turn, exile it instead')
     // Chain Lightning (D725): the payment and the copy are one offer to one player.
     .replace(/then that player or that permanent's controller may pay ((?:\{[^}]+\})+)\.\s+If the player does, they may copy this spell and may choose a new target for that copy/gi, 'then that player or that permanent\'s controller may pay $1 and if they do they may copy this spell and may choose a new target for that copy')
     // Sylvan Library (D721): three sentences, one question chain. See `sylvanLibrary`.
@@ -27784,6 +27854,17 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
   if (lines.length !== 1) return null;
   const clauses = clausesOf(lines[0]!);
   if (clauses.length !== 1) return null;
+  /*
+    Demonfire and Red Sun's Zenith (D910) print D910's rider after an X damage sentence; the X read
+    below is wrapped in it, the way `readEffect` wraps a printed number.
+  */
+  const rider = EXILED_IF_DAMAGED.exec(clauses[0]!.trim());
+  if (rider !== null) {
+    const inner = xSpellResolution([rider[1]!], name);
+    const permanents = rider[2]!.toLowerCase() === 'permanent';
+    return inner === null || inner.immediate !== undefined || inner.beforeDecisions !== undefined ? null
+      : { ...inner, effect: exiledIfDamagedThisWay(inner.effect, permanents) };
+  }
   const text = clauses[0]!.trim();
   const self = selfRef(name);
 
