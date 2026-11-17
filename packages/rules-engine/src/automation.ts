@@ -641,12 +641,36 @@ function advanceStep(state: GameState): GameState {
         turn: next.turn + 1,
         activeSeat: nextAlive(next, next.activeSeat),
         combat: EMPTY_COMBAT,
+        // Added phases belong to the turn that made them (D726).
+        extraPhases: undefined,
+        extraPhaseRun: undefined,
       };
       // And day or night may change, from what the turn that just ended cast (CR 726.3a, D593).
       // Neither stays neither here, so a change is always day to night or night to day.
       const was = next.dayNight ?? null;
       next = dayNightAfter(next, previous);
       if (next.dayNight !== was) next = raise(next, { kind: 'day-night' }, next.activeSeat);
+    }
+
+    /*
+      Additional phases (D726, CR 500.8). At the end of a phase — the beginning phase ends after
+      the draw step, combat after its end step, and a main phase is one step — the first added phase
+      is run next, and when none are left the turn goes on to where it would have gone. An added
+      main phase is a postcombat main step, so a combat followed by a main runs as one would.
+    */
+    const boundary = next.step === 'draw' || next.step === 'precombat-main'
+      || next.step === 'end-combat' || next.step === 'postcombat-main';
+    if (!isLast && boundary) {
+      const queued = next.extraPhases ?? [];
+      if (queued.length > 0) {
+        const [phase, ...rest] = queued;
+        const resume = next.extraPhaseRun?.resume ?? step;
+        step = phase === 'beginning' ? 'untap' : phase === 'combat' ? 'begin-combat' : 'postcombat-main';
+        next = { ...next, extraPhases: rest, extraPhaseRun: { resume } };
+      } else if (next.extraPhaseRun !== undefined) {
+        step = next.extraPhaseRun.resume;
+        next = { ...next, extraPhaseRun: undefined };
+      }
     }
 
     // Steps that exist only to hold a decision nobody can make are skipped rather than walked
@@ -1066,6 +1090,7 @@ export function endTurnCleanup(state: GameState): GameState {
     damagedBy: {},
     // And D564's four: who attacked, what died, what left and who gained life.
     attackedThisTurn: {},
+    attackersThisTurn: [],
     creaturesDiedThisTurn: 0,
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},

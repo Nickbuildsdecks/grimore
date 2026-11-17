@@ -13619,6 +13619,38 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    Additional phases (D726, CR 500.8): "After this phase, there is an additional combat phase"
+    (16 legal lines), "After this main phase, there is an additional combat phase followed by an
+    additional main phase" (Relentless Assault and five more), "After this combat phase, …", "there
+    are two additional combat phases", and Sphinx of the Second Sun's "there is an additional
+    beginning phase after this phase". Queued on the state (`AutomationState.extraPhases`) and run
+    by `advanceStep` at the end of the current phase. Conditions in front ("if it's your main
+    phase") are left to the readers that read conditions.
+  */
+  const extra = /^(after this (?:main |combat )?phase, )?there (?:is|are|'s) (an|two) additional (combat|beginning) phases?( after this phase)?(,? followed by an additional main phase)?$/i.exec(text);
+  if (extra !== null && (extra[1] !== undefined || extra[4] !== undefined)) {
+    const kind = extra[3]!.toLowerCase() as 'combat' | 'beginning';
+    const many = extra[2]!.toLowerCase() === 'two' ? 2 : 1;
+    if (!(kind === 'beginning' && (many > 1 || extra[5] !== undefined))) {
+      const phases: ('beginning' | 'combat' | 'main')[] = [
+        ...Array.from({ length: many }, () => kind),
+        ...(extra[5] !== undefined ? ['main' as const] : []),
+      ];
+      return { effect: (c) => ({ ...c.state, extraPhases: [...(c.state.extraPhases ?? []), ...phases] }) };
+    }
+  }
+  // "Untap all creatures that attacked this turn" (D726): Relentless Assault's first sentence.
+  if (/^untap all creatures that attacked this turn$/i.test(text)) {
+    return {
+      effect: (c) => (c.state.attackersThisTurn ?? []).reduce((state, key) => {
+        const [id, seq] = key.split('#');
+        const inst = state.instances[id!];
+        if (inst === undefined || inst.zone !== 'battlefield' || String(inst.objectSeq ?? 0) !== seq) return state;
+        return tap(state, inst.id, false);
+      }, c.state),
+    };
+  }
   const imprint = /^you may exile (a|an) (.+? card(?: with mana value \d+ or (?:less|greater))?) from your hand$/i.exec(text);
   if (imprint !== null) {
     const filter = libraryFilter(`${imprint[1]!} ${imprint[2]!}`, name);

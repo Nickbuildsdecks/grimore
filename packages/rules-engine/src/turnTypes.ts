@@ -729,6 +729,16 @@ export interface AutomationState {
    * the step it names.
    */
   readonly delayed: readonly DelayedTrigger[];
+  /**
+   * Additional phases still to come this turn (D726, CR 500.8): "after this phase, there is an
+   * additional combat phase", "… followed by an additional main phase", Sphinx of the Second Sun's
+   * "additional beginning phase". `advanceStep` takes the first at the next phase boundary — the
+   * end of the beginning phase, of either main phase, or of combat — and runs it before the turn
+   * goes on to where it would have gone (`extraPhaseRun.resume`). Cleared when the turn ends.
+   */
+  readonly extraPhases?: readonly ('beginning' | 'combat' | 'main')[];
+  /** While added phases are running (D726): the step the turn goes on to when they are done. */
+  readonly extraPhaseRun?: { readonly resume: Step };
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
   readonly drewFromEmpty: readonly SeatIndex[];
   /**
@@ -1286,6 +1296,12 @@ export interface AutomationState {
    */
   readonly damagedBy?: Readonly<Record<string, readonly string[]>>;
   readonly attackedThisTurn?: Readonly<Record<string, number>>;
+  /**
+   * Which creatures were declared as attackers this turn (D726), as `id#objectSeq` so a creature
+   * that left and came back is a new object that has not attacked (CR 400.7): Relentless Assault's
+   * "untap all creatures that attacked this turn". Cleared with the other turn facts.
+   */
+  readonly attackersThisTurn?: readonly string[];
   readonly creaturesDiedThisTurn?: number;
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
