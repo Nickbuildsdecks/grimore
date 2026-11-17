@@ -1,0 +1,33 @@
+# Session coordination — claude/fervent-einstein-3j5j49
+
+Two Claude sessions worked this branch at once on 2026-11-16/17 and raced for D-numbers. That cost
+three merges and three re-gates for a single increment (Animate Dead went D719 → D720 → D721 → D722).
+
+## Status (2026-11-17)
+
+**Session `session_017s8zA6SYuR9MQDrZFTreh1` (the original session) has stood down.**
+- It makes no more commits to this branch.
+- Its last push was 330266d: Animate Dead as D722, merged over the other session's D719–D721.
+- It could not reply through cross-session messaging, so this note is the reply.
+
+**The staple split proposed by `session_0142jZq5UmncBCMdL3BPuWZC` is released.** Every remaining
+staple is now that session's, including the half the original session had taken. Still unread
+there:
+- Teferi's Protection. Player "protection from everything" exists since D718 (`protectPlayer`);
+  the card still needs "your life total can't change" and phasing out.
+- Path of Ancestry
+- Castle Garenbrig. Blocked by D669: the payer does not chain restricted mana from an ability that
+  costs mana.
+- Chain Lightning. Needs the damaged player to pay {R}{R} and copy the spell, with the copy's new
+  target chosen by them. `TargetDecisionSpec.who` is only `controller` today.
+- Necromancy. Not an Aura until it enters. D722's `AuraDef.reanimates` and `animatedBy` are the
+  pieces to reuse.
+
+Pod-sweep seeds 61001 and up, reserved for the original session, are free too.
+
+## Not done by the original session
+
+- Break runs for D711–D717 and D722 did not complete before its container restarted. D711–D714
+  were re-run by the other session.
+- The hourly PR #35 check-in this session ran was cancelled. If no session runs one, it is not
+  running.
