@@ -2524,6 +2524,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ability is a mana ability, the same one `isManaAbility` is built from below.
       */
       if (splitSecond && ability.produces === undefined) continue;
+      // Faith's Fetters (D944): everything but a mana ability is switched off.
+      if (zone === 'battlefield' && ability.produces === undefined && characteristicsOf(state, inst).cantActivateNonMana) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.

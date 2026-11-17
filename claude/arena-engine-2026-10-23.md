@@ -31793,3 +31793,35 @@ they should.
     engine tests: 5,033, all passing
 
 Coverage: 12,260 of 31,743 cards (+21), 32,202 of 59,509 lines (+32). Staples: 239 of 244.
+
+## D944 — Detain, and Faith's Fetters
+
+**Detain** (CR 701.35a): "Until your next turn, that permanent can't attack or block and its
+activated abilities can't be activated." It is Arrest's effect from D943 (`cantAttack`, `cantBlock`,
+`cantActivate`) for the duration goad already uses, `until-controllers-next-turn`, which ends as the
+detaining player's next turn begins. Read on whatever single target phrase the reader parses:
+"target creature an opponent controls", "target nonland permanent an opponent controls".
+
+Still unread:
+- the plural "up to two target creatures your opponents control", which the target reader does not
+  parse;
+- Lavinia of the Tenth's "each nonland permanent … with mana value 4 or less".
+
+**Faith's Fetters' rider**, "… its activated abilities can't be activated unless they're mana
+abilities": a second flag, `cantActivateNonMana`. The mana sources keep the permanent; the offer and
+the activation refuse every ability that does not produce mana.
+
+8 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- detained: no blocking and no mana, through the opponent's own turn, and gone when the detaining
+  player's next turn begins;
+- Faith's Fetters: a mana ability still pays, a pinger cannot be activated, and the host cannot
+  block.
+
+Faults injected by hand: 7 of 7 caught.
+
+    engine tests: 5,036, all passing
+
+Coverage: 12,268 of 31,743 cards (+8), 32,211 of 59,509 lines (+9). Staples: 239 of 244.

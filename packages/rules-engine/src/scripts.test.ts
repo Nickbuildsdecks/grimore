@@ -19500,6 +19500,71 @@ describe('activation caps, the stronger-only blockers, and Arrest (D943)', () =>
   });
 });
 
+describe('detain, and Faith\'s Fetters sparing mana abilities (D944)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({
+    name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Arrester', 'When Test Arrester enters, detain target creature an opponent controls.'),
+    C('Test Elf', '{T}: Add {G}.', '1', '1'),
+    C('Test Pinger', '{T}: Test Pinger deals 1 damage to any target.', '1', '1'),
+    { name: 'Test Fetters', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block, and its activated abilities can't be activated unless they're mana abilities.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd944', name: 'Detain',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (hand: string, theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd944', 1: 'd944' }, deckSpecs: { d944: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Plains'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts `card`, aimed at `target` either as it is cast (an Aura) or by its enters trigger. */
+  const castOn = (s: GameState, card: string, target: string, onEnter = false) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(onEnter ? {} : { targets: [{ kind: 'card', id: target }] }) } as Action), 30);
+    for (let i = 0; i < 8 && (next.stackOrder.length > 0 || next.pendingChoice !== null); i++) {
+      if (next.pendingChoice !== null) next = drain(apply(next, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: target }] }), 30);
+      else next = drain(passBoth(next), 30);
+    }
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0]!, ROWS[3]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('detained: no blocking, no mana, until its controller\'s next turn', () => {
+    const s = seated('Test Arrester', ['Test Elf', 'Test Pinger']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    let t = castOn(s, 'Test Arrester', elf, true);
+    expect(characteristicsOf(t, t.instances[elf]!).cantBlock).toBe(true);
+    expect(characteristicsOf(t, t.instances[elf]!).cantActivate).toBe(true);
+    expect(manaSources(t, 1).some((m) => m.key === elf)).toBe(false);
+    // Through the opponent's own turn, and gone when the detaining player's next turn begins.
+    t = nextTurn(t);
+    expect(t.activeSeat).toBe(1);
+    expect(characteristicsOf(t, t.instances[elf]!).cantAttack).toBe(true);
+    t = nextTurn(t);
+    expect(t.activeSeat).toBe(0);
+    expect(characteristicsOf(t, t.instances[elf]!).cantActivate).toBe(false);
+    expect(manaSources(t, 1).some((m) => m.key === elf)).toBe(true);
+  });
+
+  it('Faith\'s Fetters: no attacking, no blocking, no ability but a mana ability', () => {
+    let s = seated('Test Fetters', ['Test Elf', 'Test Pinger']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    const pinger = find(s, 1, 'battlefield', 'Test Pinger');
+    s = castOn(s, 'Test Fetters', pinger);
+    const fettersOnElf = castOn(seated('Test Fetters', ['Test Elf', 'Test Pinger']), 'Test Fetters', elf);
+    expect(manaSources(fettersOnElf, 1).some((m) => m.key === elf)).toBe(true);
+    const turn = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(legalActions(turn, 1).plays.some((p) => p.kind === 'activate' && p.card === pinger)).toBe(false);
+    expect(refusal(turn, { type: 'auto:activate', by: 1, card: pinger, abilityIndex: 0, targets: [{ kind: 'player', seat: 0 }] } as Action)).toMatch(/can't be activated/);
+    expect(characteristicsOf(s, s.instances[pinger]!).cantBlock).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -1564,6 +1564,8 @@ export interface ContinuousEffect {
   readonly blockedByOne?: boolean;
   /** "Its activated abilities can't be activated" (D943): Arrest, mana abilities included. */
   readonly cantActivate?: boolean;
+  /** "… unless they're mana abilities" (D944): Faith's Fetters, which leaves the mana abilities. */
+  readonly cantActivateNonMana?: boolean;
   /**
    * "Can't be blocked by Walls." A restriction on the *blocker*, read from the attacker, which is
    * the only shape of evasion in this pool that is not a keyword — so it lives here rather than
@@ -2044,6 +2046,8 @@ export interface Characteristics {
    * abilities included, is offered or accepted, and the permanent pays for nothing.
    */
   readonly cantActivate: boolean;
+  /** Faith's Fetters' narrower ban (D944): every activated ability but a mana ability. */
+  readonly cantActivateNonMana: boolean;
   /**
    * "~ can't attack unless defending player controls an Island" (D937, CR 508.1c): the basic land
    * type a defending player must control for this creature to attack them, or null.
@@ -2827,6 +2831,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let blockedByOne = printedCombat.blockedByOne;
   let weakerCantBlock = printedCombat.weakerCantBlock;
   let cantActivate = false;
+  let cantActivateNonMana = false;
   let attacksOnlyIfDefenderHas: string | null = null;
   let extraBlocks = 0;
   for (const part of printedParts(def?.oracleText, def?.name)) {
@@ -2958,6 +2963,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.lure) lure = true;
     if (effect.blockedByOne) blockedByOne = true;
     if (effect.cantActivate) cantActivate = true;
+    if (effect.cantActivateNonMana) cantActivateNonMana = true;
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
       mustBlockAttackers.push(effect.mustBlockAttacker);
     }
@@ -3022,6 +3028,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     blockedByOne,
     weakerCantBlock,
     cantActivate,
+    cantActivateNonMana,
     attacksOnlyIfDefenderHas,
     extraBlocks,
     cantBeBlockedByWalls,

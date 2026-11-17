@@ -15745,6 +15745,10 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
   if (/^can't attack or block,? and its activated abilities can't be activated$/i.test(rider)) {
     return { bonus: { cantAttack: true, cantBlock: true, cantActivate: true }, harmful: true };
   }
+  // Faith's Fetters (D944): the same, its mana abilities spared.
+  if (/^can't attack or block,? and its activated abilities can't be activated unless they're mana abilities$/i.test(rider)) {
+    return { bonus: { cantAttack: true, cantBlock: true, cantActivateNonMana: true }, harmful: true };
+  }
   // D937: a restriction on the count of blockers, menace's opposite.
   if (/^can't be blocked by more than one creature$/i.test(rider)) return { bonus: { blockedByOne: true }, harmful: false };
   if (/^loses all abilities$/i.test(rider)) return { bonus: { losesAllAbilities: true }, harmful: true };
@@ -22563,6 +22567,24 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     defending player is that attack's, or with no attack of the source's to read, any player one of
     the controller's creatures is attacking.
   */
+  /*
+    **Detain** (D944, CR 701.35a): "Until your next turn, that permanent can't attack or block and
+    its activated abilities can't be activated." Arrest's effect (D943) for a turn round, on
+    whatever the target phrase names: "target creature an opponent controls", "up to two target
+    creatures your opponents control", "target nonland permanent an opponent controls".
+  */
+  const detains = /^detain ((?:up to \w+ )?target [^.]+)$/i.exec(text);
+  if (detains !== null) {
+    const spec = targetSpecFrom(detains[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, {
+          cantAttack: true, cantBlock: true, cantActivate: true, duration: 'until-controllers-next-turn',
+        }),
+      };
+    }
+  }
   const defended = /^(up to one )?target creature defending player controls blocks (?:it|~) this (?:turn|combat) if able$/i
     .exec(text.replace(new RegExp(`\\b(?:${self})\\b`, 'g'), '~'));
   if (defended !== null) {

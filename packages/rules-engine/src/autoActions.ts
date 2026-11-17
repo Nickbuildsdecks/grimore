@@ -1755,7 +1755,8 @@ function activate(
   /** The key this activation is recorded under, which differs for a granted ability. */
   const useKey = abilityUseKey(action.abilityIndex, action.grantedBy);
   // Arrest's rider (D943): nothing on this permanent may be activated while it holds.
-  if (inst.zone === 'battlefield' && characteristicsOf(state, inst).cantActivate) {
+  if (inst.zone === 'battlefield' && (characteristicsOf(state, inst).cantActivate
+    || (characteristicsOf(state, inst).cantActivateNonMana && ability?.produces === undefined))) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristicsOf(state, inst).name}'s activated abilities can't be activated`);
   }
   /*
