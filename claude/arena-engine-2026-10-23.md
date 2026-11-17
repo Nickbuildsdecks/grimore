@@ -30491,3 +30491,31 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,833, all passing (merged with the other session's D727)
 
 Coverage: 11,667 of 31,743 cards (+7), 31,212 of 59,509 lines (+12). Staples: 237 of 244.
+
+## D909 — "Reveal a <type> card from your hand or pay", and behold
+
+"As an additional cost to cast this spell, reveal a Merfolk card from your hand or pay {3}"
+(Silvergill Adept and the Lorwyn tribal cycle), and "… behold a Goblin or pay {2}" (the newer form,
+where a permanent you control also counts).
+
+How it is read:
+- A `selfCostChange` adds the printed generic amount only when nothing qualifies:
+  - another card of that creature type in hand (never the card being cast);
+  - for behold, also a permanent of that type you control (by its live type line).
+- Revealing costs nothing and paying buys nothing, so the engine reveals for the caster, which is
+  the only answer a player would give. The offer and the payment agree because `costChangeFor`
+  answers both.
+- **Refused:** a type that is not a creature type, such as Countersculpt's "behold a Jace".
+
+**Tests.** 3 engine tests:
+- both cards read;
+- castable for {1}{U} with a Merfolk card in hand, not without one, and with {3} more it is;
+- a Goblin does not count for the Merfolk;
+- behold accepts a Goblin on the battlefield or in hand.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,836, all passing
+
+Coverage on the merged head (with the other session's D727): 11,686 of 31,743 cards, 31,239 of 59,509
+lines. Staples: 238 of 244.

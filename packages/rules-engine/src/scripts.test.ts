@@ -16769,6 +16769,49 @@ describe('jump-start: flashback for its mana cost and a discard (D908)', () => {
   });
 });
 
+describe('"reveal a <type> card from your hand or pay", and behold (D909)', () => {
+  const ROWS = [
+    { name: 'Test Adept', type_line: 'Creature — Merfolk Wizard', oracle_text: 'As an additional cost to cast this spell, reveal a Merfolk card from your hand or pay {3}.', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Beholder', type_line: 'Creature — Goblin', oracle_text: 'As an additional cost to cast this spell, behold a Goblin or pay {2}.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Merfolk', type_line: 'Creature — Merfolk', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'reveal', name: 'Reveal',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 20 }, { name: 'Mountain', count: 20 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'reveal', 1: 'reveal' }, deckSpecs: { reveal: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The turn's draw back into the library, so the hand is exactly what the test gives it.
+    const extra = ids(s, 0, 'hand').filter((id) => !hand.includes(s.cardDefs[s.instances[id]!.defKey]!.name));
+    return { ...s, zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => !extra.includes(id)), '0:library': [...extra, ...ids(s, 0, 'library')] } };
+  };
+  const castable = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', name) && p.kind === 'cast');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('free with a Merfolk card to reveal; {3} more without one', () => {
+    expect(castable(table(['Test Adept', 'Test Merfolk'], ['Island', 'Island']), 'Test Adept')).toBe(true);
+    expect(castable(table(['Test Adept'], ['Island', 'Island']), 'Test Adept')).toBe(false);
+    expect(castable(table(['Test Adept'], ['Island', 'Island', 'Island', 'Island', 'Island']), 'Test Adept')).toBe(true);
+    // The card itself is not a Merfolk to reveal for itself, nor is a Goblin.
+    expect(castable(table(['Test Adept', 'Test Goblin'], ['Island', 'Island']), 'Test Adept')).toBe(false);
+  });
+
+  it('behold: a Goblin in hand or on the battlefield will do', () => {
+    expect(castable(table(['Test Beholder'], ['Mountain', 'Test Goblin']), 'Test Beholder')).toBe(true);
+    expect(castable(table(['Test Beholder', 'Test Goblin'], ['Mountain']), 'Test Beholder')).toBe(true);
+    expect(castable(table(['Test Beholder'], ['Mountain']), 'Test Beholder')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

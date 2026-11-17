@@ -11830,6 +11830,38 @@ function spellStaticFromLine(line: string): Record<string, unknown> | null {
 function selfCostChangeFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.$/, '');
   const self = selfRef(name);
+  /*
+    "As an additional cost to cast this spell, reveal a Pirate card from your hand or pay {1}", and
+    "… behold a Goblin or pay {2}" (D909). Revealing costs nothing, so the cost is nothing whenever
+    there is a card to reveal (another card of that type in hand, or for behold also a permanent of
+    that type you control) and the printed mana otherwise: `selfCostChange` adding the generic
+    amount when nothing qualifies. The engine reveals for the caster, which is the only answer a
+    player would give: paying instead buys nothing.
+  */
+  const reveal = /^As an additional cost to cast this spell, (reveal an? ([A-Z][A-Za-z'-]*) card from your hand|behold an? ([A-Z][A-Za-z'-]*)) or pay \{(\d+)\}$/.exec(text);
+  if (reveal !== null) {
+    const subtype = reveal[2] ?? reveal[3]!;
+    const behold = reveal[3] !== undefined;
+    const pay = Number(reveal[4]);
+    if (!isCreatureType(subtype)) return null;
+    const hasOne = (state: GameState, caster: SeatIndex, card?: string): boolean => {
+      const zones = behold ? ['hand', 'battlefield'] as const : ['hand'] as const;
+      return zones.some((zone) => listAt(state, zoneKey(caster, zone)).some((id) => {
+        if (id === card) return false;
+        const inst = state.instances[id];
+        if (inst === undefined) return false;
+        const line = zone === 'battlefield' ? characteristicsOf(state, inst).typeLine : parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+        return hasSubtype(line, subtype);
+      }));
+    };
+    return {
+      selfCostChange: {
+        generic: pay,
+        when: (state, caster, card) => !hasOne(state, caster, card),
+        description: `{${pay}} more, with no ${subtype} to ${behold ? 'behold' : 'reveal'}`,
+      },
+    };
+  }
   const head = new RegExp(`^(?:This spell|${self}) costs \\{(\\d+|X)\\} less to cast(?:,? (if|for each|where X is) (.+))?$`, 'i')
     .exec(text);
   if (head === null || head[2] === undefined) return null;
