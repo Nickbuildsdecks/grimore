@@ -11503,6 +11503,45 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   const bloodthirst = /^bloodthirst\s+(\d+)$/i.exec(text);
   if (bloodthirst !== null) return { bloodthirst: Number(bloodthirst[1]) };
 
+  /*
+    Scavenge and Reinforce (D906), two activated abilities that put +1/+1 counters on a target
+    creature and pay with the card itself. Scavenge is embalm's shape: from the graveyard, exiling
+    the card, at sorcery speed, and as many counters as the card's printed power (CR 702.97a).
+    Reinforce is cycling's: from the hand, discarding the card, at instant speed (CR 702.77a).
+  */
+  const scavenge = /^scavenge\s+((?:\{[^}]+\})+)$/i.exec(text);
+  if (scavenge !== null) {
+    const cost = scavenge[1]!;
+    return {
+      abilities: [{
+        cost: { mana: cost, fromGraveyard: true, exileSelf: true },
+        sorcerySpeed: true,
+        targets: [{ ...TARGET_CREATURE, friendly: true }],
+        description: `Scavenge ${cost} (${cost}, Exile this card from your graveyard: Put a number of +1/+1 counters equal to this card's power on target creature. Scavenge only as a sorcery.)`,
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          const power = Number.parseInt(c.state.cardDefs[c.state.instances[c.source]?.defKey ?? '']?.power ?? '0', 10);
+          return id === null || !(power > 0) ? c.state : addCounters(c.state, id, '+1/+1', power);
+        },
+      }],
+    };
+  }
+  const reinforce = /^reinforce\s+(\d+)\s*[—-]\s*((?:\{[^}]+\})+)$/i.exec(text);
+  if (reinforce !== null) {
+    const n = Number(reinforce[1]);
+    const cost = reinforce[2]!;
+    return {
+      abilities: [{
+        cost: { mana: cost, discardSelf: true },
+        targets: [{ ...TARGET_CREATURE, friendly: true }],
+        description: `Reinforce ${n}\u2014${cost} (${cost}, Discard this card: Put ${n} +1/+1 counter${n === 1 ? '' : 's'} on target creature.)`,
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : addCounters(c.state, id, '+1/+1', n);
+        },
+      }],
+    };
+  }
   // Afflict N, Mobilize N and Ingest (D905).
   const afflict = /^afflict\s+(\d+)$/i.exec(text);
   if (afflict !== null) return { triggers: [afflictTrigger(Number(afflict[1]))] };

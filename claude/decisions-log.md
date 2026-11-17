@@ -47820,3 +47820,29 @@ Faults injected by hand: 4 of 4 caught.
 
 Coverage: 11,627 of 31,743 cards (+23 since D904's measure), 31,150 of 59,509 lines. Staples: 237
 of 244.
+
+## D906 — Scavenge and Reinforce
+
+Two more keyword builders, both activated abilities that pay with the card itself.
+
+How each is read:
+- **Scavenge {cost}** (CR 702.97a) is embalm's shape:
+  - activated from the graveyard (`fromGraveyard`), exiling the card as part of the cost
+    (`exileSelf`), at sorcery speed;
+  - it puts as many +1/+1 counters on target creature as the card's printed power.
+- **Reinforce N—{cost}** (CR 702.77a) is cycling's shape:
+  - activated from the hand, discarding the card (`discardSelf`), at instant speed;
+  - it puts N +1/+1 counters on target creature.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- scavenge exiles the card and puts 3 counters on the Bear, and is refused on the opponent's turn
+  even with priority;
+- reinforce, on the opponent's turn, discards the card for 2 counters.
+
+Faults injected by hand: 4 of 4 caught. The sorcery-speed fault was caught only after the
+opponent's-turn case gave seat 0 priority first: without it, the refusal came from priority.
+
+    engine tests: 4,822, all passing
+
+Coverage: 11,644 of 31,743 cards (+17), 31,172 of 59,509 lines (+22). Staples: 237 of 244.
