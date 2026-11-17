@@ -49112,3 +49112,39 @@ Faults injected by hand: 4 of 5 caught. The miss was a redundant zone check, whi
     engine tests: 5,011, all passing
 
 Coverage: 12,091 of 31,743 cards (+27), 31,944 of 59,509 lines (+72). Staples: 239 of 244.
+
+## D940 — Printed cost modifiers
+
+"Instant and sorcery spells you cast cost {1} less to cast." (Goblin Electromancer's line, 15 legal
+cards), "Noncreature spells cost {1} more to cast." (Thalia's), "Dragon spells you cast cost {1}
+less", "Spells your opponents cast cost {1} more", "Treefolk spells and Shaman spells you cast …"
+(CR 601.2f). 173 legal cards print a line of the family. The engine has had `costModifiers` since
+the hand-written Electromancer and Thalia, and `costChangeFor` serves the offer and the charge alike,
+but the compiler had no reader for the line. 78 of the cards now read whole.
+
+How it is read (`costModifierFromLine`):
+- **Who it applies to**: "you cast" is the controller, "your opponents cast" the others, and nothing
+  named is everyone, its controller included, as Thalia is.
+- **The kind of spell**, as a test of the card being cast:
+  - nothing ("Spells …");
+  - "instant and sorcery";
+  - words that must all hold ("white creature", "noncreature"): a colour, a card type, "legendary",
+    "multicolored"/"colorless", a "non-" of any of those, a creature type (through
+    `cardHasSubtype`, so a changeling card counts), or Aura, Equipment, Vehicle, Lesson or Arcane;
+  - two kinds joined by "… spells and … spells" apply to either.
+- **Only generic mana moves**, so a coloured change ("cost {B} more") stays unread, and so do a
+  counted one ("for each …"), a conditional one ("As long as it's not your turn"), and
+  "face-down creature spells". An ability word in front is only a name.
+
+**Tests.** 5 engine tests:
+- the cards read, and the coloured and face-down lines stay unread;
+- instant and sorcery spells, its controller's only;
+- cast for less: the play shows the change, and one Mountain pays the rest;
+- everyone, and opponents only;
+- a creature type, a changeling, and two kinds joined by "and".
+
+Faults injected by hand: 10 of 10 caught.
+
+    engine tests: 5,016, all passing
+
+Coverage: 12,169 of 31,743 cards (+78), 32,063 of 59,509 lines (+119). Staples: 239 of 244.

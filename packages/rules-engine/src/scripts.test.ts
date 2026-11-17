@@ -19188,6 +19188,81 @@ describe('Auras that tap or untap their host, and narrower creatures to enchant 
   });
 });
 
+describe('printed cost modifiers: "<kind> spells you cast cost {N} less to cast" (D940)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human Wizard') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Electro', 'Instant and sorcery spells you cast cost {1} less to cast.'),
+    C('Test Thalia', 'Noncreature spells cost {1} more to cast.'),
+    C('Test Warchief', 'Locus — Goblin spells you cast cost {1} less to cast.'),
+    C('Test Gate', 'Spells your opponents cast cost {1} more to cast.'),
+    C('Test Pair', 'Treefolk spells and Shaman spells you cast cost {2} less to cast.'),
+    { name: 'Test Bolt', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal' },
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: '', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Shifter', type_line: 'Creature — Shapeshifter', oracle_text: 'Changeling', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Shaman', type_line: 'Creature — Human Shaman', oracle_text: '', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd940', name: 'Cost modifiers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 30 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[], theirs: string[] = [], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd940', 1: 'd940' }, deckSpecs: { d940: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const def = (s: GameState, name: string) => Object.values(s.cardDefs).find((d) => d.name === name)!;
+  const change = (s: GameState, seat: SeatIndex, name: string) => costChangeFor(s, seat, def(s, name)).generic;
+
+  it('reads whole, and leaves a coloured or face-down change unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(C('Test Tax', 'Black spells you cast cost {B} more to cast.') as never)).toMatchObject({ ok: true, unread: [{ line: 'Black spells you cast cost {B} more to cast.' }] });
+    expect(compileCard(C('Test Mask', 'Face-down creature spells you cast cost {1} less to cast.') as never)).toMatchObject({ ok: true, unread: [{ line: 'Face-down creature spells you cast cost {1} less to cast.' }] });
+  });
+
+  it('instant and sorcery spells, its controller\'s only', () => {
+    const s = seated(['Test Electro']);
+    expect(change(s, 0, 'Test Bolt')).toBe(-1);
+    expect(change(s, 0, 'Test Goblin')).toBe(0);
+    expect(change(s, 1, 'Test Bolt')).toBe(0);
+  });
+
+  it('cast for less: offered at the reduced cost, and paid with one land', () => {
+    const s = seated(['Test Electro', 'Mountain'], [], ['Test Bolt']);
+    const card = find(s, 0, 'hand', 'Test Bolt');
+    // The play shows the printed cost and the change beside it; one Mountain pays the {R} left.
+    const play = legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'cast');
+    expect(play).toMatchObject({ manaCost: '{1}{R}', costChange: -1 });
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card } as Action), 30);
+    expect(cast.instances[card]!.zone).toBe('graveyard');
+    expect(cast.instances[find(cast, 0, 'battlefield', 'Mountain')]!.tapped).toBe(true);
+  });
+
+  it('no "you cast": everyone pays, its controller too; "your opponents cast": only the others', () => {
+    const thalia = seated(['Test Thalia']);
+    expect(change(thalia, 0, 'Test Bolt')).toBe(1);
+    expect(change(thalia, 1, 'Test Bolt')).toBe(1);
+    expect(change(thalia, 1, 'Test Goblin')).toBe(0);
+    const gate = seated(['Test Gate']);
+    expect(change(gate, 0, 'Test Bolt')).toBe(0);
+    expect(change(gate, 1, 'Test Goblin')).toBe(1);
+  });
+
+  it('a creature type, a changeling, and two kinds joined by "and"', () => {
+    const war = seated(['Test Warchief']);
+    expect(change(war, 0, 'Test Goblin')).toBe(-1);
+    expect(change(war, 0, 'Test Shifter')).toBe(-1);
+    expect(change(war, 0, 'Test Elf')).toBe(0);
+    const pair = seated(['Test Pair']);
+    expect(change(pair, 0, 'Test Shaman')).toBe(-2);
+    expect(change(pair, 0, 'Test Shifter')).toBe(-2);
+    expect(change(pair, 0, 'Test Elf')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

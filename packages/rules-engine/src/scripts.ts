@@ -26772,6 +26772,79 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
  * `sizeBonus` for the bonus itself, so `+1/+0` is `{ power: 1 }` and not `{ power: 1, toughness:
  * 0 }` — the same rule everywhere a bonus is read, and the one Judith's hand-written script uses.
  */
+/** Printed colour words, for the spell kinds a cost modifier names (D940). */
+const SPELL_COLOUR_WORDS: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+
+/**
+ * One word of a spell kind, as a test of the card being cast (D940): a colour, a card type, a
+ * supertype, "multicolored"/"colorless", a "non-" of any of those, or a subtype (a creature type
+ * through `cardHasSubtype`, so a changeling card counts, or Aura, Equipment, Vehicle). Null for a
+ * word this has no test for ("face-down"), which refuses the line.
+ */
+function spellKindWord(word: string): ((card: CardDef) => boolean) | null {
+  const negated = /^non-?(.+)$/.exec(word);
+  if (negated !== null) {
+    const inner = spellKindWord(negated[1]!);
+    return inner === null ? null : (card) => !inner(card);
+  }
+  const colour = SPELL_COLOUR_WORDS[word];
+  if (colour !== undefined) return (card) => (card.colors ?? []).includes(colour);
+  if (word === 'multicolored') return (card) => (card.colors ?? []).length > 1;
+  if (word === 'colorless') return (card) => (card.colors ?? []).length === 0;
+  if (['creature', 'artifact', 'enchantment', 'planeswalker', 'instant', 'sorcery', 'battle'].includes(word)) {
+    return (card) => hasType(parseTypeLine(card.typeLine), word);
+  }
+  if (word === 'legendary') return (card) => /\blegendary\b/i.test(card.typeLine ?? '');
+  const subtype = word.charAt(0).toUpperCase() + word.slice(1);
+  if (isCreatureType(word)) return (card) => cardHasSubtype(card, subtype);
+  if (['Aura', 'Equipment', 'Vehicle', 'Lesson', 'Arcane'].includes(subtype)) return (card) => hasSubtype(parseTypeLine(card.typeLine), subtype);
+  return null;
+}
+
+/**
+ * A whole spell kind (D940): "" (every spell), "instant and sorcery" (either), or words that must
+ * all hold ("white creature", "noncreature").
+ */
+function spellKindTest(words: string): ((card: CardDef) => boolean) | null {
+  const kind = words.trim().toLowerCase();
+  if (kind === '') return () => true;
+  if (kind === 'instant and sorcery') {
+    return (card) => { const line = parseTypeLine(card.typeLine); return hasType(line, 'instant') || hasType(line, 'sorcery'); };
+  }
+  const tests = kind.split(/\s+/).map(spellKindWord);
+  if (tests.some((test) => test === null)) return null;
+  return (card) => tests.every((test) => test!(card));
+}
+
+/**
+ * The printed cost modifiers (D940, CR 601.2f): "Instant and sorcery spells you cast cost {1} less
+ * to cast." (Goblin Electromancer's line, on 15 legal cards), "Noncreature spells cost {1} more to
+ * cast." (Thalia's), "Dragon spells you cast cost {1} less", "Spells your opponents cast cost {1}
+ * more", "Treefolk spells and Shaman spells you cast …". The hand-written pair's
+ * `costModifiers`, read off the line: who it applies to is "you cast" / "your opponents cast" /
+ * nobody named (everyone), and only generic mana moves, so a coloured change ("cost {B} more") and
+ * a counted one ("for each …") stay unread.
+ */
+function costModifierFromLine(line: string, name: string): Partial<CardScript> | null {
+  // An ability word in front ("Locus of Slaanesh — …") is only a name (CR 207.2c).
+  const printed = withoutAbilityWord(plain(line).trim()).replace(/\.$/, '');
+  const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
+  if (m === null) return null;
+  const first = spellKindTest(m[1]!);
+  const second = m[2] === undefined ? null : spellKindTest(m[2]);
+  if (first === null || (m[2] !== undefined && second === null)) return null;
+  const whose = m[3] === undefined ? 'everyone' as const : /opponents/i.test(m[3]) ? 'opponents' as const : 'controller' as const;
+  const amount = Number(m[4]);
+  return {
+    costModifiers: [{
+      whose,
+      applies: (_state, _caster, card) => first(card) || (second !== null && second(card)),
+      generic: m[5]!.toLowerCase() === 'less' ? -amount : amount,
+      description: `${name} — ${printed.charAt(0).toLowerCase()}${printed.slice(1)}`,
+    }],
+  };
+}
+
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
@@ -27858,6 +27931,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? chooseAsEntersFromLine(line, name)
     ?? chosenSelfStaticFromLine(line, name)
     ?? staticFromLine(line)
+    ?? costModifierFromLine(line, name)
     ?? groupStaticFromLine(line, name)
     ?? conditionalStaticFromLine(line, name)
     /*
