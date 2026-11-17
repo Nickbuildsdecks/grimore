@@ -11703,6 +11703,48 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       }],
     };
   }
+  /*
+    Encore (D930, CR 702.141a): "{cost}, Exile this card from your graveyard: For each opponent,
+    create a token copy that attacks that opponent this turn if able. They gain haste. Sacrifice them
+    at the beginning of the next end step. Activate only as a sorcery." Scavenge's ability shape, and
+    mobilize's delayed sacrifice. "Attacks that opponent if able" is `mustAttack` plus goad's rule
+    from every *other* opponent (`mustAttackAnotherPlayer` with that opponent as its controller), so
+    in a pod the one legal aim is the opponent the token was made for; in a duel it is the one there
+    is.
+  */
+  const encore = /^encore\s+((?:\{[^}]+\})+)$/i.exec(text);
+  if (encore !== null) {
+    const cost = encore[1]!;
+    return {
+      abilities: [{
+        cost: { mana: cost, fromGraveyard: true, exileSelf: true },
+        sorcerySpeed: true,
+        description: `Encore ${cost} (${cost}, Exile this card from your graveyard: For each opponent, create a token copy that attacks that opponent this turn if able. They gain haste. Sacrifice them at the beginning of the next end step. Activate only as a sorcery.)`,
+        effect: (c) => {
+          const inst = c.state.instances[c.source];
+          const def = inst === undefined ? undefined : c.state.cardDefs[inst.defKey];
+          if (inst === undefined || def === undefined) return c.state;
+          const opponents = opponentsOf(c.state, c.controller);
+          let next = c.state;
+          for (const opponent of opponents) {
+            const made = addTokens(next, c.controller, def, 1, inst.defKey);
+            next = made.state;
+            for (const id of made.created) {
+              next = pump(next, [id], c.source, c.controller, { keywords: ['haste'], mustAttack: true });
+              for (const other of opponents) {
+                if (other !== opponent) next = pump(next, [id], c.source, other, { mustAttackAnotherPlayer: true });
+              }
+              next = scheduleDelayed(next, {
+                source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'any',
+                subject: id, builtin: 'sacrifice', description: `sacrifice the encore copy of ${def.name}`,
+              });
+            }
+          }
+          return next;
+        },
+      }],
+    };
+  }
   const reinforce = /^reinforce\s+(\d+)\s*[—-]\s*((?:\{[^}]+\})+)$/i.exec(text);
   if (reinforce !== null) {
     const n = Number(reinforce[1]);

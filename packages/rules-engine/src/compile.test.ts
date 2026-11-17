@@ -1192,17 +1192,17 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       */
       /*
         D673 read embalm, so the Angel now reads whole. The case is kept with a made-up card whose
-        enter trigger reads and whose keyword (encore) has no builder.
+        enter trigger reads and whose keyword has no builder: encore until D930 read it, banding now.
       */
       const angel = compileCard({
         name: 'Keyword Thing', type_line: 'Creature — Angel', mana_cost: '{3}{W}{W}', cmc: 5, colors: ['W'],
         layout: 'normal', power: '3', toughness: '4',
-        oracle_text: 'When this creature enters, draw a card.\nEncore {5}{W}',
+        oracle_text: 'When this creature enters, draw a card.\nBanding',
       });
       expect(angel.ok && angel.script).toBeDefined();
       if (!angel.ok) return;
       expect(angel.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
-      expect(angel.unread[0]?.line).toBe('Encore {5}{W}');
+      expect(angel.unread[0]?.line).toBe('Banding');
       expect(compiledScript('Angel of Sanctions').unread).toEqual([]);
     });
   });

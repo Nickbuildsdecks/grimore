@@ -18263,6 +18263,72 @@ describe('emerge (D929)', () => {
   });
 });
 
+describe('encore (D930)', () => {
+  const ROWS = [
+    { name: 'Test Encore', type_line: 'Creature — Pirate', oracle_text: 'Encore {0}', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd930', name: 'Encore',
+    entries: [{ name: 'Test Encore', count: 4 }, { name: 'Mountain', count: 56 }],
+    data: ROWS as never[],
+  });
+  const encored = () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd930', 1: 'd930', 2: 'd930' }, deckSpecs: { d930: deck.deck },
+      hands: { 0: ['Test Encore'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Encore');
+    s = { ...s, zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => id !== card), '0:graveyard': [card] },
+      instances: { ...s.instances, [card]: { ...s.instances[card]!, zone: 'graveyard' as const } } };
+    const play = legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'activate');
+    expect(play).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: play!.abilityIndex ?? 0 } as Action)), 40);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 40);
+    return { s, card };
+  };
+  const tokens = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Encore' && s.instances[id]!.isToken);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('exiles the card and makes a hasty token copy for each opponent', () => {
+    const { s, card } = encored();
+    expect(s.instances[card]!.zone).toBe('exile');
+    const made = tokens(s);
+    expect(made.length).toBe(2);
+    for (const id of made) expect(characteristicsOf(s, s.instances[id]!).keywords.has('haste')).toBe(true);
+  });
+
+  it('each copy must attack, and only its own opponent', () => {
+    let { s } = encored();
+    s = advanceTo(s, 'declare-attackers');
+    const [a, b] = tokens(s);
+    // Not attacking with them is refused.
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [] })).not.toBeNull();
+    // Both at the same player is refused for one of them; one each is legal.
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a!, defender: 1 }, { attacker: b!, defender: 1 }] })).not.toBeNull();
+    const split = [{ attacker: a!, defender: 1 as SeatIndex }, { attacker: b!, defender: 2 as SeatIndex }];
+    const swapped = [{ attacker: a!, defender: 2 as SeatIndex }, { attacker: b!, defender: 1 as SeatIndex }];
+    const legal = [split, swapped].filter((attackers) => refusal(s, { type: 'auto:attack', by: 0, attackers }) === null);
+    expect(legal.length).toBe(1);
+  });
+
+  it('sacrificed at the beginning of the next end step', () => {
+    let { s } = encored();
+    s = advanceTo(s, 'declare-attackers');
+    const [a, b] = tokens(s);
+    const split = [{ attacker: a!, defender: 1 as SeatIndex }, { attacker: b!, defender: 2 as SeatIndex }];
+    const swapped = [{ attacker: a!, defender: 2 as SeatIndex }, { attacker: b!, defender: 1 as SeatIndex }];
+    const attackers = refusal(s, { type: 'auto:attack', by: 0, attackers: split }) === null ? split : swapped;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers }), 40);
+    s = drain(advanceTo(s, 'end'), 40);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 40);
+    expect(tokens(s)).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -48727,3 +48727,37 @@ Faults injected by hand: 5 of 5 caught. The creature check was pinned by the lan
     engine tests: 4,947, all passing
 
 Coverage: 11,948 of 31,743 cards (+8), 31,653 of 59,509 lines (+14). Staples: 239 of 244.
+
+## D930 — Encore
+
+"Encore {cost} ({cost}, Exile this card from your graveyard: For each opponent, create a token copy
+that attacks that opponent this turn if able. They gain haste. Sacrifice them at the beginning of the
+next end step. Activate only as a sorcery.)" (CR 702.141a), from Commander Legends and Commander
+2021: Angel of Indemnity, Phyrexian Triniform, Trove Tracker and others.
+
+How it is read, all from parts that were there:
+- **The ability is scavenge's shape:** from the graveyard, exiling the card as the cost, at sorcery
+  speed.
+- **One token copy per opponent,** made from the card's own definition, with haste and `mustAttack`.
+- **"That opponent", in a pod, is goad's rule turned round.** Each copy is goaded
+  (`mustAttackAnotherPlayer`) by every *other* opponent, so the one aim left is its own opponent.
+  In a duel it is the one there is.
+- **Each copy is sacrificed** by the engine's delayed end-step sacrifice, as mobilize's Warriors are
+  (D905).
+
+A compile test that used encore as its example of "a keyword with no builder" now uses banding.
+
+Not read: Sliver Gravemother's granted encore, and cards whose other lines don't read.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- in a three-player pod it is exiled and makes two hasty copies;
+- not attacking is refused, both copies at one player is refused, and exactly one of the two
+  one-each splits is legal;
+- the copies are gone after the end step.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,951, all passing
+
+Coverage: 11,961 of 31,743 cards (+13), 31,677 of 59,509 lines (+24). Staples: 239 of 244.
