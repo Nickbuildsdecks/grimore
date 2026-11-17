@@ -7919,6 +7919,7 @@ describe('deck coverage', () => {
       - `script awaken` (D932): awaken. No pool deck has one. Driven at runtime by "awaken (D932)".
       - `script prototype` (D934): prototype. No pool deck has one. Driven at runtime by "prototype (D934)".
       - `script cipher` (D936): cipher. No pool deck has one. Driven at runtime by "cipher, and casting a copy of a card (D936)".
+      - `script umbraArmor` (D947): umbra armor. No pool deck has one. Driven at runtime by "umbra armor (D947)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7956,6 +7957,7 @@ describe('deck coverage', () => {
       'script awaken',
       'script prototype',
       'script cipher',
+      'script umbraArmor',
     ]);
 
     const declared = [
@@ -19658,6 +19660,80 @@ describe('support, and "those creatures don\'t untap" (D946)', () => {
     expect(s.activeSeat).toBe(1);
     expect(s.instances[a!]!.tapped).toBe(false);
     expect(s.instances[b!]!.tapped).toBe(false);
+  });
+});
+
+describe('umbra armor (D947)', () => {
+  const ROWS = [
+    { name: 'Test Umbra', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.\nUmbra armor (If enchanted creature would be destroyed, instead remove all damage from it and destroy this Aura.)', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Plain', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd947', name: 'Umbra',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 54 }],
+    data: ROWS as never[],
+  });
+  /** A Bear wearing the Umbra (or not). */
+  const wearing = (umbra = true, aura = 'Test Umbra') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd947', 1: 'd947' }, deckSpecs: { d947: deck.deck }, hands: { 0: umbra ? [aura] : [] },
+      battlefield: { 0: ['Forest', 'Test Bear'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    if (umbra) {
+      s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: bear }] } as Action), 30);
+      for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    }
+    return { s, bear, umbra: umbra ? find(s, 0, 'battlefield', aura) : '' };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [], script: { umbraArmor: true } });
+  });
+
+  it('destroyed: the Aura goes instead, even when it "can\'t be regenerated"', () => {
+    const { s, bear, umbra } = wearing();
+    const t = destroy(s, bear, { regenerates: false });
+    expect(t.instances[bear]!.zone).toBe('battlefield');
+    expect(t.instances[umbra]!.zone).toBe('graveyard');
+  });
+
+  it('lethal damage: the damage is removed and the Aura goes', () => {
+    const { s, bear, umbra } = wearing();
+    const t = engineSettle(dealDamage(s, { kind: 'card', id: bear }, 5, { controller: 1, source: null }), s);
+    expect(t.instances[bear]!.zone).toBe('battlefield');
+    expect(t.instances[bear]!.damage).toBe(0);
+    expect(t.instances[umbra]!.zone).toBe('graveyard');
+  });
+
+  it('a regeneration shield is spent first, and the Aura stays', () => {
+    const { s, bear, umbra } = wearing();
+    const shielded = addCounters(s, bear, REGENERATION, 1);
+    const t = destroy(shielded, bear);
+    expect(t.instances[bear]!.zone).toBe('battlefield');
+    expect(t.instances[umbra]!.zone).toBe('battlefield');
+  });
+
+  it('without one, the creature dies', () => {
+    const { s, bear } = wearing(false);
+    expect(destroy(s, bear).instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('an Aura without umbra armor saves nothing', () => {
+    const { s, bear, umbra } = wearing(true, 'Test Plain');
+    const t = destroy(s, bear);
+    expect(t.instances[bear]!.zone).toBe('graveyard');
+    expect(t.instances[umbra]!.attachedTo ?? null).toBeNull();
+  });
+
+  it('lethal damage with a shield too: the shield is spent and the Aura stays', () => {
+    const { s, bear, umbra } = wearing();
+    const shielded = addCounters(s, bear, REGENERATION, 1);
+    const t = engineSettle(dealDamage(shielded, { kind: 'card', id: bear }, 5, { controller: 1, source: null }), shielded);
+    expect(t.instances[bear]!.zone).toBe('battlefield');
+    expect(t.instances[umbra]!.zone).toBe('battlefield');
   });
 });
 

@@ -3984,6 +3984,13 @@ export interface CardScript {
    */
   readonly cipher?: true;
   /**
+   * Umbra armor, once totem armor (D947, CR 702.89a): "If enchanted creature would be destroyed,
+   * instead remove all damage from it and destroy this Aura." A replacement read by
+   * `spendUmbraArmor`, which `destroy` and the lethal-damage check both ask, after a regeneration
+   * shield.
+   */
+  readonly umbraArmor?: true;
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and

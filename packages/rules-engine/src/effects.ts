@@ -992,6 +992,25 @@ export function spendRegeneration(state: GameState, id: string): GameState | nul
 }
 
 /**
+ * Umbra armor (D947, CR 702.89a): the destruction of a creature replaced by the destruction of an
+ * Aura on it with the keyword, and all damage removed from the creature. Null when no such Aura is
+ * attached. The first one attached is spent; with two the creature's controller would choose, and
+ * either answer leaves the same board but for which Aura is left.
+ */
+export function spendUmbraArmor(state: GameState, id: string): GameState | null {
+  const inst = state.instances[id];
+  if (inst === undefined || inst.zone !== 'battlefield') return null;
+  const armour = Object.values(state.instances).find((aura) => aura.zone === 'battlefield' && aura.attachedTo === id
+    && scriptOfCard(state.cardDefs[aura.defKey])?.umbraArmor === true);
+  if (armour === undefined) return null;
+  const counters = { ...inst.counters };
+  delete counters['deathtouched'];
+  const healed = withInstance(state, id, { damage: 0, counters });
+  // "Destroy this Aura": destroyed, so an indestructible one stays and the replacement still happens.
+  return destroy(healed, armour.id);
+}
+
+/**
  * Takes one creature out of combat: it stops attacking, and stops blocking whatever it blocked.
  *
  * An attack with no attacker left is dropped entirely; a blocker is lifted off every attack it
@@ -1064,6 +1083,9 @@ export function destroy(
     const saved = spendRegeneration(state, id);
     if (saved !== null) return saved;
   }
+  // Umbra armor (D947), which "can't be regenerated" does not stop.
+  const wrapped = spendUmbraArmor(state, id);
+  if (wrapped !== null) return wrapped;
   return relocate(state, inst, 'graveyard', inst.owner, 'bottom');
 }
 

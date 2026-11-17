@@ -31876,3 +31876,35 @@ that kept the count at two).
     engine tests: 5,040, all passing
 
 Coverage: 12,293 of 31,743 cards (+21), 32,244 of 59,509 lines (+29). Staples: 239 of 244.
+
+## D947 — Umbra armor
+
+"Umbra armor (If enchanted creature would be destroyed, instead remove all damage from it and
+destroy this Aura.)" (CR 702.89a, once totem armor), on 18 legal Auras: the Umbra cycle and Eldrazi
+Conscription's kin. 8 now read whole.
+
+How it is read:
+- **`CardScript.umbraArmor`**, from the keyword under either name.
+- **`spendUmbraArmor`**, a destruction replacement beside regeneration's `spendRegeneration`, asked
+  in both places a creature is destroyed: `destroy`, and the lethal-damage state-based action. The
+  creature's damage (and a deathtouch mark) is removed, and the Aura is destroyed, so an
+  indestructible Aura stays and the replacement still happens.
+- **Order**: a regeneration shield is spent first and the Aura stays. The rules let the creature's
+  controller choose (CR 616.1); the shield is the cheaper loss, and that is the order stated rather
+  than asked. "Can't be regenerated" does not stop umbra armor. With two such Auras the first
+  attached is spent.
+
+**Tests.** 7 engine tests:
+- the card reads;
+- destroyed, even when it can't be regenerated: the Aura goes instead;
+- lethal damage: the damage is removed and the Aura goes;
+- a shield first, for both destroy and lethal damage, and the Aura stays;
+- without an Aura the creature dies;
+- an Aura without the keyword saves nothing.
+
+Faults injected by hand: 6 of 6 caught, after the second round (the order on lethal damage and the
+keyword check were pinned by the last two tests).
+
+    engine tests: 5,047, all passing
+
+Coverage: 12,301 of 31,743 cards (+8), 32,259 of 59,509 lines (+15). Staples: 239 of 244.

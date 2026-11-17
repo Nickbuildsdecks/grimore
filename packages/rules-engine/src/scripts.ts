@@ -11382,6 +11382,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'undying') return { triggers: comesBackWithACounter('undying') };
   if (word === 'persist') return { triggers: comesBackWithACounter('persist') };
   if (word === 'split second') return { splitSecond: true };
+  // Umbra armor, once totem armor (D947): see `CardScript.umbraArmor`.
+  if (word === 'umbra armor' || word === 'totem armor') return { umbraArmor: true };
   if (word === 'convoke') return { convoke: true };
   /*
     Improvise (CR 702.126), convoke's sibling one card type along: each artifact you control may be

@@ -49,7 +49,7 @@ import {
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
-  spendRegeneration, untapAll, putOnTopOfLibrary, shuffleLibrary,
+  spendRegeneration, spendUmbraArmor, untapAll, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
@@ -2864,7 +2864,8 @@ export function stateBasedActions(state: GameState): GameState {
         // the 3/3 it was blocking, which is the half players actually use it for. A toughness of
         // zero or less is not destruction and cannot be regenerated away (CR 704.5a).
         if (ch.toughness > 0) {
-          const saved = spendRegeneration(next, inst.id);
+          // And umbra armor (D947), which replaces the same destruction when there is no shield.
+          const saved = spendRegeneration(next, inst.id) ?? spendUmbraArmor(next, inst.id);
           if (saved !== null) {
             next = saved;
             changed = true;
