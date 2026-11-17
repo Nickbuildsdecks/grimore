@@ -13544,6 +13544,81 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       },
     };
   }
+  /*
+    "Sacrifice it unless you <do something>" (D724): the karoo lands' "return a land you control to
+    its owner's hand", Balduvian Horde's "discard a card at random", Plant Elemental's "sacrifice a
+    Forest", Avatar of Discord's "discard two cards", Mercenary Knight's "discard a creature card". About fifty legal
+    lines, most of them an entry trigger.
+
+    The cost is read by the clause vocabulary, which already knows each of these as an effect: it
+    must ask exactly one question about the controller's own hand, battlefield or graveyard and
+    point at nothing, or (for a random discard) ask nothing. The choice comes first, and the cost is
+    offered only when it can be done in full — enough cards of the kind in that zone — because a
+    cost that can't be paid is not one a player may choose (CR 118.3). Choosing it asks which cards
+    pay it; choosing the other, or having no way to pay, sacrifices the permanent. "Pay {N}" is the
+    same choice with a mana price on the answer, and D529's upkeep-tax reader already reads it, so
+    a price that is mana or energy is left to that reader.
+
+    The bot pays whenever it can: keeping the permanent is what the card was played for.
+  */
+  const unless = new RegExp(`^sacrifice (?:it|${selfRef(name)}|this (?:creature|land|artifact|enchantment|permanent)) unless you (.+)$`, 'i').exec(text);
+  if (unless !== null) {
+    const costText = unless[1]!.trim();
+    const SACRIFICE = 'Sacrifice it';
+    const sacrificeSelf = (c: EffectContext) => (c.state.instances[c.source]?.zone === 'battlefield' ? sacrifice(c.state, [c.source]) : c.state);
+    const random = /^discard (a|an|one|two|three) cards? at random$/i.exec(costText);
+    const cost = readEffect(costText, name, null);
+    const label = costText.charAt(0).toUpperCase() + costText.slice(1);
+    if (random !== null && cost !== null && (cost.decisions ?? []).length === 0 && cost.targets === undefined) {
+      const n = /^(a|an|one)$/i.test(random[1]!) ? 1 : random[1]!.toLowerCase() === 'two' ? 2 : 3;
+      return {
+        decisions: [{
+          who: 'controller', prompt: `${label}, or sacrifice it?`, options: [label, SACRIFICE],
+          optionsFor: (state, chooser) => (listAt(state, zoneKey(chooser, 'hand')).length >= n ? [label, SACRIFICE] : [SACRIFICE]),
+          best: () => label,
+        }],
+        effect: (c) => (chosenOption(c) === label && listAt(c.state, zoneKey(c.controller, 'hand')).length >= n
+          ? cost.effect({ ...c, decisions: c.decisions.slice(1) }) : sacrificeSelf(c)),
+      };
+    }
+    const asked = cost?.decisions?.length === 1 ? cost.decisions[0]! : undefined;
+    if (cost !== null && cost.targets === undefined && cost.beforeDecisions === undefined && asked !== undefined) {
+      /*
+        The cost's question, as it will be asked. A thunk ("return **another** creature you
+        control", which has to leave the source out) is resolved against the source, so the choice
+        is a thunk too: whether the cost can be paid depends on the same source.
+      */
+      const questionOf = (state: GameState, source: string): CardsDecisionSpec | null => {
+        const q = typeof asked === 'function' ? asked(state, source) : asked;
+        return isCardsDecision(q) && q.who === 'controller' && (q.min ?? 0) >= 1
+          && (q.from === 'hand' || q.from === 'battlefield' || q.from === 'graveyard') ? q : null;
+      };
+      const enough = (state: GameState, source: string, chooser: SeatIndex): boolean => {
+        const q = questionOf(state, source);
+        if (q === null) return false;
+        return listAt(state, zoneKey(chooser, q.from as 'hand' | 'battlefield' | 'graveyard'))
+          .filter((id) => q.filter === undefined || q.filter(state, id, chooser)).length >= (q.min ?? 1);
+      };
+      return {
+        decisions: [
+          (_state: GameState, source: string) => ({
+            who: 'controller' as const, prompt: `${label}, or sacrifice it?`, options: [label, SACRIFICE],
+            optionsFor: (state: GameState, chooser: SeatIndex) => (enough(state, source, chooser) ? [label, SACRIFICE] : [SACRIFICE]),
+            best: () => label,
+          }),
+          (state: GameState, source: string) => ({
+            ...(questionOf(state, source) ?? { who: 'controller' as const, from: 'hand' as const, prompt: label, min: 0, max: 0 }),
+            askOnlyIfChosen: label,
+          }),
+        ],
+        effect: (c) => {
+          const q = questionOf(c.state, c.source);
+          if (chosenOption(c) !== label || q === null || chosenCards(c, 1).length < (q.min ?? 1)) return sacrificeSelf(c);
+          return cost.effect({ ...c, decisions: c.decisions.slice(1) });
+        },
+      };
+    }
+  }
   const imprint = /^you may exile (a|an) (.+? card(?: with mana value \d+ or (?:less|greater))?) from your hand$/i.exec(text);
   if (imprint !== null) {
     const filter = libraryFilter(`${imprint[1]!} ${imprint[2]!}`, name);
@@ -13706,6 +13781,21 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
           prompt: `Discard ${myDiscard[1]!} ${myDiscard[2]!}`,
           min: n,
           max: n,
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
+    }
+  }
+  // "Discard a creature card", "discard two land cards" (D724): the same question, of a kind.
+  const typedDiscard = /^(?:you )?discard (a|an|one|two|three) (.+?) cards?$/i.exec(text);
+  if (typedDiscard !== null) {
+    const n = countFrom(typedDiscard[1]!) ?? (/^an?$/i.test(typedDiscard[1]!) ? 1 : null);
+    const filter = libraryFilter(`a ${typedDiscard[2]!} card`, name);
+    if (n !== null && n > 0 && filter !== null && filter.filter !== null && filter.filter !== undefined && filter.xBound !== true) {
+      return {
+        decisions: [{
+          who: 'controller', from: 'hand', prompt: `Discard ${typedDiscard[1]!} ${typedDiscard[2]!} card${n > 1 ? 's' : ''}`,
+          min: n, max: n, filter: filter.filter,
         }],
         effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
       };

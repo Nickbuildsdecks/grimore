@@ -13378,9 +13378,8 @@ describe('the Illusion drawback and the bare mill (D514)', () => {
     ['an optional draw, which needs a "you may" gate (#337)',
       'Whenever Battle Mammoth becomes the target of a spell or ability an opponent controls, you '
       + 'may draw a card.'],
-    ['a sacrifice with a price attached, which is echo\'s shape (#196)',
-      'Whenever Cursed Monstrosity becomes the target of a spell or ability, sacrifice it unless '
-      + 'you discard a land card.'],
+    // The second neighbour, "sacrifice it unless you discard a land card", reads since D724 and is
+    // tested there with the rest of the `unless you <cost>` family.
   ])('leaves the neighbour unread: %s', (_why, text) => {
     /*
       The two tails beside the one this increment read, pinned so the next person measuring the
@@ -14630,10 +14629,8 @@ describe('the upkeep tax: sacrifice unless you pay (D529)', () => {
   });
 
   it.each([
-    ['a discard price, which payIfChosen cannot express',
-      'At the beginning of your upkeep, sacrifice Not A Card unless you discard a card.'],
-    ['a sacrifice price',
-      'At the beginning of your upkeep, sacrifice Not A Card unless you sacrifice a land.'],
+    // A discard or a sacrifice price is not a `payIfChosen` price, and reads since D724 by its own
+    // reader: a choice and then a card question. See "sacrifice it unless you <cost>" (D724).
     ['a price this engine cannot parse',
       'At the beginning of your upkeep, sacrifice Not A Card unless you pay {X}.'],
     ['a price of life, which is a cost and not mana',

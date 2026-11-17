@@ -16065,6 +16065,99 @@ describe('counts beyond three, and "investigate twice" (D901)', () => {
   });
 });
 
+describe('"Sacrifice it unless you <do something>" (D724)', () => {
+  const creature = (name: string, cost: string) => ({ name, type_line: 'Creature — Soldier', oracle_text: `When ${name} enters, sacrifice it unless you ${cost}.`, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '4', toughness: '4' });
+  const ROWS = [
+    creature('Test Knight', 'discard a creature card'),
+    creature('Test Horde', 'discard a card at random'),
+    creature('Test Avatar', 'discard two cards'),
+    creature('Test Quickling', 'return another creature you control to its owner\'s hand'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'unless', name: 'Unless',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Test Spark', count: 40 }],
+    data: ROWS,
+  });
+  // Only the cards the test places, and a library of sorceries, so the turn's draw never pays.
+  const enter = (card: string, hand: string[], mine: string[] = []) => {
+    const placed = [card, ...hand, ...mine];
+    const only = customDeck({
+      id: 'unless-only', name: 'Unless only',
+      entries: [...new Set([...placed, 'Test Spark'])].map((n) => ({
+        name: n, count: placed.filter((p) => p === n).length + (n === 'Test Spark' ? 40 : 0),
+      })),
+      data: ROWS,
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'uo', 1: 'unless' }, deckSpecs: { uo: only.deck, unless: deck.deck },
+      hands: { 0: [card, ...hand] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) });
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const choose = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads every shape', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('pays with a creature card from hand, and only a creature card counts', () => {
+    let s = enter('Test Knight', ['Test Bear', 'Test Spark']);
+    expect(s.pendingDecision?.options).toEqual(['Discard a creature card', 'Sacrifice it']);
+    s = choose(s, 'Discard a creature card');
+    // The Spark is not offered, so the one creature card is the whole answer and is taken.
+    s = drain(s, 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Knight');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Bear');
+  });
+
+  it('with no way to pay, or by choice, it is sacrificed', () => {
+    const none = drain(enter('Test Knight', ['Test Spark']), 20);
+    expect(namesIn(none, 0, 'battlefield')).not.toContain('Test Knight');
+    expect(namesIn(none, 0, 'graveyard')).toContain('Test Knight');
+    let declined = enter('Test Knight', ['Test Bear']);
+    declined = drain(choose(declined, 'Sacrifice it'), 20);
+    expect(namesIn(declined, 0, 'graveyard')).toContain('Test Knight');
+    expect(namesIn(declined, 0, 'hand')).toContain('Test Bear');
+    // And declining asks nothing more, even with cards that could pay (pinned by D724's break run).
+    const avatar = choose(enter('Test Avatar', ['Test Bear', 'Test Spark', 'Test Spark']), 'Sacrifice it');
+    expect(avatar.pendingDecision).toBeNull();
+  });
+
+  it('two cards, chosen; one card at random', () => {
+    let s = enter('Test Avatar', ['Test Bear', 'Test Spark']);
+    const before = ids(s, 0, 'hand').length;
+    s = choose(s, 'Discard two cards');
+    expect(s.pendingDecision?.min).toBe(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Avatar');
+    expect(ids(s, 0, 'hand').length).toBe(before - 2);
+    let r = enter('Test Horde', ['Test Bear']);
+    const held = ids(r, 0, 'hand').length;
+    r = drain(choose(r, 'Discard a card at random'), 20);
+    expect(namesIn(r, 0, 'battlefield')).toContain('Test Horde');
+    expect(ids(r, 0, 'hand').length).toBe(held - 1);
+  });
+
+  it('"return another creature": never itself, and alone it is sacrificed', () => {
+    let s = enter('Test Quickling', [], ['Test Bear']);
+    s = drain(choose(s, "Return another creature you control to its owner's hand"), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Quickling');
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bear');
+    const alone = drain(enter('Test Quickling', []), 20);
+    expect(namesIn(alone, 0, 'battlefield')).not.toContain('Test Quickling');
+  });
+
+  it('the bot pays when it can', () => {
+    const s = enter('Test Knight', ['Test Bear']);
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', option: 'Discard a creature card' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

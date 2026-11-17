@@ -47525,3 +47525,63 @@ Faults injected by hand: 2 of 2 caught.
 
 Coverage: 11,454 of 31,653 cards (+6), 30,813 of 59,306 lines (+12). Staples: 235 of 244 (all
 remaining staples are the other session's).
+
+## Break runs for the other session's D715, D716, D718 and D722
+
+The original session's note (`claude/session-coordination.md`) records that its break runs for
+D715–D717 and D722 didn't complete. D717 (Chrome Mox) was this session's and was run with it. The
+other four were run here by script against the merged tree: **19 of 19 caught.**
+- D715: a copy counting as cast from a graveyard; any cast counting; no copy made; the resolving
+  spell not handed to the effect; the new target offered for a hand cast.
+- D716: damage to you not prevented; the static unread; creatures able to attack; the upkeep price
+  not multiplied by age counters; the life not paid.
+- D718: a protected player taking damage; a protected player targetable; the protection clause
+  unread; own counters not counted.
+- D722: the card not returned; the link not recorded; host legality ignoring the link; leaving
+  sacrificing nothing; the link surviving a zone change.
+
+## D724 — "Sacrifice it unless you <do something>"
+
+About fifty legal lines, most of them an entry trigger: the karoo lands' "return a land you control
+to its owner's hand", Balduvian Horde's "discard a card at random", Avatar of Discord's "discard two
+cards", Mercenary Knight's "discard a creature card", Quickling's "return another creature you
+control to its owner's hand". Nothing read them, and D514 and D529 had pinned two of them as
+refusals ("a discard price", "a sacrifice price") until there was a reader.
+
+How it is read:
+- **The cost is read by the clause vocabulary**, which already knows each cost as an effect. It must
+  ask exactly one question about the controller's own hand, battlefield or graveyard and point at
+  nothing, or, for a random discard, ask nothing.
+- **The choice comes first.** The cost is offered only when it can be done in full: enough cards of
+  the kind in that zone (CR 118.3). Choosing it asks which cards pay; choosing "Sacrifice it", or
+  having no way to pay, sacrifices the permanent.
+- **"Another"** ("return another creature you control"): the cost's question needs the source to
+  leave it out, so the choice is worked out against the same source.
+- **A mana or energy price** ("sacrifice it unless you pay {1}") is left to D529's upkeep-tax
+  reader, which already reads it.
+- **New vocabulary on the way:** "discard a creature card", "discard two land cards" — the plain
+  discard question with a card filter.
+- **The bot pays whenever it can.** Keeping the permanent is what the card was played for.
+- Still unread in the family: "sacrifice a Forest" and "return an untapped Mountain you control"
+  (their cost clauses don't read yet), "return a non-Lair land" (a hyphenated subtype negation), and
+  "unless {U} was spent to cast it".
+
+**Tests.** 6 engine tests, and the D514 and D529 refusal lists lose the cases that now read:
+- every shape reads;
+- a creature card pays, and the Spark in hand doesn't count;
+- with no way to pay, or by choice, it is sacrificed, and declining asks nothing more;
+- two cards are chosen, and one is discarded at random;
+- "return another creature" never offers itself, and alone it is sacrificed;
+- the bot pays.
+
+Faults injected by script: 7 of 8 caught. The miss, the cost question asked after "Sacrifice it",
+was invisible because the test hand had only one card that could pay, and a forced answer is taken
+without asking. Pinned with a two-card discard over a three-card hand. Re-run: 1 of 1 caught.
+
+**Merged first.** The original session's D901 (counts beyond three) and its merge of D723 were
+fast-forwarded in. The figures below are against its head, e859fde (11,482 cards, 30,856 lines).
+
+    engine tests: 4,793, all passing
+
+Coverage: 11,505 of 31,653 cards (+23), 30,884 of 59,306 lines (+28). Staples: 235 of 244.
+Pod sweep 58401–58440 (D723's build): 40 of 40 finished, no throw and no stall.
