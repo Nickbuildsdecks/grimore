@@ -49456,3 +49456,47 @@ two-trigger test added.
 
 Coverage: 12,325 of 31,743 cards (+24), 32,290 of 59,509 lines (+31). Staples: 240 of 244 (the
 other session's Path of Ancestry, merged in D947's merge).
+
+## D730 — Torment of Hailfire and Perforating Artist: a punisher in rounds
+
+"Repeat the following process X times. Each opponent loses 3 life unless that player sacrifices a
+nonland permanent or discards a card." Perforating Artist prints the same sentence once, behind a
+raid end-step trigger.
+
+How it is read (`punisherRounds`):
+- **Three questions per opponent per round**, in turn order:
+  - lose the life, sacrifice, or discard, offering only what that player can do (losing the life
+    is always offered);
+  - which nonland permanent;
+  - which card.
+  The second and third have no candidates for anyone who didn't choose them, and an empty question
+  is answered without asking.
+- **A round takes effect as the next round is reached** (the D721 hook, with D728's answers), so
+  each round sees the board and the hand the last one left. The last round takes effect with the
+  spell. `AutomationState.punisher` holds the round bookkeeping and is cleared by the spell.
+- **Rounds past X are not asked.** The rounds are a fixed list of questions, so there is a ceiling
+  of 40. X above it repeats only 40 times, a known limit no realistic game reaches.
+- `clausesOf` joins "Repeat the following process X times." to the sentence it is about. "Of their
+  choice" (the Artist's wording) is read too.
+- **The bot**, as the player choosing, loses the life while it has more than 9, then discards while
+  it has cards, then sacrifices; it gives up the cheapest card or permanent.
+
+Staples went from 240 to 241 (Torment of Hailfire).
+
+**Tests.** 6 engine tests:
+- Torment and the Artist read;
+- two rounds against one opponent: the sacrificed Rock is gone before round two is asked, round
+  two offers only the life and the discard, and the discard is chosen from hand;
+- with nothing to sacrifice or discard, the life alone is taken every round, unasked (X = 3,
+  9 life); and choosing the life twice costs 6;
+- at a table of three, each opponent answers for themselves every round (one discards then has
+  nothing left; the other loses the life then discards);
+- X of 0 asks nothing;
+- the bot loses life above 9 and discards at 6.
+
+Faults injected by script: 9 of 9 caught.
+
+    engine tests: 5,061, all passing (merged with the other session's D948)
+
+Coverage: 12,328 of 31,743 cards (+2), 32,294 of 59,509 lines (+2), against 5e56eeb. Staples: 241
+of 244 (+1).
