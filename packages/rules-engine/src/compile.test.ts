@@ -11308,7 +11308,8 @@ describe('a mana ability that deals you damage (D497)', () => {
     */
     // A spend restriction made of type words is read since D595; one that is not stays refused.
     ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast a multicolored spell.'],
-    ["doesn't untap", "{T}: Add {U} or {B}. Probe Land doesn't untap during your next untap step."],
+    // "Probe Land doesn't untap during your next untap step" is read since D920; about another, not.
+    ["somebody else doesn't untap", "{T}: Add {U} or {B}. Target land doesn't untap during your next untap step."],
     ['a depletion counter', '{T}: Add {W} or {U}. Put a depletion counter on Probe Land.'],
     ['an activation condition', '{T}: Add {R} or {G}. Activate only if you control a Swamp.'],
     // And for the **subject**: the damage has to be this land's own.

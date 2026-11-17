@@ -17594,6 +17594,60 @@ describe('historic and subtypes in a card filter (D919)', () => {
   });
 });
 
+describe('a mana land that stays tapped through the next untap step (D920)', () => {
+  const ROWS = [
+    { name: 'Test Marsh', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana: ['C', 'B', 'R'],
+      oracle_text: "{T}: Add {C}.\n{T}: Add {B} or {R}. Test Marsh doesn't untap during your next untap step." },
+  ];
+  const deck = customDeck({
+    id: 'd920', name: 'Depletion-free',
+    entries: [{ name: 'Test Marsh', count: 4 }, { name: 'Swamp', count: 56 }],
+    data: ROWS as never[],
+  });
+  const tapFor = (type: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd920', 1: 'd920' }, deckSpecs: { d920: deck.deck },
+      battlefield: { 0: ['Test Marsh'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const marsh = find(s, 0, 'battlefield', 'Test Marsh');
+    const abilities = scriptForCard(s.cardDefs[s.instances[marsh]!.defKey])?.abilities ?? [];
+    const index = abilities.findIndex((a) => a.produces?.length === 1 && a.produces[0] === type);
+    expect(index).toBeGreaterThanOrEqual(0);
+    s = apply(s, { type: 'auto:activate', by: 0, card: marsh, abilityIndex: index } as Action);
+    return { s, marsh };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('tapped for a colour: the mana, and the land stays down through its next untap step', () => {
+    let { s, marsh } = tapFor('B');
+    expect(s.pools['0']!.B).toBe(1);
+    expect(s.instances[marsh]!.frozen).toBe(true);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[marsh]!.tapped).toBe(true);
+    // And the turn after that it untaps: the freeze is spent by the one step.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[marsh]!.tapped).toBe(false);
+  });
+
+  it('the rider must be about the land itself', () => {
+    const other = compileCard({ ...ROWS[0], name: 'Test Other',
+      oracle_text: "{T}: Add {C}.\n{T}: Add {B} or {R}. Target land doesn't untap during your next untap step." } as never);
+    expect(other.ok && other.unread.length > 0).toBe(true);
+  });
+
+  it('tapped for colourless: no rider', () => {
+    let { s, marsh } = tapFor('C');
+    expect(s.instances[marsh]!.frozen ?? false).toBe(false);
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[marsh]!.tapped).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

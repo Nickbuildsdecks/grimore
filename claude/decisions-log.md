@@ -48346,3 +48346,35 @@ pinned by a new test.
     engine tests: 4,895, all passing
 
 Coverage: 11,843 of 31,743 cards (+32), 31,499 of 59,509 lines (+59). Staples: 238 of 244.
+
+## D920 — A mana land that stays tapped through the next untap step
+
+"{T}: Add {C}. / {T}: Add {B} or {R}. Cinder Marsh doesn't untap during your next untap step." — the
+Tempest lands and their kin, ten legal cards.
+
+- **How it is read:** the coloured line's second sentence is read as the new `ManaLine.freezes`
+  rider beside the pain land's damage.
+  - It is part of the same mana ability's effect (CR 605.3a): `freezeNextUntap` on the land as the
+    mana is made.
+  - The sentence must be about the land itself, by its name, short name or "this land".
+- **Where it is read:** the colour fold groups lines by damage alone. So a card printing the rider on
+  a line beside another is refused there and read line by line, where each line keeps its own
+  rider.
+- **Compile test retired:** D497's refusal row for the sentence. A row for "Target land doesn't
+  untap …" now stands in its place.
+- **Not modelled:** the auto-tapper does not yet weigh the cost of a frozen land when it chooses
+  sources.
+
+**Tests.** 4 engine tests:
+- the land reads;
+- tapped for black: the mana arrives, the land stays tapped through its next untap step, and it
+  untaps the turn after;
+- tapped for colourless: no rider;
+- the rider about another land is refused.
+
+Faults injected by hand: 4 of 4 caught. One first ran against the wrong file, and was re-run once
+the subject test existed.
+
+    engine tests: 4,899, all passing
+
+Coverage: 11,853 of 31,743 cards (+10), 31,509 of 59,509 lines (+10). Staples: 238 of 244.

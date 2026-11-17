@@ -88,7 +88,7 @@ import {
 } from './characteristics.js';
 import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
-import { dealDamage, drawLater, opponentsOf } from './effects.js';
+import { dealDamage, drawLater, freezeNextUntap, opponentsOf } from './effects.js';
 import { scriptForCard } from './derive.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
 import { spendRestriction } from './spending.js';
@@ -356,6 +356,13 @@ interface ManaLine {
    */
   readonly damage?: number;
   /**
+   * "~ doesn't untap during your next untap step" (D920): the other effect a mana line prints after
+   * its mana, on ten legal lands (the Ice Age and Alliances depletion-free duals and their kin). Part
+   * of the same mana ability's effect, as the pain land's damage is (CR 605.3a), so it happens as
+   * the mana is made and nobody can respond in between. `CardInstance.frozen`.
+   */
+  readonly freezes?: true;
+  /**
    * "Spend this mana only to …" — the other second sentence a mana line prints (D595). See
    * `AbilityDef.spendOnly` and `spending.ts`.
    */
@@ -532,6 +539,15 @@ function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
  * land deals the damage to **you**, and a reader loose about the subject would be one that read
  * somebody else's damage as its controller's.
  */
+/** `Lake of the Dead doesn't untap during your next untap step` (D920), of the card itself. */
+function selfFreezeSentence(sentence: string, name: string): boolean {
+  const match = /^(.+?) doesn't untap during your next untap step\.?$/i.exec(sentence.trim());
+  if (match === null) return false;
+  const subject = match[1]!.trim().toLowerCase();
+  return [name.toLowerCase(), shortName(name)?.toLowerCase(), ...SELF_TYPE_WORDS.map((word) => `this ${word.toLowerCase()}`)]
+    .includes(subject);
+}
+
 function selfDamageSentence(sentence: string, name: string): number | undefined {
   const match = /^(.+?) deals (\d+) damage to you\.?$/i.exec(sentence.trim());
   if (match === null) return undefined;
@@ -620,7 +636,8 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   // A chosen type only the line reader may take, for the reason `chosenOk` says (D644).
   if (spendOnly?.chosenType === true && !chosenOk) return null;
   const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
-  if (rest !== '' && damage === undefined && spendOnly === undefined) return null;
+  const freezes = rest !== '' && restriction === null && damage === undefined && selfFreezeSentence(rest, name);
+  if (rest !== '' && damage === undefined && spendOnly === undefined && !freezes) return null;
 
   let cost: ManaAbilityCost = { tap: true };
   if (!/^\{T\}/i.test(printed)) {
@@ -648,13 +665,13 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const one = parseSymbolRun(worded[2]!);
     if (one === null) return null;
     const n = WORDS[worded[1]!.toLowerCase()]!;
-    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   const anyOne = /^(two|three|four|five) mana of any one colou?r$/i.exec(body);
   if (anyOne !== null) {
     const n = WORDS[anyOne[1]!.toLowerCase()]!;
     const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
-    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // "An amount of {G} equal to your devotion to green" (D713): Karametra's Acolyte's count.
   const devoted = /^an amount of (\{[WUBRG]\}) equal to your devotion to (white|blue|black|red|green)$/i.exec(body);
@@ -664,7 +681,7 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const colour = LETTERS[devoted[2]!.toLowerCase()]!;
     if (symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage,
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}),
       per: {
         count: (state, _source, controller) => devotionTo(state, controller, new Set([colour])),
         phrase: `point of your devotion to ${devoted[2]!.toLowerCase()}`,
@@ -679,20 +696,20 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const symbol = parseSymbolRun(counted[1]!);
     if (count === null || symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage,
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}),
       per: { count, phrase: counted[2]!.trim() },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
   // "One mana of the chosen color" (D642), alone or after one printed colour (the Thriving lands).
   const chosenColour = /^(?:\{([WUBRG])\}\s+or\s+)?one\s+mana\s+of\s+the\s+chosen\s+colou?r$/i.exec(body);
   if (chosenColour !== null) {
     if (!chosenOk) return null;
     const fixed = chosenColour[1] as ManaType | undefined;
     return {
-      mode: 'choice', produces: COLOURS, cost, printed, damage,
+      mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}),
       chosen: fixed === undefined ? {} : { fixed },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
@@ -700,15 +717,15 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   // Chrome Mox (D717): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
   if (/^one\s+mana\s+of\s+any\s+of\s+the\s+exiled\s+card['’]s\s+colou?rs$/i.test(body)) {
     if (!chosenOk) return null;
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Fellwar Stone and Exotic Orchard (D681).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
 
   /*
@@ -732,14 +749,14 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   if (runs.some((r) => r.length !== 1)) {
     // The filter lands (D665): every answer the same size, at least two of them.
     if (!runs.every((r) => r.length === runs[0]!.length)) return null;
-    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
-  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(spendOnly === undefined ? {} : { spendOnly }) };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -779,9 +796,9 @@ function tapAbilities(
     }
     return {
       cost,
-      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${spentOn(line?.spendOnly)}`,
+      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${staysDown(line?.freezes)}${spentOn(line?.spendOnly)}`,
       produces: [type],
-      ...painEffect(damage),
+      ...painEffect(damage, line?.freezes),
       ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
       ...(line?.identity === true
         ? { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => commanderIdentity(state, controller).includes(type) }
@@ -811,15 +828,22 @@ const hurtsYou = (damage?: number): string =>
  * actions are checked, which is the rule: one ability, resolving immediately, whose effect is both
  * halves (CR 605.3a). See `ManaLine.damage` for why it is neither a cost nor a trigger.
  */
-const painEffect = (damage?: number): Pick<AbilityDef, 'effect'> => (
-  damage === undefined
+const painEffect = (damage?: number, freezes?: boolean): Pick<AbilityDef, 'effect'> => (
+  damage === undefined && freezes !== true
     ? {}
     : {
-      effect: (c) => dealDamage(
-        c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source },
-      ),
+      effect: (c) => {
+        const hurt = damage === undefined ? c.state
+          : dealDamage(c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source });
+        // And the depletion-free duals' rider (D920): the land stays down through the next untap.
+        return freezes === true ? freezeNextUntap(hurt, c.source) : hurt;
+      },
     }
 );
+
+/** The frozen rider's sentence, for the ability's own `description` (D920). */
+const staysDown = (freezes?: boolean): string =>
+  freezes === true ? " It doesn't untap during your next untap step." : '';
 
 /**
  * What a counted mana line counts (D662), as `AbilityDef.producesTimes`, or `null` for a phrase this
@@ -891,6 +915,10 @@ function foldManaLines(
   parsed: readonly ManaLine[],
 ): { abilities: AbilityDef[]; produces: ManaType[] } | { why: string } {
   if (parsed.some((p) => p.mode === 'runs')) return { why: `${name}: it adds one of several mana runs, read only line by line` };
+  // The frozen rider is a fact about one line, which the fold below groups by damage alone (D920).
+  if (parsed.some((p) => p.freezes === true) && (parsed.length > 1 || intrinsic.length > 0)) {
+    return { why: `${name}: a line that keeps it tapped is read only line by line` };
+  }
   const sums = parsed.filter((p) => p.mode === 'sum');
   if (sums.length > 0) {
     if (parsed.length > 1 || intrinsic.length > 0) {
