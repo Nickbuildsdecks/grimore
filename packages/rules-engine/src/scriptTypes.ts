@@ -1453,7 +1453,7 @@ export interface CardsDecisionSpec {
    * controller to discard.
    */
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
   /**
    * Which zone. From the chooser's own side unless `fromSeat` says otherwise. `library` is a
    * search: the chooser may look through the whole library while deciding, as they would at a
@@ -1625,7 +1625,7 @@ export interface ChoiceDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];
@@ -1734,7 +1734,7 @@ export interface NumberDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player' | 'referent-player';
+  | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller';
   readonly prompt: string;
   /** The numbers on offer, inclusive, read off the board when the question is asked. */
   readonly range: (state: GameState, chooser: SeatIndex) => { readonly min: number; readonly max: number };
@@ -1779,12 +1779,15 @@ export interface NumberDecisionSpec {
  */
 export interface TargetDecisionSpec {
   /**
-   * Not offered on this shape. A retarget and a counter question are both parts of one effect
-   * rather than steps a player may decline, so neither has a "may" in front of it to be
-   * conditional on. See `CardsDecisionSpec.askOnlyIfChosen`.
+   * Asked only after an earlier answer (D725): Chain Lightning's new target for the copy is asked
+   * only of a player who paid for one. See `CardsDecisionSpec.askOnlyIfChosen`.
    */
-  readonly askOnlyIfChosen?: never;
-  readonly who: 'controller';
+  readonly askOnlyIfChosen?: string;
+  /**
+   * `target-or-its-controller` (D725): Chain Lightning's "that player or that permanent's
+   * controller", the player the spell's first target was or the controller of the permanent it was.
+   */
+  readonly who: 'controller' | 'target-or-its-controller';
   readonly prompt: string;
   /**
    * Which object on the stack this question is about, read off the resolution that is asking.

@@ -22568,6 +22568,45 @@ function readEffect(
     return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
   }
   if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
+  /*
+    Chain Lightning (D725): "Then that player or that permanent's controller may pay {R}{R}. If the
+    player does, they may copy this spell and may choose a new target for that copy." Two questions
+    for the player the spell hit, or the controller of the permanent it hit
+    (`who: 'target-or-its-controller'`): pay or not, with the mana on the paying answer
+    (`payIfChosen`), and then, only for a player who paid, a new target for the copy. The copy is
+    theirs, made from the resolving spell as Sevinne's Reclamation's is (D715), and it is the same
+    card, so it makes the same offer to whoever it hits: the chain the card is named for.
+
+    The bot pays whenever it can: three damage back for {R}{R} is the reason to hold the mana.
+  */
+  const chain = /^then that player or that permanent's controller may pay ((?:\{[^}]+\})+) and if they do they may copy this spell and may choose a new target for that copy$/i.exec(clause.trim());
+  if (chain !== null) {
+    const price = chain[1]!;
+    const PAY = `Pay ${price} and copy it`;
+    return {
+      decisions: [
+        {
+          who: 'target-or-its-controller', prompt: `Pay ${price} to copy this spell?`, options: [PAY, 'Decline'],
+          payIfChosen: { option: PAY, cost: price }, best: () => PAY,
+        },
+        {
+          who: 'target-or-its-controller', prompt: 'Choose a new target for the copy?',
+          retargets: (_state, object) => object.id,
+          optional: true, askOnlyIfChosen: PAY,
+        } as TargetDecisionSpec,
+      ],
+      effect: (c) => {
+        const spell = c.resolving;
+        const payer = c.decisions[0]?.seat;
+        if (spell === undefined || payer === undefined || c.decisions[0]?.option !== PAY) return c.state;
+        const withSpell = { ...c.state, stackObjects: { ...c.state.stackObjects, [spell.id]: spell } };
+        const copied = copySpellOnStack(withSpell, spell.id, payer, c.decisions[1]?.target);
+        const objects = { ...copied.stackObjects };
+        delete objects[spell.id];
+        return { ...copied, stackObjects: objects };
+      },
+    };
+  }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -22822,6 +22861,8 @@ function clausesOf(line: string): readonly string[] {
       (CR 701.19e), and only when the library is the zone searched, so it is folded away.
     */
     .replace(/(search your library and\/or graveyard [^.]+)\.\s+If you search(?:ed)? your library this way, shuffle(?: it)?(?=\.|$)/gi, '$1')
+    // Chain Lightning (D725): the payment and the copy are one offer to one player.
+    .replace(/then that player or that permanent's controller may pay ((?:\{[^}]+\})+)\.\s+If the player does, they may copy this spell and may choose a new target for that copy/gi, 'then that player or that permanent\'s controller may pay $1 and if they do they may copy this spell and may choose a new target for that copy')
     // Sylvan Library (D721): three sentences, one question chain. See `sylvanLibrary`.
     .replace(/you may draw two additional cards\.\s+If you do, choose two cards in your hand drawn this turn\.\s+For each of those cards, pay 4 life or put the card on top of your library/gi, 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the

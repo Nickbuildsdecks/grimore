@@ -4126,6 +4126,20 @@ function decisionPlan(
 
       No card target means nobody is asked, as `hit-player` does with no defender.
     */
+    /*
+      "That player or that permanent's controller" (D725, Chain Lightning): the seat the spell's
+      first target is, or the controller of the permanent it is. Read whatever zone the permanent
+      is in now, for `referent-player`'s reason below; nobody is asked with no target.
+    */
+    if (spec.who === 'target-or-its-controller') {
+      const first = object.targets[0];
+      if (first?.kind === 'player') plan.push({ seat: first.seat, specIndex: i });
+      else if (first?.kind === 'card') {
+        const inst = state.instances[first.id];
+        if (inst !== undefined) plan.push({ seat: inst.zoneSeat, specIndex: i });
+      }
+      continue;
+    }
     if (spec.who === 'referent-player') {
       const object0 = object.targets.find((t) => t.kind === 'card');
       // A delayed trigger has no targets but may carry what it is about (Arcane Denial, D707).

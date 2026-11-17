@@ -16204,6 +16204,75 @@ describe('"Sacrifice it unless you <do something>" (D724)', () => {
   });
 });
 
+describe('Chain Lightning: the player it hit may pay to copy it back (D725)', () => {
+  const ROWS = [
+    { name: 'Test Chain', type_line: 'Sorcery', oracle_text: "Test Chain deals 3 damage to any target. Then that player or that permanent's controller may pay {R}{R}. If the player does, they may copy this spell and may choose a new target for that copy.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'chain', name: 'Chain',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 40 }],
+    data: ROWS,
+  });
+  const PAY = 'Pay {R}{R} and copy it';
+  const table = (theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'chain', 1: 'chain' }, deckSpecs: { chain: deck.deck },
+    hands: { 0: ['Test Chain'] }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, target: Target) => {
+    let next = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chain'), targets: [target] } as Action);
+    for (let i = 0; i < 6 && next.pendingDecision === null && next.stackOrder.length > 0; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the player it hit is asked, and declining ends it', () => {
+    let s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual([PAY, 'Decline']);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], option: 'Decline' } as Action), 20);
+    expect(life(s, 1)).toBe(17);
+    expect(life(s, 0)).toBe(20);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('paying copies it under their control, aimed where they choose', () => {
+    let s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [], option: PAY } as Action);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [], target: { kind: 'player', seat: 0 } } as Action);
+    // The {R}{R} is paid as the answers are applied: both Mountains are tapped.
+    expect(ids(s, 1, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+    expect(s.stackOrder).toHaveLength(1);
+    const copy = s.stackObjects[s.stackOrder[0]!]!;
+    expect(copy.controller).toBe(1);
+    // The copy resolves and hits seat 0, who has no {R}{R} to send it back.
+    s = drain(s, 20);
+    expect(life(s, 0)).toBe(17);
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('a player who cannot pay is not asked, and a creature\'s controller is the one asked', () => {
+    const broke = drain(cast(table([]), { kind: 'player', seat: 1 }), 20);
+    expect(life(broke, 1)).toBe(17);
+    expect(broke.stackOrder).toEqual([]);
+    const s = table(['Test Bear', 'Mountain', 'Mountain']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const asked = cast(s, { kind: 'card', id: bear });
+    expect(asked.pendingDecision?.seat).toBe(1);
+    expect(asked.instances[bear]!.damage).toBe(3);
+  });
+
+  it('the bot pays when it can', () => {
+    const s = cast(table(['Mountain', 'Mountain']), { kind: 'player', seat: 1 });
+    expect(botAction(s, 1)).toMatchObject({ type: 'auto:decide', option: PAY });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

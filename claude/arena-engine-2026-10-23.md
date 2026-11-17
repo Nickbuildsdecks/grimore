@@ -30158,3 +30158,41 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,793, all passing
 
 Coverage: 11,532 of 31,743 cards (+78), 31,013 of 59,509 lines (+200). Staples: 235 of 244.
+
+## D725 — Chain Lightning: the player it hit may pay to copy it back
+
+"Chain Lightning deals 3 damage to any target. Then that player or that permanent's controller may
+pay {R}{R}. If the player does, they may copy this spell and may choose a new target for that
+copy."
+
+How it is read:
+- **A new chooser, `target-or-its-controller`.** The seat the spell's first target is, or the
+  controller of the permanent it is, read in whatever zone the permanent is now (as
+  `referent-player` reads its card). Nobody is asked with no target. `TargetDecisionSpec` takes it
+  too, and now accepts `askOnlyIfChosen`, so a new target can be asked only of a player who paid.
+- **Two questions to that player.** Pay or decline, with {R}{R} on the paying answer
+  (`payIfChosen`, so it is offered only to a player who can pay). Then, only after paying, a new
+  target for the copy. `clausesOf` joins the two sentences, since the payment and the copy are one
+  offer.
+- **The copy is theirs.** It is made from the resolving spell the way Sevinne's Reclamation's is
+  (D715) and goes on the stack under the payer's control. It is the same card, so it makes the same
+  offer to whoever it hits: the chain the card is named for.
+- **The bot pays whenever it can.** Three damage back for {R}{R} is why a player holds the mana.
+
+Staples went from 235 to 236 (Chain Lightning).
+
+**Tests.** 5 engine tests:
+- the card reads;
+- the player it hit is asked, and declining ends it (17 life, nothing on the stack);
+- paying taps both Mountains, and the copy goes on the stack under their control, aimed where they
+  choose; it hits the caster, who can't pay to send it back;
+- a player who can't pay isn't asked, and the controller of a creature it hit is the one asked;
+- the bot pays when it can.
+
+Faults injected by script: 8 of 8 caught.
+
+    engine tests: 4,801, all passing
+
+Coverage: 11,557 of 31,743 cards (+1), 31,044 of 59,509 lines (+1). Staples: 236 of 244 (+1).
+The denominator grew with the other session's D902 ("a size that is a count"), which made `*/*`
+creatures measurable; the baseline is the merged head e37f376 (11,556 cards, 31,043 lines).
