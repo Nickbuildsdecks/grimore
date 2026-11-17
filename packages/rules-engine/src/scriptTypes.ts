@@ -668,6 +668,8 @@ export type TriggerEvent =
       readonly kind: 'damaged';
       /** Set by the engine: which permanent was dealt the damage. */
       readonly subject?: string;
+      /** Set by the engine: how much it was dealt (D904); combat damage is summed, as one event. */
+      readonly amount?: number;
     }
   /**
    * "Whenever ~ **deals damage to an opponent**" — any damage, not only combat damage (D566).
@@ -691,7 +693,14 @@ export type TriggerEvent =
       readonly amount?: number;
       readonly who?: 'self' | 'attached' | 'another' | 'any';
       readonly of?: 'you' | 'opponent' | 'any';
-      readonly to?: 'opponent' | 'player';
+      /**
+       * `any` (D904) is "Whenever ~ deals damage", to anything: answered only by the engine's
+       * `anything` events, one per non-combat hit and one per source for its combat damage in a
+       * step, so a trampler that hits a blocker and the player triggers it once, with the total.
+       */
+      readonly to?: 'opponent' | 'player' | 'any';
+      /** Set by the engine on the `to: 'any'` events (D904). */
+      readonly anything?: true;
       /**
        * "deals **combat** damage to an opponent" — the narrow form of the same sentence, for the
        * handful of cards that print "opponent" where `combat-damage` prints "player".

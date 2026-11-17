@@ -1370,6 +1370,9 @@ function triggerMatches(
         whoever controls the permanent this trigger is printed on. A missing `defender` refuses —
         an event that does not say who was hit cannot have hit an opponent.
       */
+      // "Deals damage" to anything (D904) and to a player are separate events, so neither is counted twice.
+      if (want.kind === 'deals-damage'
+        && (want.to === 'any') !== ((event as { anything?: true }).anything === true)) return false;
       if (want.kind === 'deals-damage' && (want.to ?? 'player') === 'opponent') {
         const hit = (event as { defender?: SeatIndex }).defender;
         if (hit === undefined || hit === sourceSeat) return false;
@@ -1780,7 +1783,8 @@ function fireTrigger(
     ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
     ...(attacked === undefined ? {} : { attacked }),
     // How much damage the event was, for "that many" (D903).
-    ...((event.kind === 'combat-damage' || event.kind === 'deals-damage') && event.amount !== undefined
+    ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged')
+      && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
     ...(answering === undefined ? {} : { answering }),
     ...(subject === undefined
@@ -3343,6 +3347,31 @@ function settle(state: GameState, before: GameState): GameState {
       rule is the rule, and the first such card should not have to rediscover it.
     */
     const hurtInCombat = new Set<string>();
+    // Combat damage is one event per creature dealt it, so "that much" is the sum (D904).
+    const combatTotal = new Map<string, number>();
+    for (const record of landed) {
+      if (record.to.kind === 'card' && record.combat === true) {
+        combatTotal.set(record.to.id, (combatTotal.get(record.to.id) ?? 0) + record.amount);
+      }
+    }
+    /*
+      And "Whenever ~ deals damage", to anything (D904): one event per non-combat hit, and one per
+      source for its combat damage, with the total, because combat damage is dealt at once.
+    */
+    const dealtInCombat = new Map<string, number>();
+    for (const record of landed) {
+      if (record.source === null || !record.sourceInPlay || record.amount <= 0) continue;
+      if (record.combat === true) {
+        dealtInCombat.set(record.source, (dealtInCombat.get(record.source) ?? 0) + record.amount);
+        continue;
+      }
+      next = raise(next, { kind: 'deals-damage', anything: true, amount: record.amount },
+        (next.vanished[record.source] ?? next.instances[record.source])?.zoneSeat, record.source);
+    }
+    for (const [source, amount] of dealtInCombat) {
+      next = raise(next, { kind: 'deals-damage', anything: true, amount, combat: true },
+        (next.vanished[source] ?? next.instances[source])?.zoneSeat, source);
+    }
     for (const record of landed) {
       if (record.to.kind === 'card') {
         const id = record.to.id;
@@ -3350,8 +3379,9 @@ function settle(state: GameState, before: GameState): GameState {
           if (hurtInCombat.has(id)) continue;
           hurtInCombat.add(id);
         }
+        const amount = record.combat === true ? combatTotal.get(id) ?? record.amount : record.amount;
         next = raise(
-          next, { kind: 'damaged' }, (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
+          next, { kind: 'damaged', amount }, (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
         );
       } else if (record.source !== null && record.sourceInPlay) {
         /*

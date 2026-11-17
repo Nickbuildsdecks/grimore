@@ -30239,3 +30239,34 @@ Faults injected by hand: 5 of 5 caught.
     reader sits beside this one)
 
 Coverage: 11,544 of 31,743 cards (+12), 31,035 of 59,509 lines (+22). Staples: 235 of 244.
+
+## D904 — "Deals damage" to anything, and "is dealt damage", with that much
+
+"Whenever ~ deals damage, you gain that much life" (and its enchanted-creature form), and "Whenever
+~ is dealt damage, draw that many cards / it deals that much damage to any target / you lose that
+much life / create that many 1/1 Insects".
+
+How it is read:
+- **"Deals damage" to anything** is `deals-damage` with `to: 'any'`, answered only by the engine's
+  `anything` events. The matcher keeps those apart from the player and opponent events, so a hit
+  on a player is never counted twice.
+  - One event per non-combat hit.
+  - One per source for its combat damage in a step, with the total: combat damage is dealt at once
+    (CR 510.2), so a trampler that hits a blocker and the player triggers once.
+- **"Is dealt damage"** (`damaged`) carries the amount. Combat damage to one creature is summed, as
+  the one event it already was: a double block triggers once, for the total.
+- **The words.** D903's "that many" mark now applies to `damaged` events too. The new clauses are
+  "you lose that much life", "it deals that much damage to <target>" and "… to you", and "create
+  that many <token>".
+
+**Tests.** 3 engine tests:
+- both cards read;
+- the Drinker gains 3 unblocked and 3 into a Wall;
+- a Bolt at the Sponge draws 3, and two Bears blocking it draw 4, once.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,808, all passing
+
+Coverage on the merged head (with the other session's D724 and D725): 11,604 of 31,743 cards,
+31,112 of 59,509 lines. Staples: 236 of 244.

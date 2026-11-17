@@ -17155,6 +17155,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} is dealt damage, (.+)$`, 'i'),
     on: [{ kind: 'damaged' }],
   },
+  // "Whenever ~ deals damage", to anything (D904): see the event's `to: 'any'`.
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals damage, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'any' }],
+  },
+  {
+    prologue: () => /^Whenever (?:enchanted|equipped) creature deals damage, (.+)$/i,
+    on: [{ kind: 'deals-damage', who: 'attached', to: 'any' }],
+  },
   /*
     **Discarding and cycling as events** (D567).
 
@@ -19067,7 +19076,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       the words name some other number, and no reader knows the mark.
     */
     const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
-    const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage')
+    const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
@@ -22590,6 +22599,21 @@ function readEffect(
       return { effect: (c) => drawLater(c.state, c.controller, n(c)), immediate: (c) => draw(c.state, c.controller, n(c)) };
     }
     if (/^you gain \u000e much life$/i.test(text)) return { effect: (c) => gainLife(c.state, c.controller, n(c)) };
+    // D904: the other things a damage trigger does "that much" of.
+    if (/^you lose \u000e much life$/i.test(text)) return { effect: (c) => loseLife(c.state, c.controller, n(c)) };
+    if (new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to you$`, 'i').test(text)) {
+      return { effect: (c) => dealDamage(c.state, { kind: 'player', seat: c.controller }, n(c), { controller: c.controller, source: c.source }) };
+    }
+    const muchAt = new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to (.+)$`, 'i').exec(text);
+    if (muchAt !== null) {
+      const spec = targetSpecFrom(muchAt[1]!, false);
+      if (spec !== null) return { targets: [spec], effect: (c) => damageFirstTarget(c, n(c)) };
+    }
+    const manyTokens = /^create \u000e many (.+ creature tokens?(?: with .+)?)$/i.exec(text);
+    if (manyTokens !== null) {
+      const made = tokenFrom(`create X ${manyTokens[1]!}`);
+      if (made !== null) return { effect: (c) => (n(c) === 0 ? c.state : createToken(c.state, c.controller, made.token, n(c))) };
+    }
     if (/^that player mills \u000e many cards$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };
     }

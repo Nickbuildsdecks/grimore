@@ -16329,6 +16329,61 @@ describe('"that many" after a combat-damage trigger is the damage dealt (D903)',
   });
 });
 
+describe('"deals damage" to anything, and "is dealt damage", with that much (D904)', () => {
+  const ROWS = [
+    { name: 'Test Drinker', type_line: 'Creature — Vampire', oracle_text: 'Whenever Test Drinker deals damage, you gain that much life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Sponge', type_line: 'Creature — Beast', oracle_text: 'Whenever Test Sponge is dealt damage, draw that many cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '9' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '5' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'muchdmg', name: 'Much damage',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], theirs: string[] = [], hand1: string[] = [], first: SeatIndex = 0) => arena({
+    decks: { 0: 'muchdmg', 1: 'muchdmg' }, deckSpecs: { muchdmg: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, hands: { 1: hand1 }, turn: 3, firstSeat: first,
+  });
+  const attack = (s0: GameState, name: string, blockers: string[]) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    const attacker = find(s, 0, 'battlefield', name);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    if (blockers.length > 0) {
+      const ids1 = ids(s, 1, 'battlefield').filter((id) => blockers.includes(s.cardDefs[s.instances[id]!.defKey]!.name));
+      s = apply(s, { type: 'auto:block', by: 1, blocks: ids1.map((blocker) => ({ blocker, attacker })) } as Action);
+    }
+    return drain(advanceTo(s, 'postcombat-main'), 30);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('gains as much life as it deals, to a player or to a blocker', () => {
+    expect(attack(table(['Test Drinker']), 'Test Drinker', []).seats[0]!.life).toBe(23);
+    expect(attack(table(['Test Drinker'], ['Test Wall']), 'Test Drinker', ['Test Wall']).seats[0]!.life).toBe(23);
+  });
+
+  it('a Bolt at it draws three; two blockers at once are one event, the sum', () => {
+    let s = advanceTo(table(['Test Sponge'], [], ['Test Bolt'], 1), 'precombat-main');
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Sponge') }] } as Action);
+    s = drain(s, 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 3);
+
+    const before = advanceTo(table(['Test Sponge'], ['Test Bear', 'Test Bear']), 'declare-attackers');
+    const hand0 = ids(before, 0, 'hand').length;
+    const after = attack(before, 'Test Sponge', ['Test Bear']);
+    expect(ids(after, 0, 'hand').length).toBe(hand0 + 4);
+    // One trigger, not two.
+    expect(after.log.filter((l) => /draw that many cards/i.test(l.message)).length).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
