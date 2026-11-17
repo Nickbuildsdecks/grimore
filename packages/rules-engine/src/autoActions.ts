@@ -13,7 +13,7 @@ import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPaid, withInstance } from './cardActions.js';
 import {
-  characteristicsOf, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  characteristicsOf, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
@@ -1276,9 +1276,18 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (shares) {
       for (const source of paid.tapped) {
         const sourceInst = next.instances[source];
-        const triggers = sourceInst === undefined ? [] : scriptForCard(next.cardDefs[sourceInst.defKey])?.triggers ?? [];
+        if (sourceInst === undefined) continue;
+        const triggers = scriptForCard(next.cardDefs[sourceInst.defKey])?.triggers ?? [];
         const index = triggers.findIndex((t) => t.whenManaSpent === 'creature-sharing-commander-type');
         if (index >= 0) next = pushAbility(next, source, action.by, index, [], 'triggered', triggers[index]!.description);
+        // And the same rider handed to the source by another card (`grantedTriggers`, D251), pushed
+        // with its grantor as automation pushes any granted trigger.
+        for (const ref of grantedTriggersOn(next, sourceInst)) {
+          const grantorDef = ref.defKey === undefined ? undefined : next.cardDefs[ref.defKey];
+          const granted = (grantorDef === undefined ? undefined : scriptForCard(grantorDef))?.grantedTriggers?.[ref.index];
+          if (granted?.whenManaSpent !== 'creature-sharing-commander-type') continue;
+          next = pushAbility(next, source, action.by, ref.index, [], 'triggered', granted.description, {}, ref);
+        }
       }
     }
   }

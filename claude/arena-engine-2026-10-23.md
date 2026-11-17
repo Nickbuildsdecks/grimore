@@ -31841,6 +31841,9 @@ How it is read:
     commander of its caster, the trigger goes on the stack above the spell;
   - its "scry 1" is the existing scry reader (`manaSpentScryTrigger`).
 - `compile.ts` reads a mana line followed by this rider as the mana abilities plus the trigger.
+- The rider is also found when another card grants it (`grantedTriggers`, D251), pushed with its
+  grantor as automation pushes any granted trigger. The guards caught the first draft reading only
+  the printed list.
 - **Known limitation.** Mana tapped from Path by hand and left floating has lost its source by the
   time it is spent, so it doesn't trigger. Only mana the payment taps Path for does. The
   automatic payer does that whenever Path is the source it uses, which is how the bot and the
