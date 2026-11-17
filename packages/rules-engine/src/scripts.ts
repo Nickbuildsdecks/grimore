@@ -12353,6 +12353,13 @@ const selfRef = (name: string): string => {
  */
 interface ReadEffect {
   readonly effect: EffectFn;
+  /**
+   * Reflexive triggers this reading queues (D948, CR 603.12): "you may pay {2}. When you do,
+   * target creature can't block this turn". The effect queues one by its key; the caller adds the
+   * trigger to the card, and `settle` puts it on the stack, its targets chosen then. Only a caller
+   * that does both may accept a reading carrying this; see `optionalEffect`'s `allowReflexive`.
+   */
+  readonly reflexive?: readonly TriggerDef[];
   readonly targets?: readonly TargetSpec[];
   readonly decisions?: readonly DecisionSpecOf[];
   /** Bot hints a *spell* of this family carries. The trigger path drops them — see below. */
@@ -19318,8 +19325,47 @@ function eventRelativeEffect(
  * and one whose question cannot be gated — both below.
  */
 function optionalEffect(
-  clause: string, reader: (text: string) => ReadEffect | null,
+  clause: string, reader: (text: string) => ReadEffect | null, allowReflexive = false,
 ): ReadEffect | null {
+  /*
+    **"When you do"** (D948, CR 603.12): "you may pay {2}. When you do, target creature can't
+    block this turn." The second half is a *reflexive* triggered ability, which triggers when the
+    first half is done and chooses its targets then, after the payment, not before.
+
+    Read as the "If you do" sentence below with the second half replaced by an effect that queues
+    the reflexive trigger, and that trigger carried out on the reading for the caller to add to the
+    card. So the first half is every "may" shape this function already reads (a price, a sacrifice,
+    a discard, a plain yes), and the second half is any clause the reader reads, targets and
+    questions included, because those now belong to a trigger of their own.
+  */
+  const reflex = /^(you may [^.]+)\.\s*When you do, (.+)$/i.exec(clause);
+  if (reflex !== null) {
+    if (!allowReflexive) return null;
+    const yText = reflex[2]!.trim();
+    const y = reader(yText);
+    if (y === null || y.beforeDecisions !== undefined || y.reflexive !== undefined || dividesAQuantity(y)) return null;
+    const key = yText;
+    const queue: ReadEffect = {
+      effect: (c) => ({
+        ...c.state,
+        reflexive: [...(c.state.reflexive ?? []), {
+          source: c.source, key, controller: c.controller, ...(c.subject === undefined ? {} : { subject: c.subject }),
+        }],
+      }),
+    };
+    const first = optionalEffect(`${reflex[1]!}. If you do, ${yText}`, (text) => (text.trim() === yText ? queue : reader(text)));
+    if (first === null) return null;
+    return {
+      ...first,
+      reflexive: [{
+        on: { kind: 'reflexive', key },
+        description: yText,
+        ...(y.targets === undefined ? {} : { targets: y.targets }),
+        ...(y.decisions === undefined ? {} : { decisions: y.decisions }),
+        effect: y.effect,
+      }],
+    };
+  }
   /*
     **A "may" with a price on it** (D448): "you may pay {1}. If you do, draw a card."
 
@@ -19827,7 +19873,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       currently discriminates on nothing and is kept because it is the cheap safe direction. Every
       other caller keeps it too.
     */
-    const read = reader(clause) ?? optionalEffect(clause, reader) ?? punisherEffect(clause, reader, on, name);
+    const read = reader(clause) ?? optionalEffect(clause, reader, true) ?? punisherEffect(clause, reader, on, name);
     if (read === null) return null;
     /*
       **A trigger that divides a quantity is not emitted at all**, the third call site of
@@ -19864,7 +19910,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.
         ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
         effect: read.effect,
-      } as TriggerDef)),
+      } as TriggerDef)).concat(read.reflexive ?? []),
     };
   }
   return null;

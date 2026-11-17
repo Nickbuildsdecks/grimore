@@ -951,6 +951,14 @@ export interface AutomationState {
    */
   readonly copied: readonly CopiedSpell[];
   /**
+   * Reflexive triggers waiting to go on the stack (D948, CR 603.12): queued by an effect whose
+   * "When you do" has just been done, fired by `settle` with the trigger whose `on.key` matches.
+   * Optional so a game saved before D948 still loads.
+   */
+  readonly reflexive?: readonly {
+    readonly source: string; readonly key: string; readonly controller: SeatIndex; readonly subject?: string;
+  }[];
+  /**
    * Permanents **turned over** since the last settle: transform (CR 701.28).
    *
    * The ninth member of the detect-rather-than-announce family — `entered`, `died`, `left`, `drew`,

@@ -31946,3 +31946,47 @@ keyword check were pinned by the last two tests).
     engine tests: 5,047, all passing
 
 Coverage: 12,301 of 31,743 cards (+8), 32,259 of 59,509 lines (+15). Staples: 239 of 244.
+
+## D948 — Reflexive triggers: "When you do, …"
+
+The clause tally of single-unread-line cards put "you may pay {M}. When you do, …" near the top:
+178 legal cards had a "When you do" sentence as their only unread line. "When you do" is a reflexive
+triggered ability (CR 603.12). It triggers when the first half has been done, and chooses its
+targets then, after the payment and not before. The engine had no such trigger.
+
+How it is read:
+- **A new trigger kind, `reflexive`**, raised by nothing on the board. Its `key` is the printed text
+  of its effect.
+- **The compiler** (`optionalEffect`, from the trigger reader only) reads "you may X. When you do,
+  Y" as the existing "you may X. If you do, Y", with Y replaced by an effect that queues the
+  reflexive trigger. Y's own reading, with its targets and questions, becomes the trigger and is
+  added to the card's triggers. So every "may" shape already read (a price, a sacrifice, a discard,
+  a plain yes) can be the first half.
+- **The engine**: the queue is `GameState.reflexive`. `settle` drains it with the other event lists
+  and hands each entry to `fireTrigger`, with the trigger found on its card by key. Targets are
+  asked as for any trigger, after the payment, and the first half's subject is carried, so "it"
+  means the same in both halves.
+- **Refused**: every other caller of `optionalEffect` still refuses "When you do", because only the
+  trigger reader adds the second trigger to the card. A "When you do" with no "may" in front ("sacrifice
+  it. When you do, …") is not read yet, nor is one whose second half does not read on its own (29
+  of the "you may pay" lines).
+
+24 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the card reads, its second half is a trigger of its own, and a "when you do" with no "may" stays
+  unread;
+- paid: asked to pay with nothing aimed, then the reflexive trigger asks for its target, and the
+  effect lands;
+- declined: nothing is aimed and nothing happens;
+- two on one card: each "when you do" fires its own half;
+- a "may" that asks a question: discarded, then the draw.
+
+Faults injected by hand: 6 of 6 caught, after one redundant check (the key compared again in
+`triggerMatches`, where the trigger was already chosen by key) was simplified away and the
+two-trigger test added.
+
+    engine tests: 5,055, all passing
+
+Coverage: 12,325 of 31,743 cards (+24), 32,290 of 59,509 lines (+31). Staples: 240 of 244 (the
+other session's Path of Ancestry, merged in D947's merge).

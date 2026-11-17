@@ -7920,6 +7920,7 @@ describe('deck coverage', () => {
       - `script prototype` (D934): prototype. No pool deck has one. Driven at runtime by "prototype (D934)".
       - `script cipher` (D936): cipher. No pool deck has one. Driven at runtime by "cipher, and casting a copy of a card (D936)".
       - `script umbraArmor` (D947): umbra armor. No pool deck has one. Driven at runtime by "umbra armor (D947)".
+      - `trigger reflexive` (D948): "When you do". No pool deck has one. Driven at runtime by "reflexive triggers (D948)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7958,6 +7959,7 @@ describe('deck coverage', () => {
       'script prototype',
       'script cipher',
       'script umbraArmor',
+      'trigger reflexive',
     ]);
 
     const declared = [
@@ -19785,6 +19787,97 @@ describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D
     s = apply(s, { type: 'auto:activate', by: 0, card: path, abilityIndex: green });
     s = cast(s, 'Test Elf');
     expect(s.stackOrder).toHaveLength(1);
+  });
+});
+
+describe('reflexive triggers: "When you do, …" (D948)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Payer', "When Test Payer enters, you may pay {2}. When you do, target creature can't block this turn."),
+    C('Test Looter', 'When Test Looter enters, you may discard a card. When you do, draw two cards.'),
+    C('Test Twin', "When Test Twin enters, you may pay {1}. When you do, target creature can't block this turn.\nWhenever Test Twin attacks, you may pay {1}. When you do, draw a card."),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd948', name: 'Reflexive',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string, hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd948', 1: 'd948' }, deckSpecs: { d948: deck.deck }, hands: { 0: [card, ...hand] },
+    battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Cast `card` and stop at its enters trigger's question. */
+  const toQuestion = (s: GameState, card: string) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action), 30);
+    for (let i = 0; i < 8 && next.pendingDecision === null && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole, and the second half is a trigger of its own', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    if (!read.ok) return;
+    expect(read.script?.triggers?.map((t) => t.on.kind)).toEqual(['etb', 'reflexive']);
+    expect(read.script?.triggers?.[1]?.targets?.length).toBe(1);
+    // A "when you do" with no "may" in front is not this reading.
+    expect(compileCard(C('Test Bare', 'When Test Bare enters, sacrifice a land. When you do, draw a card.') as never)).toMatchObject({ ok: true, unread: [{}] });
+  });
+
+  it('paid: the target is chosen after the payment, by a trigger of its own, and the effect lands', () => {
+    let s = toQuestion(seated('Test Payer'), 'Test Payer');
+    // Asked to pay with nothing aimed yet.
+    expect(s.pendingDecision?.prompt).toMatch(/Pay \{2\}/);
+    expect(s.pendingChoice).toBeNull();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {2}' } as Action), 30);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Mountain' && s.instances[id]!.tapped).length).toBe(2);
+    // Now the reflexive trigger asks for its target.
+    expect(s.pendingChoice).not.toBeNull();
+    const [a] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: a! }] }), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(characteristicsOf(s, s.instances[a!]!).cantBlock).toBe(true);
+  });
+
+  it('declined: nothing is aimed and nothing happens', () => {
+    let s = toQuestion(seated('Test Payer'), 'Test Payer');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Decline' } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.pendingChoice).toBeNull();
+    expect(ids(s, 1, 'battlefield').some((id) => characteristicsOf(s, s.instances[id]!).cantBlock)).toBe(false);
+    expect(s.reflexive ?? []).toEqual([]);
+  });
+
+  it('two on one card: each "when you do" fires its own half', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd948', 1: 'd948' }, deckSpecs: { d948: deck.deck },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Test Twin'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const twin = find(s, 0, 'battlefield', 'Test Twin');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: twin, defender: 1 }] }), 30);
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}' } as Action), 30);
+    // The attack's half draws; the enters half's target is never asked for.
+    expect(s.pendingChoice).toBeNull();
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('a "may" that asks a question: discarded, then the draw', () => {
+    let s = toQuestion(seated('Test Looter', ['Test Bear', 'Test Bear']), 'Test Looter');
+    const hand = ids(s, 0, 'hand').length;
+    for (let i = 0; i < 6 && s.pendingDecision !== null; i++) {
+      const d = s.pendingDecision;
+      s = drain(apply(s, d.candidates.length > 0
+        ? { type: 'auto:decide', by: 0, cards: [d.candidates[0]!] } as Action
+        : { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action), 30);
+    }
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
   });
 });
 
