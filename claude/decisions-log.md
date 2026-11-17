@@ -48455,3 +48455,54 @@ Faults injected by hand: 9 of 9 caught. The plot offer's own timing was pinned b
     engine tests: 4,910, all passing
 
 Coverage: 11,891 of 31,743 cards (+15), 31,567 of 59,509 lines (+33). Staples: 238 of 244.
+
+## D728 — Fact or Fiction: an opponent splits the top five, the caster takes a pile
+
+"Reveal the top five cards of your library. An opponent separates those cards into two piles. Put
+one pile into your hand and the other into your graveyard."
+
+**The infrastructure.**
+- **Revealed cards, `AutomationState.revealed`** (CR 701.20a). Cards a resolving spell reveals to
+  the table. Every seat and spectators see them (`view.ts` sends them as cards without their
+  library's list). A question may be asked about them, `DecisionZone` `revealed`, which unlike a
+  search or a scry moves nothing and shuffles nothing when answered. The spell clears it as it
+  finishes.
+- **A new chooser, `an-opponent`.** The next opponent in turn order after the controller. Exact at
+  two players. **Known limitation:** at a pod the caster would choose which opponent separates, and
+  this doesn't ask.
+- **D721's `onReach` hook now receives the answers so far, and a choice question may carry one.**
+  That is how the opponent's split becomes two named piles (`AutomationState.piles`) before the
+  caster is asked, so the caster's two answers can list the cards in each ("First pile: Island",
+  "Second pile: …", either of which may be "nothing").
+
+How the card is read:
+- `clausesOf` joins the three sentences.
+- The top N cards are revealed before anything is asked.
+- The opponent chooses the first pile from them; the rest are the second.
+- The caster chooses a pile. It goes to hand, and the other goes to the graveyard.
+- **The bot**, as separator, puts the card worth most alone in the first pile. As caster it takes
+  the pile worth more, counting each card as one plus its mana value.
+- Sphinx of Uthuun prints the same lines and reads whole as well.
+
+**The web client** shows revealed cards in a row for the player choosing among them, with the hint
+"tap the revealed cards below". Typecheck and its 270 tests pass.
+
+Staples went from 238 to 239 (Fact or Fiction).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- the top five are revealed to both seats, and the opponent is the one asked, from them;
+- the caster takes the pile they choose and the other goes to the graveyard (four to hand and one
+  binned; or, with an empty first pile, all five binned);
+- the bot splits off its best card and answers as caster.
+
+Faults injected by script: 9 of 9 caught.
+
+**A slip, caught by its own test.** The effect first read the caster's answer with `chosenOption`,
+which reads the *first* answer, here the opponent's split, which has no option. So choosing the
+empty first pile was taken as choosing the second. It reads the caster's answer by position now.
+
+    engine tests: 4,914, all passing (merged with the other session's D920–D922)
+
+Coverage: 11,894 of 31,743 cards (+2), 31,572 of 59,509 lines (+3), against 82ce488. Staples: 239
+of 244 (+1).
