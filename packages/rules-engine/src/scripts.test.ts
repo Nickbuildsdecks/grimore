@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, untapPermanent } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
@@ -15923,6 +15923,104 @@ describe('Animate Dead: an Aura that brings its creature back, and takes it away
     // The Aura has nothing it may enchant and falls off; its leaving sacrifices nothing.
     expect(s.instances[aura]!.zone).toBe('graveyard');
     expect(s.instances[giant]!.zone).toBe('battlefield');
+  });
+});
+
+describe('stun counters: an untap that removes a counter instead (D723)', () => {
+  const ROWS = [
+    { name: 'Test Strider', type_line: 'Creature — Elemental', oracle_text: 'When Test Strider enters, tap target creature an opponent controls and put a stun counter on it.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wake', type_line: 'Instant', oracle_text: 'Untap target creature.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'stun', name: 'Stun',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'stun', 1: 'stun' }, deckSpecs: { stun: deck.deck },
+    hands: { 0: hand }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const stun = (s: GameState, id: string) => s.instances[id]!.counters['stun'] ?? 0;
+  const stunned = () => {
+    let s = table(['Test Strider'], ['Test Bear']);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strider') });
+    s = drain(s, 20);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    // A stun counter on the card itself reads too (Ambling Stormshell's shape).
+    const shell = { ...ROWS[2], name: 'Test Shell', oracle_text: 'Whenever Test Shell attacks, put three stun counters on it and draw three cards.' };
+    expect(compileCard(shell as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('after a target, "put a +1/+1 counter on it" means the target (Big Play, Miraculous Recovery)', () => {
+    // Before D723 "it" was the spell itself here, so the counter was put on nothing.
+    const rows = [
+      ...ROWS,
+      { name: 'Test Play', type_line: 'Instant', oracle_text: 'Target creature gets +2/+2 and gains reach until end of turn. Put a +1/+1 counter on it.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+      { name: 'Test Recovery', type_line: 'Instant', oracle_text: 'Return target creature card from your graveyard to the battlefield. Put a +1/+1 counter on it.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    ];
+    const d = customDeck({ id: 'play', name: 'Play', entries: [...rows.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }], data: rows });
+    let s = advanceTo(arena({
+      decks: { 0: 'pl', 1: 'pl' }, deckSpecs: { pl: d.deck },
+      hands: { 0: ['Test Play', 'Test Recovery'] }, battlefield: { 0: ['Test Bear'] }, graveyard: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const onBoard = find(s, 0, 'battlefield', 'Test Bear');
+    const buried = find(s, 0, 'graveyard', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Play'), targets: [{ kind: 'card', id: onBoard }] } as Action)), 20);
+    expect(s.instances[onBoard]!.counters['+1/+1'], 'Big Play').toBe(1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Recovery'), targets: [{ kind: 'card', id: buried }] } as Action)), 20);
+    expect(s.instances[buried]!.zone).toBe('battlefield');
+    expect(s.instances[buried]!.counters['+1/+1'], 'Recovery').toBe(1);
+  });
+
+  it('the target is tapped and gets the counter, not the source', () => {
+    const s = stunned();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    expect(s.instances[bear]!.tapped).toBe(true);
+    expect(stun(s, bear)).toBe(1);
+    expect(stun(s, find(s, 0, 'battlefield', 'Test Strider'))).toBe(0);
+  });
+
+  it('its untap step removes the counter instead of untapping; the next one untaps', () => {
+    let s = stunned();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    for (let i = 0; i < 40 && !(s.activeSeat === 1 && s.step === 'upkeep'); i++) s = passBoth(s);
+    expect(s.instances[bear]!.tapped).toBe(true);
+    expect(stun(s, bear)).toBe(0);
+    // On through seat 0's turn 5 to seat 1's turn 6, whose untap step untaps it.
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[bear]!.tapped).toBe(false);
+  });
+
+  it('an untap effect is replaced the same way, and an untapped permanent keeps its counter', () => {
+    let s = stunned();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    let w = advanceTo(arena({
+      decks: { 0: 'stun', 1: 'stun' }, deckSpecs: { stun: deck.deck },
+      hands: { 0: ['Test Strider', 'Test Wake'] }, battlefield: { 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    w = drain(apply(w, { type: 'auto:cast', by: 0, card: find(w, 0, 'hand', 'Test Strider') }), 20);
+    const target = find(w, 1, 'battlefield', 'Test Bear');
+    w = drain(passBoth(apply(w, {
+      type: 'auto:cast', by: 0, card: find(w, 0, 'hand', 'Test Wake'), targets: [{ kind: 'card', id: target }],
+    } as Action)), 20);
+    expect(w.instances[target]!.tapped).toBe(true);
+    expect(stun(w, target)).toBe(0);
+    // Untapped, with a counter: nothing would become untapped, so nothing is removed.
+    const fresh = addCounters(table([], ['Test Bear']), find(table([], ['Test Bear']), 1, 'battlefield', 'Test Bear'), 'stun', 1);
+    const id = find(fresh, 1, 'battlefield', 'Test Bear');
+    let t = fresh;
+    for (let i = 0; i < 40 && !(t.activeSeat === 1 && t.step === 'upkeep'); i++) t = passBoth(t);
+    expect(stun(t, id)).toBe(1);
+    expect(stun(s, bear)).toBe(1);
+    // And an untap effect on it, directly (pinned by D723's break run).
+    expect(stun(untapPermanent(fresh, id), id)).toBe(1);
   });
 });
 
@@ -50594,7 +50692,8 @@ describe('a counter whose meaning is another line of the card (D603)', () => {
   });
 
   it('refuses a kind with a meaning of its own, and a keyword counter', () => {
-    for (const kind of ['lore', 'stun', 'time', 'flying']) {
+    // Stun was here until D723 gave it its replacement (`untapPermanent`, CR 122.1d); it reads now.
+    for (const kind of ['lore', 'time', 'flying']) {
       const read = compileCard({ ...THALLID, oracle_text: `At the beginning of your upkeep, put a ${kind} counter on Thallid.` } as never);
       expect(read.ok && read.unread.length).toBe(1);
     }

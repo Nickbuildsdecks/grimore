@@ -36,6 +36,7 @@ import {
   mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
   sacrifice,
+  untapPermanent,
 } from './effects.js';
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
@@ -1909,7 +1910,8 @@ function activate(
       ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
   }
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
-  if (ability.cost.untap === true) next = withInstance(next, inst.id, { tapped: false });
+  // A {Q} cost untaps through the stun counter's replacement too (D723, CR 122.1d).
+  if (ability.cost.untap === true) next = untapPermanent(next, inst.id);
   /*
     And the once-each-turn record, written beside the tap and the loyalty for the same reason: it
     is part of activating the ability, not part of resolving it, so an ability countered on the

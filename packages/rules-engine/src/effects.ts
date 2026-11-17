@@ -1802,7 +1802,21 @@ export function loseTheGame(state: GameState, seat: SeatIndex): GameState {
 export function tap(state: GameState, id: string, tapped = true): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
+  if (!tapped) return untapPermanent(state, id);
   return withInstance(state, id, { tapped });
+}
+
+/**
+ * Untaps a permanent, unless a stun counter stops it (D723, CR 122.1d): "If a permanent with a stun
+ * counter on it would become untapped, instead remove a stun counter from it." Only a permanent
+ * that is tapped would become untapped, so an untapped one keeps its counters. Every untap the
+ * engine makes goes through here: the untap step, an untap effect, and a {Q} cost.
+ */
+export function untapPermanent(state: GameState, id: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined || !inst.tapped) return state;
+  if ((inst.counters['stun'] ?? 0) > 0) return addCounters(state, id, 'stun', -1);
+  return withInstance(state, id, { tapped: false });
 }
 
 /**
@@ -1892,7 +1906,8 @@ export function untapAll(
     }
     // And one held down for as long as an effect says so (D589): Apathy, a Basalt Monolith.
     if (inst.tapped && characteristicsOf(next, inst).doesntUntap) continue;
-    if (inst.tapped) next = withInstance(next, id, { tapped: false });
+    // Through the stun counter's replacement (D723, CR 122.1d).
+    if (inst.tapped) next = untapPermanent(next, id);
   }
   return next;
 }

@@ -47451,3 +47451,49 @@ the creature it animated" test was added.
     engine tests: 4,783, all passing (after merging the other session's D719 Necropotence, D720 Finale of Devastation and D721 Sylvan Library)
 
 Coverage on the merged head: 11,448 of 31,653 cards, 30,801 of 59,306 lines. Staples: 235 of 244.
+
+## D723 — Stun counters, and "it" after a target is the target
+
+The biggest row in `phrase-gap.mjs` is "put a counter on <permanent>" (146 cards one line short),
+and its biggest single form is "tap target creature an opponent controls and put a stun counter on
+it" (Frostfist Strider, Referee Squad, Fractal Mascot, Splash Lasher and a dozen more).
+
+**Stun counters (CR 122.1d).** "If a permanent with a stun counter on it would become untapped,
+instead remove a stun counter from it." One function, `untapPermanent`, and every untap the engine
+makes goes through it: the untap step (`untapAll`), an untap effect (`tap(…, false)`), and a {Q}
+cost. A permanent that is already untapped would not become untapped, so it keeps its counters. The
+tabletop's manual "untap all" is left alone, since a tabletop move means what the player said.
+`stun` leaves `RULES_COUNTERS`, so "put three stun counters on it" reads like any other counter,
+and the targeted counter reader takes `stun` beside +1/+1 and -1/-1, as a harmful counter.
+
+**A correction found on the way: "it" after a target meant the source.** In "tap target creature
+an opponent controls and put a +1/+1 counter on it", the plain clause vocabulary read "put a +1/+1
+counter on it" first, where "it" is the trigger's subject or its source. So the counter went on the
+creature that entered, not on the one it tapped. On an instant ("Target creature gets +2/+2 … Put a
++1/+1 counter on it", Big Play), "it" was the spell itself, and the counter went nowhere. That is a
+wrong card, not an unread one. Now, when an earlier clause aimed at a card and this clause says a
+bare "it", the D530 borrow is tried first, and the plain reading only if no borrow reads.
+Miraculous Recovery's target is a graveyard card, a kind no pronoun swap reads, so "put N counters
+on it" after a single card target is read directly as a counter on that one object. Of the 30
+legal cards printing this shape, 3 read before the fix (Big Play, Charge the Sanctum, Miraculous
+Recovery), and all 3 lost their counter.
+
+**Tests.** 5 engine tests, plus the D603 test's refused list (stun moved out of it):
+- the card reads, and so does a stun counter on the card itself (Ambling Stormshell's shape);
+- Big Play's and Miraculous Recovery's counter lands on the target;
+- the tapped target gets the stun counter, not the source;
+- its untap step removes the counter instead of untapping, and the next one untaps;
+- an untap effect is replaced the same way, and an untapped permanent keeps its counter, through
+  the untap step and through an untap effect directly.
+
+Faults injected by script: 6 of 7 caught, then 2 of 2 for the Recovery path. The miss, the "only if
+tapped" guard in `untapPermanent`, is pinned by the last case above. Re-run: 1 of 1 caught.
+
+**Merged first.** The other session's D720–D722 merges and its Animate Dead (D722) were
+fast-forwarded in before this was numbered. The figures below are against its head, 330266d
+(11,449 cards, 30,803 lines).
+
+    engine tests: 4,788, all passing
+
+Coverage: 11,476 of 31,653 cards (+27), 30,844 of 59,306 lines (+41). Staples: 235 of 244.
+Pod sweep 58301–58340 (D721's build): 40 of 40 finished, no throw and no stall.
