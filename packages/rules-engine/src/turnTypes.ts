@@ -371,6 +371,8 @@ export interface StackObject {
   readonly castNumber?: number;
   /** The zone this spell was cast from (D607), for "if you cast it from your hand". */
   readonly castFrom?: ZoneId;
+  /** Cast when a sorcery couldn't have been (D727): Necromancy's flash, and its cleanup sacrifice. */
+  readonly castOutsideSorceryTiming?: true;
   /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Absent on everything that divides nothing, which is almost everything.

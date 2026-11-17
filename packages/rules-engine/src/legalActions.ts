@@ -1605,7 +1605,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
 
-    const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash');
+    const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash')
+      // "As though it had flash" (D727).
+      || scriptForCard(state.cardDefs[inst.defKey])?.castAsThoughFlash !== undefined;
     // An offered cast ignores the timing, because the ability offering it is what says when: cascade
     // casts its hit mid-resolution, with a spell on the stack underneath. See `castSpell`.
     if (!instantSpeed && !sorcerySpeed && !offered) {

@@ -722,6 +722,13 @@ function advanceStep(state: GameState): GameState {
     // there, like any other trigger. See `fireDelayed`.
     next = fireDelayed(next, step);
     if (next.pendingDiscard !== null) return next;
+    /*
+      A cleanup step with something waiting gives priority there (CR 514.3a), and passing on an
+      empty stack runs it again (`finishCleanup`). The discard path already did this; a delayed
+      ability scheduled for cleanup did not, and was carried into the next turn's upkeep (D727,
+      found while reading Necromancy's "at the beginning of the next cleanup step").
+    */
+    if (step === 'cleanup' && cleanupHolds(next)) return resetPriority(next);
     // A combat declaration is owed: nobody holds priority until it is made.
     if (pendingDeclaration(next) !== null) return { ...next, priority: null, passed: [] };
     // Stop at the first step where somebody actually gets priority.
@@ -5104,6 +5111,17 @@ function completeResolution(
           [inst.id]: { from: object.castFrom ?? 'hand', seq: next.instances[inst.id]?.objectSeq ?? 0 },
         },
       };
+      /*
+        Necromancy cast when a sorcery couldn't have been (D727): the permanent it becomes is
+        sacrificed at the beginning of the next cleanup step, by an engine-known delayed ability
+        that is a trigger like any other (and, since D727, gets its priority in that cleanup step).
+      */
+      if (script?.castAsThoughFlash === 'sacrifice-at-cleanup' && object.castOutsideSorceryTiming === true) {
+        next = scheduleDelayed(next, {
+          source: inst.id, controller: object.controller, abilityIndex: -1, step: 'cleanup', of: 'any',
+          subject: inst.id, builtin: 'sacrifice', description: `sacrifice ${next.cardDefs[inst.defKey]?.name ?? 'it'}`,
+        });
+      }
       /*
         "Enters the battlefield with N +1/+1 counters on it" (CR 614.1c), applied here because
         this is the only place the X it was cast for is known: a creature put onto the battlefield
