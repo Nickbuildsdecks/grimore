@@ -48931,3 +48931,52 @@ Faults injected by hand: 10 of 10 caught.
     engine tests: 4,977, all passing
 
 Coverage: 12,011 of 31,743 cards (+9), 31,779 of 59,509 lines (+23). Staples: 239 of 244.
+
+## D936 — Cipher, and casting a copy of a card
+
+"Cipher (Then you may exile this spell card encoded on a creature you control. Whenever that
+creature deals combat damage to a player, its controller may cast a copy of the encoded card
+without paying its mana cost.)" (CR 702.99), from Gatecrash. Ten legal cards now read whole.
+
+How it is read:
+- **A copy of a card** (CR 707.12) is new: `copyCardInExile` makes an instance marked `cardCopy`
+  in exile, owned by the seat that will cast it, and the existing free-cast offer
+  (`pendingOfferedCast`) offers it. `relocate` ends a copy as it moves anywhere but the stack
+  (after it resolves, or when a declined offer moves it), and turns a permanent copy that resolves
+  into a token. A cast copy counts as a spell cast. This is the base the other "cast a copy" cards
+  (about 130 in the corpus) can use.
+- **Encoding is the spell's last question**, appended after its own so their answer indexes are
+  unchanged. As the spell leaves the stack, `completeResolution` exiles it with `encodedOn` (the
+  creature and the object it was) if that is still a creature its controller controls, and a copy
+  is never encoded. The question is asked with the spell's others, at the start of the resolution
+  rather than at the end; the creature is checked again at the end, so one the spell itself
+  removed is not encoded on.
+- **The ability is the card's**, in its `grantedTriggers`, handed to the creature by a permanent
+  pump whose source is the creature (so it ends as the creature leaves, CR 702.99c) and whose new
+  `encodedCard` names the card as the grantor. The grant also stops as soon as the card is no longer
+  exiled encoded on it, and any move clears `encodedOn`.
+
+**Tests.** 9 engine tests:
+- the card reads;
+- encoded, the spell resolves and the card is exiled on the creature chosen;
+- with its own question, each answer goes where it belongs;
+- not encoded, it goes to the graveyard;
+- the creature connects: a free copy is offered, cast, counted, resolved and gone, and the card
+  stays encoded;
+- declined, the copy is gone and nothing moves;
+- only that creature, and not once it has left and come back;
+- the card leaves exile: it is no longer encoded and the creature loses the ability;
+- a cast copy leaves the stack and stops existing, and is never encoded.
+
+Faults injected by hand: 9 of 11 caught. The first round missed five. Two were redundant code,
+both removed: a separate removal of a declined copy (the decline's move already ends it) and a
+guard against a second offer, which cannot arise. Two were pinned by the exile-leaving test. The
+two left cannot change behaviour:
+- the re-check that the creature is still a creature: no card in the pool changes that during its
+  own resolution;
+- the creature match in the lookup: the grant check already requires it, and two encoded cards of
+  the same name give the same copy.
+
+    engine tests: 4,986, all passing
+
+Coverage: 12,021 of 31,743 cards (+10), 31,789 of 59,509 lines (+10). Staples: 239 of 244.

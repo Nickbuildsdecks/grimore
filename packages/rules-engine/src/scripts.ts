@@ -31,7 +31,7 @@ import {
   BLITZED,
   SURGED,
   SQUADDED,
-  addCounters, addToPool, addTokens, battlefield, bounceToHand, cardTargets, chosenCard,
+  addCounters, addToPool, addTokens, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard,
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
@@ -3184,6 +3184,56 @@ const INGEST_TRIGGER: TriggerDef = {
     return top === undefined ? c.state : exileCard(c.state, top);
   },
 };
+
+/**
+ * Cipher (D936, CR 702.99a): "you may exile this spell card encoded on a creature you control".
+ * Asked with the spell's other questions, as its last; `completeResolution` reads the answer as the
+ * spell leaves the stack, and encodes it only if that creature is still there.
+ */
+const CIPHER_DECISION: DecisionSpecOf = {
+  who: 'controller', from: 'battlefield', prompt: 'Cipher: you may encode this spell on a creature you control',
+  min: 0, max: 1,
+  filter: (state, id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && characteristicsOf(state, inst).isCreature;
+  },
+  // The engine's own seat encodes it on the creature likeliest to connect: evasive, then biggest.
+  pick: (state, _chooser, candidates) => {
+    const worth = (id: string): number => {
+      const ch = characteristicsOf(state, state.instances[id]!);
+      return ch.power + (ch.keywords.has('flying') || ch.keywords.has('shadow') || ch.keywords.has('menace') ? 3 : 0);
+    };
+    const best = [...candidates].sort((a, b) => worth(b) - worth(a))[0];
+    return best === undefined ? [] : [best];
+  },
+};
+
+/**
+ * Cipher's ability on the creature (D936, CR 702.99b): "Whenever this creature deals combat damage
+ * to a player, its controller may cast a copy of the encoded card without paying its mana cost."
+ * Per card name, so two different cards encoded on one creature each copy themselves.
+ */
+const cipherTrigger = (name: string): TriggerDef => ({
+  on: { kind: 'combat-damage' },
+  description: `you may cast a copy of the encoded ${name} without paying its mana cost`,
+  effect: (c) => {
+    const holder = c.state.instances[c.source];
+    const encoded = Object.values(c.state.instances).find((inst) => inst.zone === 'exile'
+      && inst.encodedOn?.id === c.source
+      && (inst.encodedOn.seq === undefined || inst.encodedOn.seq === holder?.objectSeq)
+      && c.state.cardDefs[inst.defKey]?.name === name);
+    if (encoded === undefined) return c.state;
+    const made = copyCardInExile(c.state, encoded.id, c.controller);
+    if (made.id === null) return c.state;
+    return {
+      ...made.state,
+      pendingOfferedCast: {
+        seat: c.controller, card: made.id, source: c.source,
+        prompt: `${name}: you may cast a copy of it without paying its mana cost`,
+      },
+    };
+  },
+});
 
 const fabricateTrigger = (count: number): TriggerDef => {
   const counters = `Put ${plural(count, 'a +1/+1 counter', '+1/+1 counters')} on it`;
@@ -28146,10 +28196,13 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const declared: string[] = [];
   /** "Overload {cost}" (D600), held until the resolution has been read — see below. */
   let overload: { line: string; cost: string } | null = null;
+  /** "Cipher" (D936), held the same way: it is read only with a resolution to encode. */
+  let cipherLine: string | null = null;
 
   for (const line of lines) {
     const overloaded = /^Overload ((?:\{[^}]+\})+)$/i.exec(line.replace(/\s*\([^)]*\)\s*$/, '').trim());
     if (overloaded !== null && overload === null) { overload = { line, cost: overloaded[1]! }; continue; }
+    if (/^Cipher$/i.test(line.replace(/\s*\([^)]*\)\s*$/, '').trim()) && cipherLine === null) { cipherLine = line; continue; }
     /*
       The additional cost is read here beside the keywords, and for the same reason: it is not part
       of the resolution, so it must come out of `resolution` before `readResolution` sees it — a
@@ -28202,6 +28255,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   */
   // An Overload line held above is reported unread on every path that does not read it (D600).
   if (overload !== null) declared.push(overload.line);
+  if (cipherLine !== null) declared.push(cipherLine);
   const modal = modalScriptFor(resolution, name);
   if (modal !== null) {
     Object.assign(built, modal);
@@ -28403,6 +28457,17 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       declared.splice(declared.indexOf(overload.line), 1);
       compiled.push(overload.line);
     }
+  }
+  /*
+    **Cipher** (D936, CR 702.99): the question goes last among the spell's, so every index its own
+    effects read is unchanged, and the ability goes on the card for the creature to be handed.
+  */
+  if (cipherLine !== null) {
+    built['cipher'] = true;
+    built['decisions'] = [...((built['decisions'] ?? []) as readonly DecisionSpecOf[]), CIPHER_DECISION];
+    built['grantedTriggers'] = [...((built['grantedTriggers'] ?? []) as readonly TriggerDef[]), cipherTrigger(name)];
+    declared.splice(declared.indexOf(cipherLine), 1);
+    compiled.push(cipherLine);
   }
   return {
     script: built as Partial<CardScript>,

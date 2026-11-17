@@ -3962,6 +3962,14 @@ export interface CardScript {
    */
   readonly prototype?: { readonly cost: string; readonly power: number; readonly toughness: number };
   /**
+   * Cipher (D936, CR 702.99): as the spell resolves its controller may exile it **encoded** on a
+   * creature they control, and whenever that creature deals combat damage to a player its
+   * controller may cast a copy of the card without paying its mana cost. The choice is the spell's
+   * last decision; the ability is the card's `grantedTriggers` entry, handed to the creature with
+   * the card as `encodedCard`.
+   */
+  readonly cipher?: true;
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and

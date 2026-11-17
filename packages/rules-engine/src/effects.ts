@@ -2431,6 +2431,31 @@ export function addTokens(
 }
 
 /**
+ * A **copy of a card**, made in exile under `seat` to be cast (D936, CR 707.12): "cast a copy of
+ * the encoded card without paying its mana cost". Its owner is the seat that will cast it, and it
+ * is `cardCopy`, so it ceases to exist as it moves anywhere but the stack (see `relocate`): once
+ * it has resolved, and when the offer is declined and the offer's disposition moves it.
+ */
+export function copyCardInExile(
+  state: GameState, card: string, seat: SeatIndex,
+): { readonly state: GameState; readonly id: string | null } {
+  const original = state.instances[card];
+  if (original === undefined) return { state, id: null };
+  const seq = state.instanceSeq + 1;
+  const id = `c${seat}_${seq}`;
+  const exile = zoneKey(seat, 'exile');
+  const instances = {
+    ...state.instances,
+    [id]: {
+      id, defKey: original.defKey, owner: seat, zoneSeat: seat, zone: 'exile' as const,
+      tapped: false, faceDown: false, revealed: true, counters: {}, attachedTo: null,
+      isToken: false, isCommander: false, damage: 0, enteredTurn: state.turn, cardCopy: true as const,
+    },
+  };
+  return { state: withZones({ ...state, instances, instanceSeq: seq }, { [exile]: [...listAt(state, exile), id] }), id };
+}
+
+/**
  * Moves a permanent to another player's battlefield, which is what gaining control is.
  *
  * And marks an echo as owed again (CR 702.29b), because echo is about **control** and not about
@@ -2599,6 +2624,8 @@ export interface PumpOptions {
    * builder carries it for nothing.
    */
   readonly grantsAbilities?: readonly number[];
+  /** See `ContinuousEffect.encodedCard` (cipher, D936). */
+  readonly encodedCard?: string;
   readonly duration?: EffectDuration;
 }
 
@@ -2655,6 +2682,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.while ? { while: opts.while } : {}),
     ...(opts.grants ? { grants: [...opts.grants] } : {}),
     ...(opts.grantsAbilities ? { grantsAbilities: [...opts.grantsAbilities] } : {}),
+    ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
   };
 }
 

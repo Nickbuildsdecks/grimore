@@ -42,11 +42,12 @@ import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
-import { colourIdentity, commanderIdentity, grantedAbilitiesOn, hasSubtype, playerProtected } from './characteristics.js';
+import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
+import { relocate } from './cardActions.js';
 
 const BASICS = new Set(['Mountain', 'Forest', 'Plains', 'Island', 'Swamp']);
 
@@ -7916,6 +7917,7 @@ describe('deck coverage', () => {
       - `script emerge` (D929): emerge. No pool deck has one. Driven at runtime by "emerge (D929)".
       - `script awaken` (D932): awaken. No pool deck has one. Driven at runtime by "awaken (D932)".
       - `script prototype` (D934): prototype. No pool deck has one. Driven at runtime by "prototype (D934)".
+      - `script cipher` (D936): cipher. No pool deck has one. Driven at runtime by "cipher, and casting a copy of a card (D936)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7952,6 +7954,7 @@ describe('deck coverage', () => {
       'script emerge',
       'script awaken',
       'script prototype',
+      'script cipher',
     ]);
 
     const declared = [
@@ -18687,6 +18690,152 @@ describe('prowl and freerunning (D935)', () => {
     s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 'postcombat-main');
     expect(s.combatHitsThisTurn?.['0']).toEqual([{ subtypes: ['Bear'], commander: true }]);
     expect(altPlays(s, 'Test Runner').length).toBe(1);
+  });
+});
+
+describe('cipher, and casting a copy of a card (D936)', () => {
+  const ROWS = [
+    { name: 'Test Cipher', type_line: 'Sorcery', oracle_text: 'Draw a card.\nCipher (Then you may exile this spell card encoded on a creature you control. Whenever that creature deals combat damage to a player, its controller may cast a copy of the encoded card without paying its mana cost.)', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wisp', type_line: 'Creature — Spirit', oracle_text: 'Flying', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Cipher Search', type_line: 'Sorcery', oracle_text: 'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nCipher', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd936', name: 'Cipher',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (creatures: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd936', 1: 'd936' }, deckSpecs: { d936: deck.deck }, hands: { 0: ['Test Cipher'] },
+    battlefield: { 0: ['Island', 'Island', ...creatures] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settleAll = (s: GameState) => {
+    let next = drain(s, 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0 && next.pendingDecision === null && next.pendingOfferedCast === null; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+  /** Cast it and encode it on `on` (or on nothing). */
+  const encoded = (on: string | null) => {
+    let s = seated(['Test Bear', 'Test Wisp']);
+    const card = find(s, 0, 'hand', 'Test Cipher');
+    s = settleAll(apply(s, { type: 'auto:cast', by: 0, card } as Action));
+    expect(s.pendingDecision?.prompt).toMatch(/Cipher/);
+    s = settleAll(apply(s, { type: 'auto:decide', by: 0, cards: on === null ? [] : [find(s, 0, 'battlefield', on)] } as Action));
+    return { s, card };
+  };
+  const swing = (s: GameState, attacker: string) => {
+    const at = advanceTo(s, 'declare-attackers');
+    return drain(apply(at, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(at, 0, 'battlefield', attacker), defender: 1 }] }), 30);
+  };
+  const untilOffer = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 10 && next.pendingOfferedCast === null; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('encoded: the spell resolves, and the card is exiled on the creature chosen', () => {
+    const before = ids(seated(['Test Bear', 'Test Wisp']), 0, 'hand').length;
+    const { s, card } = encoded('Test Bear');
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 1);
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(s.instances[card]!.encodedOn?.id).toBe(find(s, 0, 'battlefield', 'Test Bear'));
+  });
+
+  it('its own question first, and the cipher question last: each answer goes where it belongs', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd936', 1: 'd936' }, deckSpecs: { d936: deck.deck }, hands: { 0: ['Test Cipher Search'] },
+      battlefield: { 0: ['Island', 'Island', 'Test Bear', 'Test Wisp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Cipher Search');
+    s = settleAll(apply(s, { type: 'auto:cast', by: 0, card } as Action));
+    expect(s.pendingDecision?.prompt).not.toMatch(/Cipher/);
+    const island = s.pendingDecision!.candidates[0]!;
+    s = settleAll(apply(s, { type: 'auto:decide', by: 0, cards: [island] } as Action));
+    expect(s.pendingDecision?.prompt).toMatch(/Cipher/);
+    const wisp = find(s, 0, 'battlefield', 'Test Wisp');
+    s = settleAll(apply(s, { type: 'auto:decide', by: 0, cards: [wisp] } as Action));
+    expect(s.instances[island]!.zone).toBe('hand');
+    expect(s.instances[card]!.encodedOn?.id).toBe(wisp);
+  });
+
+  it('not encoded: it goes to the graveyard', () => {
+    const { s, card } = encoded(null);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('the creature connects: a copy is offered free, cast, resolves and is gone; the card stays encoded', () => {
+    const { s: start, card } = encoded('Test Bear');
+    let s = untilOffer(swing(start, 'Test Bear'));
+    const offer = s.pendingOfferedCast;
+    expect(offer?.card).not.toBe(card);
+    expect(s.instances[offer!.card]!.cardCopy).toBe(true);
+    const play = legalActions(s, 0).plays.find((p) => p.card === offer!.card && p.offered === true);
+    expect(play?.manaCost ?? '').toBe('');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: offer!.card, offered: true } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) {
+      s = drain(passBoth(s), 30);
+      if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 30);
+    }
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    expect(s.instances[offer!.card]).toBeUndefined();
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(s.spellsCastThisTurnBy['0']).toBe(2);
+  });
+
+  it('declined: the copy is gone, and nothing moves', () => {
+    const { s: start, card } = encoded('Test Bear');
+    let s = untilOffer(swing(start, 'Test Bear'));
+    const copy = s.pendingOfferedCast!.card;
+    const library = ids(s, 0, 'library').length;
+    s = drain(apply(s, { type: 'auto:pass', by: 0 } as Action), 30);
+    expect(s.instances[copy]).toBeUndefined();
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(ids(s, 0, 'library').length).toBe(library);
+    expect(s.instances[card]!.zone).toBe('exile');
+  });
+
+  it('only the creature it is encoded on, and only while it stays', () => {
+    const { s: start } = encoded('Test Bear');
+    expect(untilOffer(swing(start, 'Test Wisp')).pendingOfferedCast).toBeNull();
+    // The Bear leaves and comes back: a new object, with nothing encoded on it.
+    const bear = find(start, 0, 'battlefield', 'Test Bear');
+    let s = relocate(start, start.instances[bear]!, 'hand', 0, 'top');
+    s = relocate(s, s.instances[bear]!, 'battlefield', 0, 'top');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, enteredTurn: 0 } } };
+    expect(untilOffer(swing(s, 'Test Bear')).pendingOfferedCast).toBeNull();
+  });
+
+  it('the card leaves exile: no longer encoded, and the creature loses the ability', () => {
+    const { s: start, card } = encoded('Test Bear');
+    const bear = find(start, 0, 'battlefield', 'Test Bear');
+    expect(grantedTriggersOn(start, start.instances[bear]!).length).toBe(1);
+    const s = relocate(start, start.instances[card]!, 'graveyard', 0, 'top');
+    expect(s.instances[card]!.encodedOn).toBeUndefined();
+    expect(grantedTriggersOn(s, s.instances[bear]!)).toEqual([]);
+    // Back into exile by other means, it is not encoded again.
+    const back = relocate(s, s.instances[card]!, 'exile', 0, 'top');
+    expect(back.instances[card]!.encodedOn).toBeUndefined();
+    expect(grantedTriggersOn(back, back.instances[bear]!)).toEqual([]);
+  });
+
+  it('a copy that leaves the stack another way stops existing, and a copy is never encoded', () => {
+    const { s: start } = encoded('Test Bear');
+    let s = untilOffer(swing(start, 'Test Bear'));
+    const copy = s.pendingOfferedCast!.card;
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: copy, offered: true } as Action), 30);
+    expect(s.instances[copy]!.zone).toBe('stack');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) {
+      s = drain(passBoth(s), 30);
+      if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [find(s, 0, 'battlefield', 'Test Wisp')] } as Action), 30);
+    }
+    expect(s.instances[copy]).toBeUndefined();
+    expect(Object.values(s.instances).filter((i) => i.encodedOn !== undefined).length).toBe(1);
   });
 });
 

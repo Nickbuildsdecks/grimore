@@ -330,7 +330,8 @@ export function relocate(
     to carry and the one the first token with an ability of its own made real. `settle` clears the
     map once it has raised the events.
   */
-  if (inst.isToken && toZone !== 'battlefield') {
+  // And a copy of a card, everywhere but the stack it is cast onto (D936, CR 707.12).
+  if ((inst.isToken || (inst.cardCopy === true && toZone !== 'stack')) && toZone !== 'battlefield') {
     const instances = { ...next.instances };
     delete instances[inst.id];
     next = {
@@ -401,6 +402,10 @@ export function relocate(
     ...(inst.zone === toZone ? {} : { flashbackGrantedTurn: undefined, animatedBy: undefined }),
     // And an imprint (D717): a card that leaves exile is no longer the one the permanent exiled.
     ...(inst.zone === toZone ? {} : { imprintedOn: undefined }),
+    // And an encoding (D936): a card that moves is no longer the one encoded on the creature.
+    ...(inst.zone === toZone ? {} : { encodedOn: undefined }),
+    // And a copy of a card that resolves into a permanent (D936, CR 707.12): a token from then on.
+    ...(inst.cardCopy === true && toZone === 'battlefield' ? { isToken: true, cardCopy: undefined } : {}),
     // And when it was drawn (D721), which `drawFromLibrary` sets again after a draw's own move.
     ...(inst.zone === toZone ? {} : { drawnTurn: undefined }),
     counters: toZone !== 'battlefield'

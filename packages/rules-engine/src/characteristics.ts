@@ -1598,6 +1598,13 @@ export interface ContinuousEffect {
    */
   readonly grants?: readonly number[];
   /**
+   * The grantor of `grants` when it is not `source` (cipher, D936): the card **encoded on** the
+   * creature, in exile, whose `grantedTriggers` hold the ability. `source` stays the creature, so
+   * the effect ends as it leaves the battlefield (CR 702.99c); and the grant stops as soon as the
+   * card is no longer exiled encoded on it.
+   */
+  readonly encodedCard?: string;
+  /**
    * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
    * entries in the *source card's* `grantedAbilities`.
    *
@@ -3059,7 +3066,10 @@ export function grantedTriggersOn(
       out = null;
       continue;
     }
-    const grantor = state.instances[effect.source];
+    const grantor = state.instances[effect.encodedCard ?? effect.source];
+    // Cipher (D936): only while the card is still exiled encoded on this creature.
+    if (effect.encodedCard !== undefined
+      && (grantor?.zone !== 'exile' || grantor.encodedOn?.id !== instance.id)) continue;
     const defKey = grantor?.defKey;
     const name = state.cardDefs[defKey ?? '']?.name;
     if (name === undefined) continue;

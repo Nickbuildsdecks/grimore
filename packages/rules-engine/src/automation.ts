@@ -5439,7 +5439,27 @@ function completeResolution(
         not having the keyword. A test holds the pairing; this keeps a mistake in it cheap.
       */
       const reboundAt = object.rebounding === true ? reboundCastIndex(script) : -1;
-      if (reboundAt >= 0) {
+      /*
+        Cipher (D936, CR 702.99a): the spell's last question named the creature to encode it on,
+        and it is encoded only if that is still a creature its controller controls. A copy is not a
+        card and cannot be exiled encoded (CR 707.10), so a cast copy goes the way copies go.
+      */
+      const cipherId = script?.cipher === true && object.copyOf === undefined && inst.cardCopy !== true
+        ? ctx.decisions[(script.decisions?.length ?? 0) - 1]?.ids[0] : undefined;
+      const cipherHost = cipherId === undefined ? undefined : next.instances[cipherId];
+      const encodes = cipherHost !== undefined && cipherHost.zone === 'battlefield'
+        && cipherHost.zoneSeat === object.controller && characteristicsOf(next, cipherHost).isCreature;
+      if (encodes) {
+        next = exileCard(next, inst.id);
+        next = withInstance(next, inst.id, {
+          encodedOn: { id: cipherHost.id, ...(cipherHost.objectSeq === undefined ? {} : { seq: cipherHost.objectSeq }) },
+        });
+        // The ability is the card's last granted trigger (the compiler appends it), and the effect's
+        // source is the creature, so it ends as the creature leaves (CR 702.99c).
+        next = pump(next, [cipherHost.id], cipherHost.id, object.controller, {
+          grants: [(script?.grantedTriggers?.length ?? 1) - 1], encodedCard: inst.id, duration: 'permanent',
+        });
+      } else if (reboundAt >= 0) {
         next = exileCard(next, inst.id);
         next = scheduleDelayed(next, {
           source: inst.id,

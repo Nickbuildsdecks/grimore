@@ -214,6 +214,19 @@ export interface CardInstance {
    * which is what the tabletop's manual adjustment edits. See `commanderTaxFor`.
    */
   readonly commanderTax?: number;
+  /**
+   * The creature this exiled card is **encoded on** (cipher, D936, CR 702.99): its id and the
+   * object it was then, so a creature that left and came back no longer carries it (CR 702.99c).
+   * Cleared whenever the card moves.
+   */
+  readonly encodedOn?: { readonly id: string; readonly seq?: number };
+  /**
+   * A **copy of a card**, not a card (D936, CR 707.12): made in exile to be cast ("cast a copy of
+   * the encoded card"). It ceases to exist as it leaves the stack for anywhere but the battlefield,
+   * where a permanent copy becomes a token, and when the offer to cast it is declined (the decline
+   * moves it, and `relocate` ends it).
+   */
+  readonly cardCopy?: true;
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
   /**
