@@ -2693,15 +2693,28 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
   }
 
   const assigned = new Map<string, string[]>();
-  const used = new Set<string>();
+  const used = new Map<string, number>();
   for (const entry of action.blocks) {
-    if (used.has(entry.blocker)) throw new EngineError('RULE_NOT_APPLICABLE', 'a creature can only block one attacker');
+    // One attacker each, or more for a creature that "can block an additional creature" (D942).
+    const blocks = used.get(entry.blocker) ?? 0;
+    if (blocks > 0) {
+      const blocker = state.instances[entry.blocker];
+      const extra = blocker === undefined ? 0 : characteristicsOf(state, blocker).extraBlocks;
+      if (blocks > extra) {
+        throw new EngineError('RULE_NOT_APPLICABLE', extra === 0
+          ? 'a creature can only block one attacker'
+          : `${characteristicsOf(state, blocker!).name} can block only ${extra + 1} creatures`);
+      }
+      if (assigned.get(entry.attacker)?.includes(entry.blocker) === true) {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'a creature blocks an attacker once');
+      }
+    }
     const attack = state.combat.attacks.find((a) => a.attacker === entry.attacker);
     if (attack === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that creature is not attacking');
     if (attack.defender !== action.by) throw new EngineError('RULE_NOT_APPLICABLE', 'that attack is not aimed at you');
     const issue = canBlock(state, entry.blocker, entry.attacker, action.by);
     if (issue !== null) throw new EngineError('RULE_NOT_APPLICABLE', issue.reason);
-    used.add(entry.blocker);
+    used.set(entry.blocker, blocks + 1);
     assigned.set(entry.attacker, [...(assigned.get(entry.attacker) ?? []), entry.blocker]);
   }
 

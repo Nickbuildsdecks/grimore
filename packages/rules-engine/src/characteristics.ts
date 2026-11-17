@@ -388,6 +388,8 @@ type PrintedPart =
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
   /** "~ can't attack unless defending player controls an Island" (D937): a basic land type. */
   | { readonly kind: 'attack-unless'; readonly landType: string }
+  /** "~ can block an additional creature each combat" / "… any number of creatures" (D942). */
+  | { readonly kind: 'extra-blocks'; readonly count: number }
   | { readonly kind: 'blocker-ban'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocks-ban'; readonly clauses: readonly BlockerClause[] }
@@ -525,6 +527,14 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   if (unless !== null) {
     return { kind: 'attack-unless', landType: unless[1]!.charAt(0).toUpperCase() + unless[1]!.slice(1) };
   }
+  // Blocking more than one attacker (D942, CR 509.1a): one more, N more, or any number.
+  const more = /^can block (?:an additional (creature|\w+(?:-\w+)? creatures) each combat|any number of creatures)$/
+    .exec(low.slice(subject.length + 1).trim());
+  if (more !== null) {
+    if (more[1] === undefined) return { kind: 'extra-blocks', count: Infinity };
+    const count = more[1] === 'creature' ? 1 : EXTRA_BLOCK_WORDS[more[1].replace(/ creatures$/, '')];
+    return count === undefined ? null : { kind: 'extra-blocks', count };
+  }
   const clauses = low.slice(subject.length + 1).trim().split(/\s+and\s+/)
     .map((clause) => clause.trim()).filter((clause) => clause !== '');
   if (clauses.length === 0) return null;
@@ -536,6 +546,11 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   }
   return { kind: 'combat-static', statics };
 }
+
+/** The spelled-out counts "can block an additional N creatures" prints (D942). */
+const EXTRA_BLOCK_WORDS: Readonly<Record<string, number>> = {
+  two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, 'ninety-nine': 99,
+};
 
 /**
  * `printedParts` memoised on the text it reads.
@@ -2020,6 +2035,12 @@ export interface Characteristics {
    * type a defending player must control for this creature to attack them, or null.
    */
   readonly attacksOnlyIfDefenderHas: string | null;
+  /**
+   * How many attackers beyond the first this creature may block (D942, CR 509.1a): 1 for "can
+   * block an additional creature each combat", Infinity for "any number of creatures". Its damage
+   * is split across them (CR 510.1d); see `dealCombatDamage`.
+   */
+  readonly extraBlocks: number;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
   /** "Can't be blocked" outright, read from the attacker when a block is offered. */
@@ -2791,8 +2812,10 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let lure = printedCombat.lure;
   let blockedByOne = printedCombat.blockedByOne;
   let attacksOnlyIfDefenderHas: string | null = null;
+  let extraBlocks = 0;
   for (const part of printedParts(def?.oracleText, def?.name)) {
     if (part.kind === 'attack-unless') attacksOnlyIfDefenderHas = part.landType;
+    if (part.kind === 'extra-blocks') extraBlocks += part.count;
   }
   const mustBlockAttackers: string[] = [];
   let cantBeBlockedByWalls = false;
@@ -2870,6 +2893,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       lure = false;
       blockedByOne = false;
       attacksOnlyIfDefenderHas = null;
+      extraBlocks = 0;
       mustBlockAttackers.length = 0;
       cantBeBlockedByWalls = false;
       cantBeBlocked = false;
@@ -2979,6 +3003,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     lure,
     blockedByOne,
     attacksOnlyIfDefenderHas,
+    extraBlocks,
     cantBeBlockedByWalls,
     cantBeBlocked,
     cantBeBlockedBy,

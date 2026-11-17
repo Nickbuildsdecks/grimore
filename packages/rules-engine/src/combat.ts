@@ -782,6 +782,31 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
     const inst = next.instances[id];
     return inst !== undefined && assignsNoCombatDamage(next, inst);
   };
+  /*
+    **A creature blocking several attackers** (D942, CR 510.1d) divides its combat damage among
+    them. Assigned the way an attacker assigns among its blockers: lethal to each in the order the
+    attacks were declared, and whatever is left to the last. The blocking player does not choose the
+    split here; this is the order a player would most often pick, and it is stated rather than
+    asked. Keyed `blocker>attacker`; a blocker of one attacker has no entry and deals its power.
+  */
+  const shares = new Map<string, number>();
+  const blocked = new Map<string, string[]>();
+  for (const attack of next.combat.attacks) {
+    for (const id of attack.blockers) blocked.set(id, [...(blocked.get(id) ?? []), attack.attacker]);
+  }
+  for (const [blockerId, attackers] of blocked) {
+    const blocker = asItWas(blockerId);
+    if (attackers.length < 2 || blocker === null) continue;
+    let left = Math.max(0, blocker.ch.power);
+    const deathtouch = blocker.ch.keywords.has('deathtouch');
+    attackers.forEach((attackerId, i) => {
+      const target = asItWas(attackerId);
+      const lethal = target === null ? 0 : deathtouch ? 1 : Math.max(1, target.ch.toughness - target.inst.damage);
+      const amount = i === attackers.length - 1 ? left : Math.min(left, lethal);
+      shares.set(`${blockerId}>${attackerId}`, amount);
+      left -= amount;
+    });
+  }
   for (const attack of next.combat.attacks) {
     // Still in combat and still the same object, but *as it was*: see `was` above.
     const attacker = sameObject(next, attack.attacker, attack.attackerSeq)
@@ -849,11 +874,13 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
     for (const blockerId of livingBlockers) {
       const blocker = asItWas(blockerId);
       if (blocker === null || !dealsInStep(blocker.ch, firstStrike) || blocker.ch.power <= 0) continue;
+      // A creature blocking several attackers splits its damage among them (D942); see `blockerShares`.
+      const share = shares.get(`${blockerId}>${attack.attacker}`) ?? blocker.ch.power;
       // The attacker may already be gone; blockers deal damage only to something still there,
       // and not to a new permanent wearing the same id.
       if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
       if (prevented(blockerId) || prevented(attack.attacker) || assignsNone(blockerId)) continue;
-      next = dealDamage(next, { kind: 'card', id: attack.attacker }, blocker.ch.power, {
+      next = dealDamage(next, { kind: 'card', id: attack.attacker }, share, {
         controller: blocker.inst.zoneSeat,
         source: blockerId,
       });

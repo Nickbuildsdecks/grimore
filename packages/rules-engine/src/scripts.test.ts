@@ -19327,6 +19327,110 @@ describe('statics for the other side, for attackers, for countered creatures and
   });
 });
 
+describe('blocking more than one attacker (D942)', () => {
+  const C = (name: string, text: string, power: string, toughness: string) => ({
+    name, type_line: 'Creature — Wall', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Wall', 'Test Wall can block an additional creature each combat.', '3', '5'),
+    C('Test Giant', 'Test Giant can block any number of creatures.', '1', '10'),
+    C('Test Hydra', 'Test Hydra can block an additional seven creatures each combat.', '1', '10'),
+    C('Test Brute', 'Test Brute can block an additional creature each combat.', '5', '9'),
+    C('Test Viper', 'Deathtouch\nTest Viper can block an additional creature each combat.', '2', '9'),
+    C('Test Paw', 'Test Paw can block an additional creature each combat.', '2', '9'),
+    C('Test Leech', 'Lifelink\nTest Leech can block an additional creature each combat.', '5', '9'),
+    { name: 'Test Ox', type_line: 'Creature — Ox', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '6' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd942', name: 'Multi-blockers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }],
+    data: ROWS as never[],
+  });
+  /** Seat 0 swings three Bears (or `mine`) at seat 1, whose `theirs` stand ready to block. */
+  const swing = (theirs: string[], mine = ['Test Bear', 'Test Bear', 'Test Bear']) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd942', 1: 'd942' }, deckSpecs: { d942: deck.deck },
+      battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const bears = mine.map((name, i) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name)[mine.slice(0, i).filter((n) => n === name).length]!);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: bears.map((attacker) => ({ attacker, defender: 1 })) }), 12);
+    return { s: advanceTo(s, 'declare-blockers'), bears };
+  };
+  const block = (s: GameState, blocks: { blocker: string; attacker: string }[]) => refusal(s, { type: 'auto:block', by: 1, blocks });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one more: two attackers, not three; an ordinary creature still one', () => {
+    const { s, bears } = swing(['Test Wall', 'Test Bear']);
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    expect(characteristicsOf(s, s.instances[wall]!).extraBlocks).toBe(1);
+    expect(block(s, [{ blocker: wall, attacker: bears[0]! }, { blocker: wall, attacker: bears[1]! }])).toBeNull();
+    expect(block(s, bears.map((attacker) => ({ blocker: wall, attacker })))).toMatch(/can block only 2 creatures/);
+    expect(block(s, [{ blocker: wall, attacker: bears[0]! }, { blocker: wall, attacker: bears[0]! }])).toMatch(/once/);
+    expect(block(s, [{ blocker: bear, attacker: bears[0]! }, { blocker: bear, attacker: bears[1]! }])).toMatch(/only block one attacker/);
+  });
+
+  it('any number, and a spelled-out number', () => {
+    const { s, bears } = swing(['Test Giant', 'Test Hydra']);
+    const giant = find(s, 1, 'battlefield', 'Test Giant');
+    expect(block(s, bears.map((attacker) => ({ blocker: giant, attacker })))).toBeNull();
+    expect(characteristicsOf(s, s.instances[find(s, 1, 'battlefield', 'Test Hydra')]!).extraBlocks).toBe(7);
+  });
+
+  it('its damage is split: lethal to the first, the rest to the next', () => {
+    const { s, bears } = swing(['Test Wall']);
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    let t = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: bears[0]! }, { blocker: wall, attacker: bears[1]! }] }), 12);
+    for (let i = 0; i < 6 && t.step !== 'end-combat' && t.step !== 'postcombat-main'; i++) t = drain(passBoth(t), 12);
+    expect(t.instances[bears[0]!]!.zone).toBe('graveyard');
+    expect(t.instances[bears[1]!]!.zone).toBe('battlefield');
+    expect(t.instances[bears[1]!]!.damage).toBe(1);
+    // Both Bears hit the Wall, and the third was not blocked.
+    expect(t.instances[wall]!.damage).toBe(4);
+    expect(t.seats[1]!.life).toBe(18);
+  });
+
+  /** `who` blocks the first two Bears; the board after combat damage. */
+  const doubleBlock = (who: string, mine?: string[]) => {
+    const { s, bears } = swing([who], mine);
+    const id = find(s, 1, 'battlefield', who);
+    let t = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: id, attacker: bears[0]! }, { blocker: id, attacker: bears[1]! }] }), 12);
+    for (let i = 0; i < 6 && t.step !== 'end-combat' && t.step !== 'postcombat-main'; i++) t = drain(passBoth(t), 12);
+    return { t, bears, id };
+  };
+
+  it('what is left over all goes to the last attacker', () => {
+    const { t, bears } = doubleBlock('Test Brute', ['Test Bear', 'Test Ox']);
+    // 2 is lethal for the Bear; the other 3 all go to the 1/6 Ox, more than an even share.
+    expect(t.instances[bears[0]!]!.zone).toBe('graveyard');
+    expect(t.instances[bears[1]!]!.damage).toBe(3);
+  });
+
+  it('lifelink shows the whole split: 2 and the remaining 3, not 2 and 2', () => {
+    const { t } = doubleBlock('Test Leech');
+    // The third Bear was not blocked and dealt 2; the Leech dealt 5 and gained 5.
+    expect(t.seats[1]!.life).toBe(20 - 2 + 5);
+  });
+
+  it('deathtouch: one point is lethal, so two points kill two', () => {
+    const { t, bears } = doubleBlock('Test Viper');
+    expect(t.instances[bears[0]!]!.zone).toBe('graveyard');
+    expect(t.instances[bears[1]!]!.zone).toBe('graveyard');
+  });
+
+  it('nothing left for the second: it is dealt no damage at all', () => {
+    const { t, bears, id } = doubleBlock('Test Paw');
+    expect(t.instances[bears[0]!]!.zone).toBe('graveyard');
+    expect(t.instances[bears[1]!]!.damage).toBe(0);
+    expect(JSON.stringify(t.damagedBy?.[bears[1]!] ?? [])).not.toContain(id);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

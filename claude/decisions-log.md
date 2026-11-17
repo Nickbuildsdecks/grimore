@@ -49180,3 +49180,42 @@ it.
     engine tests: 5,021, all passing
 
 Coverage: 12,224 of 31,743 cards (+55), 32,150 of 59,509 lines (+87). Staples: 239 of 244.
+
+## D942 — Blocking more than one attacker
+
+"~ can block an additional creature each combat." (17 legal lines), "~ can block any number of
+creatures." (8), and "an additional seven / ninety-nine creatures" (CR 509.1a). 15 legal cards now
+read whole.
+
+How it is read:
+- **`extraBlocks`**, a printed characteristic: 1, the spelled-out N, or Infinity for any number.
+  Losing all abilities clears it.
+- **The declaration** lets such a creature be named as the blocker of that many attackers, each
+  once. The refusal names the limit ("can block only 2 creatures"), and an ordinary creature keeps
+  its one-attacker refusal.
+- **Its damage is split** (CR 510.1d). A creature blocking several attackers divides its combat
+  damage among them: lethal to each in the order the attacks were declared (1 with deathtouch), and
+  the rest to the last. The blocking player does not choose the split; this is the order most often
+  picked, and it is stated here rather than asked. A blocker of one attacker deals its power as
+  before.
+- **Not done**: the table's blocking screen still assigns one attacker per blocker, and the
+  computer still blocks one attacker each. The engine accepts the larger declarations from either.
+  The activated "can block an additional creature this turn" (2 cards) is not read.
+
+**Tests.** 8 engine tests:
+- the cards read;
+- one more: two attackers, not three, each once, and an ordinary creature still one;
+- any number, and a spelled-out number;
+- the split: lethal to the first, the rest to the next;
+- what is left all goes to the last;
+- lifelink shows the whole split (2 and 3, not 2 and 2);
+- deathtouch kills two with two points;
+- nothing left for the second: it is dealt no damage.
+
+Faults injected by hand: 8 of 8 caught, after the second round. The first missed three:
+- the remainder rule and deathtouch: pinned with a lifelink blocker and a deathtouch one;
+- a guard against a zero share: a no-op, removed.
+
+    engine tests: 5,029, all passing
+
+Coverage: 12,239 of 31,743 cards (+15), 32,170 of 59,509 lines (+20). Staples: 239 of 244.
