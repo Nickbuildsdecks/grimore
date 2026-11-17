@@ -401,6 +401,8 @@ export function relocate(
     ...(inst.zone === toZone ? {} : { flashbackGrantedTurn: undefined, animatedBy: undefined }),
     // And an imprint (D717): a card that leaves exile is no longer the one the permanent exiled.
     ...(inst.zone === toZone ? {} : { imprintedOn: undefined }),
+    // And when it was drawn (D721), which `drawFromLibrary` sets again after a draw's own move.
+    ...(inst.zone === toZone ? {} : { drawnTurn: undefined }),
     counters: toZone !== 'battlefield'
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,
@@ -544,6 +546,8 @@ export function drawFromLibrary(
     const top = listAt(next, zoneKey(seat, 'library'))[0];
     if (top === undefined) break;
     next = relocate(next, requireInstance(next, top), 'hand', seat, 'bottom');
+    // "Drawn this turn" (D721, `CardInstance.drawnTurn`).
+    next = withInstance(next, top, { drawnTurn: next.turn });
     cards.push(top);
   }
   return { state: next, drawn: cards.length, cards };

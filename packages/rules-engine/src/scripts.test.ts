@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, poolOf, putOnTopOfLibrary } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, playerProtected } from './characteristics.js';
@@ -15754,7 +15754,102 @@ describe('"Search your library and/or graveyard": Finale of Devastation (D720)',
   });
 });
 
-describe('Animate Dead: an Aura that brings its creature back, and takes it away (D721)', () => {
+describe('Sylvan Library: two more cards, and 4 life for each one kept (D721)', () => {
+  const ROWS = [
+    { name: 'Test Library', type_line: 'Enchantment', oracle_text: 'At the beginning of your draw step, you may draw two additional cards. If you do, choose two cards in your hand drawn this turn. For each of those cards, pay 4 life or put the card on top of your library.', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'sylvan', name: 'Sylvan',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  // To the draw step with the Library out, and on until its trigger asks.
+  const toTrigger = (lifeTotal = 20) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'sylvan', 1: 'sylvan' }, deckSpecs: { sylvan: deck.deck },
+      hands: { 0: ['Test Spark'] }, battlefield: { 0: ['Test Library'] }, turn: 3, firstSeat: 0,
+    }), 'upkeep');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: lifeTotal } : seat)) };
+    for (let i = 0; i < 8 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+  const yes = (s: GameState) => apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Draw two more' } as Action);
+  const back = (s: GameState, cards: string[]) => drain(apply(s, { type: 'auto:decide', by: 0, cards } as Action), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a yes draws two, and offers only the three cards drawn this turn', () => {
+    let s = toTrigger();
+    expect(s.pendingDecision?.options).toEqual(['Draw two more', "Don't"]);
+    const spark = find(s, 0, 'hand', 'Test Spark');
+    const before = ids(s, 0, 'hand').length;
+    s = yes(s);
+    expect(ids(s, 0, 'hand').length).toBe(before + 2);
+    const offered = s.pendingDecision!.candidates;
+    expect(offered).toHaveLength(3);
+    expect(offered).not.toContain(spark);
+    expect(s.pendingDecision!.min).toBe(0);
+  });
+
+  it('putting two back costs nothing, and they go on top in the order chosen', () => {
+    let s = yes(toTrigger());
+    const [a, b] = s.pendingDecision!.candidates;
+    s = back(s, [a!, b!]);
+    expect(life(s, 0)).toBe(20);
+    expect(ids(s, 0, 'library').slice(0, 2)).toEqual([a, b]);
+  });
+
+  it('each of the two not put back costs 4 life', () => {
+    let one = yes(toTrigger());
+    one = back(one, [one.pendingDecision!.candidates[0]!]);
+    expect(life(one, 0)).toBe(16);
+    let none = yes(toTrigger());
+    none = back(none, []);
+    expect(life(none, 0)).toBe(12);
+  });
+
+  it('a no draws nothing and costs nothing', () => {
+    let s = toTrigger();
+    const before = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: "Don't" } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(before);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('life that cannot pay must put back: at 5 life one card, at 3 both', () => {
+    expect(yes(toTrigger(5)).pendingDecision!.min).toBe(1);
+    expect(yes(toTrigger(3)).pendingDecision!.min).toBe(2);
+  });
+
+  it('a card that left the hand it was drawn into is no longer "drawn this turn"', () => {
+    // Pinned by D721's break run: `relocate` clearing the stamp was otherwise unobserved.
+    let s = yes(toTrigger());
+    const card = s.pendingDecision!.candidates[0]!;
+    s = moveToHand(putOnTopOfLibrary(s, card), [card]);
+    expect(s.instances[card]!.zone).toBe('hand');
+    expect(s.instances[card]!.drawnTurn).toBeUndefined();
+  });
+
+  it('the bot draws, and keeps one card at 16 life or more', () => {
+    const s = toTrigger();
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', option: 'Draw two more' });
+    const asked = yes(s);
+    const answer = botAction(asked, 0);
+    expect(answer?.type === 'auto:decide' ? answer.cards : null).toHaveLength(1);
+    const low = yes(toTrigger(12));
+    const lowAnswer = botAction(low, 0);
+    expect(lowAnswer?.type === 'auto:decide' ? lowAnswer.cards : null).toHaveLength(2);
+    const high = yes(toTrigger(20));
+    const kept = drain(apply(high, botAction(high, 0)!), 20);
+    expect(life(kept, 0)).toBe(16);
+  });
+});
+
+describe('Animate Dead: an Aura that brings its creature back, and takes it away (D722)', () => {
   const ROWS = [
     { name: 'Test Animate', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature card in a graveyard\nWhen Test Animate enters, if it\'s on the battlefield, it loses "enchant creature card in a graveyard" and gains "enchant creature put onto the battlefield with Test Animate." Return enchanted creature card to the battlefield under your control and attach Test Animate to it. When Test Animate leaves the battlefield, that creature\'s controller sacrifices it.\nEnchanted creature gets -1/-0.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
     { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', power: '4', toughness: '4' },

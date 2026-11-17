@@ -196,7 +196,7 @@ export interface CardInstance {
    */
   readonly flashbackGrantedTurn?: number;
   /**
-   * The Aura that put this creature onto the battlefield (D721, `AuraDef.reanimates`), which
+   * The Aura that put this creature onto the battlefield (D722, `AuraDef.reanimates`), which
    * sacrifices it as it leaves. Cleared on any zone change: a new object is not the one animated.
    */
   readonly animatedBy?: string;
@@ -231,6 +231,12 @@ export interface CardInstance {
    * imprint (CR 400.7); and cleared when this card leaves exile, by `relocate`.
    */
   readonly imprintedOn?: { readonly id: string; readonly seq: number };
+  /**
+   * The turn this card was drawn (D721): Sylvan Library's "choose two cards in your hand drawn this
+   * turn". Set by `drawFromLibrary` and cleared by `relocate` when the card changes zone again, so
+   * only a card still in the hand it was drawn into carries it.
+   */
+  readonly drawnTurn?: number;
   /**
    * The other half of a **soulbond** pair (CR 702.95): the creature this one is paired with.
    *

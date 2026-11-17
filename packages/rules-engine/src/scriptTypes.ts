@@ -1413,6 +1413,16 @@ export interface CardsDecisionSpec {
    */
   readonly askOnlyIf?: (state: GameState, controller: SeatIndex, source: string) => boolean;
   /**
+   * A step of the effect that happens **as this question is reached** (D721), before it is asked.
+   *
+   * Answers are otherwise applied together by the effect at the end, which is right for "each
+   * player sacrifices a creature". But some cards act between their questions: Sylvan Library
+   * draws two cards when its controller says yes, and only then asks which cards drawn this turn
+   * go back. Run once, by `askOrFinish`, when the plan reaches this entry and the question is not
+   * skipped (`askOnlyIfChosen`, `askOnlyIf`); the question is then asked of the state it made.
+   */
+  readonly onReach?: (state: GameState, controller: SeatIndex, source: string) => GameState;
+  /**
    * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
    * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
    * `each-opponent` expand into one question each, asked in turn order starting from the active
@@ -2459,7 +2469,7 @@ export interface AuraDef {
   readonly target: TargetSpec;
   readonly effect: PumpOptions;
   /**
-   * Animate Dead and Dance of the Dead (D721): the target is a creature card in a graveyard, and
+   * Animate Dead and Dance of the Dead (D722): the target is a creature card in a graveyard, and
    * as the Aura resolves that card is put onto the battlefield under the Aura's controller with the
    * Aura attached to it, recorded on the creature as `animatedBy`. The card's own "if it's on the
    * battlefield" check, and its change of enchant ability, are folded into that one step.

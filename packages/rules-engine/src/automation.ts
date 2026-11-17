@@ -2606,7 +2606,7 @@ export function stateBasedActions(state: GameState): GameState {
           const enchant = inst.bestowed === true ? BESTOW_TARGET : auraDef?.target;
           /*
             Animate Dead's enchant ability on the battlefield is "enchant creature put onto the
-            battlefield with ~" (D721): the creature it animated, and only while that is a creature.
+            battlefield with ~" (D722): the creature it animated, and only while that is a creature.
           */
           const illegalHost = host !== undefined && host.zone === 'battlefield'
             && (inst.bestowed !== true && auraDef?.reanimates === true
@@ -4303,6 +4303,10 @@ function askOrFinish(
       answers = [...answers, { seat: entry.seat, ids: [] }];
       continue;
     }
+    // And the step of the effect that happens as the question is reached (D721): Sylvan Library's
+    // two cards are drawn before it asks which go back. See `CardsDecisionSpec.onReach`.
+    const onReach = 'onReach' in spec ? spec.onReach : undefined;
+    if (onReach !== undefined) state = onReach(state, object.controller, object.source);
     // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
     // the effect at the end, not as the questions are asked — which is right, because "each player
     // sacrifices a creature" is simultaneous and the second player must not see the first's
@@ -5148,7 +5152,7 @@ function completeResolution(
       }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');
-        // Animate Dead (D721): the card comes back first, under the Aura's controller, and is the host.
+        // Animate Dead (D722): the card comes back first, under the Aura's controller, and is the host.
         if (host && host.kind === 'card' && script.aura.reanimates === true) {
           const card = next.instances[host.id];
           if (card !== undefined && card.zone === 'graveyard') {
