@@ -48895,3 +48895,39 @@ cost chain, the prototype cost's colours).
     engine tests: 4,970, all passing
 
 Coverage: 12,002 of 31,743 cards (+8), 31,756 of 59,509 lines (+18). Staples: 239 of 244.
+
+## D935 — Prowl and freerunning
+
+"Prowl {cost} (You may cast this for its prowl cost if you dealt combat damage to a player this turn
+with a [creature type].)" (CR 702.76a), from Morningtide, and "Freerunning {cost} (... with an
+Assassin or a commander.)" (CR 702.181a), from Assassin's Creed. Nine legal cards now read whole.
+
+How it is read:
+- **A new turn fact, `combatHitsThisTurn`.** Written where combat damage to a player lands (the
+  place toxic and `dealtCombatDamage` are written), keyed by the seat that controlled the creature,
+  with its creature types and whether it was a commander as the damage was dealt. Cleared with the
+  other turn facts. A changeling records every creature type.
+- **Spectacle's play a third and fourth time**, after surge (D928): `CardScript.spectacle` gained
+  `prowl` and `freerunning`. The four conditions now live in one function, `spectacleRefusal`,
+  which the offer and `castSpell` both ask, so the two cannot disagree. Prowl compares the
+  recorded types with the spell's own (`cardHasSubtype`, so a Kindred spell and a changeling card
+  both work); freerunning looks for an Assassin or a commander.
+- **The riders are surge's**: "If this spell's prowl (freerunning) cost was paid" on the spell, and
+  "When ~ enters, if its prowl cost was paid" on the `surged` marker, which the arrival now writes
+  for all three keywords (a card has only one of them).
+
+**Tests.** 7 engine tests:
+- the cards read;
+- a Rogue's hit is recorded with its types, and the record clears with the turn;
+- prowl is offered after a Rogue's or a changeling's hit, and not after a Bear's or none, and is
+  refused then;
+- the spell rider happens only when prowled;
+- the enters rider happens only when prowled;
+- freerunning is offered after an Assassin's or a commander's hit and not a Rogue's or a Bear's;
+- a commander's hit is recorded as one.
+
+Faults injected by hand: 10 of 10 caught.
+
+    engine tests: 4,977, all passing
+
+Coverage: 12,011 of 31,743 cards (+9), 31,779 of 59,509 lines (+23). Staples: 239 of 244.

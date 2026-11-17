@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -567,16 +567,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
           : prototyped ? script?.prototype : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
-    // Surge (D928) is spectacle's flag with its own condition: another spell cast this turn.
-    if (spectacled && script?.spectacle?.surge === true) {
-      if ((state.spellsCastThisTurnBy[String(action.by)] ?? 0) < 1) {
-        throw new EngineError('RULE_NOT_APPLICABLE', 'the surge cost is only payable if you have cast another spell this turn');
-      }
-    } else if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
-      && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)) {
-      throw new EngineError('RULE_NOT_APPLICABLE',
-        'the spectacle cost is only payable if an opponent lost life this turn');
-    }
+    // Spectacle, and surge (D928), prowl and freerunning (D935): one flag, four conditions.
+    const refusal = spectacled && script?.spectacle !== undefined
+      ? spectacleRefusal(state, action.by, state.cardDefs[inst.defKey], script.spectacle) : null;
+    if (refusal !== null) throw new EngineError('RULE_NOT_APPLICABLE', refusal);
     if (commanderFree && !controlsACommander(state, action.by)) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'you do not control a commander');
     }

@@ -11582,7 +11582,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     what the card is; either half alone is a card that does less than it reads.
   */
   const alternative =
-    /^(flashback|madness|miracle|foretell|spectacle|surge|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
+    /^(flashback|madness|miracle|foretell|spectacle|surge|prowl|freerunning|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
       .exec(text);
   if (alternative !== null) {
     const mana = alternative[2]!;
@@ -11594,6 +11594,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       case 'spectacle': return { spectacle: { cost: mana } };
       // Surge (D928): spectacle's alternative cost with another condition. See `CardScript.spectacle`.
       case 'surge': return { spectacle: { cost: mana, surge: true } };
+      // Prowl and freerunning (D935): the same again, conditioned on a combat hit this turn.
+      case 'prowl': return { spectacle: { cost: mana, prowl: true } };
+      case 'freerunning': return { spectacle: { cost: mana, freerunning: true } };
       case 'dash': return { dash: { cost: mana }, triggers: [dashReturn()] };
       case 'ninjutsu': return { ninjutsu: { cost: mana }, abilities: [ninjutsuAbility(mana)] };
       // The one of the eight that stores its printed line as well, as Capsize does.
@@ -19584,10 +19587,11 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     Valakut. The enters trigger with an intervening if (CR 603.4) on the `surged` marker the arrival
     wrote, as "if it was kicked" reads `KICKED`.
   */
-  const surgeIf = new RegExp(`^(When (?:${selfRef(name)}) enters), if its surge cost was paid, (.+)$`, 'i')
+  // And prowl's and freerunning's (D935), on the same marker: Earwig Squad.
+  const surgeIf = new RegExp(`^(When (?:${selfRef(name)}) enters), if its (surge|prowl|freerunning) cost was paid, (.+)$`, 'i')
     .exec(withoutAbilityWord(plain(line).trim()));
   if (surgeIf !== null) {
-    const read = triggerFromLine(`${surgeIf[1]!}, ${surgeIf[2]!}`, name);
+    const read = triggerFromLine(`${surgeIf[1]!}, ${surgeIf[3]!}`, name);
     const inner = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
     if (inner === null) return null;
     const surged: NonNullable<TriggerDef['condition']> = (c) => (c.state.instances[c.source]?.counters[SURGED] ?? 0) > 0;
@@ -19595,7 +19599,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     return {
       triggers: [{
         ...inner,
-        description: `if its surge cost was paid, ${inner.description}`,
+        description: `if its ${surgeIf[2]!.toLowerCase()} cost was paid, ${inner.description}`,
         condition: own === undefined ? surged : (c) => surged(c) && own(c),
       }],
     };
@@ -23458,7 +23462,8 @@ function readEffect(
     "If this spell's surge cost was paid, <effect>" (D928): Crush of Tentacles' rider, read off the
     spell resolving.
   */
-  const surgeRider = /^if this spell's surge cost was paid, (.+)$/i.exec(clause.trim());
+  // And prowl's and freerunning's (D935): Morsel Theft, Monastery Raid.
+  const surgeRider = /^if this spell's (?:surge|prowl|freerunning) cost was paid, (.+)$/i.exec(clause.trim());
   if (surgeRider !== null) {
     const inner = readEffect(surgeRider[1]!, name, where);
     if (inner !== null && (inner.targets ?? []).length === 0 && (inner.decisions ?? []).length === 0

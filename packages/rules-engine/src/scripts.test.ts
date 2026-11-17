@@ -18593,6 +18593,103 @@ describe('prototype (D934)', () => {
   });
 });
 
+describe('prowl and freerunning (D935)', () => {
+  const ROWS = [
+    { name: 'Test Pickpocket', type_line: 'Kindred Sorcery — Rogue', oracle_text: "Prowl {B}\nTarget player loses 3 life and you gain 3 life. If this spell's prowl cost was paid, draw a card.", mana_cost: '{5}{B}', cmc: 6, colors: ['B'], layout: 'normal' },
+    { name: 'Test Lurker', type_line: 'Creature — Faerie Rogue', oracle_text: 'Prowl {B}\nWhen Test Lurker enters, if its prowl cost was paid, draw a card.', mana_cost: '{5}{B}', cmc: 6, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Runner', type_line: 'Creature — Human Warrior', oracle_text: 'Freerunning {B}', mana_cost: '{5}{B}', cmc: 6, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Rogue', type_line: 'Creature — Human Rogue', oracle_text: '', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Assassin', type_line: 'Creature — Human Assassin', oracle_text: '', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Shifter', type_line: 'Creature — Shapeshifter', oracle_text: 'Changeling', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd935', name: 'Prowl',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 39 }],
+    data: ROWS as never[],
+  });
+  /** One Swamp, so only the prowl or freerunning cost is affordable, and `hitter` swings unblocked. */
+  const afterHit = (card: string, hitter: string | null) => {
+    const s = arena({
+      decks: { 0: 'd935', 1: 'd935' }, deckSpecs: { d935: deck.deck }, hands: { 0: [card] },
+      battlefield: { 0: ['Swamp', ...(hitter === null ? [] : [hitter])] }, turn: 3, firstSeat: 0,
+    });
+    if (hitter === null) return advanceTo(s, 'postcombat-main');
+    const attacking = advanceTo(s, 'declare-attackers');
+    return advanceTo(apply(attacking, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(attacking, 0, 'battlefield', hitter), defender: 1 }] }), 'postcombat-main');
+  };
+  const altPlays = (s: GameState, card: string) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', card) && p.spectacled === true);
+  const castAlt = (s: GameState, card: string, alt: boolean, targets?: readonly Target[]) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(alt ? { spectacled: true } : {}), ...(targets === undefined ? {} : { targets }) } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature that hits a player is recorded with its types, and the record clears with the turn', () => {
+    const s = afterHit('Test Pickpocket', 'Test Rogue');
+    expect(s.seats[1]!.life).toBe(19);
+    expect(s.combatHitsThisTurn?.['0']).toEqual([{ subtypes: ['Human', 'Rogue'] }]);
+    expect(nextTurn(s).combatHitsThisTurn?.['0'] ?? []).toEqual([]);
+  });
+
+  it('prowl: offered after a Rogue hit, and not after a Bear hit or no hit', () => {
+    expect(altPlays(afterHit('Test Pickpocket', 'Test Rogue'), 'Test Pickpocket').map((p) => p.manaCost)).toEqual(['{B}']);
+    expect(altPlays(afterHit('Test Pickpocket', 'Test Shifter'), 'Test Pickpocket').length).toBe(1);
+    expect(altPlays(afterHit('Test Pickpocket', 'Test Bear'), 'Test Pickpocket')).toEqual([]);
+    const s = afterHit('Test Pickpocket', null);
+    expect(altPlays(s, 'Test Pickpocket')).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pickpocket'), spectacled: true, targets: [{ kind: 'player', seat: 1 }] } as Action)).toMatch(/prowl cost/);
+  });
+
+  it('"if this spell\'s prowl cost was paid": the rider happens only then', () => {
+    const s = afterHit('Test Pickpocket', 'Test Rogue');
+    const hand = ids(s, 0, 'hand').length;
+    const prowled = castAlt(s, 'Test Pickpocket', true, [{ kind: 'player', seat: 1 }]);
+    expect(prowled.seats[1]!.life).toBe(16);
+    expect(ids(prowled, 0, 'hand').length).toBe(hand - 1 + 1);
+    const rich = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 6, R: 0, G: 0, C: 0 } } };
+    expect(ids(castAlt(rich, 'Test Pickpocket', false, [{ kind: 'player', seat: 1 }]), 0, 'hand').length).toBe(hand - 1);
+  });
+
+  it('"when it enters, if its prowl cost was paid": the draw only when prowled', () => {
+    const s = afterHit('Test Lurker', 'Test Rogue');
+    const hand = ids(s, 0, 'hand').length;
+    expect(ids(castAlt(s, 'Test Lurker', true), 0, 'hand').length).toBe(hand - 1 + 1);
+    const rich = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 6, R: 0, G: 0, C: 0 } } };
+    expect(ids(castAlt(rich, 'Test Lurker', false), 0, 'hand').length).toBe(hand - 1);
+  });
+
+  it('freerunning: an Assassin or a commander, and nothing else', () => {
+    expect(altPlays(afterHit('Test Runner', 'Test Assassin'), 'Test Runner').map((p) => p.manaCost)).toEqual(['{B}']);
+    const rogue = afterHit('Test Runner', 'Test Rogue');
+    expect(altPlays(rogue, 'Test Runner')).toEqual([]);
+    expect(refusal(rogue, { type: 'auto:cast', by: 0, card: find(rogue, 0, 'hand', 'Test Runner'), spectacled: true } as Action)).toMatch(/freerunning cost/);
+    // A commander's hit, whatever its types.
+    const bear = afterHit('Test Runner', 'Test Bear');
+    expect(altPlays(bear, 'Test Runner')).toEqual([]);
+    const commanded = { ...bear, combatHitsThisTurn: { '0': [{ subtypes: ['Bear'], commander: true as const }] } };
+    expect(altPlays(commanded, 'Test Runner').length).toBe(1);
+    expect(castAlt(commanded, 'Test Runner', true).instances[find(bear, 0, 'hand', 'Test Runner')]!.zone).toBe('battlefield');
+  });
+
+  it('a commander that hits is recorded as one', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd935', 1: 'd935' }, deckSpecs: { d935: deck.deck }, hands: { 0: ['Test Runner'] },
+      battlefield: { 0: ['Swamp', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, isCommander: true } } };
+    s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 'postcombat-main');
+    expect(s.combatHitsThisTurn?.['0']).toEqual([{ subtypes: ['Bear'], commander: true }]);
+    expect(altPlays(s, 'Test Runner').length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

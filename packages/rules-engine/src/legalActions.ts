@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { commanderTaxFor, listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -712,6 +712,32 @@ const COLOUR_NAMES: Readonly<Record<string, string>> = { W: 'white', U: 'blue', 
 export function pitchOptions(state: GameState, seat: SeatIndex, spell: string, colour: string): string[] {
   return listAt(state, zoneKey(seat, 'hand')).filter((id) => id !== spell
     && (state.cardDefs[state.instances[id]?.defKey ?? '']?.colors ?? []).includes(colour));
+}
+
+/**
+ * Why a spectacle-shaped alternative cost cannot be paid now, or null when it can: spectacle,
+ * surge (D928), prowl and freerunning (D935) share one play and one flag and differ only in the
+ * condition. Asked by the offer and by `castSpell`, so the two cannot disagree.
+ */
+export function spectacleRefusal(
+  state: GameState, seat: SeatIndex, def: CardDef | undefined, spectacle: NonNullable<CardScript['spectacle']>,
+): string | null {
+  if (spectacle.surge === true) {
+    return (state.spellsCastThisTurnBy[String(seat)] ?? 0) >= 1 ? null
+      : 'the surge cost is only payable if you have cast another spell this turn';
+  }
+  const hits = state.combatHitsThisTurn?.[String(seat)] ?? [];
+  if (spectacle.prowl === true) {
+    return hits.some((hit) => hit.subtypes.some((type) => cardHasSubtype(def, type))) ? null
+      : 'the prowl cost is only payable if a creature of yours sharing a creature type with this spell dealt combat damage to a player this turn';
+  }
+  if (spectacle.freerunning === true) {
+    return hits.some((hit) => hit.commander === true || hit.subtypes.includes('Assassin')) ? null
+      : 'the freerunning cost is only payable if an Assassin or a commander of yours dealt combat damage to a player this turn';
+  }
+  return state.seats.some((other) => other.index !== seat && !other.eliminated
+    && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0) ? null
+    : 'the spectacle cost is only payable if an opponent lost life this turn';
 }
 
 export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
@@ -1774,18 +1800,19 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           on anybody but you pays for it.
         */
         ...(script?.spectacle === undefined
-          || (script.spectacle.surge === true
-            // Surge (D928): another spell of this seat's this turn, before this one.
-            ? (state.spellsCastThisTurnBy[String(seat)] ?? 0) < 1
-            : !state.seats.some((other) => other.index !== seat && !other.eliminated
-              && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0))
+          // Surge (D928), prowl and freerunning (D935) are the same play under other conditions.
+          || spectacleRefusal(state, seat, state.cardDefs[state.instances[id]?.defKey ?? ''], script.spectacle) !== null
           ? []
           : [{
               flag: 'spectacled' as const,
               cost: script.spectacle.cost,
               note: script.spectacle.surge === true
                 ? `surge cost (${script.spectacle.cost}, because you have cast another spell this turn)`
-                : `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
+                : script.spectacle.prowl === true
+                  ? `prowl cost (${script.spectacle.cost}, because a creature sharing its type dealt combat damage to a player)`
+                  : script.spectacle.freerunning === true
+                    ? `freerunning cost (${script.spectacle.cost}, because an Assassin or commander dealt combat damage to a player)`
+                    : `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
               specs: specsFor(script),
             }]),
         /*

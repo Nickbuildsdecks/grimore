@@ -3329,6 +3329,13 @@ export interface CardScript {
      * validation are spectacle's; only the condition and the words differ.
      */
     readonly surge?: true;
+    /**
+     * Prowl (D935, CR 702.76a): "if you dealt combat damage to a player this turn with a source
+     * that shared a creature type with this spell". Freerunning (D935, CR 702.181a): "... with an
+     * Assassin or a commander". Both are read off `combatHitsThisTurn`.
+     */
+    readonly prowl?: true;
+    readonly freerunning?: true;
   };
   /**
    * Overload: pay more and the spell stops pointing at one thing and happens to everything

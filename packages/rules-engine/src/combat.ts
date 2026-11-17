@@ -12,7 +12,7 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  assignsNoCombatDamage, clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, keywordBlockRules,
+  assignsNoCombatDamage, clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, isCreatureType, keywordBlockRules,
   protectionApplies,
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
@@ -658,7 +658,8 @@ function hit(
     to the same simultaneous damage still dealt its own, and its toxic with it.
   */
   const dealer = state.instances[attacker];
-  const toxic = dealer === undefined ? 0 : characteristicsOf(state, dealer).toxic;
+  const dealt = dealer === undefined ? undefined : characteristicsOf(state, dealer);
+  const toxic = dealt?.toxic ?? 0;
   const poisoned = toxic > 0
     ? replaceSeat(next, target.seat, { poison: clampValue(after.poison + toxic) })
     : next;
@@ -669,6 +670,19 @@ function hit(
       creature: attacker, defender: target.seat,
       amount: Math.max(before.life - after.life, after.poison - before.poison),
     }],
+    // Prowl's and freerunning's fact (D935): who hit a player this turn, with what types.
+    ...(dealer === undefined || dealt === undefined ? {} : {
+      combatHitsThisTurn: {
+        ...(poisoned.combatHitsThisTurn ?? {}),
+        [String(dealer.zoneSeat)]: [
+          ...(poisoned.combatHitsThisTurn?.[String(dealer.zoneSeat)] ?? []),
+          {
+            subtypes: dealt.typeLine.subtypes.filter(isCreatureType),
+            ...(dealer.isCommander === true ? { commander: true as const } : {}),
+          },
+        ],
+      },
+    }),
   };
 }
 

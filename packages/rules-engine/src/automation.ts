@@ -1140,6 +1140,8 @@ export function endTurnCleanup(state: GameState): GameState {
     // And D564's four: who attacked, what died, what left and who gained life.
     attackedThisTurn: {},
     attackersThisTurn: [],
+    // And who dealt combat damage to a player (D935), prowl's and freerunning's fact.
+    combatHitsThisTurn: {},
     creaturesDiedThisTurn: 0,
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
@@ -5276,8 +5278,10 @@ function completeResolution(
       if (object.escaped === true && (script?.escape?.counters ?? 0) > 0) {
         next = addCounters(next, inst.id, '+1/+1', script!.escape!.counters!);
       }
-      // Surge (D928): cast for its surge cost, for "if its surge cost was paid".
-      if (object.spectacled === true && script?.spectacle?.surge === true) next = addCounters(next, inst.id, SURGED, 1);
+      // Surge (D928), and prowl and freerunning (D935): cast for that cost, for "if its surge cost
+      // was paid" and "if its prowl cost was paid". One marker: a card has only one of the three.
+      if (object.spectacled === true && (script?.spectacle?.surge === true || script?.spectacle?.prowl === true
+        || script?.spectacle?.freerunning === true)) next = addCounters(next, inst.id, SURGED, 1);
       // Squad (D924): how many times its cost was paid, for its entry trigger to read.
       if (script?.squad !== undefined && (object.replicated ?? 0) > 0) {
         next = addCounters(next, inst.id, SQUADDED, object.replicated!);

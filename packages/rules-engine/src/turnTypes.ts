@@ -103,6 +103,13 @@ export interface CopiedSpell {
  * "whenever ~ deals damage" is an ability of a permanent, and a burn spell's own id is a card on
  * the stack that must not be asked for triggers it could never have.
  */
+/** One creature's combat damage to a player, as `combatHitsThisTurn` records it (D935). */
+export interface CombatHit {
+  /** Its creature types as it dealt the damage — every one, for a changeling. */
+  readonly subtypes: readonly string[];
+  readonly commander?: true;
+}
+
 export interface DamageRecord {
   readonly to:
     | { readonly kind: 'player'; readonly seat: SeatIndex }
@@ -1332,6 +1339,15 @@ export interface AutomationState {
    * "untap all creatures that attacked this turn". Cleared with the other turn facts.
    */
   readonly attackersThisTurn?: readonly string[];
+  /**
+   * Combat damage dealt to a player this turn (D935), keyed by the seat that **controlled** the
+   * creature as it dealt it: its creature types then, and whether it was a commander. Prowl's fact
+   * ("a source you controlled that had any of this spell's creature types", CR 702.76a) and
+   * freerunning's ("an Assassin or a commander", CR 702.181a), both read as the damage was dealt,
+   * so a creature that changed types or left afterwards still counts. Cleared with the other turn
+   * facts.
+   */
+  readonly combatHitsThisTurn?: Readonly<Record<string, readonly CombatHit[]>>;
   readonly creaturesDiedThisTurn?: number;
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
