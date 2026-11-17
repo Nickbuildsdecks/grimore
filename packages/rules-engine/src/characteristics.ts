@@ -343,7 +343,7 @@ export function shortName(name: string): string | null {
 }
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
-type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap';
+type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -364,6 +364,10 @@ const COMBAT_STATICS: Readonly<Record<string, CombatStatic>> = Object.freeze({
   "can't block": 'cantBlock',
   "can't be blocked": 'cantBeBlocked',
   'attacks each combat if able': 'mustAttack',
+  // The blocking requirements (D913, CR 509.1c). See `ContinuousEffect.mustBlock`.
+  'blocks each combat if able': 'mustBlock',
+  'must be blocked if able': 'mustBeBlocked',
+  'must be blocked each combat if able': 'mustBeBlocked',
   // Not a combat rule, but the same kind of sentence: the card's own drawback, stated of itself
   // (D589). "This artifact doesn't untap during your untap step" is Basalt Monolith.
   "doesn't untap during your untap step": 'doesntUntap',
@@ -503,6 +507,11 @@ function protectionQuality(word: string): string | null {
  */
 function printedCombatLine(line: string, name: string | undefined): PrintedPart | null {
   const low = line.toLowerCase().replace(/\.$/, '').trim();
+  // Lure's sentence names the card in the middle (D913): "All creatures able to block ~ do so."
+  const lured = /^all creatures able to block (.+) do so$/.exec(low);
+  if (lured !== null) {
+    return selfSubjects(name).includes(lured[1]!) ? { kind: 'combat-static', statics: ['lure'] } : null;
+  }
   const subject = selfSubjects(name).find((candidate) => low.startsWith(`${candidate} `));
   if (subject === undefined) return null;
   const clauses = low.slice(subject.length + 1).trim().split(/\s+and\s+/)
@@ -818,7 +827,19 @@ export function printedCombatStatics(
   oracleText: string | null | undefined,
   name?: string,
 ): { cantBlock: boolean; cantBeBlocked: boolean; mustAttack: boolean; doesntUntap: boolean } {
-  const found = { cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false };
+  const all = printedCombatFlags(oracleText, name);
+  return { cantBlock: all.cantBlock, cantBeBlocked: all.cantBeBlocked, mustAttack: all.mustAttack, doesntUntap: all.doesntUntap };
+}
+
+/**
+ * Every printed combat static, the blocking requirements included (D913). `printedCombatStatics`
+ * keeps its four-field answer, which D495's tests pin; this is the one `characteristicsOf` reads.
+ */
+function printedCombatFlags(oracleText: string | null | undefined, name?: string): Record<CombatStatic, boolean> {
+  const found: Record<CombatStatic, boolean> = {
+    cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false,
+    mustBlock: false, mustBeBlocked: false, lure: false,
+  };
   for (const part of printedParts(oracleText, name)) {
     if (part.kind !== 'combat-static') continue;
     for (const one of part.statics) found[one] = true;
@@ -1494,6 +1515,19 @@ export interface ContinuousEffect {
    */
   readonly mustAttack?: boolean;
   /**
+   * The four blocking requirements (CR 509.1c, D913), checked against the whole declaration by
+   * `blockRequirementIssue`:
+   * - `mustBlock`: "<this creature> blocks each combat if able" (it blocks something);
+   * - `mustBlockAttacker`: "target creature blocks ~ this turn if able" and provoke (the creature
+   *   with the effect blocks the attacker named here);
+   * - `mustBeBlocked`: "~ must be blocked if able" (at least one creature blocks it);
+   * - `lure`: "all creatures able to block ~ do so" (each one that can, does).
+   */
+  readonly mustBlock?: boolean;
+  readonly mustBlockAttacker?: string;
+  readonly mustBeBlocked?: boolean;
+  readonly lure?: boolean;
+  /**
    * "Can't be blocked by Walls." A restriction on the *blocker*, read from the attacker, which is
    * the only shape of evasion in this pool that is not a keyword — so it lives here rather than
    * in `Keyword`, and `canBlock` reads it the way `dealCombatDamage` reads `preventsCombatDamage`.
@@ -1942,6 +1976,11 @@ export interface Characteristics {
   readonly doesntUntap: boolean;
   /** "Attacks each combat if able" (CR 508.1d). Checked against the whole declaration. */
   readonly mustAttack: boolean;
+  /** The blocking requirements (CR 509.1c, D913). See `ContinuousEffect.mustBlock`. */
+  readonly mustBlock: boolean;
+  readonly mustBlockAttackers: readonly string[];
+  readonly mustBeBlocked: boolean;
+  readonly lure: boolean;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
   /** "Can't be blocked" outright, read from the attacker when a block is offered. */
@@ -2699,10 +2738,14 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     rather than being layered on top of it (CR 613.1f). See `printedCombatStatics` for the hole this
     closes — the three fields existed and nothing but a script could ever set them.
   */
-  const printedCombat = printedCombatStatics(def?.oracleText, def?.name);
+  const printedCombat = printedCombatFlags(def?.oracleText, def?.name);
   let cantBlock = printedCombat.cantBlock;
   let doesntUntap = printedCombat.doesntUntap;
   let mustAttack = printedCombat.mustAttack;
+  let mustBlock = printedCombat.mustBlock;
+  let mustBeBlocked = printedCombat.mustBeBlocked;
+  let lure = printedCombat.lure;
+  const mustBlockAttackers: string[] = [];
   let cantBeBlockedByWalls = false;
   let cantBeBlocked = printedCombat.cantBeBlocked;
   /*
@@ -2773,6 +2816,10 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       doesntUntap = false;
       cantBlock = false;
       mustAttack = false;
+      mustBlock = false;
+      mustBeBlocked = false;
+      lure = false;
+      mustBlockAttackers.length = 0;
       cantBeBlockedByWalls = false;
       cantBeBlocked = false;
       cantBeBlockedBy = [];
@@ -2814,6 +2861,12 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.doesntUntap) doesntUntap = true;
     if (effect.cantBlock) cantBlock = true;
     if (effect.mustAttack) mustAttack = true;
+    if (effect.mustBlock) mustBlock = true;
+    if (effect.mustBeBlocked) mustBeBlocked = true;
+    if (effect.lure) lure = true;
+    if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
+      mustBlockAttackers.push(effect.mustBlockAttacker);
+    }
     if (effect.cantBeBlockedByWalls) cantBeBlockedByWalls = true;
     if (effect.cantBeBlocked) cantBeBlocked = true;
     for (const subtype of effect.landwalk ?? []) {
@@ -2867,6 +2920,11 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // A creature that cannot attack at all is not required to: a restriction beats a requirement
     // (CR 509.1a is the blocking half of the same idea, and 508.1d says "if able").
     mustAttack: mustAttack && !cantAttack,
+    // And the blocking half: a creature that can't block is not required to (CR 509.1c).
+    mustBlock: mustBlock && !cantBlock,
+    mustBlockAttackers: cantBlock ? [] : mustBlockAttackers,
+    mustBeBlocked,
+    lure,
     cantBeBlockedByWalls,
     cantBeBlocked,
     cantBeBlockedBy,

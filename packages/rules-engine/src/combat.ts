@@ -360,6 +360,130 @@ export function menaceSatisfied(state: GameState, attack: CombatAttack): boolean
   return attack.blockers.length === 0 || attack.blockers.length >= 2;
 }
 
+/** One creature blocking one attacker, as a declaration lists it. */
+export interface BlockEntry { readonly blocker: string; readonly attacker: string }
+
+/**
+ * The blocking requirements this seat's declaration is held to (CR 509.1c, D913), precomputed
+ * once: which blocker may block which attacker, and every requirement in play. `null` when there is
+ * none, which is nearly every combat, so the checks below cost nothing then.
+ */
+function blockRequirements(state: GameState, seat: SeatIndex) {
+  const attackers = state.combat.attacks.filter((a) => a.defender === seat).map((a) => a.attacker);
+  const blockers = legalBlockers(state, seat);
+  if (attackers.length === 0 || blockers.length === 0) return null;
+  const chOf = (id: string) => characteristicsOf(state, state.instances[id]!);
+  const mustBlock = blockers.filter((y) => chOf(y).mustBlock);
+  const asked = blockers.flatMap((y) => chOf(y).mustBlockAttackers.map((a) => ({ blocker: y, attacker: a })));
+  const lured = attackers.filter((a) => state.instances[a] !== undefined && chOf(a).lure);
+  const mustBeBlocked = attackers.filter((a) => state.instances[a] !== undefined && chOf(a).mustBeBlocked);
+  // Asked before the table of who may block whom, which is the expensive half.
+  if (mustBlock.length + asked.length + lured.length + mustBeBlocked.length === 0) return null;
+  const able = new Map(blockers.map((y) => [y, new Set(attackers.filter((a) => canBlock(state, y, a, seat) === null))]));
+  const named = asked.filter((r) => able.get(r.blocker)!.has(r.attacker));
+  const menace = new Set(attackers.filter((a) => state.instances[a] !== undefined && chOf(a).keywords.has('menace')));
+  return { attackers, blockers, able, mustBlock, named, lured, mustBeBlocked, menace };
+}
+
+type Requirements = NonNullable<ReturnType<typeof blockRequirements>>;
+
+/** How many of the requirements a declaration obeys: the number CR 509.1c says to maximise. */
+function obeyed(req: Requirements, blocks: readonly BlockEntry[]): number {
+  const blocking = new Map(blocks.map((b) => [b.blocker, b.attacker]));
+  let n = req.mustBlock.filter((y) => blocking.has(y)).length;
+  n += req.named.filter((r) => blocking.get(r.blocker) === r.attacker).length;
+  // Lure is a requirement on each creature able to block the lured one (CR 509.1c).
+  for (const a of req.lured) n += req.blockers.filter((y) => req.able.get(y)!.has(a) && blocking.get(y) === a).length;
+  n += req.mustBeBlocked.filter((a) => blocks.some((b) => b.attacker === a)).length;
+  return n;
+}
+
+/** A declaration's menace half (CR 702.110b), asked of a candidate rather than of the board. */
+function menaceHolds(req: Requirements, blocks: readonly BlockEntry[]): boolean {
+  return [...req.menace].every((a) => {
+    const n = blocks.filter((b) => b.attacker === a).length;
+    return n === 0 || n >= 2;
+  });
+}
+
+/**
+ * A legal declaration that obeys more requirements than `blocks` does, made by moving one creature
+ * to block another attacker (two, when the attacker has menace), or `null` when there is none.
+ *
+ * CR 509.1c asks for the **maximum** number of requirements obeyed without breaking a restriction.
+ * This asks the local form of that question, one or two creatures moved at a time, which is every
+ * board a printed requirement makes in practice: the requirements are each about one blocker or
+ * one attacker, and fixing one never needs more than a creature or a menace pair moved. Stated
+ * rather than hidden: a board where only a three-creature rearrangement does better would be
+ * accepted as it was declared.
+ */
+function betterBlocks(req: Requirements, blocks: readonly BlockEntry[]): { blocks: BlockEntry[]; blocker: string; attacker: string } | null {
+  const now = obeyed(req, blocks);
+  const moved = (from: readonly BlockEntry[], y: string, a: string): BlockEntry[] => [
+    ...from.filter((b) => b.blocker !== y), { blocker: y, attacker: a },
+  ];
+  for (const y of req.blockers) {
+    for (const a of req.able.get(y)!) {
+      if (blocks.some((b) => b.blocker === y && b.attacker === a)) continue;
+      const one = moved(blocks, y, a);
+      if (menaceHolds(req, one)) {
+        if (obeyed(req, one) > now) return { blocks: one, blocker: y, attacker: a };
+        continue;
+      }
+      if (!req.menace.has(a)) continue;
+      for (const y2 of req.blockers) {
+        if (y2 === y || !req.able.get(y2)!.has(a) || one.some((b) => b.blocker === y2 && b.attacker === a)) continue;
+        const two = moved(one, y2, a);
+        if (menaceHolds(req, two) && obeyed(req, two) > now) return { blocks: two, blocker: y, attacker: a };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Why this declaration breaks a blocking requirement (CR 509.1c, D913), or `null` if it obeys as
+ * many as it can. The engine refuses a declaration with an issue, so a player is told which
+ * creature has to block what.
+ */
+export function blockRequirementIssue(
+  state: GameState, seat: SeatIndex, blocks: readonly BlockEntry[],
+): CombatIssue | null {
+  const req = blockRequirements(state, seat);
+  if (req === null) return null;
+  const better = betterBlocks(req, blocks);
+  if (better === null) return null;
+  const name = (id: string) => characteristicsOf(state, state.instances[id]!).name;
+  const { blocker, attacker } = better;
+  const unblocked = !blocks.some((b) => b.attacker === attacker);
+  const reason = req.mustBeBlocked.includes(attacker) && unblocked
+    ? `${name(attacker)} must be blocked if able`
+    : req.mustBlock.includes(blocker) && !blocks.some((b) => b.blocker === blocker)
+      ? `${name(blocker)} must block this combat if able`
+      : `${name(blocker)} must block ${name(attacker)} if able`;
+  return { card: blocker, reason };
+}
+
+/**
+ * The same declaration changed as little as it takes to obey the blocking requirements (D913): each
+ * step is the move `blockRequirementIssue` would have named. For the computer's own declarations,
+ * which are chosen for value and then made legal, the way `forcedAttackers` is folded into an attack.
+ */
+export function meetBlockRequirements(
+  state: GameState, seat: SeatIndex, blocks: readonly BlockEntry[],
+): BlockEntry[] {
+  const req = blockRequirements(state, seat);
+  let out = [...blocks];
+  if (req === null) return out;
+  // Each step obeys strictly more requirements, so this ends; the bound is a guard, not a limit.
+  for (let i = 0; i < 64; i++) {
+    const better = betterBlocks(req, out);
+    if (better === null) break;
+    out = better.blocks;
+  }
+  return out;
+}
+
 /**
  * Flanking (CR 702.25a): the -1/-1 every blocker without flanking takes for blocking a flanker.
  *

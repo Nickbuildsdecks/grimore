@@ -17021,6 +17021,163 @@ describe('training and melee (D912)', () => {
   });
 });
 
+describe('blocking requirements: lure, provoke, "must be blocked if able" (D913)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2', type = 'Creature — Beast') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Lure', 'All creatures able to block Test Lure do so.'),
+    C('Test Bait', 'Test Bait must be blocked if able.'),
+    C('Test Guard', 'Test Guard blocks each combat if able.'),
+    C('Test Provoker', 'Provoke'),
+    C('Test Taunter', '{0}: Target creature blocks Test Taunter this turn if able.'),
+    C('Test Flier', 'Flying\nAll creatures able to block Test Flier do so.'),
+    C('Test Brute', 'Menace\nAll creatures able to block Test Brute do so.'),
+    C('Test Bear', ''),
+    C('Test Bird', 'Flying', '1', '1'),
+    { name: 'Test Duel', type_line: 'Instant', oracle_text: 'Target creature must be blocked this turn if able.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Allure', type_line: 'Instant', oracle_text: 'All creatures able to block target creature this turn do so.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'kw913', name: 'Block requirements',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 33 }],
+    data: ROWS as never[],
+  });
+  // Seat 0 attacks with `attackers` at seat 1, whose creatures are `theirs`; returns the declare-blockers state.
+  const combat = (mine: string[], attackers: string[], theirs: string[], before?: (s: GameState) => GameState,
+    aim?: (s: GameState) => Target[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw913', 1: 'kw913' }, deckSpecs: { kw913: deck.deck },
+      battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (before !== undefined) s = before(s);
+    s = advanceTo(s, 'declare-attackers');
+    const used = new Set<string>();
+    const ids0 = attackers.map((n) => {
+      const id = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === n && !used.has(i))!;
+      used.add(id);
+      return id;
+    });
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: ids0.map((attacker) => ({ attacker, defender: 1 })) }), 12);
+    // Provoke asks its controller for its target.
+    if (s.pendingChoice !== null && aim !== undefined) s = drain(apply(s, { type: 'auto:choose', by: 0, targets: aim(s) }), 12);
+    return advanceTo(s, 'declare-blockers');
+  };
+  const theirsNamed = (s: GameState, name: string) => ids(s, 1, 'battlefield').filter((i) => nameOf(s, i) === name);
+  const mineNamed = (s: GameState, name: string) => find(s, 0, 'battlefield', name);
+  const block = (s: GameState, blocks: { blocker: string; attacker: string }[]) => refusal(s, { type: 'auto:block', by: 1, blocks });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 7), ...ROWS.slice(9)]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('lure: every creature able to block it does', () => {
+    const s = combat(['Test Lure', 'Test Bear'], ['Test Lure', 'Test Bear'], ['Test Bear', 'Test Bear']);
+    const lure = mineNamed(s, 'Test Lure');
+    const bear = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === 'Test Bear')!;
+    const [a, b] = theirsNamed(s, 'Test Bear');
+    expect(block(s, [])).toMatch(/must block Test Lure if able/);
+    expect(block(s, [{ blocker: a!, attacker: lure }])).toMatch(/must block Test Lure if able/);
+    expect(block(s, [{ blocker: a!, attacker: lure }, { blocker: b!, attacker: bear }])).toMatch(/must block Test Lure if able/);
+    expect(block(s, [{ blocker: a!, attacker: lure }, { blocker: b!, attacker: lure }])).toBeNull();
+  });
+
+  it('a restriction beats a requirement: a creature that cannot block the lure is not required to', () => {
+    const s = combat(['Test Flier'], ['Test Flier'], ['Test Bear', 'Test Bird']);
+    const flier = mineNamed(s, 'Test Flier');
+    const [bird] = theirsNamed(s, 'Test Bird');
+    expect(block(s, [])).toMatch(/Test Bird must block Test Flier/);
+    expect(block(s, [{ blocker: bird!, attacker: flier }])).toBeNull();
+  });
+
+  it('lure with menace: two creatures move together', () => {
+    const s = combat(['Test Brute'], ['Test Brute'], ['Test Bear', 'Test Bear']);
+    const brute = mineNamed(s, 'Test Brute');
+    const [a, b] = theirsNamed(s, 'Test Bear');
+    expect(block(s, [])).toMatch(/must block Test Brute/);
+    expect(block(s, [{ blocker: a!, attacker: brute }, { blocker: b!, attacker: brute }])).toBeNull();
+  });
+
+  it('"must be blocked if able": one blocker is enough, none is not', () => {
+    const s = combat(['Test Bait', 'Test Bear'], ['Test Bait', 'Test Bear'], ['Test Bear', 'Test Bear']);
+    const bait = mineNamed(s, 'Test Bait');
+    const bear = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === 'Test Bear')!;
+    const [a, b] = theirsNamed(s, 'Test Bear');
+    expect(block(s, [])).toMatch(/Test Bait must be blocked if able/);
+    expect(block(s, [{ blocker: a!, attacker: bear }])).toMatch(/Test Bait must be blocked if able/);
+    expect(block(s, [{ blocker: a!, attacker: bait }])).toBeNull();
+    expect(block(s, [{ blocker: a!, attacker: bait }, { blocker: b!, attacker: bear }])).toBeNull();
+  });
+
+  it('"blocks each combat if able": the defender\'s own creature has to block something', () => {
+    const s = combat(['Test Bear', 'Test Bear'], ['Test Bear', 'Test Bear'], ['Test Guard', 'Test Bear']);
+    const [guard] = theirsNamed(s, 'Test Guard');
+    const [x] = ids(s, 0, 'battlefield').filter((i) => nameOf(s, i) === 'Test Bear');
+    expect(block(s, [])).toMatch(/Test Guard must block this combat if able/);
+    expect(block(s, [{ blocker: guard!, attacker: x! }])).toBeNull();
+  });
+
+  it('provoke: the target untaps and has to block the provoker', () => {
+    // Their only creature is tapped, so it is the one the trigger can aim at.
+    const tapFirst = (st: GameState) => {
+      const [t] = theirsNamed(st, 'Test Bear');
+      return { ...st, instances: { ...st.instances, [t!]: { ...st.instances[t!]!, tapped: true } } };
+    };
+    // Only a creature the defending player controls may be aimed at.
+    const mine = (st: GameState): Target[] => [{ kind: 'card', id: ids(st, 0, 'battlefield').find((i) => nameOf(st, i) === 'Test Bear')! }];
+    expect(() => combat(['Test Provoker', 'Test Bear'], ['Test Provoker', 'Test Bear'], ['Test Bear'], tapFirst, mine)).toThrow();
+    const s = combat(['Test Provoker', 'Test Bear'], ['Test Provoker', 'Test Bear'], ['Test Bear'], tapFirst,
+      (st) => [{ kind: 'card', id: theirsNamed(st, 'Test Bear')[0]! }]);
+    const provoker = mineNamed(s, 'Test Provoker');
+    const [provoked] = theirsNamed(s, 'Test Bear');
+    expect(characteristicsOf(s, s.instances[provoked!]!).mustBlockAttackers).toEqual([provoker]);
+    expect(s.instances[provoked!]!.tapped).toBe(false);
+    const bear = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === 'Test Bear')!;
+    expect(block(s, [])).toMatch(/must block Test Provoker if able/);
+    expect(block(s, [{ blocker: provoked!, attacker: bear }])).toMatch(/must block Test Provoker if able/);
+    expect(block(s, [{ blocker: provoked!, attacker: provoker }])).toBeNull();
+  });
+
+  it('an ability: "target creature blocks ~ this turn if able"', () => {
+    const s = combat(['Test Taunter', 'Test Bear'], ['Test Taunter', 'Test Bear'], ['Test Bear', 'Test Bear'], (st) => {
+      const taunter = find(st, 0, 'battlefield', 'Test Taunter');
+      const [t] = theirsNamed(st, 'Test Bear');
+      return drain(apply(st, { type: 'auto:activate', by: 0, card: taunter, abilityIndex: 0, targets: [{ kind: 'card', id: t! }] } as Action), 12);
+    });
+    const taunter = mineNamed(s, 'Test Taunter');
+    const [taunted, other] = theirsNamed(s, 'Test Bear');
+    const bear = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === 'Test Bear')!;
+    expect(block(s, [{ blocker: other!, attacker: taunter }])).toMatch(/must block Test Taunter if able/);
+    expect(block(s, [{ blocker: taunted!, attacker: taunter }, { blocker: other!, attacker: bear }])).toBeNull();
+  });
+
+  it('until end of turn, from a spell: "must be blocked" and lure', () => {
+    const castOn = (spell: string) => (st: GameState) => {
+      const withSpell = { ...st, zones: { ...st.zones, '0:hand': [...ids(st, 0, 'hand'), find(st, 0, 'library', spell)],
+        '0:library': ids(st, 0, 'library').filter((i) => i !== find(st, 0, 'library', spell)) } };
+      const moved = { ...withSpell, instances: { ...withSpell.instances, [find(st, 0, 'library', spell)]: { ...withSpell.instances[find(st, 0, 'library', spell)]!, zone: 'hand' as const } } };
+      const bear = find(moved, 0, 'battlefield', 'Test Bear');
+      return drain(apply(moved, { type: 'auto:cast', by: 0, card: find(moved, 0, 'hand', spell), targets: [{ kind: 'card', id: bear }] } as Action), 12);
+    };
+    let s = combat(['Test Bear', 'Test Bait'], ['Test Bear'], ['Test Bear', 'Test Bear'], castOn('Test Duel'));
+    let bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(block(s, [])).toMatch(/Test Bear must be blocked if able/);
+    s = combat(['Test Bear', 'Test Bait'], ['Test Bear'], ['Test Bear', 'Test Bear'], castOn('Test Allure'));
+    bear = find(s, 0, 'battlefield', 'Test Bear');
+    const [a, b] = theirsNamed(s, 'Test Bear');
+    expect(block(s, [{ blocker: a!, attacker: bear }])).toMatch(/must block Test Bear if able/);
+    expect(block(s, [{ blocker: a!, attacker: bear }, { blocker: b!, attacker: bear }])).toBeNull();
+  });
+
+  it('the computer, defending, obeys every requirement', () => {
+    const s = combat(['Test Lure', 'Test Bait', 'Test Bear'], ['Test Lure', 'Test Bait', 'Test Bear'], ['Test Bear', 'Test Bear', 'Test Guard']);
+    const action = botAction(s, 1)!;
+    expect(action.type).toBe('auto:block');
+    expect(refusal(s, action)).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

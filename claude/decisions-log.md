@@ -48070,3 +48070,68 @@ attacker's power is never greater than its own), and the guard was removed.
     engine tests: 4,850, all passing
 
 Coverage: 11,708 of 31,743 cards (+7), 31,283 of 59,509 lines (+24). Staples: 238 of 244.
+
+## D913 — Blocking requirements: Lure, provoke, "must be blocked if able"
+
+CR 509.1c: the defending player's declaration must obey as many blocking requirements as it can
+without breaking a restriction. The engine had restrictions on blocks and no requirements, so 135
+printed sentences could not be played. Four requirements are now characteristics, set by printed
+statics or by `PumpOptions`:
+- `mustBlock`: "~ blocks each combat if able", and "target creature blocks this turn if able";
+- `mustBlockAttackers`: provoke, and "target creature blocks ~ this turn if able";
+- `mustBeBlocked`: "~ must be blocked if able", and "target creature must be blocked this turn if
+  able";
+- `lure`: "All creatures able to block ~ do so", and its targeted until-end-of-turn form.
+
+How the declaration is held to them (`combat.ts`):
+- `obeyed` counts the requirements a declaration meets. Lure is one requirement per creature able
+  to block the lured attacker.
+- `betterBlocks` looks for a legal declaration that meets more, by moving one creature (two together
+  for a menace attacker). `declareBlockers` refuses a declaration that has one, naming what has to
+  block what.
+- `meetBlockRequirements` applies those moves to the computer's own plans, so its blocks are
+  always legal.
+- When no requirement is in play, which is nearly every combat, the check returns before building
+  its table of who may block whom.
+- **The approximation, stated:** CR 509.1c asks for the global maximum. This is the local form, one
+  or two creatures moved at a time. That covers every board a printed requirement makes in practice;
+  a board where only a three-creature rearrangement does better would be accepted as declared.
+- A restriction beats a requirement: a creature that cannot block that attacker (flying, can't
+  block) is never required to.
+
+Read by the compiler:
+- the printed statics above;
+- provoke, an optional target chosen from the defending player's creatures, which untaps and must
+  block the provoker;
+- the four targeted "this turn" forms;
+- the Aura riders "blocks each combat if able" and "must be blocked if able".
+
+`printedCombatStatics` keeps its four-field answer (D495's tests pin it). The new flags come from
+`printedCombatFlags`.
+
+Not read yet:
+- "gets +N/+N until end of turn and must be blocked this turn if able" (Compelled Duel);
+- "target creature defending player controls blocks it this combat if able" on an attack trigger;
+- the Aura and Equipment sentences that grant Lure to the creature;
+- "you choose how those creatures block".
+
+The table has no "must block" hint yet. The refusal reason says what has to block what.
+
+**Tests.** 10 engine tests:
+- seven printed cards and two spells read;
+- Lure, refused short of every able creature;
+- a flier's Lure binds only the creature that can block it;
+- Lure with menace moves two creatures;
+- "must be blocked if able";
+- "blocks each combat if able";
+- provoke: the target untaps, must block, and only a defending creature can be targeted;
+- the activated taunt;
+- the granted "must be blocked" and Lure;
+- the computer obeys every requirement at once.
+
+Faults injected by hand: 17 of 17 caught. Two of them, the granted Lure and "must be blocked",
+were missed at first and pinned by the spell test.
+
+    engine tests: 4,860, all passing
+
+Coverage: 11,745 of 31,743 cards (+37), 31,348 of 59,509 lines (+65). Staples: 238 of 244.

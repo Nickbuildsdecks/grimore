@@ -41,6 +41,7 @@ import {
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
+import { blockRequirementIssue } from './combat.js';
 /*
   `scriptForCard` and not `scriptFor`: a card nobody wrote a script for still has whatever the
   oracle-text compiler could read off its printed text, and these four readers decide whether a cast,
@@ -2586,6 +2587,9 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `${name} has menace and must be blocked by two or more creatures`);
     }
   }
+  // The blocking requirements (CR 509.1c, D913): Lure, provoke, "must be blocked if able".
+  const required = blockRequirementIssue(state, action.by, action.blocks);
+  if (required !== null) throw new EngineError('RULE_NOT_APPLICABLE', required.reason);
 
   let next: GameState = {
     ...state,

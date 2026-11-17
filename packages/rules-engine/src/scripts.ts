@@ -36,7 +36,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  gainControl, gainLife, goad, loseLife, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
+  gainControl, gainLife, goad, loseLife, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -3042,6 +3042,30 @@ const MELEE_TRIGGER: TriggerDef = {
  * Dethrone (CR 702.105a, D911): "Whenever this creature attacks the player with the most life or
  * tied for most life, put a +1/+1 counter on this creature." See `TriggerEvent.mostLife`.
  */
+/**
+ * Provoke (CR 702.39a, D913): "Whenever this creature attacks, you may have target creature
+ * defending player controls untap and block it if able." The defending player is this creature's
+ * attack's, read off the combat as the target is chosen; "you may" is the optional target. The
+ * requirement is `mustBlockAttacker`, held to the declaration by `blockRequirementIssue`.
+ */
+const PROVOKE_TRIGGER: TriggerDef = {
+  on: { kind: 'attacks' },
+  description: 'you may have target creature defending player controls untap and block it if able (provoke)',
+  targets: [{
+    kind: 'creature',
+    description: 'target creature defending player controls',
+    optional: true,
+    filter: (state, candidate, _controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      const attack = state.combat.attacks.find((a) => a.attacker === source);
+      return attack !== undefined && state.instances[candidate.id]?.zoneSeat === attack.defender;
+    },
+  }],
+  effect: (c) => cardTargets(c).reduce((state, id) => pump(
+    untapPermanent(state, id), [id], c.source, c.controller, { mustBlockAttacker: c.source },
+  ), c.state),
+};
+
 const DETHRONE_TRIGGER: TriggerDef = {
   on: { kind: 'attacks', mostLife: true },
   description: 'put a +1/+1 counter on this creature (dethrone)',
@@ -11193,6 +11217,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
+  if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
   if (word === 'training') return { triggers: [TRAINING_TRIGGER] };
   if (word === 'melee') return { triggers: [MELEE_TRIGGER] };
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
@@ -15396,6 +15421,9 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
   const rider = text.trim().replace(/\.$/, '');
   if (/^can't block$/i.test(rider)) return { bonus: { cantBlock: true }, harmful: true };
   if (/^attacks each combat if able$/i.test(rider)) return { bonus: { mustAttack: true }, harmful: true };
+  // The blocking requirements (D913): one hands a creature to the attacker, one draws every blocker.
+  if (/^blocks each combat if able$/i.test(rider)) return { bonus: { mustBlock: true }, harmful: true };
+  if (/^must be blocked(?: each combat)? if able$/i.test(rider)) return { bonus: { mustBeBlocked: true }, harmful: false };
   if (/^can't be blocked$/i.test(rider)) return { bonus: { cantBeBlocked: true }, harmful: false };
   if (/^loses all abilities$/i.test(rider)) return { bonus: { losesAllAbilities: true }, harmful: true };
   if (/^is every creature type$/i.test(rider)) return { bonus: { allCreatureTypes: true }, harmful: false };
@@ -22077,6 +22105,33 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       return {
         targets: [unblockable ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, options),
+      };
+    }
+  }
+
+  /*
+    **The blocking requirements, until end of turn** (D913, CR 509.1c): "target creature blocks ~
+    this turn if able" (an ability of the attacker that names it), "target creature blocks this turn
+    if able", "target creature must be blocked this turn if able" and "all creatures able to block
+    target creature this turn do so". Each is a `PumpOptions` field `blockRequirementIssue` holds the
+    declaration to. The first two are aimed at somebody else's creature; the last two help your own
+    attacker, so their spec is `friendly` and `helpsInCombat`.
+  */
+  const self = selfRef(name);
+  const blocksMe = new RegExp(`^((?:up to \\w+ )?target [^.]+?) blocks (?:${self}) this (?:turn|combat) if able$`, 'i').exec(text);
+  const blocksAny = /^((?:up to \w+ )?target [^.]+?) blocks this (?:turn|combat) if able$/i.exec(text);
+  const blockedBy = /^((?:up to \w+ )?target [^.]+?) must be blocked this turn if able$/i.exec(text);
+  const lures = /^all creatures able to block (target [^.]+?) this turn do so$/i.exec(text);
+  const required = blocksMe ?? blocksAny ?? blockedBy ?? lures;
+  if (required !== null) {
+    const helps = required === blockedBy || required === lures;
+    const spec = targetSpecFrom(required[1]!, helps);
+    const options = (c: Parameters<EffectFn>[0]): PumpOptions => (required === blocksMe ? { mustBlockAttacker: c.source }
+      : required === blocksAny ? { mustBlock: true } : required === blockedBy ? { mustBeBlocked: true } : { lure: true });
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [helps ? { ...spec, helpsInCombat: true } : spec],
+        effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, options(c)),
       };
     }
   }

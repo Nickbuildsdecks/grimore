@@ -2534,6 +2534,11 @@ export interface PumpOptions {
   readonly exiledInsteadOfDying?: boolean;
   /** See `ContinuousEffect.mustAttack` — "attacks each combat if able" (CR 508.1d). */
   readonly mustAttack?: boolean;
+  /** See `ContinuousEffect.mustBlock` — the blocking requirements (CR 509.1c, D913). */
+  readonly mustBlock?: boolean;
+  readonly mustBlockAttacker?: string;
+  readonly mustBeBlocked?: boolean;
+  readonly lure?: boolean;
   /** See `ContinuousEffect.cantBeBlockedByWalls`. */
   readonly cantBeBlockedByWalls?: boolean;
   /** See `ContinuousEffect.cantBeBlocked`. */
@@ -2617,6 +2622,10 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.assignsNoCombatDamage ? { assignsNoCombatDamage: true } : {}),
     ...(opts.exiledInsteadOfDying ? { exiledInsteadOfDying: true } : {}),
     ...(opts.mustAttack ? { mustAttack: true } : {}),
+    ...(opts.mustBlock ? { mustBlock: true } : {}),
+    ...(opts.mustBlockAttacker === undefined ? {} : { mustBlockAttacker: opts.mustBlockAttacker }),
+    ...(opts.mustBeBlocked ? { mustBeBlocked: true } : {}),
+    ...(opts.lure ? { lure: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
     ...(opts.cantBeBlocked ? { cantBeBlocked: true } : {}),
     ...(opts.landwalk === undefined ? {} : { landwalk: [...opts.landwalk] }),

@@ -30,7 +30,7 @@ import {
 } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
-  legalDefenders,
+  legalDefenders, meetBlockRequirements,
 } from './combat.js';
 import { MYRIAD, SEAT_CHOICE, UNEARTHED, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
@@ -3238,7 +3238,7 @@ function throughCombat(state: GameState): GameState {
         // comparing plans against anyway.
         : owed.kind === 'order'
           ? { type: 'auto:order', by: seat, orders: damageOrdersOwed(next, seat) }
-          : { type: 'auto:block', by: seat, blocks: chooseBlocks(next, seat) };
+          : { type: 'auto:block', by: seat, blocks: meetBlockRequirements(next, seat, chooseBlocks(next, seat)) };
       try {
         next = applyAction(next, action, HOST);
       } catch {
@@ -3688,7 +3688,8 @@ function declareBySearch(
       type: 'auto:attack', by: seat, attackers,
     } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false, opts) ?? fallback;
   }
-  const plans = blockPlans(state, seat);
+  // Each plan chosen for value, then made to obey the blocking requirements (D913).
+  const plans = blockPlans(state, seat).map((blocks) => meetBlockRequirements(state, seat, blocks));
   const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
   if (opts.lookahead === false) return fallback;
   return bestPlan(state, seat, plans.map((blocks) => ({
