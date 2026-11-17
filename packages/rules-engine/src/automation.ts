@@ -4222,6 +4222,18 @@ function decisionPlan(
       first target is, or the controller of the permanent it is. Read whatever zone the permanent
       is in now, for `referent-player`'s reason below; nobody is asked with no target.
     */
+    /*
+      "An opponent" (D728, Fact or Fiction's separator): the next opponent in turn order after the
+      controller. Exact at two players; at a pod the caster would choose which opponent, which this
+      does not ask (a known limitation).
+    */
+    if (spec.who === 'an-opponent') {
+      const order = turnOrder(state);
+      const at = order.indexOf(object.controller);
+      const next = [...order.slice(at + 1), ...order.slice(0, Math.max(0, at))].find((s) => s !== object.controller);
+      if (next !== undefined) plan.push({ seat: next, specIndex: i });
+      continue;
+    }
     if (spec.who === 'target-or-its-controller') {
       const first = object.targets[0];
       if (first?.kind === 'player') plan.push({ seat: first.seat, specIndex: i });
@@ -4306,6 +4318,9 @@ export function decisionCandidates(
   // reaching the rest of the deck.
   const inZone = spec.from === 'library-top'
     ? listAt(state, zoneKey(owner, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+    // The cards a resolution revealed to the table (D728), whoever is choosing among them.
+    : spec.from === 'revealed'
+      ? [...(state.revealed ?? [])]
     // The one question that crosses the table: every battlefield, in seat order, which is the
     // order the table reads in. See `DecisionZone`.
     : spec.from === 'any-battlefield'
@@ -4411,7 +4426,7 @@ function askOrFinish(
     // And the step of the effect that happens as the question is reached (D721): Sylvan Library's
     // two cards are drawn before it asks which go back. See `CardsDecisionSpec.onReach`.
     const onReach = 'onReach' in spec ? spec.onReach : undefined;
-    if (onReach !== undefined) state = onReach(state, object.controller, object.source);
+    if (onReach !== undefined) state = onReach(state, object.controller, object.source, answers);
     // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
     // the effect at the end, not as the questions are asked — which is right, because "each player
     // sacrifices a creature" is simultaneous and the second player must not see the first's

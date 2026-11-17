@@ -749,6 +749,14 @@ export interface AutomationState {
    * goes on to where it would have gone (`extraPhaseRun.resume`). Cleared when the turn ends.
    */
   readonly extraPhases?: readonly ('beginning' | 'combat' | 'main')[];
+  /**
+   * Cards a resolving spell has revealed to the table (D728, CR 701.20a): Fact or Fiction's "reveal
+   * the top five cards of your library". Every seat sees them (`view.ts`), and a question may be
+   * asked about them (`DecisionZone` `revealed`). Set by the spell and cleared by it as it finishes.
+   */
+  readonly revealed?: readonly string[];
+  /** The two piles an opponent made of `revealed` (D728), first pile first. */
+  readonly piles?: readonly (readonly string[])[];
   /** While added phases are running (D726): the step the turn goes on to when they are done. */
   readonly extraPhaseRun?: { readonly resume: Step };
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
@@ -1545,7 +1553,9 @@ export interface AutomationState {
  * would be a hole, and keeping the two in the same place is what stops that.
  */
 export type DecisionZone =
-  | 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield' | 'any-battlefield';
+  | 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield' | 'any-battlefield'
+  // The cards a resolution has revealed to the table (D728, `AutomationState.revealed`).
+  | 'revealed';
 
 /** One answered decision, in the order the card asked. */
 export interface DecisionAnswer {

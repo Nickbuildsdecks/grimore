@@ -2171,6 +2171,20 @@ function Board({ table }: { table: UseTable }) {
           {...aiming}
         />
       ) : null}
+      {/*
+        Cards a spell revealed to the table (Fact or Fiction): the player asked about them picks
+        from this row. The engine sends them to every seat; this row is for the one choosing.
+      */}
+      {arenaMode.kind === "deciding" && arenaMode.ask.from === "revealed" ? (
+        <ZoneRow
+          label={`Revealed — ${arenaMode.ask.prompt}`}
+          testId={`zone-revealed-${seat}`}
+          size="pile"
+          cards={cardsIn(view, [...arenaMode.ask.candidates])}
+          onSelect={onSelect}
+          {...aiming}
+        />
+      ) : null}
       {/* Searching shows your own library, and only while you are looking. */}
       {me?.searching ? (
         <ZoneRow

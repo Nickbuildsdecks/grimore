@@ -23060,6 +23060,11 @@ function readEffect(
     return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
   }
   if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
+  const split = /^reveal the top (\w+) cards of your library for an opponent to split into a pile for your hand and a pile for your graveyard$/i.exec(clause.trim());
+  if (split !== null) {
+    const n = WORD_NUMBERS[split[1]!.toLowerCase()];
+    if (n !== undefined && n > 0) return factOrFiction(n);
+  }
   /*
     "Draw that many cards" after a damage trigger (D903): the trigger reader marks the words, and the
     clause is read with X in their place and run with X as the damage that landed. Not a clause that
@@ -23463,6 +23468,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/([^.;]*\bdamage\b[^.;]*)\.\s+If a (creature|permanent) dealt damage this way would die this turn, exile it instead(?=\.|$)/gi, '$1; if a $2 dealt damage this way would die this turn, exile it instead')
     // Chain Lightning (D725): the payment and the copy are one offer to one player.
     .replace(/then that player or that permanent's controller may pay ((?:\{[^}]+\})+)\.\s+If the player does, they may copy this spell and may choose a new target for that copy/gi, 'then that player or that permanent\'s controller may pay $1 and if they do they may copy this spell and may choose a new target for that copy')
+    // Fact or Fiction (D728): three sentences, one reveal and two questions. See `factOrFiction`.
+    .replace(/reveal the top (\w+) cards of your library\.\s+An opponent separates those cards into two piles\.\s+Put one pile into your hand and the other into your graveyard/gi, 'reveal the top $1 cards of your library for an opponent to split into a pile for your hand and a pile for your graveyard')
     // Sylvan Library (D721): three sentences, one question chain. See `sylvanLibrary`.
     .replace(/you may draw two additional cards\.\s+If you do, choose two cards in your hand drawn this turn\.\s+For each of those cards, pay 4 life or put the card on top of your library/gi, 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each')
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
@@ -23666,6 +23673,68 @@ function impulseDraw(first: string, second: string | undefined): ReadEffect | nu
   const through = IMPULSE_PLAY.find(([shape]) => shape.test(second.trim()))?.[1];
   if (through === undefined) return null;
   return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
+}
+
+/**
+ * Fact or Fiction (D728): "Reveal the top five cards of your library. An opponent separates those
+ * cards into two piles. Put one pile into your hand and the other into your graveyard."
+ *
+ * The top cards are revealed to the table before anything is asked (`AutomationState.revealed`,
+ * which every seat sees). The opponent (`who: 'an-opponent'`) chooses the first pile from them
+ * (`DecisionZone` `revealed`); the rest are the second pile, either of which may be empty. As the
+ * caster's question is reached (`onReach`), the two piles are recorded (`AutomationState.piles`) so
+ * the caster's two answers can name the cards in each. The pile chosen goes to hand and the other
+ * to the graveyard, and the reveal ends with the spell.
+ *
+ * The bot, as the separator, puts the card worth most alone in the first pile: the usual split, and
+ * the one that makes the caster choose between the best card and the rest. As the caster it takes
+ * the pile worth more, counting each card as one plus its mana value.
+ */
+function factOrFiction(n: number): ReadEffect {
+  const worthOf = (state: GameState, id: string) => 1 + costValue(parseManaCost(state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost));
+  const nameOf = (state: GameState, id: string) => state.cardDefs[state.instances[id]?.defKey ?? '']?.name ?? 'a card';
+  const labels = (state: GameState): [string, string] => {
+    const [first = [], second = []] = state.piles ?? [];
+    const words = (pile: readonly string[]) => (pile.length === 0 ? 'nothing' : pile.map((id) => nameOf(state, id)).join(', '));
+    return [`First pile: ${words(first)}`, `Second pile: ${words(second)}`];
+  };
+  return {
+    beforeDecisions: (c) => ({ ...c.state, revealed: listAt(c.state, zoneKey(c.controller, 'library')).slice(0, n) }),
+    decisions: [
+      {
+        who: 'an-opponent', from: 'revealed', prompt: 'Separate the revealed cards: choose the first pile',
+        min: 0, max: n,
+        pick: (state, _chooser, candidates) => {
+          const best = [...candidates].sort((a, b) => worthOf(state, b) - worthOf(state, a))[0];
+          return best === undefined ? [] : [best];
+        },
+      },
+      {
+        who: 'controller', prompt: 'Which pile goes to your hand?', options: ['First pile', 'Second pile'],
+        optionsFor: (state) => labels(state),
+        onReach: (state, _controller, _source, answers) => {
+          const first = [...(answers[0]?.ids ?? [])].filter((id) => (state.revealed ?? []).includes(id));
+          const second = (state.revealed ?? []).filter((id) => !first.includes(id));
+          return { ...state, piles: [first, second] };
+        },
+        best: (state) => {
+          const [first = [], second = []] = state.piles ?? [];
+          const total = (pile: readonly string[]) => pile.reduce((sum, id) => sum + worthOf(state, id), 0);
+          return labels(state)[total(first) >= total(second) ? 0 : 1];
+        },
+      },
+    ],
+    effect: (c) => {
+      const [first = [], second = []] = c.state.piles ?? [];
+      // The caster's answer is the second (the first is the opponent's split, which has no option).
+      const takesFirst = c.decisions[1]?.option === labels(c.state)[0];
+      const kept = takesFirst ? first : second;
+      const binned = takesFirst ? second : first;
+      let next = moveToHand(c.state, kept.filter((id) => c.state.instances[id]?.zone === 'library'));
+      next = moveToGraveyard(next, binned.filter((id) => next.instances[id]?.zone === 'library'));
+      return { ...next, revealed: undefined, piles: undefined };
+    },
+  };
 }
 
 /**
