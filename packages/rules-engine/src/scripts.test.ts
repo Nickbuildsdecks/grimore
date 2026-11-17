@@ -16554,6 +16554,52 @@ describe('afflict, mobilize and ingest (D905)', () => {
   });
 });
 
+describe('scavenge and reinforce (D906)', () => {
+  const ROWS = [
+    { name: 'Test Scavenger', type_line: 'Creature — Zombie', oracle_text: 'Scavenge {0}', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '2' },
+    { name: 'Test Reinforcer', type_line: 'Creature — Kithkin', oracle_text: 'Reinforce 2—{0}', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'kw906', name: 'Keywords 906',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], graveyard: string[], first: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'kw906', 1: 'kw906' }, deckSpecs: { kw906: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: graveyard }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: first,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('scavenge: exiled from the graveyard, counters equal to its power, only as a sorcery', () => {
+    let s = table([], ['Test Scavenger']);
+    const card = find(s, 0, 'graveyard', 'Test Scavenger');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 10);
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(3);
+
+    // On the opponent's turn, with priority passed to us: refused for the timing, nothing else.
+    const theirTurn = apply(table([], ['Test Scavenger'], 1), { type: 'auto:pass', by: 1 });
+    expect(legalActions(theirTurn, 0).hasPriority).toBe(true);
+    expect(refusal(theirTurn, { type: 'auto:activate', by: 0, card: find(theirTurn, 0, 'graveyard', 'Test Scavenger'), abilityIndex: 0, targets: [{ kind: 'card', id: find(theirTurn, 0, 'battlefield', 'Test Bear') }] } as Action)).toBeTruthy();
+  });
+
+  it('reinforce: discarded from the hand for two counters, at instant speed', () => {
+    let s = table(['Test Reinforcer'], [], 1);
+    const card = find(s, 0, 'hand', 'Test Reinforcer');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 10);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(2);
+  });
+});
+
 describe('Necromancy: flash, an Aura it becomes, and a cleanup sacrifice (D727)', () => {
   const ROWS = [
     { name: 'Test Necro', type_line: 'Enchantment', oracle_text: 'You may cast Test Necro as though it had flash. If you cast it any time a sorcery couldn\'t have been cast, the controller of the permanent it becomes sacrifices it at the beginning of the next cleanup step.\nWhen Test Necro enters, if it\'s on the battlefield, it becomes an Aura with "enchant creature put onto the battlefield with Test Necro." Put target creature card from a graveyard onto the battlefield under your control and attach Test Necro to it. When Test Necro leaves the battlefield, that creature\'s controller sacrifices it.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },

@@ -30400,5 +30400,33 @@ Staples went from 237 to 238 (Necromancy).
 
 Faults injected by script: 8 of 8 caught, including the cleanup correction.
 
+    engine tests: 4,827, all passing (on the tree merged with the other session's D906)
+
 Coverage: 11,635 of 31,743 cards (+7), 31,163 of 59,509 lines (+11), against d1d70f9 (the other
 session's D904 and D905). Staples: 238 of 244 (+1).
+
+## D906 — Scavenge and Reinforce
+
+Two more keyword builders, both activated abilities that pay with the card itself.
+
+How each is read:
+- **Scavenge {cost}** (CR 702.97a) is embalm's shape:
+  - activated from the graveyard (`fromGraveyard`), exiling the card as part of the cost
+    (`exileSelf`), at sorcery speed;
+  - it puts as many +1/+1 counters on target creature as the card's printed power.
+- **Reinforce N—{cost}** (CR 702.77a) is cycling's shape:
+  - activated from the hand, discarding the card (`discardSelf`), at instant speed;
+  - it puts N +1/+1 counters on target creature.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- scavenge exiles the card and puts 3 counters on the Bear, and is refused on the opponent's turn
+  even with priority;
+- reinforce, on the opponent's turn, discards the card for 2 counters.
+
+Faults injected by hand: 4 of 4 caught. The sorcery-speed fault was caught only after the
+opponent's-turn case gave seat 0 priority first: without it, the refusal came from priority.
+
+    engine tests: 4,822, all passing
+
+Coverage: 11,644 of 31,743 cards (+17), 31,172 of 59,509 lines (+22). Staples: 237 of 244.
