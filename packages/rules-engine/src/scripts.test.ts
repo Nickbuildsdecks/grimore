@@ -17460,6 +17460,68 @@ describe('sunburst and converge (D917)', () => {
   });
 });
 
+describe('annihilator, and the edict widened (D918)', () => {
+  const ROWS = [
+    { name: 'Test Annihilator', type_line: 'Creature — Eldrazi', oracle_text: 'Annihilator 2', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Razer', type_line: 'Creature — Beast', oracle_text: 'When Test Razer enters, each player sacrifices a land.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Purger', type_line: 'Creature — Horror', oracle_text: 'When Test Purger enters, each opponent sacrifices a nonland permanent.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd918', name: 'Edicts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('annihilator: the defending player sacrifices two permanents of their choice, and nobody else does', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd918', 1: 'd918', 2: 'd918' }, deckSpecs: { d918: deck.deck },
+      battlefield: { 0: ['Test Annihilator'], 1: ['Forest', 'Forest', 'Test Bear'], 2: ['Forest', 'Forest', 'Test Bear'] },
+      turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const attacker = find(s, 0, 'battlefield', 'Test Annihilator');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] }), 12);
+    expect(s.pendingDecision?.seat).toBe(1);
+    const offered = [...(s.pendingDecision?.candidates ?? [])];
+    expect(offered.length).toBe(3);
+    const forests = offered.filter((id) => nameOf(s, id) === 'Forest');
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: forests } as Action), 12);
+    expect(namesIn(s, 1, 'battlefield')).toEqual(['Test Bear']);
+    expect(namesIn(s, 2, 'battlefield').length).toBe(3);
+  });
+
+  it('each player sacrifices a land, its controller included', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd918', 1: 'd918' }, deckSpecs: { d918: deck.deck },
+      hands: { 0: ['Test Razer'] }, battlefield: { 0: ['Forest', 'Forest'], 1: ['Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Razer') } as Action)), 40);
+    for (let i = 0; i < 4 && s.pendingDecision !== null; i++) {
+      const seat = s.pendingDecision!.seat;
+      // Only lands are offered: the Razer itself is a permanent and not a land.
+      expect(s.pendingDecision!.candidates.map((id) => nameOf(s, id))).toEqual(['Forest', 'Forest']);
+      s = drain(apply(s, { type: 'auto:decide', by: seat, cards: [s.pendingDecision!.candidates[0]!] } as Action), 40);
+    }
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Forest').length).toBe(1);
+    expect(namesIn(s, 1, 'battlefield').filter((n) => n === 'Forest').length).toBe(1);
+  });
+
+  it('"a nonland permanent": lands are not offered', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd918', 1: 'd918' }, deckSpecs: { d918: deck.deck },
+      hands: { 0: ['Test Purger'] }, battlefield: { 1: ['Forest', 'Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Purger') } as Action)), 40);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id))).toEqual(['Test Bear', 'Test Bear']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

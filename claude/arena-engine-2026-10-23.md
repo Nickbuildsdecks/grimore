@@ -30816,3 +30816,29 @@ choice, which differs only on a noncreature printing +1/+1 converge, and no card
     engine tests: 4,883, all passing
 
 Coverage: 11,790 of 31,743 cards (+19), 31,404 of 59,509 lines (+29). Staples: 238 of 244.
+
+## D918 — Annihilator, and the edict widened
+
+"Each player/opponent sacrifices a creature" was the only edict read. Now:
+- "**each player | each opponent | defending player** sacrifices **a | two | … | N**
+  **creature | permanent | artifact | land | enchantment | nonland permanent**(s)";
+- each sacrificing player chooses, in turn order, out of their own permanents of that kind;
+- the choice goes through `sacrifice`, so whatever watches a sacrifice sees it;
+- "Defending player" is `hit-player`, the attack's defender, which a trigger off an attack carries.
+
+**Annihilator N** (CR 702.86a) is read as the printed sentence: "Whenever this creature attacks,
+defending player sacrifices N permanents."
+
+**Tests.** 4 engine tests:
+- the printings read;
+- in a three-player pod, annihilator 2 asks only the attacked player, offers their three
+  permanents, and leaves the third player's board alone;
+- "each player sacrifices a land" takes a land from both players, and offers only lands;
+- "each opponent sacrifices a nonland permanent" offers no land.
+
+Faults injected by hand: 6 of 6 caught. The type filter was missed at first and pinned by asserting
+only lands are offered.
+
+    engine tests: 4,887, all passing
+
+Coverage: 11,811 of 31,743 cards (+21), 31,440 of 59,509 lines (+36). Staples: 238 of 244.

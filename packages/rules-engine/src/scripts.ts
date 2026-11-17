@@ -11217,6 +11217,13 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
+  // Annihilator N (CR 702.86a, D918): "Whenever this creature attacks, defending player sacrifices N
+  // permanents." The attack trigger and the widened edict, read through the printed sentence.
+  const annihilator = /^annihilator (\d+)$/i.exec(text);
+  if (annihilator !== null) {
+    const n = Number(annihilator[1]);
+    return triggerFromLine(`Whenever ${name} attacks, defending player sacrifices ${n === 1 ? 'a permanent' : `${n} permanents`}.`, name);
+  }
   // Sunburst (D917): see `CardScript.sunburst`.
   if (word === 'sunburst') return { sunburst: { counter: 'auto', n: 1 } };
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
@@ -13007,6 +13014,41 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       }],
       effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
     };
+  }
+
+  /*
+    The edict widened (D918): "defending player sacrifices two permanents" (annihilator's sentence),
+    "each opponent sacrifices an artifact", "each player sacrifices two lands". Each sacrificing
+    player chooses, as above. "Defending player" is `hit-player`, the attack's defender, which a
+    trigger off an attack carries; anywhere else it asks nobody.
+  */
+  const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent)s?$/i.exec(text);
+  if (edictMany !== null) {
+    const subject = edictMany[1]!.toLowerCase();
+    const who = subject === 'each player' ? 'each-player' as const
+      : subject === 'each opponent' ? 'each-opponent' as const : 'hit-player' as const;
+    const n = countFrom(edictMany[2]!.toLowerCase() === 'an' ? 'a' : edictMany[2]!);
+    const kind = edictMany[3]!.toLowerCase();
+    if (n !== null && n > 0) {
+      return {
+        decisions: [{
+          who,
+          from: 'battlefield',
+          prompt: `Sacrifice ${n === 1 ? `a ${kind}` : `${n} ${kind}s`}`,
+          min: n,
+          max: n,
+          filter: (state: GameState, id: string) => {
+            const inst = state.instances[id];
+            if (inst === undefined) return false;
+            const line = characteristicsOf(state, inst).typeLine;
+            if (kind === 'permanent') return true;
+            if (kind === 'nonland permanent') return !hasType(line, 'land');
+            return hasType(line, kind);
+          },
+        }],
+        effect: (c) => c.decisions.reduce((state, answer) => sacrifice(state, answer.ids), c.state),
+      };
+    }
   }
 
   /*
