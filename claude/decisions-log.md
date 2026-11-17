@@ -48378,3 +48378,41 @@ the subject test existed.
     engine tests: 4,899, all passing
 
 Coverage: 11,853 of 31,743 cards (+10), 31,509 of 59,509 lines (+10). Staples: 238 of 244.
+
+## D921 — A mana line with "Activate only if …"
+
+The second sentence after a mana ability can be a condition. The new `ManaLine.onlyIf` reads it as
+the ability's `activateOnlyIf`, so it is neither offered nor tapped automatically while false. It
+is read live, from characteristics. Conditions read:
+- "you control a Swamp or a Mountain" (the Duskmourn Verges) and "you control a Swamp" (the Tainted
+  lands): a land of that basic land type;
+- "this land entered this turn or if your control a basic land" (the Dominaria lands; the typo is
+  Scryfall's own text);
+- "you control an artifact" (Spire of Industry) or a creature type (Mox Jasper);
+- "you control five or more lands" (Temple of the False God), and the same count for artifacts and
+  creatures;
+- "~ entered this turn" (Mirrex).
+
+Both builders carry it: a single mana and a sum (Temple's {C}{C}). The colour fold leaves such a
+line to the per-line path, as D920 does. D497's refusal row for "you control a Swamp" now names a
+condition this does not read.
+
+Not read:
+- conditions behind an ability word (Formidable, Corrupted, Metalcraft);
+- counters on the card (Pyramid of the Pantheon, Tablet of Compleation);
+- "an Elf card in your graveyard";
+- "~ is a creature".
+
+**Tests.** 5 engine tests:
+- the printings read;
+- a Verge's second colour needs a Swamp or a Mountain;
+- the Dominaria land works when it entered this turn or with a basic land, and not with a nonbasic
+  one;
+- Temple needs five lands;
+- Spire's colour needs an artifact, and its colourless line does not.
+
+Faults injected by hand: 7 of 7 caught.
+
+    engine tests: 4,904, all passing
+
+Coverage: 11,876 of 31,743 cards (+23), 31,534 of 59,509 lines (+25). Staples: 238 of 244.

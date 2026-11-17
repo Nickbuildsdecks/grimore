@@ -17648,6 +17648,67 @@ describe('a mana land that stays tapped through the next untap step (D920)', () 
   });
 });
 
+describe('a mana line with "Activate only if …" (D921)', () => {
+  const L = (name: string, oracle_text: string, produced_mana: string[]) => ({ name, type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana, oracle_text });
+  const ROWS = [
+    L('Test Verge', '{T}: Add {B}.\n{T}: Add {R}. Activate only if you control a Swamp or a Mountain.', ['B', 'R']),
+    L('Test Lair', '{T}: Add {U} or {B}. Activate only if this land entered this turn or if your control a basic land.', ['U', 'B']),
+    L('Test Temple', '{T}: Add {C}{C}. Activate only if you control five or more lands.', ['C']),
+    L('Test Spire', '{T}: Add {C}.\n{T}: Add {G}. Activate only if you control an artifact.', ['C', 'G']),
+    { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' },
+    { name: 'Test Wastes', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', produced_mana: ['C'], oracle_text: '{T}: Add {C}.' },
+  ];
+  const deck = customDeck({
+    id: 'd921', name: 'Conditional mana',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 18 }, { name: 'Swamp', count: 18 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd921', 1: 'd921' }, deckSpecs: { d921: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Whether the land's ability for `type` may be activated now. */
+  const can = (s: GameState, land: string, type: string): boolean => {
+    const id = find(s, 0, 'battlefield', land);
+    const abilities = scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.abilities ?? [];
+    const index = abilities.findIndex((a) => (a.produces ?? []).includes(type as never));
+    expect(index).toBeGreaterThanOrEqual(0);
+    return refusal(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: index } as Action) === null;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Verge: the second colour only with a Swamp or a Mountain', () => {
+    expect(can(table(['Test Verge']), 'Test Verge', 'B')).toBe(true);
+    expect(can(table(['Test Verge']), 'Test Verge', 'R')).toBe(false);
+    expect(can(table(['Test Verge', 'Mountain']), 'Test Verge', 'R')).toBe(true);
+    expect(can(table(['Test Verge', 'Swamp']), 'Test Verge', 'R')).toBe(true);
+  });
+
+  it('"entered this turn or if you control a basic land"', () => {
+    const s = table(['Test Lair', 'Test Wastes']);
+    // Placed at the start of the game, so it did not enter this turn, and Test Wastes is not basic.
+    expect(can(s, 'Test Lair', 'U')).toBe(false);
+    expect(can(table(['Test Lair', 'Swamp']), 'Test Lair', 'U')).toBe(true);
+    const lair = find(s, 0, 'battlefield', 'Test Lair');
+    const fresh = { ...s, instances: { ...s.instances, [lair]: { ...s.instances[lair]!, enteredTurn: s.turn } } };
+    expect(can(fresh, 'Test Lair', 'U')).toBe(true);
+  });
+
+  it('a count of lands binds a mana sum too (Temple of the False God)', () => {
+    expect(can(table(['Test Temple', 'Swamp', 'Swamp', 'Swamp']), 'Test Temple', 'C')).toBe(false);
+    expect(can(table(['Test Temple', 'Swamp', 'Swamp', 'Swamp', 'Swamp']), 'Test Temple', 'C')).toBe(true);
+  });
+
+  it('a card type: only with an artifact', () => {
+    expect(can(table(['Test Spire']), 'Test Spire', 'G')).toBe(false);
+    expect(can(table(['Test Spire', 'Test Trinket']), 'Test Spire', 'G')).toBe(true);
+    expect(can(table(['Test Spire']), 'Test Spire', 'C')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
