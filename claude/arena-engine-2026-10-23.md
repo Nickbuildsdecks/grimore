@@ -31825,3 +31825,38 @@ Faults injected by hand: 7 of 7 caught.
     engine tests: 5,036, all passing
 
 Coverage: 12,268 of 31,743 cards (+8), 32,211 of 59,509 lines (+9). Staples: 239 of 244.
+
+## D729 — Path of Ancestry: a trigger for how its mana is spent
+
+"{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast
+a creature spell that shares a creature type with your commander, scry 1."
+
+How it is read:
+- **The mana** is the line before the rider, read by the mana-line reader as Command Tower's is
+  (D617): one ability per colour in the commander's identity.
+- **The rider is a new kind of trigger, `TriggerDef.whenManaSpent`.** It is flagged `delayed`, so
+  no event fires it. The cast does:
+  - `payFrom` already reports which sources it tapped to pay for the spell;
+  - when one of them has the rider, and the spell is a creature sharing a creature type with a
+    commander of its caster, the trigger goes on the stack above the spell;
+  - its "scry 1" is the existing scry reader (`manaSpentScryTrigger`).
+- `compile.ts` reads a mana line followed by this rider as the mana abilities plus the trigger.
+- **Known limitation.** Mana tapped from Path by hand and left floating has lost its source by the
+  time it is spent, so it doesn't trigger. Only mana the payment taps Path for does. The
+  automatic payer does that whenever Path is the source it uses, which is how the bot and the
+  "cast" button pay.
+
+Staples went from 239 to 240 (Path of Ancestry).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- paying for an Elf with an Elf commander taps Path and puts "scry 1" on the stack above the
+  spell, which asks the scry question when it resolves;
+- a Bear (no shared type) triggers nothing, and neither does mana tapped from Path by hand first.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,039, all passing (merged with the other session's D943 and D944)
+
+Coverage: 12,270 of 31,743 cards (+1), 32,214 of 59,509 lines (+1), against 958aade. Staples: 240
+of 244 (+1).
