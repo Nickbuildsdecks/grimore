@@ -5761,6 +5761,7 @@ function applyStatics(
       : entry.scope === 'controller-lands' ? { kind: 'controller-lands' }
       : entry.scope === 'all-lands' ? { kind: 'all-lands' }
       : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
+      : entry.scope === 'opponent-creatures' ? { kind: 'opponent-creatures' }
       : { kind: 'all-creatures' };
     next = {
       ...next,

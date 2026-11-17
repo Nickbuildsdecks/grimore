@@ -1423,6 +1423,8 @@ export interface ContinuousEffect {
      * 3/2. `source` is what it excludes, which is why a continuous effect keeps it.
      */
     | { readonly kind: 'other-controller-creatures' }
+    /** "Creatures your opponents control get -1/-0" (D941): every creature but its controller's. */
+    | { readonly kind: 'opponent-creatures' }
     /**
      * Every creature of one type its controller has — "other Goblin creatures you control get
      * +1/+1", and every tribal lord ever printed.
@@ -1617,6 +1619,13 @@ export interface ContinuousEffect {
    * card is no longer exiled encoded on it.
    */
   readonly encodedCard?: string;
+  /**
+   * Filters on who in `scope` the effect reaches (D941): "Attacking creatures you control get
+   * +1/+0", "Each creature you control with a +1/+1 counter on it has trample". Read live, so a
+   * creature is in it exactly while it attacks, or while it has the counter.
+   */
+  readonly onlyAttacking?: true;
+  readonly onlyWithCounter?: string;
   /**
    * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
    * entries in the *source card's* `grantedAbilities`.
@@ -2247,6 +2256,9 @@ function effectApplies(
   // The condition first, because it is about the whole effect rather than about who it reaches: an
   // effect whose condition is not met applies to nothing at all.
   if (!conditionMet(state, effect)) return false;
+  // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
+  if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
+  if (effect.onlyWithCounter !== undefined && (instance.counters[effect.onlyWithCounter] ?? 0) <= 0) return false;
   switch (effect.scope.kind) {
     case 'cards':
       return effect.scope.ids.includes(instance.id);
@@ -2258,6 +2270,8 @@ function effectApplies(
       return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat === effect.controller;
     case 'all-lands':
       return instance.zone === 'battlefield' && hasType(typeLine, 'land');
+    case 'opponent-creatures':
+      return creature && instance.zoneSeat !== effect.controller;
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':

@@ -3624,6 +3624,8 @@ export interface CardScript {
   readonly statics?: readonly {
     readonly scope:
       | 'self' | 'controller-creatures' | 'other-controller-creatures' | 'all-creatures'
+      /** "Creatures your opponents control get -1/-0" (D941). */
+      | 'opponent-creatures'
       /** "Creature tokens you control get +1/+1" (D655): Intangible Virtue, Divine Visitation's kin. */
       | 'controller-tokens'
       /** Lands, for land types added in layer 4 (D699): Dryad of the Ilysian Grove, Urborg. */

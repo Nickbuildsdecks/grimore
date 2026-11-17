@@ -26535,7 +26535,9 @@ function thresholdEffect(predicate: string, name: string): {
 }
 
 function conditionalStaticFromLine(line: string, name: string): Partial<CardScript> | null {
-  const text = withoutAbilityWord(plain(line).trim().replace(/\.\s*$/, ''));
+  // "During your turn, ~ has first strike" (D941) is the general form's "As long as it's your turn".
+  const text = withoutAbilityWord(plain(line).trim().replace(/\.\s*$/, ''))
+    .replace(/^during your turn, /i, "as long as it's your turn, ");
   const self = selfRef(name);
 
   /*
@@ -27039,6 +27041,32 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     token is a fact about the permanent (CR 111.1), not a type the type line carries.
   */
   const tokens = /^creature tokens you control (get|have) (.+)$/i.exec(text);
+  /*
+    D941: the opponents' side ("Creatures your opponents control get -1/-0", Curfew's kin), the
+    attacking ones ("Attacking creatures you control get +1/+1"), and the countered ones ("Each
+    creature you control with a +1/+1 counter on it has trample", "Creatures you control with
+    +1/+1 counters on them have …"). The last two are filters on the controller's creatures,
+    read live by `effectApplies`.
+  */
+  const theirs = /^creatures your opponents control (get|have) (.+)$/i.exec(text);
+  const attacking = /^attacking creatures you control (get|have) (.+)$/i.exec(text);
+  const countered = /^(?:each creature you control with an? \+1\/\+1 counter on it (gets|has)|creatures you control with \+1\/\+1 counters on them (get|have)) (.+)$/i.exec(text);
+  let filter: PumpOptions = {};
+  if (scope !== null) {
+    // Read above: a chosen type.
+  } else if (theirs !== null) {
+    scope = 'opponent-creatures';
+    predicate = `${theirs[1]!.toLowerCase()} ${theirs[2]}`;
+  } else if (attacking !== null) {
+    scope = 'controller-creatures';
+    filter = { onlyAttacking: true };
+    predicate = `${attacking[1]!.toLowerCase()} ${attacking[2]}`;
+  } else if (countered !== null) {
+    scope = 'controller-creatures';
+    filter = { onlyWithCounter: '+1/+1' };
+    // Either number of verb: the predicate is made singular below anyway.
+    predicate = `${(countered[1] ?? countered[2]!).toLowerCase()} ${countered[3]}`;
+  }
   if (scope !== null) {
     // Read above: a chosen type.
   } else if (tokens !== null) {
@@ -27092,6 +27120,7 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
       scope,
       effect: {
         ...effect,
+        ...filter,
         ...(grantedTriggers === null ? {} : { grants: grantedTriggers.map((_, i) => i) }),
         ...(grantedAbilities === null ? {} : { grantsAbilities: grantedAbilities.map((_, i) => i) }),
       },

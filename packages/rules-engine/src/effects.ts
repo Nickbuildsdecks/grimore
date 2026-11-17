@@ -2628,6 +2628,9 @@ export interface PumpOptions {
   readonly grantsAbilities?: readonly number[];
   /** See `ContinuousEffect.encodedCard` (cipher, D936). */
   readonly encodedCard?: string;
+  /** See `ContinuousEffect.onlyAttacking` (D941). */
+  readonly onlyAttacking?: true;
+  readonly onlyWithCounter?: string;
   readonly duration?: EffectDuration;
 }
 
@@ -2686,6 +2689,8 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.grants ? { grants: [...opts.grants] } : {}),
     ...(opts.grantsAbilities ? { grantsAbilities: [...opts.grantsAbilities] } : {}),
     ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
+    ...(opts.onlyAttacking ? { onlyAttacking: true as const } : {}),
+    ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
   };
 }
 

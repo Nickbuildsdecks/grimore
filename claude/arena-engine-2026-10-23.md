@@ -31682,3 +31682,35 @@ Faults injected by hand: 10 of 10 caught.
     engine tests: 5,016, all passing
 
 Coverage: 12,169 of 31,743 cards (+78), 32,063 of 59,509 lines (+119). Staples: 239 of 244.
+
+## D941 — Statics for the other side, for attackers, for countered creatures, and for your turn
+
+Four anthem shapes from the corpus tally of single unread lines, all read by the group static
+reader or the conditional one:
+- "Creatures your opponents control get -1/-0." (Curfew's kin): a new static scope,
+  `opponent-creatures`, which is every creature its controller does not control.
+- "Attacking creatures you control get +1/+1.": the controller's creatures, filtered by a new
+  continuous-effect field, `onlyAttacking`.
+- "Each creature you control with a +1/+1 counter on it has trample." and "Creatures you control
+  with +1/+1 counters on them have …": filtered by `onlyWithCounter`.
+- "During your turn, this creature has first strike.": read as "As long as it's your turn", the
+  existing `turn` condition of the general conditional form (D605).
+
+Both filters are read live in `effectApplies`, so a creature is in the effect exactly while it
+attacks or has the counter. "Other creatures you control with flying" is left out: a filter on a
+keyword would make keywords depend on themselves.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- the opponents' creatures only;
+- only while attacking;
+- only the countered creatures, both spellings;
+- first strike on your turn and not on the other.
+
+Faults injected by hand: 8 of 9 caught. The miss was a verb conversion the reader already does a
+line later, so it was removed. An untested "during turns other than yours" rewrite was removed with
+it.
+
+    engine tests: 5,021, all passing
+
+Coverage: 12,224 of 31,743 cards (+55), 32,150 of 59,509 lines (+87). Staples: 239 of 244.

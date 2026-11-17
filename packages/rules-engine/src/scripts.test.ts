@@ -19263,6 +19263,70 @@ describe('printed cost modifiers: "<kind> spells you cast cost {N} less to cast"
   });
 });
 
+describe('statics for the other side, for attackers, for countered creatures and for your turn (D941)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({
+    name, type_line: 'Creature — Human Soldier', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Curfew', 'Creatures your opponents control get -1/-0.'),
+    C('Test Banner', 'Attacking creatures you control get +1/+1.'),
+    C('Test Hydra', 'Each creature you control with a +1/+1 counter on it has trample.'),
+    C('Test Herd', 'Creatures you control with +1/+1 counters on them have vigilance.'),
+    C('Test Duelist', 'During your turn, this creature has first strike.'),
+    C('Test Bear', ''),
+  ];
+  const deck = customDeck({
+    id: 'd941', name: 'Group statics',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 42 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[], theirs: string[] = ['Test Bear'], step: Step = 'precombat-main', firstSeat: SeatIndex = 0) => advanceTo(arena({
+    decks: { 0: 'd941', 1: 'd941' }, deckSpecs: { d941: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat,
+  }), step);
+  const ch = (s: GameState, seat: SeatIndex, name: string) => characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"creatures your opponents control get -1/-0": theirs only', () => {
+    const s = seated(['Test Curfew', 'Test Bear']);
+    expect(ch(s, 1, 'Test Bear').power).toBe(1);
+    expect(ch(s, 0, 'Test Bear').power).toBe(2);
+    expect(ch(s, 0, 'Test Curfew').power).toBe(2);
+  });
+
+  it('"attacking creatures you control get +1/+1": only while it attacks', () => {
+    let s = seated(['Test Banner', 'Test Bear'], [], 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(ch(s, 0, 'Test Bear').power).toBe(2);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 12);
+    expect(ch(s, 0, 'Test Bear').power).toBe(3);
+    expect(ch(s, 0, 'Test Banner').power).toBe(2);
+  });
+
+  it('"with a +1/+1 counter on it": only the countered ones, both spellings', () => {
+    let s = seated(['Test Hydra', 'Test Herd', 'Test Bear', 'Test Bear'], []);
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = addCounters(s, a!, '+1/+1', 1);
+    const with1 = characteristicsOf(s, s.instances[a!]!);
+    const without = characteristicsOf(s, s.instances[b!]!);
+    expect(with1.keywords.has('trample')).toBe(true);
+    expect(with1.keywords.has('vigilance')).toBe(true);
+    expect(without.keywords.has('trample')).toBe(false);
+    expect(without.keywords.has('vigilance')).toBe(false);
+  });
+
+  it('"during your turn, this creature has first strike": not on the other turn', () => {
+    const mine = seated(['Test Duelist']);
+    expect(ch(mine, 0, 'Test Duelist').keywords.has('first strike')).toBe(true);
+    const theirs = seated(['Test Duelist'], ['Test Bear'], 'precombat-main', 1);
+    expect(ch(theirs, 0, 'Test Duelist').keywords.has('first strike')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
