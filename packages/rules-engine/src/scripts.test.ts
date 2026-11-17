@@ -19788,6 +19788,103 @@ describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D
   });
 });
 
+describe('Torment of Hailfire: X rounds of lose 3, sacrifice or discard (D730)', () => {
+  const ROWS = [
+    { name: 'Test Torment', type_line: 'Sorcery', oracle_text: 'Repeat the following process X times. Each opponent loses 3 life unless that player sacrifices a nonland permanent or discards a card.', mana_cost: '{X}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Artist', type_line: 'Creature — Devil', oracle_text: 'Raid — At the beginning of your end step, if you attacked this turn, each opponent loses 3 life unless that player sacrifices a nonland permanent of their choice or discards a card.', mana_cost: '{1}{B}{R}', cmc: 3, colors: ['B', 'R'], layout: 'normal', power: '3', toughness: '2' },
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'torment', name: 'Torment',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 40 }],
+    data: ROWS,
+  });
+  const LOSE = 'Lose 3 life';
+  const table = (x: number, theirHand: string[], theirs: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'torment', 1: 'torment' }, deckSpecs: { torment: deck.deck },
+      hands: { 0: ['Test Torment'], 1: theirHand }, battlefield: { 0: Array.from({ length: x }, () => 'Swamp'), 1: theirs },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Torment'), x } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const choose = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 1, cards: [], option } as Action);
+
+  it('reads whole, and so does the once-a-turn Artist', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each round asks the opponent; the next round sees what the last one left', () => {
+    let s = table(2, ['Test Spark', 'Test Spark'], ['Test Rock']);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual([LOSE, 'Sacrifice a nonland permanent', 'Discard a card']);
+    s = choose(s, 'Sacrifice a nonland permanent');
+    // The one nonland permanent is the whole answer, taken without asking; round two has no Rock.
+    expect(s.pendingDecision?.options).toEqual([LOSE, 'Discard a card']);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Rock');
+    s = choose(s, 'Discard a card');
+    expect(s.pendingDecision?.from).toBe('hand');
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [s.pendingDecision!.candidates[0]!] } as Action), 20);
+    expect(life(s, 1)).toBe(20);
+    expect(ids(s, 1, 'hand').length).toBe(1);
+    expect(s.punisher).toBeUndefined();
+  });
+
+  it('losing the life is always offered, and alone it is taken every round', () => {
+    let s = table(3, [], []);
+    s = drain(s, 20);
+    // Nothing to sacrifice and nothing to discard (the turn's draw is seat 0's): 9 life, unasked.
+    expect(ids(s, 1, 'hand')).toEqual([]);
+    expect(life(s, 1)).toBe(11);
+    let t = table(2, ['Test Spark'], []);
+    t = choose(t, LOSE);
+    t = drain(choose(t, LOSE), 20);
+    expect(life(t, 1)).toBe(14);
+  });
+
+  it('at a table of three, each opponent answers for themselves, every round', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'torment', 1: 'torment', 2: 'torment' }, deckSpecs: { torment: deck.deck },
+      hands: { 0: ['Test Torment'], 1: ['Test Spark'], 2: ['Test Spark'] }, battlefield: { 0: ['Swamp', 'Swamp'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Torment'), x: 2 } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    const answer = (seat: SeatIndex, option: string) => {
+      expect(s.pendingDecision?.seat).toBe(seat);
+      s = apply(s, { type: 'auto:decide', by: seat, cards: [], option } as Action);
+    };
+    // Round one: seat 1 discards its only card (taken without asking), seat 2 loses the life.
+    answer(1, 'Discard a card');
+    answer(2, LOSE);
+    // Round two: seat 1 has nothing left to discard, so only the life is offered and taken; seat 2 discards.
+    answer(2, 'Discard a card');
+    s = drain(s, 20);
+    // A pod starts at 40.
+    expect(life(s, 1)).toBe(37);
+    expect(life(s, 2)).toBe(37);
+    expect(ids(s, 1, 'hand')).toEqual([]);
+    expect(ids(s, 2, 'hand')).toEqual([]);
+  });
+
+  it('X of 0 asks nothing', () => {
+    const s = drain(table(0, ['Test Spark'], ['Test Rock']), 20);
+    expect(life(s, 1)).toBe(20);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Rock');
+  });
+
+  it('the bot loses life while it has more than 9, then discards', () => {
+    const s = table(1, ['Test Spark'], ['Test Rock']);
+    expect(botAction(s, 1)).toMatchObject({ type: 'auto:decide', option: LOSE });
+    const low = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 6 } : seat)) };
+    expect(botAction(low, 1)).toMatchObject({ type: 'auto:decide', option: 'Discard a card' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
