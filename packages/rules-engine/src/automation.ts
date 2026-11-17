@@ -5290,8 +5290,11 @@ function completeResolution(
         end-step exile already uses — so it gets a resolution path and a description for free.
       */
       if (object.dashed === true) {
-        next = addCounters(next, inst.id, DASHED, 1);
-        next = pump(next, [inst.id], inst.id, object.controller, { keywords: ['haste'] });
+        // Warp (D931) takes dash's path without the haste or the marker; its trigger exiles.
+        if (script?.dash?.warp !== true) {
+          next = addCounters(next, inst.id, DASHED, 1);
+          next = pump(next, [inst.id], inst.id, object.controller, { keywords: ['haste'] });
+        }
         const index = dashReturnIndex(script);
         if (index >= 0) {
           next = scheduleDelayed(next, {
@@ -5304,7 +5307,7 @@ function completeResolution(
             // end of *that* one, which is what the printed card says.
             of: 'any',
             subject: inst.id,
-            description: `return ${def?.name ?? 'it'} to its owner's hand`,
+            description: script?.dash?.warp === true ? `exile ${def?.name ?? 'it'} (warp)` : `return ${def?.name ?? 'it'} to its owner's hand`,
           });
         }
       }

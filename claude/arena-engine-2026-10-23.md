@@ -31295,3 +31295,40 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 4,951, all passing
 
 Coverage: 11,961 of 31,743 cards (+13), 31,677 of 59,509 lines (+24). Staples: 239 of 244.
+
+## D931 — Warp
+
+"Warp {cost} (You may cast this card from your hand for its warp cost. Exile this creature at the
+beginning of the next end step, then you may cast it from exile on a later turn.)" (CR 702.185a),
+from Edge of Eternities. 14 legal cards now read whole.
+
+How it is read:
+- **Dash's alternative cost and end-step trigger with a different ending.** `CardScript.dash` gained
+  `warp`. The play, the `dashed` flag, the validation, the computer and the web table are dash's;
+  the offer says "warp".
+- **No haste and no dash marker** on arrival.
+- **The delayed end-step trigger exiles the permanent** (a token is left alone) and gives its owner
+  D583's `playFromExile` with a new deadline kind, `through: 'warped'`. It never expires, and the
+  card is cast for its printed cost, at its own timing, on a turn after the one it was exiled on.
+  The offer and the cast both hold the "later turn" rule, which matters for a card with flash.
+
+**Pod sweep.** Seeds 61001–61020, run on the D918 build: 1,040 pods, every one reached a winner,
+none threw.
+
+**Tests.** 5 engine tests:
+- the card reads;
+- warp is offered from hand for {W}, and the creature arrives without haste;
+- it is exiled at the end step, is not castable then, and on the next turn is offered and cast from
+  exile for {3}{W};
+- with flash it is still not castable in the end step it was exiled in;
+- cast for its printed cost, it stays.
+
+Faults injected by hand: 5 of 5 caught. The two "later turn" checks were missed at first and pinned
+by the flash case.
+
+The first gate for D930 was stopped and re-run: I edited src for this increment while it ran, which
+the routine forbids. D930 was pushed only after a clean gate on its own tree.
+
+    engine tests: 4,956, all passing
+
+Coverage: 11,975 of 31,743 cards (+14), 31,708 of 59,509 lines (+31). Staples: 239 of 244.

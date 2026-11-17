@@ -3261,6 +3261,12 @@ export interface CardScript {
   readonly dash?: {
     /** The whole cost of a dashed casting, in the printed `{1}{R}` form. */
     readonly cost: string;
+    /**
+     * Warp (D931, CR 702.185a): dash's alternative cost and end-step trigger with a different
+     * ending. No haste; at the next end step the permanent is **exiled**, and its owner may cast it
+     * from exile on a later turn (`playFromExile` `through: 'warped'`, for its printed cost).
+     */
+    readonly warp?: true;
   };
   /**
    * Bestow: cast this creature as an **Aura** for a different cost, and get the creature back when

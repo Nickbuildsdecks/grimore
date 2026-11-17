@@ -315,7 +315,8 @@ export interface CardInstance {
     readonly by: SeatIndex;
     readonly grantedTurn: number;
     /** `plotted` (D922): no deadline; free, at sorcery speed, on a turn after `grantedTurn`. */
-    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted';
+    // `warped` (D931): no deadline; for its printed cost, at its own timing, on a turn after `grantedTurn`.
+    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted' | 'warped';
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the

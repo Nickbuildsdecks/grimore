@@ -49,6 +49,7 @@ const PLAY_FROM_EXILE_UNTIL: Readonly<Record<
   'your-next-turn': 'until the end of your next turn',
   'your-next-end-step': 'until your next end step',
   plotted: 'plotted, without paying its mana cost',
+  warped: 'warped, on a later turn',
 };
 
 /** One thing a player could do, with everything the UI needs to offer it. */
@@ -1443,7 +1444,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => state.instances[id]?.playFromExile?.by === seat)
       // A plotted card is cast on a later turn than the one it was plotted on (D922).
-      .filter((id) => state.instances[id]?.playFromExile?.through !== 'plotted'
+      .filter((id) => (state.instances[id]?.playFromExile?.through !== 'plotted'
+        && state.instances[id]?.playFromExile?.through !== 'warped')
         || state.turn > state.instances[id]!.playFromExile!.grantedTurn)
       .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: true, offered: false })),
     /*
@@ -1738,7 +1740,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         ...(script?.dash === undefined ? [] : [{
           flag: 'dashed' as const,
           cost: script.dash.cost,
-          note: `dash cost (${script.dash.cost}, hasty, back to your hand at end of turn)`,
+          note: script.dash.warp === true
+            ? `warp cost (${script.dash.cost}, exiled at end of turn; cast it from exile on a later turn)`
+            : `dash cost (${script.dash.cost}, hasty, back to your hand at end of turn)`,
           specs: specsFor(script),
         }]),
         /*

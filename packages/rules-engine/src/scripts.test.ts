@@ -18329,6 +18329,82 @@ describe('encore (D930)', () => {
   });
 });
 
+describe('warp (D931)', () => {
+  const ROWS = [
+    { name: 'Test Warper', type_line: 'Creature — Human', oracle_text: 'Warp {W}', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Flash Warper', type_line: 'Creature — Human', oracle_text: 'Flash\nWarp {W}', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd931', name: 'Warp',
+    entries: [{ name: 'Test Warper', count: 4 }, { name: 'Test Flash Warper', count: 2 }, { name: 'Plains', count: 54 }],
+    data: ROWS as never[],
+  });
+  const seated = (lands: number) => advanceTo(arena({
+    decks: { 0: 'd931', 1: 'd931' }, deckSpecs: { d931: deck.deck }, hands: { 0: ['Test Warper'] },
+    battlefield: { 0: Array.from({ length: lands }, () => 'Plains') }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castFor = (s: GameState, warped: boolean) => {
+    const card = find(s, 0, 'hand', 'Test Warper');
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card, ...(warped ? { dashed: true } : {}) } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return { s: next, card };
+  };
+  const toEnd = (s: GameState) => {
+    let next = drain(advanceTo(s, 'end'), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered for the warp cost from hand; it arrives without haste', () => {
+    const s0 = seated(1);
+    const card0 = find(s0, 0, 'hand', 'Test Warper');
+    expect(legalActions(s0, 0).plays.filter((p) => p.card === card0 && p.dashed === true).map((p) => p.manaCost)).toEqual(['{W}']);
+    const { s, card } = castFor(s0, true);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(characteristicsOf(s, s.instances[card]!).keywords.has('haste')).toBe(false);
+  });
+
+  it('exiled at the end step, then castable from exile on a later turn for its printed cost', () => {
+    let { s, card } = castFor(seated(4), true);
+    s = toEnd(s);
+    expect(s.instances[card]!.zone).toBe('exile');
+    expect(s.instances[card]!.playFromExile).toMatchObject({ by: 0, through: 'warped' });
+    expect(refusal(s, { type: 'auto:cast', by: 0, card } as Action)).not.toBeNull();
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    const plays = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast');
+    expect(plays.map((p) => p.manaCost)).toEqual(['{3}{W}']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card } as Action)), 30);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+
+  it('not the same turn it was exiled, even with flash', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd931', 1: 'd931' }, deckSpecs: { d931: deck.deck }, hands: { 0: ['Test Flash Warper'] },
+      battlefield: { 0: ['Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Flash Warper');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, dashed: true } as Action)), 30);
+    s = toEnd(s);
+    expect(s.instances[card]!.zone).toBe('exile');
+    // An untapped Plains and priority in the end step: flash would allow it, the warp does not yet.
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([k, v]) => [k, v.zone === 'battlefield' ? { ...v, tapped: false } : v])) };
+    expect(s.priority).toBe(0);
+    expect(legalActions(s, 0).plays.some((p) => p.card === card && p.kind === 'cast')).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card } as Action)).toMatch(/later turn/);
+  });
+
+  it('cast for its printed cost: it stays', () => {
+    let { s, card } = castFor(seated(4), false);
+    s = toEnd(s);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

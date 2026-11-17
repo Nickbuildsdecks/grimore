@@ -3652,6 +3652,24 @@ const dashReturn = (): TriggerDef => ({
 });
 
 /**
+ * Warp's end step (D931): exile the permanent, and its owner may cast it from exile on a later turn.
+ * Guarded as dash's return is: a warped permanent that left before the end step is left alone.
+ */
+const warpExile = (): TriggerDef => ({
+  on: { kind: 'step', step: 'end', of: 'any' },
+  delayed: true,
+  description: 'exile it; you may cast it from exile on a later turn',
+  effect: (c) => {
+    const id = c.subject;
+    const inst = id === undefined ? undefined : c.state.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield' || inst.isToken) return c.state;
+    const exiled = exileCard(c.state, inst.id);
+    if (exiled.instances[inst.id]?.zone !== 'exile') return exiled;
+    return withInstance(exiled, inst.id, { playFromExile: { by: inst.owner, grantedTurn: c.state.turn, through: 'warped' } });
+  },
+});
+
+/**
  * Ninjutsu, written out as the activated ability the keyword abbreviates (CR 702.49a).
  *
  * A factory rather than text on the one card that prints it, because two readings need the same
@@ -11326,6 +11344,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
   if (word === 'enlist') return { triggers: [ENLIST_TRIGGER] };
   if (word === 'conspire') return { conspire: true, triggers: [CONSPIRE_COPY] };
+  // Warp (D931): dash's alternative cost and end-step trigger, ending in exile. See `CardScript.dash.warp`.
+  const warp = /^warp ((?:\{[^}]+\})+)$/i.exec(text);
+  if (warp !== null) return { dash: { cost: warp[1]!, warp: true }, triggers: [warpExile()] };
   // Emerge (D929): see `CardScript.emerge`.
   const emerge = /^emerge ((?:\{[^}]+\})+)$/i.exec(text);
   if (emerge !== null) return { emerge: { cost: emerge[1]! } };

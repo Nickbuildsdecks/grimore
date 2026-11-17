@@ -211,6 +211,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   const plotCast = inst.zone === 'exile' && inst.playFromExile?.by === action.by
     && inst.playFromExile.through === 'plotted';
+  // A warped card (D931): from exile on a later turn than the one it was warped on.
+  if (inst.zone === 'exile' && inst.playFromExile?.by === action.by && inst.playFromExile.through === 'warped'
+    && state.turn <= inst.playFromExile.grantedTurn) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'a warped card is cast from exile on a later turn');
+  }
   if (plotCast) {
     if (state.turn <= inst.playFromExile!.grantedTurn) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'a plotted card is cast on a later turn than the one it was plotted on');
