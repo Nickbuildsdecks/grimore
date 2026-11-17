@@ -15723,6 +15723,8 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
   if (/^blocks each combat if able$/i.test(rider)) return { bonus: { mustBlock: true }, harmful: true };
   if (/^must be blocked(?: each combat)? if able$/i.test(rider)) return { bonus: { mustBeBlocked: true }, harmful: false };
   if (/^can't be blocked$/i.test(rider)) return { bonus: { cantBeBlocked: true }, harmful: false };
+  // D937: a restriction on the count of blockers, menace's opposite.
+  if (/^can't be blocked by more than one creature$/i.test(rider)) return { bonus: { blockedByOne: true }, harmful: false };
   if (/^loses all abilities$/i.test(rider)) return { bonus: { losesAllAbilities: true }, harmful: true };
   if (/^is every creature type$/i.test(rider)) return { bonus: { allCreatureTypes: true }, harmful: false };
   if (/^doesn't untap during its controller's untap step$/i.test(rider)) {

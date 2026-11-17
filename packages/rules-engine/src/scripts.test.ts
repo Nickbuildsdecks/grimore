@@ -48,6 +48,7 @@ import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Step, Target } from './turnTypes.js';
 import { relocate } from './cardActions.js';
+import { legalDefenders, meetBlockRequirements } from './combat.js';
 
 const BASICS = new Set(['Mountain', 'Forest', 'Plains', 'Island', 'Swamp']);
 
@@ -18836,6 +18837,123 @@ describe('cipher, and casting a copy of a card (D936)', () => {
     }
     expect(s.instances[copy]).toBeUndefined();
     expect(Object.values(s.instances).filter((i) => i.encodedOn !== undefined).length).toBe(1);
+  });
+});
+
+describe('"can\'t be blocked by more than one creature" and "can\'t attack unless defending player controls an Island" (D937)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2', type = 'Creature — Beast') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Rhino', "Test Rhino can't be blocked by more than one creature.", '4', '4'),
+    C('Test Lure Rhino', "All creatures able to block Test Lure Rhino do so.\nTest Lure Rhino can't be blocked by more than one creature.", '4', '4'),
+    C('Test Serpent', "Test Serpent can't attack unless defending player controls an Island.", '5', '5', 'Creature — Serpent'),
+    C('Test Bear', ''),
+    C('Test Ox', '', '4', '4'),
+    { name: 'Test Harness', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature gets +1/+1 and can't be blocked by more than one creature.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'kw937', name: 'Blocker counts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 30 }, { name: 'Island', count: 3 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'kw937', 1: 'kw937' }, deckSpecs: { kw937: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'declare-attackers');
+  const blocking = (attacker: string, theirs: string[]) => {
+    const s = seated([attacker], theirs);
+    const id = find(s, 0, 'battlefield', attacker);
+    return { s: advanceTo(drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] }), 12), 'declare-blockers'), id };
+  };
+  const bears = (s: GameState) => ids(s, 1, 'battlefield').filter((i) => nameOf(s, i) === 'Test Bear');
+  const block = (s: GameState, blocks: { blocker: string; attacker: string }[]) => refusal(s, { type: 'auto:block', by: 1, blocks });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one blocker is legal, two are not', () => {
+    const { s, id } = blocking('Test Rhino', ['Test Bear', 'Test Bear']);
+    const [a, b] = bears(s);
+    expect(block(s, [{ blocker: a!, attacker: id }])).toBeNull();
+    expect(block(s, [{ blocker: a!, attacker: id }, { blocker: b!, attacker: id }])).toMatch(/can't be blocked by more than one creature/);
+    expect(block(s, [])).toBeNull();
+  });
+
+  it('the computer never gangs it, though two Bears would kill it', () => {
+    const { s, id } = blocking('Test Rhino', ['Test Bear', 'Test Bear', 'Test Bear']);
+    const action = botAction(s, 1) as { type: string; blocks?: { blocker: string; attacker: string }[] };
+    expect(action.type).toBe('auto:block');
+    expect((action.blocks ?? []).filter((b) => b.attacker === id).length).toBeLessThanOrEqual(1);
+    expect(refusal(s, action as Action)).toBeNull();
+  });
+
+  it('with a second big attacker, the gang goes on that one instead', () => {
+    let s = seated(['Test Rhino', 'Test Ox'], ['Test Bear', 'Test Bear', 'Test Bear']);
+    const rhino = find(s, 0, 'battlefield', 'Test Rhino');
+    const ox = find(s, 0, 'battlefield', 'Test Ox');
+    s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: rhino, defender: 1 }, { attacker: ox, defender: 1 }] }), 12), 'declare-blockers');
+    const action = botAction(s, 1) as { type: string; blocks?: { blocker: string; attacker: string }[] };
+    expect((action.blocks ?? []).filter((b) => b.attacker === rhino).length).toBeLessThanOrEqual(1);
+    expect((action.blocks ?? []).filter((b) => b.attacker === ox).length).toBe(2);
+  });
+
+  it('against a lure, the requirement is met as far as the restriction allows: exactly one blocks', () => {
+    const { s, id } = blocking('Test Lure Rhino', ['Test Bear', 'Test Bear']);
+    const [a, b] = bears(s);
+    expect(block(s, [])).toMatch(/must block Test Lure Rhino if able/);
+    expect(block(s, [{ blocker: a!, attacker: id }])).toBeNull();
+    expect(meetBlockRequirements(s, 1, []).length).toBe(1);
+    expect(block(s, [{ blocker: a!, attacker: id }, { blocker: b!, attacker: id }])).toMatch(/more than one creature/);
+  });
+
+  it('an Aura can hand it out', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw937', 1: 'kw937' }, deckSpecs: { kw937: deck.deck }, hands: { 0: ['Test Harness'] },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Harness'), targets: [{ kind: 'card', id: mine }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(characteristicsOf(s, s.instances[mine]!).blockedByOne).toBe(true);
+    expect(characteristicsOf(s, s.instances[mine]!).power).toBe(3);
+  });
+
+  it('the Serpent attacks only a player who controls an Island', () => {
+    // At declare-attackers with an Island across the table, and then without it.
+    const wet0 = seated(['Test Serpent'], ['Island', 'Forest']);
+    const dry = relocate(wet0, wet0.instances[find(wet0, 1, 'battlefield', 'Island')]!, 'graveyard', 1, 'top');
+    const serpent = find(dry, 0, 'battlefield', 'Test Serpent');
+    expect(canAttack(dry, serpent, 0)?.reason).toMatch(/unless defending player controls an Island/);
+    expect(legalActions(dry, 0).attackers).not.toContain(serpent);
+    expect(refusal(dry, { type: 'auto:attack', by: 0, attackers: [{ attacker: serpent, defender: 1 }] })).toMatch(/Island/);
+    const wet = seated(['Test Serpent'], ['Island']);
+    const there = find(wet, 0, 'battlefield', 'Test Serpent');
+    expect(canAttack(wet, there, 0)).toBeNull();
+    expect(legalDefenders(wet, there, 0)).toEqual([1]);
+    expect(refusal(wet, { type: 'auto:attack', by: 0, attackers: [{ attacker: there, defender: 1 }] })).toBeNull();
+  });
+
+  it('in a pod, only at the players with an Island', () => {
+    const s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'kw937', 1: 'kw937', 2: 'kw937' }, deckSpecs: { kw937: deck.deck },
+      battlefield: { 0: ['Test Serpent'], 1: ['Forest'], 2: ['Island'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const serpent = find(s, 0, 'battlefield', 'Test Serpent');
+    expect(legalDefenders(s, serpent, 0)).toEqual([2]);
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: serpent, defender: 1 }] })).toMatch(/Island/);
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: serpent, defender: 2 }] })).toBeNull();
+  });
+
+  it('a creature that loses all abilities loses both', () => {
+    let s = seated(['Test Rhino', 'Test Serpent'], ['Island']);
+    const rhino = find(s, 0, 'battlefield', 'Test Rhino');
+    const serpent = find(s, 0, 'battlefield', 'Test Serpent');
+    s = pump(s, [rhino, serpent], rhino, 0, { losesAllAbilities: true });
+    expect(characteristicsOf(s, s.instances[rhino]!).blockedByOne).toBe(false);
+    expect(characteristicsOf(s, s.instances[serpent]!).attacksOnlyIfDefenderHas).toBeNull();
   });
 });
 

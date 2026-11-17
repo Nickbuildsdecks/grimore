@@ -3512,6 +3512,8 @@ function gangBlock(state: GameState, seat: SeatIndex): { blocker: string; attack
     const attacker = state.instances[attackerId];
     if (attacker === undefined) continue;
     const ch = characteristicsOf(state, attacker);
+    // "Can't be blocked by more than one creature" (D937): no gang is legal against it.
+    if (ch.blockedByOne) continue;
     const needed = Math.max(1, ch.toughness - attacker.damage);
     // Cheapest first: the point is to kill it for as little as possible, and whatever is left
     // over still has the rest of the attack to answer.

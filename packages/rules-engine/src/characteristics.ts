@@ -343,7 +343,8 @@ export function shortName(name: string): string | null {
 }
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
-type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure';
+type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure'
+  | 'blockedByOne';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -368,6 +369,8 @@ const COMBAT_STATICS: Readonly<Record<string, CombatStatic>> = Object.freeze({
   'blocks each combat if able': 'mustBlock',
   'must be blocked if able': 'mustBeBlocked',
   'must be blocked each combat if able': 'mustBeBlocked',
+  // A blocking restriction on the count (D937, CR 509.1b): see `Characteristics.blockedByOne`.
+  "can't be blocked by more than one creature": 'blockedByOne',
   // Not a combat rule, but the same kind of sentence: the card's own drawback, stated of itself
   // (D589). "This artifact doesn't untap during your untap step" is Basalt Monolith.
   "doesn't untap during your untap step": 'doesntUntap',
@@ -383,6 +386,8 @@ type PrintedPart =
   /** `Toxic N` — a number, so not a `Keyword`. See `printedToxic` (D556). */
   | { readonly kind: 'toxic'; readonly amount: number }
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
+  /** "~ can't attack unless defending player controls an Island" (D937): a basic land type. */
+  | { readonly kind: 'attack-unless'; readonly landType: string }
   | { readonly kind: 'blocker-ban'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocks-ban'; readonly clauses: readonly BlockerClause[] }
@@ -514,6 +519,12 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   }
   const subject = selfSubjects(name).find((candidate) => low.startsWith(`${candidate} `));
   if (subject === undefined) return null;
+  // The sea creatures' restriction (D937, CR 508.1c): an attack only on a player with that land.
+  const unless = /^can't attack unless defending player controls an? (plains|island|swamp|mountain|forest)$/
+    .exec(low.slice(subject.length + 1).trim());
+  if (unless !== null) {
+    return { kind: 'attack-unless', landType: unless[1]!.charAt(0).toUpperCase() + unless[1]!.slice(1) };
+  }
   const clauses = low.slice(subject.length + 1).trim().split(/\s+and\s+/)
     .map((clause) => clause.trim()).filter((clause) => clause !== '');
   if (clauses.length === 0) return null;
@@ -838,7 +849,7 @@ export function printedCombatStatics(
 function printedCombatFlags(oracleText: string | null | undefined, name?: string): Record<CombatStatic, boolean> {
   const found: Record<CombatStatic, boolean> = {
     cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false,
-    mustBlock: false, mustBeBlocked: false, lure: false,
+    mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false,
   };
   for (const part of printedParts(oracleText, name)) {
     if (part.kind !== 'combat-static') continue;
@@ -1527,6 +1538,8 @@ export interface ContinuousEffect {
   readonly mustBlockAttacker?: string;
   readonly mustBeBlocked?: boolean;
   readonly lure?: boolean;
+  /** "Can't be blocked by more than one creature" (D937, CR 509.1b). */
+  readonly blockedByOne?: boolean;
   /**
    * "Can't be blocked by Walls." A restriction on the *blocker*, read from the attacker, which is
    * the only shape of evasion in this pool that is not a keyword — so it lives here rather than
@@ -1988,6 +2001,16 @@ export interface Characteristics {
   readonly mustBlockAttackers: readonly string[];
   readonly mustBeBlocked: boolean;
   readonly lure: boolean;
+  /**
+   * "Can't be blocked by more than one creature" (D937, CR 509.1b): a restriction on the whole
+   * declaration, menace's opposite, checked with it.
+   */
+  readonly blockedByOne: boolean;
+  /**
+   * "~ can't attack unless defending player controls an Island" (D937, CR 508.1c): the basic land
+   * type a defending player must control for this creature to attack them, or null.
+   */
+  readonly attacksOnlyIfDefenderHas: string | null;
   /** "Can't be blocked by Walls", read from the attacker when a block is offered. */
   readonly cantBeBlockedByWalls: boolean;
   /** "Can't be blocked" outright, read from the attacker when a block is offered. */
@@ -2752,6 +2775,11 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let mustBlock = printedCombat.mustBlock;
   let mustBeBlocked = printedCombat.mustBeBlocked;
   let lure = printedCombat.lure;
+  let blockedByOne = printedCombat.blockedByOne;
+  let attacksOnlyIfDefenderHas: string | null = null;
+  for (const part of printedParts(def?.oracleText, def?.name)) {
+    if (part.kind === 'attack-unless') attacksOnlyIfDefenderHas = part.landType;
+  }
   const mustBlockAttackers: string[] = [];
   let cantBeBlockedByWalls = false;
   let cantBeBlocked = printedCombat.cantBeBlocked;
@@ -2826,6 +2854,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       mustBlock = false;
       mustBeBlocked = false;
       lure = false;
+      blockedByOne = false;
+      attacksOnlyIfDefenderHas = null;
       mustBlockAttackers.length = 0;
       cantBeBlockedByWalls = false;
       cantBeBlocked = false;
@@ -2871,6 +2901,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.mustBlock) mustBlock = true;
     if (effect.mustBeBlocked) mustBeBlocked = true;
     if (effect.lure) lure = true;
+    if (effect.blockedByOne) blockedByOne = true;
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
       mustBlockAttackers.push(effect.mustBlockAttacker);
     }
@@ -2932,6 +2963,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     mustBlockAttackers: cantBlock ? [] : mustBlockAttackers,
     mustBeBlocked,
     lure,
+    blockedByOne,
+    attacksOnlyIfDefenderHas,
     cantBeBlockedByWalls,
     cantBeBlocked,
     cantBeBlockedBy,

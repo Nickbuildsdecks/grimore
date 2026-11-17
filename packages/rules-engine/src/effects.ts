@@ -2574,6 +2574,8 @@ export interface PumpOptions {
   readonly mustBlockAttacker?: string;
   readonly mustBeBlocked?: boolean;
   readonly lure?: boolean;
+  /** See `ContinuousEffect.blockedByOne` (D937). */
+  readonly blockedByOne?: boolean;
   /** See `ContinuousEffect.cantBeBlockedByWalls`. */
   readonly cantBeBlockedByWalls?: boolean;
   /** See `ContinuousEffect.cantBeBlocked`. */
@@ -2663,6 +2665,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.mustBlockAttacker === undefined ? {} : { mustBlockAttacker: opts.mustBlockAttacker }),
     ...(opts.mustBeBlocked ? { mustBeBlocked: true } : {}),
     ...(opts.lure ? { lure: true } : {}),
+    ...(opts.blockedByOne ? { blockedByOne: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
     ...(opts.cantBeBlocked ? { cantBeBlocked: true } : {}),
     ...(opts.landwalk === undefined ? {} : { landwalk: [...opts.landwalk] }),

@@ -31514,3 +31514,52 @@ two left cannot change behaviour:
     engine tests: 4,986, all passing
 
 Coverage: 12,021 of 31,743 cards (+10), 31,789 of 59,509 lines (+10). Staples: 239 of 244.
+
+## D937 — "Can't be blocked by more than one creature", and the sea creatures
+
+Two combat restrictions from the corpus tally of single unread lines:
+- "~ can't be blocked by more than one creature." (CR 509.1b): 9 cards with it as their only
+  unread line, and Aura and Equipment riders.
+- "~ can't attack unless defending player controls an Island." (CR 508.1c): 12 cards, the sea
+  creatures, and one each for Swamp, Mountain and Forest.
+
+25 legal cards now read whole.
+
+How it is read:
+- **`blockedByOne`**, a printed combat static beside lure (`COMBAT_STATICS`). It is also a
+  continuous-effect field, so the attachment rider "… and can't be blocked by more than one
+  creature" hands it out. `singleBlockSatisfied`, menace's opposite, refuses a declaration with two
+  blockers on it.
+- **The blocking-requirement search (D913) keeps it as a restriction**: a lure on such a creature is
+  met by exactly one blocker, as CR 509.1c asks (the most requirements obeyed without breaking a
+  restriction).
+- **The computer's gang block** skips such an attacker, so its gang goes on the next one worth
+  killing instead of on a plan the engine would refuse.
+- **`attacksOnlyIfDefenderHas`**, a basic land type read off the printed line. `attackAimIssue`
+  refuses an attack at a player without one, so `legalDefenders` offers only the others.
+  `canAttack` refuses the attacker outright when no opponent has one, so it is neither offered nor
+  forced. The test is the land's live subtype, so a land that became an Island counts.
+- Losing all abilities clears both.
+
+**Tests.** 10 engine tests:
+- the cards read;
+- one blocker is legal, two are not;
+- the computer never gangs it;
+- with a second big attacker, the gang goes on that one;
+- against a lure, exactly one blocks;
+- an Aura hands it out;
+- the Serpent attacks only a player with an Island;
+- in a pod, only the players with one;
+- losing all abilities loses both.
+
+Faults injected by hand: 10 of 10 caught. The first round missed four:
+- the ability-loss reset and the per-defender check: pinned by new tests;
+- the gang guard: illegal plans are dropped when scored, so it only matters when another attacker
+  can take the gang, which is now tested;
+- a separate land-type check: removed (a basic land type is only ever a land's).
+
+Pod sweep, seeds 62001–62010 on the D931 build: 520 pods, all decided.
+
+    engine tests: 4,995, all passing
+
+Coverage: 12,046 of 31,743 cards (+25), 31,839 of 59,509 lines (+50). Staples: 239 of 244.

@@ -33,7 +33,7 @@ import { listAt, relocate, requireInstance, withInstance, withZones } from './ca
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
   flankingPenalties, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
-  menaceSatisfied,
+  menaceSatisfied, singleBlockSatisfied,
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
@@ -5711,4 +5711,4 @@ function applyStatics(
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, applyStatics, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, flankingPenalties, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, applyStatics, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, singleBlockSatisfied, needsFirstStrikeStep, tapAttackers, destroy, flankingPenalties, STEP_LABELS };

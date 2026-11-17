@@ -47,8 +47,25 @@ export function canAttack(state: GameState, id: string, seat: SeatIndex): Combat
   if (inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) {
     return { card: id, reason: `${ch.name} has summoning sickness` };
   }
+  // And nobody it may attack (D937): no opponent controls the land its restriction names.
+  if (ch.attacksOnlyIfDefenderHas !== null && !state.seats.some((s) => s.index !== seat && !s.eliminated
+    && controlsLandType(state, s.index, ch.attacksOnlyIfDefenderHas!))) {
+    return { card: id, reason: `${ch.name} can't attack unless defending player controls ${anOf(ch.attacksOnlyIfDefenderHas)}` };
+  }
   return null;
 }
+
+/** Whether a seat controls a land with this subtype, by its live type line (D937). */
+function controlsLandType(state: GameState, seat: SeatIndex, landType: string): boolean {
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined) return false;
+    // A basic land type is only ever a land's subtype (CR 205.3i), so the subtype is the test.
+    return hasSubtype(characteristicsOf(state, inst).typeLine, landType);
+  });
+}
+
+const anOf = (word: string): string => `${/^[AEIOU]/.test(word) ? 'an' : 'a'} ${word}`;
 
 /**
  * The creatures this seat is *required* to attack with, and could (CR 508.1d).
@@ -95,6 +112,10 @@ export function attackAimIssue(
   const found = creatureOf(state, id, seat);
   if (found === null) return null;
   const { ch } = found;
+  // "Can't attack unless defending player controls an Island" (D937, CR 508.1c).
+  if (ch.attacksOnlyIfDefenderHas !== null && !controlsLandType(state, defender, ch.attacksOnlyIfDefenderHas)) {
+    return { card: id, reason: `${ch.name} can't attack unless defending player controls ${anOf(ch.attacksOnlyIfDefenderHas)}` };
+  }
   if (!ch.goadedBy.includes(defender)) return null;
   const elsewhere = state.seats.some((s) => (
     s.index !== seat && !s.eliminated && !ch.goadedBy.includes(s.index)
@@ -360,6 +381,16 @@ export function menaceSatisfied(state: GameState, attack: CombatAttack): boolean
   return attack.blockers.length === 0 || attack.blockers.length >= 2;
 }
 
+/**
+ * "Can't be blocked by more than one creature" (D937, CR 509.1b): menace's opposite, about the
+ * count of a whole declaration rather than about any one blocker.
+ */
+export function singleBlockSatisfied(state: GameState, attack: CombatAttack): boolean {
+  const attacker = creatureOf(state, attack.attacker);
+  if (attacker === null || !attacker.ch.blockedByOne) return true;
+  return attack.blockers.length <= 1;
+}
+
 /** One creature blocking one attacker, as a declaration lists it. */
 export interface BlockEntry { readonly blocker: string; readonly attacker: string }
 
@@ -382,7 +413,9 @@ function blockRequirements(state: GameState, seat: SeatIndex) {
   const able = new Map(blockers.map((y) => [y, new Set(attackers.filter((a) => canBlock(state, y, a, seat) === null))]));
   const named = asked.filter((r) => able.get(r.blocker)!.has(r.attacker));
   const menace = new Set(attackers.filter((a) => state.instances[a] !== undefined && chOf(a).keywords.has('menace')));
-  return { attackers, blockers, able, mustBlock, named, lured, mustBeBlocked, menace };
+  // And the attackers no more than one creature may block (D937), a restriction the search keeps.
+  const single = new Set(attackers.filter((a) => state.instances[a] !== undefined && chOf(a).blockedByOne));
+  return { attackers, blockers, able, mustBlock, named, lured, mustBeBlocked, menace, single };
 }
 
 type Requirements = NonNullable<ReturnType<typeof blockRequirements>>;
@@ -398,12 +431,15 @@ function obeyed(req: Requirements, blocks: readonly BlockEntry[]): number {
   return n;
 }
 
-/** A declaration's menace half (CR 702.110b), asked of a candidate rather than of the board. */
+/**
+ * A declaration's count restrictions, asked of a candidate rather than of the board: menace
+ * (CR 702.110b) and "can't be blocked by more than one creature" (D937).
+ */
 function menaceHolds(req: Requirements, blocks: readonly BlockEntry[]): boolean {
   return [...req.menace].every((a) => {
     const n = blocks.filter((b) => b.attacker === a).length;
     return n === 0 || n >= 2;
-  });
+  }) && [...req.single].every((a) => blocks.filter((b) => b.attacker === a).length <= 1);
 }
 
 /**

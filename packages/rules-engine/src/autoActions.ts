@@ -22,7 +22,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
   autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, flankingPenalties,
   forcedAttackers, legalAttackers,
-  legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
+  legalBlockers, legalDefenders, menaceSatisfied, singleBlockSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   discardOptions, raiseTargeted, resetPriority, resolveTop, sacrificeOptions, sacrificeWords, scriptOf, settle, stackTop,
   stateBasedActions, unblockedAttackersOf,
@@ -2719,6 +2719,10 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     if (!menaceSatisfied({ ...state, combat: { ...state.combat, attacks } }, attack)) {
       const name = characteristicsOf(state, requireInstance(state, attack.attacker)).name;
       throw new EngineError('RULE_NOT_APPLICABLE', `${name} has menace and must be blocked by two or more creatures`);
+    }
+    if (!singleBlockSatisfied(state, attack)) {
+      const name = characteristicsOf(state, requireInstance(state, attack.attacker)).name;
+      throw new EngineError('RULE_NOT_APPLICABLE', `${name} can't be blocked by more than one creature`);
     }
   }
   // The blocking requirements (CR 509.1c, D913): Lure, provoke, "must be blocked if able".
