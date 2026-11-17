@@ -19600,6 +19600,67 @@ describe('"target creatures your opponents control" (D945)', () => {
   });
 });
 
+describe('support, and "those creatures don\'t untap" (D946)', () => {
+  const ROWS = [
+    { name: 'Test Supporter', type_line: 'Creature — Human', oracle_text: 'When Test Supporter enters, support 2.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Frost', type_line: 'Instant', oracle_text: "Tap up to two target creatures. Those creatures don't untap during their controller's next untap step.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd946', name: 'Support',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (hand: string, mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd946', 1: 'd946' }, deckSpecs: { d946: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bearsOf = (s: GameState, seat: SeatIndex) => ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // Support 3 asks for up to three.
+    const three = compileCard({ ...ROWS[0]!, name: 'Test Three', oracle_text: 'When Test Three enters, support 3.' } as never);
+    expect(three.ok && three.script?.triggers?.[0]?.targets?.[0]).toMatchObject({ count: 3, optional: true });
+  });
+
+  it('support 2: a counter on each of up to two other creatures, never itself', () => {
+    let s = seated('Test Supporter', ['Test Bear', 'Test Bear'], []);
+    const [a, b] = bearsOf(s, 0);
+    const card = find(s, 0, 'hand', 'Test Supporter');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card } as Action), 30);
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      if (s.pendingChoice !== null) {
+        const offered = (legalActions(s, 0).mustChoose?.candidates ?? []).flat().map((t) => (t.kind === 'card' ? t.id : null));
+        expect(offered).not.toContain(card);
+        expect(offered).toEqual(expect.arrayContaining([a, b]));
+        s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }] }), 30);
+      } else s = drain(passBoth(s), 30);
+    }
+    expect(s.instances[a!]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[b!]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[card]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('"those creatures don\'t untap": both stay tapped through their next untap step', () => {
+    let s = seated('Test Frost', [], ['Test Bear', 'Test Bear']);
+    const [a, b] = bearsOf(s, 1);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Frost'), targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[a!]!.tapped).toBe(true);
+    expect(s.instances[b!]!.tapped).toBe(true);
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[a!]!.tapped).toBe(true);
+    expect(s.instances[b!]!.tapped).toBe(true);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[a!]!.tapped).toBe(false);
+    expect(s.instances[b!]!.tapped).toBe(false);
+  });
+});
+
 describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D729)', () => {
   const ROWS = [
     { name: 'Test Path', type_line: 'Land', oracle_text: "Test Path enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
