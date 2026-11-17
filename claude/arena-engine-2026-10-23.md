@@ -30842,3 +30842,41 @@ only lands are offered.
     engine tests: 4,887, all passing
 
 Coverage: 11,811 of 31,743 cards (+21), 31,440 of 59,509 lines (+36). Staples: 238 of 244.
+
+## D919 — Historic and subtypes in a card filter
+
+`graveyardTypeTest` is the one test that turns "a creature card", "an instant or sorcery card" and
+the like into a predicate. The dig, the reveal-and-keep, the chosen discard and the graveyard
+targets all share it. It read card types only. Now it also reads:
+- **historic**: an artifact, a legendary card, or a Saga (CR 700.6);
+- **a subtype by its printed capital**, only when it is real: a creature type (`isCreatureType`) or
+  one of `CARD_SUBTYPES_READ` (Aura, Equipment, Vehicle, Saga, Curse, Shrine). This is the
+  validation #341 asked for, so "Blorp" and the plural "Rebels" are still refused;
+- **a mix**: "Human or artifact", "creature or Vehicle".
+
+The test now takes the card definition as well as its type line. A creature type then goes through
+`cardHasSubtype`, so a changeling card has every creature type (CR 702.73a). All four callers pass
+it. D683's reveal-and-keep test caught the changeling the first version lost.
+
+Compile tests retired, each now asserting the line reads:
+- D527: "creature or Vehicle" and "Rebel";
+- D584: historic, Elf, and "Aura, creature, or planeswalker".
+
+New refusal rows: "Blorp", "Rebels", and "a shiny card".
+
+Not read: "colorless" (a colour, not a type-line fact), and lists of more than three kinds.
+
+**Tests.** 5 engine tests:
+- the printings read;
+- historic offers the artifact, the legendary card and the Saga, and nothing else;
+- a creature type offers the Hero and the changeling;
+- "Goblin or artifact" offers either;
+- a Goblin card can be targeted in the graveyard, and a Bear cannot.
+
+Faults injected by hand: 6 of 6. Four were caught as written; the plural guard was a redundant
+check and was removed (it would have refused real types such as Cyclops), and the "or" mix was
+pinned by a new test.
+
+    engine tests: 4,895, all passing
+
+Coverage: 11,843 of 31,743 cards (+32), 31,499 of 59,509 lines (+59). Staples: 238 of 244.

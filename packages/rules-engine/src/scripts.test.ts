@@ -17522,6 +17522,78 @@ describe('annihilator, and the edict widened (D918)', () => {
   });
 });
 
+describe('historic and subtypes in a card filter (D919)', () => {
+  const C = (name: string, type_line: string, oracle_text = '') => ({ name, type_line, oracle_text, mana_cost: '{9}', cmc: 9, colors: ['W'], layout: 'normal', ...(type_line.includes('Creature') ? { power: '1', toughness: '1' } : {}) });
+  const ROWS = [
+    { name: 'Test Historian', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Look at the top five cards of your library. You may reveal a historic card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    { name: 'Test Recruiter', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Look at the top five cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    { name: 'Test Recall', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Return target Goblin card from your graveyard to your hand.' },
+    { name: 'Test Mixer', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Look at the top five cards of your library. You may reveal a Goblin or artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    C('Test Relic', 'Artifact'),
+    C('Test Legend', 'Legendary Creature — Human'),
+    C('Test Saga', 'Enchantment — Saga'),
+    C('Test Hero', 'Creature — Human Hero'),
+    C('Test Shifter', 'Creature — Shapeshifter', 'Changeling'),
+    C('Test Goblin', 'Creature — Goblin'),
+    C('Test Plain', 'Creature — Bear'),
+  ];
+  const deck = customDeck({
+    id: 'd919', name: 'Kinds',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 40 }],
+    data: ROWS as never[],
+  });
+  // Seat 0 holds `spell`; its library's top five are `top`, in order.
+  const dig = (spell: string, top: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd919', 1: 'd919' }, deckSpecs: { d919: deck.deck }, hands: { 0: [spell] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = ids(s, 0, 'library');
+    const picked: string[] = [];
+    for (const name of top) picked.push(lib.find((id) => nameOf(s, id) === name && !picked.includes(id))!);
+    s = { ...s, zones: { ...s.zones, '0:library': [...picked, ...lib.filter((id) => !picked.includes(id))] } };
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 40);
+  };
+  const offered = (s: GameState) => (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)).sort();
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('historic: an artifact, a legendary card and a Saga, and nothing else', () => {
+    const s = dig('Test Historian', ['Test Relic', 'Test Legend', 'Test Saga', 'Test Plain', 'Test Hero']);
+    expect(offered(s)).toEqual(['Test Legend', 'Test Relic', 'Test Saga']);
+  });
+
+  it('a creature type: the card with it, and a changeling card, which has every creature type', () => {
+    const s = dig('Test Recruiter', ['Test Hero', 'Test Shifter', 'Test Plain', 'Test Relic', 'Test Goblin']);
+    expect(offered(s)).toEqual(['Test Hero', 'Test Shifter']);
+  });
+
+  it('a subtype or a type: either one, not both', () => {
+    const s = dig('Test Mixer', ['Test Goblin', 'Test Relic', 'Test Plain', 'Test Hero', 'Test Saga']);
+    expect(offered(s)).toEqual(['Test Goblin', 'Test Relic']);
+  });
+
+  it('a creature type as a graveyard target: a Goblin card may be targeted, a Bear may not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd919', 1: 'd919' }, deckSpecs: { d919: deck.deck }, hands: { 0: ['Test Recall', 'Test Goblin', 'Test Plain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const goblin = find(s, 0, 'hand', 'Test Goblin');
+    const bear = find(s, 0, 'hand', 'Test Plain');
+    s = { ...s, zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').filter((id) => id !== goblin && id !== bear), '0:graveyard': [goblin, bear] },
+      instances: { ...s.instances, [goblin]: { ...s.instances[goblin]!, zone: 'graveyard' as const }, [bear]: { ...s.instances[bear]!, zone: 'graveyard' as const } } };
+    const recall = find(s, 0, 'hand', 'Test Recall');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: recall, targets: [{ kind: 'card', id: bear }] } as Action)).not.toBeNull();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: recall, targets: [{ kind: 'card', id: goblin }] } as Action)), 40);
+    expect(s.instances[goblin]!.zone).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -14389,12 +14389,12 @@ describe('the graveyard clause family (D527)', () => {
   it.each([
     ['a rider the move does not carry',
       'Return target creature card from your graveyard to the battlefield with a finality counter on it.'],
-    ['a type run mixing a type with a subtype',
-      'Return target creature or Vehicle card from your graveyard to the battlefield.'],
     ['a colour run this vocabulary does not read',
       'Return target white or black creature card from your graveyard to the battlefield.'],
-    ['a subtype alone, which would match nothing (#341)',
-      'Exile target Rebel card from a graveyard.'],
+    ['a subtype nothing has, which would match nothing (#341)',
+      'Exile target Blorp card from a graveyard.'],
+    ['a plural, which reads the same as a singular and is refused for it',
+      'Exile target Rebels card from a graveyard.'],
     ['two graveyards in one clause, which cannot share one targets list',
       "Exile target instant or sorcery card from your graveyard and target instant or sorcery card"
       + " from an opponent’s graveyard."],
@@ -14403,6 +14403,18 @@ describe('the graveyard clause family (D527)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+
+  it.each([
+    // Refused until D919, which reads a real subtype by its printed capital (#341's validation).
+    ['a type run mixing a type with a subtype (D919)',
+      'Return target creature or Vehicle card from your graveyard to the battlefield.'],
+    ['a creature type alone (D919)', 'Exile target Rebel card from a graveyard.'],
+  ])('reads %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
   });
 
   it('refuses a card out of ANY graveyard put under YOUR library, which nobody prints', () => {
@@ -18295,18 +18307,29 @@ describe('the dig: what the reader takes and what it leaves (D584)', () => {
   } as never);
 
   it.each([
+    // Refused here until D919, which reads historic and real subtypes (see `graveyardTypeTest`).
+    ['historic (D919)',
+      'Look at the top five cards of your library. You may reveal a historic card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
+    ['a creature type (D919)',
+      'Look at the top four cards of your library. You may reveal an Elf card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
+    ['a list with a subtype in it (D919)',
+      'Look at the top four cards of your library. You may reveal an Aura, creature, or planeswalker card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
+  ])('reads %s', (_why, text) => {
+    const read = spell(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+  });
+
+  it.each([
     // "…then put them back in any order" was a row here until D651, which reads the answer as a
     // sequence (`chosenGoTo: 'top'`, the first picked on top) — see "Brainstorm, Ponder and the wheel".
     ['a land put onto the battlefield, which is another destination',
       'Look at the top five cards of your library. You may put a land card from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'],
+    ['a filter that is a word for no card kind',
+      'Look at the top five cards of your library. You may reveal a shiny card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
     ['a filter with a number in it',
       'Look at the top five cards of your library. You may reveal a creature card with power 2 or less from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
-    ['a filter that is not a card type',
-      'Look at the top five cards of your library. You may reveal a historic card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
-    ['a filter that is a creature type',
-      'Look at the top four cards of your library. You may reveal an Elf card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
-    ['a list with a subtype in it',
-      'Look at the top four cards of your library. You may reveal an Aura, creature, or planeswalker card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
     ['two negations, which is not a list of types',
       'Look at the top four cards of your library. You may reveal a noncreature, nonland card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
     ['up to two revealed',

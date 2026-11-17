@@ -19733,8 +19733,34 @@ const permanentFilter = (
  * and #341 is open about exactly what an unvalidated subtype target costs (a phrase that compiles
  * and matches nothing).
  */
-function graveyardTypeTest(words: string): ((line: TypeLine) => boolean) | null {
+function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => boolean) | null {
   const text = words.trim().toLowerCase();
+  /*
+    **Historic and subtypes** (D919): "a historic card" (artifact, legendary or Saga, CR 700.6), "a
+    Hero card", "a Human or artifact card", "a creature or Vehicle card". A subtype is read only with
+    its printed capital and only when it is a real one — a creature type from `isCreatureType`, or
+    one of `CARD_SUBTYPES_READ` — which is the validation #341 asked for: a phrase that names a
+    subtype nothing has would compile and match nothing. Read part by part, so a type and a subtype
+    mix ("creature or Vehicle").
+  */
+  const printedParts = words.trim().split(/\s+or\s+/);
+  if (printedParts.length > 0 && printedParts.length <= 3
+    && printedParts.some((part) => part === 'historic' || /^[A-Z]/.test(part))) {
+    const tests = printedParts.map((part): ((line: TypeLine, def?: CardDef) => boolean) | null => {
+      if (part === 'historic') {
+        return (line) => hasType(line, 'artifact') || isLegendary(line) || hasSubtype(line, 'saga');
+      }
+      // A plural ("Rebels") is refused by the validation itself: it is not a creature type.
+      if (/^[A-Z][a-z'-]+$/.test(part) && (isCreatureType(part) || CARD_SUBTYPES_READ.includes(part))) {
+        // With the card, a changeling has every creature type (CR 702.73a): `cardHasSubtype`.
+        return (line, def) => (def !== undefined ? cardHasSubtype(def, part) : hasSubtype(line, part));
+      }
+      if (GRAVEYARD_CARD_TYPES.includes(part)) return (line) => hasType(line, part);
+      return null;
+    });
+    if (tests.some((test) => test === null)) return null;
+    return (line, def) => tests.some((test) => test!(line, def));
+  }
   if (text === '') return () => true;
   if (text === 'nonland') return (line) => !hasType(line, 'land');
   /*
@@ -19745,7 +19771,7 @@ function graveyardTypeTest(words: string): ((line: TypeLine) => boolean) | null 
   */
   if (text.startsWith('nonland ')) {
     const rest = graveyardTypeTest(text.slice('nonland '.length));
-    return rest === null ? null : (line) => !hasType(line, 'land') && rest(line);
+    return rest === null ? null : (line, def) => !hasType(line, 'land') && rest(line, def);
   }
   /*
     "Target permanent card in your graveyard" (Invoke Justice). `PERMANENT_TYPES` is the list
@@ -19766,6 +19792,9 @@ function graveyardTypeTest(words: string): ((line: TypeLine) => boolean) | null 
  * graveyard" is a phrase the pool prints (Deathrite Shaman, and the switch above has it by hand).
  * The absence of `land` from the spell list is a rule about casting, not about this zone.
  */
+/** The noncreature subtypes `graveyardTypeTest` reads by name (D919): the ones the corpus prints there. */
+const CARD_SUBTYPES_READ: readonly string[] = ['Aura', 'Equipment', 'Vehicle', 'Saga', 'Curse', 'Shrine'];
+
 const GRAVEYARD_CARD_TYPES: readonly string[] = [
   'artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery',
 ];
@@ -19819,7 +19848,7 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
       if (inst === undefined) return false;
       if (scope === 'yours' && inst.zoneSeat !== controller) return false;
       if (scope === 'opponents' && inst.zoneSeat === controller) return false;
-      return test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+      return test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey]);
     },
     ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
     ...(quantifier.optional === true ? { optional: true } : {}),
@@ -23786,7 +23815,7 @@ function revealKeepGroup(
   const subtype = /^[A-Z][a-z]+$/.test(words) && (isCreatureType(words) || LAND_SUBTYPE_WORDS.includes(words)) ? words : null;
   if (typed === null && subtype === null) return null;
   const matches = (def: CardDef | undefined): boolean => (typed !== null
-    ? typed(parseTypeLine(def?.typeLine))
+    ? typed(parseTypeLine(def?.typeLine), def)
     : cardHasSubtype(def, subtype!));
   return {
     read: {
@@ -24009,7 +24038,7 @@ function digGroup(
     min: 0, max: 1, restGoTo, revealPicked: true,
     filter: (state, id) => {
       const inst = state.instances[id];
-      return inst !== undefined && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+      return inst !== undefined && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey]);
     },
   }, 3);
 }
@@ -24055,7 +24084,7 @@ function chosenDiscardPrefix(
         filter: (state, id) => {
           const inst = state.instances[id];
           return inst !== undefined
-            && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+            && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey]);
         },
       }],
       // `moveToGraveyard` sends each card to its own owner's graveyard, so the card the caster
