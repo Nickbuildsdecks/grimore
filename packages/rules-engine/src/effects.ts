@@ -107,6 +107,8 @@ export interface EffectContext {
    * "the player or planeswalker it's attacking". Undefined for everything else.
    */
   readonly attacked?: AttackedTarget;
+  /** The damage the triggering event dealt (D903). See `StackObject.eventAmount`. */
+  readonly eventAmount?: number;
   /**
    * The attacker a block trigger's block was against, for a card that has to say "that creature".
    * Undefined for everything else. See `StackObject.blocked`.

@@ -540,7 +540,11 @@ function hit(
     : next;
   return {
     ...poisoned,
-    dealtCombatDamage: [...poisoned.dealtCombatDamage, { creature: attacker, defender: target.seat }],
+    // How much landed (D903): life lost, or poison given by infect (not toxic, which is not damage).
+    dealtCombatDamage: [...poisoned.dealtCombatDamage, {
+      creature: attacker, defender: target.seat,
+      amount: Math.max(before.life - after.life, after.poison - before.poison),
+    }],
   };
 }
 

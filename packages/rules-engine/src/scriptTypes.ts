@@ -687,6 +687,8 @@ export type TriggerEvent =
    */
   | {
       readonly kind: 'deals-damage';
+      /** Set by the engine: how much damage was dealt (D903). */
+      readonly amount?: number;
       readonly who?: 'self' | 'attached' | 'another' | 'any';
       readonly of?: 'you' | 'opponent' | 'any';
       readonly to?: 'opponent' | 'player';
@@ -764,6 +766,8 @@ export type TriggerEvent =
   | {
       readonly kind: 'combat-damage';
       readonly defender?: SeatIndex;
+      /** Set by the engine: how much damage landed (D903). */
+      readonly amount?: number;
       /**
        * Which seat controlled the creature that dealt it. Set by the engine when the event is
        * raised, never by a script — it is what `of` is answered from.

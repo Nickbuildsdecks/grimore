@@ -514,6 +514,11 @@ export interface StackObject {
    */
   readonly attacked?: AttackedTarget;
   /**
+   * How much damage the event was (D903): "Whenever ~ deals combat damage to a player, draw that
+   * many cards." Set from the damage that landed, for the two damage events.
+   */
+  readonly eventAmount?: number;
+  /**
    * For a block trigger: the attacker the block was against (CR 509.1a).
    *
    * Travels for the same reason `attacked` does, and a sharper one. "That creature" in a block
@@ -814,7 +819,11 @@ export interface AutomationState {
    * `attacked` channel an attack trigger uses, so there is one way an ability learns which player
    * its event was about rather than two.
    */
-  readonly dealtCombatDamage: readonly { readonly creature: string; readonly defender: SeatIndex }[];
+  readonly dealtCombatDamage: readonly {
+    readonly creature: string; readonly defender: SeatIndex;
+    /** How much landed — life lost, or poison for infect (D903) — for "that many" / "that much". */
+    readonly amount?: number;
+  }[];
   /**
    * One entry per card drawn and not yet announced — the seat that drew it. Drained by `settle`.
    *

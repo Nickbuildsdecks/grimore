@@ -18971,7 +18971,16 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       the same thing because the parsed row's own groups come first in the sentence: the effect is
       the last thing a cast prologue captures, not the first.
     */
-    const clause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
+    /*
+      "That many" / "that much" after a damage event is the damage (D903): marked here, where the
+      event is known, and read by `readEffect` as an X that is the event's amount. Anywhere else
+      the words name some other number, and no reader knows the mark.
+    */
+    const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
+    const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage')
+      && !/\bX\b/.test(printedClause)
+      ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
+      : printedClause;
     /*
       Where the clause's own subject is when it runs, read off the **event** rather than guessed.
 
@@ -22478,6 +22487,36 @@ function readEffect(
     return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
   }
   if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
+  /*
+    "Draw that many cards" after a damage trigger (D903): the trigger reader marks the words, and the
+    clause is read with X in their place and run with X as the damage that landed. Not a clause that
+    asks a question: a question's count is planned off the stack object's own X, not this one.
+  */
+  if (/\u000e (?:many|much)\b/.test(clause)) {
+    const text = clause.trim();
+    const n = (c: EffectContext): number => Math.max(0, c.eventAmount ?? 0);
+    const hit = (c: EffectContext): SeatIndex | undefined => c.attacked?.defender;
+    if (/^(?:you )?draw \u000e many cards$/i.test(text)) {
+      return { effect: (c) => drawLater(c.state, c.controller, n(c)), immediate: (c) => draw(c.state, c.controller, n(c)) };
+    }
+    if (/^you gain \u000e much life$/i.test(text)) return { effect: (c) => gainLife(c.state, c.controller, n(c)) };
+    if (/^that player mills \u000e many cards$/i.test(text)) {
+      return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };
+    }
+    if (/^you get \u000e many \{E\}(?: \(energy counters?\))?$/i.test(text)) {
+      return { effect: (c) => addEnergy(c.state, c.controller, n(c)) };
+    }
+    if (/^create \u000e many Treasure tokens$/i.test(text)) {
+      return { effect: (c) => (n(c) === 0 ? c.state : createToken(c.state, c.controller, TREASURE_TOKEN, n(c))) };
+    }
+    if (new RegExp(`^put \u000e many \\+1/\\+1 counters on (?:${selfRef(name)}|it)$`, 'i').test(text)) {
+      return {
+        effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield' && n(c) > 0
+          ? addCounters(c.state, c.source, '+1/+1', n(c)) : c.state),
+      };
+    }
+    return null;
+  }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };

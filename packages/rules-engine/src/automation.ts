@@ -1779,6 +1779,9 @@ function fireTrigger(
     // watcher: a card that means its own controller says `controller` and always could.
     ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
     ...(attacked === undefined ? {} : { attacked }),
+    // How much damage the event was, for "that many" (D903).
+    ...((event.kind === 'combat-damage' || event.kind === 'deals-damage') && event.amount !== undefined
+      ? { eventAmount: event.amount } : {}),
     ...(answering === undefined ? {} : { answering }),
     ...(subject === undefined
       || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
@@ -2355,6 +2358,8 @@ interface TriggerAbout {
   readonly sacrificed?: SacrificedStats;
   /** The power tapped to pay for it (D637). See `StackObject.tappedPower`. */
   readonly tappedPower?: number;
+  /** How much damage the event was (D903). See `StackObject.eventAmount`. */
+  readonly eventAmount?: number;
 }
 
 /**
@@ -2435,6 +2440,7 @@ function pushAbility(
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     ...(about.sacrificed === undefined ? {} : { sacrificedStats: about.sacrificed }),
     ...(about.tappedPower === undefined ? {} : { tappedPower: about.tappedPower }),
+    ...(about.eventAmount === undefined ? {} : { eventAmount: about.eventAmount }),
     targetSeqs: targetSeqsFor(state, targets),
     ...aboutSeqsFor(state, about),
   };
@@ -3271,7 +3277,7 @@ function settle(state: GameState, before: GameState): GameState {
       together in the rules (CR 603.3b), and for one player's abilities the order within that is
       their own choice — so the engine takes the one that matches the sequence a player watched.
     */
-    for (const { creature, defender } of connected) {
+    for (const { creature, defender, amount } of connected) {
       /*
         A creature that deals combat damage to the monarch hands the crown to its controller
         (CR 720.5).
@@ -3291,7 +3297,8 @@ function settle(state: GameState, before: GameState): GameState {
         next = { ...next, monarch: taker };
       }
       next = raise(
-        next, { kind: 'combat-damage', defender }, next.instances[creature]?.zoneSeat, creature,
+        next, { kind: 'combat-damage', defender, ...(amount === undefined ? {} : { amount }) },
+        next.instances[creature]?.zoneSeat, creature,
       );
     }
     /*
@@ -3362,7 +3369,7 @@ function settle(state: GameState, before: GameState): GameState {
         next = raise(
           next,
           {
-            kind: 'deals-damage', defender: record.to.seat,
+            kind: 'deals-damage', defender: record.to.seat, amount: record.amount,
             ...(record.combat === true ? { combat: true } : {}),
           },
           (next.vanished[record.source] ?? next.instances[record.source])?.zoneSeat,
@@ -4947,6 +4954,7 @@ function completeResolution(
     // The spell itself, for "if this spell was cast from a graveyard" (D715).
     ...(object.kind === 'spell' ? { resolving: object } : {}),
     attacked: object.attacked,
+    ...(object.eventAmount === undefined ? {} : { eventAmount: object.eventAmount }),
     /*
       Which permanent it is about, for a trigger that has to say "that creature" — and which
       creature it blocked, for the other half of the same question.

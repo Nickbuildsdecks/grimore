@@ -16111,6 +16111,62 @@ describe('a size that is a count: the commonest "*" bodies (D902)', () => {
   });
 });
 
+describe('"that many" after a combat-damage trigger is the damage dealt (D903)', () => {
+  const ROWS = [
+    { name: 'Test Scholar', type_line: 'Creature — Human Rogue', oracle_text: 'Whenever Test Scholar deals combat damage to a player, draw that many cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Leech', type_line: 'Creature — Leech', oracle_text: 'Whenever Test Leech deals combat damage to a player, you gain that much life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Miller', type_line: 'Creature — Horror', oracle_text: 'Whenever Test Miller deals combat damage to a player, that player mills that many cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '4', toughness: '1' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'thatmany', name: 'That many',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const swing = (attackerName: string, theirs: string[] = [], block = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'thatmany', 1: 'thatmany' }, deckSpecs: { thatmany: deck.deck },
+      battlefield: { 0: [attackerName], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const attacker = find(s, 0, 'battlefield', attackerName);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    if (block) s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Wall'), attacker }] });
+    // With nothing that can block, the engine declares no blocks itself.
+    return s;
+  };
+  const afterDamage = (s: GameState) => drain(advanceTo(s, 'postcombat-main'), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws as many cards as the damage it dealt', () => {
+    const before = swing('Test Scholar');
+    const hand = ids(before, 0, 'hand').length;
+    const s = afterDamage(before);
+    expect(s.seats[1]!.life).toBe(17);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 3);
+  });
+
+  it('gains that much life, and mills the player it hit that many', () => {
+    const leech = afterDamage(swing('Test Leech'));
+    expect(leech.seats[0]!.life).toBe(22);
+    const before = swing('Test Miller');
+    const library = ids(before, 1, 'library').length;
+    const s = afterDamage(before);
+    expect(ids(s, 1, 'library').length).toBe(library - 4);
+  });
+
+  it('blocked, it deals no damage to a player and nothing happens', () => {
+    const before = swing('Test Scholar', ['Test Wall'], true);
+    const hand = ids(before, 0, 'hand').length;
+    const s = afterDamage(before);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
