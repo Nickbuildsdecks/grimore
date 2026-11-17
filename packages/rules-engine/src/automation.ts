@@ -3460,11 +3460,17 @@ function settle(state: GameState, before: GameState): GameState {
       const triggers = scriptForCard(next.cardDefs[inst.defKey])?.triggers ?? [];
       const index = triggers.findIndex((t) => t.on.kind === 'reflexive' && t.on.key === entry.key);
       if (index < 0) continue;
+      const height = next.stackOrder.length;
       next = fireTrigger(
         next, triggers[index]!, entry.source, inst, index, { kind: 'reflexive', key: entry.key },
         // The first half's subject, so "it" and "that creature" in the second mean the same thing.
         entry.controller, entry.subject, false,
       );
+      // And what the first half sacrificed (D950), for "that creature's power".
+      if (entry.sacrificed !== undefined && next.stackOrder.length > height) {
+        const top = next.stackOrder[next.stackOrder.length - 1]!;
+        next = { ...next, stackObjects: { ...next.stackObjects, [top]: { ...next.stackObjects[top]!, sacrificedStats: entry.sacrificed } } };
+      }
     }
     /*
       Damage before deaths, because that is the order the two happened in: combat damage is dealt,

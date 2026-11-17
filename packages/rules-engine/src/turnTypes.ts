@@ -957,6 +957,8 @@ export interface AutomationState {
    */
   readonly reflexive?: readonly {
     readonly source: string; readonly key: string; readonly controller: SeatIndex; readonly subject?: string;
+    /** The permanent the first half sacrificed, as it last was (D950): "that creature's power". */
+    readonly sacrificed?: SacrificedStats;
   }[];
   /**
    * Permanents **turned over** since the last settle: transform (CR 701.28).

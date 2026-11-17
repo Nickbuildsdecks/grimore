@@ -32028,3 +32028,30 @@ whether it was ever asked.
     engine tests: 5,060, all passing
 
 Coverage: 12,343 of 31,743 cards (+18), 32,315 of 59,509 lines (+25). Staples: 240 of 244.
+
+## D950 — "That creature's power" after a sacrifice, in a reflexive trigger
+
+"You may sacrifice another creature. When you do, ~ deals damage equal to that creature's power to
+any target." "That creature" is the one sacrificed, as it last was on the battlefield (CR 608.2h).
+
+How it is read:
+- With a sacrifice in the first half, "that creature's power / toughness / mana value" in the second
+  is read as D586's cost phrase, "the sacrificed creature's power". That phrase is answered from the
+  stack object's `sacrificedStats`, which a cost sacrifice already fills.
+- The first half's effect records, before it runs, what each candidate was: the source (for
+  "sacrifice it") and every card an answer named, with live power and toughness, counters included,
+  and printed mana value. The one that left the battlefield is written onto the queued reflexive
+  entry (`sacrificed`), and `settle` puts it on the stack object as the trigger goes on the stack.
+
+1 legal card now reads whole. Most lines of this shape stop elsewhere (Bolg's amass, for one), but
+the reading is the machinery they need.
+
+**Tests.** 1 engine test: the card reads; an Ogre with a +1/+1 counter is sacrificed, and the
+reflexive trigger deals 4 (not its printed 3) to the chosen player.
+
+Faults injected by hand: 4 of 4 caught (the record never written, printed instead of live power,
+never put on the stack object, and the phrase read without the sacrifice context).
+
+    engine tests: 5,061, all passing
+
+Coverage: 12,344 of 31,743 cards (+1), 32,316 of 59,509 lines (+1). Staples: 240 of 244.

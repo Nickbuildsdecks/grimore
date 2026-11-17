@@ -19341,8 +19341,17 @@ function optionalEffect(
   const reflex = /^(you may [^.]+|sacrifice it)\.\s*When you do, (.+)$/i.exec(clause);
   if (reflex !== null) {
     if (!allowReflexive) return null;
-    const yText = reflex[2]!.trim();
-    const y = reader(yText);
+    /*
+      **A sacrifice in the first half** (D950): "you may sacrifice another creature. When you do,
+      ~ deals damage equal to that creature's power to any target". "That creature" is the one
+      sacrificed, as it last was (CR 608.2h), so it reads as the cost-sacrifice phrase D586 already
+      answers from the stack object's `sacrificedStats`, which the queued trigger carries.
+    */
+    const sacrifices = /^(?:you may )?sacrifice\b/i.test(reflex[1]!);
+    const yText = (sacrifices
+      ? reflex[2]!.replace(/\bthat (creature|artifact|permanent)'s (power|toughness|mana value)\b/gi, "the sacrificed $1's $2")
+      : reflex[2]!).trim();
+    const y = sacrifices ? withSacrificeInCost(true, () => reader(yText)) : reader(yText);
     if (y === null || y.beforeDecisions !== undefined || y.reflexive !== undefined || dividesAQuantity(y)) return null;
     const key = yText;
     const queue: ReadEffect = {
@@ -19366,8 +19375,31 @@ function optionalEffect(
       }
       : optionalEffect(`${reflex[1]!}. If you do, ${yText}`, (text) => (text.trim() === yText ? queue : reader(text)));
     if (first === null) return null;
+    /*
+      What the sacrificed permanent was, taken before the first half runs (it is in a graveyard
+      after), and written onto the reflexive trigger this resolution queued. The candidates are the
+      source (for "sacrifice it") and every card an answer named.
+    */
+    const remembered = (fn: EffectFn): EffectFn => (c) => {
+      const before = new Map<string, { power: number; toughness: number; manaValue: number }>();
+      for (const id of [c.source, ...c.decisions.flatMap((answer) => answer.ids)]) {
+        const inst = c.state.instances[id];
+        if (inst === undefined || inst.zone !== 'battlefield' || before.has(id)) continue;
+        const ch = characteristicsOf(c.state, inst);
+        before.set(id, { power: ch.power, toughness: ch.toughness, manaValue: inst.faceDown === true ? 0 : c.state.cardDefs[inst.defKey]?.cmc ?? 0 });
+      }
+      const after = fn(c);
+      const gone = [...before].find(([id]) => after.instances[id]?.zone !== 'battlefield');
+      if (gone === undefined) return after;
+      return {
+        ...after,
+        reflexive: (after.reflexive ?? []).map((entry) => (entry.source === c.source && entry.key === key && entry.sacrificed === undefined
+          ? { ...entry, sacrificed: gone[1] } : entry)),
+      };
+    };
     return {
       ...first,
+      ...(sacrifices ? { effect: remembered(first.effect) } : {}),
       reflexive: [{
         on: { kind: 'reflexive', key },
         description: yText,

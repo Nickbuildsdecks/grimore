@@ -19974,6 +19974,43 @@ describe('"you may sacrifice another creature", and "sacrifice it. When you do" 
   });
 });
 
+describe('"that creature\'s power" after a sacrifice, in a reflexive trigger (D950)', () => {
+  const ROWS = [
+    { name: 'Test Flinger', type_line: 'Creature — Goblin', oracle_text: "When Test Flinger enters, you may sacrifice another creature. When you do, Test Flinger deals damage equal to that creature's power to any target.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd950', name: 'Fling',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }],
+    data: ROWS as never[],
+  });
+
+  it('reads, and deals the sacrificed creature\'s power as it last was, counters included', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd950', 1: 'd950' }, deckSpecs: { d950: deck.deck }, hands: { 0: ['Test Flinger'] },
+      battlefield: { 0: ['Mountain', 'Test Ogre', 'Test Bear'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    s = addCounters(s, ogre, '+1/+1', 1);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Flinger') } as Action), 30);
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    for (let i = 0; i < 6 && s.pendingDecision !== null; i++) {
+      const d = s.pendingDecision;
+      s = drain(apply(s, d.candidates.length > 0
+        ? { type: 'auto:decide', by: 0, cards: [ogre] } as Action
+        : { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action), 30);
+    }
+    expect(s.instances[ogre]!.zone).toBe('graveyard');
+    expect(s.pendingChoice).not.toBeNull();
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] }), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    // 3 printed, 4 with its counter: what it was as it left.
+    expect(s.seats[1]!.life).toBe(20 - 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
