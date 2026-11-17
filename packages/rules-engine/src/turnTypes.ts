@@ -768,6 +768,16 @@ export interface AutomationState {
    * asked about them (`DecisionZone` `revealed`). Set by the spell and cleared by it as it finishes.
    */
   readonly revealed?: readonly string[];
+  /**
+   * A punisher resolving round by round (D730, Torment of Hailfire): how many opponents each round
+   * asks, how many rounds have been applied, and what each opponent chose this round. Set and
+   * cleared by the spell. See `punisherRounds`.
+   */
+  readonly punisher?: {
+    readonly opponents: number;
+    readonly applied: number;
+    readonly chose: Readonly<Record<string, string>>;
+  };
   /** The two piles an opponent made of `revealed` (D728), first pile first. */
   readonly piles?: readonly (readonly string[])[];
   /** While added phases are running (D726): the step the turn goes on to when they are done. */

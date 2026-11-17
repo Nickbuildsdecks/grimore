@@ -76,7 +76,7 @@ import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { isLegalTarget, legalTargets, retarget } from './targeting.js';
-import { targetKey, type ActivationTiming, type StackObject, type Target } from './turnTypes.js';
+import { targetKey, type ActivationTiming, type DecisionAnswer, type StackObject, type Target } from './turnTypes.js';
 
 /**
  * The biggest toughness on the battlefield, which is where a sweeper's useful range stops.
@@ -23513,6 +23513,9 @@ function readEffect(
     return { ...rest, effect: (c) => (c.x >= least ? inner.effect(c) : c.state) };
   }
   if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
+  // Torment of Hailfire and Perforating Artist (D730): see `punisherRounds`.
+  const punish = /^(repeat the following process X times: )?each opponent loses (\d+) life unless that player sacrifices a nonland permanent(?: of their choice)? or discards a card$/i.exec(clause.trim());
+  if (punish !== null) return punisherRounds(punish[1] !== undefined, Number(punish[2]!));
   const split = /^reveal the top (\w+) cards of your library for an opponent to split into a pile for your hand and a pile for your graveyard$/i.exec(clause.trim());
   if (split !== null) {
     const n = WORD_NUMBERS[split[1]!.toLowerCase()];
@@ -23938,6 +23941,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/([^.;]*\bdamage\b[^.;]*)\.\s+If a (creature|permanent) dealt damage this way would die this turn, exile it instead(?=\.|$)/gi, '$1; if a $2 dealt damage this way would die this turn, exile it instead')
     // Chain Lightning (D725): the payment and the copy are one offer to one player.
     .replace(/then that player or that permanent's controller may pay ((?:\{[^}]+\})+)\.\s+If the player does, they may copy this spell and may choose a new target for that copy/gi, 'then that player or that permanent\'s controller may pay $1 and if they do they may copy this spell and may choose a new target for that copy')
+    // Torment of Hailfire (D730): "Repeat the following process X times." is said of the next sentence.
+    .replace(/Repeat the following process X times\.\s+(Each opponent loses)/gi, 'repeat the following process X times: $1')
     // Fact or Fiction (D728): three sentences, one reveal and two questions. See `factOrFiction`.
     .replace(/reveal the top (\w+) cards of your library\.\s+An opponent separates those cards into two piles\.\s+Put one pile into your hand and the other into your graveyard/gi, 'reveal the top $1 cards of your library for an opponent to split into a pile for your hand and a pile for your graveyard')
     // Sylvan Library (D721): three sentences, one question chain. See `sylvanLibrary`.
@@ -24143,6 +24148,115 @@ function impulseDraw(first: string, second: string | undefined): ReadEffect | nu
   const through = IMPULSE_PLAY.find(([shape]) => shape.test(second.trim()))?.[1];
   if (through === undefined) return null;
   return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
+}
+
+/**
+ * "Each opponent loses 3 life unless that player sacrifices a nonland permanent or discards a card"
+ * (D730): Perforating Artist once, and Torment of Hailfire "X times".
+ *
+ * Each round asks every opponent, in turn order, three questions: which (lose the life, sacrifice,
+ * or discard, offering only what they can do), then which permanent, then which card. The last two
+ * are asked only of a player who chose them: their candidates are empty for anyone else, and an
+ * empty question is answered without asking. A round's choices take effect as the next round is
+ * reached (`onReach`), so each round sees the board and the hand the last one left; the last round
+ * takes effect with the spell's effect. Rounds past X are not asked.
+ *
+ * The rounds are a fixed list of questions, so there is a ceiling: `PUNISHER_ROUNDS` (40). X above
+ * it repeats only 40 times, a known limit that no realistic game reaches.
+ *
+ * The bot, as the player choosing, loses the life while it has more than 9, then discards while it
+ * has cards, then sacrifices; it gives up the cheapest permanent or card.
+ */
+const PUNISHER_ROUNDS = 40;
+function punisherRounds(repeatsX: boolean, life: number): ReadEffect {
+  const LOSE = `Lose ${life} life`;
+  const SAC = 'Sacrifice a nonland permanent';
+  const DISCARD = 'Discard a card';
+  const rounds = repeatsX ? PUNISHER_ROUNDS : 1;
+  const xOf = (state: GameState, source: string) => (repeatsX ? state.stackObjects[source]?.x ?? 0 : 1);
+  const nonland = (state: GameState, id: string) => !hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land');
+  const worth = (state: GameState, id: string) => costValue(parseManaCost(state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost));
+  const cheapest = (state: GameState, candidates: readonly string[]) => {
+    const best = [...candidates].sort((a, b) => worth(state, a) - worth(state, b))[0];
+    return best === undefined ? [] : [best];
+  };
+  // Round r's three answers for every opponent, then applied to the board.
+  const applyRound = (state: GameState, answers: readonly DecisionAnswer[], r: number): GameState => {
+    const n = state.punisher?.opponents ?? 0;
+    let next = state;
+    for (let j = 0; j < n; j++) {
+      const choice = answers[3 * r * n + j];
+      if (choice === undefined || choice.option === undefined) continue;
+      const seat = choice.seat;
+      const sacrificed = (answers[(3 * r + 1) * n + j]?.ids ?? []).filter((id) => next.instances[id]?.zone === 'battlefield');
+      const discarded = (answers[(3 * r + 2) * n + j]?.ids ?? []).filter((id) => next.instances[id]?.zone === 'hand');
+      if (choice.option === SAC && sacrificed.length > 0) next = sacrifice(next, sacrificed);
+      else if (choice.option === DISCARD && discarded.length > 0) next = moveToGraveyard(next, discarded);
+      else next = loseLife(next, seat, life);
+    }
+    return next;
+  };
+  const catchUp = (state: GameState, answers: readonly DecisionAnswer[], upTo: number): GameState => {
+    let next = state;
+    for (let r = state.punisher?.applied ?? 0; r < upTo; r++) next = applyRound(next, answers, r);
+    return { ...next, punisher: { ...(next.punisher ?? { opponents: 0, chose: {} }), applied: upTo, chose: {} } as NonNullable<GameState['punisher']> };
+  };
+  const decisions: DecisionSpecOf[] = [];
+  for (let r = 0; r < rounds; r++) {
+    const inPlay = (state: GameState, _controller: SeatIndex, source: string) => r < xOf(state, source);
+    decisions.push({
+      who: 'each-opponent', prompt: `${LOSE}, or sacrifice a nonland permanent, or discard a card?`,
+      options: [LOSE, SAC, DISCARD],
+      optionsFor: (state, chooser) => [
+        LOSE,
+        ...(listAt(state, zoneKey(chooser, 'battlefield')).some((id) => nonland(state, id)) ? [SAC] : []),
+        ...(listAt(state, zoneKey(chooser, 'hand')).length > 0 ? [DISCARD] : []),
+      ],
+      best: (state, chooser) => {
+        if ((state.seats[chooser]?.life ?? 0) > 9) return LOSE;
+        if (listAt(state, zoneKey(chooser, 'hand')).length > 0) return DISCARD;
+        return listAt(state, zoneKey(chooser, 'battlefield')).some((id) => nonland(state, id)) ? SAC : LOSE;
+      },
+      askOnlyIf: inPlay,
+      // The rounds before this one take effect now, so this round is asked of what they left.
+      onReach: (state, _controller, _source, answers) => catchUp(state, answers, r),
+    } as ChoiceDecisionSpec);
+    decisions.push({
+      who: 'each-opponent', from: 'battlefield', prompt: 'Sacrifice a nonland permanent', min: 1, max: 1,
+      askOnlyIf: inPlay,
+      // What each opponent chose this round, for the two questions that follow it.
+      onReach: (state, _controller, _source, answers) => {
+        const n = state.punisher?.opponents ?? 0;
+        const chose: Record<string, string> = {};
+        for (let j = 0; j < n; j++) {
+          const a = answers[3 * r * n + j];
+          if (a?.option !== undefined) chose[String(a.seat)] = a.option;
+        }
+        return { ...state, punisher: { ...state.punisher!, chose } };
+      },
+      filter: (state, id, chooser) => state.punisher?.chose[String(chooser)] === SAC && nonland(state, id),
+      pick: (state, _chooser, candidates) => cheapest(state, candidates),
+    });
+    decisions.push({
+      who: 'each-opponent', from: 'hand', prompt: 'Discard a card', min: 1, max: 1,
+      askOnlyIf: inPlay,
+      filter: (state, _id, chooser) => state.punisher?.chose[String(chooser)] === DISCARD,
+      pick: (state, _chooser, candidates) => cheapest(state, candidates),
+    });
+  }
+  return {
+    // How many opponents each round asks, counted as the plan is: alive seats other than this one.
+    beforeDecisions: (c) => ({
+      ...c.state,
+      punisher: { opponents: c.state.seats.filter((s) => !s.eliminated && s.index !== c.controller).length, applied: 0, chose: {} },
+    }),
+    decisions,
+    effect: (c) => {
+      const asked = Math.min(rounds, repeatsX ? c.x : 1);
+      const next = catchUp(c.state, c.decisions, asked);
+      return { ...next, punisher: undefined };
+    },
+  };
 }
 
 /**
