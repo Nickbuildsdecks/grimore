@@ -14285,12 +14285,11 @@ describe('"you may" outside a trigger (D525)', () => {
     expect(read.unread.map((u) => u.line)).toEqual(['Clash with an opponent.']);
   });
 
-  it('refuses a modal bullet, which is the one place this was measured and left out', () => {
+  it('reads a modal bullet since D952 (Witherbloom Charm\'s shape)', () => {
     /*
-      One legal card would gain — Witherbloom Charm. A mode's gate would be the first
-      `payIfChosen`-capable question inside a `ModeDef`, which nothing in the pool prints, and the
-      scripts file says so where the decision lives. If a second card ever prints one, this row is
-      what fails and tells whoever reads it that the count has moved.
+      Left out by D525 as measured and untried, not as broken. D952 holds "You may X. If you do, Y"
+      together in a line and reads it through \`optionalEffect\`, and a bullet is such a line; its
+      engine test plays all three answers inside the mode.
     */
     const read = compileCard({
       name: 'Not A Card', type_line: 'Instant', mana_cost: '{B}{G}', cmc: 2, colors: ['B', 'G'],
@@ -14300,11 +14299,8 @@ describe('"you may" outside a trigger (D525)', () => {
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.script?.modal).toBeUndefined();
-    // And the bullet stays unread rather than compiling to something outside a `modal`.
-    expect(read.unread.map((u) => u.line)).toContain(
-      '\u2022 You may sacrifice a permanent. If you do, draw two cards.',
-    );
+    expect(read.unread).toEqual([]);
+    expect(read.script?.modal?.modes.length).toBe(2);
   });
 
   it('reads the same clause identically whether a trigger or a spell prints it', () => {

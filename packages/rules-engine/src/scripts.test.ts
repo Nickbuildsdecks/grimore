@@ -20180,6 +20180,70 @@ describe('"you may exile it. If you do / When you do" from the graveyard (D951)'
   });
 });
 
+describe('"You may X. If you do, Y" in the middle of a spell (D952)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    S('Test Jolt', 'Test Jolt deals 3 damage to any target. You may discard a card. If you do, draw a card.'),
+    S('Test Choice', 'Choose one —\n• You may sacrifice a permanent. If you do, draw two cards.\n• Draw a card.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd952', name: 'Mid-line may',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string, hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd952', 1: 'd952' }, deckSpecs: { d952: deck.deck }, hands: { 0: [card, ...hand] },
+    battlefield: { 0: ['Mountain', 'Test Bear', 'Test Bear'], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Answers every question: the first candidate, or `option` for a yes-or-no. */
+  const answerAll = (s: GameState, option: (opts: readonly string[]) => string) => {
+    let next = s;
+    for (let i = 0; i < 10 && (next.pendingDecision !== null || next.stackOrder.length > 0); i++) {
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, d.candidates.length > 0
+        ? { type: 'auto:decide', by: 0, cards: [d.candidates[0]!] } as Action
+        : { type: 'auto:decide', by: 0, cards: [], option: option(d.options ?? []) } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole, the modal bullet included', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const modal = compileCard(ROWS[1] as never);
+    expect(modal).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the damage, then the may: discard and draw, or neither', () => {
+    const s = seated('Test Jolt', ['Test Bear']);
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Jolt'), targets: [{ kind: 'player', seat: 1 }] } as Action), 30);
+    const hand = ids(cast, 0, 'hand').length;
+    const yes = answerAll(cast, () => 'Yes');
+    expect(yes.seats[1]!.life).toBe(17);
+    expect(ids(yes, 0, 'hand').length).toBe(hand - 1 + 1);
+    expect(ids(yes, 0, 'graveyard').some((id) => nameOf(yes, id) === 'Test Bear')).toBe(true);
+    const no = answerAll(cast, (opts) => opts.find((o) => o !== 'Yes')!);
+    expect(no.seats[1]!.life).toBe(17);
+    expect(ids(no, 0, 'hand').length).toBe(hand);
+  });
+
+  it('in a mode: yes sacrifices and draws two; no does nothing; the other mode still draws one', () => {
+    const s = seated('Test Choice');
+    const cast = (mode: number) => drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Choice'), modes: [mode] } as Action), 30);
+    const hand = ids(s, 0, 'hand').length - 1;
+    const yes = answerAll(cast(0), () => 'Yes');
+    expect(ids(yes, 0, 'hand').length).toBe(hand + 2);
+    expect(ids(yes, 0, 'battlefield').length).toBe(2);
+    const no = answerAll(cast(0), (opts) => opts.find((o) => o !== 'Yes')!);
+    expect(ids(no, 0, 'hand').length).toBe(hand);
+    expect(ids(no, 0, 'battlefield').length).toBe(3);
+    const other = answerAll(cast(1), () => 'Yes');
+    expect(ids(other, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -49601,3 +49601,37 @@ Faults injected by hand: 4 of 4 caught.
 
 Coverage: 12,360 of 31,743 cards (+16), 32,341 of 59,509 lines (+25). Staples: 241 of 244 (the
 other session's Torment of Hailfire, merged after D950).
+
+## D952 — "You may X. If you do, Y" in the middle of a spell
+
+"~ deals 3 damage to any target. You may discard a card. If you do, draw a card." `optionalEffect`
+reads "you may X. If you do, Y" when it is a whole trigger body, but a spell's sentences are cut
+apart by `clausesOf`, and "If you do, draw a card" alone has nothing to refer to.
+
+How it is read:
+- `clausesOf` holds a "You may X." sentence and the "If you do, Y." after it together as one clause,
+  wherever they stand in the line.
+- `composeEffects` hands such a clause to `optionalEffect` when the plain reading refuses it. The
+  "may" is then one part of the sequence, its question the resolution's own. The composer's rule
+  that at most one part reads its own answers still applies.
+- A modal bullet is such a line, so Witherbloom Charm's "You may sacrifice a permanent. If you do,
+  draw two cards" now reads as a mode. D525 had left it out as untried, and the engine test below
+  plays all three answers inside the mode.
+
+8 legal cards now read whole. "You may put a card from your hand on the bottom of your library"
+(Fiery Temper's kin) is not a clause the reader has yet.
+
+**Tests.** 3 engine tests:
+- the cards read, the modal bullet included;
+- the damage, then the may: yes discards and draws, no does neither, and the damage lands either
+  way;
+- in a mode: yes sacrifices and draws two, no does nothing, and the other mode still draws one.
+
+Superseded row: D525's "refuses a modal bullet" now asserts the reading.
+
+Faults injected by hand: 3 of 3 caught (the glue removed, restored as the wrong punctuation, and the
+composer's route switched off).
+
+    engine tests: 5,074, all passing
+
+Coverage: 12,368 of 31,743 cards (+8), 32,354 of 59,509 lines (+13). Staples: 241 of 244.

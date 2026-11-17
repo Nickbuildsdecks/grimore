@@ -23978,11 +23978,18 @@ function clausesOf(line: string): readonly string[] {
     // Gamble (D682): the random discard is printed between the search and its shuffle; it is the
     // same spell with the shuffle first, as the shuffle touches only the library.
     .replace(/(put that card into your hand),\s+discard a card at random,\s+then shuffle/gi, '$1, then shuffle. Discard a card at random')
+    /*
+      "You may X. If you do, Y." in the middle of a line (D952): "~ deals 3 damage to any target.
+      You may discard a card. If you do, draw a card." One question and its consequence, read by
+      `optionalEffect` from `composeEffects`; cut apart, "If you do" has nothing to refer to.
+    */
+    .replace(/(^|\.\s+)(you may [^.;]+)\.\s+(If you do, [^.]+)/gi, (_m, lead: string, may: string, then: string) => `${lead}${may}\u0009${then}`)
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
       .replace(/\u0004/g, LIFE_LOST).replace(/\u0005/g, ', and they gain haste until end of turn')
       .replace(/\u0006/g, ', then ').replace(/\u0007/g, '; ').replace(/\u0008/g, CHAOS_WARP_TAIL)
+      .replace(/\u0009/g, '. ')
       .replace(/\.\s*$/, '').trim())
     .filter((clause) => clause !== '');
 }
@@ -25025,6 +25032,11 @@ function composeEffects(
     const pronounFirst = cardAimed && /\bit\b/i.test(clause);
     const read = pronounFirst ? null : withEarlierCardTarget(cardAimed, () => readEffect(clause, name, where));
     if (read !== null) { parts.push(read); continue; }
+    // "You may X. If you do, Y", held together by `clausesOf` (D952), read as `optionalEffect` reads it.
+    if (/^you may [^.]+\. If you do, /i.test(clause)) {
+      const optional = optionalEffect(clause, (text) => readEffect(text, name, where));
+      if (optional !== null) { parts.push(optional); continue; }
+    }
     let borrowed: ReadEffect | null = null;
     /*
       **A pronoun refers BACK**, so something before it has to point at the object (D533).
