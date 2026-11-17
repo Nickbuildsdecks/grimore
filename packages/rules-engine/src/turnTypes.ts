@@ -1669,6 +1669,8 @@ export interface AutoCastAction {
   readonly casualty?: boolean;
   /** Pay conspire (D926): the engine taps the two creatures. */
   readonly conspire?: boolean;
+  /** Cast for the emerge cost (D929): `sacrifice` names the creature, whose mana value it saves. */
+  readonly emerged?: boolean;
   /**
    * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
    * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an

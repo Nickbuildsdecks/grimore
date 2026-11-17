@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt } from './cardActions.js';
 import {
   allAbilitiesLost, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import { conspireOptions, casualtyOptions,
+import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
   discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, sacrificeWords, stackTop, unblockedAttackersOf,
 } from './automation.js';
@@ -133,6 +133,8 @@ export interface LegalPlay {
   readonly casualty?: boolean;
   /** Set on the play that pays conspire (D926). */
   readonly conspire?: boolean;
+  /** Set on the play that casts for the emerge cost (D929): `sacrificeOptions` are its creatures. */
+  readonly emerged?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -1843,6 +1845,25 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           }
           : {}),
       });
+    }
+
+    // Emerge (D929): an alternative cost paid partly with a creature, one play with its creatures.
+    if (script?.emerge !== undefined && !flashback && !escape && !retrace
+      && !foretold && !fromCommand && !fromAdventure && !offered) {
+      const emergeChange = costChangeFor(state, seat, def, id);
+      const emergeTargets = playableTargets(state, specsFor(script), seat, id);
+      const fodder = emergeTargets.ok
+        ? emergeOptions(state, seat, id, script.emerge.cost, (text) => canAfford(poolOf(state, seat), withCostChange(parseManaCost(text), emergeChange.generic), sources))
+        : [];
+      if (fodder.length > 0) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, emerged: true,
+          description: `Cast ${ch.name} for its emerge cost (${script.emerge.cost}, less the mana value of the creature you sacrifice)`,
+          manaCost: script.emerge.cost,
+          targetSpecs: specsFor(script), candidates: emergeTargets.candidates,
+          isManaAbility: false, sacrificeOptions: fodder,
+        });
+      }
     }
 
     // Flashback and foretell both replace the cost, so everything from here on — affordability, X,

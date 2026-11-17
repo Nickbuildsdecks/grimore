@@ -158,6 +158,20 @@ export function costValue(cost: ManaCost): number {
 }
 
 /** The cost with `extra` generic added — commander tax, kicker-style surcharges. */
+/**
+ * An emerge cost reduced by a mana value (D929), back in its printed form, or `null` for a cost that
+ * is not a plain run of generic and coloured symbols. The reduction is to the generic part only.
+ */
+export function reducedCostText(text: string, by: number): string | null {
+  const cost = parseManaCost(text);
+  if (cost.unsupported !== undefined || cost.x) return null;
+  const coloured = MANA_TYPES.reduce((n, t) => n + (cost.colors[t] ?? 0), 0);
+  if (costValue(cost) !== cost.generic + coloured) return null;
+  const generic = Math.max(0, cost.generic - by);
+  const symbols = MANA_TYPES.flatMap((t) => Array.from({ length: cost.colors[t] ?? 0 }, () => `{${t}}`)).join('');
+  return generic === 0 && symbols === '' ? '{0}' : `${generic > 0 ? `{${generic}}` : ''}${symbols}`;
+}
+
 export function withAdditionalGeneric(cost: ManaCost, extra: number): ManaCost {
   return { ...cost, generic: Math.max(0, cost.generic + extra) };
 }

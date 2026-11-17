@@ -41,6 +41,7 @@ import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './sc
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
 import { preferredOption } from './automation.js';
 import { costChangeFor } from './legalActions.js';
+import { reducedCostText } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
@@ -7912,6 +7913,7 @@ describe('deck coverage', () => {
       - `script casualty` (D923): casualty. No pool deck has one. Driven at runtime by "casualty (D923)".
       - `script squad` (D924): squad. No pool deck has one. Driven at runtime by "squad (D924)".
       - `script conspire` (D926): conspire. No pool deck has one. Driven at runtime by "conspire (D926)".
+      - `script emerge` (D929): emerge. No pool deck has one. Driven at runtime by "emerge (D929)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7945,6 +7947,7 @@ describe('deck coverage', () => {
       'script casualty',
       'script squad',
       'script conspire',
+      'script emerge',
     ]);
 
     const declared = [
@@ -18203,6 +18206,60 @@ describe('surge (D928)', () => {
     s = resolve({ ...rich, pools: { ...rich.pools, '0': { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 } } }, 'Test Bushwhacker', false);
     bear = find(s, 0, 'battlefield', 'Test Bear');
     expect(characteristicsOf(s, s.instances[bear]!).power).toBe(2);
+  });
+});
+
+describe('emerge (D929)', () => {
+  const ROWS = [
+    { name: 'Test Emerger', type_line: 'Creature — Eldrazi', oracle_text: 'Emerge {5}{U}', mana_cost: '{6}{U}', cmc: 7, colors: ['U'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Fodder', type_line: 'Creature — Drone', oracle_text: '', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Wisp', type_line: 'Creature — Spirit', oracle_text: '', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd929', name: 'Emerge',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = () => advanceTo(arena({
+    decks: { 0: 'd929', 1: 'd929' }, deckSpecs: { d929: deck.deck }, hands: { 0: ['Test Emerger'] },
+    battlefield: { 0: ['Island', 'Island', 'Island', 'Test Fodder', 'Test Wisp'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the reduction is to the generic part', () => {
+    expect(reducedCostText('{5}{U}', 3)).toBe('{2}{U}');
+    expect(reducedCostText('{5}{U}', 9)).toBe('{U}');
+    expect(reducedCostText('{2}', 5)).toBe('{0}');
+  });
+
+  it('offered with only the creatures that make it affordable', () => {
+    const s = seated();
+    const plays = legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', 'Test Emerger') && p.emerged === true);
+    expect(plays.length).toBe(1);
+    // Three Islands pay {2}{U} (less the Fodder's 3) and not {4}{U} (less the Wisp's 1).
+    expect(plays[0]!.sacrificeOptions.map((id) => nameOf(s, id))).toEqual(['Test Fodder']);
+  });
+
+  it('cast: the creature is sacrificed and the rest is paid', () => {
+    const s = seated();
+    const fodder = find(s, 0, 'battlefield', 'Test Fodder');
+    const card = find(s, 0, 'hand', 'Test Emerger');
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card, emerged: true, sacrifice: fodder } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    expect(next.instances[fodder]!.zone).toBe('graveyard');
+    expect(next.instances[card]!.zone).toBe('battlefield');
+    expect(ids(next, 0, 'battlefield').filter((id) => nameOf(next, id) === 'Island' && next.instances[id]!.tapped).length).toBe(3);
+  });
+
+  it('refused without a creature to sacrifice', () => {
+    const s = seated();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Emerger'), emerged: true } as Action)).toMatch(/emerge needs a creature/);
+    // A land is not a creature to emerge from.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Emerger'), emerged: true, sacrifice: find(s, 0, 'battlefield', 'Island') } as Action)).toMatch(/emerge needs a creature/);
   });
 });
 

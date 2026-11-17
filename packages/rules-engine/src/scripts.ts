@@ -11326,6 +11326,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
   if (word === 'enlist') return { triggers: [ENLIST_TRIGGER] };
   if (word === 'conspire') return { conspire: true, triggers: [CONSPIRE_COPY] };
+  // Emerge (D929): see `CardScript.emerge`.
+  const emerge = /^emerge ((?:\{[^}]+\})+)$/i.exec(text);
+  if (emerge !== null) return { emerge: { cost: emerge[1]! } };
   if (word === 'training') return { triggers: [TRAINING_TRIGGER] };
   if (word === 'melee') return { triggers: [MELEE_TRIGGER] };
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.

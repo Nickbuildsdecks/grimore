@@ -54,7 +54,7 @@ import {
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
-import {
+import { reducedCostText,
   EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
@@ -161,6 +161,21 @@ export function conspireOptions(state: GameState, seat: SeatIndex, source: strin
     const ch = characteristicsOf(state, inst);
     return ch.isCreature && ch.colors.some((colour) => colours.includes(colour));
   }).sort((a, b) => characteristicsOf(state, state.instances[a]!).power - characteristicsOf(state, state.instances[b]!).power);
+}
+
+/**
+ * Emerge's sacrifices (D929): creatures this seat controls whose mana value, taken off the emerge
+ * cost's generic part, leaves a cost `affordable` says yes to.
+ */
+export function emergeOptions(
+  state: GameState, seat: SeatIndex, source: string, cost: string, affordable: (text: string) => boolean,
+): string[] {
+  return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || id === source || !characteristicsOf(state, inst).isCreature) return false;
+    const reduced = reducedCostText(cost, state.cardDefs[inst.defKey]?.cmc ?? 0);
+    return reduced !== null && affordable(reduced);
+  });
 }
 
 /** Casualty N's sacrifices (D923): creatures this seat controls with power N or greater, by live power. */

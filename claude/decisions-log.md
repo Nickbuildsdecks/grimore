@@ -48694,3 +48694,36 @@ Faults injected by hand: 6 of 6 caught. The spell rider's gate was pinned by the
     engine tests: 4,942, all passing
 
 Coverage: 11,940 of 31,743 cards (+10), 31,639 of 59,509 lines (+14). Staples: 239 of 244.
+
+## D929 — Emerge
+
+"Emerge {cost} (You may cast this spell by sacrificing a creature and paying the emerge cost reduced
+by that creature's mana value.)" (CR 702.119a), from Eldritch Moon and Doctor Who: Elder
+Deep-Fiend's cousins, Decimator of the Provinces, Wretched Gryff and others.
+
+How it is read:
+- **`CardScript.emerge {cost}`** and a cast play `emerged: true`. Its `sacrificeOptions` are the
+  creatures whose mana value, taken off the emerge cost's generic part, leaves a cost the seat can
+  afford (`emergeOptions`). So the table asks for the creature as it asks for any sacrifice cost,
+  and offers only those that work.
+- **`reducedCostText`** reduces the generic part and writes the cost back in its printed form, so
+  delve and convoke, which rebuild the cost from the text, see the reduced cost too.
+- **The cast** refuses a sacrifice that is missing, not a creature, not yours, or the card itself.
+  It sacrifices the creature as the spell is cast and pays the reduced cost.
+- **The plumbing:** the computer and the web table forward the flag.
+
+Not read: "if its emerge cost was paid" (Adipose Offspring), and Herigast's emerge for every
+creature spell.
+
+**Tests.** 5 engine tests:
+- the card reads;
+- the reduction is generic only, never below zero;
+- the play is offered only with the creature that makes it affordable;
+- cast, the Fodder is sacrificed, the Emerger resolves, and the three Islands pay;
+- refused with no creature and with a land.
+
+Faults injected by hand: 5 of 5 caught. The creature check was pinned by the land refusal.
+
+    engine tests: 4,947, all passing
+
+Coverage: 11,948 of 31,743 cards (+8), 31,653 of 59,509 lines (+14). Staples: 239 of 244.

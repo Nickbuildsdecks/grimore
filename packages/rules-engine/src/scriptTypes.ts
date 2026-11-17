@@ -3920,6 +3920,13 @@ export interface CardScript {
    */
   readonly conspire?: true;
   /**
+   * Emerge (D929, CR 702.119a): "You may cast this spell by sacrificing a creature and paying the
+   * emerge cost reduced by that creature's mana value." A cast play (`emerged: true`) whose
+   * `sacrificeOptions` are the creatures that leave the reduced cost affordable; the reduction is to
+   * the generic part, and the creature is sacrificed as the spell is cast.
+   */
+  readonly emerge?: { readonly cost: string };
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and

@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPai
 import {
   characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import { conspireOptions, casualtyOptions,
+import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
   cleanupHolds, finishCleanup,
   attackAimIssue, grantedAbilityFor,
@@ -39,7 +39,7 @@ import {
   untapPermanent,
 } from './effects.js';
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
-import { canPay, parseManaCost, type ManaCost } from './mana.js';
+import { reducedCostText, canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
 import { blockRequirementIssue } from './combat.js';
 /*
@@ -639,6 +639,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (action.casualty === true) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} already sacrifices for its additional cost`);
     }
+  } else if (action.emerged === true) {
+    // Emerge (D929): the creature sacrificed, whose mana value comes off the generic cost below.
+    if (script?.emerge === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no emerge`);
+    }
+    const victim = action.sacrifice === undefined ? undefined : state.instances[action.sacrifice];
+    if (victim === undefined || victim.zone !== 'battlefield' || victim.zoneSeat !== action.by
+      || victim.id === inst.id || !characteristicsOf(state, victim).isCreature) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'emerge needs a creature you control to sacrifice');
+    }
+    sacrificed = victim.id;
   } else if (action.casualty === true) {
     // Casualty (D923): a creature with power N or greater, sacrificed as the spell is cast.
     if (script?.casualty === undefined) {
@@ -750,6 +761,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
                   // And the commander's free cast (D653): nothing at all.
+                  // And emerge (D929): its cost less the sacrificed creature's mana value.
+                  : action.emerged === true && sacrificed !== null
+                    ? reducedCostText(script?.emerge?.cost ?? '', state.cardDefs[state.instances[sacrificed]!.defKey]?.cmc ?? 0) ?? undefined
                   // And a plotted card's later cast (D922): without paying its mana cost.
                   : commanderFree || pitchCast || plotCast ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
