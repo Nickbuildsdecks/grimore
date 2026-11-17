@@ -170,6 +170,47 @@ export function playerProtected(state: GameState, seat: SeatIndex): boolean {
   return state.effects.some((e) => e.playerProtection === true && e.scope.kind === 'seat' && e.scope.seat === seat);
 }
 
+/** D902's counts for a characteristic-defining size; `null` for the two older kinds. */
+function cdaCountMore(
+  state: GameState,
+  kind: NonNullable<ContinuousEffect['definesSize']>['count'],
+  controller: SeatIndex,
+): number | null {
+  const lineOf = (id: string) => parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+  const zone = (seat: SeatIndex, z: 'battlefield' | 'hand' | 'graveyard') => state.zones[zoneKey(seat, z)] ?? [];
+  const everyone = state.seats.map((row) => row.index);
+  if (typeof kind === 'object') {
+    return zone(controller, 'battlefield').filter((id) => hasSubtype(lineOf(id), kind.subtype)).length;
+  }
+  switch (kind) {
+    case 'creatures-you-control':
+      return zone(controller, 'battlefield').filter((id) => hasType(lineOf(id), 'creature')).length;
+    case 'creatures-on-the-battlefield':
+      return everyone.flatMap((seat) => zone(seat, 'battlefield')).filter((id) => hasType(lineOf(id), 'creature')).length;
+    case 'lands-you-control':
+      return zone(controller, 'battlefield').filter((id) => hasType(lineOf(id), 'land')).length;
+    case 'artifacts-you-control':
+      return zone(controller, 'battlefield').filter((id) => hasType(lineOf(id), 'artifact')).length;
+    case 'cards-in-your-hand':
+      return zone(controller, 'hand').length;
+    case 'creature-cards-in-your-graveyard':
+      return zone(controller, 'graveyard').filter((id) => hasType(lineOf(id), 'creature')).length;
+    case 'cards-in-your-graveyard':
+      return zone(controller, 'graveyard').length;
+    case 'card-types-in-all-graveyards':
+    case 'card-types-in-your-graveyard': {
+      const seats = kind === 'card-types-in-your-graveyard' ? [controller] : everyone;
+      const seen = new Set<string>();
+      for (const id of seats.flatMap((seat) => zone(seat, 'graveyard'))) {
+        for (const type of lineOf(id).types) seen.add(type.toLowerCase());
+      }
+      return seen.size;
+    }
+    default:
+      return null;
+  }
+}
+
 export function parseTypeLine(line: string | null | undefined): TypeLine {
   const text = (line ?? '').trim();
   if (!text) return { supertypes: [], types: [], subtypes: [] };
@@ -1846,7 +1887,18 @@ export interface ContinuousEffect {
      */
     readonly count:
       | 'creature-cards-in-graveyards'
-      | 'instant-and-sorcery-cards-in-your-graveyard';
+      | 'instant-and-sorcery-cards-in-your-graveyard'
+      /**
+       * D902's counts: the commonest the corpus prints for a `*` body. Permanents are counted by
+       * their **printed** type line, because this runs inside `characteristicsOf` and asking the
+       * live characteristics of the permanents counted (the card itself among them) would ask this
+       * again: an animated land is not counted as a creature, which is the limitation.
+       */
+      | 'creatures-you-control' | 'creatures-on-the-battlefield' | 'lands-you-control'
+      | 'artifacts-you-control' | 'cards-in-your-hand' | 'creature-cards-in-your-graveyard'
+      | 'cards-in-your-graveyard' | 'card-types-in-all-graveyards' | 'card-types-in-your-graveyard'
+      /** "Swamps you control", "Rats you control": a land or creature subtype on the printed line. */
+      | { readonly subtype: string };
     /**
      * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both
      * the count; `power` is the Drake printed with a star for power and a 4 for toughness, where
@@ -2298,6 +2350,8 @@ function cdaCount(
   kind: NonNullable<ContinuousEffect['definesSize']>['count'],
   controller: SeatIndex,
 ): number {
+  const extra = cdaCountMore(state, kind, controller);
+  if (extra !== null) return extra;
   // Whose graveyards are counted is part of what the card says, so it is read off the kind rather
   // than passed in: "in all graveyards" and "in your graveyard" are two different counts, and a
   // card that said one while the engine performed the other would be wrong in the quiet way.

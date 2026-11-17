@@ -4268,8 +4268,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a count this engine has no data for', () => {
       /*
-        `definesSize` names its counts (D57): "cards in your hand" is a real Magic card and not a
-        count the engine can take, so the line is refused rather than read as one of the two it
+        `definesSize` names its counts (D57): "snow permanents you control" is a real Magic card and
+        not a count the engine can take ("cards in your hand", the count this used, reads since D902), so the line is refused rather than read as one of the two it
         does have. A card compiled with the wrong count is a creature of the wrong size, every
         turn, with nothing flagged.
 
@@ -4283,7 +4283,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const starred = compileCard({
         name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
         colors: ['G'], power: '*', toughness: '*',
-        oracle_text: 'Hand Goyf’s power is equal to the number of cards in your hand.',
+        oracle_text: 'Hand Goyf’s power is equal to the number of snow permanents you control.',
       });
       expect(starred.ok).toBe(false);
       if (!starred.ok) expect(starred.why).toContain('comes from an ability, not a number');
@@ -4291,7 +4291,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const sized = compileCard({
         name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
         colors: ['G'], power: '2', toughness: '2',
-        oracle_text: 'Hand Goyf’s power is equal to the number of cards in your hand.',
+        oracle_text: 'Hand Goyf’s power is equal to the number of snow permanents you control.',
       });
       expect(sized.ok).toBe(true);
       if (sized.ok) {
@@ -7203,7 +7203,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         that nothing supplies, which is a creature with zero toughness and the same death.
       */
       ['a count that supplies both halves', 'creature cards in all graveyards', '*', true],
-      ['a count this engine does not have', 'cards in your hand', '*', false],
+      // 'cards in your hand' reads since D902, so the missing count is a rarer one.
+      ['a count this engine does not have', 'snow permanents you control', '*', false],
       ['a power-only count beside a starred toughness', 'instant and sorcery cards in your graveyard', '*', false],
     ])('%s: kept = %s', (_label, count, toughness, kept) => {
       const text = count === 'instant and sorcery cards in your graveyard'

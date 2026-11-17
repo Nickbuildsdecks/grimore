@@ -16065,6 +16065,52 @@ describe('counts beyond three, and "investigate twice" (D901)', () => {
   });
 });
 
+describe('a size that is a count: the commonest "*" bodies (D902)', () => {
+  const ROWS = [
+    { name: 'Test Goyf', type_line: 'Creature — Lhurgoyf', oracle_text: "Test Goyf's power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '1+*' },
+    { name: 'Test Maro', type_line: 'Creature — Avatar', oracle_text: "Test Maro's power and toughness are each equal to the number of cards in your hand.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '*' },
+    { name: 'Test Elder', type_line: 'Creature — Treefolk', oracle_text: "Test Elder's power and toughness are each equal to the number of Forests you control.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '*' },
+    { name: 'Test Crusader', type_line: 'Creature — Human Soldier', oracle_text: "Test Crusader's power and toughness are each equal to the number of creatures you control.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '*', toughness: '*' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spark', type_line: 'Instant', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'cda', name: 'CDA',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 40 }],
+    data: ROWS,
+  });
+  const table = (mine: string[], hand: string[] = [], graveyard: string[] = []) => advanceTo(arena({
+    decks: { 0: 'cda', 1: 'cda' }, deckSpecs: { cda: deck.deck },
+    battlefield: { 0: mine }, hands: { 0: hand }, graveyard: { 1: graveyard }, turn: 3, firstSeat: 1,
+  }), 'precombat-main');
+  const size = (s: GameState, name: string) => {
+    const id = find(s, 0, 'battlefield', name);
+    return `${power(s, id)}/${toughness(s, id)}`;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('card types among cards in all graveyards, toughness one higher', () => {
+    expect(size(table(['Test Goyf']), 'Test Goyf')).toBe('0/1');
+    // A creature, a land and an instant: three types.
+    expect(size(table(['Test Goyf'], [], ['Test Bear', 'Forest', 'Test Spark']), 'Test Goyf')).toBe('3/4');
+    // Two creatures are still one type.
+    expect(size(table(['Test Goyf'], [], ['Test Bear', 'Test Bear']), 'Test Goyf')).toBe('1/2');
+  });
+
+  it('cards in your hand, Forests you control, creatures you control', () => {
+    const hand = table(['Test Maro'], ['Test Spark', 'Test Spark', 'Test Bear']);
+    expect(size(hand, 'Test Maro')).toBe(`${ids(hand, 0, 'hand').length}/${ids(hand, 0, 'hand').length}`);
+    expect(ids(hand, 0, 'hand').length).toBeGreaterThanOrEqual(3);
+    expect(size(table(['Test Elder', 'Forest', 'Forest', 'Forest']), 'Test Elder')).toBe('3/3');
+    // Itself and the Bear; the Forest is not a creature.
+    expect(size(table(['Test Crusader', 'Test Bear', 'Forest']), 'Test Crusader')).toBe('2/2');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
