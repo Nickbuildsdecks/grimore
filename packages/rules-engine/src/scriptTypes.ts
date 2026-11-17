@@ -2515,6 +2515,13 @@ export interface AuraDef {
    * battlefield" check, and its change of enchant ability, are folded into that one step.
    */
   readonly reanimates?: true;
+  /**
+   * "You control enchanted creature" (D938, CR 613.1b): Control Magic's family. While the Aura is
+   * on the battlefield attached to it, the permanent is under the Aura's controller; when the Aura
+   * leaves or is moved off it, it goes back. Applied by `settle` (`auraControl`), so every way an
+   * Aura arrives and every way it goes is the same one pass.
+   */
+  readonly controls?: true;
 }
 
 /** One mode of a modal spell: what it says, what it points at, and what it does. */

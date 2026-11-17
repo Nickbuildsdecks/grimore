@@ -31563,3 +31563,53 @@ Pod sweep, seeds 62001–62010 on the D931 build: 520 pods, all decided.
     engine tests: 4,995, all passing
 
 Coverage: 12,046 of 31,743 cards (+25), 31,839 of 59,509 lines (+50). Staples: 239 of 244.
+
+## D938 — "You control enchanted creature"
+
+Control Magic's family (CR 613.1b): 40 legal Auras print "You control enchanted creature"
+(permanent, artifact, land, enchantment). 18 now read whole.
+
+How it is read:
+- **The compiler** reads the line on an Aura as `AuraDef.controls`. Such an Aura is never marked
+  friendly, whatever else it does to its host, and it is marked `removesACreature`, so the computer
+  aims it at the other side. Hypnotic Siren's "+1/+1 and flying" does not make it a card for your own
+  creature.
+- **Control here is which battlefield a permanent is on**, so this is a move that must be undone,
+  not a modification. A new pass in `settle`, `auraControl`, keeps it true. Each control Aura that
+  takes a permanent leaves a `permanent` effect sourced on itself with `controlRevertTo`, the seat
+  it took it from.
+- **Several such effects on one permanent are a chain in timestamp order** (CR 613.7), and the
+  newest Aura's controller has the permanent:
+  - an effect whose Aura has left, been moved onto something else or lost its abilities is dropped;
+  - if that effect was the newest, the permanent goes back; if not, the next one up inherits its
+    seat, so the last to go still returns the permanent to the right player;
+  - an attached Aura whose controller does not control its permanent takes it, unless a newer one
+    holds it.
+- **One pass, before effects expire**, which covers every way an Aura arrives or leaves, an Aura
+  that changes hands, and a creature an end-of-turn steal hands back while it is enchanted. The
+  control change makes the permanent summoning sick for its new controller, as `relocate` already
+  does for any change of control.
+
+**Tests.** 12 engine tests:
+- the cards read;
+- the creature is the Aura controller's, and summoning sick;
+- the Aura leaves: it goes back;
+- the creature leaves: the Aura goes and nothing is owed;
+- the Aura changes hands, twice, and the creature follows and finally goes home;
+- the Aura is moved onto another creature;
+- the Aura loses its abilities;
+- two control Auras, the newer leaving first;
+- two control Auras, the older leaving first;
+- the older Aura never takes it back from the newer one, whichever seat is asked first;
+- a helpful rider does not make it friendly;
+- the computer aims it at the other side.
+
+Faults injected by hand: 11 of 12 caught. The first version let the first Aura's hold stand, which
+is not the rule (the newer one wins). The two-Aura tests showed it, and the pass was rewritten as
+the chain above. The one fault left is equivalent: skipping the hand-back when a newer Aura remains
+gives the same end state, because the take step in the same pass hands the permanent straight to
+the newer Aura.
+
+    engine tests: 5,007, all passing
+
+Coverage: 12,064 of 31,743 cards (+18), 31,872 of 59,509 lines (+33). Staples: 239 of 244.

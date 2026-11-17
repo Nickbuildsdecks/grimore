@@ -15900,8 +15900,14 @@ export function attachmentScriptFor(
     const declared = enchant[0]!;
     const thing = enchant[1]!.trim().toLowerCase();
     if (thing === 'player') return null;
+    /*
+      "You control enchanted creature" (D938): Control Magic's family, 40 legal Auras. Never
+      friendly, whatever else the Aura does to its host: it is for somebody else's permanent.
+    */
+    const controlLine = lines.find((line) =>
+      /^you control enchanted (?:creature|permanent|artifact|land|enchantment|artifact creature)\.?$/i.test(plain(line).trim()));
     // `false`: an Aura's host vocabulary is the switch's exact phrases only. See `targetSpecFrom`.
-    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful, false);
+    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful && controlLine === undefined, false);
     if (host === null) return null;
     /*
       **The one trigger that does say whose creature the Aura wants (D575).**
@@ -15967,8 +15973,9 @@ export function attachmentScriptFor(
           target: {
             ...host,
             description: `enchant ${thing}`,
-            ...(watchesItsHostConnect ? { friendly: true as const, helpsInCombat: true as const } : {}),
+            ...(watchesItsHostConnect && controlLine === undefined ? { friendly: true as const, helpsInCombat: true as const } : {}),
           },
+          ...(controlLine === undefined ? {} : { controls: true as const }),
           /*
             `grants` holds **indices into `grantedTriggers`** below, which is #230's two-halves
             design: the effect stays serialisable and the abilities keep their functions. So the
@@ -15992,10 +15999,10 @@ export function attachmentScriptFor(
         ...(read?.grantedAbilities === undefined
           ? {}
           : { grantedAbilities: read.grantedAbilities }),
-        ...(read?.harmful === true ? { removesACreature: true as const } : {}),
+        ...(read?.harmful === true || controlLine !== undefined ? { removesACreature: true as const } : {}),
       },
       // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
-      claimed: read === null ? [declared] : [declared, staticLine!],
+      claimed: [declared, ...(read === null ? [] : [staticLine!]), ...(controlLine === undefined ? [] : [controlLine])],
     };
   }
 

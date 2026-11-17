@@ -39,7 +39,7 @@ import {
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
-import { preferredOption } from './automation.js';
+import { preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
@@ -18954,6 +18954,173 @@ describe('"can\'t be blocked by more than one creature" and "can\'t attack unles
     s = pump(s, [rhino, serpent], rhino, 0, { losesAllAbilities: true });
     expect(characteristicsOf(s, s.instances[rhino]!).blockedByOne).toBe(false);
     expect(characteristicsOf(s, s.instances[serpent]!).attacksOnlyIfDefenderHas).toBeNull();
+  });
+});
+
+describe('"You control enchanted creature" (D938)', () => {
+  const ROWS = [
+    { name: 'Test Control', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nYou control enchanted creature.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Siren', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nYou control enchanted creature.\nEnchanted creature gets +1/+1 and has flying.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd938', name: 'Control Magic',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }],
+    data: ROWS as never[],
+  });
+  /** Seat 0 casts `aura` on seat 1's Ogre and it resolves. */
+  const stolen = (aura = 'Test Control') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd938', 1: 'd938' }, deckSpecs: { d938: deck.deck }, hands: { 0: [aura] },
+      battlefield: { 0: ['Island', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    const card = find(s, 0, 'hand', aura);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: ogre }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, ogre, aura: card };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the enchanted creature is the Aura\'s controller\'s, and summoning sick for them', () => {
+    const { s, ogre, aura } = stolen();
+    expect(s.instances[ogre]!.zoneSeat).toBe(0);
+    expect(s.instances[ogre]!.owner).toBe(1);
+    expect(s.instances[aura]!.attachedTo).toBe(ogre);
+    expect(canAttack(s, ogre, 0)?.reason).toMatch(/summoning sickness/);
+  });
+
+  it('the Aura leaves: the creature goes back', () => {
+    const { s, ogre, aura } = stolen();
+    const gone = drain(apply(destroy(s, aura), { type: 'auto:pass', by: s.priority ?? 0 } as Action), 30);
+    expect(gone.instances[aura]!.zone).toBe('graveyard');
+    expect(gone.instances[ogre]!.zoneSeat).toBe(1);
+    expect(gone.effects.some((e) => e.controlRevertTo !== undefined)).toBe(false);
+  });
+
+  it('the creature leaves: the Aura goes, and nothing is owed', () => {
+    const { s, ogre, aura } = stolen();
+    const bounced = drain(apply(bounceToHand(s, ogre), { type: 'auto:pass', by: s.priority ?? 0 } as Action), 30);
+    expect(bounced.instances[ogre]!.zone).toBe('hand');
+    expect(bounced.instances[ogre]!.zoneSeat).toBe(1);
+    expect(bounced.instances[aura]!.zone).toBe('graveyard');
+    expect(bounced.effects.some((e) => e.controlRevertTo !== undefined)).toBe(false);
+  });
+
+  it('the Aura changes hands: so does the creature, and back again', () => {
+    const { s, ogre, aura } = stolen();
+    let t = drain(apply(gainControl(s, aura, 1), { type: 'auto:pass', by: s.priority ?? 0 } as Action), 30);
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+    t = drain(apply(gainControl(t, aura, 0), { type: 'auto:pass', by: t.priority ?? 0 } as Action), 30);
+    expect(t.instances[ogre]!.zoneSeat).toBe(0);
+    // And when it finally goes, the creature goes to the seat it was taken from.
+    t = drain(apply(destroy(t, aura), { type: 'auto:pass', by: t.priority ?? 0 } as Action), 30);
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+  });
+
+  // The board settled where it stands: state-based actions and the control pass, no step taken.
+  const reSettle = (s: GameState) => engineSettle(s, s);
+  const attach = (s: GameState, aura: string, host: string): GameState => (
+    { ...s, instances: { ...s.instances, [aura]: { ...s.instances[aura]!, attachedTo: host } } });
+  /** `stolen`, with a second control Aura of seat 1's sitting unattached on its battlefield. */
+  const withSecond = () => {
+    const first = stolen();
+    const s0 = advanceTo(arena({
+      decks: { 0: 'd938', 1: 'd938' }, deckSpecs: { d938: deck.deck }, hands: { 0: ['Test Control'], 1: ['Test Control'] },
+      battlefield: { 0: ['Island', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ogre = find(s0, 1, 'battlefield', 'Test Ogre');
+    const theirs = find(s0, 1, 'hand', 'Test Control');
+    let s = s0;
+    const card = find(s, 0, 'hand', 'Test Control');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: ogre }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(first.s.instances[first.ogre]!.zoneSeat).toBe(0);
+    return { s, ogre, mine: card, theirs };
+  };
+
+  it('the Aura is moved onto another creature: the first goes back, the second comes over', () => {
+    const { s, ogre, aura } = stolen();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const t = reSettle(attach(s, aura, bear));
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+    expect(t.instances[bear]!.zoneSeat).toBe(0);
+  });
+
+  /** Seat 1's Aura arrives on the Battlefield attached to the Ogre. */
+  const arrive = (s: GameState, aura: string, host: string) => reSettle(attach(relocate(s, s.instances[aura]!, 'battlefield', 1, 'top'), aura, host));
+
+  it('two control Auras: the newer one holds it, and each gives it back down the chain', () => {
+    const { s, ogre, mine, theirs } = withSecond();
+    expect(s.instances[ogre]!.zoneSeat).toBe(0);
+    // Seat 1's Aura arrives on it: newer, so seat 1 has it back.
+    let t = arrive(s, theirs, ogre);
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+    // The newer one goes: back to the older Aura's controller.
+    t = reSettle(destroy(t, theirs));
+    expect(t.instances[ogre]!.zoneSeat).toBe(0);
+    t = reSettle(destroy(t, mine));
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+  });
+
+  it('two control Auras, the older one goes first: the last one still returns it to its owner', () => {
+    const { s, ogre, mine, theirs } = withSecond();
+    let t = arrive(s, theirs, ogre);
+    t = reSettle(destroy(t, mine));
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+    // Seat 1's Aura is handed to seat 0, so it takes the Ogre; when it goes, the Ogre goes home.
+    t = reSettle(gainControl(t, theirs, 0));
+    expect(t.instances[ogre]!.zoneSeat).toBe(0);
+    t = reSettle(destroy(t, theirs));
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+  });
+
+  it('the older Aura never takes it back from the newer one, whichever seat is asked first', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd938', 1: 'd938' }, deckSpecs: { d938: deck.deck }, hands: { 0: ['Test Control'], 1: ['Test Control'] },
+      battlefield: { 0: ['Island', 'Test Ogre'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    // Seat 1's Aura first: the Ogre is seat 1's.
+    s = arrive(s, find(s, 1, 'hand', 'Test Control'), ogre);
+    expect(s.instances[ogre]!.zoneSeat).toBe(1);
+    // Then seat 0's, newer: seat 0 has it, and keeps it through another settle.
+    const card = find(s, 0, 'hand', 'Test Control');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: ogre }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[ogre]!.zoneSeat).toBe(0);
+    expect(reSettle(s).instances[ogre]!.zoneSeat).toBe(0);
+  });
+
+  it('the Aura loses its abilities: the creature goes back', () => {
+    const { s, ogre, aura } = stolen();
+    const t = drain(apply(pump(s, [aura], aura, 0, { losesAllAbilities: true }), { type: 'auto:pass', by: s.priority ?? 0 } as Action), 30);
+    expect(t.instances[ogre]!.zoneSeat).toBe(1);
+  });
+
+  it('a helpful rider does not make it a card for your own creature', () => {
+    const { s, ogre } = stolen('Test Siren');
+    expect(s.instances[ogre]!.zoneSeat).toBe(0);
+    expect(characteristicsOf(s, s.instances[ogre]!).keywords.has('flying')).toBe(true);
+    const script = scriptForCard(s.cardDefs[s.instances[find(s, 0, 'battlefield', 'Test Siren')]!.defKey]);
+    expect(script?.aura?.target.friendly).not.toBe(true);
+    expect(script?.removesACreature).toBe(true);
+  });
+
+  it('the computer aims it at the other side', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd938', 1: 'd938' }, deckSpecs: { d938: deck.deck }, hands: { 0: ['Test Control'] },
+      battlefield: { 0: ['Island', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const action = botAction(s, 0) as { type: string; card?: string; targets?: Target[] };
+    expect(action.type).toBe('auto:cast');
+    const target = action.targets?.[0];
+    expect(target?.kind === 'card' ? s.instances[target.id]!.zoneSeat : null).toBe(1);
   });
 });
 

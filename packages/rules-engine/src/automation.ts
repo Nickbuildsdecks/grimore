@@ -48,7 +48,7 @@ import {
   drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
-  modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
+  gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
@@ -2342,6 +2342,80 @@ function raise(
 }
 
 /**
+ * "You control enchanted creature" (D938, CR 613.1b), kept true of the board.
+ *
+ * Control in this engine is which battlefield a permanent is on, so it cannot be a modification
+ * the layers apply; it is a move, and the move has to be undone. Each control Aura that takes a
+ * permanent leaves a `permanent` effect sourced on itself with `controlRevertTo`, the seat it took
+ * the permanent from. The effects on one permanent are a **chain in timestamp order** (CR 613.7):
+ * the newest one's Aura controls it. This pass keeps that true:
+ *
+ * - an effect whose Aura has left, been moved off the permanent or lost its abilities is dropped.
+ *   If it was the newest, the permanent goes back to the seat it was taken from; if not, the next
+ *   one up the chain inherits that seat, so the last to go still returns it to the right player;
+ * - a control Aura attached to a permanent its controller does not control takes it, unless a newer
+ *   one holds it: a new Aura, one whose controller changed, or one under an end-of-turn steal that
+ *   just expired.
+ */
+function auraControl(state: GameState): GameState {
+  let next = state;
+  const chainOn = (host: string): ContinuousEffect[] => next.effects.filter((e) => e.duration === 'permanent'
+    && e.controlRevertTo !== undefined && e.scope.kind === 'cards' && e.scope.ids[0] === host);
+  const holds = (effect: ContinuousEffect): boolean => {
+    const aura = next.instances[effect.source];
+    return effect.scope.kind === 'cards' && aura !== undefined && aura.zone === 'battlefield'
+      && aura.attachedTo === effect.scope.ids[0] && !allAbilitiesLost(next, aura);
+  };
+  for (const { id } of state.effects) {
+    // The current version: an earlier step of this loop may have rewritten its revert seat.
+    const effect = next.effects.find((e) => e.id === id);
+    if (effect === undefined || effect.duration !== 'permanent' || effect.controlRevertTo === undefined) continue;
+    if (effect.scope.kind !== 'cards' || holds(effect)) continue;
+    const hostId = effect.scope.ids[0] ?? '';
+    const chain = chainOn(hostId);
+    const later = chain[chain.findIndex((e) => e.id === id) + 1];
+    next = {
+      ...next,
+      effects: next.effects.filter((other) => other.id !== id).map((other) => (
+        other.id === later?.id ? { ...other, controlRevertTo: effect.controlRevertTo } : other
+      )),
+    };
+    if (later !== undefined) continue;
+    const host = next.instances[hostId];
+    if (host !== undefined && host.zone === 'battlefield' && host.zoneSeat !== effect.controlRevertTo) {
+      next = gainControl(next, host.id, effect.controlRevertTo);
+    }
+  }
+  for (const seat of next.seats) {
+    for (const id of listAt(next, zoneKey(seat.index, 'battlefield'))) {
+      const aura = next.instances[id];
+      if (aura === undefined || aura.attachedTo === null || allAbilitiesLost(next, aura)) continue;
+      if (scriptForCard(next.cardDefs[aura.defKey])?.aura?.controls !== true) continue;
+      const host = next.instances[aura.attachedTo];
+      if (host === undefined || host.zone !== 'battlefield') continue;
+      const chain = chainOn(host.id);
+      const mine = chain.find((e) => e.source === aura.id);
+      // A newer Aura holds it (CR 613.7), or it is already this Aura's controller's.
+      if ((mine !== undefined && mine !== chain[chain.length - 1]) || host.zoneSeat === aura.zoneSeat) continue;
+      const from = host.zoneSeat;
+      next = gainControl(next, host.id, aura.zoneSeat);
+      if (mine !== undefined) continue;
+      const seq = next.autoSeq + 1;
+      next = {
+        ...next,
+        autoSeq: seq,
+        effects: [...next.effects, {
+          id: `fx${seq}`, source: aura.id, controller: aura.zoneSeat,
+          scope: { kind: 'cards', ids: [host.id] }, duration: 'permanent', createdTurn: next.turn,
+          controlRevertTo: from,
+        }],
+      };
+    }
+  }
+  return next;
+}
+
+/**
  * The targets for a trigger when there is nothing to decide, or null when there is.
  *
  * A choice between one thing is not a choice: an ability that must target a creature when only one
@@ -2848,6 +2922,13 @@ export function stateBasedActions(state: GameState): GameState {
           changed = true;
         }
       }
+    }
+
+    // Control Magic's family (D938): before the expiry below, which would drop what it gives back.
+    const controlled = auraControl(next);
+    if (controlled !== next) {
+      next = controlled;
+      changed = true;
     }
 
     // A permanent whose static effect source has left stops applying it.
