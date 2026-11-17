@@ -30119,3 +30119,42 @@ fast-forwarded in. The figures below are against its head, e859fde (11,482 cards
 
 Coverage: 11,505 of 31,653 cards (+23), 30,884 of 59,306 lines (+28). Staples: 235 of 244.
 Pod sweep 58401–58440 (D723's build): 40 of 40 finished, no throw and no stall.
+
+## D902 — A size that is a count: the commonest "*" bodies
+
+"~'s power and toughness are each equal to the number of …" (Maro, Dungrove Elder, Crusader of
+Odric), and "~'s power is equal to the number of … and its toughness is equal to that number
+plus N" (Tarmogoyf).
+
+How it is read:
+- **The counts.** `definesSize.count` gains the commonest counts the corpus prints for a `*` body:
+  - creatures you control, and creatures on the battlefield;
+  - lands you control, and artifacts you control;
+  - cards in your hand;
+  - creature cards in your graveyard, and cards in your graveyard;
+  - card types among cards in all graveyards, and in your graveyard;
+  - a land type or creature type you control (`{ subtype }`).
+- **The "each equal to" phrasing** is read beside the existing "power is equal to".
+- **The compiler** already lets a `*` body through when such a static is present, so these cards now
+  compile as single-faced creatures.
+- **Limitation, stated.** `cdaCount` runs inside `characteristicsOf`, so permanents are counted by
+  their **printed** type line. Asking the live characteristics of the permanents counted (the card
+  itself among them) would ask this again. An animated land is therefore not counted as a creature.
+
+`*/*` refusals fell from 134 to 73. About 90 cards are no longer refused outright, which also
+raises the denominator.
+
+**Tests.** 3 engine tests:
+- four cards read;
+- the Goyf is 0/1 with empty graveyards, 3/4 over a creature, a land and an instant, and 1/2 over two
+  creatures;
+- the hand count; three Forests make 3/3; the Crusader with a Bear and a Forest is 2/2.
+
+Two compile tests used "cards in your hand" as their example of a count the engine lacks. They
+now use "snow permanents you control", which is still unread.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,793, all passing
+
+Coverage: 11,532 of 31,743 cards (+78), 31,013 of 59,509 lines (+200). Staples: 235 of 244.

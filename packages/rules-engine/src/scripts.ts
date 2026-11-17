@@ -25088,10 +25088,35 @@ function withoutAbilityWord(line: string): string {
  * The apostrophe is matched both ways: a card's printed text uses the typographic `’` and plain
  * ASCII `'` turns up in hand-entered rows.
  */
-const CDA_COUNTS: Readonly<Record<string, 'creature-cards-in-graveyards' | 'instant-and-sorcery-cards-in-your-graveyard'>> = {
+type CdaCount = NonNullable<NonNullable<PumpOptions['definesSize']>>['count'];
+const CDA_COUNTS: Readonly<Record<string, CdaCount>> = {
   'creature cards in all graveyards': 'creature-cards-in-graveyards',
   'instant and sorcery cards in your graveyard': 'instant-and-sorcery-cards-in-your-graveyard',
+  // D902: the commonest counts a `*` body prints. See `definesSize.count`.
+  'creatures you control': 'creatures-you-control',
+  'creatures on the battlefield': 'creatures-on-the-battlefield',
+  'lands you control': 'lands-you-control',
+  'artifacts you control': 'artifacts-you-control',
+  'cards in your hand': 'cards-in-your-hand',
+  'creature cards in your graveyard': 'creature-cards-in-your-graveyard',
+  'cards in your graveyard': 'cards-in-your-graveyard',
+  'card types among cards in all graveyards': 'card-types-in-all-graveyards',
+  'card types among cards in your graveyard': 'card-types-in-your-graveyard',
 };
+
+/** A count a `*` body names, including "<Subtype>s you control" (D902). */
+function cdaCountFor(phrase: string): CdaCount | null {
+  const text = phrase.trim().toLowerCase();
+  const fixed = CDA_COUNTS[text];
+  if (fixed !== undefined) return fixed;
+  const typed = /^([A-Z][A-Za-z'-]*) you control$/.exec(phrase.trim());
+  if (typed === null) return null;
+  const LAND_TYPES: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
+  const land = LAND_TYPES[typed[1]!];
+  if (land !== undefined) return { subtype: land };
+  const tribe = subtypeFromTribalPhrase(typed[1]!, 'plural');
+  return tribe === null ? null : { subtype: tribe };
+}
 
 /**
  * The same count as `countOfThing`, asked for as **data** instead of as a function (D523).
@@ -25223,15 +25248,22 @@ function countedSizeRate(
 
 function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
   const self = selfRef(name);
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  // "~'s power and toughness are each equal to the number of …" (D902): both, as a Lhurgoyf.
+  const each = new RegExp(`^${self}['’]s power and toughness are each equal to the number of (.+)$`, 'i').exec(text);
+  if (each !== null) {
+    const both = cdaCountFor(each[1]!);
+    return both === null ? null : { statics: [{ scope: 'self', effect: { definesSize: { count: both } } }] };
+  }
   const matched = new RegExp(
     `^${self}['’]s power is equal to the number of (.+?)` +
     `(?: and its toughness is equal to that number plus (\\d+))?$`,
     'i',
-  ).exec(plain(line).trim().replace(/\.\s*$/, ''));
+  ).exec(text);
   if (matched === null) return null;
 
-  const count = CDA_COUNTS[matched[1]!.trim().toLowerCase()];
-  if (count === undefined) return null;
+  const count = cdaCountFor(matched[1]!);
+  if (count === null) return null;
 
   const plus = matched[2];
   return {
