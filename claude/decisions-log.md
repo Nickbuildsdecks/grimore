@@ -47663,6 +47663,63 @@ Coverage: 11,557 of 31,743 cards (+1), 31,044 of 59,509 lines (+1). Staples: 236
 The denominator grew with the other session's D902 ("a size that is a count"), which made `*/*`
 creatures measurable; the baseline is the merged head e37f376 (11,556 cards, 31,043 lines).
 
+## D726 — Additional phases: extra combats, and Sphinx of the Second Sun
+
+"At the beginning of each of your postcombat main phases, there is an additional beginning phase
+after this phase." (Sphinx of the Second Sun.) The same machinery reads the extra-combat family:
+"After this phase, there is an additional combat phase" (16 legal lines), "After this main phase,
+there is an additional combat phase followed by an additional main phase" (Relentless Assault and
+five more), "After this combat phase, …", and "there are two additional combat phases".
+
+**The machinery (CR 500.8).** Two optional state fields:
+- `extraPhases`, the queue of phases still to come this turn;
+- `extraPhaseRun.resume`, the step the turn goes on to once they are done.
+
+At each phase boundary `advanceStep` runs the first queued phase next: after the draw step (end of
+the beginning phase), either main phase, or the end-of-combat step. When the queue is empty it
+returns to `resume`.
+- An added beginning phase starts at the untap step, so the active player's permanents untap and
+  upkeep triggers fire again.
+- An added combat starts at beginning of combat, and an added main phase is a postcombat main step.
+  So "a combat followed by a main", cast in the first main phase, runs main, extra combat, extra
+  main, then the regular combat, the second main and the end step.
+- Combat state is already cleared at end of combat, so a second combat starts clean.
+- Both fields are cleared when the turn ends.
+
+**"Untap all creatures that attacked this turn"** (Relentless Assault's first sentence) needed a
+per-creature record. `attackersThisTurn` holds `id#objectSeq` for each creature declared as an
+attacker, cleared with the other turn facts. A creature that left and came back is a new object and
+isn't untapped (CR 400.7).
+
+Conditions in front ("if it's your main phase, …") are left to the readers that read conditions.
+
+Staples went from 236 to 237 (Sphinx of the Second Sun).
+
+**Tests.** 7 engine tests:
+- the three test cards read;
+- the Sphinx adds untap, upkeep and draw after the postcombat main in the same turn: a tapped land
+  untaps, an upkeep trigger fires again, a card is drawn, then the end step;
+- Relentless Assault cast after attacking untaps the attacker, then a combat and a main phase
+  follow before the end step;
+- cast in the first main phase, the extra combat and main come first: two postcombat mains;
+- an instant in combat adds one combat and no main phase, and the queue is empty afterwards;
+- a phase added in the end step dies with the turn, and the next player gets no extra combat;
+- a creature that attacked and came back is not untapped.
+
+Faults injected by script: 7 of 8 caught. The miss, the queue surviving the turn, is a real case
+(an instant cast in the end step would have handed the next player an extra combat) and is pinned
+by the sixth test. Re-run: 1 of 1 caught.
+
+**Two worker restarts, and a fault left in the tree each time.** Both restarts killed a break run
+mid-fault. Each time the tree was checked fault by fault against the original text and restored
+before anything else ran (D720's shuffle fold, this entry's attacker record). The break-run script
+now keeps the original file beside it while a fault is in, and puts back any leftover from a killed
+run when it starts.
+
+    engine tests: 4,808, all passing
+
+Coverage: 11,562 of 31,743 cards (+5), 31,052 of 59,509 lines (+8). Staples: 237 of 244 (+1).
+
 ## D903 — "That many" after a combat-damage trigger is the damage dealt
 
 "Whenever ~ deals combat damage to a player, draw that many cards", and the rest of the 101 legal
@@ -47732,7 +47789,7 @@ How it is read:
 
 Faults injected by hand: 4 of 4 caught.
 
-    engine tests: 4,808, all passing
+    engine tests: 4,815, all passing (merged with the other session's D726)
 
 Coverage on the merged head (with the other session's D724 and D725): 11,604 of 31,743 cards,
 31,112 of 59,509 lines. Staples: 236 of 244.

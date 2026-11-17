@@ -2401,6 +2401,11 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
         ...(state.attackedThisTurn ?? {}),
         [String(action.by)]: (state.attackedThisTurn?.[String(action.by)] ?? 0) + attacks.length,
       },
+      // And which creatures (D726), for "untap all creatures that attacked this turn".
+      attackersThisTurn: [
+        ...(state.attackersThisTurn ?? []),
+        ...attacks.map((a) => `${a.attacker}#${state.instances[a.attacker]?.objectSeq ?? 0}`),
+      ],
     }),
     seats: state.seats.map((seat) => {
       const spared = sparedBy[String(seat.index)];

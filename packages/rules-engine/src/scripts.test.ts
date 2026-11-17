@@ -16329,6 +16329,113 @@ describe('"that many" after a combat-damage trigger is the damage dealt (D903)',
   });
 });
 
+describe('additional phases: extra combats and an extra beginning phase (D726)', () => {
+  const ROWS = [
+    { name: 'Test Sphinx', type_line: 'Creature — Sphinx', oracle_text: 'Flying\nAt the beginning of each of your postcombat main phases, there is an additional beginning phase after this phase.', mana_cost: '{5}{W}{U}', cmc: 7, colors: ['W', 'U'], layout: 'normal', power: '6', toughness: '6' },
+    { name: 'Test Assault', type_line: 'Sorcery', oracle_text: 'Untap all creatures that attacked this turn. After this main phase, there is an additional combat phase followed by an additional main phase.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Seize', type_line: 'Instant', oracle_text: 'After this phase, there is an additional combat phase.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Tithe', type_line: 'Enchantment', oracle_text: 'At the beginning of your upkeep, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'phases', name: 'Phases',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 40 }],
+    data: ROWS,
+  });
+  const table = (hand: string[], mine: string[], step: Step = 'precombat-main') => advanceTo(arena({
+    decks: { 0: 'phases', 1: 'phases' }, deckSpecs: { phases: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), step);
+  // Passes priority until the step changes, recording each step the turn visits.
+  const walk = (s0: GameState, until: (s: GameState) => boolean) => {
+    let s = s0;
+    const seen: Step[] = [s.step];
+    for (let i = 0; i < 60 && !until(s); i++) {
+      // A declaration owed is answered with nobody attacking or blocking, so the turn moves on.
+      const owed = pendingDeclaration(s);
+      if (owed?.kind === 'attackers') s = apply(s, { type: 'auto:attack', by: owed.seats[0]!, attackers: [] });
+      else if (owed?.kind === 'blockers') s = apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] });
+      else s = passBoth(s);
+      if (seen[seen.length - 1] !== s.step) seen.push(s.step);
+    }
+    return { s, seen };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Sphinx adds untap, upkeep and draw after the postcombat main phase, in the same turn', () => {
+    let s = walk(table([], ['Test Sphinx', 'Test Tithe', 'Plains']), (x) => x.step === 'postcombat-main').s;
+    const plains = find(s, 0, 'battlefield', 'Plains');
+    s = { ...s, instances: { ...s.instances, [plains]: { ...s.instances[plains]!, tapped: true } } };
+    const hand = ids(s, 0, 'hand').length;
+    const lifeBefore = life(s, 0);
+    const { s: after, seen } = walk(s, (x) => x.step === 'end');
+    expect(seen).toEqual(['postcombat-main', 'upkeep', 'draw', 'end']);
+    expect(after.turn).toBe(3);
+    expect(after.activeSeat).toBe(0);
+    expect(after.instances[plains]!.tapped).toBe(false);
+    expect(ids(after, 0, 'hand').length).toBe(hand + 1);
+    expect(life(after, 0)).toBe(lifeBefore + 1);
+  });
+
+  it('Relentless Assault untaps the attackers, then a combat and a main phase follow before the turn goes on', () => {
+    let s = table(['Test Assault'], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = walk(s, (x) => x.step === 'declare-attackers').s;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    s = walk(s, (x) => x.step === 'postcombat-main').s;
+    expect(s.instances[bear]!.tapped).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Assault') })), 10);
+    expect(s.instances[bear]!.tapped).toBe(false);
+    const { s: after, seen } = walk(s, (x) => x.step === 'end');
+    expect(seen).toEqual(['postcombat-main', 'begin-combat', 'declare-attackers', 'end-combat', 'postcombat-main', 'end']);
+    expect(after.turn).toBe(3);
+  });
+
+  it('cast in the first main phase, the extra combat and main come before the regular combat', () => {
+    let s = table(['Test Assault'], []);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Assault') })), 10);
+    const { seen } = walk(s, (x) => x.step === 'end');
+    // With no creatures, each combat goes straight to its end (CR 508.8).
+    expect(seen.filter((step) => step === 'postcombat-main')).toHaveLength(2);
+    expect(seen[0]).toBe('precombat-main');
+    expect(seen[seen.length - 1]).toBe('end');
+  });
+
+  it('an instant in combat adds one combat after it and no main phase', () => {
+    let s = table(['Test Seize'], ['Test Bear']);
+    s = walk(s, (x) => x.step === 'begin-combat').s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seize') })), 10);
+    const { s: after, seen } = walk(s, (x) => x.step === 'end');
+    expect(seen.filter((step) => step === 'begin-combat')).toHaveLength(2);
+    expect(seen.filter((step) => step === 'postcombat-main')).toHaveLength(1);
+    expect(after.extraPhases ?? []).toEqual([]);
+    expect(after.extraPhaseRun).toBeUndefined();
+  });
+
+  it('a phase added in the end step dies with the turn, and the next player gets no extra combat', () => {
+    // Pinned by D726's break run: the end phase has no boundary the queue is read at.
+    let s = walk(table(['Test Seize'], []), (x) => x.step === 'end').s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seize') })), 10);
+    expect(s.extraPhases).toEqual(['combat']);
+    const { s: next, seen } = walk(s, (x) => x.turn === 4 && x.step === 'end');
+    expect(next.activeSeat).toBe(1);
+    expect(seen.filter((step) => step === 'begin-combat')).toHaveLength(1);
+    expect(next.extraPhases ?? []).toEqual([]);
+  });
+
+  it('a creature that attacked and came back is a new object, and is not untapped', () => {
+    let s = table(['Test Assault'], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, attackersThisTurn: [`${bear}#${(s.instances[bear]!.objectSeq ?? 0) - 1}`], instances: { ...s.instances, [bear]: { ...s.instances[bear]!, tapped: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Assault') })), 10);
+    expect(s.instances[bear]!.tapped).toBe(true);
+  });
+});
+
 describe('"deals damage" to anything, and "is dealt damage", with that much (D904)', () => {
   const ROWS = [
     { name: 'Test Drinker', type_line: 'Creature — Vampire', oracle_text: 'Whenever Test Drinker deals damage, you gain that much life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
