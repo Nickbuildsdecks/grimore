@@ -7910,6 +7910,7 @@ describe('deck coverage', () => {
         runtime by "sunburst and converge (D917)".
       - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
       - `script casualty` (D923): casualty. No pool deck has one. Driven at runtime by "casualty (D923)".
+      - `script squad` (D924): squad. No pool deck has one. Driven at runtime by "squad (D924)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7941,6 +7942,7 @@ describe('deck coverage', () => {
       'script sunburst',
       'script plot',
       'script casualty',
+      'script squad',
     ]);
 
     const declared = [
@@ -17858,6 +17860,52 @@ describe('casualty (D923)', () => {
     const mouse = find(s, 0, 'battlefield', 'Test Mouse');
     const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Nuisance'), casualty: true, sacrifice: mouse } as Action);
     expect(namesIn(after, 0, 'battlefield').filter((n) => n === 'Test Nuisance').length).toBe(2);
+  });
+});
+
+describe('squad (D924)', () => {
+  const ROWS = [
+    { name: 'Test Squad', type_line: 'Creature — Human Soldier', oracle_text: 'Squad {1}', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd924', name: 'Squad',
+    entries: [{ name: 'Test Squad', count: 4 }, { name: 'Plains', count: 56 }],
+    data: ROWS as never[],
+  });
+  const seated = () => advanceTo(arena({
+    decks: { 0: 'd924', 1: 'd924' }, deckSpecs: { d924: deck.deck },
+    hands: { 0: ['Test Squad'] }, battlefield: { 0: ['Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (times?: number) => {
+    const s = seated();
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Squad'), ...(times === undefined ? {} : { replicate: times }) } as Action), 30);
+    for (let i = 0; i < 8 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+  const squads = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Squad');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered once per payment the mana covers', () => {
+    const s = seated();
+    const card = find(s, 0, 'hand', 'Test Squad');
+    const times = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast').map((p) => p.replicate ?? 0).sort();
+    expect(times).toEqual([0, 1, 2]);
+  });
+
+  it('paid twice: the creature and two token copies of it, and no more', () => {
+    const s = cast(2);
+    const all = squads(s);
+    expect(all.length).toBe(3);
+    expect(all.filter((id) => s.instances[id]!.isToken).length).toBe(2);
+    for (const id of all) expect(s.instances[id]!.counters['squad'] ?? 0).toBe(0);
+  });
+
+  it('not paid: one creature', () => {
+    expect(squads(cast()).length).toBe(1);
   });
 });
 

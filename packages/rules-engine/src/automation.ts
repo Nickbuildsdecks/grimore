@@ -37,6 +37,7 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
+  SQUADDED,
   createToken,
   DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
@@ -5211,6 +5212,10 @@ function completeResolution(
       // "Escapes with N +1/+1 counters on it" (D577): the same kind of record, for the same reason.
       if (object.escaped === true && (script?.escape?.counters ?? 0) > 0) {
         next = addCounters(next, inst.id, '+1/+1', script!.escape!.counters!);
+      }
+      // Squad (D924): how many times its cost was paid, for its entry trigger to read.
+      if (script?.squad !== undefined && (object.replicated ?? 0) > 0) {
+        next = addCounters(next, inst.id, SQUADDED, object.replicated!);
       }
       if (object.kicked === true) {
         next = addCounters(next, inst.id, KICKED, 1);

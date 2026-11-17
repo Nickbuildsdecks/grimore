@@ -31027,3 +31027,30 @@ Faults injected by hand: 7 of 7 caught.
     engine tests: 4,916, all passing
 
 Coverage: 11,898 of 31,743 cards (+7), 31,581 of 59,509 lines (+14). Staples: 238 of 244.
+
+## D924 — Squad
+
+"Squad {cost} (As an additional cost to cast this spell, you may pay {cost} any number of times. When
+this creature enters, create that many tokens that are copies of it.)" (CR 702.157a). Warhammer
+40,000 and Fallout, eight legal cards held back by the keyword alone.
+
+How it is read:
+- **The payment is replicate's.** The keyword sets `replicate` to the same cost, so the same plays
+  are offered (one per count the mana covers, up to four), priced and validated. The offer and the
+  cast message say "squad".
+- **The count is recorded** on the permanent as it arrives, as the `squad` marker, the way kicked
+  and evoked are.
+- **The card's entry trigger** reads the marker, removes it, and makes that many token copies from
+  the card's own definition. The copies carry no marker, so their own squad makes nothing.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- casts are offered for squad x0, x1 and x2 with three lands;
+- paid twice, there are three Squads, two of them tokens, and no marker is left;
+- not paid, there is one.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,920, all passing
+
+Coverage: 11,906 of 31,743 cards (+8), 31,595 of 59,509 lines (+14). Staples: 238 of 244.

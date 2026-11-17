@@ -1024,7 +1024,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     trigger (CR 707.10), so countering the original does not touch them. A player who wants to
     answer a replicated spell has to answer the trigger, or the copies, or nothing.
   */
-  const replicatedText = replicated > 0 ? ` (replicate x${replicated})` : '';
+  const replicatedText = replicated > 0 ? ` (${script?.squad !== undefined ? 'squad' : 'replicate'} x${replicated})` : '';
   // And flashback, for the third time for the same reason: a player deciding whether to counter a
   // spell cast out of a graveyard should be able to see that it is never coming back.
   const flashbackText = flashback ? ' (flashback)' : '';

@@ -3901,6 +3901,14 @@ export interface CardScript {
    */
   readonly casualty?: number;
   /**
+   * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
+   * number of times. When this creature enters, create that many tokens that are copies of it." The
+   * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and
+   * priced); the count is recorded on the permanent as the `squad` marker, and the card's entry
+   * trigger makes the copies.
+   */
+  readonly squad?: { readonly cost: string };
+  /**
    * Dredge: a draw you may replace by milling this many cards and taking this card back
    * (CR 702.52a).
    *
