@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPai
 import {
   characteristicsOf, grantedAbilitiesOn, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import { casualtyOptions,
+import { conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
   cleanupHolds, finishCleanup,
   attackAimIssue, grantedAbilityFor,
@@ -891,6 +891,20 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let beforePay = state;
   for (const id of convoked) beforePay = withInstance(beforePay, id, { tapped: true });
   /*
+    Conspire (D926): two untapped creatures sharing a colour with the spell, tapped as it is cast and
+    before the mana is paid, so neither can also tap for it. The engine picks the two weakest.
+  */
+  if (action.conspire === true) {
+    if (script?.conspire !== true) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no conspire`);
+    }
+    const conspirators = conspireOptions(beforePay, action.by, inst.id, characteristics.colors).slice(0, 2);
+    if (conspirators.length < 2) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'conspire needs two untapped creatures you control that share a color with it');
+    }
+    for (const id of conspirators) beforePay = withInstance(beforePay, id, { tapped: true });
+  }
+  /*
     And the one line that makes this an offered cast: nothing is paid.
 
     An empty cost through the same `payFrom` as every other cast rather than a branch around it,
@@ -1082,6 +1096,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent } : {}),
     // And whether casualty was paid (D923), for its copy.
     ...(action.casualty === true ? { casualtyPaid: true as const } : {}),
+    // And conspire (D926).
+    ...(action.conspire === true ? { conspired: true as const } : {}),
     // And whether a sorcery could have been cast just now (D727), for Necromancy's cleanup sacrifice.
     ...(atSorcerySpeed(state, action.by) ? {} : { castOutsideSorceryTiming: true as const }),
     ...(action.x === undefined ? {} : { x: action.x }),

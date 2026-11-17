@@ -7911,6 +7911,7 @@ describe('deck coverage', () => {
       - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
       - `script casualty` (D923): casualty. No pool deck has one. Driven at runtime by "casualty (D923)".
       - `script squad` (D924): squad. No pool deck has one. Driven at runtime by "squad (D924)".
+      - `script conspire` (D926): conspire. No pool deck has one. Driven at runtime by "conspire (D926)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7943,6 +7944,7 @@ describe('deck coverage', () => {
       'script plot',
       'script casualty',
       'script squad',
+      'script conspire',
     ]);
 
     const declared = [
@@ -17955,6 +17957,64 @@ describe('enlist (D925)', () => {
     s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 12);
     expect(s.instances[ogre]!.tapped).toBe(false);
     expect(characteristicsOf(s, s.instances[enlister]!).power).toBe(2);
+  });
+});
+
+describe('conspire (D926)', () => {
+  const C = (name: string, colors: string[], p: string) => ({ name, type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{9}', cmc: 9, colors, layout: 'normal', power: p, toughness: '1' });
+  const ROWS = [
+    { name: 'Test Discovery', type_line: 'Sorcery', oracle_text: 'Draw two cards.\nConspire', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    C('Test Green Elf', ['G'], '1'), C('Test Green Giant', ['G'], '5'), C('Test Green Sprite', ['G'], '2'), C('Test Red Goblin', ['R'], '1'),
+  ];
+  const deck = customDeck({
+    id: 'd926', name: 'Conspire',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd926', 1: 'd926' }, deckSpecs: { d926: deck.deck }, hands: { 0: ['Test Discovery'] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const conspirePlays = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.card === find(s, 0, 'hand', 'Test Discovery') && p.conspire === true);
+  const cast = (s: GameState, conspire: boolean) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Discovery'), ...(conspire ? { conspire: true } : {}) } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered only with two untapped creatures that share a colour with it', () => {
+    expect(conspirePlays(seated(['Test Green Elf', 'Test Red Goblin']))).toEqual([]);
+    expect(conspirePlays(seated(['Test Green Elf', 'Test Green Sprite'])).length).toBe(1);
+    // A tapped one does not count.
+    const s = seated(['Test Green Elf', 'Test Green Sprite']);
+    const elf = find(s, 0, 'battlefield', 'Test Green Elf');
+    expect(conspirePlays({ ...s, instances: { ...s.instances, [elf]: { ...s.instances[elf]!, tapped: true } } })).toEqual([]);
+  });
+
+  it('paid: the two weakest sharing a colour are tapped, and the copy draws two more', () => {
+    const s = seated(['Test Green Elf', 'Test Green Giant', 'Test Green Sprite', 'Test Red Goblin']);
+    const hand = ids(s, 0, 'hand').length;
+    const after = cast(s, true);
+    const tapped = ids(after, 0, 'battlefield').filter((id) => after.instances[id]!.tapped).map((id) => nameOf(after, id)).sort();
+    expect(tapped).toEqual(['Test Green Elf', 'Test Green Sprite']);
+    expect(ids(after, 0, 'hand').length).toBe(hand - 1 + 4);
+  });
+
+  it('not paid: nothing tapped, no copy', () => {
+    const s = seated(['Test Green Elf', 'Test Green Sprite']);
+    const hand = ids(s, 0, 'hand').length;
+    const after = cast(s, false);
+    expect(ids(after, 0, 'battlefield').filter((id) => after.instances[id]!.tapped)).toEqual([]);
+    expect(ids(after, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('refused without two such creatures', () => {
+    const s = seated(['Test Green Elf', 'Test Red Goblin']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Discovery'), conspire: true } as Action)).toMatch(/two untapped creatures/);
   });
 });
 

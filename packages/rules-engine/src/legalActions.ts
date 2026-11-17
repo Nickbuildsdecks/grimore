@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt } from './cardActions.js';
 import {
   allAbilitiesLost, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import { casualtyOptions,
+import { conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
   discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, sacrificeWords, stackTop, unblockedAttackersOf,
 } from './automation.js';
@@ -131,6 +131,8 @@ export interface LegalPlay {
   readonly kicked?: boolean;
   /** Set on the play that pays casualty (D923): `sacrificeOptions` are the creatures it may take. */
   readonly casualty?: boolean;
+  /** Set on the play that pays conspire (D926). */
+  readonly conspire?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -2195,6 +2197,19 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
     });
 
+    // Conspire (D926): the same cast again, with two creatures sharing a colour with it to tap.
+    if (script?.conspire === true && !offered && conspireOptions(state, seat, id, ch.colors).length >= 2) {
+      out.push({
+        kind: 'cast', card: id, name: ch.name, conspire: true,
+        description: `${castLabel} with conspire (tapping two creatures that share a color with it, and copy it)`,
+        manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
+        targetSpecs: specs, candidates,
+        ...(flashback ? { flashback: true } : {}),
+        ...(foretold ? { foretold: true } : {}),
+        ...(half === undefined ? {} : { half }),
+        isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
+      });
+    }
     /*
       Casualty (D923): the same cast again, with a creature of power N or greater to sacrifice as it
       is cast, and a copy for it. Only beside a cast with no sacrifice of its own to make.

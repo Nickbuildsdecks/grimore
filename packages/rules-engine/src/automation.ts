@@ -149,6 +149,19 @@ export function bottomOwed(state: GameState, seat: SeatIndex): number {
  * Empty when the cost asks for no sacrifice, which is also how `legalActions` tells an ability
  * that needs one from an ability that does not.
  */
+/**
+ * Conspire's creatures (D926): untapped creatures this seat controls that share a colour with the
+ * spell, weakest first, so the two the engine taps are the two that matter least.
+ */
+export function conspireOptions(state: GameState, seat: SeatIndex, source: string, colours: readonly string[]): string[] {
+  return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || id === source || inst.tapped) return false;
+    const ch = characteristicsOf(state, inst);
+    return ch.isCreature && ch.colors.some((colour) => colours.includes(colour));
+  }).sort((a, b) => characteristicsOf(state, state.instances[a]!).power - characteristicsOf(state, state.instances[b]!).power);
+}
+
 /** Casualty N's sacrifices (D923): creatures this seat controls with power N or greater, by live power. */
 export function casualtyOptions(state: GameState, seat: SeatIndex, source: string, n: number): string[] {
   return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {

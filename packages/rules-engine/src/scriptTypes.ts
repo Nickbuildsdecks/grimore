@@ -3901,6 +3901,13 @@ export interface CardScript {
    */
   readonly casualty?: number;
   /**
+   * Conspire (D926, CR 702.78a): "As you cast this spell, you may tap two untapped creatures you
+   * control that share a color with it. When you do, copy it." A second cast play
+   * (`conspire: true`); the engine taps the two weakest such creatures as the spell is cast (they
+   * are then not mana sources for it), and the card's cast trigger copies it, as casualty's does.
+   */
+  readonly conspire?: true;
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and

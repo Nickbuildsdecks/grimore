@@ -486,6 +486,8 @@ function playAction(
     "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree", "pitchCast",
     // Casualty (D923): its creature is the play's `sacrificeOptions`, chosen like any sacrifice.
     "casualty",
+    // Conspire (D926): the engine taps the two creatures, so the flag is all there is to send.
+    "conspire",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

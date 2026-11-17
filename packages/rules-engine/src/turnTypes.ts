@@ -373,6 +373,8 @@ export interface StackObject {
   readonly castFrom?: ZoneId;
   /** Casualty was paid as this spell was cast (D923): its cast trigger copies it. */
   readonly casualtyPaid?: true;
+  /** Conspire was paid as this spell was cast (D926): its cast trigger copies it. */
+  readonly conspired?: true;
   /**
    * How many colours of mana were spent to cast this spell (D917, CR 702.44a sunburst, converge).
    * Absent for none: a copy and a spell cast without paying its mana cost spent nothing.
@@ -1655,6 +1657,8 @@ export interface AutoCastAction {
   readonly kicked?: boolean;
   /** Pay casualty (D923): `sacrifice` names the creature, of power N or greater. */
   readonly casualty?: boolean;
+  /** Pay conspire (D926): the engine taps the two creatures. */
+  readonly conspire?: boolean;
   /**
    * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
    * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an

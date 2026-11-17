@@ -48548,3 +48548,34 @@ attacker was tapped; the vigilance attacker pinned it.
     engine tests: 4,924, all passing
 
 Coverage: 11,915 of 31,743 cards (+9), 31,607 of 59,509 lines (+12). Staples: 238 of 244.
+
+## D926 — Conspire
+
+"Conspire (As you cast this spell, you may tap two untapped creatures you control that share a color
+with it. When you do, copy it.)" (CR 702.78a), from Shadowmoor and Lord of the Rings: Ghastly
+Discovery, Burn Trail, Rally the Galadhrim and others.
+
+Casualty's shape (D923) with a different cost:
+- **A second cast play** (`conspire: true`) is offered when the caster has two untapped creatures
+  sharing a colour with the spell.
+- **The cast taps two of them before the mana is paid**, so neither can also tap for it.
+- **The card's cast trigger** copies the spell when `StackObject.conspired` says so.
+- **Which two, stated:** the engine picks the two weakest, because the table has no way yet to
+  choose two creatures for a cast. A player who would rather tap others taps them for mana first.
+
+Not read: cards whose other lines don't read (Disturbing Plot, Mine Excavation: a graveyard return
+to its owner's hand).
+
+**Tests.** 5 engine tests:
+- the card reads;
+- conspire is offered only with two untapped creatures that share a colour, not counting a tapped
+  one or one of another colour;
+- paid, the two weakest green creatures tap and the copy draws two more;
+- not paid, nothing taps and there is no copy;
+- refused without two such creatures.
+
+Faults injected by hand: 7 of 7 caught. The untapped check was pinned by the tapped-creature row.
+
+    engine tests: 4,929, all passing
+
+Coverage: 11,924 of 31,743 cards (+9), 31,618 of 59,509 lines (+11). Staples: 238 of 244.
