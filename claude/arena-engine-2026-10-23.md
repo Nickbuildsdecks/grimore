@@ -30669,3 +30669,34 @@ were missed at first and pinned by the spell test.
     engine tests: 4,860, all passing
 
 Coverage: 11,745 of 31,743 cards (+37), 31,348 of 59,509 lines (+65). Staples: 238 of 244.
+
+## D914 — More blocking requirements
+
+Three shapes on D913's requirements, each a reading with nothing new underneath:
+- **"Target creature gets +N/+N until end of turn and must be blocked this turn if able"**
+  (Compelled Duel, Emergent Growth), and the keyword form "gains deathtouch until end of turn and
+  must be blocked …" (Deadly Allure). One `PumpOptions` for both halves, so they expire together;
+  aimed at your own attacker.
+- **"Whenever ~ attacks, (up to one) target creature defending player controls blocks it this
+  combat if able"** (Avalanche Tusker). The target filter reads the defending player off the
+  source's attack, or with none, off the controller's attacks. "It" is the trigger's subject, which
+  for the card's own attack is the card.
+- **Lure itself:** "All creatures able to block enchanted creature do so", an Aura whose line names
+  its subject in the middle, so `attachmentScriptFor` now accepts it as the static line.
+
+Not read: "When ~ attacks" (5 sentences in the corpus, Impetuous Devils among them), and Lure riders
+joined to a size ("gets +4/+4 and has first strike, and all creatures able to block it do so").
+
+**Tests.** 5 engine tests:
+- four printings read;
+- the pump is 5 power and must be blocked;
+- deathtouch and must be blocked;
+- the Lure Aura draws both blockers;
+- the taunting attack refuses your own creature as its target, and binds the defender's to the
+  attacker.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 4,865, all passing
+
+Coverage: 11,751 of 31,743 cards (+6), 31,354 of 59,509 lines (+6). Staples: 238 of 244.

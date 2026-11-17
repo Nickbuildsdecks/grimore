@@ -15270,6 +15270,10 @@ function attachmentBonus(
   grantedTriggers?: readonly TriggerDef[];
   grantedAbilities?: readonly AbilityDef[];
 } | null {
+  // Lure (D914): "All creatures able to block enchanted creature do so." See `ContinuousEffect.lure`.
+  if (/^all creatures able to block (?:enchanted|equipped) creature do so\.?$/i.test(plain(line).trim())) {
+    return { bonus: { lure: true }, harmful: false };
+  }
   const matched = /^(?:equipped|enchanted) (?:creature|land|artifact|enchantment|permanent) (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   const tail = matched[1]!.trim();
@@ -15493,7 +15497,10 @@ export function attachmentScriptFor(
     land has '{T}: Add one mana of any color.'" is Abundant Growth, and 33 legal lines on Auras for
     lands were unread for no reason but this pattern.
   */
-  const subject = isAura ? /^enchanted (?:creature|land|artifact|enchantment|permanent)\b/i : /^equipped creature/i;
+  // Lure's line names its subject in the middle (D914); see `attachmentBonus`.
+  const subject = isAura
+    ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so)/i
+    : /^(?:equipped creature|all creatures able to block equipped creature do so)/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
   const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
   /*
@@ -22122,6 +22129,33 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   const blocksAny = /^((?:up to \w+ )?target [^.]+?) blocks this (?:turn|combat) if able$/i.exec(text);
   const blockedBy = /^((?:up to \w+ )?target [^.]+?) must be blocked this turn if able$/i.exec(text);
   const lures = /^all creatures able to block (target [^.]+?) this turn do so$/i.exec(text);
+  /*
+    And on an attack trigger (D914): "Whenever ~ attacks, target creature defending player controls
+    blocks it this combat if able" (Avalanche Tusker; "up to one" on Impetuous Devils). "It" is the
+    attacking creature, which is the trigger's subject and, for the card's own attack, the card. The
+    defending player is that attack's, or with no attack of the source's to read, any player one of
+    the controller's creatures is attacking.
+  */
+  const defended = /^(up to one )?target creature defending player controls blocks (?:it|~) this (?:turn|combat) if able$/i
+    .exec(text.replace(new RegExp(`\\b(?:${self})\\b`, 'g'), '~'));
+  if (defended !== null) {
+    return {
+      targets: [{
+        kind: 'creature',
+        description: 'target creature defending player controls',
+        ...(defended[1] === undefined ? {} : { optional: true }),
+        filter: (state, candidate, controller, source) => {
+          if (candidate.kind !== 'card') return false;
+          const own = state.combat.attacks.find((a) => a.attacker === source);
+          const defenders = own !== undefined ? [own.defender] : state.combat.attacks
+            .filter((a) => state.instances[a.attacker]?.zoneSeat === controller).map((a) => a.defender);
+          const seat = state.instances[candidate.id]?.zoneSeat;
+          return seat !== undefined && defenders.includes(seat);
+        },
+      }],
+      effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, { mustBlockAttacker: c.subject ?? c.source }),
+    };
+  }
   const required = blocksMe ?? blocksAny ?? blockedBy ?? lures;
   if (required !== null) {
     const helps = required === blockedBy || required === lures;
@@ -22233,6 +22267,28 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     refuses "the same target cannot be chosen twice", so Leeching Bite's two creatures are already
     forced apart by the engine. The same finding D542 recorded for Pit Fight.
   */
+  /*
+    The pump that also draws a blocker (D914): "Target creature gets +3/+3 until end of turn and must
+    be blocked this turn if able" (Compelled Duel, Emergent Growth), and the keyword form "gains
+    deathtouch until end of turn and must be blocked this turn if able" (Deadly Allure). One
+    `PumpOptions` for both halves, so they expire together. A help to your own attacker.
+  */
+  const drawn = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) (?:gets ([+]\\d+)\\/([+]\\d+)|gains ([a-z][a-z' ]*?))`
+    + ` until end of turn and must be blocked this turn if able$`,
+    'i',
+  ).exec(text);
+  if (drawn !== null) {
+    const bonus = drawn[2] !== undefined ? pumpAndGrant(Number(drawn[2]), Number(drawn[3]), undefined)
+      : (() => { const words = grantedKeywordList(drawn[4]!); return words === null ? null : { keywords: words }; })();
+    const spec = targetSpecFrom(drawn[1]!, true);
+    if (spec !== null && bonus !== null && pointsAtAPermanent(spec) && (spec.count ?? 1) === 1) {
+      return {
+        targets: [{ ...spec, helpsInCombat: true }],
+        effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, { ...bonus, mustBeBlocked: true }),
+      };
+    }
+  }
   const sized = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?)`
     + ` gets ([-+]\\d+)\\/([-+]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,

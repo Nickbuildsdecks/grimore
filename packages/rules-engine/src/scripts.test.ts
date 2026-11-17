@@ -17178,6 +17178,76 @@ describe('blocking requirements: lure, provoke, "must be blocked if able" (D913)
   });
 });
 
+describe('more blocking requirements: a pump that draws blockers, a taunting attack, a Lure Aura (D914)', () => {
+  const ROWS = [
+    { name: 'Test Duel', type_line: 'Instant', oracle_text: 'Target creature gets +3/+3 until end of turn and must be blocked this turn if able.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Allure', type_line: 'Instant', oracle_text: 'Target creature gains deathtouch until end of turn and must be blocked this turn if able.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Tusker', type_line: 'Creature — Elephant', oracle_text: 'Whenever Test Tusker attacks, target creature defending player controls blocks it this combat if able.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '6', toughness: '4' },
+    { name: 'Test Lure Aura', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nAll creatures able to block enchanted creature do so.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'kw914', name: 'More block requirements',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const theirs = (s: GameState) => ids(s, 1, 'battlefield').filter((i) => nameOf(s, i) === 'Test Bear');
+  const block = (s: GameState, blocks: { blocker: string; attacker: string }[]) => refusal(s, { type: 'auto:block', by: 1, blocks });
+  // Puts `spell` in seat 0's hand, casts it at the first Test Bear seat 0 controls, then attacks with that Bear.
+  const castThenAttack = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw914', 1: 'kw914' }, deckSpecs: { kw914: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: bear }] } as Action), 12);
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] }), 12);
+    return { s: advanceTo(s, 'declare-blockers'), bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a pump that must be blocked: the size and the requirement together', () => {
+    const { s, bear } = castThenAttack('Test Duel');
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(5);
+    expect(block(s, [])).toMatch(/Test Bear must be blocked if able/);
+    expect(block(s, [{ blocker: theirs(s)[0]!, attacker: bear }])).toBeNull();
+  });
+
+  it('a keyword that must be blocked: deathtouch and the requirement together', () => {
+    const { s, bear } = castThenAttack('Test Allure');
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('deathtouch')).toBe(true);
+    expect(block(s, [])).toMatch(/Test Bear must be blocked if able/);
+  });
+
+  it('a Lure Aura: every creature able to block the enchanted one does', () => {
+    const { s, bear } = castThenAttack('Test Lure Aura');
+    const [a, b] = theirs(s);
+    expect(block(s, [{ blocker: a!, attacker: bear }])).toMatch(/must block Test Bear if able/);
+    expect(block(s, [{ blocker: a!, attacker: bear }, { blocker: b!, attacker: bear }])).toBeNull();
+  });
+
+  it('a taunting attack: only the defending player\'s creature, which must block the attacker', () => {
+    const start = advanceTo(arena({
+      decks: { 0: 'kw914', 1: 'kw914' }, deckSpecs: { kw914: deck.deck },
+      battlefield: { 0: ['Test Tusker', 'Test Bear'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const tusker = find(start, 0, 'battlefield', 'Test Tusker');
+    const bear = find(start, 0, 'battlefield', 'Test Bear');
+    let s = drain(apply(start, { type: 'auto:attack', by: 0, attackers: [{ attacker: tusker, defender: 1 }, { attacker: bear, defender: 1 }] }), 12);
+    expect(s.pendingChoice).not.toBeNull();
+    expect(refusal(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] })).not.toBeNull();
+    const [taunted, other] = theirs(s);
+    s = advanceTo(drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: taunted! }] }), 12), 'declare-blockers');
+    expect(block(s, [{ blocker: taunted!, attacker: bear }])).toMatch(/must block Test Tusker if able/);
+    expect(block(s, [{ blocker: taunted!, attacker: tusker }, { blocker: other!, attacker: bear }])).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
