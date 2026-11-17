@@ -36,6 +36,8 @@ export interface EffectContext {
   readonly source: string;
   readonly controller: SeatIndex;
   readonly targets: readonly Target[];
+  /** See \`StackObject.targetSlots\` (D953): the targets as chosen, \`null\` where one has gone. */
+  readonly targetSlots?: readonly (Target | null)[];
   /** The chosen value of X, 0 when the cost had none. */
   readonly x: number;
   /**

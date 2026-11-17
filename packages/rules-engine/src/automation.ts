@@ -2566,14 +2566,18 @@ function aboutSeqsFor(
  */
 function aboutNow(
   state: GameState, object: StackObject,
-): { subject: string | undefined; blocked: string | undefined } {
+): { subject: string | undefined; blocked: string | undefined; targetSlots?: readonly (Target | null)[] } {
   const same = (id: string | undefined): string | undefined => {
     if (id === undefined) return undefined;
     const was = object.aboutSeqs?.[id];
     const now = state.instances[id]?.objectSeq;
     return was === undefined || now === undefined || now === was ? id : undefined;
   };
-  return { subject: same(object.subject), blocked: same(object.blocked) };
+  return {
+    subject: same(object.subject), blocked: same(object.blocked),
+    // The targets as chosen (D953), for a line of several targeting sentences. See `StackObject.targetSlots`.
+    ...(object.targetSlots === undefined ? {} : { targetSlots: object.targetSlots }),
+  };
 }
 
 function pushAbility(
@@ -5115,6 +5119,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       ));
     object = {
       ...object, targets: live, ...(division === undefined ? {} : { division }),
+      targetSlots: chosen.map((target) => (stillTheObject(state, target, was.targetSeqs) ? target : null)),
     };
     state = { ...state, stackObjects: { ...state.stackObjects, [object.id]: object } };
   }

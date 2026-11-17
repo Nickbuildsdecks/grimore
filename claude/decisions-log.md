@@ -49635,3 +49635,43 @@ composer's route switched off).
     engine tests: 5,074, all passing
 
 Coverage: 12,368 of 31,743 cards (+8), 32,354 of 59,509 lines (+13). Staples: 241 of 244.
+
+## D953 — Two targeting sentences in one line
+
+"Target creature gets +2/+2 until end of turn. Another target creature gets -2/-2 until end of
+turn." "Destroy target creature. ~ deals 2 damage to target player or planeswalker." "Target
+player draws two cards. Put a +1/+1 counter on up to one target creature you control." 154 legal
+lines print two targeting sentences, and `composeEffects` refused every one. The reason was sound:
+a resolution has one `targets` list, and two parts reading it would act on the same object.
+
+How it is read:
+- **The specs are concatenated**, and each targeting part reads its own slice of the targets,
+  counted from the specs before it.
+- **A target that has gone keeps its place.** `resolveTop` drops targets that are no longer the
+  object chosen (CR 608.2b), which shifts every position after it, so the second sentence would have
+  acted on the first sentence's slot. It now also records `StackObject.targetSlots`, the targets as
+  chosen with `null` for the gone ones, and the context carries it (through `aboutNow`). A part
+  slices from there, so the -2/-2 still lands on its own creature when the +2/+2's was blinked.
+- **Positions are a fact of the text only when every spec but the last asks an exact number**, so
+  an "up to" anywhere but last is refused. So is a targeting part that asks a question (its "target
+  player" would be read off the whole list), one that divides, a possessive borrow, and a blink.
+  The engine's existing rule that one object is never chosen twice in a resolution keeps "another
+  target creature" apart.
+
+39 legal cards now read whole.
+
+**Tests.** 4 engine tests:
+- the cards read, and an "up to" before the last spec stays unread;
+- each sentence acts on its own target;
+- the first target blinked before it resolves: the second still gets its own -2/-2;
+- "up to one" last: chosen gets the counter, left out the draw alone.
+
+Superseded rows: three refusals in `compile.test.ts` now assert the two-spec reading. They are
+Two Targets, the "destroy target creature and destroy target enchantment" conjunction, and D454's
+Consume Strength pair.
+
+Faults injected by hand: 6 of 6 caught.
+
+    engine tests: 5,078, all passing
+
+Coverage: 12,407 of 31,743 cards (+39), 32,414 of 59,509 lines (+60). Staples: 241 of 244.

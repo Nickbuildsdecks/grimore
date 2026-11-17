@@ -593,12 +593,12 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
     });
 
-    it('refuses a spell whose two halves each want their own target', () => {
+    it('reads a spell whose two halves each want their own target, since D953', () => {
       /*
-        `CardScript.targets` is one list for the whole spell, filled once before resolution. Two
-        parts each wanting a target of their own — "Target creature you control fights target
-        creature you don't control" is the printed shape — would silently be handed the **same**
-        target by a composition that merged them. A wrong card, not an unread one, so it is refused.
+        Refused until D953, because one list for the whole spell would have handed both parts the
+        **same** target. D953 concatenates the specs and gives each part its own slice of the
+        targets (from \`targetSlots\` once one has gone), and its engine test holds that each half
+        acts on its own object.
       */
       const two = compileCard({
         name: 'Two Targets', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
@@ -606,8 +606,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       expect(two.ok).toBe(true);
       if (!two.ok) return;
-      expect(two.script).toBeUndefined();
-      expect(two.unread).toHaveLength(2);
+      expect(two.unread).toEqual([]);
+      expect(two.script?.targets).toHaveLength(2);
     });
   });
 
@@ -3817,14 +3817,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 1);
     });
 
-    it('refuses a conjunction whose halves each want their own target', () => {
-      /*
-        `targets` is one list per script, so two targeting halves would be handed the same object.
-        `composeEffects` already refuses that and this is the conjunction reaching it.
-      */
+    it('reads a conjunction whose halves each want their own target, since D953', () => {
+      // Each half its own slice of the targets (D953); see the row above.
       const two = spell('Destroy target creature and destroy target enchantment.');
       expect(two.ok).toBe(true);
-      if (two.ok) expect(two.script).toBeUndefined();
+      if (two.ok) expect(two.script?.targets).toHaveLength(2);
     });
 
     it('refuses a conjunction with one half nothing can read', () => {
@@ -9571,9 +9568,8 @@ describe('the shrink, which is the pump with one character changed (D454)', () =
       refuses "the same target cannot be chosen twice". So the engine already forces Leeching Bite's
       two creatures apart, which is the same finding D542 recorded for Pit Fight.
 
-      The clause reads; the *line* Consume Strength prints is still unread, because two targeting
-      parts cannot share one `targets` list — `composeEffects`' rule, asserted in the second half
-      here so the limit is recorded where someone will look for it.
+      The *line* Consume Strength prints was unread until D953, which lets two targeting parts each
+      read their own slice of one \`targets\` list.
     */
     const clause = spell('Another target creature gets -2/-2 until end of turn.');
     expect(unreadLines(clause)).toEqual([]);
@@ -9581,7 +9577,7 @@ describe('the shrink, which is the pump with one character changed (D454)', () =
 
     const pair = spell('Target creature gets +2/+2 until end of turn. Another target creature gets '
       + '-2/-2 until end of turn.');
-    expect(unreadLines(pair).length).toBe(1);
+    expect(unreadLines(pair)).toEqual([]);
   });
 
   it('wears off at end of turn, which on a shrink is what kills the creature', () => {

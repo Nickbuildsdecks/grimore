@@ -20244,6 +20244,72 @@ describe('"You may X. If you do, Y" in the middle of a spell (D952)', () => {
   });
 });
 
+describe('two targeting sentences in one line (D953)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    S('Test Duel', 'Target creature gets +2/+2 until end of turn. Another target creature gets -2/-2 until end of turn.'),
+    S('Test Gift', 'Target player draws two cards. Put a +1/+1 counter on up to one target creature you control.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd953', name: 'Two targets',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd953', 1: 'd953' }, deckSpecs: { d953: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Swamp', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole, and an "up to" before the last spec stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const ambiguous = compileCard(S('Test Muddle', 'Put a +1/+1 counter on up to one target creature. Destroy target artifact.') as never);
+    expect(ambiguous.ok && ambiguous.unread.length).toBe(1);
+  });
+
+  it('each sentence acts on its own target', () => {
+    const s = seated('Test Duel');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const t = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Duel'), targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }] } as Action), 30));
+    expect(characteristicsOf(t, t.instances[mine]!).power).toBe(4);
+    expect(t.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('the first target gone before it resolves: the second still gets its own -2/-2, not the +2/+2', () => {
+    const s = seated('Test Duel');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Duel'), targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }] } as Action);
+    expect(t.stackOrder).toHaveLength(1);
+    // Blinked in response: the same id, a new object, no longer the one targeted.
+    t = relocate(t, t.instances[mine]!, 'exile', 0, 'top');
+    t = relocate(t, t.instances[mine]!, 'battlefield', 0, 'top');
+    t = resolve(t);
+    expect(characteristicsOf(t, t.instances[mine]!).power).toBe(2);
+    expect(t.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('"up to one" last: chosen, the counter; left out, the draw alone', () => {
+    const s = seated('Test Gift');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const hand = ids(s, 0, 'hand').length - 1;
+    const card = find(s, 0, 'hand', 'Test Gift');
+    const both = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'player', seat: 0 }, { kind: 'card', id: mine }] } as Action), 30));
+    expect(both.instances[mine]!.counters['+1/+1']).toBe(1);
+    expect(ids(both, 0, 'hand').length).toBe(hand + 2);
+    const drawOnly = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'player', seat: 0 }] } as Action), 30));
+    expect(drawOnly.instances[mine]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(ids(drawOnly, 0, 'hand').length).toBe(hand + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

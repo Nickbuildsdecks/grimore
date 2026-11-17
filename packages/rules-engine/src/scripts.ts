@@ -25196,8 +25196,38 @@ function composeEffects(
   }
   if (parts.length === 1) return parts[0]!;
 
-  // See the docblock: two target choices cannot share one `targets` list.
-  if (targeted.length > 1) return null;
+  /*
+    **Two targeting sentences in one line** (D953): "Target creature gets +2/+2 until end of turn.
+    Another target creature gets -2/-2 until end of turn." The specs are concatenated, and each part
+    reads its own slice of the targets, from `targetSlots` when a target has gone so the second
+    sentence still acts on its own target. Positions are a fact of the text only when every spec
+    but the last asks for an exact number, so an "up to" anywhere but last is refused, as is a
+    part that asks a question (its 'target player' would be read off the whole list) or divides.
+    A pronoun's borrow is already refused above with two targeting parts.
+  */
+  let multiSpecs: TargetSpec[] | undefined;
+  if (targeted.length > 1) {
+    if (possessive || parts.some((part) => part.returnsTheObject === true)) return null;
+    const specs = targeted.flatMap((part) => part.targets ?? []);
+    if (specs.slice(0, -1).some((spec) => spec.optional === true)) return null;
+    if (targeted.some((part) => (part.decisions ?? []).length > 0 || dividesAQuantity(part))) return null;
+    let offset = 0;
+    targeted.forEach((part, i) => {
+      const from = offset;
+      const n = (part.targets ?? []).reduce((sum, spec) => sum + Math.max(1, spec.count ?? 1), 0);
+      const last = i === targeted.length - 1;
+      const own = (c: EffectContext): readonly Target[] => {
+        const slots = c.targetSlots ?? c.targets;
+        return (last ? slots.slice(from) : slots.slice(from, from + n)).filter((t): t is Target => t !== null);
+      };
+      const aim = (fn: EffectFn): EffectFn => (c) => fn({ ...c, targets: own(c) });
+      parts[parts.indexOf(part)] = {
+        ...part, effect: aim(part.effect), ...(part.immediate === undefined ? {} : { immediate: aim(part.immediate) }),
+      };
+      offset += n;
+    });
+    multiSpecs = specs;
+  }
 
   /*
     **At most one clause may read its own answers**, which is the same rule as the one above it and
@@ -25320,7 +25350,7 @@ function composeEffects(
     `targetSpecFrom` a hard `false` and so no spec in this family arrives carrying an aim.
   */
   const ownSide = /\byou (?:control|own)\b/i;
-  const specsOut = targeted[0]?.targets === undefined ? undefined
+  const specsOut = multiSpecs !== undefined ? multiSpecs : targeted[0]?.targets === undefined ? undefined
     : blinked
       ? targeted[0]!.targets!.map((spec) => ({
         ...spec,

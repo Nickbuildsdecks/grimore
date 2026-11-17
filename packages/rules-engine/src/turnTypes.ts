@@ -365,6 +365,13 @@ export interface StackObject {
    */
   readonly subjectCounters?: Readonly<Record<string, number>>;
   readonly targetSeqs?: Readonly<Record<string, number>>;
+  /**
+   * The targets as chosen, position by position, with \`null\` where one has since stopped being the
+   * object it was (D953). Set only when \`resolveTop\` drops a target; \`targets\` is then the live
+   * ones. A line of several targeting sentences reads its own slice from here, so the second
+   * sentence still acts on its own target when the first one's has gone.
+   */
+  readonly targetSlots?: readonly (Target | null)[];
   readonly x?: number;
   /**
    * How many spells had been cast this turn **before this one** (CR 702.40a).
