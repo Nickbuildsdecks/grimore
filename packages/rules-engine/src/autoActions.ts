@@ -51,7 +51,7 @@ import { blockRequirementIssue } from './combat.js';
   with a hand-written script this is exactly `scriptFor(def.name)`, so nothing in the pool changes.
 */
 import { scriptForCard } from './derive.js';
-import { FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScript, type TargetSpec } from './scriptTypes.js';
+import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
@@ -541,9 +541,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     not flagged, so it does not rebound again. See `StackObject.rebounding`.
   */
   const rebounding = script?.rebound === true && inst.zone === 'hand' && inst.zoneSeat === action.by;
-  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast) {
+  // Awaken (D932): an alternative cost, validated with the others.
+  const awakened = action.awakened === true;
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
-      : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : 'free cast';
+      : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : awakened ? 'awaken' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -553,12 +555,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
       : bestowed ? script?.bestow : spectacled ? script?.spectacle
-        : overloaded ? script?.overload : pitchCast ? script?.pitch : script?.freeWithCommander) === undefined) {
+        : overloaded ? script?.overload : pitchCast ? script?.pitch : awakened ? script?.awaken : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     // Surge (D928) is spectacle's flag with its own condition: another spell cast this turn.
@@ -597,7 +599,22 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // `checkTargets` every other cast goes through.
     : overloaded ? []
       : modes === undefined ? spellTargets(script) : modeTargetSpecs(modesOf(script, modes));
-  const chosen = action.targets ?? [];
+  /*
+    Awaken's land (D932) is the last target sent, checked against its own spec and held apart from
+    the spell's targets on `StackObject.awakenOn`.
+  */
+  const sent = action.targets ?? [];
+  let awakenOn: string | undefined;
+  if (awakened) {
+    const land = sent[sent.length - 1];
+    const landCheck = land === undefined ? { ok: false as const, reason: 'choose a land you control to awaken' }
+      : checkTargets(state, [AWAKEN_LAND], [land], action.by, inst.id);
+    if (!landCheck.ok || land === undefined || land.kind !== 'card') {
+      throw new EngineError('RULE_NOT_APPLICABLE', landCheck.reason ?? 'choose a land you control to awaken');
+    }
+    awakenOn = land.id;
+  }
+  const chosen = awakened ? sent.slice(0, -1) : sent;
   const check = checkTargets(state, specs, chosen, action.by, inst.id);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
 
@@ -758,6 +775,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
             // And bestow, which replaces the cost the way the other two do — and is the only one
             // of the three where what you are paying for is a different kind of permanent.
             : bestowed ? script?.bestow?.cost
+            // And awaken (D932), another that replaces the printed cost.
+            : awakened ? script?.awaken?.cost
               // And spectacle, the fifth and last of the chain: cheaper again, and the only one
               // whose availability is a fact about the turn rather than about the card.
               : spectacled ? script?.spectacle?.cost
@@ -1122,6 +1141,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(action.casualty === true ? { casualtyPaid: true as const } : {}),
     // And conspire (D926).
     ...(action.conspire === true ? { conspired: true as const } : {}),
+    // And awaken's land (D932).
+    ...(awakenOn === undefined ? {} : { awakenOn }),
     // And whether a sorcery could have been cast just now (D727), for Necromancy's cleanup sacrifice.
     ...(atSorcerySpeed(state, action.by) ? {} : { castOutsideSorceryTiming: true as const }),
     ...(action.x === undefined ? {} : { x: action.x }),

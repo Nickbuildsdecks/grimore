@@ -3933,6 +3933,14 @@ export interface CardScript {
    */
   readonly emerge?: { readonly cost: string };
   /**
+   * Awaken N (D932, CR 702.113a): "If you cast this spell for <cost>, also put N +1/+1 counters on
+   * target land you control and it becomes a 0/0 Elemental creature with haste. It's still a land."
+   * An alternative cost (`awakened: true`) whose play adds `AWAKEN_LAND` as its last target spec;
+   * the cast moves that target to `StackObject.awakenOn`, out of the spell's own targets, so nothing
+   * the spell does to "each target" touches the land.
+   */
+  readonly awaken?: { readonly cost: string; readonly n: number };
+  /**
    * Squad (D924, CR 702.157a): "As an additional cost to cast this spell, you may pay <cost> any
    * number of times. When this creature enters, create that many tokens that are copies of it." The
    * payment is replicate's (`replicate` is set to the same cost, so the same plays are offered and
@@ -4055,4 +4063,18 @@ export function morphCostText(cost: AbilityCost): string {
  * In the rule rather than on the card, like morph's {3}, and a constant both halves read —
  * `legalActions` offers the special action and the reducer pays for it.
  */
+/** Awaken's land (D932): "target land you control". See `CardScript.awaken`. */
+export const AWAKEN_LAND: TargetSpec = {
+  kind: 'permanent',
+  description: 'target land you control',
+  friendly: true,
+  filter: (state, candidate, controller) => {
+    if (candidate.kind !== 'card') return false;
+    const inst = state.instances[candidate.id];
+    if (inst === undefined || inst.zoneSeat !== controller) return false;
+    const def = state.cardDefs[inst.defKey];
+    return /\bLand\b/.test(def?.typeLine ?? '');
+  },
+};
+
 export const FORETELL_COST = '{2}';

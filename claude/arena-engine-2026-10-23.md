@@ -31332,3 +31332,40 @@ the routine forbids. D930 was pushed only after a clean gate on its own tree.
     engine tests: 4,956, all passing
 
 Coverage: 11,975 of 31,743 cards (+14), 31,708 of 59,509 lines (+31). Staples: 239 of 244.
+
+## D932 — Awaken
+
+"Awaken N—{cost} (If you cast this spell for {cost}, also put N +1/+1 counters on target land you
+control and it becomes a 0/0 Elemental creature with haste. It's still a land.)" (CR 702.113a), from
+Battle for Zendikar: Coastal Discovery, Ruinous Path, Planar Outburst, Scatter to the Winds and
+others.
+
+How it is read:
+- **`CardScript.awaken {cost, n}`** and an alternative-cost play `awakened: true`, validated with
+  the other alternative costs (one per cast, from hand).
+- **The land is a target.** The play's target specs are the spell's own followed by `AWAKEN_LAND`
+  ("target land you control"), so the table asks for it like any target.
+  - The cast checks it against that spec and moves it onto `StackObject.awakenOn`, out of the
+    spell's own targets. Nothing the spell does to "target creature" or "each target" can touch it.
+  - **The approximation, stated:** a spell whose only target is the land does not fizzle when the
+    land becomes illegal; it resolves without awakening.
+- **After the spell's own effect,** if the land is still a land its caster controls, it gets N +1/+1
+  counters and a permanent effect: Creature, Elemental, base 0/0, haste. The land itself is the
+  effect's source. The first version used the spell, and a permanent effect leaves with its source,
+  so the animation vanished as the spell went to the graveyard. The test caught it.
+- **The plumbing:** the computer and the web table forward the flag.
+
+Not read: Encircling Fissure, Ondu Rising and Part the Waterveil, whose other sentences don't read.
+
+**Tests.** 5 engine tests:
+- both printings read;
+- the play's last target is "target land you control", offering only the caster's Island;
+- awakened, the spell draws its two and the Island is a 2/2 Elemental creature land with haste;
+- a destroy spell kills its creature and leaves the land, at 1/1;
+- refused with no land or the opponent's land, and cast normally no land changes.
+
+Faults injected by hand: 7 of 7 caught.
+
+    engine tests: 4,961, all passing
+
+Coverage: 11,987 of 31,743 cards (+12), 31,723 of 59,509 lines (+15). Staples: 239 of 244.

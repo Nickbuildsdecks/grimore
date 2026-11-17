@@ -29,7 +29,7 @@ import {
 } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
-import {
+import { AWAKEN_LAND,
   FORETELL_COST, MORPH_COST, isChoiceDecision, morphCostText, producedBy,
   type AbilityCost, type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
@@ -136,6 +136,8 @@ export interface LegalPlay {
   readonly conspire?: boolean;
   /** Set on the play that casts for the emerge cost (D929): `sacrificeOptions` are its creatures. */
   readonly emerged?: boolean;
+  /** Set on the play that casts for the awaken cost (D932): its last target spec is the land. */
+  readonly awakened?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -1820,6 +1822,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
             note: `alternative cost (exile a ${COLOUR_NAMES[script.pitch.colour]} card from your hand${script.pitch.life === undefined ? '' : ` and pay ${script.pitch.life} life`})`,
             specs: specsFor(script),
           }]),
+        // Awaken (D932): the spell's own targets, then the land to awaken.
+        ...(script?.awaken === undefined ? [] : [{
+          flag: 'awakened' as const,
+          cost: script.awaken.cost,
+          note: `awaken cost (${script.awaken.cost}, and a land you control becomes a 0/0 Elemental with ${script.awaken.n} +1/+1 counter${script.awaken.n === 1 ? '' : 's'} and haste)`,
+          specs: [...specsFor(script), AWAKEN_LAND] as readonly TargetSpec[],
+        }]),
         ...(script?.overload === undefined ? [] : [{
           flag: 'overloaded' as const,
           cost: script.overload.cost,

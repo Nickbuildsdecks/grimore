@@ -490,6 +490,8 @@ function playAction(
     "conspire",
     // Emerge (D929): its creature is the play's `sacrificeOptions`, like casualty's.
     "emerged",
+    // Awaken (D932): its land is the play's last target spec, chosen like any target.
+    "awakened",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true

@@ -5161,6 +5161,24 @@ function completeResolution(
     else if (modes.length > 0) next = runModes(next, modes, { ...ctx, state: next });
     else if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
     /*
+      Awaken (D932): the land chosen as the spell was cast, if it is still a land its caster controls,
+      gets N +1/+1 counters and becomes a 0/0 Elemental creature with haste for good. After the
+      spell's own effect, as the printed "also" says.
+    */
+    if (object.awakenOn !== undefined && script?.awaken !== undefined) {
+      const land = next.instances[object.awakenOn];
+      if (land !== undefined && land.zone === 'battlefield' && land.zoneSeat === object.controller
+        && hasType(characteristicsOf(next, land).typeLine, 'land')) {
+        next = addCounters(next, land.id, '+1/+1', script.awaken.n);
+        // The land is the effect's source: a permanent effect leaves with its source, and the spell
+        // is about to be in a graveyard.
+        next = pump(next, [land.id], land.id, object.controller, {
+          addTypes: ['Creature'], addSubtypes: ['Elemental'], setPower: 0, setToughness: 0,
+          keywords: ['haste'], duration: 'permanent',
+        });
+      }
+    }
+    /*
       Mox Diamond (D714, `CardScript.entersByDiscarding`): the land chosen is discarded and the
       permanent arrives; with none, it goes to its owner's graveyard instead of the battlefield.
     */

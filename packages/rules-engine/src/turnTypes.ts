@@ -375,6 +375,8 @@ export interface StackObject {
   readonly casualtyPaid?: true;
   /** Conspire was paid as this spell was cast (D926): its cast trigger copies it. */
   readonly conspired?: true;
+  /** The land awaken animates as this spell resolves (D932), held apart from `targets`. */
+  readonly awakenOn?: string;
   /**
    * How many colours of mana were spent to cast this spell (D917, CR 702.44a sunburst, converge).
    * Absent for none: a copy and a spell cast without paying its mana cost spent nothing.
@@ -1671,6 +1673,8 @@ export interface AutoCastAction {
   readonly conspire?: boolean;
   /** Cast for the emerge cost (D929): `sacrifice` names the creature, whose mana value it saves. */
   readonly emerged?: boolean;
+  /** Cast for the awaken cost (D932): the last of `targets` is the land you control to awaken. */
+  readonly awakened?: boolean;
   /**
    * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
    * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an

@@ -2533,6 +2533,7 @@ function candidateActions(
             ...(play.casualty === true ? { casualty: true } : {}),
             ...(play.conspire === true ? { conspire: true } : {}),
             ...(play.emerged === true ? { emerged: true } : {}),
+            ...(play.awakened === true ? { awakened: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -4891,7 +4892,7 @@ const playKey = (play: LegalPlay): string =>
   + `${play.overloaded === true ? 'o' : ''}`
   + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}`
   // And casualty (D923): the cast that sacrifices and copies is a different play from the one that does not.
-  + `${play.casualty === true ? 'c' : ''}${play.conspire === true ? 'n' : ''}${play.emerged === true ? 'm' : ''}`
+  + `${play.casualty === true ? 'c' : ''}${play.conspire === true ? 'n' : ''}${play.emerged === true ? 'm' : ''}${play.awakened === true ? 'a' : ''}`
   // And replicate's count, for the same reason one step further: the three castings of a Pyromatics
   // are three plays, and a key that could not tell them apart would read "x2 is still on offer"
   // after the printed one had been cast.

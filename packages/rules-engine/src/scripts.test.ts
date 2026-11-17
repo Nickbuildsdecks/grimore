@@ -7914,6 +7914,7 @@ describe('deck coverage', () => {
       - `script squad` (D924): squad. No pool deck has one. Driven at runtime by "squad (D924)".
       - `script conspire` (D926): conspire. No pool deck has one. Driven at runtime by "conspire (D926)".
       - `script emerge` (D929): emerge. No pool deck has one. Driven at runtime by "emerge (D929)".
+      - `script awaken` (D932): awaken. No pool deck has one. Driven at runtime by "awaken (D932)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7948,6 +7949,7 @@ describe('deck coverage', () => {
       'script squad',
       'script conspire',
       'script emerge',
+      'script awaken',
     ]);
 
     const declared = [
@@ -18402,6 +18404,75 @@ describe('warp (D931)', () => {
     let { s, card } = castFor(seated(4), false);
     s = toEnd(s);
     expect(s.instances[card]!.zone).toBe('battlefield');
+  });
+});
+
+describe('awaken (D932)', () => {
+  const ROWS = [
+    { name: 'Test Discovery', type_line: 'Sorcery', oracle_text: 'Draw two cards.\nAwaken 2—{0}', mana_cost: '{9}', cmc: 9, colors: ['U'], layout: 'normal' },
+    { name: 'Test Path', type_line: 'Sorcery', oracle_text: 'Destroy target creature.\nAwaken 1—{0}', mana_cost: '{9}', cmc: 9, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd932', name: 'Awaken',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (spell: string) => advanceTo(arena({
+    decks: { 0: 'd932', 1: 'd932' }, deckSpecs: { d932: deck.deck }, hands: { 0: [spell] },
+    battlefield: { 0: ['Island'], 1: ['Island', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState, action: Action) => {
+    let next = drain(apply(s, action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered with the land as its last target, a land you control', () => {
+    const s = seated('Test Discovery');
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Discovery') && p.awakened === true);
+    expect(play?.targetSpecs.map((t) => t.description)).toEqual(['target land you control']);
+    expect(play?.candidates[0]?.map((t) => (t.kind === 'card' ? nameOf(s, t.id) : t.kind))).toEqual(['Island']);
+  });
+
+  it('awakened: the spell resolves and the land is a hasty 0/0 Elemental with its counters, still a land', () => {
+    const s = seated('Test Discovery');
+    const island = find(s, 0, 'battlefield', 'Island');
+    const hand = ids(s, 0, 'hand').length;
+    const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Discovery'), awakened: true, targets: [{ kind: 'card', id: island }] } as Action);
+    expect(ids(after, 0, 'hand').length).toBe(hand - 1 + 2);
+    const ch = characteristicsOf(after, after.instances[island]!);
+    expect(ch.isCreature).toBe(true);
+    expect(ch.isLand).toBe(true);
+    expect(ch.power).toBe(2);
+    expect(ch.keywords.has('haste')).toBe(true);
+    expect(hasSubtype(ch.typeLine, 'Elemental')).toBe(true);
+  });
+
+  it('a spell with its own target: the land is not one of them', () => {
+    const s = seated('Test Path');
+    const island = find(s, 0, 'battlefield', 'Island');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const after = resolve(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Path'), awakened: true, targets: [{ kind: 'card', id: bear }, { kind: 'card', id: island }] } as Action);
+    expect(after.instances[bear]!.zone).toBe('graveyard');
+    expect(after.instances[island]!.zone).toBe('battlefield');
+    expect(characteristicsOf(after, after.instances[island]!).power).toBe(1);
+  });
+
+  it('refused without a land you control; not cast that way, no land changes', () => {
+    const s = seated('Test Discovery');
+    const card = find(s, 0, 'hand', 'Test Discovery');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, awakened: true } as Action)).not.toBeNull();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, awakened: true, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Island') }] } as Action)).not.toBeNull();
+    const pool = { ...s, pools: { ...s.pools, '0': { W: 0, U: 9, B: 0, R: 0, G: 0, C: 0 } } };
+    const island = find(s, 0, 'battlefield', 'Island');
+    const after = resolve(pool, { type: 'auto:cast', by: 0, card } as Action);
+    expect(characteristicsOf(after, after.instances[island]!).isCreature).toBe(false);
   });
 });
 

@@ -11347,6 +11347,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Warp (D931): dash's alternative cost and end-step trigger, ending in exile. See `CardScript.dash.warp`.
   const warp = /^warp ((?:\{[^}]+\})+)$/i.exec(text);
   if (warp !== null) return { dash: { cost: warp[1]!, warp: true }, triggers: [warpExile()] };
+  // Awaken N—{cost} (D932): see `CardScript.awaken`.
+  const awaken = /^awaken (\d+)\s*[—–-]\s*((?:\{[^}]+\})+)$/i.exec(text);
+  if (awaken !== null) return { awaken: { cost: awaken[2]!, n: Number(awaken[1]) } };
   // Emerge (D929): see `CardScript.emerge`.
   const emerge = /^emerge ((?:\{[^}]+\})+)$/i.exec(text);
   if (emerge !== null) return { emerge: { cost: emerge[1]! } };
