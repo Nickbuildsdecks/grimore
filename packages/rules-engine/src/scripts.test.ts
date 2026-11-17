@@ -19881,6 +19881,99 @@ describe('reflexive triggers: "When you do, …" (D948)', () => {
   });
 });
 
+describe('"you may sacrifice another creature", and "sacrifice it. When you do" (D949)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Butcher', 'When Test Butcher enters, you may sacrifice another creature. When you do, destroy target creature an opponent controls.'),
+    C('Test Feeder', 'When Test Feeder enters, you may sacrifice another creature. If you do, draw a card.'),
+    { name: 'Test Panorama', type_line: 'Enchantment', oracle_text: 'When Test Panorama enters, sacrifice it. When you do, draw two cards.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    C('Test Bear', '', 'Creature — Bear'),
+  ];
+  const deck = customDeck({
+    id: 'd949', name: 'Sacrifice reflexes',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string, mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd949', 1: 'd949' }, deckSpecs: { d949: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castIt = (s: GameState, card: string) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action), 30);
+    for (let i = 0; i < 8 && next.pendingDecision === null && next.pendingChoice === null && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+  const answer = (s: GameState, pick: (candidates: readonly string[]) => string | undefined) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.pendingDecision !== null; i++) {
+      const d = next.pendingDecision;
+      const chosen = d.candidates.length > 0 ? pick(d.candidates) : undefined;
+      next = drain(apply(next, chosen !== undefined
+        ? { type: 'auto:decide', by: 0, cards: [chosen] } as Action
+        : { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('sacrifice another creature, then the target: never itself, and the opponent\'s creature dies', () => {
+    let s = castIt(seated('Test Butcher', ['Test Bear']), 'Test Butcher');
+    const butcher = find(s, 0, 'battlefield', 'Test Butcher');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    s = answer(s, (candidates) => {
+      expect(candidates).not.toContain(butcher);
+      return candidates.includes(mine) ? mine : undefined;
+    });
+    expect(s.instances[mine]!.zone).toBe('graveyard');
+    expect(s.pendingChoice).not.toBeNull();
+    const [theirs] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: theirs! }] }), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[theirs!]!.zone).toBe('graveyard');
+    expect(s.instances[butcher]!.zone).toBe('battlefield');
+  });
+
+  it('declined: the sacrifice is never asked about, and nothing is aimed', () => {
+    // Two candidates, so a question that was not held back would have to be put to the player.
+    let s = castIt(seated('Test Butcher', ['Test Bear', 'Test Bear']), 'Test Butcher');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const options = s.pendingDecision?.options ?? [];
+    const no = options.find((o) => o !== 'Yes');
+    expect(no).toBeDefined();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: no! } as Action), 30);
+    expect(s.pendingDecision).toBeNull();
+    expect(s.pendingChoice).toBeNull();
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+  });
+
+  it('"If you do" with sacrifice another creature: the draw only with a sacrifice', () => {
+    let s = castIt(seated('Test Feeder', ['Test Bear']), 'Test Feeder');
+    const hand = ids(s, 0, 'hand').length;
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    s = answer(s, (candidates) => (candidates.includes(mine) ? mine : undefined));
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[mine]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('"sacrifice it. When you do": it goes, and then the draw', () => {
+    const start = seated('Test Panorama', []);
+    const before = ids(start, 0, 'hand').length;
+    let s = castIt(start, 'Test Panorama');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const panorama = Object.values(s.instances).find((inst) => s.cardDefs[inst.defKey]?.name === 'Test Panorama' && inst.owner === 0 && inst.zone !== 'library')!;
+    expect(panorama.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -35031,11 +35124,16 @@ describe('a bounce the controller chooses, not a target (D465)', () => {
     This test is here so the four cannot silently become forty: a reader that starts matching
     `you may return another…` without #337's wrapper would fail it.
   */
-  it('still cannot read "you may return another", which is #337 and four cards', () => {
+  it('reads "you may return another" since D949, which closes #337', () => {
+    /*
+      Unread until D949: "another" puts the bounce's question in a function (it needs the source),
+      and the "may" could not gate a function. D949 wraps it, and its decline test holds that a
+      declined "may" asks nothing.
+    */
     const compiled = compileCard(MECHANIC as never);
     expect(compiled.ok).toBe(true);
-    expect(compiled.ok ? compiled.unread.map((u) => u.why) : []).toEqual(['no-reader']);
-    expect(compiled.ok ? (compiled.script?.triggers ?? null) : 'not ok').toBe(null);
+    expect(compiled.ok ? compiled.unread : 'not ok').toEqual([]);
+    expect(compiled.ok ? compiled.script?.triggers?.length : 'not ok').toBe(1);
   });
 });
 
