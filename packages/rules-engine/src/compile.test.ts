@@ -12926,6 +12926,8 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
     ['Necrosynthesis', 'Whenever another creature dies, put a +1/+1 counter on this creature.'],
     ['Pillory of the Sleepless', 'At the beginning of your upkeep, you lose 1 life.'],
     ['Nurturing Presence', 'Whenever a creature you control enters, this creature gets +1/+1 until end of turn.'],
+    // "That many" is the damage dealt (D903).
+    ['Power Fist', 'Whenever this creature deals combat damage to a player, put that many +1/+1 counters on it.'],
   ])('reads the quote on printed %s', (name, inner) => {
     const read = aura(`Enchant creature\nEnchanted creature has "${inner as string}"`, name as string);
     expect(read.ok).toBe(true);
@@ -12936,8 +12938,7 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
   });
 
   it.each([
-    ['Power Fist: "that many", which refers to damage the reader cannot carry forward',
-      'Whenever this creature deals combat damage to a player, put that many +1/+1 counters on it.'],
+    // Power Fist's "that many" reads since D903, which carries the damage forward.
     ['Withercrown: an "unless" clause on a step trigger',
       'At the beginning of your upkeep, you lose 1 life unless you sacrifice this creature.'],
     // Idolized's own count ("nonland permanents you control") reads since D601; the colour count does not.

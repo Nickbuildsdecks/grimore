@@ -47719,3 +47719,46 @@ run when it starts.
     engine tests: 4,808, all passing
 
 Coverage: 11,562 of 31,743 cards (+5), 31,052 of 59,509 lines (+8). Staples: 237 of 244 (+1).
+
+## D903 — "That many" after a combat-damage trigger is the damage dealt
+
+"Whenever ~ deals combat damage to a player, draw that many cards", and the rest of the 101 legal
+lines where "that many" or "that much" follows a damage trigger.
+
+How it is read:
+- **The amount, end to end:**
+  - `hit` records how much landed on each combat hit (`dealtCombatDamage[].amount`): life lost, or
+    poison for infect, so prevention is already counted;
+  - the `combat-damage` event carries it, and `deals-damage` carries its record's amount;
+  - `TriggerAbout` → `StackObject.eventAmount` → `EffectContext.eventAmount`.
+- **The words.** The trigger reader marks "that many" / "that much" only when every event of the
+  shape is a damage event, and only if the clause has no X of its own. Elsewhere the words name
+  some other number, and no reader knows the mark.
+- **The clauses read with the mark:**
+  - draw that many cards (also with "you may");
+  - you gain that much life;
+  - that player mills that many cards (the player hit);
+  - you get that many {E};
+  - create that many Treasure tokens;
+  - put that many +1/+1 counters on it.
+- **Not read yet.** Anything that asks a question, such as "that player discards that many cards";
+  "it deals that much damage to each other opponent"; and the non-combat "deals damage to a player"
+  self trigger.
+
+**Tests.** 4 engine tests:
+- three cards read;
+- a 3/3 unblocked draws 3;
+- a 2/2 gains 2;
+- a 4/1 mills the player it hit 4;
+- blocked by a Wall, nothing happens.
+
+Power Fist's granted "put that many +1/+1 counters on it" reads now. Its D511 refusal row moves to
+that test's "reads the quote" list. A granted trigger's source is the creature that has it, so
+"it" is the equipped creature, as printed.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 4,805, all passing (merged with the other session's D724 and D725, whose Chain Lightning
+    reader sits beside this one)
+
+Coverage: 11,544 of 31,743 cards (+12), 31,035 of 59,509 lines (+22). Staples: 235 of 244.
