@@ -17318,6 +17318,64 @@ describe('exert (D915)', () => {
   });
 });
 
+describe('the chosen discard, exiled instead (D916)', () => {
+  const ROWS = [
+    { name: 'Test Castigate', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it and exile that card.' },
+    { name: 'Test Tactics', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it. Exile that card.' },
+    { name: 'Test Negotiations', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it and exile that card. You gain 3 life.' },
+  ];
+  const deck = customDeck({
+    id: 'd916', name: 'Exiled from hand',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Swamp', count: 48 }],
+    data: ROWS as never[],
+  });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd916', 1: 'd916' }, deckSpecs: { d916: deck.deck },
+      // Two creature cards, so the choice is a real one and not answered for the caster.
+      hands: { 0: [spell], 1: ['Grizzly Bears', 'Grizzly Bears', 'Swamp'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'player', seat: 1 }] } as Action)), 60);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a sentence after the one-sentence form is read too', () => {
+    let s = cast('Test Negotiations');
+    const offered = [...(s.pendingDecision?.candidates ?? [])];
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [offered[0]!] } as Action), 20);
+    expect(s.instances[offered[0]!]?.zone).toBe('exile');
+    expect(s.seats[0]!.life).toBe(23);
+  });
+
+  it('a reveal followed by neither a discard nor an exile is not read as either', () => {
+    const read = compileCard({ name: 'Test Peek', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it. You gain 3 life.' } as never);
+    expect(read.ok && read.unread.length > 0).toBe(true);
+  });
+
+  for (const spell of ['Test Castigate', 'Test Tactics']) {
+    it(`${spell}: the caster picks a nonland card from the target's hand, and it is exiled`, () => {
+      let s = cast(spell);
+      expect(s.pendingDecision?.seat).toBe(0);
+      const offered = [...(s.pendingDecision?.candidates ?? [])];
+      expect(offered.map((id) => nameOf(s, id))).toEqual(['Grizzly Bears', 'Grizzly Bears']);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [offered[0]!] } as Action), 20);
+      expect(s.instances[offered[0]!]?.zone).toBe('exile');
+      expect(namesIn(s, 1, 'graveyard')).not.toContain('Grizzly Bears');
+      expect(s.instances[offered[1]!]?.zone).toBe('hand');
+      expect(namesIn(s, 1, 'hand')).toContain('Swamp');
+    });
+  }
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -48204,3 +48204,32 @@ every effect that asks nothing. The scry test pinned it.
     engine tests: 4,870, all passing
 
 Coverage: 11,766 of 31,743 cards (+15), 31,369 of 59,509 lines (+15). Staples: 238 of 244.
+
+## D916 — The chosen discard, exiled instead
+
+"Target opponent reveals their hand. You choose a nonland card from it and exile that card."
+(Castigate, Sin Collector, Pick the Brain), and the two-sentence form "… You choose a nonland card
+from it. Exile that card." (Intimidation Tactics, Doomfall's mode).
+
+`chosenDiscardPrefix` (D531) reads both. The question is the same: the caster chooses out of the
+target's hand, and only the printed kind is offered. The chosen card goes to exile rather than the
+graveyard. The one-sentence form takes two clauses where the discard takes three, so anything printed
+after it (Aggressive Negotiations' counter, a life gain) is read as the rest.
+
+Not read:
+- a filter of colours ("a green or white creature card", Lifebane Zombie);
+- "exile that card until ~ leaves the battlefield";
+- the forms that also reach into the graveyard ("from that player's graveyard or hand").
+
+**Tests.** 5 engine tests:
+- the printings read;
+- each form offers only the target's creature cards to the caster, exiles the pick, and leaves the
+  other card in hand;
+- a sentence after the one-sentence form is read;
+- a reveal followed by something else is not read as a discard or an exile.
+
+Faults injected by hand: 5 of 5 caught. Two were missed at first and pinned by the last two tests.
+
+    engine tests: 4,875, all passing
+
+Coverage: 11,771 of 31,743 cards (+5), 31,375 of 59,509 lines (+6). Staples: 238 of 244.

@@ -23966,22 +23966,30 @@ function digGroup(
 function chosenDiscardPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
-  if (clauses.length < 3) return null;
+  if (clauses.length < 2) return null;
   const revealed = /^target (opponent|player) reveals their hand$/i.exec(clauses[0]!.trim());
   /*
     `a` and `an` both, and the qualifier captured as printed: "", "nonland", "nonland permanent",
     "creature or planeswalker", "instant or sorcery". `graveyardTypeTest` is what turns those words
     into a predicate, and it is the same function three other readers use — a hand and a graveyard
     ask the same question about a card's printed types.
+
+    And the exile form (D916): "You choose a nonland card from it and exile that card" in one
+    sentence (Castigate, Sin Collector, Pick the Brain), or "You choose a nonland card from it.
+    Exile that card." in two (Intimidation Tactics, Doomfall's mode). The same question; the card
+    goes to exile instead of the graveyard, so a flashback or escape card is not handed back.
   */
-  const chose = /^you choose an? (.*?)card from it$/i.exec(clauses[1]!.trim());
-  const discards = /^that player discards that card$/i.test(clauses[2]!.trim());
-  if (revealed === null || chose === null || !discards) return null;
-  const test = graveyardTypeTest(chose[1]!.trim());
+  const choseExiled = /^you choose an? (.*?)card from it and exile (?:that card|it)$/i.exec(clauses[1]!.trim());
+  const chose = choseExiled === null ? /^you choose an? (.*?)card from it$/i.exec(clauses[1]!.trim()) : null;
+  const third = clauses[2]?.trim() ?? '';
+  const discards = chose !== null && /^that player discards that card$/i.test(third);
+  const exiles = choseExiled !== null || (chose !== null && /^exile (?:that card|it)$/i.test(third));
+  if (revealed === null || !(discards || exiles)) return null;
+  const printed = (choseExiled ?? chose)![1]!.trim();
+  const test = graveyardTypeTest(printed);
   if (test === null) return null;
   const spec = targetSpecFrom(`target ${revealed[1]!.toLowerCase()}`, false);
   if (spec === null) return null;
-  const printed = chose[1]!.trim();
   return {
     read: {
       targets: [spec],
@@ -23990,7 +23998,7 @@ function chosenDiscardPrefix(
         who: 'controller',
         fromSeat: 'target-player',
         from: 'hand',
-        prompt: `Choose ${printed === '' ? 'a card' : `a ${printed} card`} to discard`,
+        prompt: `Choose ${printed === '' ? 'a card' : `a ${printed} card`} to ${exiles ? 'exile' : 'discard'}`,
         min: 1,
         max: 1,
         filter: (state, id) => {
@@ -24001,9 +24009,11 @@ function chosenDiscardPrefix(
       }],
       // `moveToGraveyard` sends each card to its own owner's graveyard, so the card the caster
       // picked out of an opponent's hand lands in the opponent's graveyard, not in the caster's.
-      effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      effect: (c) => (exiles
+        ? chosenCards(c).reduce((state, id) => exileCard(state, id), c.state)
+        : moveToGraveyard(c.state, chosenCards(c))),
     },
-    rest: clauses.slice(3),
+    rest: clauses.slice(choseExiled !== null ? 2 : 3),
   };
 }
 
