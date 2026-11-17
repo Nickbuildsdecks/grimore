@@ -48571,3 +48571,31 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 4,920, all passing
 
 Coverage: 11,906 of 31,743 cards (+8), 31,595 of 59,509 lines (+14). Staples: 238 of 244.
+
+## D925 — Enlist
+
+"Enlist (As this creature attacks, you may tap a nonattacking creature you control without summoning
+sickness. When you do, add its power to this creature's until end of turn.)" (CR 702.154a), from
+Dominaria United. Nine legal cards were held back by the keyword alone.
+
+How it is read:
+- **An attack trigger with one question:** up to one creature the controller controls that is
+  untapped, not attacking (a vigilance attacker stays untapped and still may not), not this
+  creature, and without summoning sickness, unless it has haste.
+- **Chosen:** it is tapped and its power, read as it is tapped, is added until end of turn.
+- **The computer** enlists its strongest bystander with power above zero.
+- **The timing, stated:** the rules choose as attackers are declared and the bonus is a reflexive
+  trigger. Here both happen as the trigger resolves, exert's approximation (D915).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- the candidates leave out a summoning-sick creature and a vigilance attacker;
+- enlisted, the Ogre taps and adds its 3 power;
+- none chosen, nothing changes.
+
+Faults injected by hand: 5 of 5 caught. The nonattacking check was missed at first, because every
+attacker was tapped; the vigilance attacker pinned it.
+
+    engine tests: 4,924, all passing
+
+Coverage: 11,915 of 31,743 cards (+9), 31,607 of 59,509 lines (+12). Staples: 238 of 244.

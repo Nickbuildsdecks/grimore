@@ -3067,6 +3067,48 @@ const PROVOKE_TRIGGER: TriggerDef = {
   ), c.state),
 };
 
+/**
+ * Enlist (D925, CR 702.154a): "As this creature attacks, you may tap a nonattacking creature you
+ * control without summoning sickness. When you do, add its power to this creature's until end of
+ * turn." Read as an attack trigger whose one question is that creature, up to one; chosen, it is
+ * tapped and its power added. **The timing, stated:** the rules make the choice as attackers are
+ * declared and the bonus a reflexive trigger; here both happen as the trigger resolves, so a
+ * creature that was a candidate then may have changed since. The power is read as it is tapped.
+ */
+const ENLIST_TRIGGER: TriggerDef = {
+  on: { kind: 'attacks' },
+  description: 'you may tap a nonattacking creature you control without summoning sickness; add its power to this creature\'s (enlist)',
+  decisions: [(_state: GameState, source: string) => ({
+    who: 'controller' as const,
+    from: 'battlefield' as const,
+    prompt: 'Enlist: tap a nonattacking creature you control without summoning sickness, or none',
+    min: 0,
+    max: 1,
+    filter: (s: GameState, id: string) => {
+      const inst = s.instances[id];
+      if (inst === undefined || id === source || inst.tapped) return false;
+      const ch = characteristicsOf(s, inst);
+      if (!ch.isCreature) return false;
+      if (s.combat.attacks.some((a) => a.attacker === id)) return false;
+      return inst.enteredTurn < s.turn || ch.keywords.has('haste');
+    },
+    // The computer enlists its strongest bystander.
+    pick: (s: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+      const power = (id: string) => characteristicsOf(s, s.instances[id]!).power;
+      const best = [...candidates].sort((a, b) => power(b) - power(a))[0];
+      return best === undefined || power(best) <= 0 ? [] : [best];
+    },
+  })],
+  effect: (c) => {
+    const id = chosenCards(c)[0];
+    const inst = id === undefined ? undefined : c.state.instances[id];
+    if (inst === undefined || inst.tapped || inst.zone !== 'battlefield') return c.state;
+    const power = Math.max(0, characteristicsOf(c.state, inst).power);
+    const tapped = withInstance(c.state, inst.id, { tapped: true });
+    return power === 0 ? tapped : pump(tapped, [c.source], c.source, c.controller, { power, toughness: 0 });
+  },
+};
+
 const DETHRONE_TRIGGER: TriggerDef = {
   on: { kind: 'attacks', mostLife: true },
   description: 'put a +1/+1 counter on this creature (dethrone)',
@@ -11270,6 +11312,7 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Sunburst (D917): see `CardScript.sunburst`.
   if (word === 'sunburst') return { sunburst: { counter: 'auto', n: 1 } };
   if (word === 'provoke') return { triggers: [PROVOKE_TRIGGER] };
+  if (word === 'enlist') return { triggers: [ENLIST_TRIGGER] };
   if (word === 'training') return { triggers: [TRAINING_TRIGGER] };
   if (word === 'melee') return { triggers: [MELEE_TRIGGER] };
   // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
