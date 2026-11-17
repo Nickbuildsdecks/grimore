@@ -47793,3 +47793,30 @@ Faults injected by hand: 4 of 4 caught.
 
 Coverage on the merged head (with the other session's D724 and D725): 11,604 of 31,743 cards,
 31,112 of 59,509 lines. Staples: 236 of 244.
+
+## D905 — Afflict, Mobilize and Ingest
+
+Three keywords from the "declaration with no builder" list (1,434 unread lines). Each was the only
+unread line on 5 to 8 legal cards.
+
+How each is read:
+- **Afflict N** (CR 702.130a): a becomes-blocked trigger. The defending player, read off the
+  combat's attack entry for the creature, loses N life.
+- **Mobilize N** (CR 702.181a): an attack trigger that creates N 1/1 red Warrior tokens.
+  - Each token is tapped and added to the combat attacking what the creature attacks.
+  - Each token gets the engine-known delayed sacrifice the end-step riders use (D696).
+- **Ingest** (CR 702.115a): a combat-damage trigger. The player hit (`c.attacked.defender`)
+  exiles the top card of their library.
+
+**Tests.** 4 engine tests:
+- three cards read;
+- afflict: blocked by a Wall the defender loses 2, and unblocked only the combat damage;
+- mobilize: two Warriors attack too (3 damage in all), and are gone after the end step;
+- ingest: the defender's top card is exiled.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 4,819, all passing
+
+Coverage: 11,627 of 31,743 cards (+23 since D904's measure), 31,150 of 59,509 lines. Staples: 237
+of 244.

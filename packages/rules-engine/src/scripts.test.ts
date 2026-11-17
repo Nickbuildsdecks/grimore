@@ -16491,6 +16491,65 @@ describe('"deals damage" to anything, and "is dealt damage", with that much (D90
   });
 });
 
+describe('afflict, mobilize and ingest (D905)', () => {
+  const ROWS = [
+    { name: 'Test Afflicter', type_line: 'Creature — Zombie', oracle_text: 'Afflict 2', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Mobilizer', type_line: 'Creature — Orc', oracle_text: 'Mobilize 2', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Ingester', type_line: 'Creature — Eldrazi', oracle_text: 'Ingest', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'kw905', name: 'Keywords',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS,
+  });
+  const attackWith = (name: string, theirs: string[] = [], block = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kw905', 1: 'kw905' }, deckSpecs: { kw905: deck.deck },
+      battlefield: { 0: [name], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const attacker = find(s, 0, 'battlefield', name);
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] }), 10);
+    if (theirs.length > 0) {
+      s = advanceTo(s, 'declare-blockers');
+      s = apply(s, { type: 'auto:block', by: 1, blocks: block ? [{ blocker: find(s, 1, 'battlefield', 'Test Wall'), attacker }] : [] });
+    }
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('afflict: blocked, the defending player loses 2', () => {
+    const s = drain(advanceTo(attackWith('Test Afflicter', ['Test Wall'], true), 'postcombat-main'), 20);
+    expect(s.seats[1]!.life).toBe(18);
+    const free = drain(advanceTo(attackWith('Test Afflicter', ['Test Wall'], false), 'postcombat-main'), 20);
+    // Unblocked: only the combat damage, no afflict.
+    expect(free.seats[1]!.life).toBe(18);
+  });
+
+  it('mobilize: two Warriors join the attack, then go at the end step', () => {
+    let s = attackWith('Test Mobilizer');
+    const warriors = (st: GameState) => namesIn(st, 0, 'battlefield').filter((n) => n === 'Warrior').length;
+    expect(warriors(s)).toBe(2);
+    expect(s.combat.attacks).toHaveLength(3);
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.seats[1]!.life).toBe(17);
+    s = drain(advanceTo(s, 'end'), 20);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(warriors(s)).toBe(0);
+  });
+
+  it('ingest: the player hit exiles their top card', () => {
+    const before = attackWith('Test Ingester');
+    const top = ids(before, 1, 'library')[0]!;
+    const s = drain(advanceTo(before, 'postcombat-main'), 20);
+    expect(s.instances[top]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

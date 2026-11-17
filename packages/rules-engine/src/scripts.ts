@@ -3014,6 +3014,74 @@ const plural = (count: number, one: string, many: string): string =>
  * That is the keyword's own ruling: the counters cannot be put on, so "if you don't" is what
  * happened. It is also why the effect asks where the source is instead of trusting the answer.
  */
+/**
+ * Afflict N (CR 702.130a, D905): "Whenever this creature becomes blocked, defending player loses N
+ * life." The defending player is the one its attack is against, read off the combat.
+ */
+const afflictTrigger = (n: number): TriggerDef => ({
+  on: { kind: 'becomes-blocked' },
+  description: `defending player loses ${n} life`,
+  effect: (c) => {
+    const attack = c.state.combat.attacks.find((a) => a.attacker === c.source);
+    return attack === undefined ? c.state : loseLife(c.state, attack.defender, n);
+  },
+});
+
+/**
+ * Mobilize N (CR 702.181a, D905): "Whenever this creature attacks, create N tapped and attacking
+ * 1/1 red Warrior creature tokens. Sacrifice them at the beginning of the next end step." The tokens
+ * attack whatever this creature attacks, and each is sacrificed by the engine-known delayed ability
+ * the end-step riders use (D696).
+ */
+const mobilizeTrigger = (n: number, name: string): TriggerDef => ({
+  on: { kind: 'attacks' },
+  description: `create ${n} tapped and attacking 1/1 red Warrior creature token${n === 1 ? '' : 's'}; sacrifice them at the beginning of the next end step`,
+  effect: (c) => {
+    const warrior = tokenFrom('create a 1/1 red Warrior creature token');
+    const attack = c.state.combat.attacks.find((a) => a.attacker === c.source);
+    if (warrior === null) return c.state;
+    const made = addTokens(c.state, c.controller, warrior.token, n);
+    let next = made.state;
+    for (const id of made.created) {
+      next = withInstance(next, id, { tapped: true });
+      const inst = next.instances[id];
+      if (attack !== undefined && inst !== undefined) {
+        next = {
+          ...next,
+          combat: {
+            ...next.combat,
+            attacks: [...next.combat.attacks, {
+              attacker: id, defender: attack.defender,
+              ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),
+              blockers: [],
+              ...(inst.objectSeq === undefined ? {} : { attackerSeq: inst.objectSeq }),
+            }],
+          },
+        };
+      }
+      next = scheduleDelayed(next, {
+        source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'any',
+        subject: id, builtin: 'sacrifice', description: `sacrifice a Warrior ${name} made`,
+      });
+    }
+    return next;
+  },
+});
+
+/**
+ * Ingest (CR 702.115a, D905): "Whenever this creature deals combat damage to a player, that player
+ * exiles the top card of their library."
+ */
+const INGEST_TRIGGER: TriggerDef = {
+  on: { kind: 'combat-damage' },
+  description: 'that player exiles the top card of their library',
+  effect: (c) => {
+    const seat = c.attacked?.defender;
+    const top = seat === undefined ? undefined : listAt(c.state, zoneKey(seat, 'library'))[0];
+    return top === undefined ? c.state : exileCard(c.state, top);
+  },
+};
+
 const fabricateTrigger = (count: number): TriggerDef => {
   const counters = `Put ${plural(count, 'a +1/+1 counter', '+1/+1 counters')} on it`;
   const servos = `Create ${plural(count, 'a Servo', 'Servos')}`;
@@ -11435,6 +11503,12 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   const bloodthirst = /^bloodthirst\s+(\d+)$/i.exec(text);
   if (bloodthirst !== null) return { bloodthirst: Number(bloodthirst[1]) };
 
+  // Afflict N, Mobilize N and Ingest (D905).
+  const afflict = /^afflict\s+(\d+)$/i.exec(text);
+  if (afflict !== null) return { triggers: [afflictTrigger(Number(afflict[1]))] };
+  const mobilize = /^mobilize\s+(\d+)$/i.exec(text);
+  if (mobilize !== null) return { triggers: [mobilizeTrigger(Number(mobilize[1]), name)] };
+  if (/^ingest$/i.test(text)) return { triggers: [INGEST_TRIGGER] };
   // Fabricate N (D559): 16 legal cards, every one with a digit.
   const fabricate = /^fabricate\s+(\d+)$/i.exec(text);
   if (fabricate !== null) return { triggers: [fabricateTrigger(Number(fabricate[1]))] };
