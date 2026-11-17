@@ -16639,7 +16639,7 @@ describe('Necromancy: flash, an Aura it becomes, and a cleanup sacrifice (D727)'
     s = drain(sacrifice(s, [necro]), 20);
     expect(s.instances[bear]!.zone).toBe('graveyard');
     let t = cast(table(['Test Bear']));
-    t = drain(destroy(t, [find(t, 0, 'battlefield', 'Test Bear')]), 20);
+    t = drain(destroy(t, find(t, 0, 'battlefield', 'Test Bear')), 20);
     expect(namesIn(t, 0, 'battlefield')).not.toContain('Test Necro');
   });
 
