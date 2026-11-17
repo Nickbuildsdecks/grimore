@@ -740,6 +740,19 @@ export function spectacleRefusal(
     : 'the spectacle cost is only payable if an opponent lost life this turn';
 }
 
+/**
+ * How many more times this turn an ability may be activated (D943): Infinity with no limit, one
+ * for "only once each turn", N for "no more than N times each turn", less what was used this turn.
+ */
+export function usesLeftThisTurn(
+  state: GameState, inst: CardInstance, ability: { readonly onceEachTurn?: true; readonly timesEachTurn?: number }, key: string,
+): number {
+  const limit = ability.onceEachTurn === true ? 1 : ability.timesEachTurn;
+  if (limit === undefined) return Infinity;
+  const used = inst.abilityUsedTurn?.[key] === state.turn ? inst.abilityUseCount?.[key] ?? 1 : 0;
+  return limit - used;
+}
+
 export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
   return listAt(state, zoneKey(seat, 'battlefield')).some((id) => state.instances[id]?.isCommander === true);
 }
@@ -1070,8 +1083,8 @@ export function manaSources(
     // face-down Forest is not a Forest (CR 707.2).
     if (isFaceDownPermanent(inst)) continue;
     // And a permanent whose abilities have been taken away taps for nothing: a Frogged Llanowar
-    // Elves is a 1/1 with no text (CR 613.1f). See `allAbilitiesLost`.
-    if (allAbilitiesLost(state, inst)) continue;
+    // Elves is a 1/1 with no text (CR 613.1f). See `allAbilitiesLost`. Nor an Arrested one (D943).
+    if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     /*
@@ -1282,8 +1295,8 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
-    // which is the point of both: one answer to "what can this seat pay".
-    if (allAbilitiesLost(state, inst)) continue;
+    // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
+    if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     // The granted ones too, kept in step with `manaSources` above — the dimmed pips and the
@@ -2449,6 +2462,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       there is not something a Turn to Frog has ever been pointed at.
     */
     if (zone === 'battlefield' && allAbilitiesLost(state, inst)) continue;
+    // "Its activated abilities can't be activated" (D943).
+    if (zone === 'battlefield' && characteristicsOf(state, inst).cantActivate) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     /*
@@ -2509,14 +2524,16 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ability is a mana ability, the same one `isManaAbility` is built from below.
       */
       if (splitSecond && ability.produces === undefined) continue;
+      // Faith's Fetters (D944): everything but a mana ability is switched off.
+      if (zone === 'battlefield' && ability.produces === undefined && characteristicsOf(state, inst).cantActivateNonMana) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.
       if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
       // "Activate only once each turn" (CR 602.5f), the same rule one index deeper than the
       // loyalty check below. See `AbilityDef.onceEachTurn`.
-      if (ability.onceEachTurn === true
-        && inst.abilityUsedTurn?.[abilityUseKey(i, grantedBy)] === state.turn) continue;
+      // And "no more than twice each turn" (D943), the same rule with a count.
+      if (usesLeftThisTurn(state, inst, ability, abilityUseKey(i, grantedBy)) <= 0) continue;
       // "Activate only during your turn / upkeep / before attackers" (CR 602.5d). Its own
       // predicate rather than `sorcerySpeed`'s — see `atActivationTiming`.
       if (ability.timing !== undefined && !atActivationTiming(state, seat, ability.timing)) continue;

@@ -19431,6 +19431,140 @@ describe('blocking more than one attacker (D942)', () => {
   });
 });
 
+describe('activation caps, the stronger-only blockers, and Arrest (D943)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2', cost = '{0}') => ({
+    name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: cost, cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Pumper', '{R}: Test Pumper gets +1/+0 until end of turn. Activate no more than twice each turn.'),
+    C('Test Stomper', "Creatures with power less than Test Stomper's power can't block it.", '4', '4'),
+    C('Test Elf', '{T}: Add {G}.', '1', '1'),
+    C('Test Ogre', '', '4', '4'),
+    C('Test Bear', ''),
+    { name: 'Test Arrest', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block, and its activated abilities can't be activated.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd943', name: 'Caps and bans',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 42 }],
+    data: ROWS as never[],
+  });
+  const seated = (mine: string[], theirs: string[] = [], hand: string[] = [], step: Step = 'precombat-main') => advanceTo(arena({
+    decks: { 0: 'd943', 1: 'd943' }, deckSpecs: { d943: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), step);
+  const withRed = (s: GameState): GameState => ({ ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 5, G: 0, C: 0 } } });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0]!, ROWS[1]!, ROWS[5]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"no more than twice each turn": twice, then neither offered nor accepted, and again next turn', () => {
+    let s = withRed(seated(['Test Pumper']));
+    const pumper = find(s, 0, 'battlefield', 'Test Pumper');
+    const pump1 = { type: 'auto:activate', by: 0, card: pumper, abilityIndex: 0 } as Action;
+    for (let i = 0; i < 2; i++) {
+      expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === pumper)).toBe(true);
+      s = drain(apply(s, pump1), 12);
+      for (let j = 0; j < 4 && s.stackOrder.length > 0; j++) s = drain(passBoth(s), 12);
+    }
+    expect(characteristicsOf(s, s.instances[pumper]!).power).toBe(4);
+    expect(refusal(s, pump1)).toMatch(/2 times this turn/);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === pumper)).toBe(false);
+    // Another turn: the count starts again.
+    const later = withRed({ ...s, turn: s.turn + 2 });
+    expect(refusal(later, pump1)).toBeNull();
+  });
+
+  it('"creatures with power less than its power can\'t block it": a Bear cannot, an Ogre can', () => {
+    let s = seated(['Test Stomper'], ['Test Bear', 'Test Ogre'], [], 'declare-attackers');
+    const stomper = find(s, 0, 'battlefield', 'Test Stomper');
+    s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: stomper, defender: 1 }] }), 12), 'declare-blockers');
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Bear'), stomper, 1)?.reason).toMatch(/less power/);
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Ogre'), stomper, 1)).toBeNull();
+  });
+
+  it('Arrest: no attacking or blocking, and not even its mana ability', () => {
+    let s = seated(['Mountain'], ['Test Elf', 'Test Bear'], ['Test Arrest']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    expect(manaSources(s, 1).some((m) => m.key === elf)).toBe(true);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Arrest'), targets: [{ kind: 'card', id: elf }] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const ch = characteristicsOf(s, s.instances[elf]!);
+    expect(ch.cantActivate).toBe(true);
+    expect(ch.cantBlock).toBe(true);
+    expect(manaSources(s, 1).some((m) => m.key === elf)).toBe(false);
+    const turn = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(legalActions(turn, 1).plays.some((p) => p.kind === 'activate' && p.card === elf)).toBe(false);
+    expect(refusal(turn, { type: 'auto:activate', by: 1, card: elf, abilityIndex: 0 } as Action)).toMatch(/can't be activated/);
+  });
+});
+
+describe('detain, and Faith\'s Fetters sparing mana abilities (D944)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({
+    name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Arrester', 'When Test Arrester enters, detain target creature an opponent controls.'),
+    C('Test Elf', '{T}: Add {G}.', '1', '1'),
+    C('Test Pinger', '{T}: Test Pinger deals 1 damage to any target.', '1', '1'),
+    { name: 'Test Fetters', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block, and its activated abilities can't be activated unless they're mana abilities.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd944', name: 'Detain',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (hand: string, theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd944', 1: 'd944' }, deckSpecs: { d944: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: ['Plains'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts `card`, aimed at `target` either as it is cast (an Aura) or by its enters trigger. */
+  const castOn = (s: GameState, card: string, target: string, onEnter = false) => {
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(onEnter ? {} : { targets: [{ kind: 'card', id: target }] }) } as Action), 30);
+    for (let i = 0; i < 8 && (next.stackOrder.length > 0 || next.pendingChoice !== null); i++) {
+      if (next.pendingChoice !== null) next = drain(apply(next, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: target }] }), 30);
+      else next = drain(passBoth(next), 30);
+    }
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0]!, ROWS[3]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('detained: no blocking, no mana, until its controller\'s next turn', () => {
+    const s = seated('Test Arrester', ['Test Elf', 'Test Pinger']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    let t = castOn(s, 'Test Arrester', elf, true);
+    expect(characteristicsOf(t, t.instances[elf]!).cantBlock).toBe(true);
+    expect(characteristicsOf(t, t.instances[elf]!).cantActivate).toBe(true);
+    expect(manaSources(t, 1).some((m) => m.key === elf)).toBe(false);
+    // Through the opponent's own turn, and gone when the detaining player's next turn begins.
+    t = nextTurn(t);
+    expect(t.activeSeat).toBe(1);
+    expect(characteristicsOf(t, t.instances[elf]!).cantAttack).toBe(true);
+    t = nextTurn(t);
+    expect(t.activeSeat).toBe(0);
+    expect(characteristicsOf(t, t.instances[elf]!).cantActivate).toBe(false);
+    expect(manaSources(t, 1).some((m) => m.key === elf)).toBe(true);
+  });
+
+  it('Faith\'s Fetters: no attacking, no blocking, no ability but a mana ability', () => {
+    let s = seated('Test Fetters', ['Test Elf', 'Test Pinger']);
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    const pinger = find(s, 1, 'battlefield', 'Test Pinger');
+    s = castOn(s, 'Test Fetters', pinger);
+    const fettersOnElf = castOn(seated('Test Fetters', ['Test Elf', 'Test Pinger']), 'Test Fetters', elf);
+    expect(manaSources(fettersOnElf, 1).some((m) => m.key === elf)).toBe(true);
+    const turn = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(legalActions(turn, 1).plays.some((p) => p.kind === 'activate' && p.card === pinger)).toBe(false);
+    expect(refusal(turn, { type: 'auto:activate', by: 1, card: pinger, abilityIndex: 0, targets: [{ kind: 'player', seat: 0 }] } as Action)).toMatch(/can't be activated/);
+    expect(characteristicsOf(s, s.instances[pinger]!).cantBlock).toBe(true);
+  });
+});
+
 describe('Path of Ancestry: a scry when its mana casts your commander\'s kind (D729)', () => {
   const ROWS = [
     { name: 'Test Path', type_line: 'Land', oracle_text: "Test Path enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' },

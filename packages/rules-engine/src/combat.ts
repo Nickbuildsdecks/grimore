@@ -237,6 +237,10 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   if (attacker.ch.keywords.has('flying') && !blocker.ch.keywords.has('flying') && !blocker.ch.keywords.has('reach')) {
     return { card: blockerId, reason: `${blocker.ch.name} can't block a flier` };
   }
+  // "Creatures with power less than ~'s power can't block it" (D943), compared as they are now.
+  if (attacker.ch.weakerCantBlock && blocker.ch.power < attacker.ch.power) {
+    return { card: blockerId, reason: `${blocker.ch.name} has less power than ${attacker.ch.name}` };
+  }
   // The one piece of evasion in this pool that is not a keyword, so it is read off the attacker
   // rather than compared keyword to keyword. Wall is a creature type, not an ability: a Wall of
   // Air stopped by this is stopped for what it *is*.

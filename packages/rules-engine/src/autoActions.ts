@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1774,6 +1774,11 @@ function activate(
       : undefined;
   /** The key this activation is recorded under, which differs for a granted ability. */
   const useKey = abilityUseKey(action.abilityIndex, action.grantedBy);
+  // Arrest's rider (D943): nothing on this permanent may be activated while it holds.
+  if (inst.zone === 'battlefield' && (characteristicsOf(state, inst).cantActivate
+    || (characteristicsOf(state, inst).cantActivateNonMana && ability?.produces === undefined))) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristicsOf(state, inst).name}'s activated abilities can't be activated`);
+  }
   /*
     Which zone this ability is used from, decided by its cost.
 
@@ -1817,9 +1822,10 @@ function activate(
     `activateOnlyIf`'s generic sentence — which is the whole reason this is its own declarative
     field and not another predicate. See `AbilityDef.onceEachTurn`.
   */
-  if (ability.onceEachTurn === true && inst.abilityUsedTurn?.[useKey] === state.turn) {
-    throw new EngineError('RULE_NOT_APPLICABLE',
-      `${ch.name} has already used that ability this turn`);
+  if (usesLeftThisTurn(state, inst, ability, useKey) <= 0) {
+    throw new EngineError('RULE_NOT_APPLICABLE', ability.onceEachTurn === true
+      ? `${ch.name} has already used that ability this turn`
+      : `${ch.name} has already used that ability ${ability.timesEachTurn} times this turn`);
   }
   /*
     "Activate only during your turn / your upkeep / your turn, before attackers are declared"
@@ -2079,11 +2085,13 @@ function activate(
     stack has still been used this turn (CR 602.5f). The turn number *is* the reset — see
     `CardInstance.abilityUsedTurn`.
   */
-  if (ability.onceEachTurn === true) {
+  if (ability.onceEachTurn === true || ability.timesEachTurn !== undefined) {
+    const now = requireInstance(next, inst.id);
+    const before = now.abilityUsedTurn?.[useKey] === state.turn ? now.abilityUseCount?.[useKey] ?? 1 : 0;
     next = withInstance(next, inst.id, {
-      abilityUsedTurn: {
-        ...requireInstance(next, inst.id).abilityUsedTurn, [useKey]: state.turn,
-      },
+      abilityUsedTurn: { ...now.abilityUsedTurn, [useKey]: state.turn },
+      // The count beside it (D943), for "no more than twice each turn".
+      ...(ability.timesEachTurn === undefined ? {} : { abilityUseCount: { ...now.abilityUseCount, [useKey]: before + 1 } }),
     });
   }
   if (ability.cost.loyalty !== undefined) {

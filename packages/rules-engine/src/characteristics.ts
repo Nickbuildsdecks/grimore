@@ -344,7 +344,7 @@ export function shortName(name: string): string | null {
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
 type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure'
-  | 'blockedByOne';
+  | 'blockedByOne' | 'weakerCantBlock';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -518,6 +518,11 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   const lured = /^all creatures able to block (.+) do so$/.exec(low);
   if (lured !== null) {
     return selfSubjects(name).includes(lured[1]!) ? { kind: 'combat-static', statics: ['lure'] } : null;
+  }
+  // "Creatures with power less than ~'s power can't block it" (D943): also named in the middle.
+  const weaker = /^creatures with power less than (.+)'s power can't block it$/.exec(low);
+  if (weaker !== null) {
+    return selfSubjects(name).includes(weaker[1]!) ? { kind: 'combat-static', statics: ['weakerCantBlock'] } : null;
   }
   const subject = selfSubjects(name).find((candidate) => low.startsWith(`${candidate} `));
   if (subject === undefined) return null;
@@ -864,7 +869,7 @@ export function printedCombatStatics(
 function printedCombatFlags(oracleText: string | null | undefined, name?: string): Record<CombatStatic, boolean> {
   const found: Record<CombatStatic, boolean> = {
     cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false,
-    mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false,
+    mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false, weakerCantBlock: false,
   };
   for (const part of printedParts(oracleText, name)) {
     if (part.kind !== 'combat-static') continue;
@@ -1557,6 +1562,10 @@ export interface ContinuousEffect {
   readonly lure?: boolean;
   /** "Can't be blocked by more than one creature" (D937, CR 509.1b). */
   readonly blockedByOne?: boolean;
+  /** "Its activated abilities can't be activated" (D943): Arrest, mana abilities included. */
+  readonly cantActivate?: boolean;
+  /** "… unless they're mana abilities" (D944): Faith's Fetters, which leaves the mana abilities. */
+  readonly cantActivateNonMana?: boolean;
   /**
    * "Can't be blocked by Walls." A restriction on the *blocker*, read from the attacker, which is
    * the only shape of evasion in this pool that is not a keyword — so it lives here rather than
@@ -2030,6 +2039,15 @@ export interface Characteristics {
    * declaration, menace's opposite, checked with it.
    */
   readonly blockedByOne: boolean;
+  /** "Creatures with power less than ~'s power can't block it" (D943), compared in `canBlock`. */
+  readonly weakerCantBlock: boolean;
+  /**
+   * "Its activated abilities can't be activated" (D943, Arrest's rider): none of them, mana
+   * abilities included, is offered or accepted, and the permanent pays for nothing.
+   */
+  readonly cantActivate: boolean;
+  /** Faith's Fetters' narrower ban (D944): every activated ability but a mana ability. */
+  readonly cantActivateNonMana: boolean;
   /**
    * "~ can't attack unless defending player controls an Island" (D937, CR 508.1c): the basic land
    * type a defending player must control for this creature to attack them, or null.
@@ -2811,6 +2829,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let mustBeBlocked = printedCombat.mustBeBlocked;
   let lure = printedCombat.lure;
   let blockedByOne = printedCombat.blockedByOne;
+  let weakerCantBlock = printedCombat.weakerCantBlock;
+  let cantActivate = false;
+  let cantActivateNonMana = false;
   let attacksOnlyIfDefenderHas: string | null = null;
   let extraBlocks = 0;
   for (const part of printedParts(def?.oracleText, def?.name)) {
@@ -2892,6 +2913,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       mustBeBlocked = false;
       lure = false;
       blockedByOne = false;
+      weakerCantBlock = false;
       attacksOnlyIfDefenderHas = null;
       extraBlocks = 0;
       mustBlockAttackers.length = 0;
@@ -2940,6 +2962,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.mustBeBlocked) mustBeBlocked = true;
     if (effect.lure) lure = true;
     if (effect.blockedByOne) blockedByOne = true;
+    if (effect.cantActivate) cantActivate = true;
+    if (effect.cantActivateNonMana) cantActivateNonMana = true;
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
       mustBlockAttackers.push(effect.mustBlockAttacker);
     }
@@ -3002,6 +3026,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     mustBeBlocked,
     lure,
     blockedByOne,
+    weakerCantBlock,
+    cantActivate,
+    cantActivateNonMana,
     attacksOnlyIfDefenderHas,
     extraBlocks,
     cantBeBlockedByWalls,
