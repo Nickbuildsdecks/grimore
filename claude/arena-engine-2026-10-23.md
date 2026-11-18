@@ -33209,3 +33209,41 @@ tenth fault was on a two-colour check no text can reach; the check was removed.
     engine tests: 5,183, all passing (merged with the other session's D974)
 
 Coverage: 12,730 of 31,743 cards (+53), 32,957 of 59,509 lines (+126), against 2f3068f.
+
+## D736 — Ward and goad granted by a static or an attachment
+
+Two grants the static readers didn't have:
+- **"Has ward {N}"**: "Equipped creature gets +1/+1 and has ward {2}", "Other creatures you control
+  have ward {1}", "Legendary creatures you control get +1/+1 and have ward {1}", about 30 lines;
+- **"Is goaded"**: "Enchanted creature gets +1/+1 and is goaded", 11 lines.
+
+And one combination the attachment reader refused: "gets +N/+N and has "…"", a size and a quoted
+grant together (Equipment and Auras with "Whenever this creature attacks, …").
+
+How it is read:
+- **Ward is a triggered ability** (CR 702.21a), so "has ward {N}" at the end of a predicate is
+  rewritten to `has "Ward {N}"` (`wardAsQuoted`). It is then granted by the readers that already
+  grant quoted triggers: the attachment reader and the group statics (D620, D735). The granted ward
+  counters a spell or ability an opponent aims at the creature unless they pay, as a printed one does.
+- **"Is goaded"** on an attachment is goad's two halves for as long as it is attached: attacks each
+  combat if able, and not the attachment's controller while there is another player to attack
+  (CR 701.38). After another predicate it is read with it.
+- **"Gets +N/+N and has "…""** reads each half on its own and joins them.
+
+Still unread: a goad after two predicates ("gets +2/+2, has deathtouch, and is goaded"), ward with a
+condition or a count, and ward on a single named permanent.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- an Equipment's ward {2}: the opponent's removal waits for the trigger, the opponent is asked to
+  pay {2}, and declining counters it;
+- a lord's ward reaches its other creatures and not itself;
+- a goading Aura in a pod of three: its host must attack, may not attack the Aura's controller, and
+  may attack the third player;
+- an Equipment's "gets +1/+1 and has "Whenever this creature attacks, draw a card."": both.
+
+Faults injected by script: 7 of 7 caught.
+
+    engine tests: 5,188, all passing
+
+Coverage: 12,765 of 31,743 cards (+34), 33,016 of 59,509 lines (+57), against 631357c.
