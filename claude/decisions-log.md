@@ -50672,6 +50672,6 @@ read it then. It now reads correctly, so that case is gone from the refusal list
 Faults injected by script: 9 of 9 caught, one after pinning (any word instead of every word). A
 tenth fault was on a two-colour check no text can reach; the check was removed.
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,183, all passing (merged with the other session's D974)
 
 Coverage: 12,730 of 31,743 cards (+53), 32,957 of 59,509 lines (+126), against 2f3068f.
