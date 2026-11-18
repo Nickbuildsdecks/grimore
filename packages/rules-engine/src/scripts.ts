@@ -24946,14 +24946,36 @@ function chosenDiscardPrefix(
     Exile that card." in two (Intimidation Tactics, Doomfall's mode). The same question; the card
     goes to exile instead of the graveyard, so a flashback or escape card is not handed back.
   */
-  const choseExiled = /^you choose an? (.*?)card from it and exile (?:that card|it)$/i.exec(clauses[1]!.trim());
-  const chose = choseExiled === null ? /^you choose an? (.*?)card from it$/i.exec(clauses[1]!.trim()) : null;
+  /*
+    And a mana value (D970), printed on either side of "from it": "a nonland card with mana value 3
+    or less from it", "a card from it with mana value 4 or greater". Read off the printed card's
+    mana value. "X or less" stays unread: the question is asked before X could be looked at.
+  */
+  const MV = String.raw`(?: with mana value (\d+) or (less|greater))?`;
+  const choseExiled = new RegExp(`^you choose an? (.*?)card${MV} from it${MV} and exile (?:that card|it)$`, 'i').exec(clauses[1]!.trim());
+  const chose = choseExiled === null ? new RegExp(`^you choose an? (.*?)card${MV} from it${MV}$`, 'i').exec(clauses[1]!.trim()) : null;
   const third = clauses[2]?.trim() ?? '';
   const discards = chose !== null && /^that player discards that card$/i.test(third);
   const exiles = choseExiled !== null || (chose !== null && /^exile (?:that card|it)$/i.test(third));
   if (revealed === null || !(discards || exiles)) return null;
-  const printed = (choseExiled ?? chose)![1]!.trim();
-  const test = graveyardTypeTest(printed);
+  const picked = (choseExiled ?? chose)!;
+  const printed = picked[1]!.trim();
+  const mvAt = picked[2] !== undefined ? 2 : picked[4] !== undefined ? 4 : null;
+  const mv = mvAt === null ? null : { n: Number(picked[mvAt]), most: picked[mvAt + 1]!.toLowerCase() === 'less' };
+  /*
+    The type words (D970), in two more spellings: a comma list ("an artifact, instant, or sorcery
+    card") is the "or" list `graveyardTypeTest` reads, and stacked negations ("a noncreature,
+    nonland card": Duress, Mardu Charm; "a nonlegendary, nonland card": Lay Bare the Heart) are
+    each excluded — a card type, or the legendary supertype.
+  */
+  const nons = /^(non[a-z]+)(?:,\s*non[a-z]+)+$/i.test(printed)
+    ? printed.split(/,\s*/).map((word) => word.slice(3).toLowerCase())
+    : null;
+  const excluded = (line: TypeLine, word: string): boolean => (word === 'legendary' ? isLegendary(line) : hasType(line, word));
+  const test = nons !== null
+    ? (nons.every((word) => word === 'legendary' || GRAVEYARD_CARD_TYPES.includes(word))
+      ? (line: TypeLine) => nons.every((word) => !excluded(line, word)) : null)
+    : graveyardTypeTest(/,/.test(printed) && /\bor\b/i.test(printed) ? printed.replace(/,\s*(?:or\s+)?/g, ' or ') : printed);
   if (test === null) return null;
   const spec = targetSpecFrom(`target ${revealed[1]!.toLowerCase()}`, false);
   if (spec === null) return null;
@@ -24965,13 +24987,14 @@ function chosenDiscardPrefix(
         who: 'controller',
         fromSeat: 'target-player',
         from: 'hand',
-        prompt: `Choose ${printed === '' ? 'a card' : `a ${printed} card`} to ${exiles ? 'exile' : 'discard'}`,
+        prompt: `Choose ${printed === '' ? 'a card' : `a ${printed} card`}${mv === null ? '' : ` with mana value ${mv.n} or ${mv.most ? 'less' : 'greater'}`} to ${exiles ? 'exile' : 'discard'}`,
         min: 1,
         max: 1,
         filter: (state, id) => {
           const inst = state.instances[id];
-          return inst !== undefined
-            && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey]);
+          const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+          if (inst === undefined || !test(parseTypeLine(def?.typeLine), def)) return false;
+          return mv === null || (mv.most ? (def?.cmc ?? 0) <= mv.n : (def?.cmc ?? 0) >= mv.n);
         },
       }],
       // `moveToGraveyard` sends each card to its own owner's graveyard, so the card the caster

@@ -32803,3 +32803,38 @@ Faults injected by hand: 5 of 5 caught, run again after the refactor.
     engine tests: 5,137, all passing
 
 Coverage: 12,581 of 31,743 cards (+8), 32,627 of 59,509 lines (+9). Staples: 241 of 244.
+
+## D970 — A chosen discard or exile with a mana value, a type list, or several exclusions
+
+"Target player reveals their hand. You choose a nonland card from it with mana value 3 or less.
+That player discards that card." "… You choose an artifact, instant, or sorcery card from it and
+exile that card." "… You choose a noncreature, nonland card from it. That player discards that
+card." (Duress's wording, also Mardu Charm's and Elspeth's Nightmare's.) D531's chosen discard and
+D916's exile read the plain qualifier only. These spellings were unread.
+
+How it is read, all in `chosenDiscardPrefix`:
+- **A mana value** on either side of "from it" ("… card with mana value N or less from it", "…
+  card from it with mana value N or greater"), asked of the printed card's mana value. "X or less"
+  stays unread, because the question is asked before X could be looked at.
+- **A comma list of types** is the "or" list `graveyardTypeTest` already reads.
+- **Stacked negations** ("noncreature, nonland", "nonlegendary, nonland") exclude each: a card
+  type, or the legendary supertype.
+
+A first draft dropped the negation branch as unused. The measurement disagreed: Duress and its
+siblings use it. It stays, and is pinned.
+
+7 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- "a noncreature, nonland card": the artifact is taken, the creature and the land stay;
+- "a nonlegendary, nonland card": the legendary artifact stays, the creature is taken;
+- "with mana value 3 or less": the one card that fits is taken, and the 5-drop stays;
+- "an artifact, instant, or sorcery card": the artifact is exiled, the creatures stay.
+
+Faults injected by hand: 7, across two rounds. All are caught, after the negation branch was
+pinned.
+
+    engine tests: 5,142, all passing
+
+Coverage: 12,588 of 31,743 cards (+7), 32,634 of 59,509 lines (+7). Staples: 241 of 244.

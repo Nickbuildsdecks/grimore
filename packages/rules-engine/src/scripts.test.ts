@@ -21227,6 +21227,70 @@ describe('"destroy that creature at end of combat": the basilisks (D969)', () =>
   });
 });
 
+describe('a chosen discard or exile with a mana value or a type list (D970)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    S('Test Duress', 'Target player reveals their hand. You choose a nonland card from it with mana value 3 or less. That player discards that card.'),
+    S('Test Pluck', 'Target opponent reveals their hand. You choose an artifact, instant, or sorcery card from it and exile that card.'),
+    S('Test Squeeze', 'Target opponent reveals their hand. You choose a noncreature, nonland card from it. That player discards that card.'),
+    S('Test Bare', 'Target opponent reveals their hand. You choose a nonlegendary, nonland card from it. That player discards that card.'),
+    { name: 'Test Crown', type_line: 'Legendary Artifact', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Cheap', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Dear', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Trinket', type_line: 'Artifact', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd970', name: 'Chosen discards',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 45 }],
+    data: ROWS as never[],
+  });
+  /** Casts `card` at seat 1, whose hand is `theirs`; returns the question asked and the state. */
+  const castAt = (card: string, theirs: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd970', 1: 'd970' }, deckSpecs: { d970: deck.deck }, hands: { 0: [card], 1: theirs },
+      battlefield: { 0: ['Swamp'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'player', seat: 1 }] } as Action), 30);
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a noncreature, nonland card": the artifact is taken, the creature and the land stay', () => {
+    const t = castAt('Test Squeeze', ['Test Cheap', 'Test Trinket', 'Swamp']);
+    expect(t.pendingDecision).toBeNull();
+    expect(namesIn(t, 1, 'graveyard')).toContain('Test Trinket');
+    expect(namesIn(t, 1, 'hand')).toEqual(expect.arrayContaining(['Test Cheap', 'Swamp']));
+  });
+
+  it('"a nonlegendary, nonland card": the legendary artifact stays, the creature is taken', () => {
+    const t = castAt('Test Bare', ['Test Crown', 'Test Cheap', 'Swamp']);
+    expect(t.pendingDecision).toBeNull();
+    expect(namesIn(t, 1, 'graveyard')).toContain('Test Cheap');
+    expect(namesIn(t, 1, 'hand')).toEqual(expect.arrayContaining(['Test Crown', 'Swamp']));
+  });
+
+  it('"with mana value 3 or less": the only card that fits is taken, and the dear one stays', () => {
+    // With one card that fits, the question answers itself; a filter that let the 5-drop in would
+    // leave it open, and both cards in hand.
+    const t = castAt('Test Duress', ['Test Cheap', 'Test Dear', 'Swamp']);
+    expect(t.pendingDecision).toBeNull();
+    expect(namesIn(t, 1, 'graveyard')).toContain('Test Cheap');
+    expect(namesIn(t, 1, 'hand')).toEqual(expect.arrayContaining(['Test Dear', 'Swamp']));
+  });
+
+  it('"an artifact, instant, or sorcery card": the artifact is exiled, the creatures stay', () => {
+    const t = castAt('Test Pluck', ['Test Cheap', 'Test Trinket', 'Test Dear']);
+    expect(t.pendingDecision).toBeNull();
+    expect(namesIn(t, 1, 'exile')).toContain('Test Trinket');
+    expect(namesIn(t, 1, 'hand')).toEqual(expect.arrayContaining(['Test Cheap', 'Test Dear']));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
