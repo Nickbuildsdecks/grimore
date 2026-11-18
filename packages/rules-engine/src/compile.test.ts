@@ -8958,8 +8958,8 @@ describe('a "may" with a price on it (D448)', () => {
       test states has not changed — a price the engine cannot charge refuses the line — and the
       three rows left are the ones it still cannot charge.
     */
-    ['life, which has no field here',
-      'When Probe Thing dies, you may pay 2 life. If you do, draw a card.'],                   // 4
+    // **Retired row (D989).** `['life, which has no field here', 'When Probe Thing dies, you may pay
+    // 2 life. If you do, draw a card.']` — `payIfChosen.life` charges it now, as `energy` did D451's.
     ['mana and a discard, which is two costs',
       'When Probe Thing enters, you may pay {1} and discard a card. If you do, draw a card.'], // 2
     ['mana and a sacrifice, which is two costs',
@@ -8973,6 +8973,12 @@ describe('a "may" with a price on it (D448)', () => {
     expect(compiled.ok).toBe(true);
     expect(unreadLines(compiled)).toEqual([text]);
     expect(triggersOf(compiled)).toHaveLength(0);
+  });
+
+  it('reads a life price since D989', () => {
+    const compiled = read('When Probe Thing dies, you may pay 2 life. If you do, draw a card.');
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(triggersOf(compiled)).toHaveLength(1);
   });
 
   it('keeps the whole printed clause as the description', () => {

@@ -19977,7 +19977,11 @@ function optionalEffect(
     coverage did not move a single card. A run of nothing but `{E}` is unambiguously energy, so
     asking that question first costs nothing and leaves the mana reader unchanged.
   */
-  const priced = energyPriced === null
+  // Life (D989): "you may pay 2 life. If you do, …" — `payIfChosen.life`.
+  const lifePriced = /^you may pay (\w+) life\.\s*If you do, (.+)$/i.exec(clause);
+  const lifeCost = lifePriced === null ? null : (WORD_NUMBERS[lifePriced[1]!.toLowerCase()] ?? (/^\d+$/.test(lifePriced[1]!) ? Number(lifePriced[1]) : null));
+  if (lifePriced !== null && lifeCost === null) return null;
+  const priced = energyPriced === null && lifePriced === null
     ? /^you may pay ((?:\{[^}]+\})+)\.\s*If you do, (.+)$/i.exec(clause)
     : null;
   /*
@@ -20004,7 +20008,7 @@ function optionalEffect(
     Anything else is refused rather than guessed: X asking twice, either half pointing at a
     target, or a half that does not read at all.
   */
-  const doneThen = priced === null && energyPriced === null
+  const doneThen = priced === null && energyPriced === null && lifePriced === null
     ? /^you may ([^.]+)\.\s*If you do, (.+)$/i.exec(clause)
     : null;
   /*
@@ -20071,7 +20075,7 @@ function optionalEffect(
     fails — which is the refusal that was there before this increment.
   */
   const may = /^you may (.+)$/i.exec(clause);
-  const charged = priced ?? energyPriced;
+  const charged = priced ?? energyPriced ?? lifePriced;
   /*
     Not a "may" at all, and so not this reader's sentence. Every shape above begins with the same
     two words, so the bare match is the one gate the function needs: a clause it does not match
@@ -20185,7 +20189,8 @@ function optionalEffect(
   */
   const pay = pricedCost !== null
     ? `Pay ${pricedCost}`
-    : energyCost === null ? null : `Pay ${'{E}'.repeat(energyCost)}`;
+    : energyCost !== null ? `Pay ${'{E}'.repeat(energyCost)}`
+      : lifeCost === null ? null : `Pay ${lifeCost} life`;
   /*
     The effect's own questions, asked only if the "may" was taken (D450).
 
@@ -20238,7 +20243,7 @@ function optionalEffect(
       options: ['Decline', pay],
       payIfChosen: pricedCost !== null
         ? { option: pay, cost: pricedCost }
-        : { option: pay, energy: energyCost! },
+        : energyCost !== null ? { option: pay, energy: energyCost } : { option: pay, life: lifeCost! },
     }, ...gatedOn(pay)],
     effect: (c) => (chosenOption(c) === pay ? read.effect(withoutOurs(c)) : c.state),
   } : {

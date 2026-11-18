@@ -1759,6 +1759,8 @@ export interface ChoiceDecisionSpec {
      * it. Exactly one of the two is set.
      */
     readonly energy?: number;
+    /** Life instead (D989): "you may pay 2 life. If you do / When you do, …" (CR 119.4). */
+    readonly life?: number;
   };
   /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
