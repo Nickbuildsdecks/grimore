@@ -33450,6 +33450,6 @@ behaves the same as the general combat-only flag, so the special case was remove
 Faults injected by script: 8 of 8 caught, one after pinning ("to you" stopping damage to everyone).
 A ninth was on the removed special case.
 
-    engine tests: 5,211, all passing
+    engine tests: 5,218, all passing (merged with the other session's D977)
 
 Coverage: 12,883 of 31,785 cards (+27), 33,191 of 59,596 lines (+30), against fa80496.
