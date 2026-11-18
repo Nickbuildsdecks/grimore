@@ -22937,6 +22937,76 @@ describe('"Whenever ~ deals damage to a player / to a creature" (D980)', () => {
   });
 });
 
+describe('lands described by type and state: "a non-Lair land", "an untapped Island", "two Swamps" (D741)', () => {
+  const unless = (name: string, type: string, cost: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: `When ${name} enters, sacrifice it unless you ${cost}.`, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    unless('Test Lair', 'Land — Lair', "return a non-Lair land you control to its owner's hand"),
+    unless('Test Tide', 'Creature — Elemental', "return an untapped Island you control to its owner's hand", { power: '3', toughness: '3' }),
+    unless('Test Bog', 'Creature — Horror', 'sacrifice two Swamps', { power: '5', toughness: '5' }),
+    { name: 'Test Spark', type_line: 'Sorcery', oracle_text: 'You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd741', name: 'Lands',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Test Spark', count: 30 }, { name: 'Island', count: 5 }, { name: 'Swamp', count: 5 }],
+    data: ROWS as never[],
+  });
+  const enter = (card: string, mine: string[], tapped: string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd741', 1: 'd741' }, deckSpecs: { d741: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of tapped) {
+      const id = ids(s, 0, 'battlefield').find((x) => nameOf(s, x) === name && s.instances[x]!.tapped !== true)!;
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } } };
+    }
+    const id = find(s, 0, 'hand', card);
+    s = card === 'Test Lair' ? apply(s, { type: 'auto:playLand', by: 0, card: id }) : apply(s, { type: 'auto:cast', by: 0, card: id });
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s;
+  };
+  const choose = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Lair returns a land that is not a Lair, and never itself or another Lair', () => {
+    let s = enter('Test Lair', ['Island', 'Swamp', 'Test Lair']);
+    s = choose(s, "Return a non-Lair land you control to its owner's hand");
+    expect((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)).sort()).toEqual(['Island', 'Swamp']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [find(s, 0, 'battlefield', 'Island')] } as Action), 20);
+    expect(namesIn(s, 0, 'hand')).toContain('Island');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Lair')).toHaveLength(2);
+    // With only another Lair to return, there is no way to pay: it is sacrificed.
+    const alone = drain(enter('Test Lair', ['Test Lair']), 20);
+    expect(namesIn(alone, 0, 'battlefield').filter((n) => n === 'Test Lair')).toHaveLength(1);
+  });
+
+  it('"an untapped Island": a tapped one does not pay', () => {
+    const tapped = drain(enter('Test Tide', ['Island'], ['Island']), 20);
+    expect(namesIn(tapped, 0, 'battlefield')).not.toContain('Test Tide');
+    let s = enter('Test Tide', ['Island']);
+    s = drain(choose(s, "Return an untapped Island you control to its owner's hand"), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Tide');
+    expect(namesIn(s, 0, 'hand')).toContain('Island');
+  });
+
+  it('"two Swamps": one is not enough, two are both sacrificed', () => {
+    const one = drain(enter('Test Bog', ['Swamp', 'Island']), 20);
+    expect(namesIn(one, 0, 'battlefield')).not.toContain('Test Bog');
+    let s = enter('Test Bog', ['Swamp', 'Swamp', 'Swamp', 'Island']);
+    s = choose(s, 'Sacrifice two Swamps');
+    expect((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id))).toEqual(['Swamp', 'Swamp', 'Swamp']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Bog');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Swamp')).toHaveLength(1);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Island');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -39182,8 +39252,12 @@ describe('a sacrifice the controller chooses (D471)', () => {
       } as never);
       return compiled.ok ? (compiled.unread ?? []).map((u) => u.line) : ['not ok'];
     };
-    expect(refused('sacrifice a Forest')).toHaveLength(1);
-    expect(refused('sacrifice a non-Zombie creature')).toHaveLength(1);
+    // A basic land type and a "non-<Subtype>" read since D741, off the printed capitals.
+    expect(refused('sacrifice a Forest')).toEqual([]);
+    expect(refused('sacrifice a non-Zombie creature')).toEqual([]);
+    // A creature type as the noun, and a keyword filter, still refuse.
+    expect(refused('sacrifice a Goblin')).toHaveLength(1);
+    expect(refused('sacrifice a creature with flying')).toHaveLength(1);
     // And the shapes it does read, so the refusal above is narrow rather than a reader that is off.
     expect(refused('sacrifice a creature')).toEqual([]);
     expect(refused('sacrifice two creatures')).toEqual([]);

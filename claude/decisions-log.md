@@ -51054,3 +51054,34 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 12,931 of 31,858 cards, 33,352 of 59,790 lines (with the other session's D738 and D739
 merged; the omen cards are +6).
+
+## D741 — Lands described by type and state: "a non-Lair land", "an untapped Island", "two Swamps"
+
+`permanentDescribed` reads the permanents a choice, a bounce or a sacrifice is about. It knew types,
+colours and "nonland". It didn't know these, which the "sacrifice it unless you …" costs (D724) and
+their kin print:
+- **A basic land type as the noun:** "an Island", "two Forests", "a Swamp". It is a land with that
+  subtype. The type is a fixed word, so a lower-cased phrase is still safe.
+- **"Untapped" / "tapped":** the permanent's state now.
+- **"Basic" / "nonbasic":** the supertype.
+- **"Non-<Subtype>":** "a non-Lair land" (the Lairs), "a non-Zombie creature", off the printed
+  capitals.
+
+The sacrifice reader also takes "four" and "five" ("sacrifice five lands").
+
+Two older pins move. "Sacrifice a Forest" and "sacrifice a non-Zombie creature" (D471) read now,
+correctly. The refusal is pinned on "sacrifice a Goblin" (a creature type as the noun) and a
+keyword filter instead.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a Lair returns a land that isn't a Lair, never itself or another Lair, and with only another Lair
+  it is sacrificed;
+- "an untapped Island": a tapped one doesn't pay, an untapped one does;
+- "two Swamps": one isn't enough, and with three, two are chosen and sacrificed.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,236, all passing (merged with the other session's D979)
+
+Coverage: 12,984 of 31,845 cards (+24), 33,402 of 59,749 lines (+27), against 108dda6.
