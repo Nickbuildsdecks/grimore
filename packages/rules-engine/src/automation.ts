@@ -45,7 +45,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
+  canPayLife, drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
@@ -4632,9 +4632,11 @@ function decisionBounds(
  */
 function canPayForAnswer(
   state: GameState, seat: SeatIndex,
-  price: { readonly cost?: string; readonly energy?: number },
+  price: { readonly cost?: string; readonly energy?: number; readonly life?: number },
 ): boolean {
   if (price.energy !== undefined) return energyOf(state, seat) >= price.energy;
+  // Life (D989): what `canPayLife` allows, as every other life payment in the engine asks.
+  if (price.life !== undefined) return canPayLife(state, seat, price.life);
   const cost = parseManaCost(price.cost ?? '');
   return cost.unsupported === undefined
     && canAfford(poolOf(state, seat), cost, manaSources(state, seat));
@@ -5306,9 +5308,11 @@ function completeResolution(
         : answer));
       continue;
     }
-    next = price.energy === undefined
-      ? payFrom(next, seat, parseManaCost(price.cost ?? ''), 0).state
-      : spendEnergy(next, seat, price.energy);
+    next = price.life !== undefined
+      ? loseLife(next, seat, price.life)
+      : price.energy === undefined
+        ? payFrom(next, seat, parseManaCost(price.cost ?? ''), 0).state
+        : spendEnergy(next, seat, price.energy);
   }
   answers = paidAnswers;
 

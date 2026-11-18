@@ -23870,6 +23870,67 @@ describe('"each opponent mills N cards", "each player mills N cards" (D748)', ()
   });
 });
 
+describe('"you may pay N life. If you do / When you do, …" (D989)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Vampire', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    C('Test Scholar', 'When this creature enters, you may pay 2 life. If you do, draw a card.'),
+    C('Test Stalker', 'When this creature enters, you may pay 2 life. When you do, target creature gets -1/-1 until end of turn.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd989', name: 'Life', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const enter = (card: string, life = 20) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd989', 1: 'd989' }, deckSpecs: { d989: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: [], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action);
+    for (let i = 0; i < 8 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+  const answer = (s: GameState, option: string) => {
+    let t = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 30);
+    for (let i = 0; i < 8 && t.stackOrder.length > 0 && t.pendingDecision === null; i++) t = drain(passBoth(t), 30);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A life price that is not a number is not one this reads.
+    const x = compileCard(C('Test Xer', 'When this creature enters, you may pay X life. If you do, draw a card.') as never);
+    expect(x.ok && x.unread.length).toBe(1);
+  });
+
+  it('pays the life and draws; declining pays nothing and draws nothing', () => {
+    const s = enter('Test Scholar');
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay 2 life']);
+    const hand = ids(s, 0, 'hand').length;
+    const paid = answer(s, 'Pay 2 life');
+    expect(paid.seats[0]!.life).toBe(18);
+    expect(ids(paid, 0, 'hand')).toHaveLength(hand + 1);
+    const declined = answer(s, 'Decline');
+    expect(declined.seats[0]!.life).toBe(20);
+    expect(ids(declined, 0, 'hand')).toHaveLength(hand);
+  });
+
+  it('the payment is not offered to a player who cannot pay it', () => {
+    const s = enter('Test Scholar', 2);
+    expect(s.pendingDecision?.options ?? ['Decline']).not.toContain('Pay 2 life');
+    expect(s.seats[0]!.life).toBe(2);
+  });
+
+  it('"When you do": paid, the reflexive trigger aims and shrinks a creature', () => {
+    const s = enter('Test Stalker');
+    let t = answer(s, 'Pay 2 life');
+    expect(t.seats[0]!.life).toBe(18);
+    const bear = find(t, 1, 'battlefield', 'Test Bear');
+    if (t.pendingChoice !== null) t = apply(t, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    expect(characteristicsOf(t, t.instances[bear]!).power).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -40190,13 +40251,14 @@ describe('you may X. If you do, Y — the construct, read as what it means (D472
       - **both halves ask.** The yes-or-no can gate both questions, but "if you do" then depends on
         X's answer being non-empty and Y's question is already on the plan by then. A reader that
         asked it anyway would do Y's half of the card after a discard that did not happen.
-      - **a half that does not read.** `pay 2 life` is not a clause this compiler reads at all, so
-        the line stays badged rather than becoming a free "if you do".
+      - **a half that does not read.** `pay X life` is not a price this compiler reads, so the line
+        stays badged rather than becoming a free "if you do". (`pay 2 life` reads since D989, as
+        `payIfChosen.life`.)
       - **a half that points at something.** A target is chosen when the ability goes on the stack,
         before anybody has said yes, which is a different machine from a question (D465).
     */
     expect(unreadOf('you may discard a card. If you do, discard a card')).toHaveLength(1);
-    expect(unreadOf('you may pay 2 life. If you do, draw a card')).toHaveLength(1);
+    expect(unreadOf('you may pay X life. If you do, draw a card')).toHaveLength(1);
     expect(unreadOf('you may sacrifice a creature. If you do, destroy target creature'))
       .toHaveLength(1);
     // The priced form is **not** affected: it was read before this increment and still is (D448).
