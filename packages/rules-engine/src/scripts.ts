@@ -14235,6 +14235,19 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
 
     The bot pays whenever it can: keeping the permanent is what the card was played for.
   */
+  /*
+    "Sacrifice it unless {U} was spent to cast it" (D742), and any other condition a trigger's "if"
+    reads: no choice, just the sacrifice when the condition fails.
+  */
+  const unlessHolds = new RegExp(`^sacrifice (?:it|${selfRef(name)}|this (?:creature|land|artifact|enchantment|permanent)) unless (?!you\\b)(.+)$`, 'i').exec(text);
+  if (unlessHolds !== null) {
+    const condition = interveningConditionFor(unlessHolds[1]!.trim(), name);
+    if (condition !== null) {
+      return {
+        effect: (c) => (condition(c) || c.state.instances[c.source]?.zone !== 'battlefield' ? c.state : sacrifice(c.state, [c.source])),
+      };
+    }
+  }
   const unless = new RegExp(`^sacrifice (?:it|${selfRef(name)}|this (?:creature|land|artifact|enchantment|permanent)) unless you (.+)$`, 'i').exec(text);
   if (unless !== null) {
     const costText = unless[1]!.trim();
@@ -24104,6 +24117,22 @@ function readEffect(
   // An emblem (D734): see `emblemClause`.
   const emblem = emblemClause(clause, name);
   if (emblem !== null) return emblem;
+  /*
+    "If {R} was spent to cast this spell, <effect>" (D742), and any other condition the trigger's
+    intervening "if" reads (`interveningConditionFor`): the effect happens only while the condition
+    holds as the spell resolves. A condition that reader refuses refuses this too, so a sentence
+    whose "if" is about its own targets ("if that creature …") is left to the readers that read it.
+  */
+  // A spell's sentence only (`where` is null): on a trigger an "if" is intervening (CR 603.4) and
+  // is asked as it triggers too, which `interveningIfFromLine` reads.
+  const guarded = where !== null ? null : /^if ([^,]+), (.+)$/i.exec(clause.trim());
+  if (guarded !== null && !/^you do\b|^you don't\b|^x is\b/i.test(guarded[1]!.trim())) {
+    const condition = interveningConditionFor(guarded[1]!.trim(), name);
+    const then = condition === null ? null : readEffect(guarded[2]!, name, where);
+    if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
+      return { ...then, effect: (c) => (condition(c) ? then.effect(c) : c.state) };
+    }
+  }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -28932,6 +28961,22 @@ function interveningConditionRows(
     other way — reanimated, blinked, put onto the battlefield — has no current record and the
     condition is false, which is what the 27 cards that print it are written around.
   */
+  /*
+    "If {U} was spent to cast it" (D742), Eventide's hybrid colour checks: the colours the spell
+    being resolved was paid with, or for a permanent's own trigger the colours recorded beside
+    "you cast it" (D607) as it resolved — so a permanent that arrived any other way spent nothing.
+  */
+  const spent = new RegExp(`^\\{([WUBRG])\\} was spent to cast (?:it|this spell|${selfRef(name)})$`, 'i').exec(text);
+  if (spent !== null) {
+    const colour = spent[1]!.toUpperCase();
+    return (c) => {
+      if (c.resolving?.kind === 'spell' && c.resolving.source === c.source) return (c.resolving.colorsSpent ?? []).includes(colour);
+      const record = c.state.castPermanents?.[c.source];
+      const inst = c.state.instances[c.source];
+      if (record === undefined || inst === undefined || record.seq !== (inst.objectSeq ?? 0)) return false;
+      return (record.colors ?? []).includes(colour);
+    };
+  }
   const castIt = /^you cast it( from your hand)?$/i.exec(text);
   if (castIt !== null) {
     const fromHand = castIt[1] !== undefined;

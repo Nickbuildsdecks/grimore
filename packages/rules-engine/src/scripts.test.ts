@@ -22911,6 +22911,66 @@ describe('lands described by type and state: "a non-Lair land", "an untapped Isl
   });
 });
 
+describe('"if {U} was spent to cast it" (D742)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Sight', 'Instant', 'Draw a card. If {U} was spent to cast this spell, draw a card.'),
+    R('Test Spawn', 'Creature — Elemental', 'When Test Spawn enters, sacrifice it unless {U} was spent to cast it.', { power: '3', toughness: '3' }),
+    R('Test Ember', 'Creature — Elemental', 'When Test Ember enters, if {R} was spent to cast it, you gain 3 life.', { power: '1', toughness: '1' }),
+  ];
+  const deck = customDeck({
+    id: 'd742', name: 'Spent',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 17 }, { name: 'Island', count: 17 }, { name: 'Mountain', count: 17 }],
+    data: ROWS as never[],
+  });
+  const cast = (card: string, land: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd742', 1: 'd742' }, deckSpecs: { d742: deck.deck }, hands: { 0: [card] }, battlefield: { 0: [land] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = { hand: ids(s, 0, 'hand').length - 1, life: s.seats[0]!.life };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) })), 20);
+    return { s, before };
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a spell checks the mana it was paid with, generic included', () => {
+    const blue = cast('Test Sight', 'Island');
+    expect(ids(blue.s, 0, 'hand').length - blue.before.hand).toBe(2);
+    const green = cast('Test Sight', 'Forest');
+    expect(ids(green.s, 0, 'hand').length - green.before.hand).toBe(1);
+  });
+
+  it('"sacrifice it unless {U} was spent": kept when it was, sacrificed when it was not', () => {
+    expect(namesIn(cast('Test Spawn', 'Island').s, 0, 'battlefield')).toContain('Test Spawn');
+    expect(namesIn(cast('Test Spawn', 'Forest').s, 0, 'graveyard')).toContain('Test Spawn');
+    // Cast with blue, then bounced and put back by hand: a new object, which was never cast.
+    let s = cast('Test Spawn', 'Island').s;
+    const spawn = find(s, 0, 'battlefield', 'Test Spawn');
+    s = apply(s, { type: 'card:move', by: 0, card: spawn, toZone: 'hand' });
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: spawn, toZone: 'battlefield' })), 20);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Spawn');
+  });
+
+  it('an intervening "if {R} was spent to cast it", and a permanent put onto the battlefield spent nothing', () => {
+    const red = cast('Test Ember', 'Mountain');
+    expect(red.s.seats[0]!.life).toBe(red.before.life + 3);
+    const green = cast('Test Ember', 'Forest');
+    expect(green.s.seats[0]!.life).toBe(green.before.life);
+    // Put onto the battlefield by hand, never cast: no life.
+    let s = advanceTo(arena({
+      decks: { 0: 'd742', 1: 'd742' }, deckSpecs: { d742: deck.deck }, hands: { 0: ['Test Spawn'] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Test Spawn'), toZone: 'battlefield' })), 20);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Spawn');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -1203,7 +1203,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And where it was cast from (D607): `inst` is the card before it moved to the stack.
     castFrom: inst.zone,
     // And how many colours of mana were spent on it (D917), for sunburst and converge.
-    ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent } : {}),
+    ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent, colorsSpent: [...paid.colorsSpent] } : {}),
     // And whether casualty was paid (D923), for its copy.
     ...(action.casualty === true ? { casualtyPaid: true as const } : {}),
     // And conspire (D926).

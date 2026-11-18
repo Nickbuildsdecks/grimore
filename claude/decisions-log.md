@@ -51085,3 +51085,40 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,236, all passing (merged with the other session's D979)
 
 Coverage: 12,984 of 31,845 cards (+24), 33,402 of 59,749 lines (+27), against 108dda6.
+
+## D742 — "If {U} was spent to cast it", and a spell's "If <condition>, <effect>"
+
+Eventide's hybrid cards and their kin check which colours paid for them: "When ~ enters, if {R}
+was spent to cast it, …", "If {U} was spent to cast this spell, draw a card", "sacrifice it unless
+{U} was spent to cast it". 45 legal lines, nearly every one its own shape.
+
+How it works:
+- **The payment records which colours it spent** (`colorsSpent`, beside sunburst's count from
+  D917): a colour counts when the pool holds less of it after paying, generic mana included. The
+  stack object carries the list.
+- **The permanent keeps it.** As a permanent spell resolves, the colours go into its
+  `castPermanents` record with "you cast it" (D607), under the same object-sequence check. A
+  permanent that was bounced and replayed by other means, or never cast, spent nothing.
+- **"{C} was spent to cast it / this spell / ~"** is a new intervening condition. For a resolving
+  spell it reads the spell's own list; otherwise it reads the permanent's record.
+
+Two readers take any condition the intervening-if reader answers, not only this one:
+- **A spell's "If <condition>, <effect>"**: the effect happens only while the condition holds as the
+  spell resolves. This is for spells only (`where` is null). On a trigger the "if" is intervening
+  and asked as it triggers too, so `interveningIfFromLine` keeps reading those. The first version
+  applied it to triggers as well, and 46 tests caught it.
+- **"Sacrifice it unless <condition>"**, beside D724's "unless you <cost>".
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a spell with a generic {1} draws two when an Island paid and one when a Forest did;
+- "sacrifice it unless {U} was spent": kept when cast with blue, sacrificed when cast with green,
+  and sacrificed when bounced and put back by hand;
+- an intervening "if {R} was spent to cast it": life with a Mountain, none with a Forest, and a
+  permanent put onto the battlefield without being cast spent nothing.
+
+Faults injected by script: 6 of 6 caught, one after pinning (a stale cast record trusted).
+
+    engine tests: 5,240, all passing
+
+Coverage: 13,027 of 31,858 cards (+37), 33,480 of 59,790 lines (+45), against 397e7d8.
