@@ -51288,6 +51288,6 @@ effects.
 
 Faults injected by script: 3 of 3 caught.
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,257, all passing (merged with the other session's D982)
 
 Coverage: 13,112 of 31,858 cards (+34), 33,592 of 59,790 lines (+45), against a6a04ba.
