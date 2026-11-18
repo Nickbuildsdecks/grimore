@@ -10500,12 +10500,7 @@ describe('counter unless its controller pays (D489)', () => {
       Every refusal here is about **where the number comes from**, which is the one thing a clause
       reader must not guess.
     */
-    ['Counter target spell unless its controller pays {X}.',
-      "Clash of Wills: X is the counterspell's own, chosen as it was cast"],
-    ['Counter target spell unless its controller pays {1} for each card in your graveyard.',
-      'a cost computed off the board (Circular Logic)'],
-    ['Counter target spell unless its controller pays {1} for each creature you control.',
-      'the same (Protect the Negotiators)'],
+    // {X} (the counterspell's own) and "{1} for each …" read since D739; see that block.
     ['Counter target spell unless its controller discards their hand.',
       "Perplex: a cost that is not mana, which `pendingPayment` cannot price"],
     ['Counter target spell unless its controller exiles all cards from their graveyard.',

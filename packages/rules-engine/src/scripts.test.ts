@@ -22546,6 +22546,62 @@ describe('"prevent all damage that would be dealt to / by …" this turn (D738)'
   });
 });
 
+describe('a soft counter for {X} or for a count: Power Sink, and "{1} for each …" (D739)', () => {
+  const I = (name: string, text: string, cost = '{U}') => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: cost, cmc: 1, colors: ['U'], layout: 'normal' });
+  const ROWS = [
+    I('Test Sink', 'Counter target spell unless its controller pays {X}.', '{X}{U}'),
+    I('Test Tithe', 'Counter target spell unless its controller pays {1} for each card in your graveyard.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd739', name: 'Soft counters',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }],
+    data: ROWS as never[],
+  });
+  /** Seat 1 casts a Bear on its turn; seat 0 answers with `counter`. Returns the state at the question. */
+  const answer = (counter: string, x?: number, graveyard: string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd739', 1: 'd739' }, deckSpecs: { d739: deck.deck },
+      hands: { 0: [counter], 1: ['Test Bear'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island'], 1: ['Island', 'Island', 'Island'] },
+      turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    for (const name of graveyard) s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard' });
+    const bear = find(s, 1, 'hand', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 1, card: bear });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', counter), targets: [{ kind: 'card', id: bear }], ...(x === undefined ? {} : { x }) });
+    return drain(passBoth(s));
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('{X}: the opponent is asked for X, and declining counters the spell', () => {
+    let s = answer('Test Sink', 2);
+    expect(s.pendingPayment?.seat).toBe(1);
+    expect(s.pendingPayment?.cost).toBe('{2}');
+    s = drain(apply(s, { type: 'auto:pay', by: 1, pay: false }));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Bear');
+  });
+
+  it('X of 0 asks nothing, and the spell resolves', () => {
+    const s = drain(passBoth(answer('Test Sink', 0)));
+    expect(s.pendingPayment).toBeNull();
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('"{1} for each card in your graveyard": the count as it resolves', () => {
+    const s = answer('Test Tithe', undefined, ['Island', 'Island', 'Island']);
+    expect(s.pendingPayment?.cost).toBe('{3}');
+    const empty = drain(passBoth(answer('Test Tithe')));
+    expect(empty.pendingPayment).toBeNull();
+    expect(namesIn(empty, 1, 'battlefield')).toContain('Test Bear');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

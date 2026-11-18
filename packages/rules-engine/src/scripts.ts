@@ -22194,6 +22194,40 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => counterUnlessPaid(c, cost, name),
       };
     }
+    /*
+      **{X}, the counterspell's own** (D739): Power Sink, Spell Blast's cousins. `c.x` is the X it
+      was cast for, settled by the time it resolves, so the cost is that many generic. X of 0 asks
+      nothing: {0} is always paid.
+    */
+    if (spec !== null && pointsAtTheStack(spec) && /^\{X\}$/i.test(cost)) {
+      return {
+        targets: [spec],
+        effect: (c) => (c.x <= 0 ? c.state : counterUnlessPaid(c, `{${c.x}}`, name)),
+      };
+    }
+  }
+  /*
+    **"…pays {1} for each card in your graveyard"** (D739): Mana Tithe's counted cousins, the count
+    read as the spell resolves through `forEachCount`, the same reader "draw a card for each …" uses.
+    Generic mana only: a coloured symbol times a count is not a cost this builds.
+  */
+  const unlessPaidEach = new RegExp(
+    `^counter (${TARGET_QUANTIFIER_PREFIX}target .+?) unless its controller pays \\{(\\d+)\\} for each (.+)$`,
+    'i',
+  ).exec(text);
+  if (unlessPaidEach !== null) {
+    const spec = targetSpecFrom(unlessPaidEach[1]!.trim(), false);
+    const per = Number(unlessPaidEach[2]);
+    const count = forEachCount(unlessPaidEach[3]!.trim(), name);
+    if (spec !== null && pointsAtTheStack(spec) && count !== null && per > 0) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const owed = per * count(c);
+          return owed <= 0 ? c.state : counterUnlessPaid(c, `{${owed}}`, name);
+        },
+      };
+    }
   }
 
   const countering = new RegExp(`^counter (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
