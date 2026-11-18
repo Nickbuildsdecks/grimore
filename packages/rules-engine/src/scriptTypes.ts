@@ -1538,7 +1538,12 @@ export interface CardsDecisionSpec {
    * `auto:decide` answer is checked against — rather than off a second rule that could disagree
    * with it. That is the discipline scry already uses for a library.
    */
-  readonly fromSeat?: 'chooser' | 'target-player';
+  readonly fromSeat?: 'chooser' | 'target-player'
+    /**
+     * "That player reveals their hand. You choose a card from it" on a combat-damage trigger (D987):
+     * the hand of the player the event hit, as `who: 'hit-player'` asks that player.
+     */
+    | 'hit-player';
   /**
    * For `library-top`: how many cards off the top the question is about. Ignored everywhere else.
    *

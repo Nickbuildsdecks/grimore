@@ -19541,6 +19541,25 @@ function eventRelativeEffect(
     is finished instead of refused. The order is stated here rather than left to be inferred because
     the reverse order would make every new sentence the vocabulary learns invisible to this path.
   */
+  /*
+    The caster's look at the hit player's hand (D987): "that player reveals their hand. You choose a
+    nonland card from it. That player discards that card", and "look at that player's hand and
+    choose a card from it. The player discards that card". `chosenDiscardPrefix` reads the targeted
+    sentence; here the target is dropped and the hand is the hit player's (`fromSeat: 'hit-player'`).
+    "That player" twice is why the general swap below cannot.
+  */
+  if (aboutTheHitPlayer) {
+    const looked = /^look at that player's hand and choose an? (.*?)card from it\. the player discards that card$/i.exec(text.trim());
+    const revealed = /^that player reveals their hand\. (you choose an? .*?card from it(?: and exile (?:that card|it))?)(?:\. ((?:that player discards|that player exiles|exile) (?:that card|it)))?$/i.exec(text.trim());
+    const clauses = looked !== null
+      ? ['target player reveals their hand', `you choose a ${looked[1]!}card from it`, 'that player discards that card']
+      : revealed !== null ? ['target player reveals their hand', revealed[1]!, ...(revealed[2] === undefined ? [] : [revealed[2].replace(/^that player exiles/i, 'exile')])] : null;
+    const read = clauses === null ? null : chosenDiscardPrefix(clauses.map((clause) => clause.replace(/\s+/g, ' ')));
+    if (read !== null) {
+      const asked = (read.read.decisions ?? []).map((spec) => ({ ...spec, fromSeat: 'hit-player' as const })) as readonly DecisionSpecOf[];
+      return { decisions: asked, effect: read.read.effect };
+    }
+  }
   if (aboutTheHitPlayer) {
     const hit = referentEffect(
       text, 'that player', 'player',
