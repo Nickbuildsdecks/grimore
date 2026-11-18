@@ -23726,6 +23726,57 @@ describe('turn conditions: another spell, an opponent\'s spells, cards drawn (D7
   });
 });
 
+describe('"that player reveals their hand. You choose a card from it" on a hit (D987)', () => {
+  const ROWS = [
+    { name: 'Test Thief', type_line: 'Creature — Rat Rogue', oracle_text: 'Whenever this creature deals combat damage to a player, that player reveals their hand. You choose a nonland card from it. That player discards that card.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Spy', type_line: 'Creature — Human Rogue', oracle_text: "Whenever this creature deals combat damage to a player, look at that player's hand and choose a card from it. The player discards that card.", mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' },
+    { name: 'Test Robber', type_line: 'Creature — Human Rogue', oracle_text: 'Whenever this creature deals combat damage to a player, that player reveals their hand. You choose a card from it. That player exiles that card.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({ id: 'd987', name: 'Thieves', entries: [...ROWS.map((r) => ({ name: r.name, count: 5 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const hit = (attacker: string) => {
+    let s = arena({
+      decks: { 0: 'd987', 1: 'd987' }, deckSpecs: { d987: deck.deck },
+      battlefield: { 0: [attacker], 1: [] }, hands: { 1: ['Test Bolt', 'Swamp', 'Test Bolt'] }, turn: 3, firstSeat: 0,
+    });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', attacker), defender: 1 }] });
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.step !== 'postcombat-main'; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0], ROWS[1], ROWS[3]]) expect(compileCard(row as never), row!.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"that player exiles that card": to exile, not the graveyard', () => {
+    const s = hit('Test Robber');
+    const pick = s.pendingDecision!.candidates[0]!;
+    const done = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 30);
+    expect(done.instances[pick]!.zone).toBe('exile');
+  });
+
+  it('the attacker chooses a nonland card out of the hit player\'s hand, and that player discards it', () => {
+    const s = hit('Test Thief');
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.candidates.every((id) => s.instances[id]!.zoneSeat === 1)).toBe(true);
+    expect([...new Set(choices(s))]).toEqual(['Test Bolt']);
+    const pick = s.pendingDecision!.candidates[0]!;
+    const done = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 30);
+    expect(done.instances[pick]!.zone).toBe('graveyard');
+    expect(done.instances[pick]!.zoneSeat).toBe(1);
+    expect(namesIn(done, 1, 'hand').sort()).toEqual(['Swamp', 'Test Bolt']);
+  });
+
+  it('"look at that player\'s hand and choose a card": any card, the land included', () => {
+    const s = hit('Test Spy');
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect([...new Set(choices(s))].sort()).toEqual(['Swamp', 'Test Bolt']);
+  });
+});
+
 describe('"each opponent mills N cards", "each player mills N cards" (D748)', () => {
   const I = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
   const ROWS = [I('Test Erosion', 'Each opponent mills three cards.'), I('Test Flood', 'Each player mills two cards.')];

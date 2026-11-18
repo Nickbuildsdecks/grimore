@@ -4813,7 +4813,10 @@ function askOrFinish(
     */
     const poolSeat = !isCountersDecision(spec) && spec.fromSeat === 'target-player'
       ? object.targets.find((t) => t.kind === 'player')
-      : undefined;
+      // The player the event hit (D987), with no hit there is no pool, as with no target.
+      : !isCountersDecision(spec) && spec.fromSeat === 'hit-player'
+        ? (object.attacked === undefined ? undefined : { kind: 'player' as const, seat: object.attacked.defender })
+        : undefined;
     // "With mana value X or less" (D686): bounded by the X this spell was cast with.
     const bounded = !isCountersDecision(spec) && spec.manaValueAtMostX === true
       ? {
