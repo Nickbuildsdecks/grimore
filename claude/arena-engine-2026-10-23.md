@@ -33732,3 +33732,29 @@ Faults injected by script: 6 of 6 caught, one after pinning (a stale cast record
     engine tests: 5,244, all passing (merged with the other session's D980)
 
 Coverage: 13,027 of 31,858 cards (+37), 33,480 of 59,790 lines (+45), against 397e7d8.
+
+## D743 — Pumps by X, and pumps of several targets
+
+Two shapes the targeted pump reader (D544) refused:
+- **X in the size:** "Target creature gets +X/+0 until end of turn", "… -X/-X …", "+X/+X". X is the
+  spell's own, settled as it resolves (`c.x`). The aim follows the printed signs as the numbered
+  form's does, so a -X/-X points at somebody else's creature.
+- **Several targets, each pumped:** "Up to two target creatures each get +1/+1 until end of turn",
+  "Two target creatures each get +2/+0 and gain first strike until end of turn". Every chosen
+  creature gets the same bonus, and "up to" may take fewer. A true shrink with a granted keyword
+  stays refused, as in the single form.
+
+Still unread here: X from a count ("where X is …"), a pump with a second sentence, and type-changing
+pumps ("becomes a blue Serpent with base power and toughness 5/5").
+
+**Tests.** 4 engine tests:
+- the cards read;
+- +X/+0 for X = 3 makes a 2/2 a 5/2, and -X/-X for X = 2 kills a 2/2;
+- up to two each get +1/+1: two Bears both 3/3, and with one target only that one;
+- two each get +2/+0 and first strike, both creatures, and it is gone once the turn ends.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,251, all passing (merged with the other session's D981)
+
+Coverage: 13,078 of 31,858 cards (+30), 33,547 of 59,790 lines (+39), against d5ad263.

@@ -23394,6 +23394,51 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    **Several targets, each pumped** (D743): "Up to two target creatures each get +1/+1 until end of
+    turn", "Two target creatures each get +2/+0 and gain first strike until end of turn". Every
+    creature chosen gets the same bonus; the aim follows the toughness as the single form's does.
+  */
+  const each = /^((?:up to )?(?:two|three) target .+?) each get ([-+]\d+)\/([-+]\d+)(?: and gain ([a-z][a-z', ]*?))? until end of turn$/i.exec(text);
+  if (each !== null) {
+    const power = Number(each[2]);
+    const toughness = Number(each[3]);
+    const helping = toughness !== 0 ? toughness > 0 : power > 0;
+    const bonus = pumpAndGrant(power, toughness, each[4]);
+    const spec = targetSpecFrom(each[1]!, helping);
+    if (spec !== null && bonus !== null && pointsAtAPermanent(spec) && (spec.count ?? 1) > 1
+      && !(power <= 0 && toughness <= 0 && each[4] !== undefined)) {
+      return {
+        targets: [spec],
+        effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, bonus),
+        spellFlags: { expiresAtEndOfTurn: true },
+      };
+    }
+  }
+  /*
+    **X in the size** (D743): "Target creature gets +X/+0 until end of turn", "… -X/-X …", the X the
+    spell was cast for (`c.x`, settled as it resolves). The aim follows the printed signs as the
+    numbered form's does, and X of 0 is a pump of nothing.
+  */
+  const xSized = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) gets ([-+])(X|\\d+)\\/([-+])(X|\\d+) until end of turn$`, 'i',
+  ).exec(text);
+  if (xSized !== null && (xSized[3]!.toUpperCase() === 'X' || xSized[5]!.toUpperCase() === 'X')) {
+    const value = (sign: string, word: string, x: number) => (sign === '-' ? -1 : 1) * (word.toUpperCase() === 'X' ? x : Number(word));
+    const shrinks = xSized[4] === '-' || (xSized[5] === '0' && xSized[2] === '-');
+    const spec = targetSpecFrom(xSized[1]!, !shrinks);
+    if (spec !== null && pointsAtAPermanent(spec) && (spec.count ?? 1) === 1) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          const bonus = sizeBonus(value(xSized[2]!, xSized[3]!, c.x), value(xSized[4]!, xSized[5]!, c.x));
+          return id === null || bonus === null ? c.state : pump(c.state, [id], c.source, c.controller, bonus);
+        },
+        spellFlags: { expiresAtEndOfTurn: true },
+      };
+    }
+  }
   const sized = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?)`
     + ` gets ([-+]\\d+)\\/([-+]\\d+)(?: and gains ([a-z][a-z', ]*?))? until end of turn$`,
