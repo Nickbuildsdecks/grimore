@@ -20053,7 +20053,31 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       currently discriminates on nothing and is kept because it is the cheap safe direction. Every
       other caller keeps it too.
     */
-    const read = reader(clause) ?? optionalEffect(clause, reader, true) ?? punisherEffect(clause, reader, on, name);
+    /*
+      **"That creature" is the creature the event was about** (D964): "Whenever another creature
+      you control enters, that creature gets +1/+1 until end of turn", "Whenever a creature you
+      control attacks, that creature gains flying until end of turn". The same clause with "it"
+      already reads, and "it" on these triggers is the event's subject (`itMeans`). So the clause is
+      read with "it" in its place, only where every event is about another creature (`who` any or
+      another): on "Whenever ~ blocks a creature, that creature …" the creature is the one blocked,
+      and "it" would be ~. A target earlier in the clause needs no guard here, because after a
+      target a bare "it" is that target (D723), which is what "that creature" meant. The possessive
+      ("that creature's controller") is left alone. The printed clause stays the description.
+
+      **Not where "that creature deals" damage.** The "it deals …" readers deal from the watching
+      card, not the event's creature, so a lifelink creature entering under "that creature deals 1
+      damage to each opponent" would gain nothing and "damage equal to its power" would read the
+      enchantment's. This increment's own tests found that, and those lines stay unread.
+    */
+    const aboutAnother = on.length > 0 && on.every((event) => {
+      const who = (event as { readonly who?: string }).who;
+      return who === 'any' || who === 'another';
+    });
+    const thatCreature = clause.search(/\bthat creature\b(?!['\u2019]s)/i);
+    const asRead = aboutAnother && thatCreature >= 0 && !/\bthat creature deals\b/i.test(clause)
+      ? clause.replace(/\bthat creature\b(?!['\u2019]s)/gi, 'it')
+      : clause;
+    const read = reader(asRead) ?? optionalEffect(asRead, reader, true) ?? punisherEffect(asRead, reader, on, name);
     if (read === null) return null;
     /*
       **A trigger that divides a quantity is not emitted at all**, the third call site of

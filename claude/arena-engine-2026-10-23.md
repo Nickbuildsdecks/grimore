@@ -32591,3 +32591,47 @@ Faults injected by hand: 3 of 3 caught.
     engine tests: 5,116, all passing
 
 Coverage: 12,544 of 31,743 cards (+10), 32,577 of 59,509 lines (+18). Staples: 241 of 244.
+
+## D964 — "That creature" on a trigger about another creature
+
+"Whenever another creature you control enters, that creature gets +1/+1 until end of turn."
+"… put a +1/+1 counter on that creature and it gains haste." The same clause with "it" already
+read, and on these triggers "it" is the event's creature (`itMeans`). "That creature" was not
+read as the same thing.
+
+How it is read: on a trigger whose events are all about **another** creature (`who` any or
+another), `triggerFromLine` reads the clause with "it" in place of "that creature". The printed
+clause stays the description. Three limits:
+- **Not on a trigger about its own creature.** On "Whenever ~ blocks a creature, that creature gets
+  -1/-1", "that creature" is the one blocked and "it" would be ~. That line already reads
+  correctly by its own path, and a test pins it.
+- **No guard for a target earlier in the clause.** After a target, a bare "it" is that target
+  (D723), which is what "that creature" meant. A first draft had such a guard, and fault injection
+  showed it changed nothing.
+- **Not where "that creature deals" damage.** This increment's own tests found that the "it deals
+  …" readers deal from the watching card, not the event's creature. A lifelink creature entering
+  under "that creature deals 1 damage to each opponent" gained nothing, and "damage equal to its
+  power" read the enchantment's power. Those lines stay unread, and the tests assert it.
+
+Logged across the corpus, every line that reads this way is right:
+- counters and pumps on the entering or attacking creature;
+- one "you may pay {1}. If you do, put a +1/+1 counter on that creature";
+- one fight through D958's reader, which uses the event's creature;
+- one "put a +1/+1 counter on target creature. That creature gains flying", where "it" is the
+  target.
+
+4 legal cards now read whole.
+
+**Tests.** 4 engine tests:
+- the pump card reads, and the two "that creature deals" cards stay unread;
+- the pump goes on the creature that entered;
+- a target before it: the counter and haste go to the target, not the creature that entered;
+- on a block trigger, the -1/-1 goes to the creature blocked, not the blocker.
+
+Faults injected by hand: 7, across two rounds. The first round missed three: Banner's counter line
+already read by another path (it is now a pump), the target guard was redundant (removed), and the
+own-creature check was unpinned (now pinned by the block test). The second round caught 3 of 3.
+
+    engine tests: 5,120, all passing
+
+Coverage: 12,548 of 31,743 cards (+4), 32,582 of 59,509 lines (+5). Staples: 241 of 244.

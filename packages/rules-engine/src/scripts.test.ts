@@ -20923,6 +20923,79 @@ describe('"defending player" as the subject of an attack trigger (D963)', () => 
   });
 });
 
+describe('"that creature" on a trigger about another creature (D964)', () => {
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    E('Test Banner', 'Whenever another creature you control enters, that creature gets +1/+1 until end of turn.'),
+    E('Test Kindler', 'Whenever another creature you control enters, that creature deals 1 damage to each opponent.'),
+    E('Test Sling', 'Whenever another creature you control enters, you may pay {0}. If you do, that creature deals damage equal to its power to any target.'),
+    { name: 'Test Leech', type_line: 'Creature — Leech', oracle_text: 'Lifelink', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
+    E('Test Rally', 'Whenever another creature you control enters, put a +1/+1 counter on target creature. That creature gains haste until end of turn.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd964', name: 'That creature',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  /** With `watcher` out, casts the Leech and resolves everything, answering yes and the opponent. */
+  const enter = (watcher: string, mine: string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd964', 1: 'd964' }, deckSpecs: { d964: deck.deck }, hands: { 0: ['Test Leech'] },
+      battlefield: { 0: [watcher, 'Mountain', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = mine.length > 0 ? find(s, 0, 'battlefield', 'Test Bear') : undefined;
+    const before = s;
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Leech') } as Action), 30);
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null || s.pendingChoice !== null); i++) {
+      if (s.pendingChoice !== null) { s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [bear === undefined ? { kind: 'player', seat: 1 } : { kind: 'card', id: bear }] }), 30); continue; }
+      const d = s.pendingDecision;
+      s = d === null ? drain(passBoth(s), 30)
+        : drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => o === 'Yes') } as Action), 30);
+    }
+    return { before, s, leech: find(s, 0, 'battlefield', 'Test Leech'), bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    // "That creature deals": the damage readers deal from the watching card, so these stay unread.
+    for (const row of ROWS.slice(1, 3)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread.length, row.name).toBe(1);
+    }
+  });
+
+  it('the pump goes on the creature that entered', () => {
+    const { s, leech } = enter('Test Banner');
+    expect(characteristicsOf(s, s.instances[leech]!).power).toBe(4);
+  });
+
+  it('on a block trigger, "that creature" stays the creature blocked, not the blocker', () => {
+    const thorn = { name: 'Test Thorn', type_line: 'Creature — Plant', oracle_text: 'Whenever this creature blocks a creature, that creature gets -1/-1 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '4' };
+    const thornDeck = customDeck({ id: 'd964b', name: 'Thorn', entries: [{ name: 'Test Thorn', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 54 }], data: [thorn, ROWS[5]] as never[] }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'd964b', 1: 'd964b' }, deckSpecs: { d964b: thornDeck },
+      battlefield: { 0: ['Test Thorn'], 1: ['Test Bear'] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const plant = find(s, 0, 'battlefield', 'Test Thorn');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: plant, attacker: bear }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(1);
+    expect(characteristicsOf(s, s.instances[plant]!).toughness).toBe(4);
+  });
+
+  it('a target before it: "that creature" is the target, not the creature that entered', () => {
+    const { s, leech, bear } = enter('Test Rally', ['Test Bear']);
+    expect(s.instances[bear!]!.counters['+1/+1']).toBe(1);
+    expect(characteristicsOf(s, s.instances[bear!]!).keywords).toContain('haste');
+    expect(characteristicsOf(s, s.instances[leech]!).keywords).not.toContain('haste');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
