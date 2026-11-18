@@ -79,6 +79,6 @@ That is a cross-cutting change for 6 cards, so the corpus families come first.
 D901 and up, and its own families. Pod sweeps here stay at seeds 58001 upward in steps of 100.
 
 **Claims since:** D734 emblems (done). D735 anthems by colour and kind ("Other green creatures you
-control get +1/+1", "Artifact creatures you control have flying"; done). D736 ward and goad granted by statics and attachments (done). D737 board conditions on statics (done). D738 "prevent all damage … this turn" (done).
+control get +1/+1", "Artifact creatures you control have flying"; done). D736 ward and goad granted by statics and attachments (done). D737 board conditions on statics (done). D738 "prevent all damage … this turn" (done). D739 soft counters for {X} and for a count (done).
 
 **This session (D9xx), claimed:** D978 prepare layout (done).

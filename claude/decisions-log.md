@@ -50969,3 +50969,31 @@ other seat.
     engine tests: 5,224, all passing (merged with the other session's D738)
 
 Coverage: 12,887 of 31,845 cards (+23), 33,278 of 59,749 lines (+100).
+
+## D739 — A soft counter for {X} or for a count: Power Sink, and "{1} for each …"
+
+"Counter target spell unless its controller pays {N}" read since D489; two of its relatives didn't:
+- **"… pays {X}"** (Power Sink, Clash of Wills): the X is the counterspell's own, now on the
+  resolution context as `c.x`. The cost is that many generic; X of 0 asks nothing, since {0} is
+  always paid.
+- **"… pays {1} for each …"** (Circular Logic, Protect the Negotiators, Hindering Light's kin): the
+  count is read as the counterspell resolves by `forEachCount`, the reader "draw a card for each …"
+  uses, times the generic amount. A count of 0 asks nothing.
+
+Still unread: a coloured cost times a count, "{X}, where X is its mana value", costs that aren't
+mana (Perplex, Grip of Amnesia), and riders after the counter that use X ("You gain X life").
+
+Three D489 compile tests pinned these shapes as unread, because nothing could read them then. They
+read now, and those rows are gone; the two non-mana costs stay pinned.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- {X} for 2: the Bear's controller is asked for {2}, and declining counters it;
+- X of 0: nothing is asked and the Bear resolves;
+- "{1} for each card in your graveyard": {3} with three there, nothing with none.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,219, all passing
+
+Coverage: 12,903 of 31,798 cards (+11), 33,221 of 59,619 lines (+11), against 70d002c.
