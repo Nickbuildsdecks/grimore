@@ -32740,3 +32740,26 @@ Faults injected by hand: 4 of 4 caught.
     engine tests: 5,132, all passing
 
 Coverage: 12,568 of 31,743 cards (+7), 32,610 of 59,509 lines (+12). Staples: 241 of 244.
+
+## D968 — "This spell costs {X} less to cast, where X is" a board measure
+
+"This spell costs {X} less to cast, where X is the greatest power among creatures you control"
+(Ghalta the Unstoppable, Molten Monstrosity). "… where X is your devotion to black" (Marshmist
+Titan, Drag to the Underworld), and to white (Daybreak Chimera). The cost reducer's
+`whereXCount` read only "the number of …". The damage reader's `boardCount` already reads
+devotion, "the greatest power among …" and the rest. `whereXCount` now falls back to it.
+
+Tried and dropped: a plural fallback for "for each land card in your graveyard", "… creature that
+attacked this turn" and the like. It read no more lines, so it is not kept.
+
+5 legal cards now read whole.
+
+**Tests.** 2 engine tests:
+- the devotion and greatest-power cards read;
+- devotion two takes {2} off: castable with three lands, not with two.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 5,134, all passing
+
+Coverage: 12,573 of 31,743 cards (+5), 32,618 of 59,509 lines (+8). Staples: 241 of 244.

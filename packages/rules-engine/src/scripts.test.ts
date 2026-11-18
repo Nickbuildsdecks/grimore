@@ -21147,6 +21147,34 @@ describe('"exile a creature card from your graveyard" as an additional cost (D96
   });
 });
 
+describe('"costs {X} less, where X is" a board measure (D968)', () => {
+  const ROWS = [
+    { name: 'Test Titan', type_line: 'Creature — Giant', oracle_text: 'This spell costs {X} less to cast, where X is your devotion to black.', mana_cost: '{4}{B}', cmc: 5, colors: ['B'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Knight', type_line: 'Creature — Knight', oracle_text: '', mana_cost: '{B}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Behemoth', type_line: 'Creature — Dinosaur', oracle_text: 'This spell costs {X} less to cast, where X is the greatest power among creatures you control.', mana_cost: '{6}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '7', toughness: '7' },
+  ];
+  const deck = customDeck({
+    id: 'd968', name: 'Where X is',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (swamps: number) => advanceTo(arena({
+    decks: { 0: 'd968', 1: 'd968' }, deckSpecs: { d968: deck.deck }, hands: { 0: ['Test Titan'] },
+    battlefield: { 0: ['Test Knight', ...Array.from({ length: swamps }, () => 'Swamp')], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Titan'));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0], ROWS[2]]) expect(compileCard(row as never), row!.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('devotion two takes {2} off: castable with three lands, not with two', () => {
+    expect(offered(seated(3))).toBe(true);
+    expect(offered(seated(2))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -12228,10 +12228,15 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
   } };
 }
 
-/** "the number of …" after "where X is", read in the plural as every such count is. */
+/**
+ * "the number of …" after "where X is", read in the plural as every such count is — and, failing
+ * that (D968), any measure the damage reader's `boardCount` reads: "your devotion to black", "the
+ * greatest power among creatures you control", "the total power of creatures you control".
+ */
 function whereXCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
-  const the = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
-  return the === null ? null : countOfThing(the[1]!, name, 'plural');
+  const text = plain(phrase).trim().replace(/\.$/, '');
+  const the = /^the number of (.+)$/i.exec(text);
+  return (the === null ? null : countOfThing(the[1]!, name, 'plural')) ?? boardCount(text, name);
 }
 
 export function isKeywordDeclaration(line: string): boolean {
