@@ -21899,6 +21899,38 @@ describe('Teferi\'s Protection: phasing, and a life total that can\'t change (D7
   });
 });
 
+describe('"whenever you cast an instant spell": one card type (D974)', () => {
+  const ROWS = [
+    { name: 'Test Mentor', type_line: 'Enchantment', oracle_text: 'Whenever you cast an instant spell, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Quick', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Slow', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd974', name: 'One type',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }],
+    data: ROWS as never[],
+  });
+  const castOne = (card: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd974', 1: 'd974' }, deckSpecs: { d974: deck.deck }, hands: { 0: [card] },
+      battlefield: { 0: ['Test Mentor', 'Island'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action), 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return t.seats[0]!.life - s.seats[0]!.life;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an instant gains the life; a sorcery does not', () => {
+    expect(castOne('Test Quick')).toBe(1);
+    expect(castOne('Test Slow')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -33106,3 +33106,22 @@ alone, and the protection half).
 
 Coverage: 12,663 of 31,743 cards (+26), 32,792 of 59,509 lines (+33), against b8a3206. Staples:
 243 of 244.
+
+## D974 — "Whenever you cast an instant spell": one card type
+
+`castDescriptor` read "a creature", "a noncreature", "an artifact", "an enchantment", "an instant or
+sorcery" and lists of two or more types. One other card type on its own — "an instant spell", "a
+sorcery spell", "a planeswalker spell" — was refused. It is now the list form's one-word case
+(`ofTypesOrSubtypes: [type]`), which the event already matches.
+
+A small family on single-unread-line cards: 1 legal card now reads whole. Most such lines carry
+another gap too: "Whenever you cast an instant spell, you may pay {1}. If you do, draw a card"
+reads, but most of its cousins print a prologue this compiler does not yet read.
+
+**Tests.** 2 engine tests: the card reads, and an instant gains the life while a sorcery does not.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 5,174, all passing
+
+Coverage: 12,672 of 31,743 cards (+1), 32,804 of 59,509 lines (+2). Staples: 241 of 244.
