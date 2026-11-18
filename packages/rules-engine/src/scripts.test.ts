@@ -20793,6 +20793,77 @@ describe('"… to a player or planeswalker", and "you mill" (D961)', () => {
   });
 });
 
+describe('one damage sentence, several targets (D962)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    S('Test Trail', 'Test Trail deals 2 damage to any target and 1 damage to any other target.'),
+    S('Test Swelter', 'Test Swelter deals 2 damage to each of two target creatures.'),
+    S('Test Outrage', "Test Outrage deals 2 damage to target creature and 2 damage to that creature's controller."),
+    S('Test Cone', 'Test Cone deals 3 damage to any target, 2 damage to another target, and 1 damage to a third target.'),
+    S('Test Reprisal', 'Test Reprisal deals 1 damage to each of two targets.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd962', name: 'Split damage',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 50 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd962', 1: 'd962' }, deckSpecs: { d962: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Mountain'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets: Target[]) => {
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets } as Action), 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return t;
+  };
+  const bears = (s: GameState) => ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"each of two targets": one to each, a player and a creature', () => {
+    const s = seated('Test Reprisal');
+    const [a] = bears(s);
+    const t = cast(s, 'Test Reprisal', [{ kind: 'player', seat: 1 }, { kind: 'card', id: a! }]);
+    expect(t.seats[1]!.life).toBe(s.seats[1]!.life - 1);
+    expect(damageOn(t, a!)).toBe(1);
+  });
+
+  it('each amount goes to its own target, and the same target cannot be chosen twice', () => {
+    const s = seated('Test Trail');
+    const [a] = bears(s);
+    const t = cast(s, 'Test Trail', [{ kind: 'card', id: a! }, { kind: 'player', seat: 1 }]);
+    expect(t.instances[a!]!.zone).toBe('graveyard');
+    expect(t.seats[1]!.life).toBe(s.seats[1]!.life - 1);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Trail'), targets: [{ kind: 'card', id: a! }, { kind: 'card', id: a! }] } as Action)).toContain('twice');
+  });
+
+  it('"each of two target creatures": the whole amount to each', () => {
+    const s = seated('Test Swelter');
+    const [a, b] = bears(s);
+    const t = cast(s, 'Test Swelter', [{ kind: 'card', id: a! }, { kind: 'card', id: b! }]);
+    expect(t.instances[a!]!.zone).toBe('graveyard');
+    expect(t.instances[b!]!.zone).toBe('graveyard');
+  });
+
+  it('"and 2 damage to that creature\'s controller", and three amounts to three targets', () => {
+    const s = seated('Test Outrage');
+    const [a] = bears(s);
+    const t = cast(s, 'Test Outrage', [{ kind: 'card', id: a! }]);
+    expect(t.instances[a!]!.zone).toBe('graveyard');
+    expect(t.seats[1]!.life).toBe(s.seats[1]!.life - 2);
+    const c = seated('Test Cone');
+    const [x, y] = bears(c);
+    const done = cast(c, 'Test Cone', [{ kind: 'player', seat: 1 }, { kind: 'card', id: x! }, { kind: 'card', id: y! }]);
+    expect(done.seats[1]!.life).toBe(c.seats[1]!.life - 3);
+    expect(done.instances[x!]!.zone).toBe('graveyard');
+    expect(damageOn(done, y!)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

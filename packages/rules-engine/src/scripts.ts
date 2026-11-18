@@ -20813,6 +20813,9 @@ const TARGET_QUANTIFIERS: Readonly<Record<string, {
   'up to two other': { optional: true, count: 2, another: true },
   'up to three': { optional: true, count: 3 },
   'each of up to two': { optional: true, count: 2 },
+  // "Each of two target creatures" (D962): exactly two, the same amount to each.
+  'each of two': { count: 2 },
+  'each of three': { count: 3 },
   'each of up to three': { optional: true, count: 3 },
   // Support's own phrase (D946): "each of up to two other target creatures".
   'up to three other': { optional: true, count: 3, another: true },
@@ -20929,7 +20932,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     capital is a subtype (CR 205.3) and lower case is a card type off an allow-list.
   */
   const whole = printed.trim();
-  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|two|three)?\s*target\s+(.+)$/i
+  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|each of two|each of three|two|three)?\s*target\s+(.+)$/i
     .exec(whole);
   if (opened === null) return null;
   const quantifier = TARGET_QUANTIFIERS[(opened[1] ?? '').trim().toLowerCase()];
@@ -25051,9 +25054,36 @@ function tokenAbilityRider(clauses: readonly string[], name: string): ReadEffect
   return tokenEffect(clauses[0]!, name, quoted[1]!.trim());
 }
 
+/**
+ * One damage sentence per target (D962): "~ deals 2 damage to target creature and 2 damage to
+ * target player or planeswalker", "~ deals 2 damage to any target, 2 damage to another target, and 2
+ * damage to a third target", "~ deals 1 damage to each of two targets". Split into the sentences
+ * the clause vocabulary already reads, and D953's two-target slicing gives each its own target.
+ *
+ * "Any other target", "another target" and "a third target" become "any target": every target of
+ * one resolution is already a different object (`checkTargets`), which is all those words add.
+ * A clause that is not one of these shapes comes back as it was.
+ */
+function splitDamageClauses(clause: string): readonly string[] {
+  const text = clause.trim().replace(/\.$/, '');
+  const each = /^(.+?) deals (\w+) damage to each of (two|three) targets$/i.exec(text);
+  if (each !== null) {
+    return Array.from({ length: each[3]!.toLowerCase() === 'two' ? 2 : 3 },
+      () => `${each[1]!} deals ${each[2]!} damage to any target`);
+  }
+  const opened = /^(.+?) deals (\w+ damage to .+)$/i.exec(text);
+  if (opened === null) return [clause];
+  const pieces = opened[2]!.split(/(?:,\s*(?:and\s+)?|\s+and\s+)(?=\w+ damage to )/i);
+  // Every piece opens "N damage to" by construction: the first by `opened`, the rest by the split.
+  if (pieces.length < 2) return [clause];
+  return pieces.map((piece) => `${opened[1]!} deals ${piece
+    .replace(/damage to (?:any other target|another target|a third target)$/i, 'damage to any target')}`);
+}
+
 function composeEffects(
-  clauses: readonly string[], name: string, where: SubjectZone | null,
+  printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  const clauses = printedClauses.flatMap(splitDamageClauses);
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.

@@ -49979,3 +49979,48 @@ skip, the crown, and the prevented hit.
     engine tests: 5,107, all passing
 
 Coverage: 12,512 of 31,743 cards (+6), 32,535 of 59,509 lines (+6). Staples: 241 of 244.
+
+## D962 — One damage sentence, several targets
+
+"~ deals 2 damage to target creature and 2 damage to target player or planeswalker." "~ deals 2
+damage to any target and 1 damage to any other target" (Arc Trail). "~ deals 3 damage to any
+target, 2 damage to another target, and 1 damage to a third target" (Cone of Flame). "~ deals 1
+damage to each of two targets." "~ deals 2 damage to each of two target creatures." The two-sentence
+spelling of each already read (D953). The one-sentence spelling did not.
+
+How it is read:
+- **`splitDamageClauses`**, run on the clause list before `composeEffects` reads it, turns
+  "X deals A damage to P, B damage to Q, and C damage to R" into one damage sentence per target.
+  D953's slicing gives each sentence its own target.
+- **"Any other target", "another target" and "a third target" become "any target".** Every target
+  of one resolution is already a different object (`checkTargets` refuses the same target twice),
+  which is all those words add.
+- **"Each of two targets"** becomes two "any target" sentences. **"Each of two / three target
+  creatures"** is a new quantifier with an exact count, and the whole amount goes to each, through
+  `damageEveryTarget`.
+
+Logged across the corpus, the new readings are each what the card says:
+- Arc Trail, Cone of Flame, Cunning Strike, Punish the Enemy and Reckless Rage;
+- Chandra's Outrage, Neonate's Rush and Unleash Shell, through the possessive "that creature's
+  controller";
+- Jagged Lightning and Swelter;
+- Furious Reprisal;
+- the enters triggers "it deals 3 damage to target opponent and 1 damage to up to one target
+  creature" (Burning Sun's Avatar, Rakdos Firewheeler).
+
+22 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- "each of two targets": one damage to a player and one to a creature;
+- each amount goes to its own target, and the same target cannot be chosen twice;
+- "each of two target creatures": the whole amount to each;
+- "… and 2 damage to that creature's controller", and three amounts to three targets.
+
+Faults injected by hand: 5. 3 were caught at once. "Each of two targets" was missed and is now
+pinned. A check that every split piece opens "N damage to" was redundant by construction, and was
+removed.
+
+    engine tests: 5,112, all passing
+
+Coverage: 12,534 of 31,743 cards (+22), 32,559 of 59,509 lines (+24). Staples: 241 of 244.
