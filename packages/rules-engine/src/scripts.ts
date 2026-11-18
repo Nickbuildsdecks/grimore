@@ -73,7 +73,7 @@ import type { EffectFn, TokenCopyProfile } from './effects.js';
 import { isManaAbilityLine, keywordWithCost, tapOthersCost } from './fromCardData.js';
 import { costValue, parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
-import type { Keyword } from './characteristics.js';
+import type { CreatureKindWord, Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { isLegalTarget, legalTargets, retarget } from './targeting.js';
 import { targetKey, type ActivationTiming, type DecisionAnswer, type StackObject, type Target } from './turnTypes.js';
@@ -27907,6 +27907,9 @@ function singularCreatureType(word: string): string | null {
  * Anything the predicate reader refuses — "until end of turn", a count, a condition — refuses the
  * line.
  */
+/** The colour and kind words a group static may name its creatures by (D735). See `onlyKind`. */
+const KIND_WORDS = 'white|blue|black|red|green|colorless|multicolored|monocolored|artifact|legendary|land|enchantment|untapped|tapped|nontoken|nonartifact|nonlegendary|snow';
+
 function groupStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
   type Scope = NonNullable<CardScript['statics']>[number]['scope'];
@@ -27947,9 +27950,27 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   const theirs = /^creatures your opponents control (get|have) (.+)$/i.exec(text);
   const attacking = /^attacking creatures you control (get|have) (.+)$/i.exec(text);
   const countered = /^(?:each creature you control with an? \+1\/\+1 counter on it (gets|has)|creatures you control with \+1\/\+1 counters on them (get|have)) (.+)$/i.exec(text);
+  /*
+    D735: your creatures of a colour or a kind — "Other green creatures you control get +1/+1",
+    "Artifact creatures you control have flying", "Legendary creatures …", "Untapped creatures …",
+    "Multicolored creatures …". A colour is the colour scope; every other word is an `onlyKind`
+    filter on your creatures, read live. Two colours ("white and blue") are not a run of these
+    words, so they do not match and stay unread; a run names at most one colour.
+  */
+  const kinded = new RegExp(`^(other )?((?:(?:${KIND_WORDS}) )+)creatures you control (get|have) (.+)$`, 'i').exec(text);
   let filter: PumpOptions = {};
   if (scope !== null) {
     // Read above: a chosen type.
+  } else if (kinded !== null) {
+    const words = kinded[2]!.trim().toLowerCase().split(/\s+/);
+    const colours = words.filter((word) => SPELL_COLOUR_WORDS[word] !== undefined);
+    const kinds = words.filter((word) => SPELL_COLOUR_WORDS[word] === undefined) as CreatureKindWord[];
+    const other = kinded[1] !== undefined;
+    scope = colours.length === 1
+      ? { color: SPELL_COLOUR_WORDS[colours[0]!]!, ...(other ? { other: true } : {}) }
+      : other ? 'other-controller-creatures' : 'controller-creatures';
+    if (kinds.length > 0) filter = { onlyKind: kinds };
+    predicate = `${kinded[3]!.toLowerCase()} ${kinded[4]}`;
   } else if (theirs !== null) {
     scope = 'opponent-creatures';
     predicate = `${theirs[1]!.toLowerCase()} ${theirs[2]}`;

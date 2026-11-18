@@ -15,7 +15,7 @@
  */
 import type { CardScript } from './scriptTypes.js';
 import {
-  allAbilitiesLost, characteristicsOf, countersAfterReplacement, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, countersAfterReplacement, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -2701,6 +2701,8 @@ export interface PumpOptions {
   /** See `ContinuousEffect.onlyAttacking` (D941). */
   readonly onlyAttacking?: true;
   readonly onlyWithCounter?: string;
+  /** See `ContinuousEffect.onlyKind` (D735). */
+  readonly onlyKind?: readonly CreatureKindWord[];
   readonly duration?: EffectDuration;
 }
 
@@ -2763,6 +2765,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
     ...(opts.onlyAttacking ? { onlyAttacking: true as const } : {}),
     ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
+    ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),
   };
 }
 

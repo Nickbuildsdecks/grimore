@@ -12308,7 +12308,7 @@ describe('wither, which is infect\'s creature half (D504)', () => {
       nothing and leave the rule it prints unenforced — wrong twice over (D362).
     */
     ['a global replacement', 'All damage is dealt as though its source had wither.'],
-    ['a static about other creatures by colour', 'Black creatures you control have wither.'],
+    // "Black creatures you control have wither." reads since D735: a colour static, see that block.
   ])('leaves a line unread: %s', (_why, text) => {
     const read = creature(text as string);
     expect(read.ok).toBe(true);
