@@ -179,9 +179,29 @@ function cdaCountMore(
   const lineOf = (id: string) => parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
   const zone = (seat: SeatIndex, z: 'battlefield' | 'hand' | 'graveyard') => state.zones[zoneKey(seat, z)] ?? [];
   const everyone = state.seats.map((row) => row.index);
-  if (typeof kind === 'object') {
+  if (typeof kind === 'object' && 'subtype' in kind) {
     return zone(controller, 'battlefield').filter((id) => hasSubtype(lineOf(id), kind.subtype)).length;
   }
+  if (typeof kind === 'object' && 'devotion' in kind) {
+    let total = 0;
+    for (const id of zone(controller, 'battlefield')) {
+      const cost = state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost ?? '';
+      for (const symbol of cost.match(/\{[^}]+\}/g) ?? []) {
+        if (kind.devotion.some((colour) => symbol.toUpperCase().includes(colour))) total += 1;
+      }
+    }
+    return total;
+  }
+  if (typeof kind === 'object' && 'zone' in kind) {
+    const seats = kind.whose === 'you' ? [controller]
+      : kind.whose === 'opponents' ? everyone.filter((seat) => seat !== controller) : everyone;
+    return seats.flatMap((seat) => zone(seat, kind.zone)).filter((id) => {
+      const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+      if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return false;
+      return kind.colour === undefined || (def?.colors ?? []).includes(kind.colour);
+    }).length;
+  }
+  if (kind === 'your-life-total') return state.seats[controller]?.life ?? 0;
   switch (kind) {
     case 'creatures-you-control':
       return zone(controller, 'battlefield').filter((id) => hasType(lineOf(id), 'creature')).length;
@@ -1992,7 +2012,22 @@ export interface ContinuousEffect {
       | 'artifacts-you-control' | 'cards-in-your-hand' | 'creature-cards-in-your-graveyard'
       | 'cards-in-your-graveyard' | 'card-types-in-all-graveyards' | 'card-types-in-your-graveyard'
       /** "Swamps you control", "Rats you control": a land or creature subtype on the printed line. */
-      | { readonly subtype: string };
+      | { readonly subtype: string }
+      /** "Equal to your life total" (D975): Serra Avatar. */
+      | 'your-life-total'
+      /** "Equal to your devotion to red" (D975): the coloured symbols in your permanents' printed costs. */
+      | { readonly devotion: readonly Color[] }
+      /**
+       * A count of printed cards in a zone (D975): "black permanents you control", "enchantment cards
+       * in all graveyards", "cards in your opponents' graveyards", "artifacts your opponents
+       * control". `anyType` is any of those printed card types; `colour` a printed colour.
+       */
+      | {
+        readonly zone: 'battlefield' | 'graveyard' | 'hand';
+        readonly whose: 'you' | 'opponents' | 'all';
+        readonly anyType?: readonly string[];
+        readonly colour?: Color;
+      };
     /**
      * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both
      * the count; `power` is the Drake printed with a star for power and a 4 for toughness, where

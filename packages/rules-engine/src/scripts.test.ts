@@ -22024,6 +22024,59 @@ describe('emblems: "You get an emblem with …" (D734)', () => {
   });
 });
 
+describe('a */* from more measures: colours, zones, life, devotion (D975)', () => {
+  const C = (name: string, text: string, extra: Record<string, unknown> = {}) => ({ name, type_line: 'Creature — Avatar', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '*', ...extra });
+  const ROWS = [
+    C('Test Drove', "Test Drove's power and toughness are each equal to the number of green permanents you control."),
+    C('Test Avatar', "Test Avatar's power and toughness are each equal to your life total.", { colors: ['W'] }),
+    C('Test Avenger', "Test Avenger's power and toughness are each equal to 1 plus the number of artifacts your opponents control."),
+    C('Test Hammer', "Test Hammer's power is equal to your devotion to red.", { mana_cost: '{2}{R}', cmc: 3, colors: ['R'], toughness: '4' }),
+    C('Test Instantivore', "Test Instantivore's power and toughness are each equal to the number of instant cards in all graveyards."),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Imp', type_line: 'Creature — Imp', oracle_text: '', mana_cost: '{R}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd975', name: 'Stars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 33 }],
+    data: ROWS as never[],
+  });
+  const size = (card: string, mine: string[], theirs: string[] = [], graveyards: { 0?: string[]; 1?: string[] } = {}) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd975', 1: 'd975' }, deckSpecs: { d975: deck.deck },
+      battlefield: { 0: [card, ...mine], 1: theirs }, graveyard: { 0: graveyards[0] ?? [], 1: graveyards[1] ?? [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const got = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', card)]!);
+    return `${got.power}/${got.toughness}`;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('green permanents you control: itself and a green bear, not the forest', () => {
+    expect(size('Test Drove', ['Test Bear', 'Forest'])).toBe('2/2');
+  });
+
+  it('your life total', () => {
+    expect(size('Test Avatar', [])).toBe('20/20');
+  });
+
+  it('1 plus the artifacts your opponents control, not yours', () => {
+    expect(size('Test Avenger', ['Test Relic'], ['Test Relic', 'Test Relic'])).toBe('3/3');
+  });
+
+  it('power is your devotion to red, the printed toughness stays', () => {
+    expect(size('Test Hammer', ['Test Imp', 'Test Bear'])).toBe('3/4');
+  });
+
+  it('instant cards in all graveyards, both players', () => {
+    expect(size('Test Instantivore', [], [], { 0: ['Test Bolt', 'Test Bear'], 1: ['Test Bolt'] })).toBe('2/2');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

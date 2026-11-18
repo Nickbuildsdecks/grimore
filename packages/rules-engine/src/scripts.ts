@@ -27018,6 +27018,30 @@ function cdaCountFor(phrase: string): CdaCount | null {
   const text = phrase.trim().toLowerCase();
   const fixed = CDA_COUNTS[text];
   if (fixed !== undefined) return fixed;
+  /*
+    The general zone count (D975), from printed data only (see `definesSize.count`): an optional
+    colour, an optional card type, and where. "black permanents you control", "artifacts your
+    opponents control", "enchantment cards in all graveyards", "cards in your opponents' graveyards".
+  */
+  const COLOURS: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+  const TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery'];
+  const onBoard = /^(?:(white|blue|black|red|green) )?(artifact|creature|enchantment|land|planeswalker|permanent)s (you control|your opponents control|on the battlefield)$/.exec(text);
+  if (onBoard !== null) {
+    return {
+      zone: 'battlefield',
+      whose: onBoard[3] === 'you control' ? 'you' : onBoard[3] === 'on the battlefield' ? 'all' : 'opponents',
+      ...(onBoard[2] === 'permanent' ? {} : { anyType: [onBoard[2]!] }),
+      ...(onBoard[1] === undefined ? {} : { colour: COLOURS[onBoard[1]]! }),
+    };
+  }
+  const inZone = /^(?:([a-z]+) )?cards in (your graveyard|all graveyards|your opponents' graveyards|your hand)$/.exec(text);
+  if (inZone !== null && (inZone[1] === undefined || TYPES.includes(inZone[1]))) {
+    return {
+      zone: inZone[2] === 'your hand' ? 'hand' : 'graveyard',
+      whose: inZone[2] === 'all graveyards' ? 'all' : inZone[2] === "your opponents' graveyards" ? 'opponents' : 'you',
+      ...(inZone[1] === undefined ? {} : { anyType: [inZone[1]] }),
+    };
+  }
   const typed = /^([A-Z][A-Za-z'-]*) you control$/.exec(phrase.trim());
   if (typed === null) return null;
   const LAND_TYPES: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
@@ -27158,11 +27182,47 @@ function countedSizeRate(
 function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
   const self = selfRef(name);
   const text = plain(line).trim().replace(/\.\s*$/, '');
-  // "~'s power and toughness are each equal to the number of …" (D902): both, as a Lhurgoyf.
-  const each = new RegExp(`^${self}['’]s power and toughness are each equal to the number of (.+)$`, 'i').exec(text);
+  /*
+    The measure a `*` names (D975): "the number of …" (D902), "N plus the number of …", "your life
+    total", "your devotion to red" or "… to white and blue". `plus` is added to the count.
+  */
+  const measure = (phrase: string): { readonly count: CdaCount; readonly plus: number } | null => {
+    const words = phrase.trim();
+    const plusOf = /^(\d+) plus the number of (.+)$/i.exec(words);
+    if (plusOf !== null) {
+      const count = cdaCountFor(plusOf[2]!);
+      return count === null ? null : { count, plus: Number(plusOf[1]) };
+    }
+    const numberOf = /^the number of (.+)$/i.exec(words);
+    if (numberOf !== null) {
+      const count = cdaCountFor(numberOf[1]!);
+      return count === null ? null : { count, plus: 0 };
+    }
+    if (/^your life total$/i.test(words)) return { count: 'your-life-total', plus: 0 };
+    const devoted = /^your devotion to (white|blue|black|red|green)(?: and (white|blue|black|red|green))?$/i.exec(words);
+    if (devoted !== null) {
+      const colours = [devoted[1], devoted[2]].filter((c): c is string => c !== undefined)
+        .map((c) => COLOUR_WORDS[c.toLowerCase()]!);
+      return { count: { devotion: colours }, plus: 0 };
+    }
+    return null;
+  };
+  // "~'s power and toughness are each equal to …" (D902, D975): both, as a Lhurgoyf.
+  const each = new RegExp(`^${self}['’]s power and toughness are each equal to (.+)$`, 'i').exec(text);
   if (each !== null) {
-    const both = cdaCountFor(each[1]!);
-    return both === null ? null : { statics: [{ scope: 'self', effect: { definesSize: { count: both } } }] };
+    const both = measure(each[1]!);
+    return both === null ? null : { statics: [{ scope: 'self', effect: { definesSize: {
+      count: both.count, ...(both.plus === 0 ? {} : { powerPlus: both.plus, toughnessPlus: both.plus }),
+    } } }] };
+  }
+  // "~'s power is equal to …" (D975), with the printed toughness, for the measures above other
+  // than "the number of", which the reader below keeps (with its "that number plus N" toughness).
+  const powerOnly = new RegExp(`^${self}['’]s power is equal to (.+)$`, 'i').exec(text);
+  if (powerOnly !== null && !/^the number of /i.test(powerOnly[1]!.trim())) {
+    const power = measure(powerOnly[1]!);
+    return power === null ? null : { statics: [{ scope: 'self', effect: { definesSize: {
+      count: power.count, applies: 'power' as const, ...(power.plus === 0 ? {} : { powerPlus: power.plus }),
+    } } }] };
   }
   const matched = new RegExp(
     `^${self}['’]s power is equal to the number of (.+?)` +
