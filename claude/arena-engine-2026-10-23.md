@@ -33068,3 +33068,46 @@ alone, and the protection half).
 
 Coverage: 12,663 of 31,743 cards (+26), 32,792 of 59,509 lines (+33), against b8a3206. Staples:
 243 of 244.
+
+## D734 — Emblems: "You get an emblem with …"
+
+79 legal planeswalker abilities give their controller an emblem (CR 114): an object in the command
+zone with the abilities quoted. The engine had nothing to hold one.
+
+How it works:
+- **An emblem is a \`CardInstance\` with \`emblem: true\`** in its controller's command zone, made by
+  \`createEmblem\` with a card definition built at the time from the quoted text ("<walker> emblem",
+  type line "Emblem"). Its script is compiled from that text like any card's.
+- **Its abilities work from the command zone:**
+  - statics are installed as it arrives and kept while it exists, so an anthem outlives the
+    planeswalker and reaches creatures that come later;
+  - triggers are watched from the command zone (\`raise\`);
+  - the seat-level statics ("no maximum hand size", "can't change", "prevent all damage to you",
+    "skip your draw step", riot, Seedborn's untap) read emblems beside permanents.
+- **It is never cast.** It is shown in the command zone, which everybody sees.
+- **"This emblem"** is a self-reference, like "this creature".
+
+How it is read (\`emblemClause\`):
+- "You get an emblem with "A"" or ""A" and "B"", each quoted ability on its own line.
+- **Read only if every ability reads** (\`lineScriptFor\`), and none is activated, since nothing
+  offers an activation from the command zone. Two emblems with one ("Tap an untapped artifact …",
+  "{1}{B}, Sacrifice a creature: …") stay unread.
+- **The quoted punctuation is hidden from the clause splitter**, so an emblem's own ", then" stays
+  inside it. Four real emblems need that.
+
+26 of the 79 emblem abilities read; the rest quote abilities the engine can't read yet. Five legal
+cards now read whole; most emblem walkers have another unread loyalty ability.
+
+**Tests.** 4 engine tests:
+- the walkers read; an unreadable emblem, an activated one, and one with ", then" inside it;
+- the anthem emblem is in the command zone, is never offered as a cast, everyone sees it, it
+  outlives the walker, and it pumps a creature cast afterwards;
+- an emblem's cast trigger deals its damage from the command zone;
+- an emblem's "no maximum hand size" keeps ten cards through cleanup.
+
+Faults injected by script: 11 of 11 caught, two of them after pinning (the quote hiding, and
+refusing activated emblems).
+
+    engine tests: ENGINE_COUNT, all passing
+
+Coverage: 12,668 of 31,743 cards (+5), 32,819 of 59,509 lines (+27), against 7699a9b.

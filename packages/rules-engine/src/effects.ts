@@ -1126,7 +1126,7 @@ export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
   if (state.effects.some((e) => e.lifeLocked === true && e.scope.kind === 'seat' && e.scope.seat === seat)) return true;
   if (scriptLookup === null) return false;
   const lookup = scriptLookup;
-  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
     return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
@@ -1146,7 +1146,7 @@ export function canPayLife(state: GameState, seat: SeatIndex, amount: number): b
 function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {
   if (scriptLookup === null) return false;
   const lookup = scriptLookup;
-  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
     return lookup(state.cardDefs[inst.defKey])?.preventsDamageToYou === true;
@@ -2793,6 +2793,40 @@ export function pump(
  * turn, or that forced an attack without sending it elsewhere, would be a different and much worse
  * card. `controller` is the goading player, and every part of the effect is read relative to them.
  */
+/**
+ * "You get an emblem with …" (D734, CR 114): an object in `seat`'s command zone whose abilities are
+ * `text`, read like a card's. Recorded as an arrival so `settle` installs its statics; it raises no
+ * enters trigger, because it is not a permanent and did not enter the battlefield.
+ */
+export function createEmblem(state: GameState, seat: SeatIndex, text: string, from: string): GameState {
+  const def = normaliseDef({
+    name: `${from} emblem`, typeLine: 'Emblem', oracleText: text, manaCost: '', cmc: 0, colors: [],
+  } as CardDef);
+  const key = defKeyFor(def);
+  const seq = state.instanceSeq + 1;
+  const id = `e${seat}_${seq}`;
+  const command = zoneKey(seat, 'command');
+  return withZones({
+    ...state,
+    cardDefs: { ...state.cardDefs, [key]: state.cardDefs[key] ?? def },
+    instances: {
+      ...state.instances,
+      [id]: {
+        id, defKey: key, owner: seat, zoneSeat: seat, zone: 'command',
+        tapped: false, faceDown: false, revealed: false, counters: {}, attachedTo: null,
+        isToken: false, isCommander: false, damage: 0, enteredTurn: state.turn, emblem: true,
+      },
+    },
+    instanceSeq: seq,
+    entered: state.automated ? [...state.entered, id] : state.entered,
+  }, { [command]: [...listAt(state, command), id] });
+}
+
+/** Every emblem a seat has (D734), in the order they were made. */
+export function emblemsOf(state: GameState, seat: SeatIndex): readonly string[] {
+  return listAt(state, zoneKey(seat, 'command')).filter((id) => state.instances[id]?.emblem === true);
+}
+
 /**
  * Phasing out (D733, CR 702.26): each permanent is treated as though it does not exist until its
  * controller's next untap step. No zone changes, so nothing triggers, and counters, damage, tapped

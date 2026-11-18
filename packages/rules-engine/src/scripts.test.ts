@@ -21816,6 +21816,99 @@ describe('Teferi\'s Protection: phasing, and a life total that can\'t change (D7
   });
 });
 
+describe('emblems: "You get an emblem with …" (D734)', () => {
+  const pw = (name: string, text: string) => ({
+    name, type_line: 'Legendary Planeswalker — Test', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', loyalty: '5',
+  });
+  const ROWS = [
+    pw('Test Anthemwalker', '-1: You get an emblem with "Creatures you control get +1/+1."'),
+    pw('Test Pyrowalker', '-1: You get an emblem with "Whenever you cast a spell, this emblem deals 1 damage to any target."'),
+    pw('Test Handwalker', '-1: You get an emblem with "You have no maximum hand size."'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Opt', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Doom', type_line: 'Instant', oracle_text: 'Destroy target planeswalker.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd734', name: 'Emblems',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 36 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd734', 1: 'd734' }, deckSpecs: { d734: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Activates the walker's only ability and resolves it. */
+  const ultimate = (s: GameState, name: string) => {
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name))!;
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: play.card, abilityIndex: play.abilityIndex ?? 0 })));
+  };
+  const emblems = (s: GameState) => ids(s, 0, 'command').filter((id) => s.instances[id]?.emblem === true);
+
+  it('reads an emblem whose abilities read, and leaves one that does not unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard(pw('Test Oddwalker', '-1: You get an emblem with "Whenever an opponent casts their first spell each turn, counter that spell."') as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+    // An emblem's own ", then": one clause inside the quote, not two outside it.
+    const soldiers = compileCard(pw('Test Soldierwalker', '-6: You get an emblem with "At the beginning of combat on your turn, create a 1/1 white Soldier creature token, then put a +1/+1 counter on each creature you control."') as never);
+    expect(soldiers).toMatchObject({ ok: true, unread: [] });
+    // And an activated ability, which nothing would offer from the command zone, stays unread.
+    const tapper = compileCard(pw('Test Tapwalker', '-7: You get an emblem with "Tap an untapped artifact you control: This emblem deals 1 damage to any target."') as never);
+    expect(tapper.ok && tapper.unread.length).toBe(1);
+  });
+
+  it('puts an emblem in the command zone whose anthem outlives the planeswalker and reaches later creatures', () => {
+    let s = table({ hands: { 0: ['Test Bear'], 1: ['Test Doom'] }, battlefield: { 0: ['Test Anthemwalker', 'Test Bear'] } });
+    const first = find(s, 0, 'battlefield', 'Test Bear');
+    s = ultimate(s, 'Test Anthemwalker');
+    expect(emblems(s).length).toBe(1);
+    expect(characteristicsOf(s, s.instances[first]!).power).toBe(3);
+    // Never cast from the command zone, and seen by everybody.
+    expect(legalActions(s, 0).plays.some((p) => p.card === emblems(s)[0])).toBe(false);
+    expect(viewFor(s, 1).zones['0:command']).toContain(emblems(s)[0]);
+    // The walker goes; the emblem stays.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Anthemwalker') }] })));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Anthemwalker');
+    expect(characteristicsOf(s, s.instances[first]!).power).toBe(3);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') })));
+    const second = ids(s, 0, 'battlefield').find((id) => id !== first && nameOf(s, id) === 'Test Bear')!;
+    expect(characteristicsOf(s, s.instances[second]!).power).toBe(3);
+    // And the opponent's creatures are not its.
+    expect(emblems({ ...s }).length).toBe(1);
+  });
+
+  it('an emblem\'s trigger fires from the command zone', () => {
+    let s = table({ hands: { 0: ['Test Opt'] }, battlefield: { 0: ['Test Pyrowalker'] } });
+    s = ultimate(s, 'Test Pyrowalker');
+    const life = s.seats[1]!.life;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Opt') });
+    // The trigger asks for its target; aim it at the opponent.
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) {
+      if (s.pendingChoice !== null) { s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] }); break; }
+      s = passBoth(s);
+    }
+    s = drain(passBoth(s), 20);
+    expect(s.seats[1]!.life).toBe(life - 1);
+  });
+
+  it('"You have no maximum hand size" from an emblem keeps a big hand through cleanup', () => {
+    let s = table({ battlefield: { 0: ['Test Handwalker'] } });
+    s = ultimate(s, 'Test Handwalker');
+    while (ids(s, 0, 'hand').length < 10) s = apply(s, { type: 'card:move', by: 0, card: ids(s, 0, 'library')[0]!, toZone: 'hand' });
+    expect(ids(s, 0, 'hand').length).toBeGreaterThan(7);
+    let walked = s;
+    for (let i = 0; i < 40 && !(walked.activeSeat === 1); i++) {
+      const owed = pendingDeclaration(walked);
+      if (owed?.kind === 'attackers') walked = apply(walked, { type: 'auto:attack', by: owed.seats[0]!, attackers: [] });
+      else if (walked.pendingDiscard !== null) break;
+      else walked = passBoth(walked);
+    }
+    expect(walked.pendingDiscard).toBeNull();
+    expect(walked.activeSeat).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
