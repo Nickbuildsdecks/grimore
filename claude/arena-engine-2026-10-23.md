@@ -32997,7 +32997,7 @@ Staples went from 241 to 242 (Bolas's Citadel, with D731).
 
 Faults injected by script: 15 of 15 caught (12 in the engine, 3 in the table).
 
-    engine tests: 5,155, all passing
+    engine tests: 5,158, all passing (merged with the other session's D972)
 
 Coverage: 12,637 of 31,743 cards (+25), 32,759 of 59,509 lines (+40), against 50f4683. Staples:
 242 of 244. Left: Teferi's Protection, and Castle Garenbrig (blocked by D669).
