@@ -21595,6 +21595,112 @@ describe('digging onto the battlefield, and revealing up to two (D973)', () => {
   });
 });
 
+describe('a counted sacrifice: "Sacrifice two creatures", and Bolas\'s Citadel\'s ten (D732)', () => {
+  const row = (name: string, type: string, text: string, extra: Record<string, string> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    row('Test Citadel', 'Legendary Artifact', 'You may look at the top card of your library any time.\nYou may play lands and cast spells from the top of your library. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost.\n{T}, Sacrifice ten nonland permanents: Each opponent loses 10 life.'),
+    row('Test Altar', 'Artifact', '{T}, Sacrifice two creatures: Draw a card.'),
+    row('Test Chieftain', 'Creature — Elf', 'Sacrifice two other creatures: Draw a card.', { power: '1', toughness: '1' }),
+    row('Test Elf', 'Creature — Elf', '', { power: '1', toughness: '1' }),
+    row('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    row('Test Outlet', 'Artifact', 'Sacrifice a creature: Draw a card.'),
+  ];
+  const deck = customDeck({
+    id: 'd732', name: 'Counted',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 10 })), { name: 'Forest', count: 20 }],
+    data: ROWS as never[],
+  });
+  const table = (battlefield: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd732', 1: 'd732' }, deckSpecs: { d732: deck.deck }, battlefield: { 0: [...battlefield] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const playOf = (s: GameState, name: string) =>
+    legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name));
+
+  it('reads the family, and leaves a count it has no number for unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const reads = (text: string) => compileCard(row('Test Line', 'Artifact', text) as never);
+    for (const text of [
+      '{2}, {T}, Sacrifice three Foods: Draw a card.',
+      'Sacrifice three Blood tokens: Draw a card.',
+      'Sacrifice two Mountains: Draw a card.',
+      'Sacrifice two Elves: Draw a card.',
+      'Sacrifice two other artifacts and/or creatures: Draw a card.',
+    ]) expect(reads(text), text).toMatchObject({ ok: true, unread: [] });
+    for (const text of ['Sacrifice X creatures: Draw a card.', 'Sacrifice two other lands: Draw a card.']) {
+      const read = reads(text);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('the Citadel sacrifices ten nonland permanents, itself among them if chosen, and each opponent loses 10', () => {
+    let s = table(['Test Citadel', ...Array(9).fill('Test Bear'), 'Forest', 'Forest']);
+    const play = playOf(s, 'Test Citadel')!;
+    expect(play.sacrificeCount).toBe(10);
+    // Every nonland permanent and no land.
+    expect(play.sacrificeOptions.map((id) => nameOf(s, id)).sort()).toEqual(['Test Bear', 'Test Bear', 'Test Bear',
+      'Test Bear', 'Test Bear', 'Test Bear', 'Test Bear', 'Test Bear', 'Test Bear', 'Test Citadel']);
+    const victims = [...play.sacrificeOptions];
+    const citadel = find(s, 0, 'battlefield', 'Test Citadel');
+    const life = s.seats[1]!.life;
+    s = apply(s, { type: 'auto:activate', by: 0, card: citadel, abilityIndex: play.abilityIndex ?? 0, sacrifices: victims });
+    for (const id of victims) expect(s.instances[id]!.zone, nameOf(s, id)).toBe('graveyard');
+    expect(namesIn(s, 0, 'battlefield')).toEqual(['Forest', 'Forest']);
+    s = drain(passBoth(s));
+    expect(s.seats[1]!.life).toBe(life - 10);
+  });
+
+  it('is not offered with nine, and refuses the wrong count, a repeat, a land and a single sacrifice', () => {
+    const nine = table(['Test Citadel', ...Array(8).fill('Test Bear'), 'Forest']);
+    expect(playOf(nine, 'Test Citadel')).toBeUndefined();
+    const s = table(['Test Citadel', ...Array(10).fill('Test Bear'), 'Forest']);
+    const citadel = find(s, 0, 'battlefield', 'Test Citadel');
+    const bears = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    const at = { type: 'auto:activate' as const, by: 0 as const, card: citadel, abilityIndex: playOf(s, 'Test Citadel')!.abilityIndex ?? 0 };
+    expect(refusal(s, { ...at, sacrifices: bears.slice(0, 9) })).toMatch(/choose 10 different/);
+    expect(refusal(s, { ...at, sacrifices: [...bears.slice(0, 9), bears[0]!] })).toMatch(/choose 10 different/);
+    expect(refusal(s, { ...at, sacrifices: [...bears.slice(0, 9), forest] })).toMatch(/cannot be sacrificed/);
+    expect(refusal(s, { ...at, sacrifice: bears[0]! })).toMatch(/choose 10 different/);
+    // And a single-sacrifice ability refuses a list.
+    const altar = table(['Test Chieftain', 'Test Elf', 'Test Bear']);
+    const one = playOf(altar, 'Test Chieftain')!;
+    expect(one.sacrificeCount).toBe(2);
+  });
+
+  it('"two other creatures" never takes the source, and "two creatures" may', () => {
+    const s = table(['Test Chieftain', 'Test Elf', 'Test Bear']);
+    const chieftain = find(s, 0, 'battlefield', 'Test Chieftain');
+    expect(playOf(s, 'Test Chieftain')!.sacrificeOptions).not.toContain(chieftain);
+    expect(playOf(table(['Test Chieftain', 'Test Elf']), 'Test Chieftain')).toBeUndefined();
+    const altar = table(['Test Altar', 'Test Elf', 'Test Bear']);
+    const play = playOf(altar, 'Test Altar')!;
+    expect(play.sacrificeOptions.map((id) => nameOf(altar, id)).sort()).toEqual(['Test Bear', 'Test Elf']);
+    const hand = ids(altar, 0, 'hand').length;
+    const next = drain(passBoth(apply(altar, {
+      type: 'auto:activate', by: 0, card: find(altar, 0, 'battlefield', 'Test Altar'), abilityIndex: play.abilityIndex ?? 0,
+      sacrifices: [...play.sacrificeOptions],
+    })));
+    expect(namesIn(next, 0, 'graveyard').sort()).toEqual(['Test Bear', 'Test Elf']);
+    expect(ids(next, 0, 'hand').length).toBe(hand + 1);
+    // And a list on an ability that sacrifices one thing is refused.
+    const outlet = table(['Test Outlet', 'Test Elf', 'Test Bear']);
+    const single = playOf(outlet, 'Test Outlet')!;
+    expect(single.sacrificeCount).toBeUndefined();
+    expect(refusal(outlet, {
+      type: 'auto:activate', by: 0, card: find(outlet, 0, 'battlefield', 'Test Outlet'), abilityIndex: single.abilityIndex ?? 0,
+      sacrifices: [...single.sacrificeOptions],
+    })).toMatch(/does not sacrifice several/);
+    // And a single sacrifice on a counted one.
+    expect(refusal(altar, {
+      type: 'auto:activate', by: 0, card: find(altar, 0, 'battlefield', 'Test Altar'), abilityIndex: play.abilityIndex ?? 0,
+      sacrifice: play.sacrificeOptions[0]!,
+    })).toMatch(/choose 2 different/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

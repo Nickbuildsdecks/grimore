@@ -1797,6 +1797,7 @@ function activate(
   action: {
     by: SeatIndex; card: string; abilityIndex: number;
     targets?: readonly Target[]; sacrifice?: string; returned?: string; discarded?: string;
+    sacrifices?: readonly string[];
     grantedBy?: GrantedTriggerRef;
   },
 ): Outcome {
@@ -1974,7 +1975,29 @@ function activate(
   let sacrificedName = '';
   let sacrificedStats: SacrificedStats | null = null;
   let returnedName = '';
-  if (ability.cost.sacrifice !== undefined) {
+  /*
+    A counted sacrifice (D732): every one chosen by the player, all different, each one the cost
+    can take, and exactly as many as it asks for. Sacrificed together with the rest of the cost.
+  */
+  const sacrificeCount = ability.cost.sacrificeCount ?? 1;
+  let sacrificedMany: readonly string[] = [];
+  if (ability.cost.sacrifice !== undefined && sacrificeCount > 1) {
+    const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
+    const words = sacrificeWords(ability.cost);
+    if (options.length < sacrificeCount) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `that asks for ${sacrificeCount} of your ${words}s to sacrifice, and you have ${options.length}`);
+    }
+    const chosen = action.sacrifices ?? [];
+    if (chosen.length !== sacrificeCount || new Set(chosen).size !== chosen.length) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose ${sacrificeCount} different ${words}s to sacrifice`);
+    }
+    if (chosen.some((id) => !options.includes(id))) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `that ${words} cannot be sacrificed for this`);
+    }
+    sacrificedMany = chosen;
+  } else if (action.sacrifices !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that ability does not sacrifice several permanents');
+  } else if (ability.cost.sacrifice !== undefined) {
     const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
     // The words come from the cost (D609), so a land cost says "land".
     const words = sacrificeWords(ability.cost);
@@ -2099,6 +2122,7 @@ function activate(
   // Nothing the cost spends another way pays its mana: see `payFrom`'s `exclude` (sweep 47815).
   const spent = new Set<string>([
     ...(ability.cost.tap ? [inst.id] : []), ...crewed, ...(sacrificed === null ? [] : [sacrificed]),
+    ...sacrificedMany,
   ]);
   const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
   let next = paid.state;
@@ -2153,6 +2177,11 @@ function activate(
       counters: { ...requireInstance(next, inst.id).counters, loyalty: current + ability.cost.loyalty },
       loyaltyUsedTurn: state.turn,
     });
+  }
+  // A counted sacrifice (D732): all at once, so a trigger on each death sees the others gone too.
+  if (sacrificedMany.length > 0) {
+    sacrificedName = sacrificedMany.map((id) => characteristicsOf(next, requireInstance(next, id)).name).join(', ');
+    next = sacrifice(next, [...sacrificedMany]);
   }
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
@@ -2275,7 +2304,7 @@ function activate(
     state: next,
     message: returned !== null
       ? `${seatName(state, action.by)} returns ${returnedName} to hand and activates ${ch.name}`
-      : sacrificed !== null
+      : sacrificed !== null || sacrificedMany.length > 0
       ? `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`
       : crewed.length > 0
         // Said as a count, because the creatures turning sideways are the cost a player is paying
@@ -2285,6 +2314,7 @@ function activate(
     data: {
       card: inst.id, ability: action.abilityIndex,
       ...(sacrificed === null ? {} : { sacrificed }),
+      ...(sacrificedMany.length === 0 ? {} : { sacrificedMany: [...sacrificedMany] }),
       ...(returned === null ? {} : { returned }),
       ...(crewed.length === 0 ? {} : { crewed: [...crewed] }),
     },

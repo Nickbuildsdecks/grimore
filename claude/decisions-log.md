@@ -50454,3 +50454,54 @@ Faults injected by hand: 6, across two rounds. All are caught after three were p
     engine tests: 5,159, all passing
 
 Coverage: 12,633 of 31,743 cards (+9), 32,742 of 59,509 lines (+12). Staples: 241 of 244.
+
+## D732 — A counted sacrifice: "Sacrifice two creatures", and Bolas's Citadel's ten
+
+Activated abilities that sacrifice several permanents as their cost: "Sacrifice two creatures",
+"Sacrifice three Foods", "Sacrifice two other creatures", Bolas's Citadel's "Sacrifice ten
+nonland permanents". About 80 lines in the legal corpus print one. The engine's sacrifice cost was
+one permanent.
+
+How it is read (`countedSacrifice`):
+- **The count is two to ten.** "Sacrifice X …" stays unread.
+- **The kind is a single sacrifice's kind in the plural**: creatures, artifacts, lands,
+  enchantments, tokens, permanents, "artifacts and/or creatures". "Other" maps to the "another"
+  kind, and a kind with no "another" form ("two other lands") stays unread.
+- **"Nonland permanents" is a new kind**, `nonland-permanent`.
+- **Plural subtypes narrow the kind:** Foods, Treasures, Clues and Blood tokens are artifacts; the
+  basic land types are lands; anything else is a creature type ("Goblins", "Elves", "Eldrazi"),
+  read live as the single sacrifice's subtype is.
+- **`AbilityCost.sacrificeCount`** holds the count. Absent means one.
+
+How it plays:
+- **Offered only with enough fodder.** The play carries `sacrificeCount` beside the usual
+  `sacrificeOptions`.
+- **The activation sends `sacrifices`**: exactly that many, all different, each one the cost can
+  take. A single `sacrifice` is refused on a counted cost, and a list is refused on a
+  single-sacrifice cost.
+- **They are sacrificed together**, so each death trigger sees the others gone.
+- **The source is fodder unless the cost says "other".** The Citadel can be one of its own ten.
+- **The table** collects the picks one tap at a time; a second tap on a picked permanent takes it
+  back. The bar says "tap 10 nonland permanents to sacrifice (3 of 10 chosen)", and the picks are
+  ringed as chosen.
+- **The bot leaves counted sacrifices to a person.** Which ten permanents is a judgement the
+  single-sacrifice sort can't make.
+
+Staples went from 241 to 242 (Bolas's Citadel, with D731).
+
+**Tests.** 4 engine tests and 1 table test:
+- the family reads; "Sacrifice X" and "two other lands" stay unread;
+- the Citadel's options are every nonland permanent and no land, itself included; activated with
+  ten, they all go and the opponent loses 10;
+- not offered with nine; refused for nine, a repeat, a land, a single `sacrifice`, and a list on a
+  single-sacrifice outlet;
+- "two other creatures" never offers its source and is not offered with one other; "two creatures"
+  sacrifices both and draws;
+- the table: picks one at a time, a second tap takes one back, the second pick sends `sacrifices`.
+
+Faults injected by script: 15 of 15 caught (12 in the engine, 3 in the table).
+
+    engine tests: 5,158, all passing (merged with the other session's D972)
+
+Coverage: 12,637 of 31,743 cards (+25), 32,759 of 59,509 lines (+40), against 50f4683. Staples:
+242 of 244. Left: Teferi's Protection, and Castle Garenbrig (blocked by D669).

@@ -335,6 +335,11 @@ export interface LegalPlay {
    */
   readonly sacrificeWords?: string;
   /**
+   * How many of `sacrificeOptions` the cost sacrifices, when it is more than one (D732): "Sacrifice
+   * two creatures", Bolas's Citadel's ten. The activation sends them as `sacrifices`.
+   */
+  readonly sacrificeCount?: number;
+  /**
    * Unblocked attackers that could be **returned to hand** to pay for this, when its cost asks for
    * one — ninjutsu, and nothing else so far (CR 702.49a).
    *
@@ -2631,7 +2636,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       if (lifeCost > 0 && (state.seats[seat]?.life ?? 0) <= lifeCost) continue;
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
-      if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
+      if (ability.cost.sacrifice !== undefined && victims.length < (ability.cost.sacrificeCount ?? 1)) continue;
       /*
         Ninjutsu, which is the same rule about a different list — and the list is the timing
         (CR 702.49a).
@@ -2697,7 +2702,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         if (spent.size > 0 && !affords()) continue;
         if (ability.cost.sacrifice !== undefined) {
           fodder = victims.filter((victim) => affords(victim));
-          if (fodder.length === 0) continue;
+          if (fodder.length < (ability.cost.sacrificeCount ?? 1)) continue;
         }
       }
 
@@ -2723,6 +2728,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         // Which kind of cost that list is for, read off the cost rather than guessed from the list.
         ...(ability.cost.sacrifice === 'artifact' ? { sacrificeKind: 'artifact' as const } : {}),
         ...(ability.cost.sacrifice === undefined ? {} : { sacrificeWords: sacrificeWords(ability.cost) }),
+        // A counted sacrifice (D732): this many of `sacrificeOptions`, sent as `sacrifices`.
+        ...((ability.cost.sacrificeCount ?? 1) > 1 ? { sacrificeCount: ability.cost.sacrificeCount } : {}),
         ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
         ...(pitches.length === 0 ? {} : { discardOptions: pitches }),
       });

@@ -1674,7 +1674,10 @@ function Board({ table }: { table: UseTable }) {
             ? Object.values(arenaMode.chosen).flat()
             : arenaMode.kind === "bottoming" || arenaMode.kind === "deciding"
               ? arenaMode.chosen
-              : [],
+              // The permanents picked so far for a counted sacrifice (D732).
+              : arenaMode.kind === "feeding"
+                ? arenaMode.fed ?? []
+                : [],
   )
 
   /**

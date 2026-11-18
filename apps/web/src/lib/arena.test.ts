@@ -298,6 +298,21 @@ describe("paying for an ability by sacrificing something", () => {
     })
   })
 
+  it("collects a counted sacrifice one tap at a time, and a second tap takes one back (D732)", () => {
+    const altar = outlet({ sacrificeOptions: ["a", "b", "c"], sacrificeCount: 2, sacrificeWords: "creature" })
+    let mode = arenaReducer(IDLE, { kind: "choosePlay", play: altar }).mode
+    let result = arenaReducer(mode, { kind: "feed", card: "a" })
+    expect(result.action).toBeNull()
+    mode = result.mode
+    expect(mode.kind === "feeding" ? mode.fed : undefined).toEqual(["a"])
+    expect(feedWords("sacrifice", undefined, "creature", undefined, 2, 1)).toBe("tap 2 creatures to sacrifice (1 of 2 chosen)")
+    mode = arenaReducer(mode, { kind: "feed", card: "a" }).mode
+    expect(mode.kind === "feeding" ? mode.fed : undefined).toEqual([])
+    mode = arenaReducer(mode, { kind: "feed", card: "b" }).mode
+    result = arenaReducer(mode, { kind: "feed", card: "c" })
+    expect(result.action).toEqual({ type: "auto:activate", card: "c1", abilityIndex: 0, sacrifices: ["b", "c"] })
+  })
+
   it("ignores a creature the engine did not offer", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: outlet() }).mode
     expect(arenaReducer(mode, { kind: "feed", card: "somebody-elses" }).action).toBeNull()
