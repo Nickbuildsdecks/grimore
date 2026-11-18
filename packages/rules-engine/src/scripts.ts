@@ -18157,6 +18157,28 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever (?:equipped|enchanted) creature deals damage to an opponent, (.+)$/i,
     on: [{ kind: 'deals-damage', who: 'attached', to: 'opponent' }],
   },
+  /*
+    "Deals damage **to a player**" (D980): any player, the caster included — the wider sentence the
+    event's `to: 'player'` has meant since D566, and which no row read. "That player" is the seat
+    that was hit, down the same `defender` channel.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals damage to a player, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'player' }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature deals damage to a player, (.+)$/i,
+    on: [{ kind: 'deals-damage', who: 'attached', to: 'player' }],
+  },
+  // And to a creature (D980), with the creature for "that creature".
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals damage to a creature, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'creature' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals combat damage to a creature, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'creature', combatOnly: true }],
+  },
   {
     prologue: (self) => new RegExp(`^Whenever ${self} deals combat damage to an opponent, (.+)$`, 'i'),
     on: [{ kind: 'deals-damage', to: 'opponent', combatOnly: true }],
@@ -19485,7 +19507,22 @@ function eventRelativeEffect(
     (where it means the permanent that entered or died) is **not** claimed here.
   */
   const BLOCK_EVENTS = new Set(['blocks', 'becomes-blocked']);
-  const aboutTheOther = events.length > 0 && events.every((one) => BLOCK_EVENTS.has(one.kind));
+  // And the creature a permanent dealt damage to (D980), which travels the same way.
+  const aboutTheOther = events.length > 0 && events.every((one) => BLOCK_EVENTS.has(one.kind)
+    || (one.kind === 'deals-damage' && one.to === 'creature'));
+
+  // "That creature doesn't untap during its controller's next untap step", tapped first or not (D980).
+  const frozen = /^(tap that creature and it|that creature) doesn't untap during its controller's next untap step$/i.exec(text);
+  if (frozen !== null && aboutTheOther) {
+    const tapFirst = frozen[1]!.toLowerCase().startsWith('tap');
+    return {
+      effect: (c) => {
+        if (c.blocked === undefined || c.state.instances[c.blocked]?.zone !== 'battlefield') return c.state;
+        const tapped = tapFirst ? withInstance(c.state, c.blocked, { tapped: true }) : c.state;
+        return freezeNextUntap(tapped, c.blocked);
+      },
+    };
+  }
 
   // Ashmouth Hound (6 corpus lines on this clause alone), Inferno Elemental, Acolyte of the Inferno.
   const burned = new RegExp(`^(?:${self}|it) deals (\\d+) damage to that creature$`, 'i').exec(text);
