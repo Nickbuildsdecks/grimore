@@ -27323,7 +27323,7 @@ const CDA_COUNTS: Readonly<Record<string, CdaCount>> = {
 };
 
 /** A count a `*` body names, including "<Subtype>s you control" (D902). */
-function cdaCountFor(phrase: string): CdaCount | null {
+function cdaCountFor(phrase: string, name?: string): CdaCount | null {
   const text = phrase.trim().toLowerCase();
   const fixed = CDA_COUNTS[text];
   if (fixed !== undefined) return fixed;
@@ -27372,13 +27372,113 @@ function cdaCountFor(phrase: string): CdaCount | null {
     };
   }
   const typed = /^([A-Z][A-Za-z'-]*) you control$/.exec(phrase.trim());
-  if (typed === null) return null;
+  if (typed === null) return zoneCountFrom(phrase, name);
   const LAND_TYPES: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
   const land = LAND_TYPES[typed[1]!];
   if (land !== undefined) return { subtype: land };
   // A type whose plural is itself — Treefolk, Sheep, Fish (D977) — is its own plural.
   const tribe = subtypeFromTribalPhrase(typed[1]!, 'plural') ?? (isCreatureType(typed[1]!) ? typed[1]! : null);
   return tribe === null ? null : { subtype: tribe };
+}
+
+/**
+ * The general zone count (D983), for the phrases the fixed readers above do not name: a list of
+ * words in front of a noun, each one a filter the count already knows how to ask of printed or
+ * instance data. "other creature cards in your graveyard", "noncreature, nonland cards in your
+ * graveyard", "nonbasic land cards in your opponents' graveyards", "Elf cards in your graveyard",
+ * "artifact creatures you control", "untapped artifacts, creatures, and lands you control",
+ * "face-down creatures on the battlefield", "other Rats on the battlefield", "creatures named ~ on
+ * the battlefield", "cards in all players' hands", "+1/+1 counters on creatures you control".
+ *
+ * Types joined by "and" / "or" / a comma are **any** of them ("instant and sorcery cards"); types
+ * side by side are **all** of them ("artifact creatures"). An unknown word refuses the phrase.
+ */
+function zoneCountFrom(phrase: string, name?: string): CdaCount | null {
+  const raw = phrase.trim();
+  const counters = /^(\+1\/\+1|[a-z]+) counters on (.+)$/i.exec(raw);
+  if (counters !== null && (/^it$/i.test(counters[2]!) || (name !== undefined && new RegExp(`^(?:${selfRef(name)})$`, 'i').test(counters[2]!)))) {
+    return { countersOnSelf: counters[1]!.toLowerCase() };
+  }
+  if (counters !== null) {
+    const of = zoneCountFrom(counters[2]!, name);
+    return of !== null && typeof of === 'object' && 'zone' in of && of.counters === undefined
+      ? { ...of, counters: counters[1]!.toLowerCase() } : null;
+  }
+  const TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery', 'battle'];
+  const COLOURS: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+  const LAND_PLURALS: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
+  const typeOf = (word: string): string | null => {
+    const lower = word.toLowerCase();
+    const one = TYPES.includes(lower) ? lower : TYPES.includes(lower.replace(/s$/, '')) ? lower.replace(/s$/, '') : null;
+    return one;
+  };
+  let zone: 'battlefield' | 'graveyard' | 'hand';
+  let whose: 'you' | 'opponents' | 'all';
+  let words: string;
+  let noun: string | null = null;
+  let named: string | undefined;
+  const inCards = /^(.*?)\s*\bcards? in (your graveyard|all graveyards|your opponents' graveyards|your hand|all players' hands)$/i.exec(raw);
+  if (inCards !== null) {
+    words = inCards[1]!;
+    const where = inCards[2]!.toLowerCase();
+    zone = where.endsWith('hand') || where.endsWith('hands') ? 'hand' : 'graveyard';
+    whose = where.startsWith('all') ? 'all' : where.startsWith('your opponents') ? 'opponents' : 'you';
+  } else {
+    const onBoard = /^(.*?)\s*\b([A-Za-z'-]+?)(?: named (.+?))? (you control|your opponents control|on the battlefield)$/.exec(raw);
+    if (onBoard === null) return null;
+    words = onBoard[1]!;
+    noun = onBoard[2]!;
+    named = onBoard[3];
+    zone = 'battlefield';
+    whose = onBoard[4] === 'you control' ? 'you' : onBoard[4] === 'on the battlefield' ? 'all' : 'opponents';
+  }
+  const positive: string[] = [];
+  const notTypes: string[] = [];
+  let ofSubtype: string | undefined;
+  let colour: Color | undefined;
+  const flags: { other?: true; untapped?: true; faceDown?: true; nonbasic?: true; snow?: true; legendary?: true; colorless?: true } = {};
+  const joined = /,|\band\b|\bor\b/i.test(words);
+  for (const token of words.split(/,\s*|\s+/).filter((w) => w !== '' && !/^(?:and|or|and\/or)$/i.test(w))) {
+    const lower = token.toLowerCase();
+    if (lower === 'other') flags.other = true;
+    else if (lower === 'untapped') flags.untapped = true;
+    else if (lower === 'face-down') flags.faceDown = true;
+    else if (lower === 'nonbasic') flags.nonbasic = true;
+    else if (lower === 'snow') flags.snow = true;
+    else if (lower === 'legendary') flags.legendary = true;
+    else if (lower === 'colorless') flags.colorless = true;
+    // "Permanent cards": any of the permanent types (CR 110.4).
+    else if (lower === 'permanent') positive.push('artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle');
+    else if (COLOURS[lower] !== undefined && colour === undefined) colour = COLOURS[lower];
+    else if (/^non-?/.test(lower) && typeOf(lower.replace(/^non-?/, '')) !== null) notTypes.push(typeOf(lower.replace(/^non-?/, ''))!);
+    else if (typeOf(token) !== null) positive.push(typeOf(token)!);
+    else if (/^[A-Z]/.test(token) && ofSubtype === undefined && zone !== 'battlefield') {
+      const sub = LAND_PLURALS[token] ?? (isCreatureType(token) ? token : subtypeFromTribalPhrase(token, 'singular'));
+      if (sub === null || sub === undefined) return null;
+      ofSubtype = sub;
+    } else return null;
+  }
+  if (noun !== null) {
+    const nounType = typeOf(noun);
+    if (nounType !== null) positive.push(nounType);
+    else if (!/^permanents?$/i.test(noun)) {
+      const sub = LAND_PLURALS[noun] ?? subtypeFromTribalPhrase(noun, 'plural') ?? (isCreatureType(noun) ? noun : null);
+      if (sub === null || ofSubtype !== undefined) return null;
+      ofSubtype = sub;
+    }
+  }
+  if (named !== undefined) {
+    if (name === undefined || !new RegExp(`^(?:${selfRef(name)})$`, 'i').test(named.trim())) return null;
+  }
+  return {
+    zone, whose,
+    ...(positive.length === 0 ? {} : joined || positive.length === 1 || /\bpermanent\b/i.test(words) ? { anyType: positive } : { allTypes: positive }),
+    ...(notTypes.length === 0 ? {} : { notTypes }),
+    ...(ofSubtype === undefined ? {} : { ofSubtype }),
+    ...(colour === undefined ? {} : { colour }),
+    ...flags,
+    ...(named === undefined ? {} : { namedAsSelf: true as const }),
+  };
 }
 
 /**
@@ -27521,28 +27621,33 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
     const words = phrase.trim();
     const plusOf = /^(\d+) plus the number of (.+)$/i.exec(words);
     if (plusOf !== null) {
-      const count = cdaCountFor(plusOf[2]!);
+      const count = cdaCountFor(plusOf[2]!, name);
       return count === null ? null : { count, plus: Number(plusOf[1]) };
     }
     // D977: two counts added, a count doubled, and the greatest mana value among your permanents.
     const added = /^the number of (.+?) plus the number of (.+)$/i.exec(words);
     if (added !== null) {
-      const parts = [cdaCountFor(added[1]!), cdaCountFor(added[2]!)];
+      const parts = [cdaCountFor(added[1]!, name), cdaCountFor(added[2]!, name)];
       return parts.every((part): part is CdaCount => part !== null) ? { count: { sum: parts }, plus: 0 } : null;
     }
     const doubled = /^twice the number of (.+)$/i.exec(words);
     if (doubled !== null) {
-      const of = cdaCountFor(doubled[1]!);
+      const of = cdaCountFor(doubled[1]!, name);
       return of === null ? null : { count: { times: 2, of }, plus: 0 };
     }
-    const greatest = /^the greatest mana value among (artifacts|creatures|enchantments|permanents) you control$/i.exec(words);
+    // And the highest among cards in your graveyard (D983).
+    if (/^the (?:greatest|highest) mana value among cards in your graveyard$/i.test(words)) {
+      return { count: { greatestManaValue: true, inGraveyard: true }, plus: 0 };
+    }
+    const greatest = /^the (?:greatest|highest) mana value among (artifacts|creatures|enchantments|permanents) you control$/i.exec(words);
     if (greatest !== null) {
       const word = greatest[1]!.toLowerCase().replace(/s$/, '');
       return { count: { greatestManaValue: true, ...(word === 'permanent' ? {} : { anyType: [word] }) }, plus: 0 };
     }
-    const numberOf = /^the number of (.+)$/i.exec(words);
+    // "The total number of …" (D983) is the same count.
+    const numberOf = /^the (?:total )?number of (.+)$/i.exec(words);
     if (numberOf !== null) {
-      const count = cdaCountFor(numberOf[1]!);
+      const count = cdaCountFor(numberOf[1]!, name);
       return count === null ? null : { count, plus: 0 };
     }
     if (/^your life total$/i.test(words)) return { count: 'your-life-total', plus: 0 };
@@ -27586,7 +27691,7 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
   ).exec(text);
   if (matched === null) return null;
 
-  const count = cdaCountFor(matched[1]!);
+  const count = cdaCountFor(matched[1]!, name);
   if (count === null) return null;
 
   const plus = matched[2];

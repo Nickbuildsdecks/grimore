@@ -23257,6 +23257,112 @@ describe('pumps by X, and pumps of several targets (D743)', () => {
   });
 });
 
+describe('a */* from a general zone count (D983)', () => {
+  const C = (name: string, text: string, extra: Record<string, unknown> = {}) => ({ name, type_line: 'Creature — Avatar', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '*', toughness: '*', ...extra });
+  const V = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type_line: type, oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra });
+  const ROWS = [
+    C('Test Mycodrax', "Test Mycodrax's power and toughness are each equal to the number of other creature cards in your graveyard."),
+    C('Test Swarm', "Test Swarm's power and toughness are each equal to the number of noncreature, nonland cards in your graveyard."),
+    C('Test Drone', "Test Drone's power and toughness are each equal to the number of artifact creatures you control."),
+    C('Test Maraxus', "Test Maraxus's power and toughness are each equal to the number of untapped artifacts, creatures, and lands you control."),
+    C('Test Rats', "Test Rats's power and toughness are each equal to the number of creatures named Test Rats on the battlefield."),
+    C('Test Behemoth', "Test Behemoth's power and toughness are each equal to 2 plus the number of +1/+1 counters on creatures you control."),
+    C('Test Golem', "Test Golem's power and toughness are each equal to 1 plus the number of fade counters on it."),
+    C('Test Leech', "Test Leech's power and toughness are each equal to the highest mana value among cards in your graveyard."),
+    C('Test Adaptoid', "Test Adaptoid's power and toughness are each equal to the number of legendary creatures you control."),
+    C('Test Multani', "Test Multani's power and toughness are each equal to the total number of cards in all players' hands."),
+    C('Test Detritivore', "Test Detritivore's power and toughness are each equal to the number of nonbasic land cards in your opponents' graveyards."),
+    C('Test Pestilence', "Test Pestilence's power and toughness are each equal to 1 plus the number of other Rats on the battlefield.", { type_line: 'Creature — Rat' }),
+    C('Test Ixidron', "Test Ixidron's power and toughness are each equal to 1 plus the number of face-down creatures on the battlefield."),
+    C('Test Aggregate', "Test Aggregate's power and toughness are each equal to 1 plus the number of colorless creatures you control.", { colors: ['B'] }),
+    V('Test Rat', 'Creature — Rat', { power: '1', toughness: '1', colors: ['B'] }),
+    V('Test Golem Body', 'Artifact Creature — Golem', { power: '2', toughness: '2' }),
+    V('Test Relic', 'Artifact'),
+    V('Test Spell', 'Sorcery', { mana_cost: '{5}', cmc: 5 }),
+    V('Test Bear', 'Creature — Bear', { power: '2', toughness: '2', colors: ['G'] }),
+    V('Test Hero', 'Legendary Creature — Human', { power: '1', toughness: '1' }),
+    V('Test Vista', 'Land'),
+  ];
+  const deck = customDeck({
+    id: 'd983', name: 'Counted stars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 20 }],
+    data: ROWS as never[],
+  });
+  const table = (card: string, mine: string[], extra: { graveyard?: string[]; theirs?: string[]; theirGraveyard?: string[]; hands?: [string[], string[]]; prep?: (s: GameState) => GameState } = {}) => advanceTo((extra.prep ?? ((t: GameState) => t))(arena({
+    decks: { 0: 'd983', 1: 'd983' }, deckSpecs: { d983: deck.deck },
+    battlefield: { 0: [card, ...mine], 1: extra.theirs ?? [] },
+    graveyard: { 0: extra.graveyard ?? [], 1: extra.theirGraveyard ?? [] },
+    ...(extra.hands === undefined ? {} : { hands: { 0: extra.hands[0], 1: extra.hands[1] } }),
+    turn: 3, firstSeat: 0,
+  })), 'precombat-main');
+  const withCounters = (name: string, each: readonly Record<string, number>[]) => (s: GameState): GameState => {
+    const all = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name);
+    const instances = { ...s.instances };
+    all.forEach((id, i) => { if (each[i] !== undefined) instances[id] = { ...instances[id]!, counters: each[i]! }; });
+    return { ...s, instances };
+  };
+  const sizeIn = (s: GameState, card: string) => {
+    const got = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', card)]!);
+    return `${got.power}/${got.toughness}`;
+  };
+  const size = (card: string, mine: string[], extra: Parameters<typeof table>[2] = {}) => sizeIn(table(card, mine, extra), card);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 14)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"other Rats on the battlefield", "face-down creatures", "colorless creatures you control"', () => {
+    // Everyone's Rats but itself; a Bear is not one.
+    expect(size('Test Pestilence', ['Test Rat', 'Test Bear'], { theirs: ['Test Rat'] })).toBe('3/3');
+    const s = table('Test Ixidron', ['Test Bear', 'Test Bear']);
+    const bear = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Test Bear')!;
+    expect(sizeIn(s, 'Test Ixidron')).toBe('1/1');
+    expect(sizeIn({ ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, faceDown: true } } }, 'Test Ixidron')).toBe('2/2');
+    // The colorless Golem, not the green Bear, and not itself (it is black).
+    expect(size('Test Aggregate', ['Test Golem Body', 'Test Bear'])).toBe('2/2');
+  });
+
+  it('"other creature cards", "noncreature, nonland cards", "nonbasic land cards in your opponents\' graveyards"', () => {
+    expect(size('Test Mycodrax', [], { graveyard: ['Test Bear', 'Test Golem Body', 'Test Spell', 'Swamp'] })).toBe('2/2');
+    expect(size('Test Swarm', [], { graveyard: ['Test Bear', 'Test Relic', 'Test Spell', 'Swamp', 'Test Vista'] })).toBe('2/2');
+    expect(size('Test Detritivore', [], { graveyard: ['Test Vista'], theirGraveyard: ['Test Vista', 'Swamp', 'Test Vista'] })).toBe('2/2');
+  });
+
+  it('"artifact creatures" is both types; "artifacts, creatures, and lands" is any, untapped only', () => {
+    expect(size('Test Drone', ['Test Golem Body', 'Test Relic', 'Test Bear'])).toBe('1/1');
+    const s = table('Test Maraxus', ['Test Relic', 'Test Bear', 'Swamp', 'Swamp']);
+    expect(sizeIn(s, 'Test Maraxus')).toBe('5/5');
+    const swamp = find(s, 0, 'battlefield', 'Swamp');
+    const tapped = { ...s, instances: { ...s.instances, [swamp]: { ...s.instances[swamp]!, tapped: true } } };
+    expect(sizeIn(tapped, 'Test Maraxus')).toBe('4/4');
+  });
+
+  it('"creatures named ~", "legendary creatures", and the highest mana value in the graveyard', () => {
+    expect(size('Test Rats', ['Test Rats', 'Test Bear'], { theirs: ['Test Rats'] })).toBe('3/3');
+    expect(size('Test Adaptoid', ['Test Hero', 'Test Bear'])).toBe('1/1');
+    expect(size('Test Leech', [], { graveyard: ['Test Bear', 'Test Spell'] })).toBe('5/5');
+  });
+
+  it('counters: on its own creatures summed, and on itself', () => {
+    const s = table('Test Behemoth', ['Test Bear', 'Test Bear'], { theirs: ['Test Bear'] });
+    expect(sizeIn(s, 'Test Behemoth')).toBe('2/2');
+    const after = withCounters('Test Bear', [{ '+1/+1': 2 }, { '+1/+1': 1, '-1/-1': 1 }])(s);
+    const theirBear = ids(after, 1, 'battlefield')[0]!;
+    const counted = { ...after, instances: { ...after.instances, [theirBear]: { ...after.instances[theirBear]!, counters: { '+1/+1': 5 } } } };
+    // Its own creatures' +1/+1 counters only: 2 + 1, not the opponent's 5 and not the -1/-1.
+    expect(sizeIn(counted, 'Test Behemoth')).toBe('5/5');
+    const g = table('Test Golem', []);
+    expect(sizeIn(withCounters('Test Golem', [{ fade: 4 }])(g), 'Test Golem')).toBe('5/5');
+  });
+
+  it('"the total number of cards in all players\' hands"', () => {
+    const s = table('Test Multani', [], { hands: [['Swamp', 'Swamp'], ['Swamp']] });
+    expect(sizeIn(s, 'Test Multani')).toBe(`${ids(s, 0, 'hand').length + ids(s, 1, 'hand').length}/${ids(s, 0, 'hand').length + ids(s, 1, 'hand').length}`);
+    expect(ids(s, 1, 'hand').length).toBeGreaterThan(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

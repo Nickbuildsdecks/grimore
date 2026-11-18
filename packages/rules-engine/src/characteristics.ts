@@ -178,17 +178,21 @@ function cdaCountMore(
   state: GameState,
   kind: NonNullable<ContinuousEffect['definesSize']>['count'],
   controller: SeatIndex,
+  source?: string,
 ): number | null {
   const lineOf = (id: string) => parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
   const zone = (seat: SeatIndex, z: 'battlefield' | 'hand' | 'graveyard') => state.zones[zoneKey(seat, z)] ?? [];
   const everyone = state.seats.map((row) => row.index);
-  if (typeof kind === 'object' && 'sum' in kind) return kind.sum.reduce((total, part) => total + cdaCount(state, part, controller), 0);
-  if (typeof kind === 'object' && 'times' in kind) return kind.times * cdaCount(state, kind.of, controller);
+  if (typeof kind === 'object' && 'sum' in kind) return kind.sum.reduce((total, part) => total + cdaCount(state, part, controller, source), 0);
+  if (typeof kind === 'object' && 'times' in kind) return kind.times * cdaCount(state, kind.of, controller, source);
   if (typeof kind === 'object' && 'subtypes' in kind) {
     return zone(controller, 'battlefield').filter((id) => kind.subtypes.some((sub) => hasSubtype(lineOf(id), sub))).length;
   }
+  if (typeof kind === 'object' && 'countersOnSelf' in kind) {
+    return source === undefined ? 0 : state.instances[source]?.counters[kind.countersOnSelf] ?? 0;
+  }
   if (typeof kind === 'object' && 'greatestManaValue' in kind) {
-    return zone(controller, 'battlefield').reduce((most, id) => {
+    return zone(controller, kind.inGraveyard === true ? 'graveyard' : 'battlefield').reduce((most, id) => {
       if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return most;
       return Math.max(most, state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0);
     }, 0);
@@ -223,13 +227,28 @@ function cdaCountMore(
   if (typeof kind === 'object' && 'zone' in kind) {
     const seats = kind.whose === 'you' ? [controller]
       : kind.whose === 'opponents' ? everyone.filter((seat) => seat !== controller) : everyone;
-    return seats.flatMap((seat) => zone(seat, kind.zone)).filter((id) => {
-      const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
-      if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return false;
-      if (kind.snow === true && !lineOf(id).supertypes.some((word) => word.toLowerCase() === 'snow')) return false;
-      if (kind.notSubtype !== undefined && hasSubtype(lineOf(id), kind.notSubtype)) return false;
+    const selfName = source === undefined ? undefined : state.cardDefs[state.instances[source]?.defKey ?? '']?.name;
+    const counted = seats.flatMap((seat) => zone(seat, kind.zone)).filter((id) => {
+      const inst = state.instances[id];
+      const def = state.cardDefs[inst?.defKey ?? ''];
+      const line = lineOf(id);
+      if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(line, type))) return false;
+      if (kind.allTypes !== undefined && !kind.allTypes.every((type) => hasType(line, type))) return false;
+      if (kind.notTypes !== undefined && kind.notTypes.some((type) => hasType(line, type))) return false;
+      if (kind.snow === true && !line.supertypes.some((word) => word.toLowerCase() === 'snow')) return false;
+      if (kind.nonbasic === true && line.supertypes.some((word) => word.toLowerCase() === 'basic')) return false;
+      if (kind.colorless === true && (def?.colors ?? []).length > 0) return false;
+      if (kind.legendary === true && !line.supertypes.some((word) => word.toLowerCase() === 'legendary')) return false;
+      if (kind.notSubtype !== undefined && hasSubtype(line, kind.notSubtype)) return false;
+      if (kind.ofSubtype !== undefined && !hasSubtype(line, kind.ofSubtype)) return false;
+      if (kind.other === true && id === source) return false;
+      if (kind.untapped === true && inst?.tapped === true) return false;
+      if (kind.faceDown === true && inst?.faceDown !== true) return false;
+      if (kind.namedAsSelf === true && (selfName === undefined || def?.name !== selfName)) return false;
       return kind.colour === undefined || (def?.colors ?? []).includes(kind.colour);
-    }).length;
+    });
+    return kind.counters === undefined ? counted.length
+      : counted.reduce((total, id) => total + (state.instances[id]?.counters[kind.counters!] ?? 0), 0);
   }
   if (kind === 'your-life-total') return state.seats[controller]?.life ?? 0;
   switch (kind) {
@@ -2089,7 +2108,13 @@ export interface ContinuousEffect {
       /** "Differently named lands you control" (D977): Awakened Amalgam. */
       | 'differently-named-lands-you-control'
       /** "The greatest mana value among artifacts / permanents you control" (D977), printed. */
-      | { readonly greatestManaValue: true; readonly anyType?: readonly string[] }
+      | {
+        readonly greatestManaValue: true; readonly anyType?: readonly string[];
+        /** "Among cards in your graveyard" (D983) rather than among your permanents. */
+        readonly inGraveyard?: true;
+      }
+      /** "The number of fade counters on it" (D983): counters of this kind on the permanent itself. */
+      | { readonly countersOnSelf: string }
       /** "… plus the number of …" (D977): Dauntless Dourbark. */
       | { readonly sum: readonly DefinedCount[] }
       /** "Twice the number of …" (D977): Majestic Myriarch. */
@@ -2114,6 +2139,31 @@ export interface ContinuousEffect {
         readonly snow?: true;
         /** "Non-Wall creatures you control" (D977): excluding a printed subtype. */
         readonly notSubtype?: string;
+        /**
+         * D983's filters, each printed data or instance data, as the rest are:
+         * - `allTypes`: every one of these types ("artifact creatures you control");
+         * - `notTypes`: none of them ("noncreature, nonland cards in your graveyard");
+         * - `nonbasic`: not a basic ("nonbasic land cards in your opponents' graveyards");
+         * - `ofSubtype`: a printed subtype ("Elf cards in your graveyard", "other Rats on the battlefield");
+         * - `other`: not the permanent whose size this is ("other creature cards", "other Rats");
+         * - `untapped`, `faceDown`: the instance's own state;
+         * - `namedAsSelf`: "creatures named ~ on the battlefield" (Plague Rats);
+         * - `counters`: the counters of this kind on what is counted, summed, instead of a count of
+         *   it ("the number of +1/+1 counters on creatures you control").
+         */
+        readonly allTypes?: readonly string[];
+        readonly notTypes?: readonly string[];
+        readonly nonbasic?: true;
+        readonly ofSubtype?: string;
+        readonly other?: true;
+        readonly untapped?: true;
+        readonly faceDown?: true;
+        readonly namedAsSelf?: true;
+        readonly counters?: string;
+        /** "Legendary creatures you control": the printed supertype. */
+        readonly legendary?: true;
+        /** "Colorless creatures you control": no printed colour. */
+        readonly colorless?: true;
       };
     /**
      * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both
@@ -2657,8 +2707,10 @@ function cdaCount(
   state: GameState,
   kind: NonNullable<ContinuousEffect['definesSize']>['count'],
   controller: SeatIndex,
+  // The permanent whose size this is, for "other" and "named ~" (D983).
+  source?: string,
 ): number {
-  const extra = cdaCountMore(state, kind, controller);
+  const extra = cdaCountMore(state, kind, controller, source);
   if (extra !== null) return extra;
   // Whose graveyards are counted is part of what the card says, so it is read off the kind rather
   // than passed in: "in all graveyards" and "in your graveyard" are two different counts, and a
@@ -3118,7 +3170,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // Layer 7a before 7b, which is the whole of the ordering: a defined size is a *base*, and a
     // setting effect replaces it however early the definition was installed (CR 613.4a, 613.4c).
     if (effect.definesSize !== undefined) {
-      const counted = cdaCount(state, effect.definesSize.count, effect.controller);
+      const counted = cdaCount(state, effect.definesSize.count, effect.controller, effect.source);
       if (effect.definesSize.applies !== 'toughness') definedPower = counted + (effect.definesSize.powerPlus ?? 0);
       if (effect.definesSize.applies !== 'power') {
         definedToughness = counted + (effect.definesSize.toughnessPlus ?? 0);

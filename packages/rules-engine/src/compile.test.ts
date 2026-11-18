@@ -4265,8 +4265,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a count this engine has no data for', () => {
       /*
-        `definesSize` names its counts (D57): "face-down creatures on the battlefield" is a real Magic card and
-        not a count the engine can take ("cards in your hand", the count this used, reads since D902, and "snow permanents you control" since D976), so the line is refused rather than read as one of the two it
+        `definesSize` names its counts (D57): "cards you've drawn this turn" is a real Magic card and
+        not a count the engine can take ("cards in your hand", the count this used, reads since D902, "snow permanents you control" since D976, and "face-down creatures on the battlefield" since D983), so the line is refused rather than read as one of the two it
         does have. A card compiled with the wrong count is a creature of the wrong size, every
         turn, with nothing flagged.
 
@@ -4280,7 +4280,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const starred = compileCard({
         name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
         colors: ['G'], power: '*', toughness: '*',
-        oracle_text: 'Hand Goyf’s power is equal to the number of face-down creatures on the battlefield.',
+        oracle_text: 'Hand Goyf’s power is equal to the number of cards you’ve drawn this turn.',
       });
       expect(starred.ok).toBe(false);
       if (!starred.ok) expect(starred.why).toContain('comes from an ability, not a number');
@@ -4288,7 +4288,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const sized = compileCard({
         name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
         colors: ['G'], power: '2', toughness: '2',
-        oracle_text: 'Hand Goyf’s power is equal to the number of face-down creatures on the battlefield.',
+        oracle_text: 'Hand Goyf’s power is equal to the number of cards you’ve drawn this turn.',
       });
       expect(sized.ok).toBe(true);
       if (sized.ok) {
@@ -7220,7 +7220,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ['a count that supplies both halves', 'creature cards in all graveyards', '*', true],
       // 'cards in your hand' reads since D902 and 'snow permanents you control' since D976, so the
       // missing count is a rarer one.
-      ['a count this engine does not have', 'face-down creatures on the battlefield', '*', false],
+      // Face-down creatures read since D983.
+      ['a count this engine does not have', "cards you've drawn this turn", '*', false],
       ['a power-only count beside a starred toughness', 'instant and sorcery cards in your graveyard', '*', false],
     ])('%s: kept = %s', (_label, count, toughness, kept) => {
       const text = count === 'instant and sorcery cards in your graveyard'
