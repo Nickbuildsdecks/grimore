@@ -5302,7 +5302,7 @@ function completeResolution(
     source: object.source,
     controller: object.controller,
     targets: object.targets,
-    x: object.x ?? 0,
+    x: object.x ?? triggerX(next, object),
     decisions: answers,
     kicked: object.kicked === true,
     // The spell itself, for "if this spell was cast from a graveyard" (D715).
@@ -5550,6 +5550,10 @@ function completeResolution(
         const amount = object.x ?? 0;
         if (amount > 0) next = addCounters(next, inst.id, arrives.counter, amount);
       }
+      // And the X itself, for its enters abilities that say "X" (D985, CR 107.3m).
+      if ((object.x ?? 0) > 0 && next.instances[inst.id]?.zone === 'battlefield') {
+        next = withInstance(next, inst.id, { castX: object.x! });
+      }
       /*
         Riot and unleash (CR 702.136a, 702.98a): the answer to the question this spell asked as it
         began to resolve, acted on as the permanent arrives.
@@ -5730,6 +5734,14 @@ interface Resolvable {
   readonly decisions?: readonly DecisionSpecOf[];
   readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;
+}
+
+/**
+ * The X a triggered ability of a permanent means when it has none of its own (D985, CR 107.3m): the
+ * X the permanent's spell was cast with. 0 for anything else, as before.
+ */
+function triggerX(state: GameState, object: StackObject): number {
+  return object.kind === 'triggered' ? state.instances[object.source]?.castX ?? 0 : 0;
 }
 
 function abilityOrTrigger(

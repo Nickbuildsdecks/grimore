@@ -346,6 +346,12 @@ export interface CardInstance {
    */
   readonly prepared?: true;
   /**
+   * The X its spell was cast with (D985), for its own enters-the-battlefield abilities: "If X is 5
+   * or more, draw a card when it enters" means that X (CR 107.3m). Set as the spell resolves into
+   * this permanent, only when X was more than 0; gone when it leaves the battlefield.
+   */
+  readonly castX?: number;
+  /**
    * Set on a card in exile that one seat has been told it may **play** until a deadline (D583) —
    * "Exile the top card of your library. You may play that card this turn."
    *

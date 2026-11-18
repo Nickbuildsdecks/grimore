@@ -992,6 +992,24 @@ function compileSingle(row: CardDataRow): Compilation {
       making a token copy whose printed size is 1/1 (`copyAsToken`'s profile, as eternalize's 4/4).
       The enter trigger's event shape is taken from the line reader rather than written here.
     */
+    /*
+      **Ravenous** (D985, CR 702.156a): "This creature enters with X +1/+1 counters on it. If X is
+      5 or more, draw a card when it enters." Read as those two sentences, each by the reader that
+      already has it; both or neither.
+    */
+    if (/^ravenous$/i.test(line.replace(/\([^)]*\)/g, '').trim())) {
+      const parts = [
+        lineScriptFor('This creature enters with X +1/+1 counters on it.', def.name),
+        lineScriptFor('When this creature enters, if X is 5 or more, draw a card.', def.name),
+      ];
+      if (parts.every((part) => part !== null)) {
+        const fragment: Record<string, unknown> = {};
+        const fits = parts.every((part) => merge(fragment, part!) === 'merged');
+        if (fits && merge(built, fragment as Partial<CardScript>) === 'merged') { compiled.push(line); continue; }
+        unread.push({ line, why: 'field-conflict' });
+        continue;
+      }
+    }
     const offspring = /^offspring\s+((?:\{[^}]*\})+)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
     if (offspring !== null) {
       const enters = lineScriptFor('When this creature enters, draw a card.', def.name)?.triggers?.[0];

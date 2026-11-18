@@ -437,6 +437,8 @@ export function relocate(
     ...(toZone === 'battlefield' || toZone === 'stack' ? {} : { prototype: undefined }),
     // And prepared (D978), which the permanent is and the card it leaves as is not.
     ...(toZone === 'battlefield' ? {} : { prepared: undefined }),
+    // And the X it was cast with (D985), which only its own arrival can have meant.
+    ...(toZone === 'battlefield' ? {} : { castX: undefined }),
     // And a permission to play this card out of exile ends when it is no longer there (D583):
     // played, or moved by something else, it is a new object that was never told anything.
     ...(inst.zone === 'exile' && toZone !== 'exile' && inst.playFromExile !== undefined

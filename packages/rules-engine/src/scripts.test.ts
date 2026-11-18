@@ -23515,6 +23515,39 @@ describe('outlast and undaunted (D984)', () => {
   });
 });
 
+describe('ravenous (D985)', () => {
+  const ROW = { name: 'Test Ravener', type_line: 'Creature — Tyranid', oracle_text: 'Ravenous (This creature enters with X +1/+1 counters on it. If X is 5 or more, draw a card when it enters.)\nTrample', mana_cost: '{X}{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '0', toughness: '0' };
+  const deck = customDeck({ id: 'd985', name: 'Ravenous', entries: [{ name: 'Test Ravener', count: 10 }, { name: 'Forest', count: 30 }], data: [ROW] as never[] });
+  const cast = (x: number) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd985', 1: 'd985' }, deckSpecs: { d985: deck.deck },
+      hands: { 0: ['Test Ravener'] }, battlefield: { 0: Array.from({ length: 6 }, () => 'Forest'), 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Ravener');
+    const hand = ids(s, 0, 'hand').length;
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card, x } as Action), 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return { t, card, hand };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROW as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('X = 3: three counters and no card; X = 5: five counters and a card', () => {
+    const three = cast(3);
+    expect(three.t.instances[three.card]!.counters['+1/+1']).toBe(3);
+    expect(ids(three.t, 0, 'hand')).toHaveLength(three.hand - 1);
+    const five = cast(5);
+    expect(five.t.instances[five.card]!.counters['+1/+1']).toBe(5);
+    expect(ids(five.t, 0, 'hand')).toHaveLength(five.hand);
+    // The X belongs to the permanent it was cast into, and goes when that permanent does.
+    expect(five.t.instances[five.card]!.castX).toBe(5);
+    expect(bounceToHand(five.t, five.card).instances[five.card]!.castX).toBeUndefined();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
