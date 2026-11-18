@@ -396,6 +396,8 @@ export interface StackObject {
    * Absent for none: a copy and a spell cast without paying its mana cost spent nothing.
    */
   readonly coloursSpent?: number;
+  /** Which colours of mana were spent on it (D742): "if {U} was spent to cast it". */
+  readonly colorsSpent?: readonly string[];
   /** Cast when a sorcery couldn't have been (D727): Necromancy's flash, and its cleanup sacrifice. */
   readonly castOutsideSorceryTiming?: true;
   /**
@@ -1273,7 +1275,7 @@ export interface AutomationState {
    * by other means) makes the record stale without anything clearing it — the new object was never
    * cast (CR 400.7). Optional so a game saved before it loads as "nothing was cast".
    */
-  readonly castPermanents?: Readonly<Record<string, { readonly from: ZoneId; readonly seq: number }>>;
+  readonly castPermanents?: Readonly<Record<string, { readonly from: ZoneId; readonly seq: number; readonly colors?: readonly string[] }>>;
   /**
    * Whether it is day or night (CR 726), or neither — `null`, which is how every game starts.
    *

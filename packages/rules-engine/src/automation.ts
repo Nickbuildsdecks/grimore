@@ -4195,7 +4195,7 @@ function payFrom(
    * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
    */
   exclude?: ReadonlySet<string>,
-): { state: GameState; tapped: readonly string[]; coloursSpent: number } {
+): { state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[] } {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
   const printed = typeof costText === 'object' && costText !== null
@@ -4241,9 +4241,11 @@ function payFrom(
     player who could have spent more gets the count of what was spent.
   */
   const beforePaying = poolOf(next, seat);
-  const coloursSpent = result.paid
-    ? COLOR_SYMBOLS.filter((type) => (beforePaying[type] ?? 0) > ((result.pool as ManaPool)[type] ?? 0)).length
-    : 0;
+  // Which colours, too (D742): "if {U} was spent to cast it".
+  const colorsSpent = result.paid
+    ? COLOR_SYMBOLS.filter((type) => (beforePaying[type] ?? 0) > ((result.pool as ManaPool)[type] ?? 0))
+    : [];
+  const coloursSpent = colorsSpent.length;
   if (!result.paid) {
     const asText = typeof costText === 'string' || costText === undefined ? costText : null;
     const shown = asText === null
@@ -4263,7 +4265,7 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent };
+  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */
@@ -5404,7 +5406,11 @@ function completeResolution(
         ...next,
         castPermanents: {
           ...(next.castPermanents ?? {}),
-          [inst.id]: { from: object.castFrom ?? 'hand', seq: next.instances[inst.id]?.objectSeq ?? 0 },
+          [inst.id]: {
+            from: object.castFrom ?? 'hand', seq: next.instances[inst.id]?.objectSeq ?? 0,
+            // And the colours spent on it (D742): "if {U} was spent to cast it".
+            ...((object.colorsSpent ?? []).length > 0 ? { colors: [...object.colorsSpent!] } : {}),
+          },
         },
       };
       /*
