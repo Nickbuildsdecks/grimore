@@ -171,6 +171,9 @@ export function playerProtected(state: GameState, seat: SeatIndex): boolean {
 }
 
 /** D902's counts for a characteristic-defining size; `null` for the two older kinds. */
+/** A count a characteristic-defining size names (see `ContinuousEffect.definesSize`). */
+export type DefinedCount = NonNullable<ContinuousEffect['definesSize']>['count'];
+
 function cdaCountMore(
   state: GameState,
   kind: NonNullable<ContinuousEffect['definesSize']>['count'],
@@ -179,6 +182,21 @@ function cdaCountMore(
   const lineOf = (id: string) => parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
   const zone = (seat: SeatIndex, z: 'battlefield' | 'hand' | 'graveyard') => state.zones[zoneKey(seat, z)] ?? [];
   const everyone = state.seats.map((row) => row.index);
+  if (typeof kind === 'object' && 'sum' in kind) return kind.sum.reduce((total, part) => total + cdaCount(state, part, controller), 0);
+  if (typeof kind === 'object' && 'times' in kind) return kind.times * cdaCount(state, kind.of, controller);
+  if (typeof kind === 'object' && 'subtypes' in kind) {
+    return zone(controller, 'battlefield').filter((id) => kind.subtypes.some((sub) => hasSubtype(lineOf(id), sub))).length;
+  }
+  if (typeof kind === 'object' && 'greatestManaValue' in kind) {
+    return zone(controller, 'battlefield').reduce((most, id) => {
+      if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return most;
+      return Math.max(most, state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0);
+    }, 0);
+  }
+  if (kind === 'differently-named-lands-you-control') {
+    return new Set(zone(controller, 'battlefield').filter((id) => hasType(lineOf(id), 'land'))
+      .map((id) => state.cardDefs[state.instances[id]?.defKey ?? '']?.name ?? id)).size;
+  }
   if (typeof kind === 'object' && 'subtype' in kind) {
     const seats = kind.whose === 'all' ? everyone : [controller];
     return seats.flatMap((seat) => zone(seat, 'battlefield')).filter((id) => hasSubtype(lineOf(id), kind.subtype)).length;
@@ -209,6 +227,7 @@ function cdaCountMore(
       const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
       if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return false;
       if (kind.snow === true && !lineOf(id).supertypes.some((word) => word.toLowerCase() === 'snow')) return false;
+      if (kind.notSubtype !== undefined && hasSubtype(lineOf(id), kind.notSubtype)) return false;
       return kind.colour === undefined || (def?.colors ?? []).includes(kind.colour);
     }).length;
   }
@@ -2065,6 +2084,16 @@ export interface ContinuousEffect {
       | { readonly subtype: string; readonly whose?: 'all' }
       /** Domain (D976): the basic land types among the printed lands you control. */
       | 'basic-land-types-you-control'
+      /** "Differently named lands you control" (D977): Awakened Amalgam. */
+      | 'differently-named-lands-you-control'
+      /** "The greatest mana value among artifacts / permanents you control" (D977), printed. */
+      | { readonly greatestManaValue: true; readonly anyType?: readonly string[] }
+      /** "… plus the number of …" (D977): Dauntless Dourbark. */
+      | { readonly sum: readonly DefinedCount[] }
+      /** "Twice the number of …" (D977): Majestic Myriarch. */
+      | { readonly times: number; readonly of: DefinedCount }
+      /** "Soldiers and Warriors you control" (D977): any of several subtypes, on your side. */
+      | { readonly subtypes: readonly string[] }
       /** "Equal to your life total" (D975): Serra Avatar. */
       | 'your-life-total'
       /** "Equal to your devotion to red" (D975): the coloured symbols in your permanents' printed costs. */
@@ -2081,6 +2110,8 @@ export interface ContinuousEffect {
         readonly colour?: Color;
         /** "Snow permanents you control", "snow lands you control" (D976). */
         readonly snow?: true;
+        /** "Non-Wall creatures you control" (D977): excluding a printed subtype. */
+        readonly notSubtype?: string;
       };
     /**
      * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both

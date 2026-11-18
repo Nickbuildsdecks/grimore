@@ -22300,6 +22300,66 @@ describe('ward and goad granted by a static or an attachment (D736)', () => {
   });
 });
 
+describe('a */* from sums, doubles, the greatest mana value, names and subtypes (D977)', () => {
+  const C = (name: string, text: string, extra: Record<string, unknown> = {}) => ({ name, type_line: 'Creature — Avatar', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '*', ...extra });
+  const ROWS = [
+    C('Test Forge', "Test Forge's power and toughness are each equal to the greatest mana value among artifacts you control."),
+    C('Test Dourbark', "Test Dourbark's power and toughness are each equal to the number of Forests you control plus the number of Treefolk you control.", { type_line: 'Creature — Treefolk Warrior' }),
+    C('Test Myriarch', "Test Myriarch's power and toughness are each equal to twice the number of creatures you control."),
+    C('Test Warlord', "Test Warlord's power and toughness are each equal to the number of non-Wall creatures you control."),
+    C('Test Amalgam', "Test Amalgam's power and toughness are each equal to the number of differently named lands you control."),
+    C('Test Crusader', "Test Crusader's power and toughness are each equal to 2 plus the number of Soldiers and Warriors you control.", { type_line: 'Creature — Human Knight' }),
+    { name: 'Test Engine', type_line: 'Artifact', oracle_text: '', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal' },
+    { name: 'Test Trinket', type_line: 'Artifact', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '4' },
+    { name: 'Test Soldier', type_line: 'Creature — Human Soldier', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Warrior', type_line: 'Creature — Elf Warrior', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Titan', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{5}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({
+    id: 'd977', name: 'Even more stars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 19 }, { name: 'Plains', count: 19 }],
+    data: ROWS as never[],
+  });
+  const size = (card: string, mine: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd977', 1: 'd977' }, deckSpecs: { d977: deck.deck },
+      battlefield: { 0: [card, ...mine], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const got = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', card)]!);
+    return `${got.power}/${got.toughness}`;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 6)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the greatest mana value among your artifacts, not the 6-mana creature beside them', () => {
+    expect(size('Test Forge', ['Test Engine', 'Test Trinket', 'Test Titan'])).toBe('4/4');
+  });
+
+  it('Forests plus Treefolk: two Forests and itself', () => {
+    expect(size('Test Dourbark', ['Forest', 'Forest', 'Plains'])).toBe('3/3');
+  });
+
+  it('twice the creatures you control: itself and a Wall', () => {
+    expect(size('Test Myriarch', ['Test Wall'])).toBe('4/4');
+  });
+
+  it('non-Wall creatures: itself and the Soldier, not the Wall', () => {
+    expect(size('Test Warlord', ['Test Wall', 'Test Soldier'])).toBe('2/2');
+  });
+
+  it('differently named lands: two Forests and a Plains are two names', () => {
+    expect(size('Test Amalgam', ['Forest', 'Forest', 'Plains'])).toBe('2/2');
+  });
+
+  it('2 plus Soldiers and Warriors: one of each, and not itself (a Knight)', () => {
+    expect(size('Test Crusader', ['Test Soldier', 'Test Warrior', 'Test Wall'])).toBe('4/4');
+  });
+});
+
 describe('board conditions on a static: "as long as you control another artifact" (D737)', () => {
   const C = (name: string, type: string, text: string, colors: string[], extra: Record<string, unknown> = {}) => ({
     name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors, layout: 'normal', power: '2', toughness: '2', ...extra,

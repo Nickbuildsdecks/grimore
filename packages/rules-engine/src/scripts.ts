@@ -27125,6 +27125,17 @@ function cdaCountFor(phrase: string): CdaCount | null {
   }
   // Domain (D976).
   if (text === 'basic land types among lands you control') return 'basic-land-types-you-control';
+  // D977: differently named lands; a negated subtype; several subtypes.
+  if (text === 'differently named lands you control') return 'differently-named-lands-you-control';
+  const notOf = /^non-([A-Z][A-Za-z'-]*) creatures you control$/.exec(phrase.trim());
+  if (notOf !== null && isCreatureType(notOf[1]!)) {
+    return { zone: 'battlefield', whose: 'you', anyType: ['creature'], notSubtype: notOf[1]! };
+  }
+  const several = /^([A-Z][A-Za-z'-]*) and ([A-Z][A-Za-z'-]*) you control$/.exec(phrase.trim());
+  if (several !== null) {
+    const subs = [several[1]!, several[2]!].map((word) => subtypeFromTribalPhrase(word, 'plural') ?? (isCreatureType(word) ? word : null));
+    if (subs.every((sub): sub is string => sub !== null)) return { subtypes: subs };
+  }
   // "Clerics on the battlefield", "Forests on the battlefield" (D976): a subtype, everyone's.
   const everywhere = /^([A-Z][A-Za-z'-]*) on the battlefield$/.exec(phrase.trim());
   if (everywhere !== null) {
@@ -27145,7 +27156,8 @@ function cdaCountFor(phrase: string): CdaCount | null {
   const LAND_TYPES: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
   const land = LAND_TYPES[typed[1]!];
   if (land !== undefined) return { subtype: land };
-  const tribe = subtypeFromTribalPhrase(typed[1]!, 'plural');
+  // A type whose plural is itself — Treefolk, Sheep, Fish (D977) — is its own plural.
+  const tribe = subtypeFromTribalPhrase(typed[1]!, 'plural') ?? (isCreatureType(typed[1]!) ? typed[1]! : null);
   return tribe === null ? null : { subtype: tribe };
 }
 
@@ -27291,6 +27303,22 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
     if (plusOf !== null) {
       const count = cdaCountFor(plusOf[2]!);
       return count === null ? null : { count, plus: Number(plusOf[1]) };
+    }
+    // D977: two counts added, a count doubled, and the greatest mana value among your permanents.
+    const added = /^the number of (.+?) plus the number of (.+)$/i.exec(words);
+    if (added !== null) {
+      const parts = [cdaCountFor(added[1]!), cdaCountFor(added[2]!)];
+      return parts.every((part): part is CdaCount => part !== null) ? { count: { sum: parts }, plus: 0 } : null;
+    }
+    const doubled = /^twice the number of (.+)$/i.exec(words);
+    if (doubled !== null) {
+      const of = cdaCountFor(doubled[1]!);
+      return of === null ? null : { count: { times: 2, of }, plus: 0 };
+    }
+    const greatest = /^the greatest mana value among (artifacts|creatures|enchantments|permanents) you control$/i.exec(words);
+    if (greatest !== null) {
+      const word = greatest[1]!.toLowerCase().replace(/s$/, '');
+      return { count: { greatestManaValue: true, ...(word === 'permanent' ? {} : { anyType: [word] }) }, plus: 0 };
     }
     const numberOf = /^the number of (.+)$/i.exec(words);
     if (numberOf !== null) {
