@@ -22884,6 +22884,22 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    "Each opponent mills three cards", "Each player mills two cards" (D748): the untargeted mill, every
+    named player in turn order, each from their own library. Eliminated seats mill nothing.
+  */
+  const everyoneMills = /^(each opponent|each player) mills ([\w]+) cards?$/i.exec(text);
+  if (everyoneMills !== null) {
+    const n = countFrom(everyoneMills[2]!);
+    const everyone = everyoneMills[1]!.toLowerCase() === 'each player';
+    if (n !== null) {
+      return {
+        effect: (c) => c.state.seats
+          .filter((seat) => !seat.eliminated && (everyone || seat.index !== c.controller))
+          .reduce((state, seat) => mill(state, seat.index, n), c.state),
+      };
+    }
+  }
   const milled = /^(target player|target opponent) mills ([\w]+) cards?$/i.exec(text);
   if (milled !== null) {
     const n = countFrom(milled[2]!);
