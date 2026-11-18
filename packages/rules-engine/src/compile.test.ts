@@ -4530,8 +4530,9 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     it.each([
-      // Nothing in the list is a number, so there is no count to take at all.
-      ['any number of targets'],
+      // "Any number of targets" reads since D749: the count is the damage.
+      // A word that is not a number and not that phrase still refuses.
+      ['several targets'],
       /*
         And the case that needs its own row: a readable number **beside** an unreadable word. The
         largest-word rule would happily return two here and read a card whose list it did not
@@ -9379,8 +9380,7 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     ['a list of subtypes', 'put a +1/+1 counter on each Pest, Bat, Insect, Snake, and Spider you control.'],
     // Venerated Loxodon: a fact about how the spell was cast, not about the board.
     ['a fact about the cast', 'put a +1/+1 counter on each creature that convoked it.'],
-    // Choking Fumes: a combat scope, which this reader has no vocabulary for yet.
-    ['an attacking scope', 'put a -1/-1 counter on each attacking creature.'],
+    // Choking Fumes' "each attacking creature" reads since D749 (state words in a board scope).
     // Charmed Stray: a name, and a name needs a card database to resolve.
     ['a named scope', 'put a +1/+1 counter on each other creature you control named Charmed Stray.'],
     /*

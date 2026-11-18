@@ -51567,3 +51567,55 @@ D984–D986): every game finished.
     engine tests: 5,291, all passing (merged with the other session's D987)
 
 Coverage: 13,207 of 31,900 cards (+15), 33,778 of 59,888 lines (+23), against 38c5bb6.
+
+## D749 — Divided damage among any number of targets, and state words in a board scope
+
+Two shared readers widened:
+- **Divided damage** (#119) read "among one, two, or three targets". It now also reads:
+  - "among **any number of** targets": the count is the damage, since each target is assigned at
+    least one. The bot is told to take one (`botTakes`, D579's hint), so it doesn't spread a
+    Fireball-like over its own board.
+  - a typed target in the plural: "any number of target creatures", "one, two, or three target
+    attacking or blocking creatures", "… target creatures with flying".
+- **The board scopes** ("each …", "all …"; `boardScope` and `massScope`) read type words only. They
+  now read the state words, live as the effect resolves: "attacking", "blocking", "tapped",
+  "untapped". "Deals 2 damage to each attacking creature", "Destroy all tapped creatures", "Tap all
+  untapped creatures your opponents control", "Put a -1/-1 counter on each attacking creature".
+
+Two older pins read now and are updated:
+- the divided refusal ("any number of targets") is pinned on a word that still isn't a number;
+- Choking Fumes' "each attacking creature" row (D453) is gone.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- 4 divided among two Bears kills both, and the spec carries `botTakes: 1`;
+- "target creatures" refuses a player;
+- each attacking creature: the attacker dies; a tapped Bear at home and the defender's creature
+  don't;
+- all tapped creatures: the tapped one dies, the untapped one lives.
+
+Faults injected by script: 5 of 5 caught, one after pinning (attacking read as tapped).
+
+Coverage: 13,255 of 31,900 cards (+46), 33,833 of 59,888 lines (+53), against 2bd1f8a.
+
+## D750 — A trigger whose targets are gone before it is aimed is removed
+
+**Found by the 100-game pod sweep at seed 59203.** Schema Thief's "Whenever ~ deals combat damage
+to a player, create a token that's a copy of target artifact that player controls" triggered with
+candidates. By the time its controller aimed it, that player had left the game, and with them the
+attack, so "that player" (read as "defending player", D960) named nobody. `chooseTargets` refused
+every answer, including none, and the game threw.
+
+The rule is CR 603.3d: a triggered ability with no legal target is removed. The engine already did
+that as a trigger goes on the stack; now `chooseTargets` does it too, when a required target has
+nobody left to point at. A trigger whose target is "up to one" still resolves the rest of its
+effect with no target.
+
+**Tests.** 2 engine tests:
+- two artifacts gone before the trigger is aimed: the trigger leaves the stack and the game goes on;
+- "destroy up to one target artifact … You gain 2 life" with nothing left: the life is still gained.
+
+Faults injected by script: 2 of 2 caught, one after pinning (an optional target counted as
+unaimable). Seed 59203 replays to a finish.
+
+    engine tests: ENGINE_COUNT, all passing

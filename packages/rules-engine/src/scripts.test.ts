@@ -23813,6 +23813,127 @@ describe('"each opponent mills N cards", "each player mills N cards" (D748)', ()
   });
 });
 
+describe('divided damage among any number of targets, and state words in a board scope (D749)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    I('Test Spray', 'Test Spray deals 4 damage divided as you choose among any number of targets.'),
+    I('Test Volley', 'Test Volley deals 4 damage divided as you choose among any number of target creatures.'),
+    I('Test Ambush', 'Test Ambush deals 2 damage to each attacking creature.'),
+    I('Test Calm', 'Destroy all tapped creatures.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd749', name: 'Scopes',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = [], firstSeat: 0 | 1 = 0) => advanceTo(arena({
+    decks: { 0: 'd749', 1: 'd749' }, deckSpecs: { d749: deck.deck }, hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat,
+  }), 'precombat-main');
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('any number of targets: two Bears take two each, and the bot is told to take one', () => {
+    let s = table(['Test Spray'], [], ['Test Bear', 'Test Bear']);
+    const [a, b] = ids(s, 1, 'battlefield');
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Spray'))!;
+    expect(play.targetSpecs[0]).toMatchObject({ count: 4, optional: true, divided: 4, botTakes: 1 });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spray'),
+      targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }], division: [2, 2],
+    })));
+    expect(namesIn(s, 1, 'graveyard')).toEqual(['Test Bear', 'Test Bear']);
+  });
+
+  it('"target creatures" may not be a player', () => {
+    const s = table(['Test Volley'], [], ['Test Bear']);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Volley'),
+      targets: [{ kind: 'player', seat: 1 }], division: [4],
+    })).toBeTruthy();
+  });
+
+  it('each attacking creature is hit, and a creature at home is not', () => {
+    let s = table([], ['Test Bear'], ['Test Bear', 'Test Bear'], 1);
+    s = { ...s, zones: { ...s.zones } };
+    const [attacker, home] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: attacker!, defender: 0 }] });
+    // The Bear at home is tapped, and still not attacking.
+    s = { ...s, instances: { ...s.instances, [home!]: { ...s.instances[home!]!, tapped: true } } };
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Ambush'), toZone: 'hand' });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ambush') })));
+    expect(s.instances[attacker!]!.zone).toBe('graveyard');
+    expect(s.instances[home!]!.zone).toBe('battlefield');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('all tapped creatures are destroyed, and untapped ones are not', () => {
+    let s = table(['Test Calm'], ['Test Bear'], ['Test Bear']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [theirs]: { ...s.instances[theirs]!, tapped: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Calm') })));
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Bear');
+  });
+});
+
+describe('a trigger whose targets are gone before it is aimed is removed (D750)', () => {
+  const ROWS = [
+    { name: 'Test Thief', type_line: 'Creature — Rogue', oracle_text: 'Whenever Test Thief deals combat damage to a player, destroy target artifact that player controls.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Pickpocket', type_line: 'Creature — Rogue', oracle_text: 'Whenever Test Pickpocket deals combat damage to a player, destroy up to one target artifact that player controls. You gain 2 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd750', name: 'Gone',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 54 }],
+    data: ROWS as never[],
+  });
+
+  it('answered with nothing left to aim at, it leaves the stack instead of refusing every answer', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd750', 1: 'd750' }, deckSpecs: { d750: deck.deck },
+      battlefield: { 0: ['Test Thief'], 1: ['Test Rock', 'Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Thief'), defender: 1 }] });
+    for (let i = 0; i < 20 && s.pendingChoice === null; i++) {
+      const owed = pendingDeclaration(s);
+      s = owed?.kind === 'blockers' ? apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] }) : passBoth(s);
+    }
+    expect(s.pendingChoice?.seat).toBe(0);
+    // Both artifacts leave before the trigger is aimed.
+    for (const rock of ids(s, 1, 'battlefield')) s = apply(s, { type: 'card:move', by: 1, card: rock, toZone: 'graveyard' });
+    const stack = s.stackOrder.length;
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [] });
+    expect(s.pendingChoice).toBeNull();
+    expect(s.stackOrder.length).toBe(stack - 1);
+    // And the game goes on.
+    s = drain(passBoth(s), 20);
+    expect(s.step).not.toBe('combat-damage');
+  });
+
+  it('"up to one target" with nothing left still resolves the rest of the ability', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd750', 1: 'd750' }, deckSpecs: { d750: deck.deck },
+      battlefield: { 0: ['Test Pickpocket'], 1: ['Test Rock', 'Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Pickpocket'), defender: 1 }] });
+    for (let i = 0; i < 20 && s.pendingChoice === null; i++) {
+      const owed = pendingDeclaration(s);
+      s = owed?.kind === 'blockers' ? apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] }) : passBoth(s);
+    }
+    expect(s.pendingChoice?.seat).toBe(0);
+    for (const rock of ids(s, 1, 'battlefield')) s = apply(s, { type: 'card:move', by: 1, card: rock, toZone: 'graveyard' });
+    const life = s.seats[0]!.life;
+    s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [] })), 20);
+    expect(s.seats[0]!.life).toBe(life + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
