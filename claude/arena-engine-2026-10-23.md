@@ -32838,3 +32838,35 @@ pinned.
     engine tests: 5,142, all passing
 
 Coverage: 12,588 of 31,743 cards (+7), 32,634 of 59,509 lines (+7). Staples: 241 of 244.
+
+## D971 — Connive
+
+"When ~ enters, it connives." "Whenever this creature attacks, it connives." "{2}: ~ connives."
+"Whenever you cast a noncreature spell, ~ connives." The keyword action (CR 701.50a): draw a card,
+then discard a card, and if a nonland card was discarded, put a +1/+1 counter on the creature. It
+was not in the engine.
+
+How it is read: before `composeEffects` reads a chain, "it / ~ / he / she connives" becomes two
+clauses. The first is "draw a card". The second is a private connive clause (`CONNIVE`, read in
+`selfEffect`): a discard question from the controller's hand, then the counter if any card
+discarded was not a land, on the conniving creature if it is still on the battlefield. Because the
+chain splits at its first question (D418), the draw happens before the discard is asked, so the
+card just drawn can be the one discarded. "It" is the event's creature and "~" the card itself, as
+`itMeans` has it.
+
+Still unread: "connives X", "whenever a creature you control connives", and "you may have it
+connive".
+
+15 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the enters and activated forms read;
+- the draw comes first: the card drawn is one of the cards it may discard;
+- a nonland card discarded puts a +1/+1 counter on it, and a land discarded does not.
+
+Faults injected by hand: 4 of 4 caught. They were the order of the two clauses, the nonland test,
+the discard itself, and the land check.
+
+    engine tests: 5,145, all passing
+
+Coverage: 12,603 of 31,743 cards (+15), 32,655 of 59,509 lines (+21). Staples: 241 of 244.
