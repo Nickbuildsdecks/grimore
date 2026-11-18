@@ -20656,6 +20656,73 @@ describe('"Then it fights / that creature deals damage equal to its power to" (D
   });
 });
 
+describe('"target … that player controls" after combat damage, and "defending player controls" (D960)', () => {
+  const ROWS = [
+    { name: 'Test Raider', type_line: 'Creature — Rogue', oracle_text: 'Whenever this creature deals combat damage to a player, destroy target artifact that player controls.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd960', name: 'That player',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 54 }],
+    data: ROWS as never[],
+  }).deck;
+  const C = (text: string) => ({ name: 'Test Row', type_line: 'Creature — Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' });
+
+  it('reads whole, the attack form and the causative form too', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      'Whenever this creature attacks, destroy target artifact defending player controls.',
+      'Whenever this creature deals combat damage to a player, you may have it deal 2 damage to target creature that player controls.',
+    ]) expect(compileCard(C(text) as never), text).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Equipment\'s attack trigger: the defending player is the equipped creature\'s', () => {
+    const lasso = { name: 'Test Lasso', type_line: 'Artifact — Equipment', oracle_text: 'Whenever equipped creature attacks, tap target creature defending player controls.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' };
+    const lassoDeck = customDeck({
+      id: 'd960b', name: 'Lasso',
+      entries: [{ name: 'Test Lasso', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Mountain', count: 54 }],
+      data: [lasso, ROWS[2]] as never[],
+    }).deck;
+    expect(compileCard(lasso as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd960b', 1: 'd960b', 2: 'd960b' }, deckSpecs: { d960b: lassoDeck },
+      battlefield: { 0: ['Test Bear', 'Test Bear', 'Test Lasso'], 1: ['Test Bear', 'Test Bear'], 2: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const [carrier, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = equipTo(s, find(s, 0, 'battlefield', 'Test Lasso'), carrier!, 0, {});
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: carrier!, defender: 1 }, { attacker: other!, defender: 2 }] });
+    for (let i = 0; i < 10 && s.pendingChoice === null; i++) s = passBoth(s);
+    const offered = (legalActions(s, 0).mustChoose?.candidates ?? []).flat().map((t) => (t.kind === 'card' ? t.id : null));
+    expect([...offered].sort()).toEqual([...ids(s, 1, 'battlefield')].sort());
+  });
+
+  it('at a table of three, only the artifacts of the player it hit can be chosen', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd960', 1: 'd960', 2: 'd960' }, deckSpecs: { d960: deck },
+      // Two artifacts and an enchantment on the hit player's side, so the target is asked rather than
+      // chosen for them and the artifact filter has something to refuse; a second attacker of ours
+      // goes at the third player, so "that player" has to be this attack's, not every defender.
+      battlefield: { 0: ['Test Raider', 'Test Relic', 'Test Bear'], 1: ['Test Relic', 'Test Relic', 'Test Charm'], 2: ['Test Relic'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const raider = find(s, 0, 'battlefield', 'Test Raider');
+    const [mine, hit, other] = [0, 1, 2].map((seat) => find(s, seat as SeatIndex, 'battlefield', 'Test Relic'));
+    const charm = find(s, 1, 'battlefield', 'Test Charm');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: raider, defender: 1 }, { attacker: find(s, 0, 'battlefield', 'Test Bear'), defender: 2 }] });
+    for (let i = 0; i < 30 && s.pendingChoice === null; i++) s = passBoth(s);
+    expect(s.seats[1]!.life).toBe(38);
+    expect(s.pendingChoice).not.toBeNull();
+    const candidates = (legalActions(s, 0).mustChoose?.candidates ?? []).flat();
+    expect(candidates).toEqual(expect.arrayContaining([{ kind: 'card', id: hit }]));
+    expect(candidates.some((t) => t.kind === 'card' && (t.id === mine || t.id === other || t.id === charm))).toBe(false);
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: hit }] }), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[hit]!.zone).toBe('graveyard');
+    expect(s.instances[other]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -36338,8 +36405,7 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       unrecognised word refuses the whole phrase and the line stays unread and flagged.
 
       Each of these is a real printed phrase with a stated reason, in `parsedTargetPhrase`'s
-      docblock: **defending player** is a fact about an attack and a filter is not told which attack;
-      **dealt damage this turn** needs a per-turn record of who was dealt damage rather than how much
+      docblock: **dealt damage this turn** needs a per-turn record of who was dealt damage rather than how much
       is marked on them now; a capitalised word ending in **`s`** may be a plural or a singular
       subtype (`Plains`, `Fungus`) and no rule here separates them, so reading one would be a spell
       that is never castable and never flagged (D486); a **negated** subtype is on none of the
@@ -36351,8 +36417,8 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       is what carries the meaning — the same word lower-cased is a qualifier this parse does not
       know, and refusing it is right.
     */
+    // "Defending player controls" was on this list until D960, which reads it off the source's attack.
     for (const phrase of [
-      'destroy target creature defending player controls',
       'destroy target creature that was dealt damage this turn',
       'destroy target squirrel',
       'destroy target creature with squelching',

@@ -32427,3 +32427,50 @@ at first and is now pinned.
     engine tests: 5,098, all passing
 
 Coverage: 12,473 of 31,743 cards (+10), 32,489 of 59,509 lines (+10). Staples: 241 of 244.
+
+## D960 — "Target … that player controls" after combat damage, and "defending player controls"
+
+"Whenever ~ deals combat damage to a player, destroy target artifact that player controls."
+"Whenever ~ attacks, tap target creature defending player controls." Neither target phrase read.
+`parsedTargetPhrase`'s docblock gave the reason: a filter could not know which attack it was
+about. But the filter is handed the source, and D913's provoke and D914's "blocks it if able"
+already read the attacker's own attack off it.
+
+How it is read:
+- **A "defending player controls" suffix** on any target phrase: the phrase without it, narrowed
+  to permanents the defending player controls.
+- **"Defending player"** comes from `defendersOf`, shared with D914. It is the player the source's
+  own attack is aimed at. For an Equipment or Aura, it is the attack of the creature the source is
+  attached to. When neither is attacking (a spell, or an attacker already gone), it is each player
+  a creature of the controller is attacking.
+- **"That player controls" on "Whenever ~ deals combat damage to a player"** is rewritten to
+  "defending player controls" in `triggerFromLine`. The player it hit is its attack's defender.
+
+The stale note in `parsedTargetPhrase` is struck through.
+
+Logged across the corpus, the new readings are each what the card says:
+- attack triggers that tap, damage, bounce or shrink "target creature defending player controls",
+  and the Equipment forms (Thunder Lasso, Heart-Piercer Bow, Greatsword of Tyr);
+- "becomes blocked" (Rust Scarab), and Ancient Hellkite's activation while attacking;
+- the combat-damage family: Caustic Wasps, Trygon Predator, Throat Slitter, Mistblade Shinobi,
+  Schema Thief, Skirk Commando and Spark Mage through the D957 causative, and Blind Zealot's
+  "sacrifice it. If you do".
+
+Pod sweep on D959 (seeds 64001–64004): 208 pods, all decided.
+
+**Tests.** 3 engine tests:
+- the cards read, with the attack and causative forms;
+- at a table of three, only the artifacts of the player it hit can be chosen. That rules out its
+  own, the third player's (another attacker of ours went there), and an enchantment on the hit
+  player's side;
+- an Equipment's trigger offers the equipped creature's defender only.
+
+Superseded row: D469's list of refused target phrases had "destroy target creature defending
+player controls"; it is taken off the list, with a note saying when.
+
+Faults injected by hand: 5. 3 were caught at once. Two were missed and are now pinned: the
+artifact filter, and "its own attack" rather than every defender.
+
+    engine tests: 5,101, all passing
+
+Coverage: 12,506 of 31,743 cards (+33), 32,529 of 59,509 lines (+40). Staples: 241 of 244.

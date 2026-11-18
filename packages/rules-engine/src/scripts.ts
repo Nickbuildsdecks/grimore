@@ -19875,6 +19875,16 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     Valakut. The enters trigger with an intervening if (CR 603.4) on the `surged` marker the arrival
     wrote, as "if it was kicked" reads `KICKED`.
   */
+  /*
+    "Whenever ~ deals combat damage to a player, destroy target artifact that player controls"
+    (D960). "That player" is the one it hit, which is the defending player of its attack, so the
+    phrase is read as "defending player controls" (see `parsedTargetPhrase`).
+  */
+  const hitTarget = new RegExp(`^(Whenever (?:${selfRef(name)}) deals combat damage to a player, )(.*\\bthat player controls\\b.*)$`, 'i')
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (hitTarget !== null) {
+    return triggerFromLine(`${hitTarget[1]!}${hitTarget[2]!.replace(/\bthat player controls\b/gi, 'defending player controls')}`, name);
+  }
   // And prowl's and freerunning's (D935), on the same marker: Earwig Squad.
   const surgeIf = new RegExp(`^(When (?:${selfRef(name)}) enters), if its (surge|prowl|freerunning) cost was paid, (.+)$`, 'i')
     .exec(withoutAbilityWord(plain(line).trim()));
@@ -20864,16 +20874,49 @@ const TARGET_NOUNS: Readonly<Record<string, {
  *   and reading one that matches nothing is worse than not reading it; a **negated**
  *   subtype ("target non-Human creature", 44 + 5 lines), which the qualifier run refuses because
  *   `non-human` is on none of its lists; and a disjunction carrying a qualifier.
- * - **"defending player controls"** (2 cards). The defending player is a fact about *an attack*, and
- *   a `TargetSpec.filter` is handed the state, the candidate, the controller and the source — not
- *   which attack this is. `attackingOrBlocking` can read `state.combat` because "is this creature
- *   attacking" is a question about the board; "whose defender is it" is not.
+ * - ~~"defending player controls"~~ — **read** as of D960. The note here said a filter could not
+ *   know which attack it is about; it is handed the source, and the source is the attacker. See
+ *   `defendersOf` and the suffix at the top of `parsedTargetPhrase`.
  * - **"that was dealt damage this turn"** (5 + 5 cards). Damage marked on a permanent is state the
  *   engine keeps, but "this turn" needs a per-turn record of *who was dealt* damage rather than how
  *   much is on them now — a creature healed to zero marked damage was still dealt it. That is an
  *   engine fact to add, not a filter to write.
  */
+/**
+ * Who "defending player" is for a target chosen by `source` (D914, D960): the player its own attack
+ * is aimed at — or, for an Equipment or Aura ("Whenever equipped creature attacks, tap target
+ * creature defending player controls"), the attack of the creature it is attached to. When neither
+ * is attacking (a spell, or an attacker already gone), each player attacked by a creature
+ * `controller` controls.
+ */
+function defendersOf(state: GameState, controller: SeatIndex, source: string | undefined): readonly number[] {
+  const host = source === undefined ? undefined : state.instances[source]?.attachedTo;
+  const own = state.combat.attacks.find((a) => a.attacker === source)
+    ?? (host === undefined || host === null ? undefined : state.combat.attacks.find((a) => a.attacker === host));
+  return own !== undefined ? [own.defender] : state.combat.attacks
+    .filter((a) => state.instances[a.attacker]?.zoneSeat === controller).map((a) => a.defender);
+}
+
 function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
+  /*
+    **"… defending player controls"** (D960): "destroy target artifact defending player controls",
+    and a combat-damage trigger's "target creature that player controls", which `triggerFromLine`
+    rewrites to this. The note above said a filter could not know which attack this is; it is
+    handed the source, and the source is the attacker (D913's provoke reads it the same way). Read
+    as the phrase without the suffix, narrowed to permanents the defending player controls.
+  */
+  const defending = /\s+defending player controls$/i.exec(printed.trim());
+  if (defending !== null) {
+    const inner = parsedTargetPhrase(printed.trim().slice(0, defending.index));
+    if (inner === null || !pointsAtAPermanent({ ...inner, description: '' })) return null;
+    const own = inner.filter;
+    return {
+      ...inner,
+      filter: (state, candidate, controller, source) => candidate.kind === 'card'
+        && defendersOf(state, controller, source).includes(state.instances[candidate.id]?.zoneSeat ?? -1)
+        && (own === undefined || own(state, candidate, controller, source)),
+    };
+  }
   /*
     **Not** lower-cased (D486). Every comparison below lower-cases the one word it is about, which
     leaves the printed capitalisation readable where it carries meaning: the noun position, where a
@@ -22794,11 +22837,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         ...(defended[1] === undefined ? {} : { optional: true }),
         filter: (state, candidate, controller, source) => {
           if (candidate.kind !== 'card') return false;
-          const own = state.combat.attacks.find((a) => a.attacker === source);
-          const defenders = own !== undefined ? [own.defender] : state.combat.attacks
-            .filter((a) => state.instances[a.attacker]?.zoneSeat === controller).map((a) => a.defender);
           const seat = state.instances[candidate.id]?.zoneSeat;
-          return seat !== undefined && defenders.includes(seat);
+          return seat !== undefined && defendersOf(state, controller, source).includes(seat);
         },
       }],
       effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, { mustBlockAttacker: c.subject ?? c.source }),
