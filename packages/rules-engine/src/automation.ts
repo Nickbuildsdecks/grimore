@@ -49,7 +49,7 @@ import {
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
-  spendRegeneration, spendUmbraArmor, untapAll, putOnTopOfLibrary, shuffleLibrary,
+  spendRegeneration, spendUmbraArmor, untapAll, phaseIn, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
@@ -872,6 +872,8 @@ function onEnterStep(state: GameState, step: Step): GameState {
   let next = state;
   switch (step) {
     case 'untap':
+      // Phasing first (CR 502.1): what phased out under this seat phases in, then everything untaps.
+      next = phaseIn(next, next.activeSeat);
       next = untapAll(next, next.activeSeat);
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
       for (const seat of next.seats) {
@@ -5612,6 +5614,9 @@ function completeResolution(
           subject: inst.id,
           description: `cast ${def?.name ?? 'it'} from exile without paying its mana cost`,
         });
+      } else if (script?.exilesItselfAsItResolves === true) {
+        // "Exile ~." (D733): exile in place of the graveyard, as it resolves.
+        next = exileCard(next, inst.id);
       } else if (script?.shufflesIntoLibrary === true && object.flashback !== true) {
         // "Shuffle ~ into its owner's library" (D687): only on resolving, and not past flashback.
         next = shuffleLibrary(putOnTopOfLibrary(next, inst.id), inst.owner);

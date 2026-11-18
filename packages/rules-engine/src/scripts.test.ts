@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
 import { preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
@@ -7912,6 +7912,9 @@ describe('deck coverage', () => {
       - `script spellsFromTop` and `script lookAtTop` (D731): Future Sight, Bolas's Citadel, Vizier
         of the Menagerie. No pool deck has one. Driven at runtime by "spells cast from the top of the
         library, and Bolas's Citadel's life (D731)".
+      - `script lifeTotalCantChange` and `script exilesItselfAsItResolves` (D733): Platinum
+        Emperion, and Teferi's Protection's "Exile ~.". No pool deck has one. Driven at runtime by
+        "Teferi's Protection: phasing, and a life total that can't change (D733)".
       - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
         runtime by "sunburst and converge (D917)".
       - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
@@ -7953,6 +7956,7 @@ describe('deck coverage', () => {
       'script entersCounting',
       'script castAsThoughFlash',
       'script spellsFromTop', 'script lookAtTop',
+      'script lifeTotalCantChange', 'script exilesItselfAsItResolves',
       'script sunburst',
       'script plot',
       'script casualty',
@@ -21698,6 +21702,200 @@ describe('a counted sacrifice: "Sacrifice two creatures", and Bolas\'s Citadel\'
       type: 'auto:activate', by: 0, card: find(altar, 0, 'battlefield', 'Test Altar'), abilityIndex: play.abilityIndex ?? 0,
       sacrifice: play.sacrificeOptions[0]!,
     })).toMatch(/choose 2 different/);
+  });
+});
+
+describe('Teferi\'s Protection: phasing, and a life total that can\'t change (D733)', () => {
+  const row = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    row('Test Protection', 'Instant', "Until your next turn, your life total can't change and you gain protection from everything. All permanents you control phase out. (While they're phased out, they're treated as though they don't exist. They phase in before you untap during your untap step.)\nExile Test Protection."),
+    row('Test Emperion', 'Artifact Creature — Golem', "Your life total can't change.", { power: '8', toughness: '8' }),
+    row('Test Slip', 'Instant', 'Put a +1/+1 counter on target creature. It phases out.'),
+    row('Test Blink', 'Instant', 'Target creature phases out.'),
+    row('Test Watcher', 'Creature — Bird', 'When this creature enters, draw a card.', { power: '1', toughness: '1' }),
+    row('Test Aura', 'Enchantment — Aura', 'Enchant creature\nEnchanted creature gets +2/+2.'),
+    row('Test Drain', 'Sorcery', 'Each opponent loses 3 life. You gain 3 life.'),
+    row('Test Wrath', 'Sorcery', 'Destroy all creatures.'),
+    row('Test Shrine', 'Artifact', 'Pay 2 life: Draw a card.'),
+    { ...row('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }) },
+    row('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.'),
+  ];
+  const deck = customDeck({
+    id: 'd733', name: 'Phasing',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 30 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]>; firstSeat?: 0 | 1 }) => advanceTo(arena({
+    decks: { 0: 'd733', 1: 'd733' }, deckSpecs: { d733: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: opts.firstSeat ?? 0,
+  }), 'precombat-main');
+  /** Every turn step passed with nobody attacking, until `until` holds. */
+  const walk = (s0: GameState, until: (s: GameState) => boolean) => {
+    let s = s0;
+    for (let i = 0; i < 80 && !until(s); i++) {
+      const owed = pendingDeclaration(s);
+      if (owed?.kind === 'attackers') s = apply(s, { type: 'auto:attack', by: owed.seats[0]!, attackers: [] });
+      else if (owed?.kind === 'blockers') s = apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] });
+      else if (s.pendingDiscard !== null) s = drain(s);
+      else s = passBoth(s);
+    }
+    return s;
+  };
+  /** Casts `name` from `seat`'s hand and resolves it. */
+  const resolve = (s: GameState, seat: 0 | 1, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), ...(targets ? { targets } : {}) })));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const reads = (text: string, type = 'Instant') => compileCard(row('Test Line', type, text, { power: '1', toughness: '1' }) as never);
+    for (const [text, type] of [
+      ['Target artifact, creature, or land phases out.', 'Instant'],
+      ['{U}{U}: Test Line phases out.', 'Creature — Wizard'],
+      ['Enchant creature\n{U}{U}: Enchanted creature phases out.', 'Enchantment — Aura'],
+    ] as const) expect(reads(text, type), text).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('phases out every permanent its caster controls, with an Aura on one, and is exiled', () => {
+    let s = table({ hands: { 0: ['Test Protection', 'Test Aura'] }, battlefield: { 0: ['Test Bear', 'Forest'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const aura = find(s, 0, 'hand', 'Test Aura');
+    s = resolve(s, 0, 'Test Aura', [{ kind: 'card', id: bear }]);
+    s = resolve(s, 0, 'Test Protection');
+    expect(ids(s, 0, 'battlefield')).toEqual([]);
+    for (const id of [bear, aura]) expect(s.instances[id]!.zone).toBe('phased');
+    expect(s.instances[aura]!.attachedTo).toBe(bear);
+    // Both directly: the Aura is one of "all permanents you control" (CR 702.26g is for the rest).
+    expect(s.instances[aura]!.phasedIndirectly).toBeUndefined();
+    expect(namesIn(s, 0, 'exile')).toEqual(['Test Protection']);
+    // Everybody still sees them, as phased out.
+    const theirs = viewFor(s, 1);
+    expect(theirs.zones['0:phased']).toEqual(expect.arrayContaining([bear, aura]));
+    expect(theirs.cards[bear]?.card?.name).toBe('Test Bear');
+  });
+
+  it('keeps the life total where it is, and lets no life be paid', () => {
+    let s = table({ hands: { 0: ['Test Protection'], 1: ['Test Drain'] }, battlefield: { 1: ['Test Shrine'] }, firstSeat: 1 });
+    // Seat 1's turn: seat 0 casts it at instant speed after seat 1 passes priority.
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Protection') })));
+    const life = s.seats[0]!.life;
+    s = resolve(s, 1, 'Test Drain');
+    expect(s.seats[0]!.life).toBe(life);
+    expect(lifeLocked(s, 0)).toBe(true);
+    expect(gainLife(s, 0, 5).seats[0]!.life).toBe(life);
+    expect(dealDamage(s, { kind: 'player', seat: 0 }, 4, { controller: 1, source: null }).seats[0]!.life).toBe(life);
+    // And the caster's opponent is not locked.
+    expect(lifeLocked(s, 1)).toBe(false);
+    // Protection from everything as well: the caster is not a target for the opponent's Bolt.
+    const bolt = { ...s, instances: { ...s.instances } };
+    const withBolt = apply(bolt, { type: 'card:move', by: 1, card: find(bolt, 1, 'library', 'Test Bolt'), toZone: 'hand' });
+    const play = legalActions(withBolt, 1).plays.find((p) => p.card === find(withBolt, 1, 'hand', 'Test Bolt'));
+    expect(play?.candidates.flat().some((t) => t.kind === 'player' && t.seat === 0) ?? false).toBe(false);
+    expect(play?.candidates.flat().some((t) => t.kind === 'player' && t.seat === 1) ?? false).toBe(true);
+  });
+
+  it('phases them all back in at the caster\'s next untap, still attached, without entering again', () => {
+    let s = table({ hands: { 0: ['Test Protection', 'Test Aura'] }, battlefield: { 0: ['Test Watcher'] } });
+    const watcher = find(s, 0, 'battlefield', 'Test Watcher');
+    const aura = find(s, 0, 'hand', 'Test Aura');
+    s = resolve(s, 0, 'Test Aura', [{ kind: 'card', id: watcher }]);
+    s = { ...s, instances: { ...s.instances, [watcher]: { ...s.instances[watcher]!, counters: { '+1/+1': 2 } } } };
+    s = resolve(s, 0, 'Test Protection');
+    // The opponent's whole turn: still out, and a wrath does not reach it.
+    s = walk(s, (x) => x.activeSeat === 1 && x.step === 'precombat-main');
+    expect(s.instances[watcher]!.zone).toBe('phased');
+    const hand = ids(s, 0, 'hand').length;
+    s = walk(s, (x) => x.activeSeat === 0 && x.step === 'upkeep');
+    expect(s.instances[watcher]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.attachedTo).toBe(watcher);
+    expect(s.instances[watcher]!.counters['+1/+1']).toBe(2);
+    expect(characteristicsOf(s, s.instances[watcher]!).power).toBe(1 + 2 + 2);
+    // No enter-the-battlefield draw: it never left (CR 702.26d). The draw step has not happened yet.
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+    // And the lock and the protection are over.
+    expect(lifeLocked(s, 0)).toBe(false);
+  });
+
+  it('a phased-out creature is not destroyed by a wrath, and a creature that phases out leaves combat', () => {
+    let s = table({ hands: { 0: ['Test Blink'], 1: ['Test Wrath'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] }, firstSeat: 1 });
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = resolve(s, 0, 'Test Blink', [{ kind: 'card', id: mine }]);
+    expect(s.instances[mine]!.zone).toBe('phased');
+    s = resolve(s, 1, 'Test Wrath');
+    expect(s.instances[mine]!.zone).toBe('phased');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Bear');
+    // An attacker that phases out is out of the attack.
+    let c = table({ hands: { 1: ['Test Blink'] }, battlefield: { 0: ['Test Bear'] } });
+    const attacker = find(c, 0, 'battlefield', 'Test Bear');
+    c = advanceTo(c, 'declare-attackers');
+    c = apply(c, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    c = apply(c, { type: 'auto:pass', by: 0 });
+    c = resolve(c, 1, 'Test Blink', [{ kind: 'card', id: attacker }]);
+    expect(c.combat.attacks.some((a) => a.attacker === attacker)).toBe(false);
+  });
+
+  it('an Aura phases out with its creature, indirectly, and back in with it; nobody can target it meanwhile', () => {
+    let s = table({ hands: { 0: ['Test Aura', 'Test Blink'], 1: ['Test Blink'] }, battlefield: { 0: ['Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const aura = find(s, 0, 'hand', 'Test Aura');
+    s = resolve(s, 0, 'Test Aura', [{ kind: 'card', id: bear }]);
+    s = resolve(s, 0, 'Test Blink', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zone).toBe('phased');
+    expect(s.instances[aura]!.zone).toBe('phased');
+    expect(s.instances[aura]!.phasedIndirectly).toBe(true);
+    // Not a target for the other Blink, which then has nothing to point at.
+    s = walk(s, (x) => x.activeSeat === 1 && x.step === 'precombat-main');
+    const other = legalActions(s, 1).plays.find((p) => p.card === find(s, 1, 'hand', 'Test Blink'));
+    expect(other?.candidates.flat().some((t) => t.kind === 'card' && t.id === bear) ?? false).toBe(false);
+    s = walk(s, (x) => x.activeSeat === 0 && x.step === 'upkeep');
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.attachedTo).toBe(bear);
+    expect(s.instances[aura]!.phasedIndirectly).toBeUndefined();
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(4);
+  });
+
+  it('an opponent\'s Aura on a phased creature waits for the creature, not its own controller\'s untap', () => {
+    let s = table({ hands: { 0: ['Test Blink'], 1: ['Test Aura'] }, battlefield: { 0: ['Test Bear'] }, firstSeat: 1 });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const aura = find(s, 1, 'hand', 'Test Aura');
+    s = resolve(s, 1, 'Test Aura', [{ kind: 'card', id: bear }]);
+    expect(s.instances[aura]!.attachedTo).toBe(bear);
+    // Seat 0's own turn: the Bear phases out, and the Aura with it, into seat 1's keeping.
+    s = walk(s, (x) => x.activeSeat === 0 && x.step === 'precombat-main');
+    s = resolve(s, 0, 'Test Blink', [{ kind: 'card', id: bear }]);
+    expect(s.instances[aura]!.zone).toBe('phased');
+    expect(s.instances[aura]!.zoneSeat).toBe(1);
+    // Seat 1's untap comes first, and the Aura stays out: it phases in with the Bear only.
+    s = walk(s, (x) => x.activeSeat === 1 && x.step === 'precombat-main');
+    expect(s.instances[aura]!.zone).toBe('phased');
+    s = walk(s, (x) => x.activeSeat === 0 && x.step === 'upkeep');
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.attachedTo).toBe(bear);
+  });
+
+  it('"it" after a target phases the target out, with its counter', () => {
+    let s = table({ hands: { 0: ['Test Slip'] }, battlefield: { 0: ['Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Slip', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zone).toBe('phased');
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('Platinum Emperion: damage is dealt and no life is lost, and a life cost is not offered', () => {
+    const s = table({ battlefield: { 0: ['Test Emperion', 'Test Shrine'] } });
+    const life = s.seats[0]!.life;
+    expect(dealDamage(s, { kind: 'player', seat: 0 }, 5, { controller: 1, source: null }).seats[0]!.life).toBe(life);
+    expect(loseLife(s, 0, 3).seats[0]!.life).toBe(life);
+    const shrine = find(s, 0, 'battlefield', 'Test Shrine');
+    expect(legalActions(s, 0).plays.some((p) => p.card === shrine)).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: shrine, abilityIndex: 0 })).toMatch(/can't change/);
   });
 });
 

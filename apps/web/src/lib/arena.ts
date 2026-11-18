@@ -1220,6 +1220,8 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     tap; keeping it here is the stricter of the two rules and right in every zone.
   */
   if (playsForCard(view, card.id).some((play) => !play.isManaAbility)) out.push("playable")
+  // Phased out (D733): drawn with its battlefield, and named so nobody tries to use it.
+  if (card.zone === "phased") out.push("phased out")
   if (card.zone !== "battlefield") return out
   // An Aura is drawn on its controller's side, which is often not the side its host is on, so
   // without naming the host there is nothing on screen that says what a Pacifism is doing.

@@ -22,7 +22,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { energyOf, paymentWords, poolOf } from './effects.js';
+import { canPayLife, energyOf, paymentWords, poolOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
@@ -1346,7 +1346,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       // A life cost is reachable while there is life to pay it with. Shown rather than hidden,
       // because a player looking at Mana Confluence already counts it as a land.
       const life = ability.cost.life ?? 0;
-      if (life > 0 && (state.seats[seat]?.life ?? 0) <= life) continue;
+      if (!canPayLife(state, seat, life)) continue;
       for (const type of producedBy(state, ability, id, seat)) pool = addMana(pool, type as ManaType, 1);
     }
   }
@@ -1892,7 +1892,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         */
         ...(script?.pitch === undefined || pitchOptions(state, seat, id, script.pitch.colour).length === 0
           || (script.pitch.notYourTurn === true && state.activeSeat === seat)
-          || ((script.pitch.life ?? 0) > 0 && (state.seats[seat]?.life ?? 0) <= (script.pitch.life ?? 0))
+          || !canPayLife(state, seat, script.pitch.life ?? 0)
           ? [] : [{
             flag: 'pitchCast' as const,
             cost: '{0}',
@@ -1927,7 +1927,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const topLifeCost = def?.cmc ?? 0;
     const alternatives = [
       ...printedAlternatives,
-      ...(!topLife || (state.seats[seat]?.life ?? 0) <= topLifeCost ? [] : [{
+      ...(!topLife || !canPayLife(state, seat, topLifeCost) ? [] : [{
         flag: 'payLifeFromTop' as const,
         cost: '{0}',
         note: `cost from the top of your library (${topLifeCost} life)`,
@@ -2057,7 +2057,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const lifeAsked = script?.additionalCost !== undefined && 'life' in script.additionalCost
       ? script.additionalCost.life
       : 0;
-    if (lifeAsked > 0 && (state.seats[seat]?.life ?? 0) <= lifeAsked) {
+    if (!canPayLife(state, seat, lifeAsked)) {
       why(id, `it costs ${lifeAsked} life, and you do not have that to pay`);
       continue;
     }
@@ -2633,7 +2633,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
       const lifeCost = abilityLifeCost(state, seat, ability.cost);
-      if (lifeCost > 0 && (state.seats[seat]?.life ?? 0) <= lifeCost) continue;
+      if (!canPayLife(state, seat, lifeCost)) continue;
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length < (ability.cost.sacrificeCount ?? 1)) continue;
@@ -2767,7 +2767,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       offered a turn-up, because paying for it would lose the game and a cost you cannot pay is not
       a cost you may choose to pay.
     */
-    if (morph.cost.life !== undefined && (state.seats[seat]?.life ?? 0) <= morph.cost.life) continue;
+    if (morph.cost.life !== undefined && !canPayLife(state, seat, morph.cost.life)) continue;
     const word = morph.mega === true ? 'megamorph' : 'morph';
     out.push({
       kind: 'turnUp', card: id, name: def?.name ?? 'that card',

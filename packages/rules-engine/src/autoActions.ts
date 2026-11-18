@@ -32,7 +32,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 } from './automation.js';
 import {
   MYRIAD, SEAT_CHOICE, TIME, addCounters, addToPool, addTokens, bottomPile, counterSpell, draw,
-  energyOf, enterAttacking, loseLife, paymentWords,
+  canPayLife, energyOf, enterAttacking, lifeLocked, loseLife, paymentWords,
   mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
   sacrifice,
@@ -751,7 +751,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const pitchLife = pitchCast ? script?.pitch?.life ?? 0
     // Bolas's Citadel's (D731): the mana value of the face cast, paid the same way.
     : payLifeFromTop ? def?.cmc ?? 0 : 0;
-  if (pitchLife > 0 && (state.seats[action.by]?.life ?? 0) <= pitchLife) {
+  if (!canPayLife(state, action.by, pitchLife)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${pitchLife} life to pay for ${characteristics.name}`);
   }
   /*
@@ -761,7 +761,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const lifeForCost = script?.additionalCost !== undefined && 'life' in script.additionalCost
     ? script.additionalCost.life
     : 0;
-  if (lifeForCost > 0 && (state.seats[action.by]?.life ?? 0) <= lifeForCost) {
+  if (!canPayLife(state, action.by, lifeForCost)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifeForCost} life to pay for ${characteristics.name}`);
   }
 
@@ -870,7 +870,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     refused at exactly the life that would end the game — the rule `AbilityCost.life` keeps.
   */
   const lifePaidForX = lifeX ? action.x ?? 0 : 0;
-  if (lifePaidForX > 0 && (state.seats[action.by]?.life ?? 0) <= lifePaidForX) {
+  if (!canPayLife(state, action.by, lifePaidForX)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifePaidForX} life to pay`);
   }
 
@@ -1720,7 +1720,7 @@ function playLand(
   if (action.payLife === true && asked === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${ch.name} does not ask for life to enter untapped`);
   }
-  if (shockPrice > 0 && (state.seats[action.by]?.life ?? 0) <= shockPrice) {
+  if (!canPayLife(state, action.by, shockPrice)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${shockPrice} life to pay for ${ch.name}`);
   }
 
@@ -1924,9 +1924,11 @@ function activate(
   if (lifeCost > 0) {
     // Checked before anything is spent, and refused at exactly the life that would kill you: a
     // cost you cannot pay is not a cost you may choose to pay (CR 118.4).
-    const life = state.seats[action.by]?.life ?? 0;
-    if (life <= lifeCost) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifeCost} life to pay`);
+    // And none at all while your life total can't change (D733, CR 119.8).
+    if (!canPayLife(state, action.by, lifeCost)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', lifeLocked(state, action.by)
+        ? 'your life total can\'t change, so no life can be paid'
+        : `you do not have ${lifeCost} life to pay`);
     }
   }
 

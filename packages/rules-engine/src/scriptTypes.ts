@@ -3506,6 +3506,13 @@ export interface CardScript {
    */
   readonly preventsDamageToYou?: true;
   /**
+   * "Exile ~." as an instant's or sorcery's last sentence (D733, Teferi's Protection): it goes to
+   * exile rather than the graveyard as it resolves. Not as it is countered.
+   */
+  readonly exilesItselfAsItResolves?: true;
+  /** "Your life total can't change." (D733) — Platinum Emperion, while it is on your battlefield. */
+  readonly lifeTotalCantChange?: true;
+  /**
    * "Skip your draw step." (D719): Necropotence, Damia, Solitary Confinement and a dozen more.
    * While the permanent is on the battlefield and has its abilities, its controller's draw step
    * does not happen at all (CR 614.10): no draw, no priority in it, and nothing that triggers "at

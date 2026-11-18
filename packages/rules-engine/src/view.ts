@@ -543,6 +543,8 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
         && (ask.looked ?? ask.candidates).includes(inst.id);
     }
     case 'battlefield':
+    // Phased out (D733): still on the battlefield, face up or down as it was.
+    case 'phased':
     case 'exile':
     case 'stack':
       // Face down hides a card from everyone except the seat it sits with. The stack is here for
@@ -709,6 +711,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     // The hand's ids travel so the opponent's grip can be drawn and counted; the identities do not.
     include(zoneKey(seat.index, 'hand'));
     include(zoneKey(seat.index, 'battlefield'));
+    include(zoneKey(seat.index, 'phased'));
     include(zoneKey(seat.index, 'graveyard'));
     include(zoneKey(seat.index, 'exile'));
     include(zoneKey(seat.index, 'command'));

@@ -170,7 +170,11 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
   return (
     <span
       data-testid={`slot-${card.id}`}
-      className={cn("relative block shrink-0", card.tapped ? TAPPED_SLOT[size] : SLOT[size])}
+      className={cn(
+        "relative block shrink-0", card.tapped ? TAPPED_SLOT[size] : SLOT[size],
+        // Phased out (D733): still on the table, treated as though it is not there.
+        card.zone === "phased" && "opacity-40 grayscale",
+      )}
     >
     <button
       type="button"
