@@ -22375,6 +22375,117 @@ describe('board conditions on a static: "as long as you control another artifact
   });
 });
 
+describe('"prevent all damage that would be dealt to / by …" this turn (D738)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const ROWS = [
+    I('Test Shelter', 'Prevent all damage that would be dealt to target creature this turn.'),
+    I('Test Pacify', 'Prevent all combat damage that would be dealt by target creature this turn.'),
+    I('Test Calm', 'Prevent all damage that would be dealt by creatures this turn.'),
+    I('Test Truce', 'Prevent all combat damage that would be dealt to players this turn.'),
+    I('Test Ward Off', 'Prevent all damage that would be dealt to you and creatures you control this turn.'),
+    { ...I('Test Bolt', 'Test Bolt deals 3 damage to any target.'), colors: ['R'] },
+    { name: 'Test Pinger', type_line: 'Creature — Human', oracle_text: '{T}: Test Pinger deals 1 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd738', name: 'Prevention',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 28 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd738', 1: 'd738' }, deckSpecs: { d738: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState, seat: 0 | 1, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), ...(targets ? { targets } : {}) })));
+  const ping = (s: GameState, seat: 0 | 1, target: Target) => {
+    const pinger = find(s, seat, 'battlefield', 'Test Pinger');
+    const play = legalActions(s, seat).plays.find((p) => p.kind === 'activate' && p.card === pinger)!;
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: seat, card: pinger, abilityIndex: play.abilityIndex ?? 0, targets: [target] })));
+  };
+  /** Seat 0 attacks seat 1 with `attacker`, nobody blocks, through combat damage. */
+  const swing = (s0: GameState, attacker: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    for (let i = 0; i < 20 && s.step !== 'postcombat-main'; i++) {
+      const owed = pendingDeclaration(s);
+      s = owed?.kind === 'blockers' ? apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] }) : passBoth(s);
+    }
+    return drain(s, 20);
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('to target creature: a Bolt does nothing to it, and still kills another', () => {
+    let s = table({ hands: { 0: ['Test Shelter', 'Test Bolt', 'Test Bolt'] }, battlefield: { 0: ['Test Bear', 'Test Bear'] } });
+    const [safe, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = resolve(s, 0, 'Test Shelter', [{ kind: 'card', id: safe! }]);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'card', id: safe! }]);
+    expect(s.instances[safe!]!.zone).toBe('battlefield');
+    expect(s.instances[safe!]!.damage).toBe(0);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'card', id: other! }]);
+    expect(s.instances[other!]!.zone).toBe('graveyard');
+  });
+
+  it('combat damage by target creature: its attack deals nothing', () => {
+    let s = table({ hands: { 0: ['Test Pacify'] }, battlefield: { 0: ['Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Pacify', [{ kind: 'card', id: bear }]);
+    const life = s.seats[1]!.life;
+    expect(swing(s, bear).seats[1]!.life).toBe(life);
+  });
+
+  it('by creatures: a creature\'s ping is prevented, a Bolt is not', () => {
+    let s = table({ hands: { 0: ['Test Calm', 'Test Bolt'] }, battlefield: { 0: ['Test Pinger'] } });
+    s = resolve(s, 0, 'Test Calm');
+    const life = s.seats[1]!.life;
+    s = ping(s, 0, { kind: 'player', seat: 1 });
+    expect(s.seats[1]!.life).toBe(life);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]);
+    expect(s.seats[1]!.life).toBe(life - 3);
+  });
+
+  it('combat damage to players: the attack is prevented, a Bolt to the face is not; and it lasts this turn only', () => {
+    let s = table({ hands: { 0: ['Test Truce', 'Test Bolt'] }, battlefield: { 0: ['Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Truce');
+    const life = s.seats[1]!.life;
+    s = swing(s, bear);
+    expect(s.seats[1]!.life).toBe(life);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]);
+    expect(s.seats[1]!.life).toBe(life - 3);
+    expect(s.effects.some((e) => e.preventsDamageToPlayers !== undefined)).toBe(true);
+    // Gone by the opponent's turn.
+    for (let i = 0; i < 40 && !(s.activeSeat === 1 && s.step === 'precombat-main'); i++) s = passBoth(s);
+    expect(s.activeSeat).toBe(1);
+    expect(s.effects.some((e) => e.preventsDamageToPlayers !== undefined)).toBe(false);
+  });
+
+  it('to you and creatures you control: both are spared, the opponent is not', () => {
+    let s = table({ hands: { 0: ['Test Ward Off', 'Test Bolt'], 1: ['Test Bolt', 'Test Bolt', 'Test Bolt'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] } });
+    s = resolve(s, 0, 'Test Ward Off');
+    // The caster's own Bolt still reaches the opponent's face.
+    const theirLife = s.seats[1]!.life;
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]);
+    expect(s.seats[1]!.life).toBe(theirLife - 3);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const life = s.seats[0]!.life;
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'player', seat: 0 }]);
+    expect(s.seats[0]!.life).toBe(life);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'card', id: mine }]);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'card', id: theirs }]);
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -50839,3 +50839,47 @@ Faults injected by script: 9 of 9 caught, one after pinning (card types ignored)
     engine tests: 5,205, all passing (merged with the other session's D976)
 
 Coverage: 12,841 of 31,764 cards (+62), 33,127 of 59,553 lines (+75), against 1af49a9.
+
+## D738 — "Prevent all damage that would be dealt to / by …" this turn
+
+Fog's "Prevent all combat damage that would be dealt this turn" was the only one of its family the
+engine read. The rest stayed unread:
+- "Prevent all damage that would be dealt to target creature this turn";
+- "… combat damage that would be dealt by target attacking creature this turn";
+- "… dealt by creatures this turn";
+- "… dealt this turn to creatures you control";
+- "… to you and creatures you control this turn";
+- "… combat damage … to players this turn".
+
+How it works:
+- **Four effect flags, checked in `dealDamage`** before anything is marked, beside protection and
+  the shields (CR 615.1):
+  - `preventsDamageTo` and `preventsDamageFrom`, for the damaged permanent and for the source,
+    each over the effect's scope (`effectReaches`);
+  - `preventsDamageToPlayers`, the controller or every player;
+  - `preventsCombatOnly`, which lets non-combat damage through.
+- **Prevented damage is never dealt:** no life lost, no damage marked, no deathtouch, no lifelink.
+- **"This turn" is the duration;** the line has to say it. The static "Prevent all damage that would
+  be dealt to creatures" is left unread.
+- **The subjects read:** a target creature (any target creature phrase), creatures, creatures you
+  control, creatures your opponents control, you, players, and you and creatures you control.
+
+The first version special-cased "combat damage by" as a Fog over a scope. The break run showed it
+behaves the same as the general combat-only flag, so the special case was removed.
+
+**Tests.** 6 engine tests:
+- the cards read;
+- to target creature: a Bolt does nothing to it, and still kills another;
+- combat damage by target creature: its attack deals nothing;
+- by creatures: a creature's ping is prevented, a Bolt is not;
+- combat damage to players: the attack is prevented, a Bolt to the face is not, and the effect is
+  gone by the opponent's turn;
+- to you and creatures you control: both spared from the opponent's Bolts; the caster's Bolt still
+  hits the opponent and the opponent's creature.
+
+Faults injected by script: 8 of 8 caught, one after pinning ("to you" stopping damage to everyone).
+A ninth was on the removed special case.
+
+    engine tests: 5,211, all passing
+
+Coverage: 12,883 of 31,785 cards (+27), 33,191 of 59,596 lines (+30), against fa80496.

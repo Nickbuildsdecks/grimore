@@ -43,7 +43,7 @@ import {
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
@@ -13664,6 +13664,54 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       effect: (c) => preventCombatDamage(c.state, c.source, c.controller),
       spellFlags: { preventsDamage: true },
     };
+  }
+  /*
+    The rest of the "this turn" prevention family (D738): "Prevent all damage that would be dealt to
+    target creature this turn", "… combat damage that would be dealt by target attacking creature
+    this turn", "… dealt by creatures this turn", "… dealt this turn to creatures you control",
+    "… to you and creatures you control this turn", "… combat damage … to players this turn".
+  */
+  const prevented = /^prevent all (combat )?damage that would be dealt (?:this turn )?(to|by) (.+?)(?: this turn)?$/i.exec(text);
+  if (prevented !== null && /\bthis turn\b/i.test(text)) {
+    const combatOnly = prevented[1] !== undefined;
+    const direction = prevented[2]!.toLowerCase() as 'to' | 'by';
+    const subject = prevented[3]!.trim().toLowerCase();
+    const scopes: Readonly<Record<string, EffectScope>> = {
+      creatures: { kind: 'all-creatures' },
+      'creatures you control': { kind: 'controller-creatures' },
+      'creatures your opponents control': { kind: 'opponent-creatures' },
+    };
+    const flags = { spellFlags: { preventsDamage: true as const } };
+    if (/^target /.test(subject)) {
+      const spec = targetSpecFrom(prevented[3]!.trim(), direction === 'to');
+      if (spec !== null && spec.kind === 'creature') {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const ids = cardTargets(c);
+            return ids.length === 0 ? c.state
+              : preventDamageThisTurn(c.state, c.source, c.controller, { direction, combatOnly, scope: { kind: 'cards', ids } });
+          },
+          ...flags,
+        };
+      }
+    } else if (scopes[subject] !== undefined) {
+      const scope = scopes[subject]!;
+      return {
+        effect: (c) => preventDamageThisTurn(c.state, c.source, c.controller, { direction, combatOnly, scope }),
+        ...flags,
+      };
+    } else if (direction === 'to' && (subject === 'you' || subject === 'players')) {
+      const players = subject === 'you' ? 'controller' as const : 'all' as const;
+      return { effect: (c) => preventDamageThisTurn(c.state, c.source, c.controller, { direction, combatOnly, players }), ...flags };
+    } else if (direction === 'to' && subject === 'you and creatures you control') {
+      return {
+        effect: (c) => preventDamageThisTurn(c.state, c.source, c.controller, {
+          direction, combatOnly, players: 'controller', scope: { kind: 'controller-creatures' },
+        }),
+        ...flags,
+      };
+    }
   }
 
   /*
@@ -27908,6 +27956,9 @@ function spellsFromTopFromLine(line: string): Partial<CardScript> | null {
     }],
   };
 }
+
+/** A continuous effect's scope, for the prevention readers (D738). */
+type EffectScope = NonNullable<Parameters<typeof preventDamageThisTurn>[3]['scope']>;
 
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
