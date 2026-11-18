@@ -51225,6 +51225,49 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 13,078 of 31,858 cards (+30), 33,547 of 59,790 lines (+39), against d5ad263.
 
+## D982 — Flip cards, comma names in costs, and an ability that outlives its face
+
+**Flip cards** (CR 710; 20 legal cards, the Kamigawa flip creatures). The compiler refused them all
+as "more than one face".
+- `CardFaces.kind` gains `flip`.
+- The flipped half keeps the card's one mana cost and mana value (CR 710.2a).
+- From the hand only the upright half is cast; a cast of the flipped half is refused.
+- `flipPermanent` is "flip ~" / "flip it". It is transform's one-field move (`defKey` to the other
+  half, `printedDefKey` remembering the card, and `relocate` putting it back on the way off).
+  The differences:
+  - it is one-way (CR 701.29c);
+  - it records nothing for "transforms into" to hear;
+  - it refuses a permanent already holding a copy's memory in the same field.
+- `transformPermanent` now refuses anything but a transforming card. A flip card, an adventurer or
+  a prepare card has no back to turn to (CR 701.28c). Before this, "transform it" on such a card
+  would have turned it into its spell.
+
+**A legendary name with a comma, in a cost.** "Remove a ki counter from Ichiga, Who Topples Oaks:"
+was cut in two by the cost's comma split, so every activated ability whose cost names its own
+comma-bearing card stayed unread: "Sacrifice X, Y:", "Exile X, Y from your graveyard:", and the
+rest. The full name is now read as its short form before the split.
+
+**An ability that outlives its face.** An activated ability is put on the stack after its costs are
+paid, and its `cardKey` was read from the source as it was by then. A flipped card that sacrifices
+itself is its upright half again by then, so ability 0 of the wrong face resolved. A Clone that
+sacrifices itself had the same bug. `pushAbility` now takes the face the ability was activated
+from, read before the costs (CR 113.7a).
+
+4 of the 20 flip cards read whole. Most of the rest wait on their flip conditions.
+
+**Tests.** 3 engine tests:
+- the card reads whole, with the flipped half's mana cost and mana value;
+- only the upright half is cast, and a cast of the flipped half is refused;
+- it flips to a flying 3/3 that does not flip back. A flip card does not transform, flipping records
+  no transform, and a copy is not flipped over its memory. The flipped half's "Sacrifice <its full
+  name>:" resolves (+5 life), and the card leaves as the card it was printed as.
+
+Faults injected by script: 10. 9 were caught at once. The copy guard was missed and is now pinned.
+
+    engine tests: 5,254, all passing (merged with the other session's D743)
+
+Coverage: 13,052 of 31,878 cards, 33,535 of 59,841 lines (with the other session's D742 merged).
+
 ## D744 — A combat-damage copy of itself, and an edict of any permanent
 
 Two small shapes off the combat-damage family, the largest group of cards one line short:

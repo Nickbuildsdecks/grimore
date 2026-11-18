@@ -2611,6 +2611,12 @@ function pushAbility(
    * See `StackObject.grantedBy`.
    */
   grantedBy?: GrantedTriggerRef,
+  /**
+   * The face the ability was activated from, when paying its cost changed the source (D982): a
+   * flipped card or a copy that sacrificed itself is its printed card again by now, and its
+   * ability is still the one it activated (CR 113.7a). Defaults to the source as it is.
+   */
+  cardKey?: string,
 ): GameState {
   const seq = state.autoSeq + 1;
   const id = `ab${seq}`;
@@ -2620,7 +2626,7 @@ function pushAbility(
   const inst = state.instances[source] ?? state.vanished[source];
   const object: StackObject = {
     id, kind, source, controller,
-    cardKey: inst?.defKey ?? '',
+    cardKey: cardKey ?? inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
     ...(grantedBy === undefined ? {} : { grantedBy }),
     ...(about.attacked === undefined ? {} : { attacked: about.attacked }),

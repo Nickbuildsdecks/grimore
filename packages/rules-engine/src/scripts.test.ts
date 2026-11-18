@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, untapPermanent } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
@@ -23116,6 +23116,78 @@ describe('"if {U} was spent to cast it" (D742)', () => {
     }), 'precombat-main');
     s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'hand', 'Test Spawn'), toZone: 'battlefield' })), 20);
     expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Spawn');
+  });
+});
+
+describe('flip cards, and a name with a comma in a cost (D982)', () => {
+  const ROWS = [
+    {
+      name: 'Test Initiate', type_line: 'Creature — Human Monk', oracle_text: '{T}: Flip Test Initiate.', mana_cost: '{2}', cmc: 2, colors: ['W'],
+      layout: 'flip', power: '1', toughness: '1',
+      card_faces: [
+        { name: 'Test Initiate', type_line: 'Creature — Human Monk', oracle_text: '{T}: Flip Test Initiate.', mana_cost: '{2}', colors: ['W'], power: '1', toughness: '1' },
+        { name: 'Test Master, Who Ascends', type_line: 'Legendary Creature — Spirit', oracle_text: 'Flying\nSacrifice Test Master, Who Ascends: You gain 5 life.', mana_cost: '', colors: ['W'], power: '3', toughness: '3' },
+      ],
+    },
+  ];
+  const deck = customDeck({
+    id: 'd982', name: 'Flips', entries: [{ name: 'Test Initiate', count: 10 }, { name: 'Plains', count: 30 }], data: ROWS as never[],
+  });
+  const table = (where: 'hand' | 'battlefield') => {
+    let s = arena({
+      decks: { 0: 'd982', 1: 'd982' }, deckSpecs: { d982: deck.deck },
+      ...(where === 'hand' ? { hands: { 0: ['Test Initiate'] }, battlefield: { 0: ['Plains', 'Plains'], 1: [] } } : { battlefield: { 0: ['Test Initiate'], 1: [] } }),
+      turn: 3, firstSeat: 0,
+    });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+  const settle = (s: GameState) => {
+    let t = drain(s, 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return t;
+  };
+
+  it('reads whole: the flip, and the flipped half\'s sacrifice of itself by its full name', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.def.faces?.kind).toBe('flip');
+    // The flipped half keeps the card's mana cost and mana value (CR 710.2a).
+    expect(read.ok && read.def.faces?.cards[0]).toMatchObject({ manaCost: '{2}', cmc: 2 });
+  });
+
+  it('is cast as its upright half only', () => {
+    const s = table('hand');
+    const card = find(s, 0, 'hand', 'Test Initiate');
+    const casts = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast');
+    expect(casts).toHaveLength(1);
+    expect(casts[0]!.half).toBeUndefined();
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)).toThrow(/upright half/);
+  });
+
+  it('flips for good: the other half\'s size and abilities, once, and back to the card when it leaves', () => {
+    const s = table('battlefield');
+    const card = find(s, 0, 'battlefield', 'Test Initiate');
+    const flipped = settle(apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0 } as Action));
+    const ch = characteristicsOf(flipped, flipped.instances[card]!);
+    expect(ch.name).toBe('Test Master, Who Ascends');
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(ch.keywords.has('flying')).toBe(true);
+    // A flipped permanent does not flip back (CR 701.29c), and a flip card does not transform.
+    expect(flipPermanent(flipped, card).instances[card]!.defKey).toBe(flipped.instances[card]!.defKey);
+    expect(transformPermanent(s, card)).toBe(s);
+    // A copy of a flip card keeps its copy memory in the same field, so it is not flipped over it.
+    const copy = { ...s, instances: { ...s.instances, [card]: { ...s.instances[card]!, printedDefKey: 'plains' } } };
+    expect(flipPermanent(copy, card)).toBe(copy);
+    // Flipping is not transforming: nothing was recorded for "transforms into" to hear.
+    expect(flipped.transformed ?? []).toEqual(s.transformed ?? []);
+    // Its new ability, whose cost names it in full.
+    const life = flipped.seats[0]!.life;
+    const sacrificed = settle(apply(flipped, { type: 'auto:activate', by: 0, card, abilityIndex: 0 } as Action));
+    expect(sacrificed.seats[0]!.life).toBe(life + 5);
+    expect(sacrificed.instances[card]!.zone).toBe('graveyard');
+    expect(characteristicsOf(sacrificed, sacrificed.instances[card]!).name).toBe('Test Initiate');
   });
 });
 

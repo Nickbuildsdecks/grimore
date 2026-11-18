@@ -48,7 +48,7 @@ import {
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, reboundOffer, FADE, TIME, enterAttacking,
-  transformPermanent, recordExpiry, pairCreatures,
+  transformPermanent, flipPermanent, recordExpiry, pairCreatures,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import { spendRestriction } from './spending.js';
@@ -12935,6 +12935,12 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     face and would be turned again, which is the one case the face cannot tell; nothing in the
     corpus transforms a permanent twice at instant speed with one ability waiting.
   */
+  // "Flip ~", "flip it" (D982): the flip card's own one-way turn. See `flipPermanent`.
+  const flipping = new RegExp(`^flip (${selfRef(name)}|it)$`, 'i').exec(clause.trim());
+  if (flipping !== null) {
+    const byPronoun = /^it$/i.test(flipping[1]!);
+    return { effect: (c) => flipPermanent(c.state, byPronoun ? c.subject ?? c.source : c.source) };
+  }
   const transforming = new RegExp(`^transform (${selfRef(name)}|it)$`, 'i').exec(clause.trim());
   if (transforming !== null) {
     const byPronoun = /^it$/i.test(transforming[1]!);
@@ -26661,7 +26667,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let sacrificeCount = 1;
   const mana: string[] = [];
   const self = selfRef(name);
-  for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
+  /*
+    A legendary name with a comma in it (D982) — "Remove a ki counter from Ichiga, Who Topples
+    Oaks:" — would be cut in two by the split below, so the name is read as its short form first,
+    which \`selfRef\` already answers to.
+  */
+  const costWords = name.includes(',') ? split[1]!.split(name).join(name.split(',')[0]!) : split[1]!;
+  for (const component of costWords.split(/,\s*/).map((part) => part.trim())) {
     if (component === '') return null;
     if (/^\{T\}$/i.test(component)) { taps += 1; continue; }
     // The untap symbol (D627): Hateflayer, Farmstead Gleaner, Duergar Mine-Captain.
