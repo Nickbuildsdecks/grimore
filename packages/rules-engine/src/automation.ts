@@ -4309,10 +4309,20 @@ function decisionSpecsFor(state: GameState, object: StackObject): readonly Decis
   return asked(script?.decisions ?? []);
 }
 
-/** The half of a card that runs before its questions are asked. Spell-level only. */
+/**
+ * The half of a card that runs before its questions are asked: the spell's, the chosen mode's
+ * (D955), or the ability's.
+ *
+ * A mode's only when **one** mode was chosen. The compiler gives a mode this half only on a spell
+ * that chooses exactly one, because with two chosen the second mode's first half would have to
+ * run after the first mode's questions, and every question is planned before anything runs.
+ */
 function beforeDecisionsFor(state: GameState, object: StackObject): EffectFn | undefined {
   const script = scriptOnStack(state, object);
-  if (object.kind === 'spell') return script?.beforeDecisions;
+  if (object.kind === 'spell') {
+    const modes = modesOf(script, object.modes);
+    return modes.length === 1 ? modes[0]!.beforeDecisions ?? script?.beforeDecisions : script?.beforeDecisions;
+  }
   return abilityOrTrigger(script, object, state.cardDefs)?.beforeDecisions;
 }
 

@@ -20384,6 +20384,62 @@ describe('a card from your hand on the bottom of your library (D954)', () => {
   });
 });
 
+describe('a mode whose first half comes before its question (D955)', () => {
+  const ROWS = [
+    { name: 'Test Modal', type_line: 'Instant', oracle_text: 'Choose one —\n• Test Modal deals 2 damage to target creature. Scry 1.\n• Draw two cards, then discard a card.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd955', name: 'Mode first halves',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 54 }],
+    data: ROWS as never[],
+  });
+  const seated = () => advanceTo(arena({
+    decks: { 0: 'd955', 1: 'd955' }, deckSpecs: { d955: deck.deck }, hands: { 0: ['Test Modal'] },
+    battlefield: { 0: ['Mountain'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const answer = (s: GameState, pick: (candidates: readonly string[]) => string[]) => {
+    let next = s;
+    for (let i = 0; i < 10 && (next.pendingDecision !== null || next.stackOrder.length > 0); i++) {
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, { type: 'auto:decide', by: 0, cards: pick(d.candidates) } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole where one mode is chosen, and stays unread where two are', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const two = compileCard({ ...ROWS[0], name: 'Test Pair', oracle_text: ROWS[0]!.oracle_text.replace('Choose one', 'Choose one or both').replace(/Test Modal/g, 'Test Pair') } as never);
+    expect(two.ok && two.unread.length).toBeGreaterThan(0);
+    // Entwined, both modes resolve: refused for the same reason.
+    const entwined = compileCard({ ...ROWS[0], name: 'Test Twine', oracle_text: `${ROWS[0]!.oracle_text.replace(/Test Modal/g, 'Test Twine')}\nEntwine {2}` } as never);
+    expect(entwined.ok && entwined.unread.length).toBeGreaterThan(0);
+  });
+
+  it('the damage mode deals its damage, then scries', () => {
+    const s = seated();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Modal'), modes: [0], targets: [{ kind: 'card', id: bear }] } as Action), 30);
+    const done = answer(cast, () => []);
+    expect(done.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('the draw mode draws before the question, so a card just drawn can be the one discarded', () => {
+    const s = seated();
+    const [first, second] = ids(s, 0, 'library');
+    const hand = ids(s, 0, 'hand').length - 1;
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Modal'), modes: [1] } as Action), 30);
+    const t = cast.stackOrder.length > 0 && cast.pendingDecision === null ? drain(passBoth(cast), 30) : cast;
+    expect(t.pendingDecision?.candidates).toEqual(expect.arrayContaining([first, second]));
+    const done = answer(t, () => [second!]);
+    expect(done.instances[second!]!.zone).toBe('graveyard');
+    expect(done.instances[first!]!.zone).toBe('hand');
+    expect(ids(done, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -32248,3 +32248,42 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 5,082, all passing
 
 Coverage: 12,412 of 31,743 cards (+5), 32,421 of 59,509 lines (+7). Staples: 241 of 244.
+
+## D955 — A mode whose first half comes before its question
+
+A fix, found while reading D954's chain split. `composeEffects` puts everything before a chain's
+first question into `beforeDecisions` (D418), and spells, abilities and triggers all carry that
+half. A **mode** did not: `ModeDef` had no such field, and `modalScriptFor` built each mode from
+`targets`, `decisions` and `effect` only. So a bullet like "~ deals 2 damage to target creature.
+Scry 1." read whole and did only the scry, and "Draw two cards, then discard a card" discarded from
+a hand that never drew. Nothing reported it, because the card counted as read.
+
+The fix:
+- **`ModeDef.beforeDecisions`**, carried by `modalScriptFor`. `beforeDecisionsFor` in
+  `automation.ts` runs the chosen mode's half when exactly one mode was chosen.
+- **Only where exactly one mode can be chosen.** With two chosen, the second mode's first half
+  would have to run after the first mode's questions, and the engine plans every question before
+  anything runs. So "choose two", "one or both", "one or more", the Will cycle's commander clause
+  and entwine all refuse a mode that has such a half, rather than reorder it.
+
+That refusal costs 2 legal cards that had been reading whole and playing wrong:
+- Artistic Refusal: "Draw two cards, then discard a card" as one of "one or both", so it discarded
+  without drawing.
+- Avengers Disassembled: "Destroy target land. Its controller may search …", whose destroy was
+  dropped, so the land stayed.
+
+Both are now honestly unread. Reading them needs the chosen modes split at their first question at
+resolution time, which is not done yet.
+
+**Tests.** 3 engine tests:
+- reads whole as "choose one", and stays unread as "one or both" or entwined;
+- the damage mode deals its damage, then scries;
+- the draw mode draws before the question, so a card just drawn can be the one discarded.
+
+Faults injected by hand: 5 of 5 caught. The entwine refusal was missed at first and is now pinned
+by its own assertion.
+
+    engine tests: 5,085, all passing
+
+Coverage: 12,410 of 31,743 cards (−2), 32,415 of 59,509 lines (−6): the two cards above, now
+counted as what they are. Staples: 241 of 244.

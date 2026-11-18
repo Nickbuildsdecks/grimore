@@ -2550,6 +2550,13 @@ export interface ModeDef {
   readonly targets?: readonly TargetSpec[];
   /** Questions asked while this mode resolves. See `DecisionSpec`. */
   readonly decisions?: readonly DecisionSpecOf[];
+  /**
+   * What the mode does before its questions are asked — `CardScript.beforeDecisions`, for a mode
+   * (D955). "~ deals 2 damage to target creature. Scry 1." and "Draw two cards, then discard a card"
+   * as bullets: the half before the question has to happen before it is planned. Only a mode of a
+   * spell that chooses exactly one carries it — see `modalScriptFor` for why several cannot.
+   */
+  readonly beforeDecisions?: EffectFn;
   readonly effect: EffectFn;
   /**
    * See `CardScript.expiresAtEndOfTurn`. On the mode rather than the card, because a charm's other

@@ -28454,6 +28454,8 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
   if (entwined !== null) {
     const rest = modalScriptFor(lines.slice(0, -1), name);
     if (rest === null || rest.kicker !== undefined || rest.modal.modes.length < 2) return null;
+    // Entwined, both modes resolve: the same refusal as any header that chooses more than one (D955).
+    if (rest.modal.modes.some((mode) => mode.beforeDecisions !== undefined)) return null;
     return {
       modal: { ...rest.modal, entwine: true },
       kicker: { cost: entwined[1]!, description: `Entwine ${entwined[1]!}` },
@@ -28502,15 +28504,26 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     */
     delete flags['makesMana'];
     if (Object.keys(flags).length > 0) return null;
+    /*
+      A mode's first half, before its question (D955) — "~ deals 2 damage to target creature.
+      Scry 1." as a bullet. Dropped until D955, so the mode read whole and did only the scry.
+      Carried only where exactly one mode is chosen: with two, the second mode's first half would
+      have to run after the first mode's questions, and the engine plans every question before
+      anything runs. Those headers refuse it below rather than reorder it.
+    */
     modes.push({
       description: printed,
       ...(read.targets === undefined ? {} : { targets: read.targets }),
       ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
       effect: read.effect,
       ...(expires ? { expiresAtEndOfTurn: true } : {}),
       ...(prevents ? { preventsDamage: true } : {}),
     });
   }
+  // See the note at `modes.push`: a first half before a question only where one mode is chosen.
+  const chooseOne = !willHeader && header[1]!.toLowerCase() === 'one';
+  if (!chooseOne && modes.some((mode) => mode.beforeDecisions !== undefined)) return null;
   if (willHeader) return modes.length === 2 ? { modal: { modes, maxWithCommander: 2 } } : null;
   // "one or both" is two modes by definition; a header that says it over three is not a card.
   if (header[1]!.toLowerCase() === 'one or both') {
