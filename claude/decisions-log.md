@@ -50795,3 +50795,39 @@ Faults injected by script: 7 of 7 caught.
     engine tests: 5,194, all passing (merged with the other session's D975)
 
 Coverage: 12,765 of 31,743 cards (+34), 33,016 of 59,509 lines (+57), against 631357c.
+
+## D977 — A */* from sums, doubles, the greatest mana value, names and subtypes
+
+The next rows of D975's list of refused "*/*" cards, each a count kind (data, for the reason D975
+gives) and its phrase:
+- `{ sum: [a, b] }`: "the number of A plus the number of B" (Dauntless Dourbark, Abomination of
+  Llanowar);
+- `{ times: 2, of }`: "twice the number of …" (Majestic Myriarch);
+- `{ greatestManaValue, anyType? }`: "the greatest mana value among artifacts / permanents you
+  control" (Karn, Legacy Reforged; Daretti; Kraven), from printed mana values;
+- `differently-named-lands-you-control` (Awakened Amalgam, Captain Pike, Lt. Arex);
+- `{ subtypes: [a, b] }`: "Soldiers and Warriors you control" (Aysen Crusader, with "2 plus");
+- the zone count's `notSubtype`: "non-Wall creatures you control" (Keldon Warlord).
+
+Also: a creature type whose plural is itself (Treefolk, Sheep) is now read as its own plural in the
+subtype counts. Dourbark's second count needed it.
+
+Refused "*/*" cards: 50 to 39.
+
+8 legal cards now read whole.
+
+**Tests.** 7 engine tests:
+- the cards read;
+- the greatest mana value among your artifacts, not the 6-mana creature beside them;
+- Forests plus Treefolk;
+- twice the creatures you control;
+- non-Wall creatures;
+- differently named lands (two Forests and a Plains are two names);
+- 2 plus Soldiers and Warriors, which does not count a Knight.
+
+Faults injected by hand: 7. 6 were caught at once. The type filter on the greatest mana value was
+missed and is pinned by the 6-mana creature.
+
+    engine tests: 5,206, all passing
+
+Coverage: 12,801 of 31,798 cards (+8), 33,102 of 59,619 lines. Staples: 241 of 244.
