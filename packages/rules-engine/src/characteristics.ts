@@ -1673,6 +1673,12 @@ export interface ContinuousEffect {
   readonly onlyAttacking?: true;
   readonly onlyWithCounter?: string;
   /**
+   * And by what the creature is (D735): "Artifact creatures you control get +1/+1", "Legendary
+   * creatures …", "Untapped creatures …", "Multicolored creatures …". Every word must hold, read
+   * live off the creature's type line after layer 4 and its colours after layer 5.
+   */
+  readonly onlyKind?: readonly CreatureKindWord[];
+  /**
    * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
    * entries in the *source card's* `grantedAbilities`.
    *
@@ -2330,6 +2336,34 @@ function layerFiveColours(
   return colours;
 }
 
+/** The words `onlyKind` reads (D735). */
+export type CreatureKindWord = 'artifact' | 'legendary' | 'land' | 'enchantment' | 'colorless' | 'multicolored'
+  | 'monocolored' | 'untapped' | 'tapped' | 'nontoken' | 'token' | 'nonartifact' | 'nonlegendary' | 'snow';
+
+/** Whether a creature is every word of `onlyKind` (D735). */
+function isEveryKind(
+  state: GameState, instance: CardInstance, creature: boolean, typeLine: TypeLine, words: readonly CreatureKindWord[],
+): boolean {
+  return words.every((word) => {
+    switch (word) {
+      case 'artifact': case 'land': case 'enchantment':
+        return hasType(typeLine, word);
+      case 'nonartifact': return !hasType(typeLine, 'artifact');
+      case 'legendary': return typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary');
+      case 'nonlegendary': return !typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary');
+      case 'snow': return typeLine.supertypes.some((t) => t.toLowerCase() === 'snow');
+      case 'untapped': return !instance.tapped;
+      case 'tapped': return instance.tapped;
+      case 'token': return instance.isToken;
+      case 'nontoken': return !instance.isToken;
+      case 'colorless': return layerFiveColours(state, instance, creature, typeLine).length === 0;
+      case 'multicolored': return layerFiveColours(state, instance, creature, typeLine).length > 1;
+      case 'monocolored': return layerFiveColours(state, instance, creature, typeLine).length === 1;
+      default: return false;
+    }
+  });
+}
+
 function effectApplies(
   state: GameState, effect: ContinuousEffect, instance: CardInstance,
   creature: boolean, typeLine: TypeLine,
@@ -2342,6 +2376,7 @@ function effectApplies(
   // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
   if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
   if (effect.onlyWithCounter !== undefined && (instance.counters[effect.onlyWithCounter] ?? 0) <= 0) return false;
+  if (effect.onlyKind !== undefined && !isEveryKind(state, instance, creature, typeLine, effect.onlyKind)) return false;
   switch (effect.scope.kind) {
     case 'cards':
       return effect.scope.ids.includes(instance.id);

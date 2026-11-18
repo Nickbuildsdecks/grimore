@@ -77,3 +77,6 @@ That is a cross-cutting change for 6 cards, so the corpus families come first.
 **Next here: corpus families, claimed one at a time in this file, on D7xx.** First claim: emblems
 ("You get an emblem with …", about 69 lines, mostly planeswalker ultimates). The other session keeps
 D901 and up, and its own families. Pod sweeps here stay at seeds 58001 upward in steps of 100.
+
+**Claims since:** D734 emblems (done). D735 anthems by colour and kind ("Other green creatures you
+control get +1/+1", "Artifact creatures you control have flying"; done).

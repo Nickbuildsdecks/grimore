@@ -22077,6 +22077,91 @@ describe('a */* from more measures: colours, zones, life, devotion (D975)', () =
   });
 });
 
+describe('anthems by colour and kind: "Other green creatures you control get +1/+1" (D735)', () => {
+  const C = (name: string, type: string, text: string, colors: string[], extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors, layout: 'normal', power: '2', toughness: '2', ...extra,
+  });
+  const ROWS = [
+    C('Test Green Lord', 'Creature — Elf', 'Other green creatures you control get +1/+1.', ['G']),
+    C('Test Forge Lord', 'Artifact Creature — Golem', 'Artifact creatures you control have flying.', []),
+    C('Test Watchman', 'Creature — Human', 'Untapped creatures you control get +0/+2.', ['W']),
+    C('Test Prism', 'Legendary Creature — Avatar', 'Multicolored creatures you control get +1/+0.\nLegendary creatures you control get +0/+1.', ['W', 'U']),
+    C('Test Bear', 'Creature — Bear', '', ['G']),
+    C('Test Goblin', 'Creature — Goblin', '', ['R']),
+    C('Test Golem', 'Artifact Creature — Golem', '', []),
+    C('Test Duo', 'Creature — Wizard', '', ['U', 'R']),
+    C('Test Smith', 'Creature — Dwarf', 'Untapped artifact creatures you control get +1/+0.', ['R']),
+  ];
+  const deck = customDeck({
+    id: 'd735', name: 'Anthems',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd735', 1: 'd735' }, deckSpecs: { d735: deck.deck }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const size = (s: GameState, seat: 0 | 1, name: string) => {
+    const ch = characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!);
+    return `${ch.power}/${ch.toughness}`;
+  };
+
+  it('reads the family, and leaves two colours unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const two = compileCard(C('Test Line', 'Creature — Wizard', 'White and blue creatures you control get +1/+1.', ['W']) as never);
+    expect(two.ok && two.unread.length).toBe(1);
+  });
+
+  it('a colour lord pumps its controller\'s other creatures of the colour, and nobody else', () => {
+    const s = table(['Test Green Lord', 'Test Bear', 'Test Goblin'], ['Test Bear']);
+    expect(size(s, 0, 'Test Bear')).toBe('3/3');
+    expect(size(s, 0, 'Test Green Lord')).toBe('2/2');
+    expect(size(s, 0, 'Test Goblin')).toBe('2/2');
+    expect(size(s, 1, 'Test Bear')).toBe('2/2');
+    // Made red, the Bear leaves it; made green, the Goblin joins, read live.
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const goblin = find(s, 0, 'battlefield', 'Test Goblin');
+    const swapped = pump(pump(s, [bear], bear, 1, { setColors: ['R'] }), [goblin], goblin, 1, { setColors: ['G'] });
+    expect(size(swapped, 0, 'Test Bear')).toBe('2/2');
+    expect(size(swapped, 0, 'Test Goblin')).toBe('3/3');
+  });
+
+  it('artifact creatures have flying, an animated or typed one included, and others do not', () => {
+    const s = table(['Test Forge Lord', 'Test Golem', 'Test Bear']);
+    const has = (st: GameState, name: string) => characteristicsOf(st, st.instances[find(st, 0, 'battlefield', name)]!).keywords.has('flying');
+    expect(has(s, 'Test Golem')).toBe(true);
+    expect(has(s, 'Test Forge Lord')).toBe(true);
+    expect(has(s, 'Test Bear')).toBe(false);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(has(pump(s, [bear], bear, 0, { addTypes: ['Artifact'] }), 'Test Bear')).toBe(true);
+  });
+
+  it('untapped creatures get the bonus only while untapped', () => {
+    const s = table(['Test Watchman', 'Test Bear']);
+    expect(size(s, 0, 'Test Bear')).toBe('2/4');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const tapped = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, tapped: true } } };
+    expect(size(tapped, 0, 'Test Bear')).toBe('2/2');
+  });
+
+  it('two kind words both have to hold: untapped and artifact', () => {
+    const s = table(['Test Smith', 'Test Golem', 'Test Bear']);
+    expect(size(s, 0, 'Test Golem')).toBe('3/2');
+    expect(size(s, 0, 'Test Bear')).toBe('2/2');
+    const golem = find(s, 0, 'battlefield', 'Test Golem');
+    const tapped = { ...s, instances: { ...s.instances, [golem]: { ...s.instances[golem]!, tapped: true } } };
+    expect(size(tapped, 0, 'Test Golem')).toBe('2/2');
+  });
+
+  it('multicolored and legendary creatures, by the colours and supertypes they have', () => {
+    const s = table(['Test Prism', 'Test Duo', 'Test Goblin']);
+    expect(size(s, 0, 'Test Duo')).toBe('3/2');
+    expect(size(s, 0, 'Test Goblin')).toBe('2/2');
+    // The Prism is both multicolored and legendary.
+    expect(size(s, 0, 'Test Prism')).toBe('3/3');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

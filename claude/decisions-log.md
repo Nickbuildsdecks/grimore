@@ -50678,3 +50678,44 @@ Faults injected by hand: 8 of 8 caught.
     engine tests: 5,184, all passing
 
 Coverage: 12,691 of 31,764 cards (+14), 32,867 of 59,553 lines. Staples: 241 of 244.
+
+## D735 — Anthems by colour and kind: "Other green creatures you control get +1/+1"
+
+The group statics of D620 covered your creatures, other creatures, a creature type, tokens, and
+since D941 attacking or countered creatures. They didn't cover a colour or a kind, so a whole
+shelf of lords stayed unread:
+- "Other green creatures you control get +1/+1" (the colour lords, 35 lines);
+- "Artifact creatures you control have flying";
+- "Legendary creatures …", "Multicolored creatures …", "Untapped creatures …", "Land creatures …".
+
+How it is read (`groupStaticFromLine`):
+- **A run of colour and kind words before "creatures you control"**, with or without "other", then
+  "get" or "have" and the predicate the other group statics read.
+- **A colour is the existing colour scope** (`controller-color`), the one "of the chosen color"
+  uses. A run names at most one colour; "white and blue" isn't a run, so it stays unread.
+- **Every other word is a new data filter, `onlyKind`**, beside D941's `onlyAttacking` and
+  `onlyWithCounter`: artifact, legendary, land, enchantment, colorless, multicolored, monocolored,
+  untapped, tapped, token, nontoken, nonartifact, nonlegendary, snow. Every word must hold. It is
+  read live in `effectApplies`: types after layer 4 (an Artifact-ised Bear joins the artifact
+  lord), colours after layer 5, tapped state as it is.
+- **Data, not a function**, because effects are part of the persisted game state.
+
+One older compile test pinned "Black creatures you control have wither" as unread, because nothing
+read it then. It now reads correctly, so that case is gone from the refusal list.
+
+**Tests.** 6 engine tests:
+- the family reads; two colours stay unread;
+- a green lord pumps its controller's other green creatures, not itself, not a red one, not the
+  opponent's; recoloured, the two swap places;
+- an artifact lord gives flying to artifact creatures, itself and a Bear made an artifact included,
+  and not to a plain Bear;
+- untapped creatures get the bonus only while untapped;
+- both words must hold: an untapped artifact creature only;
+- multicolored and legendary, the Prism being both.
+
+Faults injected by script: 9 of 9 caught, one after pinning (any word instead of every word). A
+tenth fault was on a two-colour check no text can reach; the check was removed.
+
+    engine tests: 5,183, all passing (merged with the other session's D974)
+
+Coverage: 12,730 of 31,743 cards (+53), 32,957 of 59,509 lines (+126), against 2f3068f.
