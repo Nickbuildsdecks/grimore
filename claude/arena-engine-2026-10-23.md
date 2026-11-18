@@ -33113,21 +33113,21 @@ Coverage: 12,663 of 31,743 cards (+26), 32,792 of 59,509 lines (+33), against b8
 zone with the abilities quoted. The engine had nothing to hold one.
 
 How it works:
-- **An emblem is a \`CardInstance\` with \`emblem: true\`** in its controller's command zone, made by
-  \`createEmblem\` with a card definition built at the time from the quoted text ("<walker> emblem",
+- **An emblem is a `CardInstance` with `emblem: true`** in its controller's command zone, made by
+  `createEmblem` with a card definition built at the time from the quoted text ("<walker> emblem",
   type line "Emblem"). Its script is compiled from that text like any card's.
 - **Its abilities work from the command zone:**
   - statics are installed as it arrives and kept while it exists, so an anthem outlives the
     planeswalker and reaches creatures that come later;
-  - triggers are watched from the command zone (\`raise\`);
+  - triggers are watched from the command zone (`raise`);
   - the seat-level statics ("no maximum hand size", "can't change", "prevent all damage to you",
     "skip your draw step", riot, Seedborn's untap) read emblems beside permanents.
 - **It is never cast.** It is shown in the command zone, which everybody sees.
 - **"This emblem"** is a self-reference, like "this creature".
 
-How it is read (\`emblemClause\`):
+How it is read (`emblemClause`):
 - "You get an emblem with "A"" or ""A" and "B"", each quoted ability on its own line.
-- **Read only if every ability reads** (\`lineScriptFor\`), and none is activated, since nothing
+- **Read only if every ability reads** (`lineScriptFor`), and none is activated, since nothing
   offers an activation from the command zone. Two emblems with one ("Tap an untapped artifact …",
   "{1}{B}, Sacrifice a creature: …") stay unread.
 - **The quoted punctuation is hidden from the clause splitter**, so an emblem's own ", then" stays
