@@ -11571,6 +11571,25 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (unearth !== null) return unearthFragment(unearth[1]!);
 
   /*
+    Outlast (D984, CR 702.107a): "[Cost], {T}: Put a +1/+1 counter on this creature. Activate only
+    as a sorcery." A declaration that is an ability, as unearth's is.
+  */
+  // Undaunted (D984, CR 702.125a): "This spell costs {1} less to cast for each opponent you have."
+  if (/^undaunted$/i.test(text)) return selfCostChangeFromLine('This spell costs {1} less to cast for each opponent.', name);
+  const outlast = /^outlast\s+((?:\{[^}]*\})+)$/i.exec(text);
+  if (outlast !== null) {
+    const mana = outlast[1]!;
+    return {
+      abilities: [{
+        cost: { mana, tap: true },
+        sorcerySpeed: true,
+        description: `Outlast ${mana} (${mana}, {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery.)`,
+        effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield' ? addCounters(c.state, c.source, '+1/+1', 1) : c.state),
+      } as AbilityDef],
+    };
+  }
+
+  /*
     **Ward paid in life** (D578): "Ward—Pay 3 life." and "Ward—{2}, Pay 2 life."
 
     Tried before the mana reader below, whose pattern would otherwise take "{2}, Pay 2 life" for a
@@ -12220,7 +12239,10 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
       when: (state, caster, card) => condition(ctx(state, caster, card)),
     } };
   }
-  const count = how.toLowerCase() === 'for each'
+  // "For each opponent" (D984): undaunted's own sentence, the opponents still in the game.
+  const perOpponent = how.toLowerCase() === 'for each' && /^opponent(?: you have)?$/i.test(rest.trim())
+    ? (c: EffectContext) => opponentsOf(c.state, c.controller).length : null;
+  const count = perOpponent !== null ? perOpponent : how.toLowerCase() === 'for each'
     ? (amount === 'X' ? null : forEachCount(rest, name))
     : (amount === 'X' ? whereXCount(rest, name) : null);
   if (count === null) return null;
