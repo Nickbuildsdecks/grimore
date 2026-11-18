@@ -15158,6 +15158,25 @@ function selfEffect(
     }
   }
 
+  // Connive's second half (D971); see `conniveClauses`. The creature is the event's for "it".
+  if (text === CONNIVE || text === `${CONNIVE}:self`) {
+    const named = text === CONNIVE ? undefined : name;
+    return {
+      decisions: [{ who: 'controller', from: 'hand', prompt: 'Discard a card (connive)', min: 1, max: 1 }],
+      effect: (c) => {
+        const discarded = chosenCards(c);
+        let next = moveToGraveyard(c.state, discarded);
+        const nonland = discarded.some((id) => {
+          const inst = c.state.instances[id];
+          return inst !== undefined && !hasType(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), 'land');
+        });
+        const creature = itMeans(named, c);
+        if (nonland && next.instances[creature]?.zone === 'battlefield') next = addCounters(next, creature, '+1/+1', 1);
+        return next;
+      },
+    };
+  }
+
   const eatsItself = new RegExp(`^sacrifice (?:(${self})|it)$`, 'i').exec(text);
   if (eatsItself !== null && where !== null) {
     const named = eatsItself[1];
@@ -25169,6 +25188,19 @@ function tokenAbilityRider(clauses: readonly string[], name: string): ReadEffect
  * one resolution is already a different object (`checkTargets`), which is all those words add.
  * A clause that is not one of these shapes comes back as it was.
  */
+/**
+ * Connive (D971, CR 701.50a): "Draw a card, then discard a card. If you discarded a nonland card,
+ * put a +1/+1 counter on this creature." Read as two clauses: the draw, and the discard with its
+ * counter (`CONNIVE`, read by `selfEffect`), so the chain's split at its first question (D418) draws
+ * before the discard is asked, which is the order the rules give. "Connives X" is not read.
+ */
+const CONNIVE = '\u000fconnive';
+function conniveClauses(clause: string, name: string): readonly string[] | null {
+  const read = new RegExp(`^(?:(${selfRef(name)})|it|he|she) connives$`, 'i').exec(clause.trim().replace(/\.$/, ''));
+  if (read === null) return null;
+  return ['draw a card', `${CONNIVE}${read[1] === undefined ? '' : ':self'}`];
+}
+
 function splitDamageClauses(clause: string): readonly string[] {
   const text = clause.trim().replace(/\.$/, '');
   const each = /^(.+?) deals (\w+) damage to each of (two|three) targets$/i.exec(text);
@@ -25188,7 +25220,7 @@ function splitDamageClauses(clause: string): readonly string[] {
 function composeEffects(
   printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
-  const clauses = printedClauses.flatMap(splitDamageClauses);
+  const clauses = printedClauses.flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.

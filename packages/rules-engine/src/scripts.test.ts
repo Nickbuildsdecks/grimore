@@ -21295,6 +21295,53 @@ describe('a chosen discard or exile with a mana value or a type list (D970)', ()
   });
 });
 
+describe('connive (D971)', () => {
+  const ROWS = [
+    { name: 'Test Schemer', type_line: 'Creature — Rogue', oracle_text: 'When this creature enters, it connives.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Plotter', type_line: 'Creature — Rogue', oracle_text: '{0}: This creature connives.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd971', name: 'Connive',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** Casts the Schemer with `hand` beside it; returns the state at the discard question. */
+  const conniving = (hand: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd971', 1: 'd971' }, deckSpecs: { d971: deck.deck }, hands: { 0: ['Test Schemer', ...hand] },
+      battlefield: { 0: ['Island'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const top = ids(s, 0, 'library')[0]!;
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Schemer') } as Action), 30);
+    for (let i = 0; i < 8 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return { t, top, schemer: find(t, 0, 'battlefield', 'Test Schemer') };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws first: the card drawn is one of the cards it may discard', () => {
+    const { t, top } = conniving(['Test Bear']);
+    expect(t.pendingDecision?.candidates).toEqual(expect.arrayContaining([top]));
+  });
+
+  it('a nonland card discarded: a +1/+1 counter; a land discarded: none', () => {
+    const one = conniving(['Test Bear', 'Island']);
+    const bear = find(one.t, 0, 'hand', 'Test Bear');
+    const withBear = drain(apply(one.t, { type: 'auto:decide', by: 0, cards: [bear] } as Action), 30);
+    expect(withBear.instances[bear]!.zone).toBe('graveyard');
+    expect(withBear.instances[one.schemer]!.counters['+1/+1']).toBe(1);
+    const two = conniving(['Test Bear', 'Island']);
+    const land = find(two.t, 0, 'hand', 'Island');
+    const withLand = drain(apply(two.t, { type: 'auto:decide', by: 0, cards: [land] } as Action), 30);
+    expect(withLand.instances[land]!.zone).toBe('graveyard');
+    expect(withLand.instances[two.schemer]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+});
+
 describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life (D731)', () => {
   const row = (name: string, type: string, text: string, cost = '{3}{B}{B}{B}', cmc = 6, colors = ['B']) => ({
     name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors, layout: 'normal',
