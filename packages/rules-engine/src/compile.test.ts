@@ -17913,8 +17913,7 @@ describe('an intervening-if in a trigger (D563)', () => {
     // the nearest condition still out of reach.
     ['a condition that needs a filter',
       'When this creature enters, if you control a creature with flying, draw a card.'],
-    ['"another", which needs to know whether the card asking is one of them',
-      'When this creature enters, if you control another Wizard, draw a card.'],
+    // "If you control another Wizard" reads since D737: the condition is asked with the trigger's source.
     ['a choice of two things',
       'When this creature enters, if you control an artifact or enchantment, draw a card.'],
     ['a number it does not print',

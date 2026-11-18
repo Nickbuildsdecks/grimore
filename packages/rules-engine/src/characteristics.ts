@@ -1994,7 +1994,24 @@ export interface ContinuousEffect {
      */
     | { readonly kind: 'controller-devotion'; readonly colours: readonly string[]; readonly atLeast?: number; readonly below?: number }
     /** "It's your turn" / "it's not your turn". */
-    | { readonly kind: 'turn'; readonly yours: boolean };
+    | { readonly kind: 'turn'; readonly yours: boolean }
+    /**
+     * A board condition in general (D737): "you control another artifact", "you control a blue
+     * creature", "an opponent controls an Island", "an opponent controls a black permanent", "you
+     * control another Warrior". Whose board, "another" (not the source), and what each counted
+     * permanent must be: every listed card type, the subtype, one of the colours, nontoken. Read
+     * off **printed** type lines and colours, for the reason the artifact count gives.
+     */
+    | {
+        readonly kind: 'board-has';
+        readonly whose: 'you' | 'an-opponent';
+        readonly other?: true;
+        readonly types?: readonly string[];
+        readonly subtype?: string;
+        readonly colours?: readonly string[];
+        readonly nontoken?: true;
+        readonly atLeast: number;
+      };
   /**
    * A size that is a **count times a rate**: layer 7c, `~ gets +1/+1 for each Equipment you
    * control` (D523).
@@ -2346,6 +2363,27 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   }
   if (cond.kind === 'turn') {
     return (state.activeSeat === effect.controller) === cond.yours;
+  }
+  if (cond.kind === 'board-has') {
+    const counts = (seat: SeatIndex): number => {
+      let n = 0;
+      for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
+        if (cond.other === true && id === effect.source) continue;
+        const inst = state.instances[id];
+        if (inst === undefined || isFaceDownPermanent(inst)) continue;
+        if (cond.nontoken === true && inst.isToken) continue;
+        const def = state.cardDefs[inst.defKey];
+        const line = parseTypeLine(def?.typeLine);
+        if (!(cond.types ?? []).every((type) => hasType(line, type))) continue;
+        if (cond.subtype !== undefined && !hasSubtype(line, cond.subtype)) continue;
+        if (cond.colours !== undefined && !cond.colours.some((c) => (def?.colors ?? []).includes(c))) continue;
+        n += 1;
+      }
+      return n;
+    };
+    return cond.whose === 'you'
+      ? counts(effect.controller) >= cond.atLeast
+      : state.seats.some((seat) => seat.index !== effect.controller && !seat.eliminated && counts(seat.index) >= cond.atLeast);
   }
   // Equipment attached to the source, whoever controls it: the sentence says "attached to it".
   if (cond.kind === 'source-equipment') {

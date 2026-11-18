@@ -22360,6 +22360,81 @@ describe('a */* from sums, doubles, the greatest mana value, names and subtypes 
   });
 });
 
+describe('board conditions on a static: "as long as you control another artifact" (D737)', () => {
+  const C = (name: string, type: string, text: string, colors: string[], extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors, layout: 'normal', power: '2', toughness: '2', ...extra,
+  });
+  const ROWS = [
+    C('Test Gearsmith', 'Artifact Creature — Construct', 'Test Gearsmith gets +1/+1 as long as you control another artifact.', []),
+    C('Test Mariner', 'Creature — Merfolk', 'Test Mariner gets +1/+1 as long as an opponent controls an Island.', ['U']),
+    C('Test Lookout', 'Creature — Elf', 'Test Lookout has flying as long as you control a blue creature.', ['G']),
+    C('Test Hunter', 'Creature — Human', 'Test Hunter gets +2/+2 as long as an opponent controls a nontoken white permanent.', ['B']),
+    C('Test Captain', 'Creature — Human', 'Test Captain gets +1/+1 as long as you control two or more Wizards.', ['U']),
+    C('Test Wizard', 'Creature — Human Wizard', '', ['U']),
+    C('Test Knight', 'Creature — Knight', '', ['W']),
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    C('Test Seer', 'Creature — Human Wizard', 'When this creature enters, if you control another Wizard, draw a card.', ['U']),
+  ];
+  const deck = customDeck({
+    id: 'd737', name: 'Conditions',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd737', 1: 'd737' }, deckSpecs: { d737: deck.deck }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ch = (s: GameState, name: string) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"another artifact" does not count the source itself', () => {
+    expect(ch(table(['Test Gearsmith']), 'Test Gearsmith').power).toBe(2);
+    expect(ch(table(['Test Gearsmith', 'Test Rock']), 'Test Gearsmith').power).toBe(3);
+    // Another creature that is not an artifact is not one.
+    expect(ch(table(['Test Gearsmith', 'Test Wizard']), 'Test Gearsmith').power).toBe(2);
+  });
+
+  it('"an opponent controls an Island" counts the opponent\'s board, not yours', () => {
+    expect(ch(table(['Test Mariner', 'Island']), 'Test Mariner').power).toBe(2);
+    expect(ch(table(['Test Mariner'], ['Island']), 'Test Mariner').power).toBe(3);
+  });
+
+  it('a colour condition: flying while you control a blue creature', () => {
+    expect(ch(table(['Test Lookout']), 'Test Lookout').keywords.has('flying')).toBe(false);
+    expect(ch(table(['Test Lookout', 'Test Wizard']), 'Test Lookout').keywords.has('flying')).toBe(true);
+    expect(ch(table(['Test Lookout'], ['Test Wizard']), 'Test Lookout').keywords.has('flying')).toBe(false);
+  });
+
+  it('a nontoken white permanent: a white card counts, a white token does not', () => {
+    expect(ch(table(['Test Hunter'], ['Test Knight']), 'Test Hunter').power).toBe(4);
+    let s = table(['Test Hunter']);
+    s = createToken(s, 1, { name: 'Soldier', typeLine: 'Token Creature — Soldier', colors: ['W'], power: '1', toughness: '1', oracleText: '' } as never);
+    expect(ch(s, 'Test Hunter').power).toBe(2);
+  });
+
+  it('an intervening "if you control another Wizard" does not count the creature entering', () => {
+    const cast = (mine: string[]) => {
+      let s = advanceTo(arena({
+        decks: { 0: 'd737', 1: 'd737' }, deckSpecs: { d737: deck.deck }, hands: { 0: ['Test Seer'] },
+        battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      const hand = ids(s, 0, 'hand').length;
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seer') })), 20);
+      return ids(s, 0, 'hand').length - (hand - 1);
+    };
+    expect(cast([])).toBe(0);
+    expect(cast(['Test Wizard'])).toBe(1);
+  });
+
+  it('"two or more Wizards" needs two', () => {
+    expect(ch(table(['Test Captain', 'Test Wizard']), 'Test Captain').power).toBe(2);
+    expect(ch(table(['Test Captain', 'Test Wizard', 'Test Wizard']), 'Test Captain').power).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -57268,7 +57343,8 @@ describe('a static with any condition it can answer (D605)', () => {
   });
 
   it('refuses a condition it cannot answer', () => {
-    const read = compileCard({ ...KIRD, oracle_text: 'Kird Ape gets +1/+2 as long as an opponent controls a Forest.' } as never);
+    // An opponent's Forest became answerable in D737; a keyword filter still is not.
+    const read = compileCard({ ...KIRD, oracle_text: 'Kird Ape gets +1/+2 as long as an opponent controls a creature with flying.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
   });
 });
