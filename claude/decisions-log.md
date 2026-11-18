@@ -50720,6 +50720,44 @@ tenth fault was on a two-colour check no text can reach; the check was removed.
 
 Coverage: 12,730 of 31,743 cards (+53), 32,957 of 59,509 lines (+126), against 2f3068f.
 
+## D976 — A */* from domain, everyone's subtypes, snow, and a counted toughness
+
+D975's list of still-refused "*/*" cards, next rows:
+- **Domain**: "the number of basic land types among lands you control" (Matca Rioters, Aven
+  Trailblazer, Fblthp). A new count kind, `basic-land-types-you-control`, over the printed
+  subtypes of your lands.
+- **"<Subtype>s on the battlefield"**, everyone's (Doubtless One's Clerics, Heedless One's Elves,
+  Coiling Woodworm's Forests). The subtype count takes `whose: 'all'`.
+- **"Snow permanents / snow lands you control"** (Abominable Treefolk, Drift of the Dead). The
+  zone count takes `snow`, a printed supertype.
+- **A counted toughness with the power printed**: "~'s toughness is equal to …" (People of the
+  Woods, An-Havva Constable, Daxos). `definesSize.applies` takes `'toughness'`, the mirror of
+  D902's power-only. `unsizeable` checks that the other half is printed as a number.
+- **"Domain —" in front of the line** is an ability word, and `definesSizeFromLine` now strips it,
+  as the other line readers do.
+
+Refused "*/*" cards: 58 to 50.
+
+Superseded rows: two `compile.test.ts` rows used "snow permanents you control" as their count the
+engine does not have. They now use "face-down creatures on the battlefield" (Ixidron), which is
+still unread, so they still test the refusal.
+
+12 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- domain: three basic land types from four lands;
+- Clerics on the battlefield: its own side, the other side, and itself;
+- snow lands: the snow land, not the plain Forest;
+- toughness counted, the printed power kept.
+
+Faults injected by hand: 5. 4 were caught when run. The fifth, the ability-word strip, was shown by
+the domain test failing before the fix.
+
+    engine tests: 5,194, all passing
+
+Coverage: 12,756 of 31,780 cards (+12), 33,020 of 59,585 lines. Staples: 241 of 244.
+
 ## D736 — Ward and goad granted by a static or an attachment
 
 Two grants the static readers didn't have:

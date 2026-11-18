@@ -27066,14 +27066,23 @@ function cdaCountFor(phrase: string): CdaCount | null {
   */
   const COLOURS: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
   const TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'instant', 'sorcery'];
-  const onBoard = /^(?:(white|blue|black|red|green) )?(artifact|creature|enchantment|land|planeswalker|permanent)s (you control|your opponents control|on the battlefield)$/.exec(text);
+  const onBoard = /^(?:(white|blue|black|red|green|snow) )?(artifact|creature|enchantment|land|planeswalker|permanent)s (you control|your opponents control|on the battlefield)$/.exec(text);
   if (onBoard !== null) {
     return {
       zone: 'battlefield',
       whose: onBoard[3] === 'you control' ? 'you' : onBoard[3] === 'on the battlefield' ? 'all' : 'opponents',
       ...(onBoard[2] === 'permanent' ? {} : { anyType: [onBoard[2]!] }),
-      ...(onBoard[1] === undefined ? {} : { colour: COLOURS[onBoard[1]]! }),
+      ...(onBoard[1] === undefined ? {} : onBoard[1] === 'snow' ? { snow: true as const } : { colour: COLOURS[onBoard[1]]! }),
     };
+  }
+  // Domain (D976).
+  if (text === 'basic land types among lands you control') return 'basic-land-types-you-control';
+  // "Clerics on the battlefield", "Forests on the battlefield" (D976): a subtype, everyone's.
+  const everywhere = /^([A-Z][A-Za-z'-]*) on the battlefield$/.exec(phrase.trim());
+  if (everywhere !== null) {
+    const LANDS: Readonly<Record<string, string>> = { Plains: 'Plains', Islands: 'Island', Swamps: 'Swamp', Mountains: 'Mountain', Forests: 'Forest' };
+    const subtype = LANDS[everywhere[1]!] ?? subtypeFromTribalPhrase(everywhere[1]!, 'plural');
+    return subtype === null ? null : { subtype, whose: 'all' };
   }
   const inZone = /^(?:([a-z]+) )?cards in (your graveyard|all graveyards|your opponents' graveyards|your hand)$/.exec(text);
   if (inZone !== null && (inZone[1] === undefined || TYPES.includes(inZone[1]))) {
@@ -27222,7 +27231,8 @@ function countedSizeRate(
 
 function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
   const self = selfRef(name);
-  const text = plain(line).trim().replace(/\.\s*$/, '');
+  // An ability word in front ("Domain —", D976) is a label, not part of the sentence.
+  const text = withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, '');
   /*
     The measure a `*` names (D975): "the number of …" (D902), "N plus the number of …", "your life
     total", "your devotion to red" or "… to white and blue". `plus` is added to the count.
@@ -27254,6 +27264,14 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
     const both = measure(each[1]!);
     return both === null ? null : { statics: [{ scope: 'self', effect: { definesSize: {
       count: both.count, ...(both.plus === 0 ? {} : { powerPlus: both.plus, toughnessPlus: both.plus }),
+    } } }] };
+  }
+  // "~'s toughness is equal to …" (D976), with the printed power: People of the Woods, Daxos.
+  const toughnessOnly = new RegExp(`^${self}['’]s toughness is equal to (.+)$`, 'i').exec(text);
+  if (toughnessOnly !== null) {
+    const toughness = measure(toughnessOnly[1]!);
+    return toughness === null ? null : { statics: [{ scope: 'self', effect: { definesSize: {
+      count: toughness.count, applies: 'toughness' as const, ...(toughness.plus === 0 ? {} : { toughnessPlus: toughness.plus }),
     } } }] };
   }
   // "~'s power is equal to …" (D975), with the printed toughness, for the measures above other
