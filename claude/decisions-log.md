@@ -51221,6 +51221,6 @@ pumps ("becomes a blue Serpent with base power and toughness 5/5").
 
 Faults injected by script: 4 of 4 caught.
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,251, all passing (merged with the other session's D981)
 
 Coverage: 13,078 of 31,858 cards (+30), 33,547 of 59,790 lines (+39), against d5ad263.
