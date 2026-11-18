@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -216,6 +216,32 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     && state.turn <= inst.playFromExile.grantedTurn) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'a warped card is cast from exile on a later turn');
   }
+  /*
+    The top card of the caster's library, under a permission to cast it from there (D731): Future
+    Sight's at the printed cost, Bolas's Citadel's for life equal to its mana value instead. The
+    permission is asked of the face being cast, and the one asked for must be one the seat has.
+  */
+  const fromTop = inst.zone === 'library' && inst.zoneSeat === action.by
+    && listAt(state, zoneKey(action.by, 'library'))[0] === inst.id;
+  const topPermissions = fromTop && def !== undefined
+    ? spellsFromTopFor(state, action.by).filter((permission) => permission.applies(def))
+    : [];
+  const payLifeFromTop = action.payLifeFromTop === true;
+  if (payLifeFromTop) {
+    if (!topPermissions.some((permission) => permission.payLife === true)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'nothing lets you cast that card for life from the top of your library');
+    }
+    if (action.x !== undefined && action.x !== 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'X is 0 when a spell is cast without paying its mana cost');
+    }
+    if (action.kicked === true || action.buyback === true || (action.replicate ?? 0) > 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a spell cast for life from the top of your library pays no mana cost to add to');
+    }
+  } else if (fromTop && !topPermissions.some((permission) => permission.payLife !== true)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', topPermissions.length > 0
+      ? 'that card is cast from the top of your library for life, not for its mana cost'
+      : 'nothing lets you cast that card from the top of your library');
+  }
   if (plotCast) {
     if (state.turn <= inst.playFromExile!.grantedTurn) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'a plotted card is cast on a later turn than the one it was plotted on');
@@ -327,7 +353,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
-  } else if (!foretold && !fromCommand && !fromAdventure && !offered
+  } else if (!foretold && !fromCommand && !fromAdventure && !offered && !fromTop
     && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', inst.zone === 'exile' && inst.onAdventure === true
       ? 'that card is on an adventure in somebody else\'s exile'
@@ -722,7 +748,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   } else if (action.discarded !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} does not ask for a discard`);
   }
-  const pitchLife = pitchCast ? script?.pitch?.life ?? 0 : 0;
+  const pitchLife = pitchCast ? script?.pitch?.life ?? 0
+    // Bolas's Citadel's (D731): the mana value of the face cast, paid the same way.
+    : payLifeFromTop ? def?.cmc ?? 0 : 0;
   if (pitchLife > 0 && (state.seats[action.by]?.life ?? 0) <= pitchLife) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${pitchLife} life to pay for ${characteristics.name}`);
   }
@@ -788,7 +816,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                   : action.emerged === true && sacrificed !== null
                     ? reducedCostText(script?.emerge?.cost ?? '', state.cardDefs[state.instances[sacrificed]!.defKey]?.cmc ?? 0) ?? undefined
                   // And a plotted card's later cast (D922): without paying its mana cost.
-                  : commanderFree || pitchCast || plotCast ? '{0}'
+                  : commanderFree || pitchCast || plotCast || payLifeFromTop ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.

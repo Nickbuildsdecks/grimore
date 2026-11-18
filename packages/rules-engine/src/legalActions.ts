@@ -270,6 +270,8 @@ export interface LegalPlay {
    */
   readonly pitchCast?: boolean;
   readonly pitchWords?: string;
+  /** Cast off the top of the library for life equal to its mana value (D731): Bolas's Citadel. */
+  readonly payLifeFromTop?: boolean;
   /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
@@ -787,6 +789,16 @@ export function landsFromGraveyardFor(state: GameState, seat: SeatIndex): boolea
 /** Whether this seat's top card is revealed to everybody now (D649): Courser of Kruphix. */
 export function topRevealedFor(state: GameState, seat: SeatIndex): boolean {
   return staticsOf(state, seat).some((script) => script.topRevealed === true);
+}
+
+/** The permissions this seat has now to cast spells off the top of its library (D731). */
+export function spellsFromTopFor(state: GameState, seat: SeatIndex): NonNullable<CardScript['spellsFromTop']> {
+  return staticsOf(state, seat).flatMap((script) => script.spellsFromTop ?? []);
+}
+
+/** Whether this seat may look at its own top card now (D731): Bolas's Citadel. */
+export function lookAtTopFor(state: GameState, seat: SeatIndex): boolean {
+  return staticsOf(state, seat).some((script) => script.lookAtTop === true);
 }
 
 /** Whether this seat may play a land off the top of its library now (D649). */
@@ -1425,6 +1437,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     creature a Banisher Priest took — `foretoldTurn` is what tells them apart, and it belongs to
     whoever foretold it rather than to whoever owns the card.
   */
+  const topSpells = spellsFromTopFor(state, seat);
   const zones = [
     ...listAt(state, zoneKey(seat, 'hand'))
       .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
@@ -1511,10 +1524,11 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         fromAdventure: false, impulse: false, offered: false, landOnly: true,
       })),
     // And the top card of the library, when Courser of Kruphix says its lands may be played (D649).
-    ...(landsFromTopFor(state, seat) ? listAt(state, zoneKey(seat, 'library')).slice(0, 1) : [])
+    // And its spells, when Future Sight or Bolas's Citadel says so (D731): one entry for both.
+    ...(landsFromTopFor(state, seat) || topSpells.length > 0 ? listAt(state, zoneKey(seat, 'library')).slice(0, 1) : [])
       .map((id) => ({
         id, fromCommand: false, flashback: false, escape: false, foretold: false,
-        fromAdventure: false, impulse: false, offered: false, landOnly: true, fromTop: true,
+        fromAdventure: false, impulse: false, offered: false, landOnly: topSpells.length === 0, fromTop: true,
       })),
     ...(state.pendingOfferedCast !== null && state.pendingOfferedCast.seat === seat
       ? [{
@@ -1574,6 +1588,18 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const script = scriptForCard(def);
     // A graveyard entry under Crucible of Worlds is a land drop or nothing (D648).
     if (landOnly && !ch.isLand) continue;
+    /*
+      The top of the library (D731): a land only under a land permission, a spell only under a
+      spell permission whose kind it is. Which costs that leaves is settled with the alternatives.
+    */
+    const fromTop = 'fromTop' in entry && entry.fromTop === true;
+    if (fromTop && ch.isLand && !landsFromTopFor(state, seat)) continue;
+    const topPermissions = fromTop && !ch.isLand && def !== undefined
+      ? topSpells.filter((permission) => permission.applies(def))
+      : [];
+    if (fromTop && !ch.isLand && topPermissions.length === 0) continue;
+    const topPrinted = !fromTop || topPermissions.some((permission) => permission.payLife !== true);
+    const topLife = topPermissions.some((permission) => permission.payLife === true);
 
     /*
       Morph: the same card offered a second time, as a {3} face-down 2/2 (CR 702.37a).
@@ -1588,7 +1614,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       in your hand, and nothing in this pool has both.
     */
     if (script?.morph !== undefined && !flashback && !escape && !retrace && !fromCommand && !fromAdventure
-      && sorcerySpeed) {
+      && !fromTop && sorcerySpeed) {
       const faceDownCost = parseManaCost(MORPH_COST);
       if (canAfford(poolOf(state, seat), faceDownCost, sources)) {
         out.push({
@@ -1630,7 +1656,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         const named = half === undefined
           ? `Play ${ch.name}${impulse
             ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
-            : landOnly ? ('fromTop' in entry ? ' from the top of your library' : ' from your graveyard') : ''}`
+            : fromTop ? ' from the top of your library' : landOnly ? ' from your graveyard' : ''}`
           : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`;
         /*
           A land that chooses a colour as it enters (D642) is offered once per colour, which is
@@ -1688,7 +1714,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       which in this engine is the window a sorcery gets.
     */
     if (script?.foretell !== undefined && !flashback && !escape && !retrace && !fromCommand && !foretold
-      && !fromAdventure && sorcerySpeed) {
+      && !fromAdventure && !fromTop && sorcerySpeed) {
       const cost = parseManaCost(FORETELL_COST);
       if (canAfford(poolOf(state, seat), cost, sources)) {
         out.push({
@@ -1711,7 +1737,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       needs to plan around, so the row says it.
     */
     if (script?.suspend !== undefined && !flashback && !escape && !retrace && !fromCommand && !foretold
-      && !fromAdventure && sorcerySpeed) {
+      && !fromAdventure && !fromTop && sorcerySpeed) {
       const cost = parseManaCost(script.suspend.cost);
       if (cost.unsupported === undefined && canAfford(poolOf(state, seat), cost, sources)) {
         const counters = Math.max(1, script.suspend.counters);
@@ -1763,7 +1789,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       be being cast for two costs at once. A card with evoke *and* dash would be offered twice
       here, which is also what the rules say happens.
     */
-    const alternatives = flashback || escape || retrace || foretold || fromCommand || fromAdventure || offered
+    const printedAlternatives = flashback || escape || retrace || foretold || fromCommand || fromAdventure || offered
+      // Every one of these is paid from the hand (D731): the top of the library has only its own.
+      || fromTop
       ? []
       : [
         /*
@@ -1887,6 +1915,20 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           specs: [] as readonly TargetSpec[],
         }]),
       ];
+    /*
+      Bolas's Citadel's cost (D731): life equal to the spell's mana value instead of its mana cost,
+      offered while the life is there to pay without ending the game (the line D585 draws).
+    */
+    const topLifeCost = def?.cmc ?? 0;
+    const alternatives = [
+      ...printedAlternatives,
+      ...(!topLife || (state.seats[seat]?.life ?? 0) <= topLifeCost ? [] : [{
+        flag: 'payLifeFromTop' as const,
+        cost: '{0}',
+        note: `cost from the top of your library (${topLifeCost} life)`,
+        specs: specsFor(script),
+      }]),
+    ];
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def, id);
       const altCost = withCostChange(parseManaCost(alternative.cost), altChange.generic);
@@ -1911,9 +1953,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       });
     }
 
+    // A top card the only permission for is Bolas's Citadel's has no printed cast (D731).
+    if (!topPrinted) continue;
+
     // Emerge (D929): an alternative cost paid partly with a creature, one play with its creatures.
     if (script?.emerge !== undefined && !flashback && !escape && !retrace
-      && !foretold && !fromCommand && !fromAdventure && !offered) {
+      && !foretold && !fromCommand && !fromAdventure && !offered && !fromTop) {
       const emergeChange = costChangeFor(state, seat, def, id);
       const emergeTargets = playableTargets(state, specsFor(script), seat, id);
       const fodder = emergeTargets.ok

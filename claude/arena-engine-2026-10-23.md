@@ -32803,3 +32803,56 @@ Faults injected by hand: 5 of 5 caught, run again after the refactor.
     engine tests: 5,137, all passing
 
 Coverage: 12,581 of 31,743 cards (+8), 32,627 of 59,509 lines (+9). Staples: 241 of 244.
+
+## D731 — Spells cast from the top of the library, and Bolas's Citadel's life
+
+"You may cast <kind> spells from the top of your library." is on 43 legal cards (Future Sight,
+Mystic Forge, Vizier of the Menagerie, Garruk's Horde, Sigarda, Font of Blessings, Melek…).
+Bolas's Citadel adds "If you cast a spell this way, pay life equal to its mana value rather than
+pay its mana cost." Courser's land permission (D649) was the only part the engine already had.
+
+How it is read (`spellsFromTopFromLine`, `CardScript.spellsFromTop`):
+- **The kinds are D940's spell kinds**, joined by "and", "or" and commas, any of which lets the
+  card be cast: "artifact spells and colorless spells", "Cleric, Rogue, Warrior, and Wizard
+  spells", "instant and sorcery spells". "Play lands and" in front also sets `landsFromTop`.
+- **Left unread:** a kind with a condition ("with flying", "with mana value 4 or greater", "of the
+  chosen type", "historic"), and any rider sentence except the Citadel's (Elsha's flash, Thundermane
+  Dragon's haste, Mikey & Don's counter).
+- **"You may look at the top card of your library any time."** is `lookAtTop`: the controller's own
+  view gets the top card and `libraryTop`; nobody else's does.
+
+How it plays:
+- **One library entry for lands and spells.** A land on top is a land drop only under a land
+  permission. A spell is offered only when a permission of its kind applies, at its ordinary timing.
+- **The printed cost only under a printed permission.** Under the Citadel alone the only row is the
+  life cast. It costs `{0}` plus life equal to the mana value of the face cast, and is offered while
+  that leaves the caster alive (D585's line). Cost increases still apply, paid in mana.
+- **Not from the top:** the hand's alternative costs (evoke, dash, pitch and the rest), morph,
+  foretell, suspend and emerge. Each of those is paid from the hand.
+- **Refused on a life cast:** X other than 0, the kicker, buyback and replicate. There is no mana
+  cost left for them to add to.
+- **The action.** `auto:cast` with `payLifeFromTop` carries the life cast. The bot and the table
+  client send it as one more cost flag. A plain cast of the top card is refused unless a printed
+  permission of its kind applies.
+
+The Citadel's third line ("{T}, Sacrifice ten nonland permanents") needs a cost that sacrifices
+several permanents, which the engine does not have. That is D732.
+
+**Tests.** 6 engine tests:
+- the family reads, and conditioned kinds stay unread;
+- the Citadel casts the top card for 3 life, taps nothing, and offers no mana row;
+- a land on top is the land drop; the life row is withheld at 6 life against a 6-mana spell;
+  nothing is offered without the Citadel; the second card from the top is refused;
+- the controller sees the top card and the opponent does not;
+- a creature permission casts a creature at its printed cost and in its own main phase only;
+  a sorcery and a land are not its kind;
+- a permission naming two kinds casts either.
+
+Faults injected by script: 16 of 17 caught. The miss removes the own-side check before the look
+permission, and nothing observable changes: another seat's library top is never put in an
+opponent's view to be shown.
+
+    engine tests: 5,143, all passing
+
+Coverage: 12,590 of 31,743 cards (+8), 32,691 of 59,509 lines (+62), against 700bd75. Staples:
+241 of 244 (Bolas's Citadel waits on D732).

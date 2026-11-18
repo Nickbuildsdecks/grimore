@@ -27463,6 +27463,35 @@ function costModifierFromLine(line: string, name: string): Partial<CardScript> |
   };
 }
 
+/**
+ * "You may cast <kind> spells from the top of your library." (D731), with "play lands and" in front
+ * (Future Sight) and Bolas's Citadel's "If you cast a spell this way, pay life equal to its mana
+ * value rather than pay its mana cost." after. The kinds are spell kinds as the cost modifiers read
+ * them (D940), joined by "and"/"or" and commas, any one of which lets the card be cast: "artifact
+ * spells and colorless spells", "Cleric, Rogue, Warrior, and Wizard spells". A kind with a
+ * condition on it ("with flying", "with mana value 4 or greater", "of the chosen type") stays
+ * unread, and so does a rider sentence other than the Citadel's.
+ */
+function spellsFromTopFromLine(line: string): Partial<CardScript> | null {
+  const m = /^you may (play lands and )?cast (.+?) from the top of your library\.( if you cast a spell this way, pay life equal to its mana value rather than pay its mana cost\.)?$/i
+    .exec(`${plain(line).trim().replace(/\.?$/, '')}.`);
+  if (m === null) return null;
+  const words = m[2]!.trim();
+  if (!/spells$/i.test(words)) return null;
+  const parts = words.replace(/\s*\bspells\b/gi, '').trim();
+  const tests = parts === ''
+    ? [spellKindTest('')]
+    : parts.split(/\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+/).map((part) => spellKindTest(part));
+  if (tests.length === 0 || tests.some((test) => test === null)) return null;
+  return {
+    ...(m[1] === undefined ? {} : { landsFromTop: true as const }),
+    spellsFromTop: [{
+      applies: (card: CardDef) => tests.some((test) => test!(card)),
+      ...(m[3] === undefined ? {} : { payLife: true as const }),
+    }],
+  };
+}
+
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
@@ -27589,6 +27618,10 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // The top of the library (D649): Courser of Kruphix, Oracle of Mul Daya.
   if (/^play with the top card of your library revealed\.?$/i.test(plain(line).trim())) return { topRevealed: true };
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
+  // "You may look at the top card of your library any time." (D731): Bolas's Citadel, Vizier.
+  if (/^you may look at the top card of your library any time\.?$/i.test(plain(line).trim())) return { lookAtTop: true };
+  const fromTop = spellsFromTopFromLine(line);
+  if (fromTop !== null) return fromTop;
   const anthem = /^(other )?creatures you control get \+(\d+)\/\+(\d+)$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (anthem === null) return null;
