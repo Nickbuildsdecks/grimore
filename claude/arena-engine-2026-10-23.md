@@ -33963,6 +33963,6 @@ they read too wherever the thing counted is one of these.
 Faults injected by script: 5 of 5 caught, two after pinning (a non-land in the graveyard, and a
 creature that didn't attack).
 
-    engine tests: 5,272, all passing
+    engine tests: 5,275, all passing (merged with the other session's D984)
 
 Coverage: 13,165 of 31,900 cards (+20), 33,708 of 59,888 lines (+26), against 9f5db7f.
