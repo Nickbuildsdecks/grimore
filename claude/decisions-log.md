@@ -51519,3 +51519,32 @@ which the fold makes unreachable, and it is removed.
     engine tests: 5,284, all passing (merged with the other session's D747)
 
 Coverage: 13,187 of 31,900 cards (+27), 33,748 of 59,888 lines (+38).
+
+## D987 — Hand attacks on a hit
+
+"Whenever ~ deals combat damage to a player, that player reveals their hand. You choose a nonland
+card from it. That player discards that card." The targeted sentence ("Target opponent reveals …")
+has read since D531. On a hit it stayed unread: the general "that player" swap (D530) refuses a
+pronoun that stands twice.
+
+- The hit-player block now reads it directly. It is rewritten to the targeted sentence and read by
+  `chosenDiscardPrefix`, then the target is dropped and the hand becomes the hit player's.
+- That needs `CardsDecisionSpec.fromSeat: 'hit-player'`: the pool is the seat the stack object's
+  `attacked` names, resolved where `target-player`'s pool is. With no hit there is no pool, as with
+  no target.
+- Two more spellings: "look at that player's hand and choose a card from it. The player discards
+  that card", and "… That player exiles that card" (the exile form).
+
+**Tests.** 4 engine tests:
+- the three spellings read;
+- the attacker chooses only nonland cards, all from the hit player's hand, and the chosen card goes
+  to that player's graveyard;
+- "that player exiles that card" sends it to exile;
+- "look at … and choose a card" offers the land too.
+
+Faults injected by script: 5. 3 were caught at once. Of the misses, the exile spelling is now
+pinned. A rest-of-clauses check was unreachable (the regex allows nothing after) and is removed.
+
+    engine tests: 5,288, all passing
+
+Coverage: 13,193 of 31,900 cards (+6), 33,755 of 59,888 lines (+7).
