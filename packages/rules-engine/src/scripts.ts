@@ -29339,6 +29339,35 @@ function interveningConditionRows(
   if (/^you haven't cast a spell this turn$/i.test(text)) {
     return (c) => (c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0) === 0;
   }
+  /*
+    D747: "if you've cast another spell this turn" — another than this card's own casting, which the
+    tally already holds when this card is the spell resolving or a permanent cast this turn, and does
+    not yet hold when the question is a cost reduction asked before it is cast.
+  */
+  if (/^you(?:'ve| have) cast another spell this turn$/i.test(text)) {
+    return (c) => {
+      const cast = c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0;
+      const resolvingItself = c.resolving?.kind === 'spell' && c.resolving.source === c.source;
+      const record = c.state.castPermanents?.[c.source];
+      const inst = c.state.instances[c.source];
+      const castItself = resolvingItself || (record !== undefined && inst !== undefined
+        && record.seq === (inst.objectSeq ?? 0) && (inst.enteredTurn ?? -1) === c.state.turn);
+      return cast - (castItself ? 1 : 0) >= 1;
+    };
+  }
+  // "If an opponent cast two or more spells this turn" (D747): any one opponent's tally.
+  const opponentCast = /^an opponent (?:has )?cast (a|two or more|three or more) spells? this turn$/i.exec(text);
+  if (opponentCast !== null) {
+    const atLeast = opponentCast[1]!.startsWith('two') ? 2 : opponentCast[1]!.startsWith('three') ? 3 : 1;
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller
+      && (c.state.spellsCastThisTurnBy[String(seat.index)] ?? 0) >= atLeast);
+  }
+  // "If you've drawn two or more cards this turn" (D747): `cardsDrawnThisTurn`.
+  const drew = /^you(?:'ve| have) drawn (two|three|four) or more cards this turn$/i.exec(text);
+  if (drew !== null) {
+    const atLeast = WORD_NUMBERS[drew[1]!.toLowerCase()]!;
+    return (c) => (c.state.cardsDrawnThisTurn[String(c.controller)] ?? 0) >= atLeast;
+  }
   if (/^you gained life this turn$/i.test(text)) {
     return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
   }

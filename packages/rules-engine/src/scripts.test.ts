@@ -23668,6 +23668,64 @@ describe('"a card named …", searched for in the library and/or graveyard (D986
   });
 });
 
+describe('turn conditions: another spell, an opponent\'s spells, cards drawn (D747)', () => {
+  const R = (name: string, type: string, text: string, cost = '{0}', cmc = 0, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors: ['U'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Flurry', 'Sorcery', "This spell costs {2} less to cast if you've cast another spell this turn.\nYou gain 1 life.", '{2}', 2),
+    R('Test Adept', 'Creature — Human Wizard', "When Test Adept enters, if you've cast another spell this turn, you gain 2 life.", '{0}', 0, { power: '1', toughness: '1' }),
+    R('Test Watcher', 'Creature — Human Wizard', 'When Test Watcher enters, if an opponent cast two or more spells this turn, you gain 3 life.', '{0}', 0, { power: '1', toughness: '1' }),
+    R('Test Scholar', 'Creature — Human Wizard', "When Test Scholar enters, if you've drawn two or more cards this turn, you gain 4 life.", '{0}', 0, { power: '1', toughness: '1' }),
+    R('Test Opt', 'Instant', 'You gain 1 life.'),
+  ];
+  const deck = customDeck({
+    id: 'd747', name: 'Turn facts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd747', 1: 'd747' }, deckSpecs: { d747: deck.deck }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) })), 20);
+  const offered = (s: GameState, card: string) => legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', card));
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a cost that falls once another spell has been cast this turn', () => {
+    let s = table(['Test Flurry', 'Test Opt']);
+    expect(offered(s, 'Test Flurry')).toBe(false);
+    s = cast(s, 'Test Opt');
+    expect(offered(s, 'Test Flurry')).toBe(true);
+  });
+
+  it("'another spell' on an enters trigger does not count the creature's own casting", () => {
+    const alone = table(['Test Adept']);
+    expect(cast(alone, 'Test Adept').seats[0]!.life).toBe(alone.seats[0]!.life);
+    let s = cast(table(['Test Adept', 'Test Opt']), 'Test Opt');
+    const life = s.seats[0]!.life;
+    s = cast(s, 'Test Adept');
+    expect(s.seats[0]!.life).toBe(life + 2);
+  });
+
+  it("an opponent's two spells, and two cards drawn", () => {
+    const s = table(['Test Watcher', 'Test Scholar']);
+    expect(cast(s, 'Test Watcher').seats[0]!.life).toBe(s.seats[0]!.life);
+    // Your own two spells are not an opponent's.
+    const mine = { ...s, spellsCastThisTurnBy: { ...s.spellsCastThisTurnBy, '0': 2 } };
+    expect(cast(mine, 'Test Watcher').seats[0]!.life).toBe(s.seats[0]!.life);
+    const busy = { ...s, spellsCastThisTurnBy: { ...s.spellsCastThisTurnBy, '1': 2 } };
+    expect(cast(busy, 'Test Watcher').seats[0]!.life).toBe(s.seats[0]!.life + 3);
+    const one = { ...s, cardsDrawnThisTurn: { ...s.cardsDrawnThisTurn, '0': 1 } };
+    expect(cast(one, 'Test Scholar').seats[0]!.life).toBe(s.seats[0]!.life);
+    const two = { ...s, cardsDrawnThisTurn: { ...s.cardsDrawnThisTurn, '0': 2 } };
+    expect(cast(two, 'Test Scholar').seats[0]!.life).toBe(s.seats[0]!.life + 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

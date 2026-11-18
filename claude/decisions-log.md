@@ -51460,3 +51460,29 @@ pinned, and the intervening-if context's X is reverted as unreachable.
     engine tests: 5,277, all passing (merged with the other session's D746)
 
 Coverage: 13,160 of 31,900 cards (+4), 33,710 of 59,888 lines (+12).
+
+## D747 — Turn conditions: another spell, an opponent's spells, cards drawn
+
+Three more conditions for the intervening-if reader. Self cost reductions, triggers' "if" and
+D742's spell "If …" all ask it:
+- **"You've cast another spell this turn":** another than this card's own casting. The per-seat
+  tally already holds that when this card is the spell resolving, or a permanent cast this turn
+  (its D607 record, current and entered this turn). It doesn't hold it yet when the question is a
+  cost reduction asked before casting.
+- **"An opponent cast two or more spells this turn":** any one opponent's tally.
+- **"You've drawn two or more cards this turn":** `cardsDrawnThisTurn`.
+
+A small family (+4 cards), most of whose printings have a second unread line.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a {2} spell that falls by {2} once another spell has been cast is offered then, and not before;
+- "another spell" on an enters trigger: alone, no life; after an instant, the life;
+- an opponent's two spells give the life and your own two don't; two cards drawn do and one doesn't.
+
+Faults injected by script: 4 of 4 caught, one after pinning (your own spells counted as an
+opponent's).
+
+    engine tests: 5,281, all passing
+
+Coverage: 13,185 of 31,900 cards (+4), 33,743 of 59,888 lines (+5), against 01222a7.
