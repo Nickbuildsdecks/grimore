@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, untapPermanent } from './effects.js';
 import { preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
@@ -46,7 +46,7 @@ import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersO
 import { opponentLandColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
-import type { Step, Target } from './turnTypes.js';
+import type { StackObject, Step, Target } from './turnTypes.js';
 import { relocate } from './cardActions.js';
 import { legalDefenders, meetBlockRequirements } from './combat.js';
 
@@ -22727,6 +22727,60 @@ describe('a soft counter for {X} or for a count: Power Sink, and "{1} for each �
     const empty = drain(passBoth(answer('Test Tithe')));
     expect(empty.pendingPayment).toBeNull();
     expect(namesIn(empty, 1, 'battlefield')).toContain('Test Bear');
+  });
+});
+
+describe('omen: an adventurer whose spell is shuffled into the library (D979)', () => {
+  const ROW = {
+    name: 'Test Wyrm', type_line: 'Creature — Dragon', oracle_text: 'Flying', mana_cost: '{0}', cmc: 0, colors: ['G'],
+    layout: 'omen', power: '3', toughness: '3',
+    card_faces: [
+      { name: 'Test Wyrm', type_line: 'Creature — Dragon', oracle_text: 'Flying', mana_cost: '{0}', colors: ['G'], power: '3', toughness: '3' },
+      { name: 'Test Portent', type_line: 'Sorcery — Omen', oracle_text: 'You gain 3 life. (Then shuffle this card into its owner\'s library.)', mana_cost: '{0}', colors: ['G'] },
+    ],
+  };
+  const deck = customDeck({
+    id: 'd979', name: 'Omens', entries: [{ name: 'Test Wyrm', count: 10 }, { name: 'Forest', count: 30 }], data: [ROW] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd979', 1: 'd979' }, deckSpecs: { d979: deck.deck }, hands: { 0: ['Test Wyrm'] },
+    battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState) => {
+    let t = s;
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole, with an omen face', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROW as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.def.faces?.kind).toBe('omen');
+  });
+
+  it('the omen resolves and its card is shuffled into its owner\'s library', () => {
+    const s = table();
+    const card = find(s, 0, 'hand', 'Test Wyrm');
+    const casts = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast');
+    expect(casts.map((p) => p.half ?? null).sort()).toEqual([0, null]);
+    const life = s.seats[0]!.life;
+    const library = ids(s, 0, 'library').length;
+    const done = settle(drain(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action), 30));
+    expect(done.seats[0]!.life).toBe(life + 3);
+    expect(done.instances[card]!.zone).toBe('library');
+    expect(ids(done, 0, 'library')).toHaveLength(library + 1);
+    expect(done.instances[card]!.onAdventure).toBeUndefined();
+  });
+
+  it('countered, it goes to the graveyard; cast as the creature, it is a creature', () => {
+    const s = table();
+    const card = find(s, 0, 'hand', 'Test Wyrm');
+    const object = { id: 'o', kind: 'spell', controller: 0, source: card, description: 'Test Portent', omen: true } as unknown as StackObject;
+    expect(spellLeavesStack(s, object, s.instances[card]!, false).instances[card]!.zone).toBe('graveyard');
+    expect(spellLeavesStack(s, object, s.instances[card]!, true).instances[card]!.zone).toBe('library');
+    const creature = settle(drain(apply(s, { type: 'auto:cast', by: 0, card } as Action), 30));
+    expect(creature.instances[card]!.zone).toBe('battlefield');
   });
 });
 

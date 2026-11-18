@@ -1259,6 +1259,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       creature spell and goes to the battlefield like one.
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
+    // And an omen's (D979): its card is shuffled into the library as it resolves, not exiled.
+    ...(faces?.kind === 'omen' && faceKey !== undefined ? { omen: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${boughtBackText}${replicatedText}${flashbackText}${escapedText}`
       + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${spectacledText}`
       + `${overloadedText}${offeredText}${modeText}`,

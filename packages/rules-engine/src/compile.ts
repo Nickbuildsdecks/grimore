@@ -602,6 +602,8 @@ const FACE_LAYOUTS: Readonly<Record<string, CardFaces['kind']>> = {
   adventure: 'adventure', modal: 'modal', modal_dfc: 'modal', transform: 'transform',
   // A creature and the spell it casts copies of while prepared (D978). See `CardInstance.prepared`.
   prepare: 'prepare',
+  // An adventurer whose spell is shuffled into the library as it resolves (D979).
+  omen: 'omen',
 };
 
 /** `card_faces` as a list, from the array Scryfall writes or the JSON text the database holds. */

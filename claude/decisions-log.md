@@ -51026,6 +51026,35 @@ Faults injected by script: 6 of 6 caught.
 Coverage: 12,937 of 31,798 cards (+34), 33,275 of 59,619 lines (+54), against d1f1a0d. Pod sweep
 58901 (D735–D739): every game finished.
 
+## D979 — Omen: an adventurer whose spell goes back into the library
+
+The "omen" layout (16 legal cards, the Dragons of Tarkir Dragonstorm) is a creature with an instant
+or sorcery beside it. The compiler refused all of them as "more than one face".
+
+It is the adventurer's shape with a different destination, so it is built the same way:
+- `CardFaces.kind` gains `omen`, and the compiler builds it like an adventure. From the hand both
+  faces are offered.
+- A cast of the spell face marks its stack object `omen`.
+- `spellLeavesStack` shuffles a **resolved** omen into its owner's library ("Then shuffle this
+  card into its owner's library"). A countered one goes to the graveyard, as a countered adventure
+  does. Flashback's exile still wins (CR 702.33a).
+
+6 of the 16 read whole. The rest have lines no reader has yet (seek, "secretly choose", a ward
+cost of a discard).
+
+**Tests.** 3 engine tests:
+- the card reads, with an omen face;
+- both casts are offered from the hand, and the omen resolves (+3 life) with the card shuffled into
+  the library;
+- a countered omen goes to the graveyard, and the creature cast is a creature.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,232, all passing (merged with the other session's D740)
+
+Coverage: 12,931 of 31,858 cards, 33,352 of 59,790 lines (with the other session's D738 and D739
+merged; the omen cards are +6).
+
 ## D741 — Lands described by type and state: "a non-Lair land", "an untapped Island", "two Swamps"
 
 `permanentDescribed` reads the permanents a choice, a bounce or a sacrifice is about. It knew types,

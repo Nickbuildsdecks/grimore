@@ -158,8 +158,11 @@ export interface CardFaces {
    * `prepare` (D978): a creature with a spell printed on it that is never cast from the hand. Its
    * one other face is the spell the creature lets you cast **a copy of** while it is prepared; see
    * `CardInstance.prepared`.
+   *
+   * `omen` (D979): an adventurer's shape, a creature with an instant or sorcery beside it, whose
+   * spell is shuffled into its owner's library as it resolves rather than exiled.
    */
-  readonly kind: 'split' | 'adventure' | 'modal' | 'transform' | 'prepare';
+  readonly kind: 'split' | 'adventure' | 'modal' | 'transform' | 'prepare' | 'omen';
   readonly cards: readonly CardDef[];
 }
 
