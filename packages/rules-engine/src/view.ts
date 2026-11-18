@@ -107,6 +107,8 @@ export interface VisibleCard {
    * continuous effect — nothing about the creature is different — so it travels on its own.
    */
   readonly frozen?: true;
+  /** Prepared (D978): its controller may cast a copy of its spell. Public, as a designation is. */
+  readonly prepared?: true;
   /**
    * Whether this permanent is **currently** a creature, which is not the same question as whether
    * its card has power printed on it.
@@ -360,6 +362,7 @@ export interface PackedCard {
   readonly cantAttack?: true;
   readonly cantBlock?: true;
   readonly frozen?: true;
+  readonly prepared?: true;
   readonly damagePrevented?: true;
   readonly shielded?: number;
 }
@@ -426,6 +429,7 @@ export function packView(view: GameView): PackedView {
     if (card.keywords !== undefined && card.keywords.length > 0) packed.keywords = card.keywords;
   if (card.isCreature === true) packed.isCreature = true;
     if (card.frozen === true) packed.frozen = true;
+    if (card.prepared === true) packed.prepared = true;
     if (card.cantAttack === true) packed.cantAttack = true;
     if (card.cantBlock === true) packed.cantBlock = true;
     if (card.damagePrevented === true) packed.damagePrevented = true;
@@ -477,6 +481,7 @@ export function unpackView(packed: PackedView): GameView {
           ? { keywords: [] } : {}),
       ...(card.isCreature === true ? { isCreature: true as const } : {}),
       ...(card.frozen === true ? { frozen: true as const } : {}),
+      ...(card.prepared === true ? { prepared: true as const } : {}),
       ...(card.cantAttack === true ? { cantAttack: true } : {}),
       ...(card.cantBlock === true ? { cantBlock: true } : {}),
       ...(card.damagePrevented === true ? { damagePrevented: true } : {}),
@@ -622,6 +627,7 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     */
     ...(granted.length === 0 ? {} : { granted }),
     ...(inst.frozen === true ? { frozen: true as const } : {}),
+    ...(inst.prepared === true ? { prepared: true as const } : {}),
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),
     ...(combatDamagePrevented(state, inst) ? { damagePrevented: true } : {}),

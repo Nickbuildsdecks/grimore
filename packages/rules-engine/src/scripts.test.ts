@@ -38,7 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
+import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, untapPermanent } from './effects.js';
 import { preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
@@ -7967,6 +7967,8 @@ describe('deck coverage', () => {
       'script prototype',
       'script cipher',
       'script umbraArmor',
+      // Prepare (D978): 50 legal cards carry both faces; the compiler reads them, no pool deck plays one.
+      'script entersPrepared',
       'trigger reflexive',
     ]);
 
@@ -22432,6 +22434,132 @@ describe('board conditions on a static: "as long as you control another artifact
   it('"two or more Wizards" needs two', () => {
     expect(ch(table(['Test Captain', 'Test Wizard']), 'Test Captain').power).toBe(2);
     expect(ch(table(['Test Captain', 'Test Wizard', 'Test Wizard']), 'Test Captain').power).toBe(3);
+  });
+});
+
+describe('prepare: "While it\'s prepared, you may cast a copy of its spell" (D978)', () => {
+  const P = (name: string, text: string, spell: { name: string; type: string; cost: string; text: string }) => ({
+    name, type_line: 'Creature — Human Wizard', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'],
+    layout: 'prepare', power: '2', toughness: '2',
+    card_faces: [
+      { name, type_line: 'Creature — Human Wizard', oracle_text: text, mana_cost: '{0}', colors: ['W'], power: '2', toughness: '2' },
+      { name: spell.name, type_line: spell.type, oracle_text: spell.text, mana_cost: spell.cost, colors: ['W'] },
+    ],
+  });
+  const ROWS = [
+    P('Test Scholar', 'This creature enters prepared. (While it\'s prepared, you may cast a copy of its spell. Doing so unprepares it.)',
+      { name: 'Test Lesson', type: 'Sorcery', cost: '{1}', text: 'You gain 3 life.' }),
+    P('Test Duelist', 'Whenever this creature attacks, it becomes prepared.',
+      { name: 'Test Insight', type: 'Instant', cost: '{0}', text: 'Draw a card.' }),
+    P('Test Waiter', 'At the beginning of your upkeep, if this creature isn\'t prepared, it becomes prepared.',
+      { name: 'Test Patience', type: 'Sorcery', cost: '{0}', text: 'You gain 1 life.' }),
+  ];
+  const deck = customDeck({
+    id: 'd978', name: 'Prepared',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 10 })), { name: 'Plains', count: 30 }],
+    data: ROWS as never[],
+  });
+  const table = (extra: { hands?: string[]; battlefield?: string[] } = {}) => advanceTo(arena({
+    decks: { 0: 'd978', 1: 'd978' }, deckSpecs: { d978: deck.deck },
+    hands: { 0: extra.hands ?? [] }, battlefield: { 0: extra.battlefield ?? [], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const prepare = (s: GameState, id: string): GameState =>
+    ({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, prepared: true } } });
+  const copies = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.preparedCopy === true);
+  const resolve = (s: GameState) => {
+    let t = s;
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads whole, as a creature with a prepare face', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      const read = compileCard(row as never);
+      expect(read, row.name).toMatchObject({ ok: true, unread: [] });
+      expect(read.ok && read.def.faces?.kind, row.name).toBe('prepare');
+    }
+    // A prepare row the data carries with one face has no spell to copy, and stays refused.
+    const lone = { ...ROWS[0]!, card_faces: [ROWS[0]!.card_faces[0]] };
+    expect(compileCard(lone as never).ok).toBe(false);
+  });
+
+  it('from the hand it is the creature only: the spell is never cast from there', () => {
+    const s = table({ hands: ['Test Scholar'], battlefield: ['Plains'] });
+    const card = find(s, 0, 'hand', 'Test Scholar');
+    const casts = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast');
+    expect(casts).toHaveLength(1);
+    expect(casts[0]!.half).toBeUndefined();
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)).toThrow(/only as a copy/);
+  });
+
+  it('enters prepared; the copy is cast for the spell\'s cost, unprepares it, resolves, and is gone', () => {
+    const s = table({ hands: ['Test Scholar'], battlefield: ['Plains'] });
+    const card = find(s, 0, 'hand', 'Test Scholar');
+    const entered = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card } as Action), 30));
+    expect(entered.instances[card]!.zone).toBe('battlefield');
+    expect(entered.instances[card]!.prepared).toBe(true);
+    const offer = copies(entered);
+    expect(offer).toHaveLength(1);
+    expect(offer[0]).toMatchObject({ card, half: 0, manaCost: '{1}' });
+    expect(offer[0]!.description).toBe('Cast a copy of Test Lesson (prepared)');
+    const before = entered.seats[0]!.life;
+    const known = new Set(Object.keys(entered.instances));
+    const cast = drain(apply(entered, { type: 'auto:cast', by: 0, card, half: 0, preparedCopy: true } as Action), 30);
+    expect(cast.instances[card]!.prepared).toBeUndefined();
+    expect(copies(cast)).toHaveLength(0);
+    const done = resolve(cast);
+    expect(done.seats[0]!.life).toBe(before + 3);
+    // The copy left the game as it left the stack (CR 707.12); the creature card is where it was.
+    expect(Object.keys(done.instances).filter((id) => !known.has(id))).toEqual([]);
+    expect(done.instances[card]!.zone).toBe('battlefield');
+    // And casting it again is refused: it is no longer prepared.
+    expect(() => apply(done, { type: 'auto:cast', by: 0, card, half: 0, preparedCopy: true } as Action)).toThrow(/not a prepared permanent/);
+  });
+
+  it('a sorcery copy waits for sorcery timing; leaving the battlefield unprepares', () => {
+    const s = table({ battlefield: ['Test Waiter'] });
+    const waiter = find(s, 0, 'battlefield', 'Test Waiter');
+    const ready = prepare(s, waiter);
+    expect(copies(ready)).toHaveLength(1);
+    // Not while a spell is on the stack.
+    const busy = { ...ready, stackOrder: ['x'], stackObjects: { x: { id: 'x', kind: 'ability', controller: 1, source: waiter, description: 'x' } } } as unknown as GameState;
+    expect(copies(busy)).toHaveLength(0);
+    // Not for another seat: the copy is its controller's to cast.
+    expect(preparedCopyOf(ready, waiter, 1)).toBeNull();
+    expect(preparedCopyOf(ready, waiter, 0)).not.toBeNull();
+    // A creature that leaves is a new object, and not prepared, wherever it went (CR 400.7).
+    const bounced = bounceToHand(ready, waiter);
+    expect(bounced.instances[waiter]!.prepared).toBeUndefined();
+    expect(() => apply(bounced, { type: 'auto:cast', by: 0, card: waiter, half: 0, preparedCopy: true } as Action)).toThrow(/not a prepared permanent/);
+  });
+
+  it('"if this creature isn\'t prepared, it becomes prepared": at the upkeep', () => {
+    let s = table({ battlefield: ['Test Waiter'] });
+    const waiter = find(s, 0, 'battlefield', 'Test Waiter');
+    // This turn's upkeep, which the table walked through on the way to the main phase.
+    expect(s.instances[waiter]!.prepared).toBe(true);
+    s = { ...s, instances: { ...s.instances, [waiter]: { ...s.instances[waiter]!, prepared: undefined } } } as GameState;
+    // Round to seat 0's next turn: not on the opponent's upkeep, and again on its own.
+    s = nextTurn(s);
+    expect(s.instances[waiter]!.prepared).toBeUndefined();
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.instances[waiter]!.prepared).toBe(true);
+  });
+
+  it('an instant copy is offered in combat, once the attack made it prepared', () => {
+    let s = table({ battlefield: ['Test Duelist'] });
+    const duelist = find(s, 0, 'battlefield', 'Test Duelist');
+    s = { ...s, instances: { ...s.instances, [duelist]: { ...s.instances[duelist]!, enteredTurn: 0 } } };
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: duelist, defender: 1 }] } as Action), 30);
+    s = resolve(s);
+    expect(s.instances[duelist]!.prepared).toBe(true);
+    const offer = copies(s);
+    expect(offer).toHaveLength(1);
+    const hand = ids(s, 0, 'hand').length;
+    const done = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card: duelist, half: 0, preparedCopy: true } as Action), 30));
+    expect(ids(done, 0, 'hand')).toHaveLength(hand + 1);
   });
 });
 

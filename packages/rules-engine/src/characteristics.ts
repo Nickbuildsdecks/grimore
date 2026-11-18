@@ -1990,6 +1990,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'graveyard-card-types'; readonly atLeast: number }
     /** "As long as ~ is untapped / tapped". */
     | { readonly kind: 'source-tapped'; readonly tapped: boolean }
+    /** "If this creature is / isn't prepared" (D978): `CardInstance.prepared`. */
+    | { readonly kind: 'source-prepared'; readonly prepared: boolean }
     /** "As long as it's attacking". */
     | { readonly kind: 'source-attacking' }
     /** "As long as ~ is enchanted": Auras attached to the source. */
@@ -2346,6 +2348,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'source-tapped') {
     const source = state.instances[effect.source];
     return source !== undefined && source.zone === 'battlefield' && source.tapped === cond.tapped;
+  }
+  if (cond.kind === 'source-prepared') {
+    const source = state.instances[effect.source];
+    return source !== undefined && source.zone === 'battlefield' && (source.prepared === true) === cond.prepared;
   }
   if (cond.kind === 'source-attacking') {
     return state.combat.attacks.some(({ attacker }) => attacker === effect.source);

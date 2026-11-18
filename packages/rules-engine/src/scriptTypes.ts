@@ -2676,6 +2676,8 @@ export interface CardScript {
    * the permanent is never untapped and nothing can be done with it on the way in.
    */
   readonly entersTapped?: boolean;
+  /** "This creature enters prepared" (D978): the same kind of fact about arriving. See `CardInstance.prepared`. */
+  readonly entersPrepared?: true;
   /**
    * "~ enters tapped **unless** <condition>" (D587): the check lands, fast lands, slow lands, bond
    * lands and their cousins — the dual lands every Commander deck plays.

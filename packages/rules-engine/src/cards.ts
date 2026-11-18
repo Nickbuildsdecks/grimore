@@ -154,7 +154,12 @@ export interface LevelBand {
  * rather than find out.
  */
 export interface CardFaces {
-  readonly kind: 'split' | 'adventure' | 'modal' | 'transform';
+  /**
+   * `prepare` (D978): a creature with a spell printed on it that is never cast from the hand. Its
+   * one other face is the spell the creature lets you cast **a copy of** while it is prepared; see
+   * `CardInstance.prepared`.
+   */
+  readonly kind: 'split' | 'adventure' | 'modal' | 'transform' | 'prepare';
   readonly cards: readonly CardDef[];
 }
 
@@ -325,6 +330,15 @@ export interface CardInstance {
    * there is no wait — the adventure resolved, and the creature is castable from then on.
    */
   readonly onAdventure?: true;
+  /**
+   * Prepared (D978): "While it's prepared, you may cast a copy of its spell. Doing so unprepares it."
+   *
+   * A designation on the permanent, set by "enters prepared" and "~ becomes prepared", cleared by
+   * casting the copy and by leaving the battlefield (a new object is not prepared, CR 400.7). It is
+   * the whole of what makes the copy a play: `legalActions` offers one for each prepared permanent
+   * whose card has a `prepare` face, and `castSpell` makes the copy as it is cast.
+   */
+  readonly prepared?: true;
   /**
    * Set on a card in exile that one seat has been told it may **play** until a deadline (D583) —
    * "Exile the top card of your library. You may play that card this turn."
