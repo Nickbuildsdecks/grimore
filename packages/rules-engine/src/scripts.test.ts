@@ -22841,6 +22841,102 @@ describe('tapped tokens, and the Powerstone (D740)', () => {
   });
 });
 
+describe('"Whenever ~ deals damage to a player / to a creature" (D980)', () => {
+  const C = (name: string, text: string, power = '2', toughness = power) => ({
+    name, type_line: 'Creature — Elemental', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Frostbiter', 'Whenever this creature deals combat damage to a creature, tap that creature and it doesn\'t untap during its controller\'s next untap step.'),
+    C('Test Stinger', '{T}: This creature deals 1 damage to any target.\nWhenever this creature deals damage to a creature, you gain 2 life.\nWhenever this creature deals damage to a player, that player discards a card.'),
+    C('Test Wall', '', '0', '4'),
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', loyalty: '5' },
+    { name: 'Test Shelter', type_line: 'Instant', oracle_text: 'Prevent all damage that would be dealt to target creature this turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd980', name: 'Damage',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 10 })), { name: 'Mountain', count: 30 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[]) => {
+    let s = arena({
+      decks: { 0: 'd980', 1: 'd980' }, deckSpecs: { d980: deck.deck },
+      battlefield: { 0: mine, 1: theirs }, hands: { 0: ['Test Shelter', 'Mountain'], 1: ['Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+    });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+  const settle = (s: GameState) => {
+    let t = drain(s, 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return t;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a ping at a creature fires the creature row only; a ping at a player fires the player row only', () => {
+    const s = table(['Test Stinger'], ['Test Wall']);
+    const stinger = find(s, 0, 'battlefield', 'Test Stinger');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    const life = s.seats[0]!.life;
+    const atWall = settle(apply(s, { type: 'auto:activate', by: 0, card: stinger, abilityIndex: 0, targets: [{ kind: 'card', id: wall }] } as Action));
+    expect(atWall.instances[wall]!.damage).toBe(1);
+    expect(atWall.seats[0]!.life).toBe(life + 2);
+    expect(ids(atWall, 1, 'hand')).toHaveLength(2);
+    const pinged = settle(apply(s, { type: 'auto:activate', by: 0, card: stinger, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] } as Action));
+    // "That player" discards: the seat that was hit is the one asked.
+    expect(pinged.pendingDecision).toMatchObject({ seat: 1, from: 'hand' });
+    const atPlayer = settle(apply(pinged, { type: 'auto:decide', by: 1, cards: [pinged.pendingDecision!.candidates[0]!] } as Action));
+    expect(atPlayer.seats[0]!.life).toBe(life);
+    expect(ids(atPlayer, 1, 'hand')).toHaveLength(1);
+    expect(atPlayer.seats[1]!.life).toBe(s.seats[1]!.life - 1);
+    // "A player" is any player, its own controller included.
+    const self = settle(apply(s, { type: 'auto:activate', by: 0, card: stinger, abilityIndex: 0, targets: [{ kind: 'player', seat: 0 }] } as Action));
+    expect(self.pendingDecision).toMatchObject({ seat: 0, from: 'hand' });
+  });
+
+  it('a planeswalker is not a creature, and prevented damage is not dealt', () => {
+    const s = table(['Test Stinger'], ['Test Wall', 'Test Walker']);
+    const stinger = find(s, 0, 'battlefield', 'Test Stinger');
+    const walker = find(s, 1, 'battlefield', 'Test Walker');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    const life = s.seats[0]!.life;
+    const atWalker = settle(apply(s, { type: 'auto:activate', by: 0, card: stinger, abilityIndex: 0, targets: [{ kind: 'card', id: walker }] } as Action));
+    expect(atWalker.instances[walker]!.counters['loyalty']).toBe(4);
+    expect(atWalker.seats[0]!.life).toBe(life);
+    const sheltered = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shelter'), targets: [{ kind: 'card', id: wall }] } as Action));
+    const atWall = settle(apply(sheltered, { type: 'auto:activate', by: 0, card: stinger, abilityIndex: 0, targets: [{ kind: 'card', id: wall }] } as Action));
+    expect(atWall.instances[wall]!.damage).toBe(0);
+    expect(atWall.seats[0]!.life).toBe(life);
+  });
+
+  it('combat damage to its blocker taps and freezes the blocker, not the attacker', () => {
+    let s = table(['Test Frostbiter'], ['Test Wall']);
+    const biter = find(s, 0, 'battlefield', 'Test Frostbiter');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: biter, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: wall, attacker: biter }] });
+    for (let i = 0; i < 8 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[wall]!.zone).toBe('battlefield');
+    expect(s.instances[wall]!.tapped).toBe(true);
+    expect(s.instances[wall]!.frozen).toBe(true);
+    expect(s.instances[biter]!.frozen).toBeFalsy();
+    // Unblocked, it hits the player and the creature row hears nothing.
+    let t = table(['Test Frostbiter'], ['Test Wall']);
+    t = advanceTo(t, 'declare-attackers');
+    t = apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: biter, defender: 1 }] });
+    t = passBoth(t);
+    t = apply(t, { type: 'auto:block', by: 1, blocks: [] });
+    for (let i = 0; i < 8 && t.step !== 'postcombat-main'; i++) t = drain(passBoth(t), 30);
+    expect(t.instances[wall]!.tapped).toBe(false);
+    expect(t.instances[wall]!.frozen).toBeFalsy();
+  });
+});
+
 describe('lands described by type and state: "a non-Lair land", "an untapped Island", "two Swamps" (D741)', () => {
   const unless = (name: string, type: string, cost: string, extra: Record<string, unknown> = {}) => ({
     name, type_line: type, oracle_text: `When ${name} enters, sacrifice it unless you ${cost}.`, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,

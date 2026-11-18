@@ -716,9 +716,17 @@ export type TriggerEvent =
        * `anything` events, one per non-combat hit and one per source for its combat damage in a
        * step, so a trampler that hits a blocker and the player triggers it once, with the total.
        */
-      readonly to?: 'opponent' | 'player' | 'any';
+      readonly to?: 'opponent' | 'player' | 'any' | 'creature';
       /** Set by the engine on the `to: 'any'` events (D904). */
       readonly anything?: true;
+      /**
+       * `to: 'creature'` (D980): "Whenever ~ deals (combat) damage to a creature". Set by the engine
+       * on its own events, one per creature dealt damage by a permanent — combat damage summed per
+       * pair, as it is dealt at once — with that creature as `blocked`, the channel the block
+       * events use for "that creature".
+       */
+      readonly creature?: true;
+      readonly blocked?: string;
       /**
        * "deals **combat** damage to an opponent" — the narrow form of the same sentence, for the
        * handful of cards that print "opponent" where `combat-damage` prints "player".

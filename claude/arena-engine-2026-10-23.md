@@ -33620,6 +33620,51 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 12,984 of 31,845 cards (+24), 33,402 of 59,749 lines (+27), against 108dda6.
 
+## D980 — "Whenever ~ deals damage to a player", and "… to a creature"
+
+Two trigger sentences that the event model could nearly say already:
+
+- **"Whenever ~ deals damage to a player"** (and "equipped / enchanted creature deals damage to a
+  player"). `deals-damage` has meant `to: 'player'` since D566, but only "to an opponent" had a
+  row. Now any player is heard, its own controller included, and "that player" is the seat that
+  was hit.
+- **"Whenever ~ deals (combat) damage to a creature"**: a new `deals-damage` event with
+  `to: 'creature'`.
+  - The engine raises one per creature a permanent dealt damage to. Combat damage is summed per
+    pair, because it is dealt at once (CR 510.2).
+  - The creature travels as `blocked`, the channel the block events use for "that creature".
+  - Whether it was a creature is asked of the snapshot, so a creature the damage killed still
+    counts and a planeswalker never does.
+  - No player row hears these events, and no creature row hears a player's.
+
+The block referents (D480/D969) now read under the new event as well: "destroy that creature",
+"destroy that creature at end of combat", and "~ deals N damage to that creature". A new clause,
+"(tap that creature and it | that creature) doesn't untap during its controller's next untap step",
+reads under both the block and the damage events.
+
+Two D566 refusal rows ("deals damage to a player", "… to a creature") are now reads rows.
+
+**Not yet:** a creature that dies in the same combat damage step does not get its "deals damage"
+trigger. The watcher has left by the time triggers are collected. That is a look-back question
+shared with D904's "deals damage", and it is left for its own increment.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a ping at a creature fires the creature row and not the player row, and a ping at a player fires
+  the player row (the hit player discards) and not the creature row; a ping at its own controller
+  is "a player" too;
+- combat damage to its blocker taps and freezes the blocker, not the attacker, and an unblocked
+  hit freezes nothing;
+- a ping at a planeswalker is not damage to a creature, and a prevented ping is not dealt.
+
+Faults injected by script: 9. 6 were caught at once. Of the 3 misses, two (a player row narrowed to
+opponents, and the creature check) are now pinned by tests. The third, a source-in-play and
+zero-amount guard, was unreachable and is removed.
+
+    engine tests: 5,240, all passing (merged with the other session's D741)
+
+Coverage: 12,986 of 31,858 cards (+55), 33,434 of 59,790 lines (+82).
+
 ## D742 — "If {U} was spent to cast it", and a spell's "If <condition>, <effect>"
 
 Eventide's hybrid cards and their kin check which colours paid for them: "When ~ enters, if {R}

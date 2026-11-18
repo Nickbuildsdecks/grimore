@@ -1457,6 +1457,9 @@ function triggerMatches(
       // "Deals damage" to anything (D904) and to a player are separate events, so neither is counted twice.
       if (want.kind === 'deals-damage'
         && (want.to === 'any') !== ((event as { anything?: true }).anything === true)) return false;
+      // And to a creature (D980), its own events again: no player row hears them, and they hear no player.
+      if (want.kind === 'deals-damage'
+        && (want.to === 'creature') !== ((event as { creature?: true }).creature === true)) return false;
       if (want.kind === 'deals-damage' && (want.to ?? 'player') === 'opponent') {
         const hit = (event as { defender?: SeatIndex }).defender;
         if (hit === undefined || hit === sourceSeat) return false;
@@ -1902,7 +1905,9 @@ function fireTrigger(
     // The attacker a block was against, for "that creature". Its own field rather than the
     // subject, because the subject of a block is the creature that blocked — which is almost
     // always the watcher itself, and never the one the card is talking about.
-    ...((event.kind === 'blocks' || event.kind === 'becomes-blocked')
+    ...((event.kind === 'blocks' || event.kind === 'becomes-blocked'
+      // And the creature a permanent dealt damage to (D980).
+      || (event.kind === 'deals-damage' && event.creature === true))
       && event.blocked !== undefined
       ? { blocked: event.blocked }
       : {}),
@@ -3590,6 +3595,30 @@ function settle(state: GameState, before: GameState): GameState {
     for (const [source, amount] of dealtInCombat) {
       next = raise(next, { kind: 'deals-damage', anything: true, amount, combat: true },
         (next.vanished[source] ?? next.instances[source])?.zoneSeat, source);
+    }
+    /*
+      And "Whenever ~ deals damage to a creature" (D980): one event per creature a permanent dealt
+      damage to, with the creature as `blocked` for "that creature". Combat damage is summed per
+      pair, because it is dealt at once (CR 510.2); a creature that the damage killed is still the
+      creature it was dealt to, so the snapshot answers whether it was one.
+    */
+    const toCreatures = new Map<string, { source: string; creature: string; amount: number; combat: boolean }>();
+    for (const record of landed) {
+      // No `sourceInPlay` or zero-amount test: every row is about its own permanent, which a spell is
+      // not, and prevented damage leaves no record (D980's fault run found both unreachable).
+      if (record.source === null || record.to.kind !== 'card') continue;
+      const hit = next.vanished[record.to.id] ?? next.instances[record.to.id];
+      if (hit === undefined || !characteristicsOf(next, hit).isCreature) continue;
+      const key = record.combat === true ? `${record.source}>${record.to.id}` : `#${landed.indexOf(record)}`;
+      const was = toCreatures.get(key);
+      toCreatures.set(key, {
+        source: record.source, creature: record.to.id, amount: (was?.amount ?? 0) + record.amount, combat: record.combat === true,
+      });
+    }
+    for (const { source, creature, amount, combat } of toCreatures.values()) {
+      next = raise(next, {
+        kind: 'deals-damage', creature: true, blocked: creature, amount, ...(combat ? { combat: true } : {}),
+      }, (next.vanished[source] ?? next.instances[source])?.zoneSeat, source);
     }
     for (const record of landed) {
       if (record.to.kind === 'card') {

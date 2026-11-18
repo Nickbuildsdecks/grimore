@@ -18073,6 +18073,9 @@ describe('damage as an event: the five prologues (D566)', () => {
       { kind: 'deals-damage', who: 'any', of: 'you', to: 'opponent', combatOnly: true }],
     ['Whenever a creature dealt damage by Sengir Vampire this turn dies, put a +1/+1 counter on Sengir Vampire.',
       undefined, { kind: 'dies', who: 'any', what: 'creature', damagedBy: 'self' }],
+    // Two rows that were refusals here until D980: any player, and a creature.
+    ['Whenever Sengir Vampire deals damage to a player, draw a card.', undefined, { kind: 'deals-damage', to: 'player' }],
+    ['Whenever Sengir Vampire deals damage to a creature, draw a card.', undefined, { kind: 'deals-damage', to: 'creature' }],
   ])('reads %s', (text, type, event) => {
     const got = card(text, type);
     expect(got.unread.map((u) => u.line)).toEqual([]);
@@ -18090,9 +18093,6 @@ describe('damage as an event: the five prologues (D566)', () => {
     ['"dealt damage by enchanted creature", whose one card means the enchanted creature by "that creature"',
       'Whenever a creature dealt damage by enchanted creature this turn dies, put a +1/+1 counter on that creature.', AURA],
     ['a threshold on the damage', 'Whenever Sengir Vampire is dealt 3 or more damage, draw a card.', undefined],
-    ['damage to "a player", which is not the printed sentence this event reads',
-      'Whenever Sengir Vampire deals damage to a player, draw a card.', undefined],
-    ['damage to a creature', 'Whenever Sengir Vampire deals damage to a creature, draw a card.', undefined],
     ['a characteristic on the dead creature',
       'Whenever a creature with flying dealt damage by Sengir Vampire this turn dies, draw a card.', undefined],
   ])('leaves %s unread', (_what, line, type) => {
