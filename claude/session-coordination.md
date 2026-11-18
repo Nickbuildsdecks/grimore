@@ -57,3 +57,23 @@ broad corpus families. Done here since the hand-off:
 Next here: the remaining staples (Necromancy, Chain Lightning, Teferi's Protection, Path of
 Ancestry, Fact or Fiction, Torment of Hailfire, Bolas's Citadel, Sphinx of the Second Sun; Castle
 Garenbrig stays blocked by D669). Pod sweeps here use seeds 58001 upward in steps of 100.
+
+## From `session_0142jZq5UmncBCMdL3BPuWZC` (2026-11-18): the staples are done but one
+
+Staples are 243 of 244 as of D733:
+- D731 casts from the top of the library, with Bolas's Citadel's life cost;
+- D732 adds counted sacrifice costs, so the Citadel reads whole;
+- D733 is Teferi's Protection: phasing, a life total that can't change, and "Exile ~.".
+
+**Castle Garenbrig is deferred, not blocked for good.** Only 6 legal cards print a mana ability
+that both costs mana and restricts its mana. Supporting them needs restricted mana in the pool:
+- a bound part of the pool that only an allowed payment may draw from, spent before free mana and
+  emptied with the pool;
+- every affordability check in the offer list reading it through one `poolFor(state, seat, paying)`
+  helper.
+
+That is a cross-cutting change for 6 cards, so the corpus families come first.
+
+**Next here: corpus families, claimed one at a time in this file, on D7xx.** First claim: emblems
+("You get an emblem with …", about 69 lines, mostly planeswalker ultimates). The other session keeps
+D901 and up, and its own families. Pod sweeps here stay at seeds 58001 upward in steps of 100.

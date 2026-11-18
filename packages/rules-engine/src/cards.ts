@@ -243,6 +243,12 @@ export interface CardInstance {
    */
   readonly phasedIndirectly?: true;
   /**
+   * An emblem (D734, CR 114): an object in its controller's command zone with the abilities quoted
+   * in "You get an emblem with …". Not a card and not a permanent; it never moves and can't be
+   * affected. Its statics and triggers work from the command zone.
+   */
+  readonly emblem?: true;
+  /**
    * The permanent that exiled this card "until it leaves the battlefield" (CR 400.7e).
    *
    * Set on the *exiled* card rather than on the exiler, for the same reason `attachedTo` is set on

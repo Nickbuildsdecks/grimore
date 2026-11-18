@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -23915,6 +23915,9 @@ function readEffect(
       },
     };
   }
+  // An emblem (D734): see `emblemClause`.
+  const emblem = emblemClause(clause, name);
+  if (emblem !== null) return emblem;
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -24228,6 +24231,31 @@ function exiledIfDamagedThisWay(deal: EffectFn, permanents: boolean): EffectFn {
   };
 }
 
+/** An emblem's quoted text with its punctuation swapped for look-alikes the splitter ignores (D734). */
+const EMBLEM_HIDDEN: readonly (readonly [string, string])[] = [['.', '\u2024'], [',', '\u201A'], [';', '\u204F'], [':', '\u2236']];
+const hideEmblemText = (text: string): string => EMBLEM_HIDDEN.reduce((t, [from, to]) => t.split(from).join(to), text);
+const showEmblemText = (text: string): string => EMBLEM_HIDDEN.reduce((t, [from, to]) => t.split(to).join(from), text);
+
+/**
+ * "You get an emblem with "…"" (D734, CR 114): the quoted abilities, read as a card would be, and
+ * refused unless every one of them reads. Two quoted abilities ("A" and "B") are two lines.
+ */
+function emblemClause(clause: string, name: string): ReadEffect | null {
+  const m = /^you get an emblem with (.+)$/i.exec(clause.trim());
+  if (m === null) return null;
+  const parts = /^"([^"]+)"(?: and "([^"]+)")?$/.exec(showEmblemText(m[1]!).trim());
+  if (parts === null) return null;
+  const text = [parts[1]!, ...(parts[2] === undefined ? [] : [parts[2]])].map((line) => line.trim()).join('\n');
+  // Every ability has to read, line by line, as the compiler will read the emblem's own definition —
+  // and none may be activated, because nothing offers an activation from the command zone.
+  const emblemName = `${name} emblem`;
+  if (text.split('\n').some((line) => {
+    const read = lineScriptFor(line, emblemName);
+    return read === null || (read.abilities ?? []).length > 0;
+  })) return null;
+  return { effect: (c) => createEmblem(c.state, c.controller, text, name) };
+}
+
 function clausesOf(line: string): readonly string[] {
   /*
     "…, reveal it, then shuffle and put that card on top" is one step and not two (D602): cut at its
@@ -24243,6 +24271,9 @@ function clausesOf(line: string): readonly string[] {
   const BACK = ', then put them back in any order';
   const LIFE_LOST = ', and you gain life equal to the life lost this way';
   return plain(line)
+    // An emblem's quoted abilities (D734) are one clause: their own punctuation is hidden from the
+    // splitting below and put back by `emblemClause`.
+    .replace(/you get an emblem with ("[^"]+"(?: and "[^"]+")?)/gi, (_m, quoted: string) => `you get an emblem with ${hideEmblemText(quoted)}`)
     // "The card" is Worldly Tutor's wording of the same step (D655).
     .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')

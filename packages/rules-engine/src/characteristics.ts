@@ -307,6 +307,8 @@ export const SELF_TYPE_WORDS = [
   'Spacecraft',
   // D638: "When this Class enters", "this Class's level".
   'Class',
+  // D734: "this emblem deals 1 damage to any target".
+  'emblem',
 ] as const;
 
 /**
@@ -3319,7 +3321,9 @@ export function expireEffects(
     if (effect.duration === 'permanent') {
       const source = state.instances[effect.source];
       // Phasing changes no zone (D733, CR 702.26d): the static waits for it, off (see `effectApplies`).
-      return source !== undefined && (source.zone === 'battlefield' || source.zone === 'phased');
+      return source !== undefined && (source.zone === 'battlefield' || source.zone === 'phased'
+        // An emblem's statics work from the command zone, for the rest of the game (D734).
+        || (source.zone === 'command' && source.emblem === true));
     }
     return true;
   });

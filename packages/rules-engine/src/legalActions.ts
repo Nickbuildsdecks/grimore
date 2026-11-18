@@ -767,7 +767,9 @@ export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
 /** The permanents whose static abilities this seat may lean on now: its own, face up, abilities intact. */
 function staticsOf(state: GameState, seat: SeatIndex): readonly CardScript[] {
   const out: CardScript[] = [];
-  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+  // And its emblems, from the command zone (D734): "You have no maximum hand size".
+  const emblems = listAt(state, zoneKey(seat, 'command')).filter((id) => state.instances[id]?.emblem === true);
+  for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblems]) {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown === true || allAbilitiesLost(state, inst)) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
@@ -1447,6 +1449,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ...listAt(state, zoneKey(seat, 'hand'))
       .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'command'))
+      // An emblem is in the command zone too, and is never cast (D734).
+      .filter((id) => state.instances[id]?.emblem !== true)
       .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => flashbackCostOf(state, id) !== undefined)

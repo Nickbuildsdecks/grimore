@@ -49,7 +49,7 @@ import {
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
-  spendRegeneration, spendUmbraArmor, untapAll, phaseIn, putOnTopOfLibrary, shuffleLibrary,
+  spendRegeneration, spendUmbraArmor, untapAll, phaseIn, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
@@ -88,7 +88,7 @@ export const MAX_HAND_SIZE = 7;
  */
 /** Whether a seat controls a live "untap during each other player's untap step" permanent (D661). */
 function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
-  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
     const inst = state.instances[id];
     return inst !== undefined && !isFaceDownPermanent(inst) && !allAbilitiesLost(state, inst)
       && scriptForCard(state.cardDefs[inst.defKey])?.untapsDuringOthersUntap === true;
@@ -96,7 +96,8 @@ function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
 }
 
 export function maxHandSize(state: GameState, seat: SeatIndex): number {
-  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+  // And an emblem that says so (D734), from the command zone.
+  for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
     const inst = state.instances[id];
     if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
     if (scriptForCard(state.cardDefs[inst.defKey])?.noMaxHandSize === true) return Number.POSITIVE_INFINITY;
@@ -515,7 +516,7 @@ const scriptOnStack = (state: GameState, object: StackObject): CardScript | unde
  * permanent that says so, face up and with its abilities.
  */
 function skipsDrawStep(state: GameState, seat: SeatIndex): boolean {
-  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
     return scriptForCard(state.cardDefs[inst.defKey])?.skipsDrawStep === true;
@@ -533,7 +534,7 @@ function riotGranted(state: GameState, object: StackObject, script: CardScript |
   if (object.kind !== 'spell' || script === undefined || object.copyOf !== undefined) return false;
   if (script.entersChoice !== undefined || (script.decisions ?? []).length > 0) return false;
   if (!hasType(parseTypeLine(state.cardDefs[object.cardKey]?.typeLine), 'creature')) return false;
-  return listAt(state, zoneKey(object.controller, 'battlefield')).some((id) => {
+  return [...listAt(state, zoneKey(object.controller, 'battlefield')), ...emblemsOf(state, object.controller)].some((id) => {
     const inst = state.instances[id];
     if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
     return scriptForCard(state.cardDefs[inst.defKey])?.grantsRiot === true;
@@ -2142,7 +2143,11 @@ function raise(
     'damaged',
   ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
-    const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
+    const mine = [
+      ...listAt(next, zoneKey(seat, 'battlefield')),
+      // And each emblem, which watches from the command zone (D734).
+      ...listAt(next, zoneKey(seat, 'command')).filter((id) => next.instances[id]?.emblem === true),
+    ].filter((id) => id !== subject);
     // The subject goes with its own controller rather than ahead of everybody: it may be the only
     // watcher, and after a death it is in a graveyard rather than on a battlefield, so it would
     // otherwise be missed. Put first within that seat, which is where it was.
@@ -2260,7 +2265,8 @@ function raise(
       `spell-cast` trigger and the watcher list above.
     */
     const fromStack = event.kind === 'spell-cast' && id === subject && inst.zone === 'stack';
-    if (!fromGraveyard && !fromStack && !lastKnown && !ownCycle && inst.zone !== 'battlefield') continue;
+    const fromEmblem = inst.zone === 'command' && inst.emblem === true;
+    if (!fromGraveyard && !fromStack && !lastKnown && !ownCycle && !fromEmblem && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
     /*
@@ -3785,6 +3791,13 @@ function settle(state: GameState, before: GameState): GameState {
     }
     for (const id of arrived) {
       const arrival = next.instances[id];
+      // An emblem (D734): its statics, and nothing else an arrival on the battlefield gets.
+      if (arrival?.zone === 'command' && arrival.emblem === true) {
+        if (!next.effects.some((effect) => effect.source === id)) {
+          next = applyStatics(next, id, arrival.zoneSeat, scriptForCard(next.cardDefs[arrival.defKey]));
+        }
+        continue;
+      }
       if (arrival?.zone !== 'battlefield') continue;
       /*
         "Enters the battlefield tapped" is a replacement effect (CR 614.1c), not a trigger: the
