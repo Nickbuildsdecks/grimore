@@ -51377,3 +51377,29 @@ Pod sweep 59001 (D740–D744): every game finished.
     engine tests: 5,260, all passing
 
 Coverage: 13,129 of 31,878 cards (+12), 33,645 of 59,841 lines (+24), against e8981aa.
+
+## D984 — Outlast and undaunted
+
+Two keyword declarations that had no builder:
+
+- **Outlast** (CR 702.107a; 8 legal cards it alone blocked). "Outlast {cost}" is the ability
+  "{cost}, {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery." It is read
+  beside unearth, as another declaration that is an ability.
+- **Undaunted** (CR 702.125a; 4 cards). "This spell costs {1} less to cast for each opponent you
+  have." It is read as that sentence. The self cost reader (`selfCostChangeFromLine`) now reads
+  "for each opponent" as the opponents still in the game (`opponentsOf`, which skips eliminated
+  seats).
+
+**Tests.** 3 engine tests:
+- both cards read;
+- outlast costs {W}, taps the creature and puts the counter on it; it is not offered in combat or
+  while the creature is tapped;
+- undaunted is {1} less in a duel and {3} less in a four-player pod, and {2} less once a seat is
+  eliminated.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,270, all passing
+
+Coverage: 13,156 of 31,900 cards, 33,698 of 59,888 lines (with the other session's D744 and D745
+merged).
