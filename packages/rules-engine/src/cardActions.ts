@@ -435,6 +435,8 @@ export function relocate(
     ...(toZone === 'battlefield' || toZone === 'stack' ? {} : { bestowed: undefined }),
     // And a prototype (D934), the same bit for size and colour.
     ...(toZone === 'battlefield' || toZone === 'stack' ? {} : { prototype: undefined }),
+    // And prepared (D978), which the permanent is and the card it leaves as is not.
+    ...(toZone === 'battlefield' ? {} : { prepared: undefined }),
     // And a permission to play this card out of exile ends when it is no longer there (D583):
     // played, or moved by something else, it is a new object that was never told anything.
     ...(inst.zone === 'exile' && toZone !== 'exile' && inst.playFromExile !== undefined
@@ -621,10 +623,10 @@ function assertCardDef(card: unknown): asserts card is CardDef {
   if (c['faces'] !== undefined) {
     const faces = c['faces'] as Record<string, unknown>;
     if (typeof faces !== 'object' || faces === null
-      || !['split', 'adventure', 'modal', 'transform'].includes(faces['kind'] as string)
+      || !['split', 'adventure', 'modal', 'transform', 'prepare'].includes(faces['kind'] as string)
       || !Array.isArray(faces['cards']) || faces['cards'].length === 0 || faces['cards'].length > 2) {
       throw new EngineError('INVALID_CARD',
-        'card faces must be one or two faces, split, adventure, modal or transform');
+        'card faces must be one or two faces, split, adventure, modal, transform or prepare');
     }
     for (const face of faces['cards']) assertCardDef(face);
   }

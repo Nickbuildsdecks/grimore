@@ -34,7 +34,7 @@ import {
   MYRIAD, SEAT_CHOICE, TIME, addCounters, addToPool, addTokens, bottomPile, counterSpell, draw,
   canPayLife, energyOf, enterAttacking, lifeLocked, loseLife, paymentWords,
   mill, moveToHand, removeFromCombat,
-  poolOf, spendEnergy,
+  poolOf, preparedCopyOf, spendEnergy,
   sacrifice,
   untapPermanent,
 } from './effects.js';
@@ -141,6 +141,22 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     refused there, so skipping the check here gains a client nothing.
   */
   if (action.offered !== true) requirePriority(state, action.by);
+  /*
+    A copy of a prepared permanent's spell (D978): made, and the permanent unprepared, and then
+    cast as the ordinary cast out of exile it now is. The state the copy is made in is the
+    before-picture of that cast, so the copy's arrival in exile is not news to anything watching.
+  */
+  if (action.preparedCopy === true) {
+    if (action.half !== undefined && action.half !== 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'a prepared permanent has one spell to copy, its face 0');
+    }
+    const made = preparedCopyOf(state, action.card, action.by);
+    if (made === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that is not a prepared permanent of yours with a spell to copy');
+    }
+    const { preparedCopy: _copy, half: _half, ...rest } = action;
+    return castSpell(made.state, { ...rest, card: made.id });
+  }
   const inst = requireInstance(state, action.card);
   // A commander is cast from the command zone (CR 903.8); everything else from hand — or, with
   // flashback, from its owner's graveyard (CR 702.33).
@@ -169,6 +185,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   } else if (faces?.kind === 'split') {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `choose which half of ${printedDef?.name ?? 'that card'} to cast`);
+  }
+  // A prepare card's spell is cast only as a copy, while its permanent is prepared (D978).
+  if (action.half !== undefined && faces?.kind === 'prepare') {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `${faces.cards[action.half]?.name ?? 'that spell'} is cast only as a copy, while ${printedDef?.name ?? 'its creature'} is prepared`);
   }
   const face = action.half === undefined ? undefined : faces?.cards[action.half];
   const faceKey = face === undefined ? undefined : defKeyFor(face);

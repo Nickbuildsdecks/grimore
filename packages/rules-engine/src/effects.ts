@@ -2522,6 +2522,46 @@ export function copyCardInExile(
 }
 
 /**
+ * The copy a prepared permanent's controller casts (D978): "While it's prepared, you may cast a
+ * copy of its spell. Doing so unprepares it."
+ *
+ * Made in its controller's exile as a copy of the **spell face** alone, with the D583 permission to
+ * cast it this turn, and the permanent unprepared in the same step — so the cast that follows is an
+ * ordinary cast out of exile at the spell's own cost and timing, and a copy that is cast and resolves
+ * leaves the game the way any copy of a card does (CR 707.12). `null` when there is nothing to copy:
+ * the permanent is gone, is not prepared, is not this seat's, or its card has no prepare face.
+ *
+ * Both `legalActions` and `castSpell` call this on the same state, which is why the offer and the
+ * cast agree on the copy's id and on everything the spell would see.
+ */
+export function preparedCopyOf(
+  state: GameState, permanent: string, seat: SeatIndex,
+): { readonly state: GameState; readonly id: string } | null {
+  const source = state.instances[permanent];
+  if (source === undefined || source.zone !== 'battlefield' || source.zoneSeat !== seat || source.prepared !== true) {
+    return null;
+  }
+  const def = state.cardDefs[source.printedDefKey ?? source.defKey];
+  const spell = def?.faces?.kind === 'prepare' ? def.faces.cards[0] : undefined;
+  if (spell === undefined || state.cardDefs[defKeyFor(spell)] === undefined) return null;
+  const seq = state.instanceSeq + 1;
+  const id = `c${seat}_${seq}`;
+  const exile = zoneKey(seat, 'exile');
+  const { prepared: _spent, ...unprepared } = source;
+  const instances = {
+    ...state.instances,
+    [permanent]: unprepared,
+    [id]: {
+      id, defKey: defKeyFor(spell), owner: seat, zoneSeat: seat, zone: 'exile' as const,
+      tapped: false, faceDown: false, revealed: true, counters: {}, attachedTo: null,
+      isToken: false, isCommander: false, damage: 0, enteredTurn: state.turn, cardCopy: true as const,
+      playFromExile: { by: seat, grantedTurn: state.turn, through: 'this-turn' as const },
+    },
+  };
+  return { state: withZones({ ...state, instances, instanceSeq: seq }, { [exile]: [...listAt(state, exile), id] }), id };
+}
+
+/**
  * Moves a permanent to another player's battlefield, which is what gaining control is.
  *
  * And marks an echo as owed again (CR 702.29b), because echo is about **control** and not about

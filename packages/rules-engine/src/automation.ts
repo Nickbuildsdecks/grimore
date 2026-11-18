@@ -3815,6 +3815,10 @@ function settle(state: GameState, before: GameState): GameState {
       if (!arrival.tapped && arrivalScript?.entersTapped === true) {
         next = withInstance(next, id, { tapped: true });
       }
+      // "Enters prepared" (D978), by the same replacement and at the same moment.
+      if (arrivalScript?.entersPrepared === true && next.instances[id]?.prepared !== true) {
+        next = withInstance(next, id, { prepared: true });
+      }
       /*
         The conditional form (D587): "enters tapped unless you control a Mountain or a Plains".
         Asked here, of the board it is arriving on, by the same replacement and at the same moment.

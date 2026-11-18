@@ -22,7 +22,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { canPayLife, energyOf, paymentWords, poolOf } from './effects.js';
+import { canPayLife, energyOf, paymentWords, poolOf, preparedCopyOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
@@ -140,6 +140,11 @@ export interface LegalPlay {
   readonly awakened?: boolean;
   /** Set on the play that casts the card as a prototype (D934). */
   readonly prototyped?: boolean;
+  /**
+   * Set on the play that casts a copy of a prepared permanent's spell (D978): `card` is the
+   * permanent and `half` is 0, its spell face. See `preparedCopyOf`.
+   */
+  readonly preparedCopy?: boolean;
   /**
    * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
    *
@@ -1558,6 +1563,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const faces = state.cardDefs[state.instances[entry.id]?.defKey ?? '']?.faces;
     if (faces === undefined || entry.fromAdventure) return [{ ...entry, half: undefined as number | undefined }];
     const halves = faces.cards.map((_face, index) => ({ ...entry, half: index as number | undefined }));
+    // A prepare card's spell is never cast from the hand (D978): only a copy, while it is prepared.
+    if (faces.kind === 'prepare') return [{ ...entry, half: undefined as number | undefined }];
     return faces.kind === 'split'
       ? halves
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
@@ -2478,6 +2485,24 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       }
     }
 
+  }
+  /*
+    And a copy of each prepared permanent's spell (D978). Asked of the state the cast itself makes
+    — the copy in exile under a permission to cast it, the permanent unprepared — so the cost, the
+    timing, the targets and the affordability are exactly the ones `castSpell` will check, and the
+    recursion ends: the permanent asked about is no longer prepared in the state asked.
+  */
+  for (const permanent of listAt(state, zoneKey(seat, 'battlefield'))) {
+    if (state.instances[permanent]?.prepared !== true) continue;
+    const made = preparedCopyOf(state, permanent, seat);
+    if (made === null) continue;
+    for (const play of castablePlays(made.state, seat, sources).plays) {
+      if (play.card !== made.id || play.kind !== 'cast') continue;
+      out.push({
+        ...play, card: permanent, half: 0, preparedCopy: true,
+        description: `Cast a copy of ${play.description.replace(/^Cast /, '').replace(/ from exile \(this turn only\)/, '')} (prepared)`,
+      });
+    }
   }
   return { plays: out, blocked };
 }

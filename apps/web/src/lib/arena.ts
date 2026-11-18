@@ -509,6 +509,8 @@ function playAction(
     "awakened",
     // Prototype (D934).
     "prototyped",
+    // A prepared permanent's spell, cast as a copy (D978).
+    "preparedCopy",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true
@@ -1318,6 +1320,8 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     make it. "Won't untap" rather than "frozen", because the card says what it does.
   */
   if (card.frozen === true) out.push("won't untap")
+  // Prepared (D978): the copy of its spell is on offer in the play list while this badge shows.
+  if (card.prepared === true) out.push("prepared")
   if (card.cantAttack === true && card.cantBlock === true) out.push("can't fight")
   else if (card.cantAttack === true) out.push("can't attack")
   else if (card.cantBlock === true) out.push("can't block")

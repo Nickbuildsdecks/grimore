@@ -2537,6 +2537,9 @@ function candidateActions(
             ...(play.emerged === true ? { emerged: true } : {}),
             ...(play.awakened === true ? { awakened: true } : {}),
             ...(play.prototyped === true ? { prototyped: true } : {}),
+            // And a prepared permanent's copy (D978): sent without it, a cast of face 0 of a
+            // creature on the battlefield, which the engine refuses.
+            ...(play.preparedCopy === true ? { preparedCopy: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -4899,7 +4902,7 @@ const playKey = (play: LegalPlay): string =>
   + `${play.overloaded === true ? 'o' : ''}`
   + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}${play.payLifeFromTop === true ? 'l' : ''}`
   // And casualty (D923): the cast that sacrifices and copies is a different play from the one that does not.
-  + `${play.casualty === true ? 'c' : ''}${play.conspire === true ? 'n' : ''}${play.emerged === true ? 'm' : ''}${play.awakened === true ? 'a' : ''}${play.prototyped === true ? 'r' : ''}`
+  + `${play.casualty === true ? 'c' : ''}${play.conspire === true ? 'n' : ''}${play.emerged === true ? 'm' : ''}${play.awakened === true ? 'a' : ''}${play.prototyped === true ? 'r' : ''}${play.preparedCopy === true ? 'q' : ''}`
   // And replicate's count, for the same reason one step further: the three castings of a Pyromatics
   // are three plays, and a key that could not tell them apart would read "x2 is still on offer"
   // after the printed one had been cast.

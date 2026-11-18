@@ -1727,6 +1727,12 @@ export interface AutoCastAction {
   /** Cast as a prototype (D934). */
   readonly prototyped?: boolean;
   /**
+   * Cast a copy of a prepared permanent's spell (D978): `card` is the permanent, `half` its spell
+   * face (0, or absent). Refused when the permanent is not this seat's, not prepared, or has no
+   * prepare face. See `preparedCopyOf`.
+   */
+  readonly preparedCopy?: boolean;
+  /**
    * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
    * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an
    * alternative cost, which replaces the printed cost that buyback adds to.

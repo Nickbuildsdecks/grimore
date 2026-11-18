@@ -15205,6 +15205,24 @@ function selfEffect(
     }
   }
 
+  /*
+    "~ becomes prepared" (D978): the permanent printing it, or "it" — the attacker in "Whenever this
+    creature attacks, it becomes prepared". Only from the battlefield, and asked again as it resolves:
+    a creature that has left is a new object, and a new object is not prepared (CR 400.7).
+  */
+  const becomesPrepared = new RegExp(`^(?:(${self})|it) becomes prepared$`, 'i').exec(text);
+  if (becomesPrepared !== null && where === 'battlefield') {
+    const named = becomesPrepared[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        return c.state.instances[id]?.zone === 'battlefield' && c.state.instances[id]?.prepared !== true
+          ? withInstance(c.state, id, { prepared: true })
+          : c.state;
+      },
+    };
+  }
+
   // Connive's second half (D971); see `conniveClauses`. The creature is the event's for "it".
   if (text === CONNIVE || text === `${CONNIVE}:self`) {
     const named = text === CONNIVE ? undefined : name;
@@ -27785,6 +27803,9 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   }
   const tapped = new RegExp(`^(?:${self} is|it's) (untapped|tapped)$`, 'i').exec(text);
   if (tapped !== null) return { kind: 'source-tapped', tapped: tapped[1]!.toLowerCase() === 'tapped' };
+  // "If this creature isn't prepared" (D978).
+  const prepared = new RegExp(`^${self} (is|isn't|is not) prepared$`, 'i').exec(text);
+  if (prepared !== null) return { kind: 'source-prepared', prepared: prepared[1]!.toLowerCase() === 'is' };
   if (new RegExp(`^(?:${self} is|it's) attacking$`, 'i').test(text)) return { kind: 'source-attacking' };
   if (new RegExp(`^${self} is equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
@@ -28585,6 +28606,8 @@ function becomesDayFromLine(line: string, name: string): Partial<CardScript> | n
 function entersTappedFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
   if (new RegExp(`^${selfRef(name)} ${ENTERS} tapped$`, 'i').test(text)) return { entersTapped: true };
+  // "This creature enters prepared" (D978): a fact about arriving, like tapped. See `CardInstance.prepared`.
+  if (new RegExp(`^${selfRef(name)} ${ENTERS} prepared$`, 'i').test(text)) return { entersPrepared: true };
   /*
     "~ enters tapped unless <condition>" (D587), with the condition from a short table of the
     printings the corpus actually has. A condition not in the table refuses the line, which leaves

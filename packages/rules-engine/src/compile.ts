@@ -594,11 +594,14 @@ export function compileCard(row: CardDataRow): Compilation {
  *
  * The three the engine already plays: an **adventurer** (a creature with an instant or sorcery on
  * it, CR 715), a **modal double-faced** card (either face may be played, CR 712), and a
- * **transforming** one (cast as its front, turned over by an effect, CR 712). Split, flip, meld,
- * prepare and the rest are each their own rules and are still refused as more than one face.
+ * **transforming** one (cast as its front, turned over by an effect, CR 712). And since D978 a
+ * **prepare** card, whose spell face is cast only as a copy while the creature is prepared. Split,
+ * flip, meld and the rest are each their own rules and are still refused as more than one face.
  */
 const FACE_LAYOUTS: Readonly<Record<string, CardFaces['kind']>> = {
   adventure: 'adventure', modal: 'modal', modal_dfc: 'modal', transform: 'transform',
+  // A creature and the spell it casts copies of while prepared (D978). See `CardInstance.prepared`.
+  prepare: 'prepare',
 };
 
 /** `card_faces` as a list, from the array Scryfall writes or the JSON text the database holds. */
