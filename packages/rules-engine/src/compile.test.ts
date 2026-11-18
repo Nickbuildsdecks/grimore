@@ -16354,9 +16354,9 @@ describe('the bite and the fight: two targets pointed at each other (D542)', () 
   it('reads the pump-then-fight referent form whole, as one shape with both targets (D608)', () => {
     /*
       This was the refusal: "It fights target creature you don't control" borrows its first target
-      from the sentence before, and `referentEffect` supplies exactly one object. D608 reads the
-      pump-then-fight and pump-then-bite lines as one shape instead (`pumpThenBiteResolution`),
-      declaring both targets once. Other referent spellings ("Then that creature …") stay unread.
+      from the sentence before, and `referentEffect` supplies exactly one object. D608 read the
+      pump-then-fight and pump-then-bite lines as one shape (`pumpThenBiteResolution`); D959 reads
+      the pair in `composeEffects` for any targeting first sentence, and deleted that reader.
     */
     const read = row('Epic Confrontation', 'Sorcery',
       'Target creature you control gets +1/+2 until end of turn. '
@@ -16365,9 +16365,10 @@ describe('the bite and the fight: two targets pointed at each other (D542)', () 
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toEqual([]);
+    // "Then that creature …" reads too since D959, by the general pairing in `composeEffects`.
     const other = row('Other Confrontation', 'Sorcery',
       "Target creature you control gets +1/+2 until end of turn. Then that creature fights target creature you don't control.");
-    expect(other.ok && other.unread.length).toBe(1);
+    expect(other.ok && other.unread).toEqual([]);
   });
 
   it('refuses a bite whose subject is not a creature', () => {

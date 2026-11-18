@@ -20589,6 +20589,73 @@ describe('a creature fighting from its own trigger (D958)', () => {
   });
 });
 
+describe('"Then it fights / that creature deals damage equal to its power to" (D959)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    S('Test Brawl', 'Put a +1/+1 counter on target creature you control. Then it fights target creature an opponent controls.'),
+    S('Test Snap', 'Put a +1/+1 counter on target creature you control. Then that creature deals damage equal to its power to up to one target creature you don\'t control.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd959', name: 'Referent fights',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd959', 1: 'd959' }, deckSpecs: { d959: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Forest', 'Test Bear'], 1: ['Test Wall'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // Two earlier targets: "it" is the later one, not slot 0, so the line stays unread.
+    const two = compileCard(S('Test Muddle', "Target creature gets +1/+1 until end of turn. Put a +1/+1 counter on target creature you control. Then it fights target creature you don't control.") as never);
+    expect(two.ok && two.unread.length).toBe(1);
+  });
+
+  it('the counter first, then the fight: the 3/3 kills the 0/3 and takes nothing back', () => {
+    const s = seated('Test Brawl');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    const t = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brawl'), targets: [{ kind: 'card', id: mine }, { kind: 'card', id: wall }] } as Action), 30));
+    expect(t.instances[mine]!.counters['+1/+1']).toBe(1);
+    expect(t.instances[wall]!.zone).toBe('graveyard');
+    expect(damageOn(t, mine)).toBe(0);
+  });
+
+  it('the first creature gone before it resolves: no fight, and the second is not taken for it', () => {
+    const s = seated('Test Brawl');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brawl'), targets: [{ kind: 'card', id: mine }, { kind: 'card', id: wall }] } as Action);
+    t = relocate(t, t.instances[mine]!, 'graveyard', 0, 'top');
+    t = resolve(t);
+    expect(t.instances[wall]!.zone).toBe('battlefield');
+    expect(damageOn(t, wall)).toBe(0);
+    expect(t.instances[wall]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('the bite: one way, from the creature; "up to one" left out still puts the counter on', () => {
+    const s = seated('Test Snap');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    const card = find(s, 0, 'hand', 'Test Snap');
+    const bit = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: mine }, { kind: 'card', id: wall }] } as Action), 30));
+    expect(bit.instances[wall]!.zone).toBe('graveyard');
+    expect(damageOn(bit, mine)).toBe(0);
+    const alone = resolve(drain(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: mine }] } as Action), 30));
+    expect(alone.instances[mine]!.counters['+1/+1']).toBe(1);
+    expect(alone.instances[wall]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

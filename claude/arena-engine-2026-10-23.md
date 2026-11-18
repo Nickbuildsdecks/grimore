@@ -32386,3 +32386,44 @@ Faults injected by hand: 5 of 5 caught.
     engine tests: 5,094, all passing
 
 Coverage: 12,463 of 31,743 cards (+10), 32,479 of 59,509 lines (+18). Staples: 241 of 244.
+
+## D959 — "Then it fights / that creature deals damage equal to its power to"
+
+"Put a +1/+1 counter on target creature you control. Then it fights target creature an opponent
+controls." "… Then that creature deals damage equal to its power to target creature you don't
+control." D542 left every such referent unread: the second sentence borrows the first's target and
+also declares one of its own, and `referentEffect` supplies exactly one object. D608 then read one
+spelling of it whole: a pump, then "it fights / bites".
+
+How it is read now:
+- **In `composeEffects`, as its own targeting part.** After exactly one earlier targeting part that
+  aims at exactly one creature, the clause "(then) it / that creature fights / deals damage equal to
+  its power to <target>" declares its target, and its first creature is slot 0 of the full target
+  list. D953's slicing gives each part its own targets. The slicing wrapper now also passes the full
+  list as `targetSlots`, so this part can see the earlier one.
+- **The first creature gone means nothing happens.** If it has left by resolution, its slot is
+  empty, so there is no fight and no bite (CR 701.12b). The other creature is not taken in its
+  place.
+- **Damage from the creature**, credited to its controller, as `selfBite`'s is.
+- **D608's `pumpThenBiteResolution` deleted.** Two readers for one sentence is what D441
+  collapses, and the general one is also more correct. D608 read its targets with `cardTargets`,
+  which shifts when the first target has gone, so the creature it meant to fight would have been
+  taken as the one it pumped. D608's own tests pass on the composed reading. Its compile row's
+  "Then that creature …" refusal now asserts the reading.
+- **Two earlier targets stay unread**: "it" then means the later one, not slot 0.
+
+10 legal cards now read whole.
+
+**Tests.** 4 engine tests, plus D608's existing ones on the new path:
+- the cards read, and a line with two earlier targets stays unread;
+- the counter, then the fight: a 3/3 kills a 0/3 and takes nothing back;
+- the first creature gone before resolution: no fight, and the second is not taken for it;
+- the bite is one way and from the creature; with "up to one" left out, the counter still goes on.
+
+Faults injected by hand: 7. 6 were caught. The seventh was a zone check that a gone target's empty
+slot already covers, and it was removed. One of the six, the one-earlier-target guard, was missed
+at first and is now pinned.
+
+    engine tests: 5,098, all passing
+
+Coverage: 12,473 of 31,743 cards (+10), 32,489 of 59,509 lines (+10). Staples: 241 of 244.

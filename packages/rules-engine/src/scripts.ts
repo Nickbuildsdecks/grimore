@@ -25097,6 +25097,48 @@ function composeEffects(
     */
     const cardAimed = earlier !== undefined && earlier.kind !== 'player' && earlier.kind !== 'any';
     const pronounFirst = cardAimed && /\bit\b/i.test(clause);
+    /*
+      **"Then it fights target creature you don't control"** (D959): the earlier target is the first
+      creature of a fight or a bite, and this clause chooses the second. "Put a +1/+1 counter on
+      target creature you control. Then it fights target creature an opponent controls." D542 left
+      every such referent unread because the clause declares a target of its own as well as
+      borrowing one; D953's two-target slicing is what can hold both. So it is read here as its own
+      targeting part, and its first creature is slot 0 of the full target list, which the slicing
+      passes along as `targetSlots`.
+
+      Only after exactly one earlier targeting part that aims at exactly one creature, so slot 0 is
+      that creature. If it has gone by the time the spell resolves, its slot is empty and nothing is
+      dealt, by either side (CR 701.12b; and a bite whose biter is an illegal target deals nothing).
+      Its damage is from the creature, credited to the creature's controller, as `selfBite`'s is.
+    */
+    const onePriorCreature = earlier !== undefined && earlier.kind === 'creature' && (earlier.count ?? 1) === 1
+      && parts.filter((part) => part.targets !== undefined).length === 1
+      && parts.find((part) => part.targets !== undefined)!.targets!.length === 1;
+    const pairs = onePriorCreature
+      ? new RegExp(`^(?:then )?(?:it|that creature) (fights|deals damage equal to its power to) (${TARGET_QUANTIFIER_PREFIX}target .+?)\\.?$`, 'i').exec(clause.trim())
+      : null;
+    if (pairs !== null) {
+      const fights = pairs[1]!.toLowerCase() === 'fights';
+      const second = targetSpecFrom(pairs[2]!, false);
+      if (second !== null && (second.count ?? 1) === 1 && (fights ? second.kind === 'creature' : pointsAtAPermanent(second))) {
+        parts.push({
+          targets: [second],
+          effect: (c) => {
+            const first = (c.targetSlots ?? c.targets)[0];
+            const other = c.targets[0];
+            if (first === null || first === undefined || first.kind !== 'card' || other === undefined || other.kind !== 'card') return c.state;
+            const inst = c.state.instances[first.id];
+            if (inst === undefined) return c.state;
+            if (fights) return fight(c.state, first.id, other.id, inst.zoneSeat);
+            const power = characteristicsOf(c.state, inst).power;
+            return power > 0
+              ? dealDamage(c.state, other, power, { controller: inst.zoneSeat, source: first.id })
+              : c.state;
+          },
+        });
+        continue;
+      }
+    }
     const read = pronounFirst ? null : withEarlierCardTarget(cardAimed, () => readEffect(clause, name, where));
     if (read !== null) { parts.push(read); continue; }
     // "You may X. If you do, Y", held together by `clausesOf` (D952), read as `optionalEffect` reads it.
@@ -25287,7 +25329,8 @@ function composeEffects(
         const slots = c.targetSlots ?? c.targets;
         return (last ? slots.slice(from) : slots.slice(from, from + n)).filter((t): t is Target => t !== null);
       };
-      const aim = (fn: EffectFn): EffectFn => (c) => fn({ ...c, targets: own(c) });
+      // `targetSlots` carried whole, so a part that pairs with an earlier target can still see it (D959).
+      const aim = (fn: EffectFn): EffectFn => (c) => fn({ ...c, targets: own(c), targetSlots: c.targetSlots ?? c.targets });
       parts[parts.indexOf(part)] = {
         ...part, effect: aim(part.effect), ...(part.immediate === undefined ? {} : { immediate: aim(part.immediate) }),
       };
@@ -29372,49 +29415,18 @@ function optionalResolution(lines: readonly string[], name: string): ReadEffect 
     composeEffects(clausesOf(text), name, null));
 }
 
-/**
- * "Target creature you control gets +1/+1 until end of turn. **It** fights / deals damage equal to
- * its power to target creature you don't control" (D608) — the pump-then-bite family, which D542's
- * docblock names as the referent half it left unread.
- *
- * Read as one shape rather than two composed clauses because the second sentence's "it" is the
- * first sentence's target and it declares a target of its own, which the composer refuses (two
- * clauses, two target choices). Here both targets are declared once, in printed order, and the
- * effect pumps the first, then fights or bites with it — so the pump counts, which is the card.
- */
-function pumpThenBiteResolution(lines: readonly string[]): ReadEffect | null {
-  if (lines.length !== 1) return null;
-  const matched = new RegExp(
-    `^target creature you control gets ([+-]\\d+)\\/([+-]\\d+) until end of turn\\. (?:then )?it `
-    + `(fights|deals damage equal to its power to) (${TARGET_QUANTIFIER_PREFIX}target .+?)\\.?$`,
-    'i',
-  ).exec(plain(lines[0]!).trim());
-  if (matched === null) return null;
-  const size = sizeBonus(Number(matched[1]), Number(matched[2]));
-  const biter = targetSpecFrom('target creature you control', true);
-  const bitten = targetSpecFrom(matched[4]!, false);
-  if (size === null || biter === null || bitten === null || !pointsAtAPermanent(bitten)
-    || (bitten.count ?? 1) !== 1) return null;
-  const fights = matched[3]!.toLowerCase() === 'fights';
-  if (fights && bitten.kind !== 'creature') return null;
-  return {
-    targets: [biter, bitten],
-    effect: (c) => {
-      const [mine, theirs] = cardTargets(c);
-      if (mine === undefined) return c.state;
-      let state = pump(c.state, [mine], c.source, c.controller, { ...size, duration: 'end-of-turn' });
-      // "Up to one" may have chosen nothing: the pump still happened.
-      if (theirs === undefined || state.instances[theirs]?.zone !== 'battlefield') return state;
-      if (fights) return fight(state, mine, theirs, c.controller);
-      const inst = state.instances[mine];
-      if (inst === undefined || inst.zone !== 'battlefield') return state;
-      const power = characteristicsOf(state, inst).power;
-      return power > 0
-        ? dealDamage(state, { kind: 'card', id: theirs }, power, { controller: c.controller, source: mine })
-        : state;
-    },
-  };
-}
+/*
+  `pumpThenBiteResolution` lived here (D608), and D959 deleted it.
+
+  It read one printed shape whole — "Target creature you control gets +A/+B until end of turn.
+  (Then) it fights / deals damage equal to its power to target creature …" — because the composer
+  could not then hold a clause that borrows the earlier target and declares one of its own. D959
+  reads that pair in `composeEffects` for any targeting first sentence (a counter, a pump with a
+  condition, "that creature"), on top of D953's two-target slicing. Two readers for one sentence is
+  the shape D441 collapses, and the general one is also the more correct: this one read its targets
+  with `cardTargets`, which shifts when the first target has gone, so the creature it meant to fight
+  would have been taken as the one it pumped. The composed reading uses the slots.
+*/
 
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
@@ -29430,7 +29442,6 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
   return xSpellResolution(lines, name)
     ?? lootResolution(lines, name)
     ?? exileForLifeResolution(lines, name)
-    ?? pumpThenBiteResolution(lines)
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
     ?? composeEffects(lines.flatMap(clausesOf), name, null)
     /*
