@@ -23067,6 +23067,72 @@ describe('"if {U} was spent to cast it" (D742)', () => {
   });
 });
 
+describe('pumps by X, and pumps of several targets (D743)', () => {
+  const I = (name: string, text: string, cost: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    I('Test Surge', 'Target creature gets +X/+0 until end of turn.', '{X}{G}'),
+    I('Test Wither', 'Target creature gets -X/-X until end of turn.', '{X}{B}'),
+    I('Test Pair', 'Up to two target creatures each get +1/+1 until end of turn.', '{G}'),
+    I('Test Duel', 'Two target creatures each get +2/+0 and gain first strike until end of turn.', '{G}'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd743', name: 'Pumps',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 20 }, { name: 'Swamp', count: 20 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd743', 1: 'd743' }, deckSpecs: { d743: deck.deck }, hands: { 0: [hand] },
+    battlefield: { 0: [...mine, 'Forest', 'Forest', 'Forest', 'Swamp', 'Swamp'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets: string[], x?: number) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+    targets: targets.map((id) => ({ kind: 'card' as const, id })), ...(x === undefined ? {} : { x }),
+  })));
+  const size = (s: GameState, id: string) => { const ch = characteristicsOf(s, s.instances[id]!); return `${ch.power}/${ch.toughness}`; };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('+X/+0 for X = 3, and -X/-X for X = 2 kills a 2/2', () => {
+    let s = table('Test Surge', ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Surge', [bear], 3);
+    expect(size(s, bear)).toBe('5/2');
+    let w = table('Test Wither', [], ['Test Bear']);
+    const theirs = find(w, 1, 'battlefield', 'Test Bear');
+    w = cast(w, 'Test Wither', [theirs], 2);
+    expect(w.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('up to two each get +1/+1: both, or just one', () => {
+    let s = table('Test Pair', ['Test Bear', 'Test Bear']);
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    const both = cast(s, 'Test Pair', [a!, b!]);
+    expect([size(both, a!), size(both, b!)]).toEqual(['3/3', '3/3']);
+    s = cast(s, 'Test Pair', [a!]);
+    expect([size(s, a!), size(s, b!)]).toEqual(['3/3', '2/2']);
+  });
+
+  it('two each get +2/+0 and first strike, for the turn', () => {
+    let s = table('Test Duel', ['Test Bear'], ['Test Bear']);
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Duel', [mine, theirs]);
+    for (const id of [mine, theirs]) {
+      expect(size(s, id)).toBe('4/2');
+      expect(characteristicsOf(s, s.instances[id]!).keywords.has('first strike')).toBe(true);
+    }
+    for (let i = 0; i < 40 && s.activeSeat === 0; i++) {
+      const owed = pendingDeclaration(s);
+      s = owed?.kind === 'attackers' ? apply(s, { type: 'auto:attack', by: 0, attackers: [] }) : passBoth(s);
+    }
+    expect(size(s, mine)).toBe('2/2');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
