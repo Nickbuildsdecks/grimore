@@ -34215,4 +34215,4 @@ effect with no target.
 Faults injected by script: 2 of 2 caught, one after pinning (an optional target counted as
 unaimable). Seed 59203 replays to a finish.
 
-    engine tests: 5,302, all passing (merged with the other session's D988)
+    engine tests: 5,306, all passing (merged with the other session's D988 and D989)
