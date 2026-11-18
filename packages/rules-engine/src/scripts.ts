@@ -17293,6 +17293,17 @@ function castBound(printed: string, self: string): Partial<CastEvent> | null {
       : { manaValueAtLeast: value };
   }
   if (new RegExp(`^that targets ${self}$`, 'i').test(text)) return { targetsSelf: true };
+  // D988: "that's both red and white".
+  const both = /^that's both (white|blue|black|red|green) and (white|blue|black|red|green)$/i.exec(text);
+  if (both !== null) {
+    return { allColours: [both[1]!, both[2]!].map((word) => CAST_COLOURS[word.toLowerCase() as keyof typeof CAST_COLOURS]) as Color[] };
+  }
+  // D988: "that targets a creature", "… a creature you control", "… an opponent or a creature an opponent controls".
+  const aimed = /^that targets (a creature you control|a creature|an opponent or a creature an opponent controls)$/i.exec(text);
+  if (aimed !== null) {
+    const what = aimed[1]!.toLowerCase();
+    return { targetsWhat: what === 'a creature' ? 'creature' : what === 'a creature you control' ? 'creature-you-control' : 'opponent-or-their-creature' };
+  }
   // "…spell of the chosen color / type" (D643): the watcher's own answer, asked in `fireTrigger`.
   const chosen = /^of the chosen (color|type)$/i.exec(text);
   if (chosen !== null) return { ofChosen: chosen[1]!.toLowerCase() === 'color' ? 'color' : 'type' };

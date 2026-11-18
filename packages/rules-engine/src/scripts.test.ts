@@ -23777,6 +23777,63 @@ describe('"that player reveals their hand. You choose a card from it" on a hit (
   });
 });
 
+describe('cast triggers on what the spell targets, and on "both red and white" (D988)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human Monk', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' });
+  const I = (name: string, text: string, colors: string[]) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors, layout: 'normal' });
+  const ROWS = [
+    C('Test Mentor', 'Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on this creature.'),
+    C('Test Instigator', 'Whenever you cast a spell that targets an opponent or a creature an opponent controls, put a +1/+1 counter on this creature.'),
+    C('Test Partisan', "Whenever you cast a spell that's both red and white, put a +1/+1 counter on this creature."),
+    I('Test Pump', 'Target creature gets +1/+1 until end of turn.', ['G']),
+    I('Test Zap', 'Test Zap deals 1 damage to any target.', ['R']),
+    I('Test Charm', 'You gain 1 life.', ['R', 'W']),
+    C('Test Watcher', 'Whenever you cast a spell that targets a creature, put a +1/+1 counter on this creature.'),
+    I('Test Raise', 'Return target creature card from your graveyard to your hand.', ['B']),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd988', name: 'Aimed', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const cast = (watcher: string, spell: string, target: (s: GameState) => Target | undefined) => castWith(watcher, spell, [], target);
+  const castWith = (watcher: string, spell: string, graveyard: string[], target: (s: GameState) => Target | undefined) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd988', 1: 'd988' }, deckSpecs: { d988: deck.deck },
+      hands: { 0: [spell] }, graveyard: { 0: graveyard }, battlefield: { 0: [watcher, 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const aim = target(s);
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...(aim === undefined ? {} : { targets: [aim] }) } as Action);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    return t.instances[find(t, 0, 'battlefield', watcher)]!.counters['+1/+1'] ?? 0;
+  };
+  const mineBear = (s: GameState): Target => ({ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') });
+  const theirBear = (s: GameState): Target => ({ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"targets a creature": a creature on the battlefield, not a creature card in a graveyard', () => {
+    expect(cast('Test Watcher', 'Test Pump', theirBear)).toBe(1);
+    expect(castWith('Test Watcher', 'Test Raise', ['Test Bear'], (s) => ({ kind: 'card', id: find(s, 0, 'graveyard', 'Test Bear') }))).toBe(0);
+  });
+
+  it('"targets a creature you control": yours fires it, theirs does not', () => {
+    expect(cast('Test Mentor', 'Test Pump', mineBear)).toBe(1);
+    expect(cast('Test Mentor', 'Test Pump', theirBear)).toBe(0);
+  });
+
+  it('"targets an opponent or a creature an opponent controls": either fires it, your own creature or yourself does not', () => {
+    expect(cast('Test Instigator', 'Test Zap', () => ({ kind: 'player', seat: 1 }))).toBe(1);
+    expect(cast('Test Instigator', 'Test Zap', theirBear)).toBe(1);
+    expect(cast('Test Instigator', 'Test Zap', mineBear)).toBe(0);
+    expect(cast('Test Instigator', 'Test Zap', () => ({ kind: 'player', seat: 0 }))).toBe(0);
+  });
+
+  it('"both red and white": a red-and-white spell, not a red one', () => {
+    expect(cast('Test Partisan', 'Test Charm', () => undefined)).toBe(1);
+    expect(cast('Test Partisan', 'Test Zap', () => ({ kind: 'player', seat: 1 }))).toBe(0);
+  });
+});
+
 describe('"each opponent mills N cards", "each player mills N cards" (D748)', () => {
   const I = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
   const ROWS = [I('Test Erosion', 'Each opponent mills three cards.'), I('Test Flood', 'Each player mills two cards.')];

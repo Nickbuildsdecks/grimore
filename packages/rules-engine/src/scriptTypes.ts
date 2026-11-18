@@ -969,6 +969,8 @@ export type TriggerEvent =
        * what one event per cast already gives.
        */
       readonly ofColours?: readonly Color[];
+      /** "A spell that's both red and white" (D988): every one of these colours, not any. */
+      readonly allColours?: readonly Color[];
       /**
        * "Whenever a player casts a **multicolored** spell" — two or more colours (CR 105.1).
        *
@@ -1058,6 +1060,14 @@ export type TriggerEvent =
        * as instance ids. Player and ability targets are deliberately absent — see `targetsSelf`.
        */
       readonly targetIds?: readonly string[];
+      /** Set by the engine (D988): the **player** targets the spell was cast with. */
+      readonly targetSeats?: readonly SeatIndex[];
+      /**
+       * "Whenever you cast a spell **that targets a creature**" (D988), "… a creature you control",
+       * "… an opponent or a creature an opponent controls". "You" is the watcher's controller, so it
+       * is answered in `fireTrigger` beside `targetsSelf`, from the board as the trigger fires.
+       */
+      readonly targetsWhat?: 'creature' | 'creature-you-control' | 'opponent-or-their-creature';
       /**
        * "Whenever you cast a spell with **mana value 4 or greater**" — the floor, inclusive.
        *
