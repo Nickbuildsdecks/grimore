@@ -50754,6 +50754,6 @@ condition or a count, and ward on a single named permanent.
 
 Faults injected by script: 7 of 7 caught.
 
-    engine tests: 5,188, all passing
+    engine tests: 5,194, all passing (merged with the other session's D975)
 
 Coverage: 12,765 of 31,743 cards (+34), 33,016 of 59,509 lines (+57), against 631357c.
