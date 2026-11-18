@@ -32919,7 +32919,7 @@ Faults injected by script: 16 of 17 caught. The miss removes the own-side check 
 permission, and nothing observable changes: another seat's library top is never put in an
 opponent's view to be shown.
 
-    engine tests: ENGINE_COUNT, all passing (merged with the other session's D970 and D971)
+    engine tests: 5,151, all passing (merged with the other session's D970 and D971)
 
 Coverage: 12,590 of 31,743 cards (+8), 32,691 of 59,509 lines (+62), against 700bd75. Staples:
 241 of 244 (Bolas's Citadel waits on D732).
