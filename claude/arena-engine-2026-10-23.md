@@ -33911,3 +33911,32 @@ Pod sweep 59001 (D740–D744): every game finished.
     engine tests: 5,260, all passing
 
 Coverage: 13,129 of 31,878 cards (+12), 33,645 of 59,841 lines (+24), against e8981aa.
+
+## D746 — More counts: lands in your graveyard, the dead, the attackers, the draws
+
+`countOfThing` is the count every "for each …" reads: life gained, cards drawn, tokens made, cost
+reductions. It was missing counts the engine already keeps a record of:
+- **"<type> card in your graveyard"** for land, artifact, enchantment, instant, sorcery and
+  planeswalker, by printed type line. Creature cards already read.
+- **"creature that died this turn"**: morbid's tally, `creaturesDiedThisTurn`.
+- **"creature that attacked this turn"**: `attackersThisTurn` (D726).
+- **"attacking creature you control"**: the attackers this seat has declared now.
+- **"card you've drawn this turn"**: `cardsDrawnThisTurn`.
+
+The self cost reductions ("This spell costs {1} less to cast for each …") use the same count, so
+they read too wherever the thing counted is one of these.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- three lands and a Bear in the graveyard gain 3, and a {3} spell that falls by the lands is
+  castable with no land out, and not without them;
+- a creature destroyed this turn counts;
+- two of three Bears attack: 2 while attacking, and 2 for "attacked this turn" after combat;
+- the cards drawn this turn.
+
+Faults injected by script: 5 of 5 caught, two after pinning (a non-land in the graveyard, and a
+creature that didn't attack).
+
+    engine tests: 5,272, all passing
+
+Coverage: 13,165 of 31,900 cards (+20), 33,708 of 59,888 lines (+26), against 9f5db7f.

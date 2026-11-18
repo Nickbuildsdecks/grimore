@@ -23466,6 +23466,82 @@ describe('"exile up to N target cards from graveyards" (D745)', () => {
   });
 });
 
+describe('more counts: lands in your graveyard, the dead, the attackers, the draws (D746)', () => {
+  const S_ = (name: string, text: string, type = 'Instant', cost = '{0}', cmc = 0) => ({ name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    S_('Test Loam', 'You gain 1 life for each land card in your graveyard.'),
+    S_('Test Wake', 'You gain 1 life for each creature that died this turn.'),
+    S_('Test Ride', 'You gain 1 life for each creature that attacked this turn.'),
+    S_('Test Rally', 'You gain 1 life for each attacking creature you control.'),
+    S_('Test Study', "You gain 1 life for each card you've drawn this turn."),
+    S_('Test Mulch', 'This spell costs {1} less to cast for each land card in your graveyard.\nYou gain 1 life.', 'Sorcery', '{3}', 3),
+    S_('Test Doom', 'Destroy target creature.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd746', name: 'Counts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 36 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[] = [], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd746', 1: 'd746' }, deckSpecs: { d746: deck.deck }, hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets: string[] = []) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets.length ? { targets: targets.map((id) => ({ kind: 'card' as const, id })) } : {}),
+  })), 20);
+  const gained = (before: GameState, after: GameState) => after.seats[0]!.life - before.seats[0]!.life;
+  const bury = (s: GameState, n: number) => {
+    let next = s;
+    for (let i = 0; i < n; i++) next = apply(next, { type: 'card:move', by: 0, card: find(next, 0, 'library', 'Forest'), toZone: 'graveyard' });
+    return next;
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 6)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('land cards in your graveyard, and a cost that falls by them', () => {
+    let s = bury(table(['Test Loam', 'Test Mulch']), 3);
+    // A card that is not a land does not count.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Bear'), toZone: 'graveyard' });
+    expect(gained(s, cast(s, 'Test Loam'))).toBe(3);
+    // {3} less three: castable with no land on the battlefield.
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Mulch'))).toBe(true);
+    const bare = table(['Test Mulch']);
+    expect(legalActions(bare, 0).plays.some((p) => p.card === find(bare, 0, 'hand', 'Test Mulch'))).toBe(false);
+  });
+
+  it('creatures that died this turn', () => {
+    let s = table(['Test Doom', 'Test Wake'], [], ['Test Bear']);
+    s = cast(s, 'Test Doom', [find(s, 1, 'battlefield', 'Test Bear')]);
+    expect(gained(s, cast(s, 'Test Wake'))).toBe(1);
+  });
+
+  it('attacking creatures now, and the creatures that attacked this turn afterwards', () => {
+    // Three Bears, two of them attack.
+    let s = table(['Test Rally', 'Test Ride'], ['Test Bear', 'Test Bear', 'Test Bear']);
+    const bears = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear').slice(0, 2);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: bears.map((attacker) => ({ attacker, defender: 1 })) });
+    const during = cast(s, 'Test Rally');
+    expect(gained(s, during)).toBe(2);
+    let after = during;
+    for (let i = 0; i < 20 && after.step !== 'postcombat-main'; i++) {
+      const owed = pendingDeclaration(after);
+      after = owed?.kind === 'blockers' ? apply(after, { type: 'auto:block', by: owed.seats[0]!, blocks: [] }) : passBoth(after);
+    }
+    expect(gained(after, cast(after, 'Test Ride'))).toBe(2);
+  });
+
+  it('cards drawn this turn', () => {
+    const s = table(['Test Study']);
+    const drawn = s.cardsDrawnThisTurn['0'] ?? 0;
+    expect(drawn).toBeGreaterThan(0);
+    expect(gained(s, cast(s, 'Test Study'))).toBe(drawn);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
