@@ -4869,6 +4869,9 @@ function applyLibraryTop(
     if (spec.revealPicked === true) {
       for (const id of picked) next = withInstance(next, id, { revealed: true });
     }
+  } else if (picked.length > 0 && (spec?.chosenGoTo === 'battlefield' || spec?.chosenGoTo === 'battlefield-tapped')) {
+    // "Put … from among them onto the battlefield (tapped)" (D973), under the chooser's control.
+    for (const id of picked) next = putOntoBattlefield(next, id, seat, { tapped: spec.chosenGoTo === 'battlefield-tapped' });
   } else if (picked.length > 0 && spec?.chosenGoTo === 'top') {
     // Back on top in the order picked: the first picked is the new top card (D651).
     const rest = listAt(next, key).filter((id) => !picked.includes(id));

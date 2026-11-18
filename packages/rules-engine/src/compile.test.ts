@@ -18315,6 +18315,11 @@ describe('the dig: what the reader takes and what it leaves (D584)', () => {
       'Look at the top four cards of your library. You may reveal an Elf card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
     ['a list with a subtype in it (D919)',
       'Look at the top four cards of your library. You may reveal an Aura, creature, or planeswalker card from among them and put it into your hand. Put the rest on the bottom of your library in any order.'],
+    // Both were "leaves … unread" rows until D973.
+    ['a land put onto the battlefield tapped (D973)',
+      'Look at the top five cards of your library. You may put a land card from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'],
+    ['up to two revealed (D973)',
+      'Look at the top four cards of your library. You may reveal up to two creature cards from among them and put them into your hand. Put the rest on the bottom of your library in a random order.'],
   ])('reads %s', (_why, text) => {
     const read = spell(text as string);
     expect(read.ok).toBe(true);
@@ -18325,16 +18330,12 @@ describe('the dig: what the reader takes and what it leaves (D584)', () => {
   it.each([
     // "…then put them back in any order" was a row here until D651, which reads the answer as a
     // sequence (`chosenGoTo: 'top'`, the first picked on top) — see "Brainstorm, Ponder and the wheel".
-    ['a land put onto the battlefield, which is another destination',
-      'Look at the top five cards of your library. You may put a land card from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'],
     ['a filter that is a word for no card kind',
       'Look at the top five cards of your library. You may reveal a shiny card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
     ['a filter with a number in it',
       'Look at the top five cards of your library. You may reveal a creature card with power 2 or less from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
     ['two negations, which is not a list of types',
       'Look at the top four cards of your library. You may reveal a noncreature, nonland card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.'],
-    ['up to two revealed',
-      'Look at the top four cards of your library. You may reveal up to two creature cards from among them and put them into your hand. Put the rest on the bottom of your library in a random order.'],
     ['a count the sentence does not print',
       'Look at the top X cards of your library. Put one of them into your hand and the rest on the bottom of your library in any order.'],
     ['taking all of them, which is not a choice',

@@ -1560,7 +1560,9 @@ export interface CardsDecisionSpec {
    * `'top'` (D651) is "then put them back in any order": every card looked at is picked, and they go
    * back on top in the order picked — the first one picked is the new top card. Ponder.
    */
-  readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand' | 'top';
+  readonly chosenGoTo?: 'bottom' | 'graveyard' | 'hand' | 'top'
+    /** Onto the battlefield under the chooser's control (D973), tapped or not. */
+    | 'battlefield' | 'battlefield-tapped';
   /**
    * For `library-top`: where the cards that were looked at and **not** picked go (D584).
    *
