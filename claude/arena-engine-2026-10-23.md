@@ -32635,3 +32635,37 @@ own-creature check was unpinned (now pinned by the block test). The second round
     engine tests: 5,120, all passing
 
 Coverage: 12,548 of 31,743 cards (+4), 32,582 of 59,509 lines (+5). Staples: 241 of 244.
+
+## D965 — "It deals …" on a trigger about another creature: from that creature
+
+A fix, found by D964's tests. The general damage reader (`damageEffect`) read its subject, "~" or
+"it", and then dealt from `c.source`, the watching card, and took "its power" from it too. On a
+trigger about another creature, "it" is that creature. So Warstorm Surge ("Whenever a creature you
+control enters, it deals damage equal to its power to any target") read whole and dealt the
+enchantment's power, 0, every time. A lifelink or deathtouch creature dealing "1 damage to each
+opponent" this way would not have applied its keyword either. Warstorm Surge is the one legal card
+printed that way. Nothing reported it, because the card counted as read.
+
+How it is read now:
+- **"It" is `itMeans`:** the event's creature where there is one, the source otherwise. It is both
+  the damage source passed to the destination and the creature whose power "its power" reads.
+- **The card's own name is always the source**: "this creature deals damage equal to its power"
+  is its own power, even on a trigger about another creature.
+- **D964's "that creature deals" exclusion is lifted.** It was there only because of this.
+
+2 more legal cards now read whole, and Warstorm Surge now plays correctly.
+
+**Tests.** 6 engine tests, and D964's "that creature deals" test:
+- the damage is from the creature that entered, so its lifelink gains the life;
+- "this enchantment deals": the source is still the enchantment, so no lifelink;
+- "this creature deals damage equal to its power": its own 1, not the entered 3/3's;
+- "damage equal to its power" is the entered 3/3's;
+- on its own death trigger, "it" is still the card itself;
+- D964's: "that creature deals", with the lifelink and the power.
+
+Faults injected by hand: 4. 3 were caught at once. The named-subject case was missed twice: the
+first pin exercised the source but not the power. The own-power test now catches it.
+
+    engine tests: 5,126, all passing
+
+Coverage: 12,550 of 31,743 cards (+2), 32,585 of 59,509 lines (+3). Staples: 241 of 244.

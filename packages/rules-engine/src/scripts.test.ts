@@ -20951,19 +20951,23 @@ describe('"that creature" on a trigger about another creature (D964)', () => {
       if (s.pendingChoice !== null) { s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [bear === undefined ? { kind: 'player', seat: 1 } : { kind: 'card', id: bear }] }), 30); continue; }
       const d = s.pendingDecision;
       s = d === null ? drain(passBoth(s), 30)
-        : drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => o === 'Yes') } as Action), 30);
+        : drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => !/^(no|decline|don)/i.test(o)) } as Action), 30);
     }
     return { before, s, leech: find(s, 0, 'battlefield', 'Test Leech'), bear };
   };
 
   it('reads whole', () => {
     expect(deck.unknown).toEqual([]);
-    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
-    // "That creature deals": the damage readers deal from the watching card, so these stay unread.
-    for (const row of ROWS.slice(1, 3)) {
-      const read = compileCard(row as never);
-      expect(read.ok && read.unread.length, row.name).toBe(1);
-    }
+    // "That creature deals" reads too since D965 made the damage reader's "it" the event's creature.
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"that creature deals" (D965): from the creature that entered, its lifelink and its power', () => {
+    const kindled = enter('Test Kindler');
+    expect(kindled.s.seats[1]!.life).toBe(kindled.before.seats[1]!.life - 1);
+    expect(kindled.s.seats[0]!.life).toBe(kindled.before.seats[0]!.life + 1);
+    const slung = enter('Test Sling');
+    expect(slung.s.seats[1]!.life).toBe(slung.before.seats[1]!.life - 3);
   });
 
   it('the pump goes on the creature that entered', () => {
@@ -20993,6 +20997,70 @@ describe('"that creature" on a trigger about another creature (D964)', () => {
     expect(s.instances[bear!]!.counters['+1/+1']).toBe(1);
     expect(characteristicsOf(s, s.instances[bear!]!).keywords).toContain('haste');
     expect(characteristicsOf(s, s.instances[leech]!).keywords).not.toContain('haste');
+  });
+});
+
+describe('"it deals …" on a trigger about another creature (D965)', () => {
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    E('Test Ember', 'Whenever another creature you control enters, it deals 1 damage to each opponent.'),
+    E('Test Catapult', 'Whenever another creature you control enters, it deals damage equal to its power to any target.'),
+    E('Test Brazier', 'Whenever another creature you control enters, this enchantment deals 1 damage to each opponent.'),
+    { name: 'Test Slinger', type_line: 'Creature — Goblin', oracle_text: 'Whenever another creature you control enters, this creature deals damage equal to its power to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Leech', type_line: 'Creature — Leech', oracle_text: 'Lifelink', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Imp', type_line: 'Creature — Imp', oracle_text: 'When this creature dies, it deals 2 damage to each opponent.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd965', name: 'It deals',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  const enter = (watcher: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd965', 1: 'd965' }, deckSpecs: { d965: deck.deck }, hands: { 0: ['Test Leech'] },
+      battlefield: { 0: [watcher, 'Mountain'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Leech') } as Action), 30);
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      s = s.pendingChoice !== null
+        ? drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] }), 30)
+        : drain(passBoth(s), 30);
+    }
+    return { before, s };
+  };
+
+  it('the damage is from the creature that entered: its lifelink gains the life', () => {
+    const { before, s } = enter('Test Ember');
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life - 1);
+    expect(s.seats[0]!.life).toBe(before.seats[0]!.life + 1);
+  });
+
+  it('"this enchantment deals": the source is still the enchantment, so no lifelink', () => {
+    const { before, s } = enter('Test Brazier');
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life - 1);
+    expect(s.seats[0]!.life).toBe(before.seats[0]!.life);
+  });
+
+  it('"this creature deals damage equal to its power": its own power, 1, not the 3/3\'s', () => {
+    const { before, s } = enter('Test Slinger');
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life - 1);
+  });
+
+  it('"damage equal to its power" is the entered 3/3\'s', () => {
+    const { before, s } = enter('Test Catapult');
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life - 3);
+  });
+
+  it('on its own trigger, "it" is still the card itself', () => {
+    expect(compileCard(ROWS.find((r) => r.name === 'Test Imp') as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd965', 1: 'd965' }, deckSpecs: { d965: deck.deck }, battlefield: { 0: ['Test Imp'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s.seats[1]!.life;
+    s = drain(destroy(s, find(s, 0, 'battlefield', 'Test Imp')), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.seats[1]!.life).toBe(before - 2);
   });
 });
 

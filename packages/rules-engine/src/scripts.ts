@@ -20064,17 +20064,15 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       target a bare "it" is that target (D723), which is what "that creature" meant. The possessive
       ("that creature's controller") is left alone. The printed clause stays the description.
 
-      **Not where "that creature deals" damage.** The "it deals …" readers deal from the watching
-      card, not the event's creature, so a lifelink creature entering under "that creature deals 1
-      damage to each opponent" would gain nothing and "damage equal to its power" would read the
-      enchantment's. This increment's own tests found that, and those lines stay unread.
+      "That creature deals" damage is read too since D965, which made the damage reader's "it" the
+      event's creature; D964 had excluded it while that reader dealt from the watching card.
     */
     const aboutAnother = on.length > 0 && on.every((event) => {
       const who = (event as { readonly who?: string }).who;
       return who === 'any' || who === 'another';
     });
     const thatCreature = clause.search(/\bthat creature\b(?!['\u2019]s)/i);
-    const asRead = aboutAnother && thatCreature >= 0 && !/\bthat creature deals\b/i.test(clause)
+    const asRead = aboutAnother && thatCreature >= 0
       ? clause.replace(/\bthat creature\b(?!['\u2019]s)/gi, 'it')
       : clause;
     const read = reader(asRead) ?? optionalEffect(asRead, reader, true) ?? punisherEffect(asRead, reader, on, name);
@@ -21448,6 +21446,16 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     'i',
   ).exec(clause.trim());
   if (dealt === null) return null;
+  /*
+    **Who "it" is** (D965). On a trigger about another creature — "Whenever another creature you
+    control enters, it deals 1 damage to each opponent" — "it" is that creature, and it is the source
+    of the damage and the owner of "its power". This read the watching card for both, so a lifelink
+    creature entering gained nothing and "damage equal to its power" was the enchantment's. Now "it"
+    is `itMeans`: the event's creature where there is one, the source otherwise. The card's own name
+    is always the source.
+  */
+  const byIt = /^it\s/i.test(clause.trim());
+  const dealer = (c: EffectContext): string => (byIt ? itMeans(undefined, c) : c.source);
   const where = dealt[2]!.trim();
   /*
     The amount, which is either printed or read off the board.
@@ -21467,7 +21475,7 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   const amountOf = (c: EffectContext): number => {
     if (printed !== null) return printed;
     if (counted !== null) return counted(c);
-    const inst = c.state.instances[c.source];
+    const inst = c.state.instances[dealer(c)];
     return inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
   };
 
@@ -21485,8 +21493,9 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   return {
     ...(dest.targets === undefined ? {} : { targets: dest.targets }),
     ...(dest.spellFlags === undefined ? {} : { spellFlags: dest.spellFlags }),
-    effect: (c) => {
-      const dealtOut = dest.apply(c, amountOf(c));
+    effect: (c0) => {
+      const c = byIt ? { ...c0, source: dealer(c0) } : c0;
+      const dealtOut = dest.apply(c, amountOf(c0));
       return back === null ? dealtOut : back.apply({ ...c, state: dealtOut }, Number(toYou![2]));
     },
   };
