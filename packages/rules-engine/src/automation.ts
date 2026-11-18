@@ -1222,6 +1222,8 @@ function triggerMatches(
       */
       if (want.ofColours !== undefined
         && !want.ofColours.some((colour) => (e.colors ?? []).includes(colour))) return false;
+      if (want.allColours !== undefined
+        && !want.allColours.every((colour) => (e.colors ?? []).includes(colour))) return false;
       if (want.multicoloured === true && (e.colors ?? []).length < 2) return false;
       // D606: historic, colorless, and a list of card types or subtypes, any of them.
       if (want.colorless === true && (e.colors ?? []).length > 0) return false;
@@ -1718,6 +1720,25 @@ function fireTrigger(
   */
   if (trigger.on.kind === 'spell-cast' && trigger.on.targetsSelf === true
     && !(event.kind === 'spell-cast' && (event.targetIds ?? []).includes(holder))) return next;
+  /*
+    "…a spell that targets a creature (you control / an opponent controls), or an opponent" (D988):
+    asked here for `targetsSelf`'s reason — "you" is this watcher's controller — of the creatures
+    the spell targets as they are on the battlefield now, as the trigger fires.
+  */
+  if (trigger.on.kind === 'spell-cast' && trigger.on.targetsWhat !== undefined) {
+    const want = trigger.on.targetsWhat;
+    const mine = inst.zoneSeat;
+    const ids = event.kind === 'spell-cast' ? event.targetIds ?? [] : [];
+    const seats = event.kind === 'spell-cast' ? event.targetSeats ?? [] : [];
+    const creatures = ids.filter((id) => {
+      const target = next.instances[id];
+      return target !== undefined && target.zone === 'battlefield' && characteristicsOf(next, target).isCreature;
+    });
+    const fits = want === 'creature' ? creatures.length > 0
+      : want === 'creature-you-control' ? creatures.some((id) => next.instances[id]!.zoneSeat === mine)
+        : seats.some((seat) => seat !== mine) || creatures.some((id) => next.instances[id]!.zoneSeat !== mine);
+    if (!fits) return next;
+  }
   /*
     "…a spell of the chosen color / type" (D643): the watcher's own answer, so two Vanquisher's
     Banners naming different tribes each draw for their own. A creature type is compared as the

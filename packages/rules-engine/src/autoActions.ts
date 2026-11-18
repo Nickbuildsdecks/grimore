@@ -1322,6 +1322,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       resolves after its spell may have been countered or resolved off the stack.
     */
     targetIds: object.targets.flatMap((t) => (t.kind === 'card' ? [t.id] : [])),
+    // And the players it was pointed at (D988), for "… that targets an opponent or a creature …".
+    targetSeats: object.targets.flatMap((t) => (t.kind === 'player' ? [t.seat] : [])),
     // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
     // and then counter that object. See the `spell-cast` event's `object`.
     object: object.id,
