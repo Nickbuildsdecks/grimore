@@ -32474,3 +32474,42 @@ artifact filter, and "its own attack" rather than every defender.
     engine tests: 5,101, all passing
 
 Coverage: 12,506 of 31,743 cards (+33), 32,529 of 59,509 lines (+40). Staples: 241 of 244.
+
+## D961 — "… to a player or planeswalker", and "you mill"
+
+"Whenever ~ deals combat damage to a player or planeswalker, draw a card": 9 legal lines print
+the planeswalker form. The engine recorded a combat hit only when it landed on a player, so the
+trigger had no event to hear.
+
+How it is read:
+- **A planeswalker hit is recorded**, in `hit` (combat.ts), on the same `dealtCombatDamage` list
+  with a `planeswalker` flag, the walker's controller as `defender`, and the loyalty it lost as
+  the amount. "Landed" means loyalty went down, so damage prevented by a shield records nothing.
+- **Only "… or planeswalker" hears it.** The combat-damage event carries the flag, and
+  `triggerMatches` refuses it unless the trigger has `orPlaneswalker`. The other readers of the
+  list skip it: the one-or-more batch ("whenever one or more creatures you control deal combat
+  damage to a player") and the monarch's crown (CR 720.5 is about a player).
+- **The trigger form** is the existing self combat-damage prologue with "or planeswalker" and the
+  flag.
+- **Edge, stated:** a trampler that hits a planeswalker and its controller in one damage step
+  would fire twice. The rules fire it once per damage event. It is rare enough to leave.
+- **"You mill two cards"**: the self-mill reader now takes the printed subject.
+
+The "player or battle" form (8 lines) stays unread, because battles are not in the engine.
+
+6 legal cards now read whole.
+
+**Tests.** 6 engine tests:
+- the cards read;
+- a hit on a planeswalker: "or planeswalker" draws, "a player" does not, and loyalty goes 5 to 3;
+- a planeswalker hit fires no "one or more … to a player" and takes no crown;
+- damage to the planeswalker prevented: nothing landed, nothing drawn;
+- a hit on the player: both draw, once;
+- "you mill two cards" mills its controller.
+
+Faults injected by hand: 7. 4 were caught at once. Three were missed and are now pinned: the batch
+skip, the crown, and the prevented hit.
+
+    engine tests: 5,107, all passing
+
+Coverage: 12,512 of 31,743 cards (+6), 32,535 of 59,509 lines (+6). Staples: 241 of 244.

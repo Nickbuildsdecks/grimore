@@ -878,6 +878,12 @@ export interface AutomationState {
     readonly creature: string; readonly defender: SeatIndex;
     /** How much landed — life lost, or poison for infect (D903) — for "that many" / "that much". */
     readonly amount?: number;
+    /**
+     * The hit was on a **planeswalker** (D961), and `defender` is its controller. Recorded for
+     * "Whenever ~ deals combat damage to a player or planeswalker" and nothing else: every other
+     * reader of this list skips it, because loyalty is not a player.
+     */
+    readonly planeswalker?: true;
   }[];
   /**
    * One entry per card drawn and not yet announced — the seat that drew it. Drained by `settle`.

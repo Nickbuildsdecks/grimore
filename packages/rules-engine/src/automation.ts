@@ -1429,6 +1429,9 @@ function triggerMatches(
     // And "deals damage to an opponent" (D566), the same sentence with a different verb again.
     case 'deals-damage':
     case 'combat-damage': {
+      // A planeswalker hit is heard only by "… to a player or planeswalker" (D961).
+      if (event.kind === 'combat-damage' && event.planeswalker === true
+        && (want.kind !== 'combat-damage' || want.orPlaneswalker !== true)) return false;
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
       const who = want.who ?? 'self';
@@ -3482,7 +3485,7 @@ function settle(state: GameState, before: GameState): GameState {
       together in the rules (CR 603.3b), and for one player's abilities the order within that is
       their own choice — so the engine takes the one that matches the sequence a player watched.
     */
-    for (const { creature, defender, amount } of connected) {
+    for (const { creature, defender, amount, planeswalker } of connected) {
       /*
         A creature that deals combat damage to the monarch hands the crown to its controller
         (CR 720.5).
@@ -3497,12 +3500,15 @@ function settle(state: GameState, before: GameState): GameState {
         the crown moves and the log says so. At a real table the trigger could be countered.
       */
       const taker = next.instances[creature]?.zoneSeat;
-      if (next.monarch !== null && defender === next.monarch && taker !== undefined
+      if (planeswalker !== true && next.monarch !== null && defender === next.monarch && taker !== undefined
         && taker !== next.monarch && next.seats[taker]?.eliminated === false) {
         next = { ...next, monarch: taker };
       }
       next = raise(
-        next, { kind: 'combat-damage', defender, ...(amount === undefined ? {} : { amount }) },
+        next, {
+          kind: 'combat-damage', defender, ...(amount === undefined ? {} : { amount }),
+          ...(planeswalker === true ? { planeswalker } : {}),
+        },
         next.instances[creature]?.zoneSeat, creature,
       );
     }
@@ -3521,7 +3527,9 @@ function settle(state: GameState, before: GameState): GameState {
       entry rather than parsed out of it.
     */
     const hits = new Map<string, { readonly by: SeatIndex; readonly defender: SeatIndex }>();
-    for (const { creature, defender } of connected) {
+    for (const { creature, defender, planeswalker } of connected) {
+      // "Deal combat damage to a player": a planeswalker hit is not one (D961).
+      if (planeswalker === true) continue;
       const by = next.instances[creature]?.zoneSeat;
       if (by === undefined) continue;
       hits.set(`${by}:${defender}`, { by, defender });

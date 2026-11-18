@@ -17215,6 +17215,12 @@ const TRIGGER_SHAPES: readonly ({
       new RegExp(`^When(?:ever)? ${self} deals combat damage to a player, (.+)$`, 'i'),
     on: [{ kind: 'combat-damage' }],
   },
+  // "… to a player or planeswalker" (D961): the same, and a hit on a planeswalker too.
+  {
+    prologue: (self) =>
+      new RegExp(`^When(?:ever)? ${self} deals combat damage to a player or planeswalker, (.+)$`, 'i'),
+    on: [{ kind: 'combat-damage', orPlaneswalker: true }],
+  },
   // City of Brass.
   {
     prologue: (self) => new RegExp(`^Whenever ${self} becomes tapped, (.+)$`, 'i'),
@@ -22370,7 +22376,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     reader that defaulted the target to the controller would make `target player mills two cards`
     unable to point at an opponent.
   */
-  const selfMill = /^mill ([\w]+) cards?$/i.exec(text);
+  // "You mill two cards" too (D961): the subject printed, the same sentence.
+  const selfMill = /^(?:you )?mill ([\w]+) cards?$/i.exec(text);
   if (selfMill !== null) {
     const n = countFrom(selfMill[1]!);
     if (n !== null && n > 0) {

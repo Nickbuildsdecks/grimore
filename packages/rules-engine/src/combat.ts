@@ -678,6 +678,24 @@ function hit(
   attacker: string,
 ): GameState {
   const next = dealDamage(state, target, amount, opts);
+  /*
+    A hit on a planeswalker (D961), recorded with its flag for "… to a player or planeswalker".
+    Landed means loyalty went down (or the walker is gone, the damage having taken it all).
+  */
+  if (target.kind === 'card') {
+    const walker = state.instances[target.id];
+    if (walker === undefined || walker.zone !== 'battlefield'
+      || !characteristicsOf(state, walker).typeLine.types.some((t) => t.toLowerCase() === 'planeswalker')) return next;
+    const after = next.instances[target.id];
+    const lost = (walker.counters['loyalty'] ?? 0) - (after?.zone === 'battlefield' ? after.counters['loyalty'] ?? 0 : 0);
+    if (lost <= 0) return next;
+    return {
+      ...next,
+      dealtCombatDamage: [...next.dealtCombatDamage, {
+        creature: attacker, defender: walker.zoneSeat, amount: lost, planeswalker: true,
+      }],
+    };
+  }
   if (target.kind !== 'player') return next;
   const before = state.seats[target.seat];
   const after = next.seats[target.seat];

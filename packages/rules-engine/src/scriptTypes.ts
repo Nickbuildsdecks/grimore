@@ -793,6 +793,13 @@ export type TriggerEvent =
   | {
       readonly kind: 'combat-damage';
       readonly defender?: SeatIndex;
+      /**
+       * Set by the engine on a hit that landed on a planeswalker (D961); `defender` is then its
+       * controller. Only a trigger with `orPlaneswalker` hears such an event.
+       */
+      readonly planeswalker?: true;
+      /** "… to a player **or planeswalker**" (D961): this trigger hears planeswalker hits too. */
+      readonly orPlaneswalker?: true;
       /** Set by the engine: how much damage landed (D903). */
       readonly amount?: number;
       /**

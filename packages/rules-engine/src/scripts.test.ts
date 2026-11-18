@@ -20723,6 +20723,76 @@ describe('"target … that player controls" after combat damage, and "defending 
   });
 });
 
+describe('"… to a player or planeswalker", and "you mill" (D961)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Either', 'Whenever this creature deals combat damage to a player or planeswalker, draw a card.'),
+    C('Test Player', 'Whenever this creature deals combat damage to a player, draw a card.'),
+    C('Test Miller', 'Whenever this creature deals combat damage to a player, you mill two cards.'),
+    { name: 'Test Banner', type_line: 'Enchantment', oracle_text: 'Whenever one or more creatures you control deal combat damage to a player, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: Draw a card.', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: null, toughness: null, loyalty: '5' },
+  ];
+  const deck = customDeck({
+    id: 'd961', name: 'Or planeswalker',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  /** Swings with `name` at seat 1, or at its planeswalker; returns the state after damage and the hand size before. */
+  const swing = (name: string, atWalker: boolean, setUp: (s: GameState) => GameState = (s) => s, mine: string[] = []) => {
+    let s = setUp(advanceTo(arena({
+      decks: { 0: 'd961', 1: 'd961' }, deckSpecs: { d961: deck.deck },
+      battlefield: { 0: [name, ...mine], 1: ['Test Walker'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers'));
+    const attacker = find(s, 0, 'battlefield', name);
+    const walker = find(s, 1, 'battlefield', 'Test Walker');
+    const hand = ids(s, 0, 'hand').length;
+    const library = ids(s, 0, 'library').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1, ...(atWalker ? { planeswalker: walker } : {}) }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return { s, hand, library, walker };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a hit on a planeswalker: "or planeswalker" draws, "a player" does not', () => {
+    const either = swing('Test Either', true);
+    expect(either.s.instances[either.walker]!.counters['loyalty']).toBe(3);
+    expect(ids(either.s, 0, 'hand').length).toBe(either.hand + 1);
+    const player = swing('Test Player', true);
+    expect(player.s.instances[player.walker]!.counters['loyalty']).toBe(3);
+    expect(ids(player.s, 0, 'hand').length).toBe(player.hand);
+  });
+
+  it('a planeswalker hit is not a hit on a player: no "one or more … to a player", no crown', () => {
+    const banner = swing('Test Player', true, (s) => s, ['Test Banner']);
+    expect(ids(banner.s, 0, 'hand').length).toBe(banner.hand);
+    const crowned = swing('Test Player', true, (s) => ({ ...s, monarch: 1 }));
+    expect(crowned.s.monarch).toBe(1);
+  });
+
+  it('damage to the planeswalker prevented: nothing landed, nothing drawn', () => {
+    const shielded = swing('Test Either', true, (s) => preventDamage(s, find(s, 1, 'battlefield', 'Test Walker'), 1, { kind: 'card', id: find(s, 1, 'battlefield', 'Test Walker') }, 5));
+    expect(shielded.s.instances[shielded.walker]!.counters['loyalty']).toBe(5);
+    expect(ids(shielded.s, 0, 'hand').length).toBe(shielded.hand);
+  });
+
+  it('a hit on the player: both draw, once', () => {
+    for (const name of ['Test Either', 'Test Player']) {
+      const { s, hand } = swing(name, false);
+      expect(ids(s, 0, 'hand').length, name).toBe(hand + 1);
+    }
+  });
+
+  it('"you mill two cards" mills its controller', () => {
+    const { s, library } = swing('Test Miller', false);
+    expect(ids(s, 0, 'library').length).toBe(library - 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
