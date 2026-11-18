@@ -23466,6 +23466,55 @@ describe('"exile up to N target cards from graveyards" (D745)', () => {
   });
 });
 
+describe('outlast and undaunted (D984)', () => {
+  const ROWS = [
+    { name: 'Test Outlaster', type_line: 'Creature — Human Warrior', oracle_text: 'Outlast {W} ({W}, {T}: Put a +1/+1 counter on this creature. Outlast only as a sorcery.)', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Daunt', type_line: 'Sorcery', oracle_text: 'Undaunted (This spell costs {1} less to cast for each opponent.)\nYou gain 3 life.', mana_cost: '{5}{W}', cmc: 6, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd984', name: 'Outlast', entries: [...ROWS.map((r) => ({ name: r.name, count: 10 })), { name: 'Plains', count: 30 }], data: ROWS as never[],
+  });
+  const table = (seats: number, mine: string[], hand: string[] = []) => {
+    const decks = Object.fromEntries(Array.from({ length: seats }, (_, i) => [i, 'd984']));
+    let s = arena({
+      ...(seats > 2 ? { format: 'pod' as const, seats } : {}),
+      decks, deckSpecs: { d984: deck.deck }, battlefield: { 0: mine }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+    });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('outlast: pay and tap for a +1/+1 counter, only as a sorcery', () => {
+    const s = table(2, ['Test Outlaster', 'Plains']);
+    const outlaster = find(s, 0, 'battlefield', 'Test Outlaster');
+    const play = legalActions(s, 0).plays.find((p) => p.card === outlaster && p.kind === 'activate');
+    expect(play?.manaCost).toBe('{W}');
+    let t = apply(s, { type: 'auto:activate', by: 0, card: outlaster, abilityIndex: 0 } as Action);
+    expect(t.instances[outlaster]!.tapped).toBe(true);
+    for (let i = 0; i < 4 && t.stackOrder.length > 0; i++) t = passBoth(t);
+    expect(t.instances[outlaster]!.counters['+1/+1']).toBe(1);
+    // Not in combat, and not while it is tapped.
+    const combat = advanceTo(s, 'begin-combat');
+    expect(legalActions(combat, 0).plays.some((p) => p.card === outlaster && p.kind === 'activate')).toBe(false);
+    expect(legalActions(t, 0).plays.some((p) => p.card === outlaster && p.kind === 'activate')).toBe(false);
+  });
+
+  it('undaunted: {1} less for each opponent still in the game', () => {
+    const duel = table(2, [], ['Test Daunt']);
+    expect(costChangeFor(duel, 0 as SeatIndex, duel.cardDefs[duel.instances[find(duel, 0, 'hand', 'Test Daunt')]!.defKey]!).generic).toBe(-1);
+    const pod = table(4, [], ['Test Daunt']);
+    const def = pod.cardDefs[pod.instances[find(pod, 0, 'hand', 'Test Daunt')]!.defKey]!;
+    expect(costChangeFor(pod, 0 as SeatIndex, def).generic).toBe(-3);
+    const fewer = { ...pod, seats: pod.seats.map((seat) => (seat.index === 3 ? { ...seat, eliminated: true } : seat)) };
+    expect(costChangeFor(fewer, 0 as SeatIndex, def).generic).toBe(-2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
