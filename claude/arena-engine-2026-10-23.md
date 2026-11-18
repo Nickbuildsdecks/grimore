@@ -34101,3 +34101,35 @@ D984–D986): every game finished.
     engine tests: 5,291, all passing (merged with the other session's D987)
 
 Coverage: 13,207 of 31,900 cards (+15), 33,778 of 59,888 lines (+23), against 38c5bb6.
+
+## D988 — Cast triggers on what the spell targets, and on two colours at once
+
+Grouping the cards one line short by their opening (D987's probe) showed a family under "Whenever
+you cast …" whose effects already read ("put a +1/+1 counter on ~", "draw a card"). The spell
+filter in front of them is what stayed unread:
+
+- **"… a spell that targets a creature / a creature you control / an opponent or a creature an
+  opponent controls"**: `targetsWhat` on the `spell-cast` event.
+  - It is answered in `fireTrigger`, beside heroic's `targetsSelf` and for its reason: "you" is
+    the watching permanent's controller.
+  - The targets are the creatures the spell targets that are on the battlefield now, so a creature
+    card in a graveyard is not "a creature".
+  - The event now carries the spell's player targets too (`targetSeats`), for "an opponent".
+- **"… a spell that's both red and white"**: `allColours`, every colour rather than any. It sits
+  beside `ofColours` in `triggerMatches`.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- "targets a creature" fires on a creature on the battlefield and not on a creature card in a
+  graveyard;
+- "a creature you control" fires on yours and not on theirs;
+- "an opponent or a creature an opponent controls" fires on the opponent and on their creature, and
+  not on your own creature or yourself;
+- "both red and white" fires on a red-and-white spell and not on a red one.
+
+Faults injected by script: 9. 8 were caught at once. The battlefield-creature check was missed and
+is now pinned by the graveyard target.
+
+    engine tests: 5,296, all passing (merged with the other session's D748)
+
+Coverage: 13,206 of 31,900 cards (+13), 33,771 of 59,888 lines (+16).
