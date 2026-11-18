@@ -33616,6 +33616,6 @@ keyword filter instead.
 
 Faults injected by script: 4 of 4 caught.
 
-    engine tests: 5,233, all passing
+    engine tests: 5,236, all passing (merged with the other session's D979)
 
 Coverage: 12,984 of 31,845 cards (+24), 33,402 of 59,749 lines (+27), against 108dda6.
