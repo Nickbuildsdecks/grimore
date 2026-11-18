@@ -33169,6 +33169,50 @@ refusing activated emblems).
 
 Coverage: 12,668 of 31,743 cards (+5), 32,819 of 59,509 lines (+27), against 7699a9b.
 
+## D975 — A */* from more measures: colours, zones, life, devotion
+
+A creature printed "*/*" is refused whole unless its size line is read, because a 0/0 dies before
+anyone has priority. D902 read "… are each equal to the number of <count>" for eleven counts and a
+subtype. The measurement showed 73 legal "*/*" cards still refused. The commonest missing measures
+were these:
+- "green / black / … permanents you control" (Drove of Elves, Crowd of Cinders, Kithkin Rabble);
+- "artifacts your opponents control" (Gaea's Avenger, with "1 plus");
+- "<type> cards in all graveyards" (Cognivore, Cantivore, Magnivore, Terravore, Slag Fiend), and
+  "cards in all graveyards" (Lord of Extinction);
+- "your life total" (Soul of Eternity);
+- "your devotion to <colour>" (Anax and the other Theros gods' heroes print it for power).
+
+How it is read:
+- **Three serializable count kinds** in `definesSize.count`, because the count runs inside
+  `characteristicsOf` and travels in state, so it is data, not a closure:
+  - `your-life-total`;
+  - `{ devotion: [colours] }`, which counts the coloured symbols in the printed costs of your
+    permanents, hybrid and Phyrexian included;
+  - `{ zone, whose, anyType?, colour? }`, a count of printed cards in a zone.
+- **`cdaCountFor`** reads the general zone phrases. **`definesSizeFromLine`** reads a measure that
+  is "the number of …", "N plus the number of …" (through the existing `powerPlus` and
+  `toughnessPlus`), "your life total" or "your devotion to …". Power-only is read the same way,
+  with the printed toughness kept.
+
+Logged across the corpus, all 18 newly read lines name the count they say. Refused "*/*" cards
+went from 73 to 58.
+
+14 legal cards now read whole.
+
+**Tests.** 6 engine tests:
+- the cards read;
+- green permanents you control: itself and a green bear, not the forest;
+- your life total, 20/20;
+- 1 plus the artifacts your opponents control, not yours;
+- power is your devotion to red ({2}{R} and {R}{R} make 3), and the printed toughness stays;
+- instant cards in all graveyards, both players'.
+
+Faults injected by hand: 8 of 8 caught.
+
+    engine tests: 5,184, all passing
+
+Coverage: 12,691 of 31,764 cards (+14), 32,867 of 59,553 lines. Staples: 241 of 244.
+
 ## D735 — Anthems by colour and kind: "Other green creatures you control get +1/+1"
 
 The group statics of D620 covered your creatures, other creatures, a creature type, tokens, and
