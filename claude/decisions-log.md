@@ -51548,3 +51548,22 @@ pinned. A rest-of-clauses check was unreachable (the regex allows nothing after)
     engine tests: 5,288, all passing
 
 Coverage: 13,193 of 31,900 cards (+6), 33,755 of 59,888 lines (+7).
+
+## D748 — "Each opponent mills N cards", "each player mills N cards"
+
+The mill reader read "Target player mills N cards" and "Mill N cards". It didn't read the
+untargeted form, which appears 59 times in the legal corpus across "each opponent" (23) and "each
+player" (36). It reads now: every named player mills from their own library, in turn order. "Each
+player" includes the caster, and eliminated seats mill nothing.
+
+**Tests.** 3 engine tests in a pod of three:
+- the cards read;
+- each opponent mills three: both opponents' graveyards grow by three, the caster's only by the spell;
+- each player mills two: the caster's grows by two and the spell, the others' by two.
+
+Faults injected by script: 3 of 3 caught. Pod sweep 59101 (D745–D747 and the other session's
+D984–D986): every game finished.
+
+    engine tests: 5,291, all passing (merged with the other session's D987)
+
+Coverage: 13,207 of 31,900 cards (+15), 33,778 of 59,888 lines (+23), against 38c5bb6.

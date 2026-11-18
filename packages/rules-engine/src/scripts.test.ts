@@ -23834,6 +23834,42 @@ describe('cast triggers on what the spell targets, and on "both red and white" (
   });
 });
 
+describe('"each opponent mills N cards", "each player mills N cards" (D748)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const ROWS = [I('Test Erosion', 'Each opponent mills three cards.'), I('Test Flood', 'Each player mills two cards.')];
+  const deck = customDeck({
+    id: 'd748', name: 'Mills',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string) => advanceTo(arena({
+    seats: 3, format: 'pod', decks: { 0: 'd748', 1: 'd748', 2: 'd748' }, deckSpecs: { d748: deck.deck },
+    hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const graveyards = (s: GameState) => [0, 1, 2].map((seat) => ids(s, seat as SeatIndex, 'graveyard').length);
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) })), 20);
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each opponent mills three, and the caster none', () => {
+    const s = table('Test Erosion');
+    const before = graveyards(s);
+    const after = graveyards(cast(s, 'Test Erosion'));
+    // The caster's graveyard gains only the spell itself.
+    expect(after.map((n, i) => n - before[i]!)).toEqual([1, 3, 3]);
+  });
+
+  it('each player mills two, the caster included', () => {
+    const s = table('Test Flood');
+    const before = graveyards(s);
+    const after = graveyards(cast(s, 'Test Flood'));
+    expect(after.map((n, i) => n - before[i]!)).toEqual([3, 2, 2]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
