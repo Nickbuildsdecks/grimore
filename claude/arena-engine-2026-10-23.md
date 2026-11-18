@@ -33966,3 +33966,31 @@ creature that didn't attack).
     engine tests: 5,275, all passing (merged with the other session's D984)
 
 Coverage: 13,165 of 31,900 cards (+20), 33,708 of 59,888 lines (+26), against 9f5db7f.
+
+## D985 — Ravenous, and the X a permanent was cast with
+
+**Ravenous** (CR 702.156a; 4 legal cards it alone blocked): "This creature enters with X +1/+1
+counters on it. If X is 5 or more, draw a card when it enters." It is read as those two sentences,
+by the readers that already had each. Both are merged in, or neither.
+
+It found a latent bug in the second sentence's reader. "When ~ enters, if X is 5 or more, …" read
+cleanly, but its X was the **trigger's** X, which is always 0, so it never fired. CR 107.3m says an
+enters ability's X is the X of the spell that became the permanent. So:
+- `CardInstance.castX` is set as a permanent spell resolves, when X was more than 0, and cleared
+  when the permanent leaves the battlefield;
+- a triggered ability with no X of its own resolves with its source's `castX` (`triggerX`).
+
+The intervening-if and before-decisions contexts are left at 0. No condition reads X yet, and the
+fault run showed both unreachable.
+
+**Tests.** 2 engine tests:
+- the card reads;
+- cast for X = 3 it has three counters and draws nothing; for X = 5, five counters and a card. The
+  X stays on the permanent and goes when it is bounced.
+
+Faults injected by script: 6. 4 were caught at once. Of the misses, the reset on leaving is now
+pinned, and the intervening-if context's X is reverted as unreachable.
+
+    engine tests: 5,277, all passing (merged with the other session's D746)
+
+Coverage: 13,160 of 31,900 cards (+4), 33,710 of 59,888 lines (+12).
