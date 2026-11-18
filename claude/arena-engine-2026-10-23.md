@@ -33555,7 +33555,7 @@ Map, Junk and Gold are still not written, and the compile test that pins that no
 
 Faults injected by script: 6 of 6 caught.
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,229, all passing (merged with the other session's D978)
 
 Coverage: 12,937 of 31,798 cards (+34), 33,275 of 59,619 lines (+54), against d1f1a0d. Pod sweep
 58901 (D735–D739): every game finished.
