@@ -32287,3 +32287,28 @@ by its own assertion.
 
 Coverage: 12,410 of 31,743 cards (−2), 32,415 of 59,509 lines (−6): the two cards above, now
 counted as what they are. Staples: 241 of 244.
+
+## D956 — "You may gain N life"
+
+"At the beginning of your upkeep, you may gain 1 life." "When this creature enters, you may gain 3
+life." `optionalEffect` strips "you may" and reads the rest, and "gain 3 life" alone is not a
+sentence any reader takes: the life reader reads "you gain 3 life", which is how the indicative is
+printed. So every one of these lines was unread, while "you may draw a card" read, because the draw
+reader accepts a bare "draw".
+
+The fix is one line: an inner clause that does not read is tried once more with "you" in front.
+Putting back the printed subject cannot change what a clause means, so it is not limited to the
+bare "may". A first version was limited to it, but no test could tell the limit was there, so it
+was removed. Logged across the whole corpus, every clause that now reads this way is a life gain:
+"gain N life", "gain life equal to the number of charge counters on …", "gain life equal to the
+number of Allies you control".
+
+25 legal cards now read whole.
+
+**Tests.** 2 engine tests: the card reads; it asks, and gains the life only on a yes.
+
+Faults injected by hand: 2 of 2 caught.
+
+    engine tests: 5,087, all passing
+
+Coverage: 12,435 of 31,743 cards (+25), 32,443 of 59,509 lines (+28). Staples: 241 of 244.

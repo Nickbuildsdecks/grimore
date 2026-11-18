@@ -19633,8 +19633,15 @@ function optionalEffect(
   const causative = charged === null && sequence === null
     ? /^have (.+?) deal (.+)$/i.exec(inner)
     : null;
+  /*
+    **"You may gain 3 life"** (D956): the subject is stripped with the "may", and some readers want
+    it back — "you gain 3 life" is the sentence the indicative prints, and "gain 3 life" alone is
+    nothing. So an inner clause that does not read is tried once more with "you" in front. Putting
+    the printed subject back cannot change what a clause means, so nothing narrower is needed.
+  */
   const read = sequence?.read
-    ?? reader(causative === null ? inner : `${causative[1]!} deals ${causative[2]!}`);
+    ?? reader(causative === null ? inner : `${causative[1]!} deals ${causative[2]!}`)
+    ?? reader(`you ${inner}`);
   if (read === null) return null;
   /*
     Either kind of "may" is refused when its own effect asks a question, and for one reason: the

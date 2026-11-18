@@ -20440,6 +20440,42 @@ describe('a mode whose first half comes before its question (D955)', () => {
   });
 });
 
+describe('"you may gain N life" (D956)', () => {
+  const ROWS = [
+    { name: 'Test Healer', type_line: 'Creature — Cleric', oracle_text: 'When this creature enters, you may gain 3 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd956', name: 'May gain',
+    entries: [{ name: 'Test Healer', count: 3 }, { name: 'Plains', count: 57 }],
+    data: ROWS as never[],
+  });
+  const seated = () => advanceTo(arena({
+    decks: { 0: 'd956', 1: 'd956' }, deckSpecs: { d956: deck.deck }, hands: { 0: ['Test Healer'] },
+    battlefield: { 0: ['Plains'], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const answer = (s: GameState, yes: boolean) => {
+    let next = s;
+    for (let i = 0; i < 10 && (next.pendingDecision !== null || next.stackOrder.length > 0); i++) {
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => (o === 'Yes') === yes)! } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks, and gains the life only on a yes', () => {
+    const s = seated();
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Healer') } as Action), 30);
+    expect(answer(cast, true).seats[0]!.life).toBe(s.seats[0]!.life + 3);
+    expect(answer(cast, false).seats[0]!.life).toBe(s.seats[0]!.life);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
