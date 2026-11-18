@@ -1835,6 +1835,11 @@ export interface AutoCastAction {
    */
   readonly pitchCast?: boolean;
   /**
+   * Cast the top card of your library for life equal to its mana value instead of its mana cost
+   * (D731): Bolas's Citadel. Refused without such a permission or with the life not there.
+   */
+  readonly payLifeFromTop?: boolean;
+  /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *
    * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather

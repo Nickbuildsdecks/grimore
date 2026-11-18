@@ -7909,6 +7909,9 @@ describe('deck coverage', () => {
       - `script castAsThoughFlash` (D727): Necromancy's "You may cast ~ as though it had flash". No
         pool deck has one. Driven at runtime by "Necromancy: flash, an Aura it becomes, and a
         cleanup sacrifice (D727)".
+      - `script spellsFromTop` and `script lookAtTop` (D731): Future Sight, Bolas's Citadel, Vizier
+        of the Menagerie. No pool deck has one. Driven at runtime by "spells cast from the top of the
+        library, and Bolas's Citadel's life (D731)".
       - `script sunburst` (D917): sunburst and converge's counters. No pool deck has one. Driven at
         runtime by "sunburst and converge (D917)".
       - `script plot` (D922): plot. No pool deck has one. Driven at runtime by "plot (D922)".
@@ -7949,6 +7952,7 @@ describe('deck coverage', () => {
       'script skipsDrawStep',
       'script entersCounting',
       'script castAsThoughFlash',
+      'script spellsFromTop', 'script lookAtTop',
       'script sunburst',
       'script plot',
       'script casualty',
@@ -21388,6 +21392,123 @@ describe('an Equipment that attaches as it enters, then acts on that creature (D
     const { s, bear, equipment } = enter('Test Spur');
     expect(s.instances[equipment]!.attachedTo).toBe(bear);
     expect(s.instances[bear]!.tapped).toBe(false);
+  });
+});
+
+describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life (D731)', () => {
+  const row = (name: string, type: string, text: string, cost = '{3}{B}{B}{B}', cmc = 6, colors = ['B']) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors, layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Citadel', 'Legendary Artifact', 'You may look at the top card of your library any time.\nYou may play lands and cast spells from the top of your library. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost.'),
+    { ...row('Test Vizier', 'Creature — Naga Cleric', 'You may cast creature spells from the top of your library.', '{3}{G}', 4, ['G']), power: '3', toughness: '4' },
+    { ...row('Test Bear', 'Creature — Bear', '', '{1}{G}', 2, ['G']), power: '2', toughness: '2' },
+    // Green, so the Forests could pay its mana cost: a mana cast refused is refused for the permission.
+    row('Test Divination', 'Sorcery', 'Draw two cards.', '{2}{G}', 3, ['G']),
+    { ...row('Test Sigarda', 'Creature — Angel', 'You may cast Elf spells and Bear spells from the top of your library.', '{5}', 5, []), power: '4', toughness: '4' },
+  ];
+  const deck = customDeck({
+    id: 'd731', name: 'Citadel',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (battlefield: readonly string[], firstSeat: 0 | 1 = 0) => advanceTo(arena({
+    decks: { 0: 'd731', 1: 'd731' }, deckSpecs: { d731: deck.deck }, battlefield: { 0: [...battlefield] }, turn: 3, firstSeat,
+  }), 'precombat-main');
+  const onTop = (s: GameState, name: string): GameState =>
+    apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'library', position: 'top' });
+  const top = (s: GameState) => ids(s, 0, 'library')[0]!;
+  const rowsFor = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.card === top(s));
+
+  it('reads the family, and leaves a kind with a condition on it unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const reads = (text: string) => compileCard(row('Test Line', 'Enchantment', text) as never);
+    for (const text of [
+      'You may play lands and cast spells from the top of your library.',
+      'You may cast artifact spells and colorless spells from the top of your library.',
+      'You may cast Angel spells and Human spells from the top of your library.',
+      'You may cast Cleric, Rogue, Warrior, and Wizard spells from the top of your library.',
+      'You may cast instant and sorcery spells from the top of your library.',
+    ]) expect(reads(text), text).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      'You may cast spells with flash or flying from the top of your library.',
+      'You may cast creature spells with power 4 or greater from the top of your library. If you cast a creature spell this way, it gains haste until end of turn.',
+      'You may cast noncreature spells from the top of your library. If you cast a spell this way, you may cast it as though it had flash.',
+      'You may cast historic spells from the top of your library.',
+    ]) { const read = reads(text); expect(read.ok && read.unread.length, text).toBe(1); }
+  });
+
+  it('casts the top card for life equal to its mana value, and offers no mana cast beside it', () => {
+    let s = onTop(table(['Test Citadel', 'Forest', 'Forest', 'Forest']), 'Test Divination');
+    const card = top(s);
+    const rows = rowsFor(s);
+    expect(rows.map((p) => p.description)).toEqual(['Cast Test Divination for its cost from the top of your library (3 life)']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card })).toMatch(/for life, not for its mana cost/);
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:cast', by: 0, card, payLifeFromTop: true });
+    expect(s.seats[0]!.life).toBe(life - 3);
+    expect(s.instances[card]!.zone).toBe('stack');
+    // Nothing tapped: the mana cost was not paid.
+    expect(ids(s, 0, 'battlefield').every((id) => s.instances[id]!.tapped !== true)).toBe(true);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(s));
+    expect(ids(s, 0, 'hand').length).toBe(hand + 2);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('offers a land on top as the land drop, and a spell only while the life is there', () => {
+    const land = onTop(table(['Test Citadel']), 'Forest');
+    expect(rowsFor(land).map((p) => p.description)).toEqual(['Play Forest from the top of your library']);
+    const s = onTop(table(['Test Citadel']), 'Test Citadel');
+    const poor = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 6 } : seat)) } as GameState;
+    expect(rowsFor(poor)).toEqual([]);
+    expect(rowsFor(s).length).toBe(1);
+    // And refused without the Citadel.
+    const bare = onTop(table([]), 'Test Divination');
+    expect(rowsFor(bare)).toEqual([]);
+    expect(refusal(bare, { type: 'auto:cast', by: 0, card: top(bare), payLifeFromTop: true })).toMatch(/nothing lets you/);
+    expect(refusal(bare, { type: 'auto:cast', by: 0, card: top(bare) })).toMatch(/nothing lets you/);
+    // Only the top card: the one under it is still in the library.
+    const under = onTop(onTop(table(['Test Citadel']), 'Test Divination'), 'Forest');
+    const second = ids(under, 0, 'library')[1]!;
+    expect(nameOf(under, second)).toBe('Test Divination');
+    expect(refusal(under, { type: 'auto:cast', by: 0, card: second, payLifeFromTop: true })).toMatch(/nothing lets you|not in your hand/);
+  });
+
+  it('shows its controller the top card and nobody else', () => {
+    const s = onTop(table(['Test Citadel']), 'Test Divination');
+    expect(viewFor(s, 0).seats[0]!.libraryTop).toBe(top(s));
+    expect(viewFor(s, 0).cards[top(s)]?.card?.name).toBe('Test Divination');
+    expect(viewFor(s, 1).seats[0]!.libraryTop).toBeUndefined();
+    expect(viewFor(s, 1).cards[top(s)]).toBeUndefined();
+    const bare = onTop(table([]), 'Test Divination');
+    expect(viewFor(bare, 0).cards[top(bare)]).toBeUndefined();
+  });
+
+  it('a kind permission casts its kind at the printed cost and at its timing, and nothing else', () => {
+    let s = onTop(table(['Test Vizier', 'Forest', 'Forest']), 'Test Bear');
+    const bear = top(s);
+    expect(rowsFor(s).map((p) => p.description)).toEqual(['Cast Test Bear']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: bear, payLifeFromTop: true })).toMatch(/for life/);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear })));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    // A sorcery on top is not its kind, and neither is a land: no land permission.
+    const sorcery = onTop(table(['Test Vizier', 'Forest', 'Forest', 'Forest']), 'Test Divination');
+    expect(rowsFor(sorcery)).toEqual([]);
+    expect(refusal(sorcery, { type: 'auto:cast', by: 0, card: top(sorcery) })).toMatch(/nothing lets you/);
+    const land = onTop(table(['Test Vizier']), 'Forest');
+    expect(rowsFor(land)).toEqual([]);
+    // On the opponent's turn, a creature is not cast at all.
+    const theirs = apply(onTop(table(['Test Vizier', 'Forest', 'Forest'], 1), 'Test Bear'), { type: 'auto:pass', by: 1 });
+    expect(theirs.priority).toBe(0);
+    expect(legalActions(theirs, 0).plays.some((p) => p.card === top(theirs))).toBe(false);
+    expect(refusal(theirs, { type: 'auto:cast', by: 0, card: top(theirs) })).toMatch(/main phase/);
+  });
+
+  it('a permission naming two kinds casts either one', () => {
+    const s = onTop(table(['Test Sigarda', 'Forest', 'Forest']), 'Test Bear');
+    expect(rowsFor(s).map((p) => p.description)).toEqual(['Cast Test Bear']);
   });
 });
 

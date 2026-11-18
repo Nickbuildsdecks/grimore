@@ -2727,6 +2727,21 @@ export interface CardScript {
    */
   readonly landsFromTop?: true;
   /**
+   * "You may cast <kind> spells from the top of your library." (D731) — Future Sight, Mystic Forge,
+   * Vizier of the Menagerie, Bolas's Citadel. The top card, when `applies` holds of it, is offered
+   * as a cast at its ordinary timing. With `payLife`, Bolas's Citadel's "pay life equal to its mana
+   * value rather than pay its mana cost": the only cost this permission offers.
+   */
+  readonly spellsFromTop?: readonly {
+    readonly applies: (card: CardDef) => boolean;
+    readonly payLife?: true;
+  }[];
+  /**
+   * "You may look at the top card of your library any time." (D731) — Bolas's Citadel, Vizier of
+   * the Menagerie, Mystic Forge. The controller's own view shows their top card; nobody else's does.
+   */
+  readonly lookAtTop?: true;
+  /**
    * "This spell's whole effect is mana": a ritual, and Dark Ritual is the only one in the pool.
    *
    * Nothing in the engine reads it — the mana goes in the pool through `addToPool` like any other

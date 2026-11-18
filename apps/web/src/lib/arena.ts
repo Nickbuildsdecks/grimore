@@ -484,6 +484,8 @@ function playAction(
   const COST_FLAGS = [
     "kicked", "buyback", "flashback", "escape", "retrace", "faceDown", "foretold", "offered",
     "evoked", "dashed", "bestowed", "spectacled", "overloaded", "commanderFree", "pitchCast",
+    // Bolas's Citadel's life (D731).
+    "payLifeFromTop",
     // Casualty (D923): its creature is the play's `sacrificeOptions`, chosen like any sacrifice.
     "casualty",
     // Conspire (D926): the engine taps the two creatures, so the flag is all there is to send.

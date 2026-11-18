@@ -32,7 +32,7 @@ import {
   characteristicsOf, combatDamagePrevented, grantedTriggersOn, type Keyword,
 } from './characteristics.js';
 import { shieldOn } from './effects.js';
-import { legalActions, topRevealedFor, type LegalActions } from './legalActions.js';
+import { legalActions, lookAtTopFor, topRevealedFor, type LegalActions } from './legalActions.js';
 import { scriptFor } from './scripts.js';
 import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
@@ -249,6 +249,7 @@ export interface SeatView {
   /**
    * The id of this seat's top library card while it is revealed to the table (D649) — Courser of
    * Kruphix, Oracle of Mul Daya. The card itself is in `cards`; the rest of the library is not.
+   * Also set on the viewer's own seat while they may look at it any time (D731, Bolas's Citadel).
    */
   readonly libraryTop?: string;
   readonly graveyardCount: number;
@@ -527,6 +528,10 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
       // Only its own, and only in the two situations where a player may read their own library:
       // while searching it, and while looking at the top few cards of it.
       if (!isOwnSide) return false;
+      // "You may look at the top card of your library any time" (D731): its controller only.
+      if (lookAtTopFor(state, inst.zoneSeat) && listAt(state, zoneKey(inst.zoneSeat, 'library'))[0] === inst.id) {
+        return true;
+      }
       if (state.seats[inst.zoneSeat]?.searching === true) return true;
       // Scry. The authorisation is the engine's own candidate list — the same list `auto:decide`
       // checks an answer against — rather than a second rule about how many cards are readable,
@@ -717,7 +722,9 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
   // A revealed top card (D649) travels as a card without its library's list, like a scry's.
   for (const seat of state.seats) {
     const top = listAt(state, zoneKey(seat.index, 'library'))[0];
-    if (top !== undefined && topRevealedFor(state, seat.index)) {
+    if (top !== undefined && (topRevealedFor(state, seat.index)
+      // And a top card only its own player may look at (D731), sent to that player alone.
+      || (seat.index === viewer && lookAtTopFor(state, seat.index)))) {
       const inst = state.instances[top];
       if (inst !== undefined) cards[top] = redact(state, inst, viewer);
     }
@@ -759,7 +766,8 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     searching: seat.searching,
     handCount: listAt(state, zoneKey(seat.index, 'hand')).length,
     libraryCount: listAt(state, zoneKey(seat.index, 'library')).length,
-    ...(topRevealedFor(state, seat.index) && listAt(state, zoneKey(seat.index, 'library'))[0] !== undefined
+    ...((topRevealedFor(state, seat.index) || (seat.index === viewer && lookAtTopFor(state, seat.index)))
+      && listAt(state, zoneKey(seat.index, 'library'))[0] !== undefined
       ? { libraryTop: listAt(state, zoneKey(seat.index, 'library'))[0]! }
       : {}),
     graveyardCount: listAt(state, zoneKey(seat.index, 'graveyard')).length,
