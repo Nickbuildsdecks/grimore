@@ -51164,6 +51164,6 @@ Two readers take any condition the intervening-if reader answers, not only this 
 
 Faults injected by script: 6 of 6 caught, one after pinning (a stale cast record trusted).
 
-    engine tests: 5,240, all passing
+    engine tests: 5,244, all passing (merged with the other session's D980)
 
 Coverage: 13,027 of 31,858 cards (+37), 33,480 of 59,790 lines (+45), against 397e7d8.
