@@ -18878,6 +18878,26 @@ function countOfThing(
   if (/^creature cards? in all graveyards$/i.test(text)) {
     return (c) => creatureCardsInAllGraveyards(c.state);
   }
+  /*
+    D746: more of the turn and the graveyard, each a record the engine already keeps.
+    - "<type> card in your graveyard" for the other card types, by printed type line;
+    - "creature that died this turn" (`creaturesDiedThisTurn`, morbid's tally);
+    - "creature that attacked this turn" (`attackersThisTurn`, D726);
+    - "attacking creature you control", the attackers declared by this seat now;
+    - "card you've drawn this turn" (`cardsDrawnThisTurn`).
+  */
+  const typedInGraveyard = /^(land|artifact|enchantment|instant|sorcery|planeswalker) cards? in your graveyard$/i.exec(text);
+  if (typedInGraveyard !== null) {
+    const type = typedInGraveyard[1]!.toLowerCase();
+    return (c) => listAt(c.state, zoneKey(c.controller, 'graveyard'))
+      .filter((id) => hasType(parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine), type)).length;
+  }
+  if (/^creatures? that died this turn$/i.test(text)) return (c) => c.state.creaturesDiedThisTurn ?? 0;
+  if (/^creatures? that attacked this turn$/i.test(text)) return (c) => (c.state.attackersThisTurn ?? []).length;
+  if (/^attacking creatures? you control$/i.test(text)) {
+    return (c) => c.state.combat.attacks.filter(({ attacker }) => c.state.instances[attacker]?.zoneSeat === c.controller).length;
+  }
+  if (/^cards? you've drawn this turn$/i.test(text)) return (c) => c.state.cardsDrawnThisTurn[String(c.controller)] ?? 0;
   if (/^instant and sorcery cards? in your graveyard$/i.test(text)) {
     return (c) => instantsAndSorceriesInGraveyard(c.state, c.controller);
   }
