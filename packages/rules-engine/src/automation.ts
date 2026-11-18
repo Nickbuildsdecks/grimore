@@ -2201,7 +2201,6 @@ function raise(
       : event.kind === 'spell-cast' && subject !== undefined
         ? [subject, ...everyBattlefield.filter((id) => id !== subject)]
         : everyBattlefield;
-
   for (const id of watchers) {
     /*
       A token that has ceased to exist is still the subject of its own death: its last state is in
@@ -2247,12 +2246,14 @@ function raise(
       dealt damage" — a Ripjaw Raptor draws for the hit that kills it. Only for the subject, like
       every other exception here.
 
-      **Not** for `deals-damage`, and that is a known gap rather than a rule: a trampler that dies
-      to its blocker in the same step it tramples over should still get "whenever ~ deals damage to
-      an opponent". `combat-damage` has never fired in that case either, the two are the same
-      sentence, and one of them firing where the other does not would be worse than both missing.
+      And since D981 for the permanent that **dealt** it, under `deals-damage` and `combat-damage`
+      alike: a trampler that dies to its blocker in the same step it tramples over still gets
+      "whenever ~ deals combat damage to a player", and a 2/2 that trades with a blocker still gets
+      "whenever ~ deals combat damage to a creature". The two sentences change together, as the
+      gap they shared was kept together.
     */
-    const lastKnown = event.kind === 'damaged' && id === subject;
+    const lastKnown = (event.kind === 'damaged' || event.kind === 'deals-damage' || event.kind === 'combat-damage')
+      && id === subject;
     /*
       And the seventh: a card watching its own cycling, from the graveyard the cost put it in (D567).
 
