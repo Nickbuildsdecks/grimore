@@ -22602,6 +22602,63 @@ describe('a soft counter for {X} or for a count: Power Sink, and "{1} for each �
   });
 });
 
+describe('tapped tokens, and the Powerstone (D740)', () => {
+  const R = (name: string, type: string, text: string, cost = '{0}', extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: cost === '{0}' ? 0 : 1, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Forge', 'Sorcery', 'Create a tapped Powerstone token. (It\'s an artifact with "{T}: Add {C}. This mana can\'t be spent to cast a nonartifact spell.")'),
+    R('Test Graves', 'Sorcery', 'Create two tapped 2/2 black Zombie creature tokens.'),
+    R('Test Rock', 'Artifact', '', '{1}'),
+    R('Test Bear', 'Creature — Bear', '', '{1}', { power: '2', toughness: '2', colors: ['G'] }),
+    R('Test Lamp', 'Artifact', '{1}: You gain 1 life.'),
+  ];
+  const deck = customDeck({
+    id: 'd740', name: 'Powerstones',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (hands: string[], battlefield: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd740', 1: 'd740' }, deckSpecs: { d740: deck.deck }, hands: { 0: hands }, battlefield: { 0: battlefield }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+  /** The table with every Powerstone untapped, as it would be on the next turn. */
+  const untapped = (s: GameState): GameState => ({
+    ...s,
+    instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, nameOf(s, id) === 'Powerstone' ? { ...inst, tapped: false } : inst])),
+  });
+
+  it("reads them, and the token's mana line", () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Powerstone arrives tapped, as an artifact', () => {
+    const s = resolve(table(['Test Forge']), 'Test Forge');
+    const stone = find(s, 0, 'battlefield', 'Powerstone');
+    expect(s.instances[stone]!.tapped).toBe(true);
+    expect(characteristicsOf(s, s.instances[stone]!).typeLine.types).toContain('Artifact');
+  });
+
+  it('its mana pays for an artifact spell and for an ability, and not for a creature spell', () => {
+    const s = untapped(resolve(table(['Test Forge', 'Test Rock', 'Test Bear'], ['Test Lamp']), 'Test Forge'));
+    const plays = legalActions(s, 0).plays;
+    expect(plays.some((p) => p.card === find(s, 0, 'hand', 'Test Rock'))).toBe(true);
+    expect(plays.some((p) => p.card === find(s, 0, 'hand', 'Test Bear'))).toBe(false);
+    expect(plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', 'Test Lamp'))).toBe(true);
+    const rocked = resolve(s, 'Test Rock');
+    expect(namesIn(rocked, 0, 'battlefield')).toContain('Test Rock');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') })).toBeTruthy();
+  });
+
+  it('tapped creature tokens arrive tapped', () => {
+    const s = resolve(table(['Test Graves']), 'Test Graves');
+    const zombies = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id).includes('Zombie'));
+    expect(zombies).toHaveLength(2);
+    for (const id of zombies) expect(s.instances[id]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

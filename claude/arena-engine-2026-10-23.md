@@ -33481,3 +33481,31 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,219, all passing
 
 Coverage: 12,903 of 31,798 cards (+11), 33,221 of 59,619 lines (+11), against 70d002c.
+
+## D740 — Tapped tokens, and the Powerstone
+
+"Create a tapped … token" is on 198 legal lines: Powerstones (32), Treasures (31), Zombies (21)
+and the rest. The token reader had no "tapped", so every one of them stayed unread. It reads now:
+the word is taken out before the token is read, and the tokens arrive tapped
+(`createTappedTokens`). "Tapped and attacking" keeps its own reading.
+
+**The Powerstone** is the fifth predefined token. Its text is written from the reminder text every
+card that makes one prints, character for character, as D582 did for Food and Blood: "{T}: Add
+{C}. This mana can't be spent to cast a nonartifact spell." That second sentence is a new mana
+restriction, the ban form (`spendBan`): the mana pays for any ability, and for a spell only if it
+isn't of the banned kind. It goes through the same D595 machinery as "Spend this mana only …".
+Map, Junk and Gold are still not written, and the compile test that pins that now names them.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a Powerstone arrives tapped, as an artifact;
+- with only Powerstone mana, an artifact spell and an ability are offered and paid for, and a
+  creature spell is neither offered nor accepted;
+- two tapped Zombie tokens arrive tapped.
+
+Faults injected by script: 6 of 6 caught.
+
+    engine tests: ENGINE_COUNT, all passing
+
+Coverage: 12,937 of 31,798 cards (+34), 33,275 of 59,619 lines (+54), against d1f1a0d. Pod sweep
+58901 (D735–D739): every game finished.

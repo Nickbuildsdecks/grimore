@@ -91,7 +91,7 @@ import type { GameState, SeatIndex } from './types.js';
 import { dealDamage, drawLater, freezeNextUntap, opponentsOf } from './effects.js';
 import { scriptForCard } from './derive.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
-import { spendRestriction } from './spending.js';
+import { spendBan, spendRestriction } from './spending.js';
 import type { ManaType } from './mana.js';
 
 /**
@@ -698,8 +698,10 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   const body = match[2]!.trim();
   const rest = (match[3] ?? '').trim();
   // The tail is a pain land's damage or a spending restriction (D595); anything else refuses.
-  const restriction = /^Spend this mana only (.+)$/i.exec(rest);
-  const spendOnly = restriction === null ? undefined : spendRestriction(restriction[1]!);
+  // And the ban form (D740), Powerstone's: "This mana can't be spent to cast a nonartifact spell."
+  const restriction = /^Spend this mana only (.+)$/i.exec(rest) ?? /^This mana (can't be spent to cast .+)$/i.exec(rest);
+  const spendOnly = restriction === null ? undefined
+    : /^can't/i.test(restriction[1]!) ? spendBan(restriction[1]!) : spendRestriction(restriction[1]!);
   if (spendOnly === null) return null;
   // A chosen type only the line reader may take, for the reason `chosenOk` says (D644).
   if (spendOnly?.chosenType === true && !chosenOk) return null;
@@ -886,7 +888,9 @@ function tapAbilities(
 
 /** A restriction's sentence, for the ability's own `description` (D595). */
 const spentOn = (only?: SpendRestriction): string =>
-  only === undefined ? '' : ` Spend this mana only ${only.words}.`;
+  only === undefined ? ''
+    // The ban form says it the other way round (D740).
+    : /^can't/i.test(only.words) ? ` This mana ${only.words}.` : ` Spend this mana only ${only.words}.`;
 
 /** The pain land's second sentence, for the ability's own `description`. */
 const hurtsYou = (damage?: number): string =>

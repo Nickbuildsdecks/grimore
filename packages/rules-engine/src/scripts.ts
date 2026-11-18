@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, createTappedTokens, gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -1480,6 +1480,16 @@ export const FOOD_TOKEN: CardDef = {
 export const BLOOD_TOKEN: CardDef = {
   name: 'Blood', typeLine: 'Token Artifact — Blood', manaCost: '', cmc: 0,
   oracleText: '{1}, {T}, Discard a card, Sacrifice this token: Draw a card.', colors: [],
+};
+
+/*
+  Powerstone (D740), written from the reminder text every card that makes one prints, character
+  for character: (It's an artifact with "{T}: Add {C}. This mana can't be spent to cast a
+  nonartifact spell.") — 32 legal lines make one, nearly all of them tapped.
+*/
+export const POWERSTONE_TOKEN: CardDef = {
+  name: 'Powerstone', typeLine: 'Token Artifact — Powerstone', manaCost: '', cmc: 0,
+  oracleText: "{T}: Add {C}. This mana can't be spent to cast a nonartifact spell.", colors: [],
 };
 
 export const KNIGHT_TOKEN: CardDef = {
@@ -8460,6 +8470,8 @@ export const TOKEN_DEFS: readonly CardDef[] = [
   TREASURE_TOKEN, CLUE_TOKEN,
   // And the two D582 added, on the same terms.
   FOOD_TOKEN, BLOOD_TOKEN,
+  // And Powerstone (D740).
+  POWERSTONE_TOKEN,
 ];
 
 /*
@@ -18921,6 +18933,7 @@ const NAMED_TOKENS: Readonly<Record<string, CardDef>> = {
   Clue: CLUE_TOKEN,
   Food: FOOD_TOKEN,
   Blood: BLOOD_TOKEN,
+  Powerstone: POWERSTONE_TOKEN,
 };
 
 function namedTokenFrom(body: string): { token: CardDef; printed: string } | null {
@@ -18968,7 +18981,11 @@ function tokenEffect(
     ? boardCount(announced[2]!, name)
     : perThing !== null ? forEachCount(perThing[2]!, name) : null;
   if ((announced !== null || perThing !== null) && counted === null) return null;
-  const body = announced?.[1] ?? perThing?.[1] ?? flat;
+  const untappedBody = announced?.[1] ?? perThing?.[1] ?? flat;
+  // "Create a tapped Powerstone token", "two tapped 2/2 black Zombie creature tokens" (D740). Not
+  // "tapped and attacking", which is its own reading.
+  const tappedMade = /^(create \S+) tapped (?!and attacking)(.+)$/i.exec(untappedBody.trim());
+  const body = tappedMade === null ? untappedBody : `${tappedMade[1]} ${tappedMade[2]}`;
 
   /*
     Two shapes, one count. A described token carries its own power, toughness, colours and subtype;
@@ -19007,7 +19024,9 @@ function tokenEffect(
   */
   const to = recipients ?? ((c: EffectContext) => [c.controller]);
   const give = (c: EffectContext, n: number): GameState =>
-    to(c).reduce((state, seat) => createToken(state, seat, made.token, n), c.state);
+    to(c).reduce((state, seat) => (tappedMade === null
+      ? createToken(state, seat, made.token, n)
+      : createTappedTokens(state, seat, made.token, n)), c.state);
   if (counted !== null) {
     return {
       effect: (c) => {
