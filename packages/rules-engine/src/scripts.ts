@@ -2394,6 +2394,18 @@ function libraryFilter(
     return rest === null ? null : { ...rest, phrase: phrase.trim(), filter: withColour(rest.filter, colour) };
   }
   const whole = phrase.trim();
+  /*
+    "A card named Gideon, Battle-Ready" (D986): the planeswalker deck creatures that fetch their
+    walker, and the rest. The printed name, compared as a card in a library has it.
+  */
+  const named = /^a card named (.+)$/i.exec(whole);
+  if (named !== null) {
+    const wanted = named[1]!.trim().toLowerCase();
+    return {
+      phrase: whole,
+      filter: (state, id) => state.cardDefs[state.instances[id]?.defKey ?? '']?.name.toLowerCase() === wanted,
+    };
+  }
   // "With mana value X or less" (D686): the bound is the spell's X, which only the engine knows as
   // it asks, so it is returned as a flag for the search to carry (`CardsDecisionSpec.manaValueAtMostX`).
   const xClause = /^(.*?) with mana value X or less$/i.exec(whole);
@@ -24697,6 +24709,8 @@ function clausesOf(line: string): readonly string[] {
       (CR 701.19e), and only when the library is the zone searched, so it is folded away.
     */
     .replace(/(search your library and\/or graveyard [^.]+)\.\s+If you search(?:ed)? your library this way, shuffle(?: it)?(?=\.|$)/gi, '$1')
+    // "…, reveal it, then put it into your hand" (D986) is the same as "… and put it": one clause.
+    .replace(/(search your library and\/or graveyard [^.]+?reveal it), then (put it (?:into your hand|onto the battlefield))/gi, '$1, and $2')
     /*
       Anger of the Gods and Magma Spray (D910): "If a creature dealt damage this way would die this
       turn, exile it instead" is about what the sentence before it damaged, so the two are one clause.

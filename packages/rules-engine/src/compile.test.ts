@@ -9109,11 +9109,11 @@ describe('a library search, generalised (D449)', () => {
     expect(unreadLines(compiled)).toEqual([]);
   });
 
-  it('reads "a card named <itself>" and refuses any other name', () => {
+  it('reads "a card named <itself>", and since D986 any other name', () => {
     /*
-      Avarax's shape, and the only name a printed line can give this reader: the card's own. A line
-      naming some *other* card would need a database to look the name up in, and a filter matching a
-      name that is not in the deck is a search that finds nothing.
+      Avarax's shape, and until D986 the only name this reader took: the card's own. Another name
+      is compared exactly as printed (the planeswalker-deck creatures fetching their walker); a
+      search for a name that is not in the library finds nothing, which is what it does at a table.
     */
     const own = spell(
       'Search your library for a card named Probe Thing, reveal it, put it into your hand, then'
@@ -9122,7 +9122,7 @@ describe('a library search, generalised (D449)', () => {
     expect(unreadLines(own)).toEqual([]);
     const other = 'Search your library for a card named Shivan Dragon, reveal it, put it into your'
       + ' hand, then shuffle.';
-    expect(unreadLines(spell(other))).toEqual([other]);
+    expect(unreadLines(spell(other))).toEqual([]);
   });
 
   it.each([

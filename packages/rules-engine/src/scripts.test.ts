@@ -23624,6 +23624,50 @@ describe('more counts: lands in your graveyard, the dead, the attackers, the dra
   });
 });
 
+describe('"a card named …", searched for in the library and/or graveyard (D986)', () => {
+  const ROWS = [
+    { name: 'Test Squire', type_line: 'Creature — Human Soldier', oracle_text: 'When this creature enters, you may search your library and/or graveyard for a card named Test Gideon, Champion, reveal it, then put it into your hand. If you searched your library this way, shuffle.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Gideon, Champion', type_line: 'Legendary Creature — Human Soldier', oracle_text: '', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Gideon', type_line: 'Creature — Human', oracle_text: '', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd986', name: 'Named', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 30 }], data: ROWS as never[],
+  });
+  const enter = (graveyard: string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd986', 1: 'd986' }, deckSpecs: { d986: deck.deck },
+      hands: { 0: ['Test Squire'] }, graveyard: { 0: graveyard }, battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Squire') } as Action);
+    for (let i = 0; i < 8 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+  const zone = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads whole, comma in the name and "then put it" both', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('from the library: only cards with exactly that name are offered', () => {
+    let s = enter();
+    expect(s.pendingDecision?.options).toEqual(['Library', 'Graveyard']);
+    s = zone(s, 'Library');
+    expect(s.pendingDecision?.from).toBe('library');
+    expect([...new Set(choices(s))]).toEqual(['Test Gideon, Champion']);
+    s = drain(decide(s, ['Test Gideon, Champion']));
+    expect(namesIn(s, 0, 'hand')).toContain('Test Gideon, Champion');
+  });
+
+  it('from the graveyard', () => {
+    let s = zone(enter(['Test Gideon, Champion', 'Test Gideon']), 'Graveyard');
+    expect(choices(s)).toEqual(['Test Gideon, Champion']);
+    s = drain(decide(s, ['Test Gideon, Champion']));
+    expect(namesIn(s, 0, 'hand')).toContain('Test Gideon, Champion');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Test Gideon']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
