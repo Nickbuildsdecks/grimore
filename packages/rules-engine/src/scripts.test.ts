@@ -23306,6 +23306,60 @@ describe('a combat-damage copy of itself, and an edict of any permanent (D744)',
   });
 });
 
+describe('"exile up to N target cards from graveyards" (D745)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    I('Test Scour', 'Exile up to one target card from a graveyard. Draw a card.'),
+    I('Test Purge', 'Exile up to two target cards from graveyards.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd745', name: 'Graveyard hate',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd745', 1: 'd745' }, deckSpecs: { d745: deck.deck }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Bear'), toZone: 'graveyard' });
+    s = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'library', 'Test Bear'), toZone: 'graveyard' });
+    return s;
+  };
+  const cast = (s: GameState, card: string, targets: string[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: targets.map((id) => ({ kind: 'card' as const, id })),
+  })));
+
+  it('reads them, and leaves "from a single graveyard" unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const single = compileCard(I('Test Line', 'Exile up to two target cards from a single graveyard.') as never);
+    expect(single.ok && single.unread.length).toBe(1);
+  });
+
+  it('up to one: with a target it is exiled, and with none the spell still resolves', () => {
+    const s = table('Test Scour');
+    const theirs = find(s, 1, 'graveyard', 'Test Bear');
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Scour'))!;
+    expect(play.targetSpecs[0]!.optional).toBe(true);
+    const hit = cast(s, 'Test Scour', [theirs]);
+    expect(hit.instances[theirs]!.zone).toBe('exile');
+    const hand = ids(s, 0, 'hand').length;
+    const none = cast(s, 'Test Scour', []);
+    expect(namesIn(none, 1, 'graveyard')).toContain('Test Bear');
+    expect(ids(none, 0, 'hand').length).toBe(hand);
+  });
+
+  it("up to two from graveyards: one from each player's", () => {
+    const s = table('Test Purge');
+    const mine = find(s, 0, 'graveyard', 'Test Bear');
+    const theirs = find(s, 1, 'graveyard', 'Test Bear');
+    const done = cast(s, 'Test Purge', [mine, theirs]);
+    expect(done.instances[mine]!.zone).toBe('exile');
+    expect(done.instances[theirs]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

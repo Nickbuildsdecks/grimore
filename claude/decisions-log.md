@@ -51291,3 +51291,31 @@ Faults injected by script: 3 of 3 caught.
     engine tests: 5,257, all passing (merged with the other session's D982)
 
 Coverage: 13,112 of 31,858 cards (+34), 33,592 of 59,790 lines (+45), against a6a04ba.
+
+## D745 — "Exile up to N target cards from graveyards"
+
+Graveyard hate (D527) read "Exile target card from a graveyard". The "up to" forms didn't read,
+about 45 legal lines: "Exile up to one target card from a graveyard", "… up to two target cards
+from graveyards", "… from an opponent's graveyard", "… up to one target creature card …".
+
+They read now as the single spec with a count and `optional`, so fewer may be chosen, none
+included, and the spell still resolves. Every card chosen that is still in a graveyard is exiled.
+
+**"From a single graveyard" stays unread**, on purpose. The targets must share an owner, which a
+per-target filter can't check, and exiling across graveyards would be a different card.
+
+**Tests.** 3 engine tests:
+- the cards read; "from a single graveyard" stays unread;
+- up to one: the target is offered as optional, a chosen card is exiled, and with none chosen the
+  spell still resolves and draws;
+- up to two from graveyards: one card from each player's graveyard, both exiled.
+
+Faults injected by script: 2 of 3 caught. The miss was a malformed fault: reading "a single
+graveyard" takes two coordinated edits, and a one-edit fault leaves it as unread as before, which
+the test above pins.
+
+Pod sweep 59001 (D740–D744): every game finished.
+
+    engine tests: 5,260, all passing
+
+Coverage: 13,129 of 31,878 cards (+12), 33,645 of 59,841 lines (+24), against e8981aa.

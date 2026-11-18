@@ -23125,6 +23125,33 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    **"Up to" N of them** (D745): "Exile up to one target card from a graveyard", "Exile up to two
+    target cards from graveyards", "… from an opponent's graveyard". The single spec with a count and
+    `optional`, so fewer — none — may be chosen. "From a single graveyard" stays unread: the targets
+    have to share an owner, which a per-target filter cannot check, and exiling across graveyards
+    would be a different card.
+  */
+  const upToFromGraveyard =
+    /^exile up to (one|two|three|four) target (.*?)cards? from (a graveyard|graveyards|your graveyard|an opponent's graveyard)$/i
+      .exec(text);
+  if (upToFromGraveyard !== null) {
+    const n = WORD_NUMBERS[upToFromGraveyard[1]!.toLowerCase()];
+    const where = upToFromGraveyard[3]!.toLowerCase();
+    const whose = where === 'graveyards' ? 'a' : where.replace(/ graveyard$/, '');
+    // Several from "a graveyard" would be the single-graveyard wording; one from "graveyards" is not printed.
+    const consistent = n !== undefined && (n === 1 ? where !== 'graveyards' : where !== 'a graveyard');
+    const base = consistent
+      ? targetSpecFrom(`target ${upToFromGraveyard[2]!.replace(/s\s*$/, ' ')}card in ${whose} graveyard`, false)
+      : null;
+    if (base !== null && n !== undefined) {
+      return {
+        targets: [{ ...base, count: n, optional: true, description: `up to ${upToFromGraveyard[1]!.toLowerCase()} ${base.description}` }],
+        effect: (c) => cardTargets(c).reduce((state, id) => (state.instances[id]?.zone === 'graveyard' ? exileCard(state, id) : state), c.state),
+      };
+    }
+  }
+
+  /*
     **A card out of a graveyard and under its own library** (D527): Barkform Harvester's "{2}: Put
     target card from your graveyard on the bottom of your library."
 
