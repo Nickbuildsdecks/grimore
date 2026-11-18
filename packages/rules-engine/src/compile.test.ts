@@ -5952,9 +5952,10 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         This list was `Food, Blood, Powerstone` until D582, which wrote Food and Blood from the
         ability their makers quote in reminder text. The comment that stood here is the argument
         for doing it that way: it gave Food's text from memory as "Sacrifice this artifact", and
-        the cards print "Sacrifice this token".
+        the cards print "Sacrifice this token". Powerstone left the list at D740, written the same
+        way from the reminder text its makers print.
       */
-      for (const named of ['Map', 'Powerstone', 'Junk']) {
+      for (const named of ['Map', 'Junk', 'Gold']) {
         const card = compileCard({
           name: `Larder ${named}`, type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
           oracle_text: `Create a ${named} token.`,

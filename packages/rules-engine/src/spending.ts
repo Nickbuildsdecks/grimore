@@ -105,3 +105,19 @@ export function spendRestriction(phrase: string): SpendRestriction | null {
   };
 }
 
+/**
+ * "This mana can't be spent to cast a nonartifact spell" (D740, Powerstone): the opposite shape of
+ * "Spend this mana only …". Any ability may use it; a spell only when it is not of the banned kind.
+ * The kind is one word, a "non-" of a card type or a card type.
+ */
+export function spendBan(phrase: string): SpendRestriction | null {
+  const printed = phrase.trim().replace(/\.$/, '');
+  const m = /^can't be spent to cast (?:an? )?(non)?(artifact|creature|enchantment|instant|sorcery|planeswalker) spells?$/i.exec(printed);
+  if (m === null) return null;
+  const type = m[2]!.toLowerCase();
+  const banned = (t: TypeLine): boolean => (m[1] === undefined ? hasType(t, type) : !hasType(t, type));
+  return {
+    words: printed,
+    allows: (paying) => (paying.spell !== undefined ? !banned(paying.spell) : paying.abilityOf !== undefined),
+  };
+}

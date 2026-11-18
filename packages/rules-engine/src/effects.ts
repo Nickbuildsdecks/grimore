@@ -2481,6 +2481,12 @@ export function createToken(
   return addTokens(state, seat, card, count, keyOverride).state;
 }
 
+/** "Create a tapped … token" (D740): the tokens arrive tapped, never untapped in between. */
+export function createTappedTokens(state: GameState, seat: SeatIndex, card: CardDef, count = 1): GameState {
+  const made = addTokens(state, seat, card, count);
+  return made.created.reduce((next, id) => withInstance(next, id, { tapped: true }), made.state);
+}
+
 /**
  * `createToken`, and the ids of what it made.
  *
