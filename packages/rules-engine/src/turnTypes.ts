@@ -460,6 +460,8 @@ export interface StackObject {
    * adventure that finishes resolving is exiled, and its owner may cast the creature from there.
    */
   readonly adventure?: true;
+  /** An omen spell (D979): shuffled into its owner's library as it resolves. */
+  readonly omen?: true;
   /**
    * Whether this spell was cast for its evoke cost (CR 702.74a).
    *

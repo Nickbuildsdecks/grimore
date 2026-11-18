@@ -1228,6 +1228,14 @@ export function spellLeavesStack(
   if (object.boughtBack === true && resolved) {
     return relocate(state, inst, 'hand', inst.owner, 'bottom');
   }
+  /*
+    And an omen that resolved (D979): "Then shuffle this card into its owner's library." The
+    adventure's `resolved` test, for its reason — a countered omen goes to the graveyard — and
+    under flashback's exile, which replaces anywhere else the card would go (CR 702.33a).
+  */
+  if (object.omen === true && resolved && object.flashback !== true) {
+    return shuffleLibrary(relocate(state, inst, 'library', inst.owner, 'top'), inst.owner);
+  }
   return relocate(state, inst, object.flashback === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
 }
 
