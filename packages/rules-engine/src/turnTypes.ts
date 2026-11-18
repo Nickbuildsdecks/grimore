@@ -214,7 +214,7 @@ export interface DelayedTrigger {
    * answered like any other (CR 603.7). `to-hand` (D719) is Necropotence's: "put that card into
    * your hand at the beginning of your next end step", for a card it exiled face down.
    */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy';
 }
 
 /** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */
@@ -294,7 +294,7 @@ export interface StackObject {
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
   /** An engine-known delayed ability (D696); see `DelayedTrigger.builtin`. */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy';
   /**
    * Where this triggered ability was **defined**, when the permanent that has it did not print it.
    *

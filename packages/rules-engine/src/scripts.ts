@@ -10036,49 +10036,40 @@ const SEARCH_FOR_TOMORROW: CardScript = {
   },
 };
 
-const THICKET_BASILISK: CardScript = {
-  name: 'Thicket Basilisk',
-  triggers: [
-    {
-      on: { kind: 'blocks' },
-      description: 'destroy the non-Wall creature it blocked at end of combat',
-      effect: (c) => markForEndOfCombat(c),
-    },
-    {
-      // The same clause from the other side, and a separate trigger because the two events are
-      // about different creatures. Both read `c.blocked`, which is the other creature either way.
-      on: { kind: 'becomes-blocked' },
-      description: 'destroy the non-Wall creature blocking it at end of combat',
-      effect: (c) => markForEndOfCombat(c),
-    },
-    {
-      on: { kind: 'step', step: 'end-combat', of: 'any' },
-      delayed: true,
-      description: 'destroy the creature it fought',
-      // No `destroy` of a creature that has left: `destroy` reads the instance and does nothing
-      // for a card that is not on the battlefield, which is the rule rather than a guard.
-      effect: (c) => (c.subject === undefined ? c.state : destroy(c.state, c.subject)),
-    },
-  ],
+/**
+ * The basilisks' two block triggers (D969): "Whenever ~ blocks or becomes blocked by a <kind>
+ * creature, destroy that creature at end of combat". `fits` is asked of the other creature live as
+ * the trigger resolves; one that fits is scheduled for the engine-known `destroy` delayed ability at
+ * end of combat, which does nothing to a creature that has left. Shared by the hand-written Thicket
+ * Basilisk and the compiled readings, so the two are the same script.
+ */
+function basiliskTriggers(
+  words: string,
+  fits: (state: GameState, id: string, controller: SeatIndex, source: string) => boolean,
+): TriggerDef[] {
+  const effect: EffectFn = (c) => (c.blocked === undefined || !fits(c.state, c.blocked, c.controller, c.source) ? c.state
+    : scheduleDelayed(c.state, {
+      source: c.source, controller: c.controller, abilityIndex: -1, step: 'end-combat', of: 'any',
+      subject: c.blocked, builtin: 'destroy', description: `destroy ${nameOfCard(c.state, c.blocked)}`,
+    }));
+  const kind = `${words === '' ? '' : `${words} `}creature`;
+  return [
+    { on: { kind: 'blocks' }, description: `destroy the ${kind} it blocked at end of combat`, effect },
+    { on: { kind: 'becomes-blocked' }, description: `destroy the ${kind} blocking it at end of combat`, effect },
+  ];
+}
+
+/** "Non-Wall" and its kind (D576): the other creature is not of that creature type, read live. */
+const notOfType = (type: string) => (state: GameState, id: string): boolean => {
+  const other = state.instances[id];
+  return other !== undefined && !hasSubtype(characteristicsOf(state, other).typeLine, type);
 };
 
-function markForEndOfCombat(c: EffectContext): GameState {
-  if (c.blocked === undefined) return c.state;
-  // "…by a non-Wall creature" (D576). Read live, as the card would be read at the table.
-  const other = c.state.instances[c.blocked];
-  if (other !== undefined && hasSubtype(characteristicsOf(c.state, other).typeLine, 'Wall')) return c.state;
-  return scheduleDelayed(c.state, {
-    source: c.source,
-    controller: c.controller,
-    abilityIndex: delayedIndexOf(THICKET_BASILISK),
-    step: 'end-combat',
-    // `any`, not `you`: the combat this was scheduled in is as often as not somebody else's turn,
-    // and "at end of combat" means *this* combat.
-    of: 'any',
-    subject: c.blocked,
-    description: `destroy ${nameOfCard(c.state, c.blocked)}`,
-  });
-}
+// Thicket Basilisk: the non-Wall basilisk, written as the compiler reads it (D969).
+const THICKET_BASILISK: CardScript = {
+  name: 'Thicket Basilisk',
+  triggers: basiliskTriggers('non-Wall', notOfType('Wall')),
+};
 
 const FLICKERWISP: CardScript = {
   name: 'Flickerwisp',
@@ -19303,6 +19294,19 @@ function eventRelativeEffect(
   if (/^destroy that creature$/i.test(text) && aboutTheOther) {
     return { effect: (c) => (c.blocked === undefined ? c.state : destroy(c.state, c.blocked)) };
   }
+  /*
+    The basilisks (D969): "destroy that creature at end of combat". Thicket Basilisk's hand-written
+    shape, compiled: the other creature is scheduled for the engine-known `destroy` delayed ability
+    (D696's family), which fires at end of combat and does nothing to a creature that has left.
+  */
+  if (/^destroy that creature at end of combat$/i.test(text) && aboutTheOther) {
+    return {
+      effect: (c) => (c.blocked === undefined ? c.state : scheduleDelayed(c.state, {
+        source: c.source, controller: c.controller, abilityIndex: -1, step: 'end-combat', of: 'any',
+        subject: c.blocked, builtin: 'destroy', description: `destroy ${nameOfCard(c.state, c.blocked)} at end of combat`,
+      })),
+    };
+  }
 
   // Flailing Drake: the pump that lands on the other creature rather than on this one.
   const sized = /^that creature gets ([+-]\d+)\/([+-]\d+) until end of turn$/i.exec(text);
@@ -19915,6 +19919,26 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     .exec(withoutAbilityWord(plain(line).trim()));
   if (hitTarget !== null) {
     return triggerFromLine(`${hitTarget[1]!}${hitTarget[2]!.replace(/\bthat player controls\b/gi, 'defending player controls')}`, name);
+  }
+  /*
+    The filtered basilisks (D969): "Whenever ~ blocks or becomes blocked by a non-Wall creature /
+    a nonblack creature / a green or white creature, destroy that creature at end of combat". The
+    two block events, as the unfiltered line reads, with the filter asked of the other creature live
+    as the trigger resolves, the way Thicket Basilisk's hand-written check for a Wall is. A negated
+    creature type is read here; any other filter is the target reader's.
+  */
+  const basilisk = new RegExp(`^Whenever (?:${selfRef(name)}) blocks or becomes blocked by an? (.+?) creature, destroy that creature at end of combat\\.?$`, 'i')
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (basilisk !== null) {
+    const words = basilisk[1]!.trim();
+    const negated = /^non-([A-Z][a-z]+)$/.exec(words);
+    const spec = negated === null ? targetSpecFrom(`target ${words} creature`, false) : null;
+    const fits: ((state: GameState, id: string, controller: SeatIndex, source: string) => boolean) | null = negated !== null
+      ? (isCreatureType(negated[1]!) ? notOfType(negated[1]!) : null)
+      : spec === null || spec.kind !== 'creature' ? null
+        : (state, id, controller, source) => spec.filter === undefined || spec.filter(state, { kind: 'card', id }, controller, source);
+    if (fits === null) return null;
+    return { triggers: basiliskTriggers(words, fits) };
   }
   // And prowl's and freerunning's (D935), on the same marker: Earwig Squad.
   const surgeIf = new RegExp(`^(When (?:${selfRef(name)}) enters), if its (surge|prowl|freerunning) cost was paid, (.+)$`, 'i')

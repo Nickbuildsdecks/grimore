@@ -21175,6 +21175,58 @@ describe('"costs {X} less, where X is" a board measure (D968)', () => {
   });
 });
 
+describe('"destroy that creature at end of combat": the basilisks (D969)', () => {
+  const C = (name: string, text: string, extra: Record<string, unknown> = {}) => ({ name, type_line: 'Creature — Basilisk', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '6', ...extra });
+  const ROWS = [
+    C('Test Basilisk', 'Whenever this creature blocks or becomes blocked by a creature, destroy that creature at end of combat.'),
+    C('Test Gaze', 'Whenever this creature blocks or becomes blocked by a non-Wall creature, destroy that creature at end of combat.'),
+    C('Test Stare', 'Whenever this creature blocks or becomes blocked by a nonblack creature, destroy that creature at end of combat.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Shade', type_line: 'Creature — Shade', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '4' },
+  ];
+  const deck = customDeck({
+    id: 'd969', name: 'Basilisks',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  /** Seat 1 attacks with `attacker`; seat 0 blocks with `blocker`. Returns the state at combat damage and after combat. */
+  const fight = (blocker: string, attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd969', 1: 'd969' }, deckSpecs: { d969: deck.deck },
+      battlefield: { 0: [blocker], 1: [attacker] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const them = find(s, 1, 'battlefield', attacker);
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: them, defender: 0 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: find(s, 0, 'battlefield', blocker), attacker: them }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const during = drain(advanceTo(s, 'combat-damage'), 30);
+    const after = drain(advanceTo(s, 'postcombat-main'), 30);
+    return { them, during, after };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the creature it blocks is destroyed at end of combat, not before', () => {
+    const { them, during, after } = fight('Test Basilisk', 'Test Bear');
+    expect(during.instances[them]!.zone).toBe('battlefield');
+    expect(after.instances[them]!.zone).toBe('graveyard');
+  });
+
+  it('a non-Wall basilisk spares a Wall; a nonblack one spares a black creature and not a green one', () => {
+    const wall = fight('Test Gaze', 'Test Wall');
+    expect(wall.after.instances[wall.them]!.zone).toBe('battlefield');
+    const shade = fight('Test Stare', 'Test Shade');
+    expect(shade.after.instances[shade.them]!.zone).toBe('battlefield');
+    const bear = fight('Test Stare', 'Test Bear');
+    expect(bear.after.instances[bear.them]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

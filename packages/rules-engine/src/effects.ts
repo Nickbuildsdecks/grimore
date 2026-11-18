@@ -1883,7 +1883,7 @@ export function scheduleDelayed(
     readonly of: 'you' | 'any';
     readonly subject?: string;
     readonly description: string;
-    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand';
+    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy';
   },
 ): GameState {
   const seq = state.autoSeq + 1;

@@ -50229,3 +50229,43 @@ Faults injected by hand: 2 of 2 caught.
     engine tests: 5,134, all passing
 
 Coverage: 12,573 of 31,743 cards (+5), 32,618 of 59,509 lines (+8). Staples: 241 of 244.
+
+## D969 — "Destroy that creature at end of combat": the basilisks
+
+"Whenever ~ blocks or becomes blocked by a creature, destroy that creature at end of combat"
+(Tangle Asp, Venomous Dragonfly), "… by a non-Wall creature …" (Cockatrice, Rock Basilisk and one
+more), and "… by a nonblack creature …" (Deathgazer, Dread Specter and one more). Thicket Basilisk
+is hand-written this way. The compiler had no clause for it.
+
+How it is read:
+- **A fourth engine-known delayed ability, `destroy`** (D696's family, beside sacrifice, exile and
+  to-hand). It destroys its subject at end of combat if it is still on the battlefield, and does
+  nothing to a creature that has left.
+- **"Destroy that creature at end of combat"** in `eventRelativeEffect`, on the block events, where
+  "that creature" is `c.blocked`. It schedules the other creature for that ability.
+- **The filtered forms** in `triggerFromLine`: the same two block triggers, with the filter asked
+  of the other creature live as the trigger resolves, as the hand-written card's Wall check is. A
+  negated creature type ("non-Wall") is read directly. Any other filter goes through the target
+  reader ("nonblack"). "Green or white" (one card) is not a filter it reads, and stays unread.
+
+- **Thicket Basilisk, hand-written, now uses the same factory** (`basiliskTriggers`). Its compiled
+  reading appeared in `compiled-vs-written` as a new disagreement: its old three triggers, one of
+  them a delayed one of its own, against the compiled two. That table is kept empty, so the
+  difference is settled rather than listed: both are now the same two triggers and the same
+  engine-known ability. Its existing tests pass unchanged, including the two Cloudshift cases
+  where a blinked blocker is a new object and is not destroyed. So do the stack labels "destroy
+  the non-Wall creature blocking it at end of combat" and "destroy Grizzly Bears".
+
+8 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- the creature it blocks is still there at combat damage and destroyed at end of combat;
+- a non-Wall basilisk spares a Wall, and a nonblack one spares a black creature and not a green
+  one.
+
+Faults injected by hand: 5 of 5 caught, run again after the refactor.
+
+    engine tests: 5,137, all passing
+
+Coverage: 12,581 of 31,743 cards (+8), 32,627 of 59,509 lines (+9). Staples: 241 of 244.
