@@ -50757,3 +50757,47 @@ Faults injected by script: 7 of 7 caught.
     engine tests: 5,194, all passing (merged with the other session's D975)
 
 Coverage: 12,765 of 31,743 cards (+34), 33,016 of 59,509 lines (+57), against 631357c.
+
+## D737 — Board conditions: "as long as you control another artifact"
+
+The static condition reader (D605) answered "you control a Plains" and metalcraft's "you control
+an artifact". It didn't answer "another", an opponent's board, a colour, or a count of a type, so
+"~ gets +1/+1 as long as …" stayed unread across a family of about 50 lines:
+- "you control another artifact";
+- "an opponent controls an Island";
+- "you control a blue creature";
+- "an opponent controls a nontoken white permanent";
+- "you control two or more Wizards";
+- "you control ten or more lands".
+
+How it is read (`boardCondition`, a new `board-has` condition):
+- **Whose board:** yours, or any one opponent's.
+- **"Another":** not the source. It is yours only; "another" on an opponent's board is refused.
+- **The count:** "a"/"an" is one, "N or more" is N.
+- **What each counted permanent must be:**
+  - an optional "nontoken", on either side of the colour;
+  - an optional colour;
+  - then a card type with "creature" or "permanent" after it, "permanent" alone, or a capitalised
+    subtype (creature types singularised, basic land types, Equipment, Aura, Vehicle, Gate, Desert).
+- **Answered off printed type lines and colours,** the compromise the metalcraft count states,
+  because it is asked from inside `characteristicsOf`.
+
+Triggers share the reader: an intervening "if you control another Wizard" is asked with the
+trigger's own source, so it doesn't count the creature asking. Two older tests pinned these as
+refusals. The D563 row ("another Wizard") is removed. The D605 row moves to a condition still out
+of reach: "an opponent controls a creature with flying".
+
+**Tests.** 7 engine tests:
+- the cards read;
+- "another artifact": the source doesn't count, a Rock does, a non-artifact creature doesn't;
+- "an opponent controls an Island": the opponent's counts, your own doesn't;
+- a blue creature of yours gives flying, the opponent's doesn't;
+- "a nontoken white permanent": a white card counts, a white token doesn't;
+- the intervening "if you control another Wizard" on entering, with and without one;
+- "two or more Wizards" needs two.
+
+Faults injected by script: 9 of 9 caught, one after pinning (card types ignored).
+
+    engine tests: ENGINE_COUNT, all passing
+
+Coverage: 12,841 of 31,764 cards (+62), 33,127 of 59,553 lines (+75), against 1af49a9.

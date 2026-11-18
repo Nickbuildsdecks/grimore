@@ -27662,6 +27662,55 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
 }
 
 /**
+ * "You control another artifact", "an opponent controls a black permanent", "you control two or
+ * more Wizards" (D737): a `board-has` condition, or null. The thing counted is an optional colour,
+ * an optional "nontoken", then a card type (with "creature" or "permanent" after it, or alone), or
+ * a capitalised subtype (optionally followed by "creature" or "permanent").
+ * "you control a Plains" stays with the older subtype row, which this leaves alone.
+ */
+function boardCondition(text: string): NonNullable<PumpOptions['while']> | null {
+  // "Nontoken" on either side of the colour: "a nontoken white permanent", "a white nontoken creature".
+  const m = /^(you control|an opponent controls) (another|an?|(\S+) or more) (nontoken )?(?:(white|blue|black|red|green) )?(nontoken )?(.+?)$/i.exec(text);
+  if (m === null) return null;
+  const nontoken = m[4] !== undefined || m[6] !== undefined;
+  const whose = /^you/i.test(m[1]!) ? 'you' as const : 'an-opponent' as const;
+  const other = /^another$/i.test(m[2]!);
+  if (other && whose !== 'you') return null;
+  const atLeast = m[3] === undefined ? 1 : countFrom(m[3]);
+  if (atLeast === null || atLeast < 1) return null;
+  const colour = m[5] === undefined ? undefined : SPELL_COLOUR_WORDS[m[5].toLowerCase()];
+  const what = m[7]!.trim();
+  const TYPES = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker'];
+  let types: string[] = [];
+  let subtype: string | undefined;
+  const typed = /^(artifact|creature|enchantment|land|planeswalker)s?(?: (creature|permanent)s?)?$/i.exec(what);
+  if (typed !== null) {
+    types = [typed[1]!.toLowerCase(), ...(typed[2]?.toLowerCase() === 'creature' ? ['creature'] : [])];
+  } else if (/^permanents?$/i.test(what)) {
+    types = [];
+  } else {
+    const sub = /^([A-Z][A-Za-z'-]*?)(?: (creature|permanent)s?)?$/.exec(what);
+    if (sub === null) return null;
+    const single = isCreatureType(sub[1]!) ? sub[1]! : singularCreatureType(sub[1]!)
+      ?? (['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Equipment', 'Aura', 'Vehicle', 'Gate', 'Desert'].includes(sub[1]!) ? sub[1]! : null);
+    if (single === null) return null;
+    // "You control a Plains" with nothing else is the older row's.
+    if (!other && whose === 'you' && atLeast === 1 && colour === undefined && !nontoken && sub[2] === undefined) return null;
+    subtype = single;
+    if (sub[2]?.toLowerCase() === 'creature') types = ['creature'];
+  }
+  if (!types.every((type) => TYPES.includes(type))) return null;
+  return {
+    kind: 'board-has', whose, atLeast,
+    ...(other ? { other: true as const } : {}),
+    ...(types.length > 0 ? { types } : {}),
+    ...(subtype === undefined ? {} : { subtype }),
+    ...(colour === undefined ? {} : { colours: [colour] }),
+    ...(nontoken ? { nontoken: true as const } : {}),
+  };
+}
+
+/**
  * A static's printed condition as `ContinuousEffect.while` data (D605), or `null` for one this does
  * not read. Each row is a question `conditionMet` can answer without a live characteristic — see the
  * union's own note — and anything else refuses the line rather than applying the effect always.
@@ -27704,6 +27753,8 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
     const atLeast = n(life[1]!);
     return atLeast === null ? null : { kind: 'controller-life', atLeast };
   }
+  const board = boardCondition(text);
+  if (board !== null) return board;
   // A capitalised subtype only: "you control a Plains", "… a Gate". A lower-case word is a type or a
   // quality this does not count.
   const subtype = /^you control an? ([A-Z][A-Za-z'-]*)$/.exec(text);
