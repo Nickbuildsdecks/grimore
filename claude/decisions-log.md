@@ -50612,6 +50612,6 @@ cards now read whole; most emblem walkers have another unread loyalty ability.
 Faults injected by script: 11 of 11 caught, two of them after pinning (the quote hiding, and
 refusing activated emblems).
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,176, all passing (merged with the other session's D973)
 
 Coverage: 12,668 of 31,743 cards (+5), 32,819 of 59,509 lines (+27), against 7699a9b.
