@@ -33825,3 +33825,61 @@ Faults injected by script: 3 of 3 caught.
     engine tests: 5,257, all passing (merged with the other session's D982)
 
 Coverage: 13,112 of 31,858 cards (+34), 33,592 of 59,790 lines (+45), against a6a04ba.
+
+## D983 — A */* from a general zone count
+
+D975 to D977 read the "*/*" counts one phrase at a time. This increment adds a general grammar
+(`zoneCountFrom`) behind the fixed readers, in `cdaCountFor`. It reads a list of words in front of a
+noun, each word one filter the zone count asks of printed or instance data. Everything stays
+serialisable, as `definesSize` requires.
+
+- **Words:**
+  - `other`, `untapped`, `face-down`, `nonbasic`, `snow`, `legendary`, `colorless`;
+  - a colour;
+  - `nonX` for a card type;
+  - a card type ("permanent" means any permanent type);
+  - a capitalised subtype ("Elf cards in your graveyard").
+- **Joining:** types joined by "and", "or" or a comma are **any** of them ("instant and sorcery",
+  "artifacts, creatures, and lands"). Types side by side are **all** of them ("artifact creatures").
+- **Nouns:**
+  - `cards in` your graveyard, all graveyards, your opponents' graveyards, your hand, or all
+    players' hands;
+  - on the battlefield, a type, "permanents", or a subtype plural ("other Rats on the
+    battlefield"), with "you control", "your opponents control" or "on the battlefield";
+  - "creatures named ~ on the battlefield" (Plague Rats), matched against the card's own name.
+- **Counters:**
+  - "+1/+1 counters on creatures you control" sums those counters on what the count finds;
+  - "fade counters on it" is the permanent's own counters.
+- **Also:**
+  - "the highest / greatest mana value among cards in your graveyard";
+  - "the total number of …".
+  - An unknown word refuses the phrase.
+
+The count now receives the permanent whose size it is (`effect.source`), for "other" and "named ~".
+The new zone filter is `ofSubtype` rather than `subtype`, because `'subtype' in kind` already tells
+the `{ subtype }` kind apart.
+
+Refused "*/*" cards: 39 to 26 (and the "*/N" ones 9 to 7).
+
+Two older refusal rows used "face-down creatures on the battlefield" as the count the engine
+did not have. They now use "cards you've drawn this turn".
+
+**Tests.** 7 engine tests, all on real boards:
+- the 14 cards read;
+- "other creature cards" (not the sorcery or the land), "noncreature, nonland cards", and
+  "nonbasic land cards in your opponents' graveyards" (not yours, not their Swamp);
+- "artifact creatures" is both types; "untapped artifacts, creatures, and lands" is any of them and
+  drops by one when a Swamp taps;
+- "creatures named ~" counts both sides; "legendary creatures"; and the highest mana value in the
+  graveyard;
+- +1/+1 counters on your own creatures summed (not the opponent's, not -1/-1), and fade counters on
+  itself;
+- all players' hands;
+- "other Rats" (everyone's, not itself, not a Bear), face-down creatures, and colorless creatures.
+
+Faults injected by script: 16. 12 were caught at once. The 4 misses (subtype, "other", face-down,
+colorless) are now pinned by the last test.
+
+    engine tests: 5,264, all passing (merged with the other session's D744)
+
+Coverage: 13,098 of 31,900 cards (+46), 33,611 of 59,888 lines (+76).
