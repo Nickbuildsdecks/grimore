@@ -22162,6 +22162,52 @@ describe('anthems by colour and kind: "Other green creatures you control get +1/
   });
 });
 
+describe('a */* from domain, everyone\'s subtypes, snow, and a counted toughness (D976)', () => {
+  const C = (name: string, text: string, extra: Record<string, unknown> = {}) => ({ name, type_line: 'Creature — Avatar', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '*', toughness: '*', ...extra });
+  const ROWS = [
+    C('Test Rioters', "Domain — Test Rioters's power and toughness are each equal to the number of basic land types among lands you control."),
+    C('Test Doubtless', "Test Doubtless's power and toughness are each equal to the number of Clerics on the battlefield.", { type_line: 'Creature — Cleric Avatar' }),
+    C('Test Drift', "Test Drift's power and toughness are each equal to the number of snow lands you control."),
+    C('Test Folk', "Test Folk's toughness is equal to the number of Forests you control.", { power: '1' }),
+    { name: 'Test Cleric', type_line: 'Creature — Human Cleric', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Snowfield', type_line: 'Snow Land — Forest', oracle_text: '', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd976', name: 'More stars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 14 }, { name: 'Plains', count: 14 }, { name: 'Island', count: 14 }],
+    data: ROWS as never[],
+  });
+  const size = (card: string, mine: string[], theirs: string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd976', 1: 'd976' }, deckSpecs: { d976: deck.deck },
+      battlefield: { 0: [card, ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const got = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', card)]!);
+    return `${got.power}/${got.toughness}`;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('domain: three basic land types from four lands', () => {
+    expect(size('Test Rioters', ['Forest', 'Forest', 'Plains', 'Island'])).toBe('3/3');
+  });
+
+  it('Clerics on the battlefield: its own side, the other side, and itself', () => {
+    expect(size('Test Doubtless', ['Test Cleric'], ['Test Cleric'])).toBe('3/3');
+  });
+
+  it('snow lands you control: the snow land, not the plain Forest', () => {
+    expect(size('Test Drift', ['Test Snowfield', 'Forest'])).toBe('1/1');
+  });
+
+  it('toughness counted, the printed power kept', () => {
+    expect(size('Test Folk', ['Forest', 'Forest', 'Plains'])).toBe('1/2');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

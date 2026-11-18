@@ -499,12 +499,13 @@ function unsizeable(
   const body = printedBody(name, row);
   if (!('why' in body)) return null;
   if (defines === undefined) return body.why;
-  // The count covers the power always and the toughness unless the ability is power-only.
-  if (defines.applies !== 'power') return null;
-  const toughness = (row.toughness ?? '').trim();
-  return INTEGER.test(toughness)
+  // The count covers the power and the toughness unless the ability names one of them; the other
+  // has to be printed as a number (D976 adds the toughness-only mirror).
+  if (defines.applies === undefined || defines.applies === 'both') return null;
+  const other = defines.applies === 'power' ? (row.toughness ?? '').trim() : (row.power ?? '').trim();
+  return INTEGER.test(other)
     ? null
-    : `${name}: its power is a count but its toughness of ${toughness || '(none)'} is not a number`;
+    : `${name}: its ${defines.applies} is a count but its ${defines.applies === 'power' ? 'toughness' : 'power'} of ${other || '(none)'} is not a number`;
 }
 
 /**

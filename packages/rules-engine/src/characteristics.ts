@@ -180,7 +180,17 @@ function cdaCountMore(
   const zone = (seat: SeatIndex, z: 'battlefield' | 'hand' | 'graveyard') => state.zones[zoneKey(seat, z)] ?? [];
   const everyone = state.seats.map((row) => row.index);
   if (typeof kind === 'object' && 'subtype' in kind) {
-    return zone(controller, 'battlefield').filter((id) => hasSubtype(lineOf(id), kind.subtype)).length;
+    const seats = kind.whose === 'all' ? everyone : [controller];
+    return seats.flatMap((seat) => zone(seat, 'battlefield')).filter((id) => hasSubtype(lineOf(id), kind.subtype)).length;
+  }
+  if (kind === 'basic-land-types-you-control') {
+    const seen = new Set<string>();
+    for (const id of zone(controller, 'battlefield')) {
+      const line = lineOf(id);
+      if (!hasType(line, 'land')) continue;
+      for (const basic of ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']) if (hasSubtype(line, basic)) seen.add(basic);
+    }
+    return seen.size;
   }
   if (typeof kind === 'object' && 'devotion' in kind) {
     let total = 0;
@@ -198,6 +208,7 @@ function cdaCountMore(
     return seats.flatMap((seat) => zone(seat, kind.zone)).filter((id) => {
       const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
       if (kind.anyType !== undefined && !kind.anyType.some((type) => hasType(lineOf(id), type))) return false;
+      if (kind.snow === true && !lineOf(id).supertypes.some((word) => word.toLowerCase() === 'snow')) return false;
       return kind.colour === undefined || (def?.colors ?? []).includes(kind.colour);
     }).length;
   }
@@ -2017,8 +2028,13 @@ export interface ContinuousEffect {
       | 'creatures-you-control' | 'creatures-on-the-battlefield' | 'lands-you-control'
       | 'artifacts-you-control' | 'cards-in-your-hand' | 'creature-cards-in-your-graveyard'
       | 'cards-in-your-graveyard' | 'card-types-in-all-graveyards' | 'card-types-in-your-graveyard'
-      /** "Swamps you control", "Rats you control": a land or creature subtype on the printed line. */
-      | { readonly subtype: string }
+      /**
+       * "Swamps you control", "Rats you control": a land or creature subtype on the printed line.
+       * `whose: 'all'` is "Clerics on the battlefield" (D976).
+       */
+      | { readonly subtype: string; readonly whose?: 'all' }
+      /** Domain (D976): the basic land types among the printed lands you control. */
+      | 'basic-land-types-you-control'
       /** "Equal to your life total" (D975): Serra Avatar. */
       | 'your-life-total'
       /** "Equal to your devotion to red" (D975): the coloured symbols in your permanents' printed costs. */
@@ -2033,13 +2049,16 @@ export interface ContinuousEffect {
         readonly whose: 'you' | 'opponents' | 'all';
         readonly anyType?: readonly string[];
         readonly colour?: Color;
+        /** "Snow permanents you control", "snow lands you control" (D976). */
+        readonly snow?: true;
       };
     /**
      * Which of the two the count defines. `both` is a Lhurgoyf, whose power and toughness are both
      * the count; `power` is the Drake printed with a star for power and a 4 for toughness, where
      * only the power is counted. Defaulting to `both` leaves the card that shipped first unchanged.
      */
-    readonly applies?: 'both' | 'power';
+    /** `toughness` (D976) is the mirror of `power`: "~'s toughness is equal to …", the printed power kept. */
+    readonly applies?: 'both' | 'power' | 'toughness';
     readonly powerPlus?: number;
     readonly toughnessPlus?: number;
   };
@@ -3012,7 +3031,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // setting effect replaces it however early the definition was installed (CR 613.4a, 613.4c).
     if (effect.definesSize !== undefined) {
       const counted = cdaCount(state, effect.definesSize.count, effect.controller);
-      definedPower = counted + (effect.definesSize.powerPlus ?? 0);
+      if (effect.definesSize.applies !== 'toughness') definedPower = counted + (effect.definesSize.powerPlus ?? 0);
       if (effect.definesSize.applies !== 'power') {
         definedToughness = counted + (effect.definesSize.toughnessPlus ?? 0);
       }
