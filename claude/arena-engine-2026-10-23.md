@@ -33453,3 +33453,53 @@ A ninth was on the removed special case.
     engine tests: 5,218, all passing (merged with the other session's D977)
 
 Coverage: 12,883 of 31,785 cards (+27), 33,191 of 59,596 lines (+30), against fa80496.
+
+## D978 — Prepare: a creature that casts a copy of its spell
+
+The "prepare" layout is a creature with a spell printed beside it: "While it's prepared, you may
+cast a copy of its spell. Doing so unprepares it." The compiler refused all 71 legal cards as "more
+than one face".
+
+Of those 71, 50 carry both faces in the data. The other 21 carry only the creature face, so they
+have no spell to copy and stay refused.
+
+**How it is built:**
+- **The faces.** `CardFaces.kind` gains `prepare`, and the compiler builds the layout the way it
+  builds an adventurer's. From the hand only the creature is offered, and a cast of the spell face
+  is refused ("cast only as a copy").
+- **Prepared.** A designation on the permanent, `CardInstance.prepared`:
+  - set by "This creature enters prepared" (`entersPrepared`, applied at arrival like
+    `entersTapped`);
+  - set by "~ becomes prepared" / "it becomes prepared" (an effect clause), so every trigger and
+    activated ability the compiler already reads can prepare a creature;
+  - cleared by casting the copy and by leaving the battlefield (CR 400.7).
+- **The copy.** `preparedCopyOf` makes a card copy of the spell face in its controller's exile,
+  with the D583 permission to cast it this turn, and unprepares the permanent in the same step.
+  `castSpell` (`preparedCopy: true`, `half: 0`, `card` the permanent) casts it from there. So the
+  cost, the timing, the targets and the copy leaving the game as it resolves (CR 707.12) are the
+  ordinary ones.
+- **The offer.** `legalActions` asks the same state `castSpell` will make for its plays of that
+  copy, so the offer and the cast cannot disagree. The recursion ends because the permanent is
+  unprepared in that state. The row reads "Cast a copy of <spell> (prepared)".
+- **The condition.** "If this creature isn't prepared" is read, as a `source-prepared` condition.
+- **The view, the bot and the web table** carry the flag. The board shows a "prepared" badge.
+
+21 legal cards now read whole, plus the cards whose other lines were already readable.
+
+**Tests.** 6 engine tests:
+- the three shapes read, with a `prepare` face, and a one-face prepare row stays refused;
+- from the hand the creature is the only cast, and a half-0 cast from the hand is refused;
+- it enters prepared, then the copy is offered for the spell's cost, cast, unprepares the creature,
+  resolves (+3 life) and leaves no object behind, and a second copy is refused;
+- a sorcery copy is not offered with something on the stack, it is not another seat's, and a
+  bounced creature is not prepared;
+- "if this creature isn't prepared, it becomes prepared": on its own upkeep, not the opponent's;
+- an attack prepares the Duelist, and its instant copy is cast in combat.
+
+Faults injected by script: 16. 14 were caught at once. The two misses were the leave-the-battlefield
+reset and the controller check; both are now pinned with a real bounce and a check against the
+other seat.
+
+    engine tests: 5,224, all passing (merged with the other session's D738)
+
+Coverage: 12,887 of 31,845 cards (+23), 33,278 of 59,749 lines (+100).
