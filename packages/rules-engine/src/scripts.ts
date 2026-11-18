@@ -12518,6 +12518,9 @@ const BOUNCE_COUNTS: Readonly<Record<string, {
   another: { min: 1, max: 1, another: true },
   two: { min: 2, max: 2 },
   three: { min: 3, max: 3 },
+  // D741: "sacrifice five lands" (Lake of the Dead's kin, as a cost).
+  four: { min: 4, max: 4 },
+  five: { min: 5, max: 5 },
   'up to one': { min: 0, max: 1 },
   'up to two': { min: 0, max: 2 },
   'up to three': { min: 0, max: 3 },
@@ -12549,7 +12552,18 @@ const BOUNCE_COUNTS: Readonly<Record<string, {
 const permanentDescribed = (
   phrase: string,
 ): ((state: GameState, id: string) => boolean) | null => {
-  const words = phrase.trim().toLowerCase().split(/\s+/).filter((word) => word !== 'or');
+  const printedWords = phrase.trim().split(/\s+/).filter((word) => word.toLowerCase() !== 'or');
+  const words = printedWords.map((word) => word.toLowerCase());
+  // A basic land type as the noun (D741): "an untapped Island", "two Forests", "a Swamp".
+  const BASIC_TYPES: Readonly<Record<string, string>> = {
+    plains: 'Plains', island: 'Island', islands: 'Island', swamp: 'Swamp', swamps: 'Swamp',
+    mountain: 'Mountain', mountains: 'Mountain', forest: 'Forest', forests: 'Forest',
+  };
+  const basicNoun = BASIC_TYPES[words[words.length - 1] ?? ''];
+  if (basicNoun !== undefined) {
+    words.pop();
+    words.push('land');
+  }
   const noun = (words.pop() ?? '').replace(/s$/, '');
   /*
     `PERMANENT_TYPES` is the list that was already here for printed board scopes (CR 205.2a), and
@@ -12561,8 +12575,16 @@ const permanentDescribed = (
   const type = noun === 'permanent' ? null : noun;
   const colours: Color[] = [];
   let nonland = false;
-  for (const word of words) {
+  // D741: "untapped"/"tapped", "basic"/"nonbasic", and "non-<Subtype>" ("a non-Lair land").
+  let tapped: boolean | undefined;
+  let basic: boolean | undefined;
+  const notSubtypes: string[] = [];
+  for (const [i, word] of words.entries()) {
     if (word === 'nonland') { nonland = true; continue; }
+    if (word === 'untapped' || word === 'tapped') { tapped = word === 'tapped'; continue; }
+    if (word === 'basic' || word === 'nonbasic') { basic = word === 'basic'; continue; }
+    const notSub = /^non-([A-Z][A-Za-z'-]*)$/.exec(printedWords[i] ?? '');
+    if (notSub !== null) { notSubtypes.push(notSub[1]!); continue; }
     const colour = COLOUR_WORDS[word];
     if (colour === undefined) return null;
     colours.push(colour);
@@ -12573,6 +12595,10 @@ const permanentDescribed = (
     const live = characteristicsOf(state, inst);
     if (type !== null && !hasType(live.typeLine, type)) return false;
     if (nonland && hasType(live.typeLine, 'land')) return false;
+    if (basicNoun !== undefined && !hasSubtype(live.typeLine, basicNoun)) return false;
+    if (tapped !== undefined && inst.tapped !== tapped) return false;
+    if (basic !== undefined && live.typeLine.supertypes.some((t) => t.toLowerCase() === 'basic') !== basic) return false;
+    if (notSubtypes.some((sub) => hasSubtype(live.typeLine, sub))) return false;
     if (colours.length > 0 && !colours.some((colour) => live.colors.includes(colour))) return false;
     return true;
   };
@@ -13501,7 +13527,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     the same exclusion rather than as a second qualifier, and only when the name is **this card's**:
     "other than" naming anything else is a restriction this reader cannot express, so it refuses.
   */
-  const sacrificed = /^sacrifice (a|an|another|two|three|up to two|up to three) (.+?)$/i.exec(text);
+  const sacrificed = /^sacrifice (a|an|another|two|three|four|five|up to two|up to three) (.+?)$/i.exec(text);
   if (sacrificed !== null) {
     const selfExcluded = new RegExp(`^(.+?) other than ${escapeName(name)}$`, 'i')
       .exec(sacrificed[2]!.trim());
