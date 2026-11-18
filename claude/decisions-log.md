@@ -51224,3 +51224,27 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,251, all passing (merged with the other session's D981)
 
 Coverage: 13,078 of 31,858 cards (+30), 33,547 of 59,790 lines (+39), against d5ad263.
+
+## D744 — A combat-damage copy of itself, and an edict of any permanent
+
+Two small shapes off the combat-damage family, the largest group of cards one line short:
+- **"Create a token that's a copy of ~"** (or "of it"): the permanent copying itself as it is on the
+  battlefield, through the same `copyAsToken` the targeted copy (D695) uses. Gone, it copies
+  nothing.
+- **"That player sacrifices a permanent"**, and any other description `permanentDescribed` reads
+  ("… a nonland permanent", "… an artifact", "… a land"). It was a creature only. The sacrificing
+  player chooses from their own battlefield.
+
+Still unread there: "discards that many cards" (the damage amount), and the flat tail of one-off
+effects.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- connecting makes a token copy of itself, one token beside the original;
+- "that player sacrifices a permanent": an artifact counts.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: ENGINE_COUNT, all passing
+
+Coverage: 13,112 of 31,858 cards (+34), 33,592 of 59,790 lines (+45), against a6a04ba.

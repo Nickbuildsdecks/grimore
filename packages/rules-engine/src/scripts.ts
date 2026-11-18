@@ -22125,6 +22125,19 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     reads for a Clone ("except it has haste", "except it isn't legendary"; `copyExceptions`). A
     count other than one prints as a word, and a quoted ability or a changed size is refused.
   */
+  /*
+    "Create a token that's a copy of ~" (D744): the permanent copying itself (Mirrorweave's
+    attackers, the Spawning Bed kin), as it is now on the battlefield. Gone, it copies nothing.
+  */
+  const selfCopy = new RegExp(`^create (a|an|one|two|three) tokens? (?:that's a copy|that are copies) of (?:${selfRef(name)}|it)$`, 'i').exec(text);
+  if (selfCopy !== null) {
+    const count = WORD_NUMBERS[selfCopy[1]!.toLowerCase()];
+    if (count !== undefined) {
+      return {
+        effect: (c) => (c.state.instances[c.source]?.zone !== 'battlefield' ? c.state : copyAsToken(c.state, c.controller, c.source, count)),
+      };
+    }
+  }
   const tokenCopy = new RegExp(
     `^create (a|an|one|two|three|four|five) tokens? (?:that's a copy|that are copies) of (${TARGET_QUANTIFIER_PREFIX}target .+?)(?:, except (.+))?$`, 'i',
   ).exec(text);
@@ -22847,22 +22860,22 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     combat-damage trigger (Cabal Executioner, Demon of Loathing). The player sacrificing chooses,
     from their own creatures, as the each-player edict asks.
   */
-  const aimedEdict = /^(target player|target opponent) sacrifices a creature$/i.exec(text);
+  // And of any described permanent (D744): "that player sacrifices a permanent", "… a nonland
+  // permanent", "… an artifact", "… a land", read by `permanentDescribed` like the own sacrifice.
+  const aimedEdict = /^(target player|target opponent) sacrifices (an? (.+))$/i.exec(text);
   if (aimedEdict !== null) {
     const spec = targetSpecFrom(aimedEdict[1]!, false);
-    if (spec !== null) {
+    const describes = permanentDescribed(aimedEdict[3]!);
+    if (spec !== null && describes !== null) {
       return {
         targets: [spec],
         decisions: [{
           who: 'target-player',
           from: 'battlefield',
-          prompt: 'Sacrifice a creature',
+          prompt: `Sacrifice ${aimedEdict[2]!.toLowerCase()}`,
           min: 1,
           max: 1,
-          filter: (state: GameState, id: string) => {
-            const inst = state.instances[id];
-            return inst !== undefined && characteristicsOf(state, inst).isCreature;
-          },
+          filter: (state: GameState, id: string) => describes(state, id),
         }],
         effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
       };

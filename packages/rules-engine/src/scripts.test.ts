@@ -23185,6 +23185,55 @@ describe('pumps by X, and pumps of several targets (D743)', () => {
   });
 });
 
+describe('a combat-damage copy of itself, and an edict of any permanent (D744)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const ROWS = [
+    C('Test Mirror', "Whenever Test Mirror deals combat damage to a player, create a token that's a copy of Test Mirror."),
+    C('Test Razer', 'Whenever Test Razer deals combat damage to a player, that player sacrifices a permanent.'),
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd744', name: 'Combat',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }],
+    data: ROWS as never[],
+  });
+  const swing = (attacker: string, theirs: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd744', 1: 'd744' }, deckSpecs: { d744: deck.deck }, battlefield: { 0: [attacker], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', attacker), defender: 1 }] });
+    for (let i = 0; i < 30 && s.step !== 'postcombat-main'; i++) {
+      const owed = pendingDeclaration(s);
+      if (owed?.kind === 'blockers') s = apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] });
+      else if (s.pendingDecision !== null) {
+        const ask = s.pendingDecision;
+        s = apply(s, { type: 'auto:decide', by: ask.seat, cards: ask.candidates.slice(0, ask.min ?? 1) } as Action);
+      } else s = passBoth(s);
+    }
+    return drain(s, 20);
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('connecting makes a token copy of itself', () => {
+    const s = swing('Test Mirror', []);
+    const copies = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Mirror');
+    expect(copies).toHaveLength(2);
+    expect(copies.filter((id) => s.instances[id]!.isToken)).toHaveLength(1);
+  });
+
+  it('"that player sacrifices a permanent": a non-creature permanent counts', () => {
+    const s = swing('Test Razer', ['Test Rock']);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Rock');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Rock');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
