@@ -50836,6 +50836,6 @@ of reach: "an opponent controls a creature with flying".
 
 Faults injected by script: 9 of 9 caught, one after pinning (card types ignored).
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,205, all passing (merged with the other session's D976)
 
 Coverage: 12,841 of 31,764 cards (+62), 33,127 of 59,553 lines (+75), against 1af49a9.
