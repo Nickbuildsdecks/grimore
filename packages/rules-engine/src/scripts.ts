@@ -15135,6 +15135,33 @@ function selfEffect(
     already left does as much as it can, which is nothing. That is not a hypothetical here — these
     cards are sacrificed *in response to* a spell, and the spell may well have killed them first.
   */
+  /*
+    "It fights target creature you don't control" (D958): the permanent printing the trigger is the
+    first creature of the fight — "When ~ enters, it fights up to one target creature you don't
+    control", and the "you may have it fight …" form through the causative (D957). One target, the
+    other creature, chosen as the trigger goes on the stack.
+
+    Only from the battlefield, and the zone is checked again as it resolves: a creature that has
+    left by then is not on the battlefield to fight, so neither creature deals damage (CR 701.12b).
+  */
+  const fightsItself = new RegExp(`^(?:(${self})|it) fights (${TARGET_QUANTIFIER_PREFIX}target .+?)$`, 'i').exec(text);
+  if (fightsItself !== null && where === 'battlefield') {
+    const named = fightsItself[1];
+    const theirs = targetSpecFrom(fightsItself[2]!, false);
+    if (theirs !== null && theirs.kind === 'creature' && (theirs.count ?? 1) === 1) {
+      return {
+        targets: [theirs],
+        effect: (c) => {
+          const id = itMeans(named, c);
+          const other = firstCardTarget(c);
+          return other === null || c.state.instances[id]?.zone !== 'battlefield'
+            ? c.state
+            : fight(c.state, id, other, c.controller);
+        },
+      };
+    }
+  }
+
   const eatsItself = new RegExp(`^sacrifice (?:(${self})|it)$`, 'i').exec(text);
   if (eatsItself !== null && where !== null) {
     const named = eatsItself[1];
@@ -19637,7 +19664,7 @@ function optionalEffect(
     only for verbs whose third person is a plain "-s".
   */
   const causative = charged === null && sequence === null
-    ? /^have (.+?) (deal|get|discard|lose|mill|gain|sacrifice) (.+)$/i.exec(inner)
+    ? /^have (.+?) (deal|get|discard|lose|mill|gain|sacrifice|fight) (.+)$/i.exec(inner)
     : null;
   /*
     **"You may gain 3 life"** (D956): the subject is stripped with the "may", and some readers want

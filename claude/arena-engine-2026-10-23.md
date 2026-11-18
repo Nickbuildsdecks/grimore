@@ -32349,3 +32349,40 @@ Faults injected by hand: 6 of 6 caught, across two rounds.
     engine tests: 5,090, all passing
 
 Coverage: 12,453 of 31,743 cards (+18), 32,461 of 59,509 lines (+18). Staples: 241 of 244.
+
+## D958 — A creature fighting from its own trigger
+
+"When this creature enters, it fights up to one target creature you don't control." "When ~ enters,
+you may have it fight target creature you don't control." The fight reader (D542) read two targets
+fighting each other. When the first creature is the permanent printing the trigger, there is one
+target, and the line was unread.
+
+How it is read:
+- **A self reader beside "sacrifice it"**, in `selfEffect`: "it" or the card's own name fights one
+  target creature. It uses the same `fight` helper as Prey Upon, so both powers are read before
+  either damage is dealt (CR 701.12a), and the damage comes from the creatures, not the trigger.
+- **The battlefield only, checked again as it resolves.** If the creature has left by then, it is
+  not on the battlefield to fight, so neither creature deals damage (CR 701.12b). A gone target is
+  dropped by the targeting rules already.
+- **"Have it fight"** comes through the causative (D957), with "fight" added to its verbs.
+
+Still unread:
+- the spell form where "it" is an earlier target ("Put a +1/+1 counter on target creature you
+  control. Then it fights target creature an opponent controls"), which is D542's open referent
+  case;
+- "chosen at random";
+- "have ~ fight that creature".
+
+10 legal cards now read whole.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a 3/3 and a 2/2 deal their power to each other;
+- the creature gone before the trigger resolves means no fight, and the bear is unharmed;
+- "you may have it fight": a no fights nothing, a yes fights.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 5,094, all passing
+
+Coverage: 12,463 of 31,743 cards (+10), 32,479 of 59,509 lines (+18). Staples: 241 of 244.

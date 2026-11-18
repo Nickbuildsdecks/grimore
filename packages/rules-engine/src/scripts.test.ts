@@ -20528,6 +20528,67 @@ describe('"you may have X get / discard / lose …" (D957)', () => {
   });
 });
 
+describe('a creature fighting from its own trigger (D958)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3' });
+  const ROWS = [
+    C('Test Brawler', "When this creature enters, it fights up to one target creature you don't control."),
+    C('Test Challenger', "When this creature enters, you may have it fight target creature you don't control."),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd958', name: 'Self fights',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd958', 1: 'd958' }, deckSpecs: { d958: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Forest'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts `card`, points the trigger at the bear, then runs `before` (if any) before it resolves. */
+  const play = (card: string, yes: boolean, before?: (s: GameState, me: string) => GameState) => {
+    const s = seated(card);
+    const me = find(s, 0, 'hand', card);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    let next = drain(apply(s, { type: 'auto:cast', by: 0, card: me } as Action), 30);
+    for (let i = 0; i < 12 && (next.pendingDecision !== null || next.pendingChoice !== null || next.stackOrder.length > 0); i++) {
+      if (next.pendingChoice !== null) {
+        next = apply(next, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] });
+        if (before !== undefined) { next = before(next, me); before = undefined; }
+        next = drain(next, 30);
+        continue;
+      }
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => (o === 'Yes') === yes)! } as Action), 30);
+    }
+    return { state: next, me, bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the 3/3 and the 2/2 deal their power to each other', () => {
+    const { state, me, bear } = play('Test Brawler', true);
+    expect(state.instances[bear]!.zone).toBe('graveyard');
+    expect(state.instances[me]!.zone).toBe('battlefield');
+    expect(damageOn(state, me)).toBe(2);
+  });
+
+  it('gone before the trigger resolves: no fight, the bear is unharmed', () => {
+    const { state, bear } = play('Test Brawler', true, (s, me) => relocate(s, s.instances[me]!, 'graveyard', 0, 'top'));
+    expect(state.instances[bear]!.zone).toBe('battlefield');
+    expect(damageOn(state, bear)).toBe(0);
+  });
+
+  it('"you may have it fight": a no fights nothing, a yes fights', () => {
+    expect(play('Test Challenger', false).state.instances[play('Test Challenger', false).bear]!.zone).toBe('battlefield');
+    const yes = play('Test Challenger', true);
+    expect(yes.state.instances[yes.bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
