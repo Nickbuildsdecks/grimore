@@ -20476,6 +20476,58 @@ describe('"you may gain N life" (D956)', () => {
   });
 });
 
+describe('"you may have X get / discard / lose …" (D957)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Horror', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    C('Test Shrinker', 'When this creature enters, you may have target creature get -2/-2 until end of turn.'),
+    C('Test Leech', 'When this creature enters, you may have target player lose 2 life.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd957', name: 'Causatives',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string) => advanceTo(arena({
+    decks: { 0: 'd957', 1: 'd957' }, deckSpecs: { d957: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Swamp'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Resolves everything: `target` for any target choice, then yes or no. */
+  const answer = (s: GameState, target: Target, yes: boolean) => {
+    let next = s;
+    for (let i = 0; i < 12 && (next.pendingDecision !== null || next.pendingChoice !== null || next.stackOrder.length > 0); i++) {
+      if (next.pendingChoice !== null) { next = drain(apply(next, { type: 'auto:choose', by: 0, targets: [target] }), 30); continue; }
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => (o === 'Yes') === yes)! } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole, and so do the player verbs', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of ['you may have target opponent discard a card.', 'you may have target player mill two cards.', 'you may have target opponent sacrifice a creature.', 'you may have target creature gain flying until end of turn.']) {
+      expect(compileCard(C('Test Row', `When this creature enters, ${text}`) as never), text).toMatchObject({ ok: true, unread: [] });
+    }
+  });
+
+  it('-2/-2 on a yes kills the 2/2; on a no it lives', () => {
+    const s = seated('Test Shrinker');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shrinker') } as Action), 30);
+    expect(answer(cast, { kind: 'card', id: bear }, true).instances[bear]!.zone).toBe('graveyard');
+    expect(answer(cast, { kind: 'card', id: bear }, false).instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it('the target player loses the life only on a yes', () => {
+    const s = seated('Test Leech');
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Leech') } as Action), 30);
+    expect(answer(cast, { kind: 'player', seat: 1 }, true).seats[1]!.life).toBe(s.seats[1]!.life - 2);
+    expect(answer(cast, { kind: 'player', seat: 1 }, false).seats[1]!.life).toBe(s.seats[1]!.life);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

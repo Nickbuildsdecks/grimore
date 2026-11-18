@@ -32312,3 +32312,40 @@ Faults injected by hand: 2 of 2 caught.
     engine tests: 5,087, all passing
 
 Coverage: 12,435 of 31,743 cards (+25), 32,443 of 59,509 lines (+28). Staples: 241 of 244.
+
+## D957 — "You may have X get / discard / lose …"
+
+"When this creature enters, you may have target creature get -2/-2 until end of turn." "… you may
+have target opponent discard a card." "… you may have target player lose 2 life." D574 read the
+causative for one verb: "you may have it deal 1 damage" becomes "it deals 1 damage" behind a
+yes-or-no. Every other verb after "have" stayed unread.
+
+The fix widens that rule to the verbs whose third person is a plain "-s": deal, get, discard,
+lose, mill, gain and sacrifice. "Have target creature get -2/-2" is read as "target creature gets
+-2/-2", and the question is still asked in the card's own words. Logged across the corpus, what
+now reads this way:
+- "have target creature get -N/-N / +N/+N / +N/-N until end of turn";
+- "have target opponent / target player / that player discard a card";
+- "mill a card", "lose N life", "sacrifice a creature";
+- "have target creature gain / lose flying until end of turn";
+- "have each opponent lose N life".
+
+Every one means what the card says. "Draw" was in the first list and no card used it, so it was
+taken out.
+
+Still unread: "you may have it fight target creature you don't control" (5 lines). "It fights …"
+does not read on its own yet, only "target creature you control fights …". The "~'s base power
+becomes" family is unread too.
+
+18 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read, and so do the discard, mill, sacrifice and gain-flying forms;
+- -2/-2 on a yes kills a 2/2, and on a no it lives;
+- the target player loses the life only on a yes.
+
+Faults injected by hand: 6 of 6 caught, across two rounds.
+
+    engine tests: 5,090, all passing
+
+Coverage: 12,453 of 31,743 cards (+18), 32,461 of 59,509 lines (+18). Staples: 241 of 244.

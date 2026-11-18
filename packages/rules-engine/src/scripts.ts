@@ -19630,8 +19630,14 @@ function optionalEffect(
     is still asked in the card's own words, because `inner` is what the prompt is made from.
     Only the bare "may": a priced or sequenced one names its effect after "If you do".
   */
+  /*
+    And the other verbs a card puts after "have" (D957): "you may have target creature get -2/-2
+    until end of turn", "you may have target opponent discard a card", "you may have target player
+    mill two cards". The same move, to the indicative's third person ("gets", "discards"), and
+    only for verbs whose third person is a plain "-s".
+  */
   const causative = charged === null && sequence === null
-    ? /^have (.+?) deal (.+)$/i.exec(inner)
+    ? /^have (.+?) (deal|get|discard|lose|mill|gain|sacrifice) (.+)$/i.exec(inner)
     : null;
   /*
     **"You may gain 3 life"** (D956): the subject is stripped with the "may", and some readers want
@@ -19640,7 +19646,7 @@ function optionalEffect(
     the printed subject back cannot change what a clause means, so nothing narrower is needed.
   */
   const read = sequence?.read
-    ?? reader(causative === null ? inner : `${causative[1]!} deals ${causative[2]!}`)
+    ?? reader(causative === null ? inner : `${causative[1]!} ${causative[2]!}s ${causative[3]!}`)
     ?? reader(`you ${inner}`);
   if (read === null) return null;
   /*
