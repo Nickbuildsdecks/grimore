@@ -23007,6 +23007,58 @@ describe('lands described by type and state: "a non-Lair land", "an untapped Isl
   });
 });
 
+describe('a creature that dies dealing its damage still triggers (D981)', () => {
+  const C = (name: string, text: string, power: string, toughness: string) => ({
+    name, type_line: 'Creature — Elemental', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Trader', 'Whenever this creature deals combat damage to a creature, you gain 3 life.', '2', '2'),
+    C('Test Stomper', 'Trample\nWhenever this creature deals combat damage to a player, you gain 4 life.', '3', '1'),
+    C('Test Bear', '', '2', '2'),
+    C('Test Cub', '', '1', '1'),
+  ];
+  const deck = customDeck({
+    id: 'd981', name: 'Trades',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 10 })), { name: 'Mountain', count: 20 }],
+    data: ROWS as never[],
+  });
+  const swing = (attacker: string, blocker: string) => {
+    let s = arena({
+      decks: { 0: 'd981', 1: 'd981' }, deckSpecs: { d981: deck.deck },
+      battlefield: { 0: [attacker], 1: [blocker] }, turn: 3, firstSeat: 0,
+    });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const a = find(s, 0, 'battlefield', attacker);
+    const b = find(s, 1, 'battlefield', blocker);
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: b, attacker: a }] });
+    for (let i = 0; i < 8 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    return { s, a, b, life };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 2/2 that trades with its blocker still gains the life for the damage it dealt', () => {
+    const { s, a, b, life } = swing('Test Trader', 'Test Bear');
+    expect(s.instances[a]!.zone).toBe('graveyard');
+    expect(s.instances[b]!.zone).toBe('graveyard');
+    expect(s.seats[0]!.life).toBe(life + 3);
+  });
+
+  it('a trampler that dies to its blocker still hears the damage it trampled over', () => {
+    const { s, a, life } = swing('Test Stomper', 'Test Cub');
+    expect(s.instances[a]!.zone).toBe('graveyard');
+    expect(s.seats[1]!.life).toBe(18);
+    expect(s.seats[0]!.life).toBe(life + 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

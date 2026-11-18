@@ -51130,3 +51130,34 @@ zero-amount guard, was unreachable and is removed.
     engine tests: 5,240, all passing (merged with the other session's D741)
 
 Coverage: 12,986 of 31,858 cards (+55), 33,434 of 59,790 lines (+82).
+
+## D981 — A creature that dies dealing its damage still triggers
+
+D980 left a gap that D566 had already written down. A creature's "whenever ~ deals (combat)
+damage …" did not fire when the same damage step killed it, under either `deals-damage` or
+`combat-damage`. Two cases:
+- a 2/2 with "deals combat damage to a creature" that trades with its blocker;
+- a trampler that dies to its blocker while trampling over.
+
+The damage was dealt while it was on the battlefield, so the ability triggered then. State-based
+actions only buried the creature afterwards (CR 603.2, 704.3).
+
+The fix is the one `damaged` has had since D566: the event's own subject may fire from its
+last-known state (`lastKnown`), now for `deals-damage` and `combat-damage` too. The two sentences
+change together, as the gap they shared was kept together.
+
+The watcher list needed nothing. The board-wide list already carries the subject with its
+controller, wherever it is (D566's arrangement for deaths). The fault run showed that a second
+addition there was redundant, and it was removed before commit.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- a 2/2 trades with a 2/2 blocker and still gains its 3 life;
+- a 3/1 trampler dies to a 1/1 blocker, the opponent takes 2, and it still gains its 4 life.
+
+Faults injected by script: 4. 3 were caught. The miss was the redundant watcher addition, which is
+removed.
+
+    engine tests: 5,243, all passing
+
+Coverage is unchanged (a rules fix, not a new reader).
