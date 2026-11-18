@@ -21516,6 +21516,89 @@ describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life 
   });
 });
 
+describe('digging onto the battlefield, and revealing up to two (D973)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    S('Test Ramp', 'Look at the top seven cards of your library. Put up to two land cards from among them onto the battlefield tapped. Put the rest on the bottom of your library in a random order.'),
+    S('Test Call', 'Look at the top seven cards of your library. You may put a creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.'),
+    S('Test Salvage', 'Look at the top seven cards of your library. You may reveal up to two artifact cards from among them and put them into your hand. Put the rest on the bottom of your library in a random order.'),
+    S('Test Muster', 'Look at the top seven cards of your library. Put up to two creature cards with mana value 3 or less from among them onto the battlefield. Put the rest on the bottom of your library in a random order.'),
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd973', name: 'Digs',
+    entries: [{ name: 'Test Ramp', count: 1 }, { name: 'Test Call', count: 1 }, { name: 'Test Salvage', count: 1 }, { name: 'Test Muster', count: 1 }, { name: 'Test Bear', count: 14 }, { name: 'Test Giant', count: 14 }, { name: 'Test Relic', count: 14 }, { name: 'Forest', count: 14 }],
+    data: ROWS as never[],
+  });
+  /** Casts `card`; returns the question, the seven looked at, and a function answering it. */
+  const dig = (card: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd973', 1: 'd973' }, deckSpecs: { d973: deck.deck }, hands: { 0: [card] },
+      battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action), 30);
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    const looked = ids(t, 0, 'library').slice(0, 7);
+    return { t, looked, answer: (cards: string[]) => drain(apply(t, { type: 'auto:decide', by: 0, cards } as Action), 30) };
+  };
+  const kind = (s: GameState, id: string) => nameOf(s, id);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // "Up to two" is the most that may be taken, whatever the seven turn out to hold.
+    const salvage = compileCard(ROWS[2] as never);
+    expect(salvage.ok && (salvage.script?.decisions?.[0] as { max?: number } | undefined)?.max).toBe(2);
+    // "And/or" is the "or" list.
+    expect(compileCard(S('Test Study', 'Look at the top four cards of your library. You may reveal up to two instant and/or sorcery cards from among them and put the revealed cards into your hand. Put the rest on the bottom of your library in a random order.') as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"with mana value 3 or less": the bears are offered, the 5-mana giants are not', () => {
+    const { t } = dig('Test Muster');
+    const offered = t.pendingDecision?.candidates ?? [];
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => kind(t, id) === 'Test Bear')).toBe(true);
+  });
+
+  it('up to two lands onto the battlefield tapped; only lands offered; the rest to the bottom', () => {
+    const { t, looked, answer } = dig('Test Ramp');
+    const offered = t.pendingDecision?.candidates ?? [];
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => kind(t, id) === 'Forest')).toBe(true);
+    const picked = offered.slice(0, 2);
+    const done = answer(picked);
+    for (const id of picked) {
+      expect(done.instances[id]!.zone).toBe('battlefield');
+      expect(done.instances[id]!.tapped).toBe(true);
+    }
+    const rest = looked.filter((id) => !picked.includes(id));
+    expect(ids(done, 0, 'library').slice(-rest.length).sort()).toEqual([...rest].sort());
+  });
+
+  it('a creature onto the battlefield, untapped; or none', () => {
+    const { t, answer } = dig('Test Call');
+    const offered = t.pendingDecision?.candidates ?? [];
+    expect(offered.every((id) => kind(t, id) === 'Test Bear' || kind(t, id) === 'Test Giant')).toBe(true);
+    const done = answer([offered[0]!]);
+    expect(done.instances[offered[0]!]!.zone).toBe('battlefield');
+    expect(done.instances[offered[0]!]!.tapped).toBe(false);
+    const none = answer([]);
+    expect(ids(none, 0, 'battlefield')).toHaveLength(0);
+  });
+
+  it('up to two artifacts into the hand, not three', () => {
+    const { t, answer } = dig('Test Salvage');
+    expect(t.pendingDecision?.max).toBe(2);
+    const offered = t.pendingDecision?.candidates ?? [];
+    expect(offered.every((id) => kind(t, id) === 'Test Relic')).toBe(true);
+    const picked = offered.slice(0, 2);
+    const done = answer(picked);
+    for (const id of picked) expect(done.instances[id]!.zone).toBe('hand');
+  });
+});
+
 describe('a counted sacrifice: "Sacrifice two creatures", and Bolas\'s Citadel\'s ten (D732)', () => {
   const row = (name: string, type: string, text: string, extra: Record<string, string> = {}) => ({
     name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,

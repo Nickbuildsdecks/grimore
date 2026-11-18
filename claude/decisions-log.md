@@ -50417,6 +50417,44 @@ opponent's view to be shown.
 Coverage: 12,590 of 31,743 cards (+8), 32,691 of 59,509 lines (+62), against 700bd75. Staples:
 241 of 244 (Bolas's Citadel waits on D732).
 
+## D973 — Digging onto the battlefield, and revealing up to two
+
+"Look at the top seven cards of your library. Put up to two land cards from among them onto the
+battlefield tapped. Put the rest on the bottom of your library in a random order." "… You may put
+a creature card from among them onto the battlefield …", "… up to two creature cards with mana
+value 3 or less …", and "… You may reveal up to two artifact cards from among them and put them
+into your hand …". D584's dig read one card into the hand, and its docblock listed both the
+battlefield and "up to two" as refused.
+
+How it is read:
+- **A battlefield destination for a library-top question**: `chosenGoTo: 'battlefield'` or
+  `'battlefield-tapped'`. `applyLibraryTop` puts the picked cards onto the battlefield under the
+  chooser's control, and the rest go where the card says, as before.
+- **`digGroup`** reads "you may put a / put up to N <kind> card(s) [with mana value N or less] from
+  among them onto the battlefield [tapped]", and "you may reveal up to two / three <kind> cards
+  from among them and put them / the revealed cards into your hand". The kind goes through
+  `graveyardTypeTest`, with "and/or" and comma lists as its "or" list.
+- The docblock's refused list is struck through for both.
+
+Superseded rows: D584's "leaves … unread" table had "a land put onto the battlefield" and "up to two
+revealed". Both now sit in its "reads" table.
+
+9 legal cards now read whole.
+
+**Tests.** 5 engine tests:
+- the cards read, "up to two" is the compiled maximum, and "and/or" reads;
+- "with mana value 3 or less": the bears are offered, the 5-mana giants are not;
+- up to two lands onto the battlefield tapped, only lands offered, and the rest to the bottom;
+- a creature onto the battlefield untapped, or none;
+- up to two artifacts into the hand.
+
+Faults injected by hand: 6, across two rounds. All are caught after three were pinned: the maximum,
+"and/or", and the mana value cap.
+
+    engine tests: 5,159, all passing
+
+Coverage: 12,633 of 31,743 cards (+9), 32,742 of 59,509 lines (+12). Staples: 241 of 244.
+
 ## D732 — A counted sacrifice: "Sacrifice two creatures", and Bolas's Citadel's ten
 
 Activated abilities that sacrifice several permanents as their cost: "Sacrifice two creatures",

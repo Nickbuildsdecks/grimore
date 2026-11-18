@@ -25014,10 +25014,11 @@ const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mou
  *
  * - "…then put them back in any order" was here until D651, which reads it as its own clause: the
  *   answer is the order picked (`chosenGoTo: 'top'`).
- * - "You may put a land card from among them **onto the battlefield**" — a different destination.
+ * - ~~"You may put a land card from among them onto the battlefield"~~ — read since D973, with
+ *   "put up to two …", "tapped" and "with mana value N or less" (`chosenGoTo: 'battlefield'`).
  * - "a creature card **with power 2 or less**", "a historic card", "an Elf card" — filters
  *   `graveyardTypeTest` does not read, refused there rather than widened here.
- * - "reveal **up to two** creature cards" — a count on the filtered shape.
+ * - ~~"reveal up to two creature cards"~~ — read since D973.
  * - "the top **X** cards", "…where X is" — a number the sentence does not print.
  * - K not smaller than N, which is not a choice.
  */
@@ -25050,6 +25051,50 @@ function digGroup(
       prompt: `${name}: choose ${count === 1 ? 'a card' : `${count} cards`} to put into your hand`,
       min: count, max: count, restGoTo,
     }, 2);
+  }
+
+  /*
+    Onto the battlefield (D973): "You may put a creature card from among them onto the battlefield",
+    "Put up to two land cards from among them onto the battlefield tapped", with a mana value cap
+    where printed ("… creature cards with mana value 3 or less …"). And a count on the reveal:
+    "You may reveal up to two artifact cards from among them and put them into your hand".
+  */
+  const kindTest = (printed: string, cap: string | undefined) => {
+    const test = graveyardTypeTest(printed.replace(/\s+and\/or\s+/g, ' or ').replace(/,\s*(?:or\s+)?/g, ' or '));
+    if (test === null) return null;
+    const most = cap === undefined ? null : Number(cap);
+    return (state: GameState, id: string): boolean => {
+      const inst = state.instances[id];
+      const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+      return inst !== undefined && test(parseTypeLine(def?.typeLine), def) && (most === null || (def?.cmc ?? 0) <= most);
+    };
+  };
+  const later = clauses[at + 2]?.trim().replace(/^then\s+/i, '');
+  const theRest = later === undefined ? null : /^put the rest (.+)$/i.exec(later);
+  const fielded = /^(?:you may put an? |put up to (one|two|three) )(.+?) cards?(?: with mana value (\d+) or less)? from among them onto the battlefield( tapped)?$/i
+    .exec(second);
+  if (fielded !== null && theRest !== null) {
+    const most = fielded[1] === undefined ? 1 : WORD_NUMBERS[fielded[1].toLowerCase()];
+    const fits = kindTest(fielded[2]!, fielded[3]);
+    const restGoTo = digRest(theRest[1]!);
+    if (most === undefined || most >= look || fits === null || restGoTo === null) return null;
+    return asks({
+      prompt: `${name}: choose up to ${most === 1 ? 'one' : most} ${fielded[2]!} card${most === 1 ? '' : 's'} to put onto the battlefield${fielded[4] === undefined ? '' : ' tapped'}`,
+      min: 0, max: most, restGoTo, revealPicked: true,
+      chosenGoTo: fielded[4] === undefined ? 'battlefield' : 'battlefield-tapped',
+      filter: fits,
+    }, 3);
+  }
+  const severalShown = /^you may reveal up to (two|three) (.+?) cards from among them and put (?:them|the revealed cards) into your hand$/i.exec(second);
+  if (severalShown !== null && theRest !== null) {
+    const most = WORD_NUMBERS[severalShown[1]!.toLowerCase()];
+    const fits = kindTest(severalShown[2]!, undefined);
+    const restGoTo = digRest(theRest[1]!);
+    if (most === undefined || most >= look || fits === null || restGoTo === null) return null;
+    return asks({
+      prompt: `${name}: you may reveal up to ${severalShown[1]!} ${severalShown[2]!} cards and put them into your hand`,
+      min: 0, max: most, restGoTo, revealPicked: true, filter: fits,
+    }, 3);
   }
 
   const reveals = /^you may reveal an? (.+?) card from among them and put (?:it|that card) into your hand$/i
