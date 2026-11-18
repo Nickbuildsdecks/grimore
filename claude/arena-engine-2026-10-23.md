@@ -34020,3 +34020,36 @@ opponent's).
     engine tests: 5,281, all passing
 
 Coverage: 13,185 of 31,900 cards (+4), 33,743 of 59,888 lines (+5), against 01222a7.
+
+## D986 — Searching for "a card named …"
+
+The planeswalker-deck creatures (Gideon's, Chandra's, Ajani's and the rest) print "When ~ enters,
+you may search your library and/or graveyard for a card named <their walker>, reveal it, and put it
+into your hand. If you search your library this way, shuffle." D720 had read that sentence since
+it was written. What it could not read was **"a card named …"**: the library search's filter
+(`libraryFilter`) had no named-card form, so every printing stayed unread.
+
+- `libraryFilter` reads "a card named <name>" as the printed name, compared exactly. A name with
+  a comma in it ("Gideon, Battle-Ready") is kept whole: the phrase ends where the search
+  sentence's own ", reveal it" begins.
+- "…, reveal it, **then** put it into your hand" (two printings) is folded into "… and put it", the
+  form D720 reads. The clause splitter would otherwise have cut it at ", then".
+
+The plain library search reads the same name: "Search your library for a card named …, reveal it,
+put it into your hand, then shuffle."
+
+D449's row that refused a name other than the card's own now reads it. Its reason was that a search
+for a name not in the library finds nothing, which is what the search does at a table.
+
+**Tests.** 3 engine tests:
+- the card reads, with the comma name and "then put it";
+- from the library only cards with exactly that name are offered (not "Test Gideon"), and the one
+  chosen goes to hand;
+- from the graveyard, the same, and the other card stays.
+
+Faults injected by script: 4. 3 were caught. The miss was a "then" alternative in D720's regex,
+which the fold makes unreachable, and it is removed.
+
+    engine tests: 5,284, all passing (merged with the other session's D747)
+
+Coverage: 13,187 of 31,900 cards (+27), 33,748 of 59,888 lines (+38).
