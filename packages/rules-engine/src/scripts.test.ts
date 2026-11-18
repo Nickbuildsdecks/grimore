@@ -21342,6 +21342,59 @@ describe('connive (D971)', () => {
   });
 });
 
+describe('an Equipment that attaches as it enters, then acts on that creature (D972)', () => {
+  const ROWS = [
+    { name: 'Test Lance', type_line: 'Artifact — Equipment', oracle_text: 'When this Equipment enters, attach it to target creature you control. That creature gains first strike until end of turn.\nEquipped creature gets +1/+0.\nEquip {2}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Spur', type_line: 'Artifact — Equipment', oracle_text: 'When this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+1.\nEquip {1}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd972', name: 'Arrives attached',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** Casts `card` with two bears out (one tapped), aiming the trigger at the tapped one. */
+  const enter = (card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd972', 1: 'd972' }, deckSpecs: { d972: deck.deck }, hands: { 0: [card] },
+      battlefield: { 0: ['Plains', 'Test Bear', 'Test Bear'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const [bear, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear!]: { ...s.instances[bear!]!, tapped: true } } };
+    const equipment = find(s, 0, 'hand', card);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: equipment } as Action), 30);
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      s = s.pendingChoice !== null
+        ? drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear! }] }), 30)
+        : drain(passBoth(s), 30);
+    }
+    return { s, bear: bear!, other: other!, equipment };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A follow-up with a target of its own would be handed the host creature, so it stays unread.
+    const own = compileCard({ ...ROWS[0], name: 'Test Wrecker', oracle_text: 'When this Equipment enters, attach it to target creature you control. Destroy target artifact.\nEquipped creature gets +1/+0.\nEquip {2}' } as never);
+    expect(own.ok && own.unread.length).toBeGreaterThan(0);
+  });
+
+  it('attached, with its bonus, and first strike on that creature only', () => {
+    const { s, bear, other, equipment } = enter('Test Lance');
+    expect(s.instances[equipment]!.attachedTo).toBe(bear);
+    const got = characteristicsOf(s, s.instances[bear]!);
+    expect(got.power).toBe(3);
+    expect([...got.keywords]).toContain('first strike');
+    expect([...characteristicsOf(s, s.instances[other]!).keywords]).not.toContain('first strike');
+  });
+
+  it('"Untap that creature": the tapped creature it attached to is untapped', () => {
+    const { s, bear, equipment } = enter('Test Spur');
+    expect(s.instances[equipment]!.attachedTo).toBe(bear);
+    expect(s.instances[bear]!.tapped).toBe(false);
+  });
+});
+
 describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life (D731)', () => {
   const row = (name: string, type: string, text: string, cost = '{3}{B}{B}{B}', cmc = 6, colors = ['B']) => ({
     name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors, layout: 'normal',

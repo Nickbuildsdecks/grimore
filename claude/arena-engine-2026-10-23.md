@@ -32871,6 +32871,33 @@ the discard itself, and the land check.
 
 Coverage: 12,603 of 31,743 cards (+15), 32,655 of 59,509 lines (+21). Staples: 241 of 244.
 
+## D972 — An Equipment that attaches as it enters, then acts on that creature
+
+"When this Equipment enters, attach it to target creature you control. That creature gains first
+strike until end of turn." "… Untap that creature." "… That creature gains indestructible / shroud
+/ wither until end of turn." D547 read the enters-attach sentence in the whole-card Equipment path,
+and its pattern ended at "you control", so a second sentence left the line unread.
+
+How it is read: the pattern now takes one more sentence. That sentence is read by `composeEffects`
+with "that creature" as "target creature you control". It must come back with exactly one creature
+target, no questions and no `beforeDecisions`. It then runs after the attach, with the same
+target, so it lands on the creature now carrying the Equipment. A follow-up with a target of its
+own ("Destroy target artifact") would be handed the host creature, so it stays unread, and a test
+pins that.
+
+13 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read, and a follow-up with its own target stays unread;
+- attached, with its bonus, and first strike on that creature only;
+- "Untap that creature": the tapped creature it attached to is untapped.
+
+Faults injected by hand: 3 of 3 caught, the one-target guard after it was pinned.
+
+    engine tests: 5,148, all passing
+
+Coverage: 12,616 of 31,743 cards (+13), 32,668 of 59,509 lines (+13). Staples: 241 of 244.
+
 ## D731 — Spells cast from the top of the library, and Bolas's Citadel's life
 
 "You may cast <kind> spells from the top of your library." is on 43 legal cards (Future Sight,
