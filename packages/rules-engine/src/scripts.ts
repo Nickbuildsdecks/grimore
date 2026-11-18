@@ -17019,6 +17019,8 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
   if (lower === 'noncreature') return { spell: 'noncreature' };
   if (lower === 'instant or sorcery') return { spell: 'instant-or-sorcery' };
   if (lower === 'artifact' || lower === 'enchantment') return { ofType: lower };
+  // "An instant spell", "a sorcery spell", "a planeswalker spell" (D974): one card type, the list form's one-word case.
+  if (SEARCHABLE_TYPES.includes(lower)) return { ofTypesOrSubtypes: [lower] };
   if (lower === 'multicolored' || lower === 'multicoloured') return { multicoloured: true };
   // D606: see the event's own fields.
   if (lower === 'historic') return { historic: true };
