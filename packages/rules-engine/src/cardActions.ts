@@ -623,10 +623,10 @@ function assertCardDef(card: unknown): asserts card is CardDef {
   if (c['faces'] !== undefined) {
     const faces = c['faces'] as Record<string, unknown>;
     if (typeof faces !== 'object' || faces === null
-      || !['split', 'adventure', 'modal', 'transform', 'prepare', 'omen'].includes(faces['kind'] as string)
+      || !['split', 'adventure', 'modal', 'transform', 'prepare', 'omen', 'flip'].includes(faces['kind'] as string)
       || !Array.isArray(faces['cards']) || faces['cards'].length === 0 || faces['cards'].length > 2) {
       throw new EngineError('INVALID_CARD',
-        'card faces must be one or two faces, split, adventure, modal, transform, prepare or omen');
+        'card faces must be one or two faces, split, adventure, modal, transform, prepare, omen or flip');
     }
     for (const face of faces['cards']) assertCardDef(face);
   }

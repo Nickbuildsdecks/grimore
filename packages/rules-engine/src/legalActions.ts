@@ -1565,6 +1565,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const halves = faces.cards.map((_face, index) => ({ ...entry, half: index as number | undefined }));
     // A prepare card's spell is never cast from the hand (D978): only a copy, while it is prepared.
     if (faces.kind === 'prepare') return [{ ...entry, half: undefined as number | undefined }];
+    // Nor is a flip card's flipped half, or a transforming card's back (D982): only the card is cast.
+    if (faces.kind === 'flip') return [{ ...entry, half: undefined as number | undefined }];
     return faces.kind === 'split'
       ? halves
       : [{ ...entry, half: undefined as number | undefined }, ...halves];

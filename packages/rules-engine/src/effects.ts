@@ -2320,11 +2320,31 @@ export function transformPermanent(
   if (printed !== undefined) {
     return withInstance(noted, id, { defKey: printed, printedDefKey: undefined });
   }
+  // Only a transforming card has a back to turn to (CR 701.28c): a flip card flips, it does not
+  // transform, and an adventurer or a prepare card has a spell beside it, not a back (D982).
+  if (state.cardDefs[self.defKey]?.faces?.kind !== 'transform') return state;
   const back = facesOf(state.cardDefs[self.defKey])[0];
   if (back === undefined) return state;
   const backKey = defKeyFor(back);
   if (state.cardDefs[backKey] === undefined) return state;
   return withInstance(noted, id, { defKey: backKey, printedDefKey: self.defKey });
+}
+
+/**
+ * "Flip it" (D982, CR 701.29): a flip card turns to its other half, for as long as it stays on the
+ * battlefield. One way: a flipped permanent cannot flip again (CR 701.29c), so a second flip does
+ * nothing. The same one-field move as transform, `printedDefKey` remembering the upright half and
+ * `relocate` putting it back on the way off — and announced as nothing, because flipping is not
+ * transforming and "whenever this creature transforms" must not hear it.
+ */
+export function flipPermanent(state: GameState, id: string): GameState {
+  const self = state.instances[id];
+  if (self === undefined || self.zone !== 'battlefield' || self.printedDefKey !== undefined) return state;
+  const def = state.cardDefs[self.defKey];
+  if (def?.faces?.kind !== 'flip') return state;
+  const flipped = def.faces.cards[0];
+  if (flipped === undefined || state.cardDefs[defKeyFor(flipped)] === undefined) return state;
+  return withInstance(state, id, { defKey: defKeyFor(flipped), printedDefKey: self.defKey });
 }
 
 /*

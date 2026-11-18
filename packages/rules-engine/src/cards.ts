@@ -161,8 +161,11 @@ export interface CardFaces {
    *
    * `omen` (D979): an adventurer's shape, a creature with an instant or sorcery beside it, whose
    * spell is shuffled into its owner's library as it resolves rather than exiled.
+   *
+   * `flip` (D982): a Kamigawa flip card (CR 710). One card, cast as its upright half; "flip it"
+   * turns it to the other half for good, while it stays on the battlefield. See `flipPermanent`.
    */
-  readonly kind: 'split' | 'adventure' | 'modal' | 'transform' | 'prepare' | 'omen';
+  readonly kind: 'split' | 'adventure' | 'modal' | 'transform' | 'prepare' | 'omen' | 'flip';
   readonly cards: readonly CardDef[];
 }
 

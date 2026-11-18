@@ -187,6 +187,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       `choose which half of ${printedDef?.name ?? 'that card'} to cast`);
   }
   // A prepare card's spell is cast only as a copy, while its permanent is prepared (D978).
+  if (action.half !== undefined && faces?.kind === 'flip') {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${printedDef?.name ?? 'a flip card'} is cast as its upright half`);
+  }
   if (action.half !== undefined && faces?.kind === 'prepare') {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `${faces.cards[action.half]?.name ?? 'that spell'} is cast only as a copy, while ${printedDef?.name ?? 'its creature'} is prepared`);
@@ -2320,7 +2323,9 @@ function activate(
       ...(sacrificedStats === null ? {} : { sacrificed: sacrificedStats }),
       ...(tappedPower === null ? {} : { tappedPower }),
     },
-    action.grantedBy);
+    action.grantedBy,
+    // The face it was activated from, read before the costs were paid (D982).
+    inst.defKey);
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
   // at a warded creature is exactly the case the keyword is printed for. See `raiseTargeted`.
   next = raiseTargeted(next, next.stackOrder[next.stackOrder.length - 1]!);

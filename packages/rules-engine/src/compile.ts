@@ -604,6 +604,8 @@ const FACE_LAYOUTS: Readonly<Record<string, CardFaces['kind']>> = {
   prepare: 'prepare',
   // An adventurer whose spell is shuffled into the library as it resolves (D979).
   omen: 'omen',
+  // A Kamigawa flip card (D982): the upright half is the card, the flipped half its other face.
+  flip: 'flip',
 };
 
 /** `card_faces` as a list, from the array Scryfall writes or the JSON text the database holds. */
@@ -668,8 +670,9 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
       name: face.name ?? null,
       type_line: face.type_line ?? null,
       oracle_text: face.oracle_text ?? null,
-      mana_cost: face.mana_cost ?? '',
-      cmc: kind === 'transform' ? frontValue : costValue(parseManaCost(face.mana_cost ?? '')),
+      // A flipped permanent keeps the card's one mana cost (CR 710.2a); a transformed one has none.
+      mana_cost: kind === 'flip' ? front.mana_cost ?? row.mana_cost ?? '' : face.mana_cost ?? '',
+      cmc: kind === 'transform' || kind === 'flip' ? frontValue : costValue(parseManaCost(face.mana_cost ?? '')),
       colors: face.colors ?? [],
       power: face.power ?? null,
       toughness: face.toughness ?? null,
