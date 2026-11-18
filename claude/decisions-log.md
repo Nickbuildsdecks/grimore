@@ -51599,3 +51599,34 @@ is now pinned by the graveyard target.
     engine tests: 5,296, all passing (merged with the other session's D748)
 
 Coverage: 13,206 of 31,900 cards (+13), 33,771 of 59,888 lines (+16).
+
+## D989 — "You may pay N life. If you do / When you do, …"
+
+The "may" with a price (D448) read mana and, since D451, energy. A life price stayed refused:
+"When ~ enters, you may pay 2 life. When you do, target creature gets -1/-1 until end of turn"
+(19 cards one line short opened that way), and "… If you do, draw a card".
+
+- `payIfChosen.life` is the third currency, beside `cost` (mana) and `energy`.
+  - It is offered only when `canPayLife` says the seat can pay, which is the test every other life
+    payment in the engine uses.
+  - It is paid with `loseLife` before the effect runs. Paying life is losing it (CR 119.4).
+- `optionalEffect` reads "you may pay N life. If you do, …" (N a numeral or a word) into that
+  price. Its "When you do" form (D948) is read through the same path, so the reflexive trigger's
+  target is chosen after the payment.
+- A life price that is not a number ("X life") refuses the line.
+
+Two older rows refused this price: D448's "life, which has no field here", retired as D451 retired
+energy's, and D472's "pay 2 life", which now uses "pay X life".
+
+**Tests.** 4 engine tests:
+- the cards read, and "pay X life" does not;
+- "Pay 2 life" pays 2 and draws, and "Decline" pays nothing and draws nothing;
+- at 2 life the payment is not offered;
+- "When you do": paid, the reflexive trigger shrinks the target creature.
+
+Faults injected by script: 5. 4 were caught at once. The non-number guard was missed and is now
+pinned.
+
+    engine tests: 5,300, all passing
+
+Coverage: 13,230 of 31,900 cards (+24), 33,805 of 59,888 lines (+34).
