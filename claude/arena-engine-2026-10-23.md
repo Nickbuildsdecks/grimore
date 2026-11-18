@@ -34098,6 +34098,6 @@ player" includes the caster, and eliminated seats mill nothing.
 Faults injected by script: 3 of 3 caught. Pod sweep 59101 (D745–D747 and the other session's
 D984–D986): every game finished.
 
-    engine tests: ENGINE_COUNT, all passing
+    engine tests: 5,291, all passing (merged with the other session's D987)
 
 Coverage: 13,207 of 31,900 cards (+15), 33,778 of 59,888 lines (+23), against 38c5bb6.
