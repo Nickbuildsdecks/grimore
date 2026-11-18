@@ -1739,6 +1739,19 @@ export interface ContinuousEffect {
    */
   readonly preventsCombatDamage?: boolean;
   /**
+   * "Prevent all damage that would be dealt **to** <the permanents in scope> this turn" (D738), and
+   * "… **by** them" (`preventsDamageFrom`), combat damage only with `preventsCombatOnly`. Asked by
+   * `dealDamage` of the damaged permanent and of the source; see `damagePrevented` in effects.ts.
+   */
+  readonly preventsDamageTo?: true;
+  readonly preventsDamageFrom?: true;
+  readonly preventsCombatOnly?: true;
+  /**
+   * "… dealt to you" / "… to players" (D738): the controller alone, or every player. Read by
+   * `dealDamage` with the scope ignored, which is about permanents.
+   */
+  readonly preventsDamageToPlayers?: 'controller' | 'all';
+  /**
    * "~ **assigns no combat damage** this turn" (D578) — the one-directional half of the flag above.
    *
    * `preventsCombatDamage` answers for damage dealt **by and to** a creature, which is a Fog. This
@@ -3233,6 +3246,15 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
     (effect) => effect.preventsCombatDamage === true
       && effectApplies(state, effect, instance, creature, line),
   );
+}
+
+/**
+ * Whether an effect reaches this permanent (D738), its scope and filters read against the printed
+ * type line, as `combatDamagePrevented` reads them. For the prevention flags `dealDamage` asks.
+ */
+export function effectReaches(state: GameState, effect: ContinuousEffect, instance: CardInstance): boolean {
+  const line = parseTypeLine(state.cardDefs[instance.defKey]?.typeLine);
+  return effectApplies(state, effect, instance, hasType(line, 'creature'), line);
 }
 
 /** Whether this permanent assigns no combat damage: see `ContinuousEffect.assignsNoCombatDamage`. */

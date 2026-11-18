@@ -15,7 +15,7 @@
  */
 import type { CardScript } from './scriptTypes.js';
 import {
-  allAbilitiesLost, characteristicsOf, countersAfterReplacement, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, countersAfterReplacement, effectReaches, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -468,6 +468,8 @@ export function dealDamage(
   if (target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
   // And a player with protection from everything (D718): damage to them is prevented.
   if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
+  // And "prevent all damage that would be dealt to / by …" this turn (D738).
+  if (damagePrevented(next, target, opts.source, opts.combatFrom !== undefined)) return next;
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
 
@@ -1141,6 +1143,26 @@ export function canPayLife(state: GameState, seat: SeatIndex, amount: number): b
   if (amount <= 0) return true;
   if (lifeLocked(state, seat)) return false;
   return (state.seats[seat]?.life ?? 0) > amount;
+}
+
+/**
+ * Whether a "prevent all damage" effect stops this damage (D738): one to the damaged permanent or
+ * player, or one from the source. A combat-only effect lets other damage through.
+ */
+function damagePrevented(state: GameState, target: Target, source: string | null, combat: boolean): boolean {
+  const from = source === null ? undefined : state.instances[source];
+  return (state.effects ?? []).some((effect) => {
+    if (effect.preventsCombatOnly === true && !combat) return false;
+    if (effect.preventsDamageToPlayers !== undefined && target.kind === 'player'
+      && (effect.preventsDamageToPlayers === 'all' || effect.controller === target.seat)) return true;
+    if (effect.preventsDamageTo === true && target.kind === 'card') {
+      const inst = state.instances[target.id];
+      if (inst !== undefined && inst.zone === 'battlefield' && effectReaches(state, effect, inst)) return true;
+    }
+    if (effect.preventsDamageFrom === true && from !== undefined && from.zone === 'battlefield'
+      && effectReaches(state, effect, from)) return true;
+    return false;
+  });
 }
 
 function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {
@@ -2982,6 +3004,27 @@ export function goad(
  * on the table, which is what a Fog does and is symmetrical on purpose: it stops the swing coming
  * back as well as the swing going out.
  */
+/**
+ * "Prevent all [combat] damage that would be dealt to / by …" this turn (D738). `scope` is the
+ * permanents it is about; `players` the player half ("to you", "to players").
+ */
+export function preventDamageThisTurn(
+  state: GameState, source: string, controller: SeatIndex,
+  opts: {
+    readonly direction: 'to' | 'by'; readonly combatOnly: boolean;
+    readonly scope?: ContinuousEffect['scope']; readonly players?: 'controller' | 'all';
+  },
+): GameState {
+  return pushEffect(state, {
+    source, controller,
+    scope: opts.scope ?? { kind: 'cards', ids: [] },
+    ...(opts.scope === undefined ? {} : opts.direction === 'to' ? { preventsDamageTo: true as const } : { preventsDamageFrom: true as const }),
+    ...(opts.players === undefined ? {} : { preventsDamageToPlayers: opts.players }),
+    ...(opts.combatOnly ? { preventsCombatOnly: true as const } : {}),
+    duration: 'end-of-turn',
+  });
+}
+
 export function preventCombatDamage(
   state: GameState, source: string, controller: SeatIndex, ids?: readonly string[],
 ): GameState {
