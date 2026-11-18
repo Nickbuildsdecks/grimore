@@ -15715,6 +15715,14 @@ function grantedAbilityFrom(
   return abilities;
 }
 
+/**
+ * "Has ward {N}" / "have ward {N}" at the end of a static's predicate, as the quoted ward trigger the
+ * grant readers read (D736): `has "Ward {2}"`. Ward is a triggered ability (CR 702.21a).
+ */
+function wardAsQuoted(predicate: string): string {
+  return predicate.replace(/\b(has|have) ward (\{[^}]+\})$/i, (_m, verb: string, cost: string) => `${verb} "Ward ${cost}"`);
+}
+
 /** `Equipped creature gets +2/+0 and has trample.` as the bonus, and whether it harms its host. */
 function attachmentBonus(
   line: string, name: string,
@@ -15730,7 +15738,40 @@ function attachmentBonus(
   }
   const matched = /^(?:equipped|enchanted) (?:creature|land|artifact|enchantment|permanent) (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
-  const tail = matched[1]!.trim();
+  // "Has ward {2}" is the ward trigger granted (D736): the quoted form the grant readers know.
+  const tail = wardAsQuoted(matched[1]!.trim());
+  const host = /^(enchanted|equipped)/i.exec(plain(line).trim())![1]!;
+
+  /*
+    "Is goaded" (D736, CR 701.38): the host attacks each combat if able, and a player other than the
+    attachment's controller if able — the two halves `goad` sets, for as long as it is attached.
+    After another predicate it is read with that one ("gets +2/+2 and is goaded").
+  */
+  const goaded = /^(?:(.+?)(?:,? and |, ))?is goaded$/i.exec(tail);
+  if (goaded !== null) {
+    const head = goaded[1] === undefined ? null : attachmentBonus(`${host} creature ${goaded[1]}`, name);
+    if (goaded[1] !== undefined && head === null) return null;
+    return {
+      ...(head ?? {}),
+      bonus: { ...(head?.bonus ?? {}), mustAttack: true, mustAttackAnotherPlayer: true },
+      harmful: true,
+    };
+  }
+  /*
+    "Gets +1/+1 and has "…"" (D736): the size and the quoted grant, each read on its own and joined.
+  */
+  const sizeAndGrant = /^(gets [^"]+?) and (has (?:[^"]+? and )?"[^"]+")$/i.exec(tail);
+  if (sizeAndGrant !== null) {
+    const size = attachmentBonus(`${host} creature ${sizeAndGrant[1]}`, name);
+    const grant = attachmentBonus(`${host} creature ${sizeAndGrant[2]}`, name);
+    if (size === null || grant === null || size.grantedTriggers !== undefined || size.grantedAbilities !== undefined) return null;
+    const keywords = [...(size.bonus.keywords ?? []), ...(grant.bonus.keywords ?? [])];
+    return {
+      ...grant,
+      bonus: { ...size.bonus, ...grant.bonus, ...(keywords.length === 0 ? {} : { keywords }) },
+      harmful: size.harmful || grant.harmful,
+    };
+  }
 
   /*
     **A counted size on the attached creature** (D523): `Enchanted creature gets +1/+1 for each
@@ -28094,6 +28135,8 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     predicate = `${everyone[3]} ${everyone[4]}`;
   }
   if (scope === null) return null;
+  // Ward granted (D736): the quoted trigger, as `attachmentBonus` reads it too.
+  predicate = wardAsQuoted(predicate);
   // The plural verbs, singular: the predicate grammar is the self-static one.
   const singular = predicate.replace(/^get /, 'gets ').replace(/^have /, 'has ').replace(/ and have /g, ' and has ');
   const quoted = /^(?:(.*?)\s+and\s+)?has\s+"([^"]+)"$/i.exec(singular);

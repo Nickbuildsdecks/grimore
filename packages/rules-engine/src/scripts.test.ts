@@ -22208,6 +22208,98 @@ describe('a */* from domain, everyone\'s subtypes, snow, and a counted toughness
   });
 });
 
+describe('ward and goad granted by a static or an attachment (D736)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Shield', 'Artifact — Equipment', 'Equipped creature gets +1/+1 and has ward {2}.\nEquip {0}'),
+    R('Test Ward Lord', 'Creature — Elf', 'Other creatures you control have ward {1}.', { power: '1', toughness: '1' }),
+    R('Test Taunt', 'Enchantment — Aura', 'Enchant creature\nEnchanted creature gets +1/+1 and is goaded.'),
+    R('Test Pen', 'Artifact — Equipment', 'Equipped creature gets +1/+1 and has "Whenever this creature attacks, draw a card."\nEquip {0}'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Doom', 'Instant', 'Destroy target creature.'),
+  ];
+  const deck = customDeck({
+    id: 'd736', name: 'Grants',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { seats?: number; hands?: Record<number, string[]>; battlefield?: Record<number, string[]>; firstSeat?: 0 | 1 | 2 }) => advanceTo(arena({
+    ...(opts.seats === undefined ? {} : { seats: opts.seats, format: 'pod' }),
+    decks: { 0: 'd736', 1: 'd736', 2: 'd736' }, deckSpecs: { d736: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: opts.firstSeat ?? 0,
+  } as never), 'precombat-main');
+  const resolve = (s: GameState, seat: 0 | 1 | 2, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), ...(targets ? { targets } : {}) })));
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Equipment\'s ward {2} asks the opponent to pay when they target the equipped creature', () => {
+    let s = table({ hands: { 1: ['Test Doom'] }, battlefield: { 0: ['Test Shield', 'Test Bear'], 1: ['Forest', 'Forest'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const shield = find(s, 0, 'battlefield', 'Test Shield');
+    const equip = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === shield)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: shield, abilityIndex: equip.abilityIndex ?? 0, targets: [{ kind: 'card', id: bear }] })));
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(3);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: bear }] });
+    expect(s.stackOrder).toHaveLength(2);
+    s = drain(passBoth(s));
+    expect(s.pendingPayment?.seat).toBe(1);
+    expect(s.pendingPayment?.cost).toBe('{2}');
+    // Declined: the removal is countered and the Bear lives.
+    s = drain(passBoth(drain(apply(s, { type: 'auto:pay', by: 1, pay: false }))));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it('a lord\'s ward reaches its other creatures and not itself', () => {
+    let s = table({ hands: { 1: ['Test Doom', 'Test Doom'] }, battlefield: { 0: ['Test Ward Lord', 'Test Bear'] } });
+    const lord = find(s, 0, 'battlefield', 'Test Ward Lord');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    const onBear = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: bear }] });
+    expect(onBear.stackOrder).toHaveLength(2);
+    const onLord = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: lord }] });
+    expect(onLord.stackOrder).toHaveLength(1);
+  });
+
+  it('a goading Aura makes its host attack each combat, and not at the Aura\'s controller while another player is there', () => {
+    let s = table({ seats: 3, hands: { 0: ['Test Taunt'] }, battlefield: { 1: ['Test Bear'] } });
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Taunt', [{ kind: 'card', id: bear }]);
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(3);
+    // Seat 1's turn.
+    for (let i = 0; i < 80 && !(s.activeSeat === 1 && s.step === 'declare-attackers'); i++) {
+      const owed = pendingDeclaration(s);
+      if (owed?.kind === 'attackers') s = apply(s, { type: 'auto:attack', by: owed.seats[0]!, attackers: [] });
+      else if (owed?.kind === 'blockers') s = apply(s, { type: 'auto:block', by: owed.seats[0]!, blocks: [] });
+      else s = passBoth(s);
+    }
+    expect(s.activeSeat).toBe(1);
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [] })).not.toBeNull();
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] })).toMatch(/goaded/);
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 2 }] })).toBeNull();
+  });
+
+  it('"gets +1/+1 and has "…"" on an Equipment: the size and the granted trigger both', () => {
+    let s = table({ battlefield: { 0: ['Test Pen', 'Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const pen = find(s, 0, 'battlefield', 'Test Pen');
+    const equip = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === pen)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: pen, abilityIndex: equip.abilityIndex ?? 0, targets: [{ kind: 'card', id: bear }] })));
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(3);
+    const hand = ids(s, 0, 'hand').length;
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    s = drain(passBoth(s), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
