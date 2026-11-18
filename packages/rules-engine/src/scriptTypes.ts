@@ -2076,7 +2076,14 @@ export interface AbilityCost {
       offers only creatures and spent artifacts as fodder, so it leaves the rest to a person.
     */
     | 'land' | 'artifact-or-land' | 'another-artifact-or-land' | 'token' | 'permanent'
-    | 'nontoken-permanent' | 'enchantment' | 'another-artifact' | 'another-creature-or-artifact';
+    | 'nontoken-permanent' | 'enchantment' | 'another-artifact' | 'another-creature-or-artifact'
+    // "Sacrifice ten nonland permanents" (D732, Bolas's Citadel).
+    | 'nonland-permanent';
+  /**
+   * How many `sacrifice` asks for (D732): "Sacrifice two creatures", "Sacrifice three Foods".
+   * Absent for one. The player chooses them all, sent as `sacrifices` on the activation.
+   */
+  readonly sacrificeCount?: number;
   /**
    * Narrows `sacrifice` to permanents with **one of** these subtypes: "Sacrifice another Vampire
    * or Zombie" (D578).

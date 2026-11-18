@@ -12282,6 +12282,53 @@ const WORD_NUMBERS: Readonly<Record<string, number>> = {
  */
 const SACRIFICED_ARTIFACT_TYPES: readonly string[] = ['Food', 'Treasure', 'Clue'];
 
+/**
+ * "Sacrifice two creatures" and the rest of the counted family (D732): the count, the kind the
+ * single sacrifice already has, and a subtype that narrows it. Null for anything else, including
+ * "Sacrifice X …" and a kind the single sacrifice has no member for ("two other lands").
+ */
+function countedSacrifice(component: string): {
+  readonly count: number; readonly kind: NonNullable<AbilityCost['sacrifice']>; readonly subtype?: string;
+} | null {
+  const m = /^Sacrifice (two|three|four|five|six|seven|eight|nine|ten) (other )?(.+)$/.exec(component);
+  if (m === null) return null;
+  const count = countFrom(m[1]!);
+  if (count === null || count < 2) return null;
+  const other = m[2] !== undefined;
+  const what = m[3]!;
+  const KINDS: Readonly<Record<string, readonly [NonNullable<AbilityCost['sacrifice']>, NonNullable<AbilityCost['sacrifice']> | null]>> = {
+    creatures: ['creature', 'another-creature'],
+    artifacts: ['artifact', 'another-artifact'],
+    lands: ['land', null],
+    enchantments: ['enchantment', null],
+    tokens: ['token', null],
+    permanents: ['permanent', null],
+    'nonland permanents': ['nonland-permanent', null],
+    'artifacts and/or creatures': ['artifact-or-creature', 'another-creature-or-artifact'],
+    'creatures and/or artifacts': ['artifact-or-creature', 'another-creature-or-artifact'],
+  };
+  const pair = KINDS[what];
+  if (pair !== undefined) {
+    const kind = other ? pair[1] : pair[0];
+    return kind === null ? null : { count, kind };
+  }
+  // A subtype in the plural: "Foods", "Blood tokens", "Mountains", "Goblins", "Elves".
+  const word = /^([A-Z][a-z]+)(?:s| tokens)$|^([A-Z][a-z]+)$/.exec(what);
+  if (word === null) return null;
+  const plural = word[1] ?? word[2]!;
+  const blood = what === 'Blood tokens';
+  if (blood || SACRIFICED_ARTIFACT_TYPES.includes(plural)) {
+    return other ? null : { count, kind: 'artifact', subtype: blood ? 'Blood' : plural };
+  }
+  if (['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'].includes(plural)) {
+    return other ? null : { count, kind: 'land', subtype: plural };
+  }
+  const bare = word[2] ?? `${plural}s`;
+  const singular = [bare, bare.replace(/ves$/, 'f'), bare.replace(/es$/, ''), bare.replace(/s$/, '')]
+    .find((candidate) => candidate !== '' && isCreatureType(candidate));
+  return singular === undefined ? null : { count, kind: other ? 'another-creature' : 'creature', subtype: singular };
+}
+
 function countFrom(text: string): number | null {
   const word = text.trim().toLowerCase();
   if (/^\d+$/.test(word)) return Number(word);
@@ -26171,6 +26218,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let returnsSelf = false;
   let returnsOthers: NonNullable<AbilityCost['returnToHand']> | null = null;
   let sacrificedSubtype: string | null = null;
+  let sacrificeCount = 1;
   const mana: string[] = [];
   const self = selfRef(name);
   for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
@@ -26341,6 +26389,19 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       Sanctum), "Sacrifice another Warrior creature" (D586). Only a creature type can stand in
       front of "creature", so the artifact branch below is not reached by this spelling.
     */
+    /*
+      A counted sacrifice (D732): "Sacrifice two creatures", "Sacrifice three Foods", "Sacrifice
+      ten nonland permanents" (Bolas's Citadel), "Sacrifice two other creatures". The kinds are the
+      single-sacrifice kinds in the plural, plus a creature, artifact-token or basic land subtype.
+    */
+    const counted = countedSacrifice(component);
+    if (counted !== null) {
+      if (sacrifices !== null) return null;
+      sacrifices = counted.kind;
+      sacrificeCount = counted.count;
+      if (counted.subtype !== undefined) sacrificedSubtype = counted.subtype;
+      continue;
+    }
     const typed = /^Sacrifice (an?|another) ([A-Z][a-z]+)( creature)?$/.exec(component);
     if (typed !== null) {
       if (sacrifices !== null) return null;
@@ -26474,6 +26535,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardsACard ? { discardACard: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
+    ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
     ...(removes === null ? {} : { removeCounter: removes }),
     ...(energy === 0 ? {} : { energy }),
     ...(exilesSelf ? { exileSelf: true as const } : {}),

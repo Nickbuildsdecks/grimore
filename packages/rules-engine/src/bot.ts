@@ -2662,6 +2662,8 @@ function candidateActions(
         either way — nothing it is willing to lose means the ability is not used — but what it is
         willing to lose is the whole question, and the two costs answer it differently.
       */
+      // A counted sacrifice (D732) is left to a person: which ten permanents is not a sort.
+      if ((play.sacrificeCount ?? 1) > 1) continue;
       if (play.sacrificeKind === 'artifact') {
         const spent = spentArtifact(state, play.sacrificeOptions);
         if (spent === null) continue;

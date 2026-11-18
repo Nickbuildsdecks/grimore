@@ -1912,6 +1912,12 @@ export interface AutoActivateAction {
   /** The card **discarded** to pay for it, when the cost says "Discard a card" (D579). */
   readonly discarded?: string;
   /**
+   * The permanents sacrificed for a counted cost (D732): "Sacrifice two creatures", Bolas's
+   * Citadel's ten. Exactly the count, all different, each one the cost can take; `sacrifice` is for
+   * a cost of one.
+   */
+  readonly sacrifices?: readonly string[];
+  /**
    * Which card **defines** the ability, for one a continuous effect handed this permanent
    * (CR 113.6) — an Aura's `Enchanted creature has "{T}: …"`. Absent for a printed ability, which
    * is every other activation.

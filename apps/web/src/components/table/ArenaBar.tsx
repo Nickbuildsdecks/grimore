@@ -229,7 +229,10 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             the board.
           */}
           <span className="text-[var(--g-text-muted)]">
-            {feedWords(mode.cost, mode.play.sacrificeKind, mode.play.sacrificeWords, mode.play.pitchWords)}
+            {feedWords(
+              mode.cost, mode.play.sacrificeKind, mode.play.sacrificeWords, mode.play.pitchWords,
+              mode.play.sacrificeCount, mode.fed?.length ?? 0,
+            )}
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
             <X className="size-3.5" /> Cancel

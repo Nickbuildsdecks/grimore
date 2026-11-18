@@ -49,7 +49,11 @@ export type ArenaMode =
     `play.sacrificeKind` for that. Folding it in here would make `cost` mean two things at once —
     what happens to the permanent, and what kind of permanent it may be.
   */
-  | { kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" | "discarded" }
+  | {
+      kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" | "discarded"
+      /** The permanents picked so far for a counted sacrifice (D732), "Sacrifice two creatures". */
+      fed?: readonly string[]
+    }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
   /**
@@ -69,7 +73,10 @@ export type ArenaMode =
    * every other play, where there is nothing to divide.
    */
   | {
-      kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; returned?: string
+      kind: "targeting"; play: LegalPlay; chosen: Target[]
+      /** One permanent sacrificed, or several for a counted cost (D732). */
+      sacrifice?: string | readonly string[]
+      returned?: string
       /** The card discarded to pay for it, when the cost says "Discard a card". */
       discarded?: string
       x?: number
@@ -142,9 +149,13 @@ export type Decision = NonNullable<LegalActions["mustDecide"]>
  */
 export function feedWords(
   cost: "sacrifice" | "returned" | "discarded", sacrificeKind?: LegalPlay["sacrificeKind"], words?: string,
-  pitchWords?: string,
+  pitchWords?: string, count = 1, chosen = 0,
 ): string {
   if (cost === "returned") return "tap an unblocked attacker to return to your hand"
+  // A counted sacrifice (D732): how many, in the cost's own words, and how many are picked.
+  if (cost === "sacrifice" && count > 1) {
+    return `tap ${count} ${words !== undefined && words !== "" ? words : "creature"}s to sacrifice (${chosen} of ${count} chosen)`
+  }
   // A pitch cost (D691) is paid from the same cards as a discard, but the card is exiled.
   if (cost === "discarded" && pitchWords !== undefined) return `tap a ${pitchWords} in your hand to exile`
   if (cost === "discarded") return "tap a card in your hand to discard"
@@ -399,7 +410,7 @@ export function feedOptions(mode: Extract<ArenaMode, { kind: "feeding" }>): read
 
 /** The action a completed play turns into. */
 function playAction(
-  play: LegalPlay, targets: readonly Target[], sacrifice?: string, x?: number,
+  play: LegalPlay, targets: readonly Target[], sacrifice?: string | readonly string[], x?: number,
   division?: readonly number[], returned?: string, discarded?: string,
 ): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
@@ -408,7 +419,9 @@ function playAction(
   const withDivision = dividedAmount(play) === undefined || division === undefined
     ? {}
     : { division: [...division] }
-  const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
+  const withSacrifice = sacrifice === undefined ? {}
+    // A counted sacrifice (D732) travels as a list, in a field of its own.
+    : typeof sacrifice === "string" ? { sacrifice } : { sacrifices: [...sacrifice] }
   // Ninjutsu's unblocked attacker, carried the same way and in its own field: a cost that gives the
   // creature back is not a sacrifice, and one field for both would make the engine guess.
   const withReturned = returned === undefined ? {} : { returned }
@@ -594,7 +607,20 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
     case "feed": {
       if (mode.kind !== "feeding") return { mode, action: null }
       if (!feedOptions(mode).includes(event.card)) return { mode, action: null }
-      const paid = mode.cost === "returned" ? { returned: event.card }
+      /*
+        A counted sacrifice (D732): each tap adds a permanent or takes it back, and the play goes on
+        once there are as many as the cost asks for.
+      */
+      const count = mode.play.sacrificeCount ?? 1
+      let many: readonly string[] | undefined
+      if (mode.cost === "sacrifice" && count > 1) {
+        const fed = mode.fed ?? []
+        const next = fed.includes(event.card) ? fed.filter((id) => id !== event.card) : [...fed, event.card]
+        if (next.length < count) return { mode: { ...mode, fed: next }, action: null }
+        many = next
+      }
+      const paid = many !== undefined ? { sacrifice: many }
+        : mode.cost === "returned" ? { returned: event.card }
         : mode.cost === "discarded" ? { discarded: event.card }
           : { sacrifice: event.card }
       if (targetsWanted(mode.play) === 0) {

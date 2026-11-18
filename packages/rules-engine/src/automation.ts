@@ -220,6 +220,7 @@ export function sacrificeOptions(
             : kind === 'token' ? inst.isToken
               : kind === 'permanent' ? true
                 : kind === 'nontoken-permanent' ? !inst.isToken
+                  : kind === 'nonland-permanent' ? !land
                   : kind === 'enchantment' ? hasType(ch.typeLine, 'enchantment')
                     : ch.isCreature;
     if (!rightKind) return false;
@@ -258,6 +259,7 @@ export function sacrificeWords(
     case 'token': return 'token';
     case 'permanent': return 'permanent';
     case 'nontoken-permanent': return 'nontoken permanent';
+    case 'nonland-permanent': return 'nonland permanent';
     case 'enchantment': return 'enchantment';
     default: return 'creature';
   }
