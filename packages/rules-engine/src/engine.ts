@@ -231,7 +231,7 @@ function nextAliveSeat(state: GameState, from: SeatIndex): SeatIndex {
  * same breath below.
  */
 const OWNED_ZONES: readonly ZoneId[] = Object.freeze([
-  'battlefield', 'hand', 'library', 'graveyard', 'exile', 'command', 'stack',
+  'battlefield', 'hand', 'library', 'graveyard', 'exile', 'command', 'stack', 'phased',
 ]);
 
 /**

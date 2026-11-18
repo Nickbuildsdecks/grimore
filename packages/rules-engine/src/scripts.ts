@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  gainControl, gainLife, goad, loseLife, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -23917,6 +23917,43 @@ function readEffect(
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
   }
+  /*
+    Teferi's Protection's first sentence (D733): "Until your next turn, your life total can't change
+    and you gain protection from everything." Also the life half alone, either way round.
+  */
+  const locked = /^(?:until your next turn, your life total can't change( and you gain protection from everything)?|your life total can't change until your next turn)$/i
+    .exec(clause.trim());
+  if (locked !== null) {
+    const protects = locked[1] !== undefined;
+    return {
+      effect: (c) => {
+        const next = lockLife(c.state, c.controller, c.source);
+        return protects ? protectPlayer(next, c.controller, c.source) : next;
+      },
+    };
+  }
+  // Phasing out (D733): "All permanents you control phase out.", "~ phases out.", "Target creature phases out."
+  if (/^all permanents you control phase out$/i.test(clause.trim())) {
+    return { effect: (c) => phaseOut(c.state, listAt(c.state, zoneKey(c.controller, 'battlefield'))) };
+  }
+  if (new RegExp(`^(?:${selfRef(name)}) phases out$`, 'i').test(clause.trim())) {
+    return { effect: (c) => phaseOut(c.state, [c.source]) };
+  }
+  if (/^(?:enchanted|equipped) creature phases out$/i.test(clause.trim())) {
+    return {
+      effect: (c) => {
+        const host = c.state.instances[c.source]?.attachedTo;
+        return host === null || host === undefined ? c.state : phaseOut(c.state, [host]);
+      },
+    };
+  }
+  const phasesTarget = /^(target .+?) phases out$/i.exec(clause.trim());
+  if (phasesTarget !== null) {
+    const spec = targetSpecFrom(phasesTarget[1]!, false);
+    if (spec !== null && (spec.kind === 'creature' || spec.kind === 'permanent')) {
+      return { targets: [spec], effect: (c) => foldCardTargets(c, (state, id) => phaseOut(state, [id])) };
+    }
+  }
   const sacrificeThen = /^sacrifice a creature and if you do (.+)$/i.exec(clause.trim());
   if (sacrificeThen !== null) {
     const cost = readEffect('sacrifice a creature', name, where);
@@ -27750,6 +27787,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // The top of the library (D649): Courser of Kruphix, Oracle of Mul Daya.
   if (/^play with the top card of your library revealed\.?$/i.test(plain(line).trim())) return { topRevealed: true };
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
+  // "Your life total can't change." (D733): Platinum Emperion.
+  if (/^your life total can't change\.?$/i.test(plain(line).trim())) return { lifeTotalCantChange: true };
   // "You may look at the top card of your library any time." (D731): Bolas's Citadel, Vizier.
   if (/^you may look at the top card of your library any time\.?$/i.test(plain(line).trim())) return { lookAtTop: true };
   const fromTop = spellsFromTopFromLine(line);
@@ -29239,8 +29278,12 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     as it resolves, not something the resolution does, so it is taken off the end of the text and
     becomes `CardScript.shufflesIntoLibrary`. On a line of its own or after the last full stop.
   */
-  const recycled = new RegExp(`(?:^|\\.\\s+)Shuffle (?:${selfRef(name)}) into its owner's library\\.?$`, 'i');
+  const shuffled = new RegExp(`(?:^|\\.\\s+)Shuffle (?:${selfRef(name)}) into its owner's library\\.?$`, 'i');
+  // And "Exile ~." the same way (D733): Teferi's Protection, and 24 more spells.
+  const exiled = new RegExp(`(?:^|\\.\\s+)Exile (?:${selfRef(name)})\\.?$`, 'i');
   const last = resolution.length - 1;
+  const exilesItself = last >= 0 && exiled.test(plain(resolution[last]!).trim());
+  const recycled = exilesItself ? exiled : shuffled;
   const recycles = last >= 0 && recycled.test(plain(resolution[last]!).trim());
   // What the readers see; `resolution` stays the printed lines, which is what is reported.
   /*
@@ -29383,7 +29426,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   if (read !== null && laters.length > 0) {
     built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), ...laters.map((l) => l.trigger)];
   }
-  if (read !== null && recycles) built['shufflesIntoLibrary'] = true;
+  if (read !== null && recycles) built[exilesItself ? 'exilesItselfAsItResolves' : 'shufflesIntoLibrary'] = true;
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
     return { script, compiled, unread: [...declared, ...resolution] };

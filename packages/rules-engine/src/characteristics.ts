@@ -1739,6 +1739,11 @@ export interface ContinuousEffect {
    */
   readonly playerProtection?: true;
   /**
+   * "Your life total can't change" (D733, Teferi's Protection), for the seat in `scope`: life is
+   * neither gained nor lost and none can be paid. See `lifeLocked`.
+   */
+  readonly lifeLocked?: true;
+  /**
    * Where the damage this shield absorbs is **dealt instead** (CR 615.9) — redirection.
    *
    * The last member of the replacement-effect family the engine had neither built nor approximated,
@@ -2295,6 +2300,8 @@ function effectApplies(
   // The condition first, because it is about the whole effect rather than about who it reaches: an
   // effect whose condition is not met applies to nothing at all.
   if (!conditionMet(state, effect)) return false;
+  // A static from a phased-out permanent is off while it is out, and back when it phases in (D733).
+  if (effect.duration === 'permanent' && state.instances[effect.source]?.zone === 'phased') return false;
   // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
   if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
   if (effect.onlyWithCounter !== undefined && (instance.counters[effect.onlyWithCounter] ?? 0) <= 0) return false;
@@ -3311,7 +3318,8 @@ export function expireEffects(
     // A static effect only exists while its source is on the battlefield.
     if (effect.duration === 'permanent') {
       const source = state.instances[effect.source];
-      return source !== undefined && source.zone === 'battlefield';
+      // Phasing changes no zone (D733, CR 702.26d): the static waits for it, off (see `effectApplies`).
+      return source !== undefined && (source.zone === 'battlefield' || source.zone === 'phased');
     }
     return true;
   });

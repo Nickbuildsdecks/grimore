@@ -1673,6 +1673,13 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent({ power: 5, toughness: 5 }))).toContain("5/5")
   })
 
+  it("names a phased-out permanent, and gives it no battlefield badges (D733)", () => {
+    const v = view({ automation: automation() })
+    const out = cardBadges(v, permanent({ zone: "phased" }))
+    expect(out).toContain("phased out")
+    expect(out).not.toContain("2/2")
+  })
+
   it("says a permanent has something to do, and does not say it of a land", () => {
     /*
       Every other zone a play comes from badges it, and the battlefield did not — so an Equipment

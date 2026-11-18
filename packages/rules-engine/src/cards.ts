@@ -24,7 +24,15 @@ import type { SeatIndex } from './types.js';
 import type { Color } from './mana.js';
 
 /** `library` index 0 is the top of the deck. `stack` is shared and not owned by a seat. */
-export type ZoneId = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command' | 'stack';
+export type ZoneId = 'library' | 'hand' | 'battlefield' | 'graveyard' | 'exile' | 'command' | 'stack'
+  /*
+    Phased out (D733, CR 702.26). Not a zone in the rules: the permanent stays on the battlefield
+    and is treated as though it does not exist. Held apart in its own list so every reader of the
+    battlefield passes over it without being told, and entered and left by `phaseOut`/`phaseIn`
+    only, never by `relocate`: phasing changes no zone and fires nothing. Not in `ZONE_IDS`, so no
+    tabletop move can name it.
+  */
+  | 'phased';
 
 export const ZONE_IDS: readonly ZoneId[] = Object.freeze([
   'library', 'hand', 'battlefield', 'graveyard', 'exile', 'command', 'stack',
@@ -35,7 +43,7 @@ export function isZoneId(value: unknown): value is ZoneId {
 }
 
 /** Zones whose contents every seat may see in full. */
-export const PUBLIC_ZONES: readonly ZoneId[] = Object.freeze(['battlefield', 'graveyard', 'exile', 'command', 'stack']);
+export const PUBLIC_ZONES: readonly ZoneId[] = Object.freeze(['battlefield', 'graveyard', 'exile', 'command', 'stack', 'phased']);
 
 /**
  * A printed card. `imageUri` is optional on purpose: this environment cannot reach Scryfall, and a
@@ -229,6 +237,11 @@ export interface CardInstance {
   readonly cardCopy?: true;
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
+  /**
+   * Phased out **indirectly** (D733, CR 702.26g): an Aura or Equipment that phased out because the
+   * permanent it is attached to did. It phases in only with that permanent, still attached.
+   */
+  readonly phasedIndirectly?: true;
   /**
    * The permanent that exiled this card "until it leaves the battlefield" (CR 400.7e).
    *

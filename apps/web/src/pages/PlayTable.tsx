@@ -127,7 +127,11 @@ const HOW_TO: [string, string][] = [
   ["Take something back", "There is no undo — move the card back by hand. The log shows what actually happened."],
 ]
 
-const zoneAt = (view: GameView, seat: number, zone: ZoneId): string[] => [...(view.zones[`${seat}:${zone}`] ?? [])]
+const zoneAt = (view: GameView, seat: number, zone: ZoneId): string[] => [
+  ...(view.zones[`${seat}:${zone}`] ?? []),
+  // Phased-out permanents (D733) are drawn with the battlefield they are still on, dimmed.
+  ...(zone === "battlefield" ? view.zones[`${seat}:phased`] ?? [] : []),
+]
 const stackOf = (view: GameView): string[] => [...(view.zones["stack"] ?? [])]
 const cardsIn = (view: GameView, ids: string[]): VisibleCard[] =>
   ids.map((id) => view.cards[id]).filter((c): c is VisibleCard => c !== undefined)

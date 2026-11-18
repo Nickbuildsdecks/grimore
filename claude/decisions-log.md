@@ -50467,3 +50467,70 @@ Faults injected by script: 15 of 15 caught (12 in the engine, 3 in the table).
 
 Coverage: 12,637 of 31,743 cards (+25), 32,759 of 59,509 lines (+40), against 50f4683. Staples:
 242 of 244. Left: Teferi's Protection, and Castle Garenbrig (blocked by D669).
+
+## D733 — Teferi's Protection: phasing, and a life total that can't change
+
+"Until your next turn, your life total can't change and you gain protection from everything. All
+permanents you control phase out. Exile Teferi's Protection." Protection from everything was
+already there (D718). This adds the other three pieces: phasing, the life lock, and the self-exile.
+
+**Phasing** (CR 702.26):
+- **A zone of its own, `phased`.** It isn't a zone in the rules. Keeping phased permanents in
+  their own list means every reader of the battlefield passes over them without being told: they
+  can't be targeted, counted, attacked with, destroyed by a wrath, or seen by a static. A stored
+  target that phased out is illegal on resolution.
+- **`phaseOut` and `phaseIn` move them without `relocate`.** Phasing changes no zone, so nothing
+  triggers, and counters, damage, tapped state, attachments and tokens stay. `phased` is not in
+  `ZONE_IDS`, so no tabletop move can name it.
+- **Phasing out removes from combat.** What is attached phases out with it, indirectly
+  (`phasedIndirectly`), however deep the chain goes. An indirectly phased permanent phases in only
+  with its host, even when another seat controls it, so an opponent's Aura on your creature waits
+  for your untap step.
+- **Phase-in is the first thing in the untap step** (CR 502.1), before anything untaps.
+- **A static stays put while its source is phased** (CR 702.26d). It is off while phased and on
+  again after; before this, a phased Aura's static was expired. Effects that last "for as long as"
+  still end, which is CR 702.26e.
+- **The table** draws phased permanents in their battlefield row, dimmed, with a "phased out"
+  badge and no plays.
+
+**Your life total can't change** (`lockLife`, `lifeLocked`, CR 119.7–119.8):
+- no life is gained or lost, so nothing triggers on it;
+- damage is still dealt and tallied, commander damage included, and the life stays;
+- no life can be paid: `canPayLife` replaces the eleven "life above the cost" checks in the offer
+  list and the actions;
+- it lasts until the controller's next turn. Platinum Emperion's static is the same lock, read
+  live (`CardScript.lifeTotalCantChange`).
+
+**"Exile ~."** as an instant's or sorcery's last sentence (`exilesItselfAsItResolves`, 25 legal
+spells): exile instead of the graveyard as it resolves, read the way D687 reads "Shuffle ~ into its
+owner's library".
+
+**Readers:** "All permanents you control phase out", "~ phases out", "target <creature or permanent
+kind> phases out" (and "It phases out" after a target), "enchanted/equipped creature phases out",
+and the life lock alone or with protection.
+
+Staples went from 242 to 243. Left: Castle Garenbrig, blocked by D669.
+
+**Tests.** 9 engine tests and 1 table test:
+- the cards read;
+- everything the caster controls phases out, an Aura with it, and the spell is exiled; the opponent
+  still sees them;
+- life is unchanged by loss, gain and damage; the opponent is unlocked; the caster can't be
+  targeted;
+- everything phases back in at the caster's next untap, still attached, counters and Aura bonus
+  intact, with no enters trigger; the lock is over;
+- a wrath misses a phased creature, and a phased attacker leaves combat;
+- a creature phased out alone takes its Aura indirectly, can't be targeted meanwhile, and both come
+  back;
+- an opponent's Aura waits through its own controller's untap;
+- "It phases out" after a target, with its counter;
+- Platinum Emperion: no life lost, and no life cost offered;
+- the table: the "phased out" badge.
+
+Faults injected by script: 18 of 18 caught, two of them after pinning (an indirect Aura phasing in
+alone, and the protection half).
+
+    engine tests: 5,167, all passing
+
+Coverage: 12,663 of 31,743 cards (+26), 32,792 of 59,509 lines (+33), against b8a3206. Staples:
+243 of 244.

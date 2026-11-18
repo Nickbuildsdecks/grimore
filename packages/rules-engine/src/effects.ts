@@ -599,10 +599,13 @@ export function dealDamage(
       ? replaceSeat(next, target.seat, { poison: clampValue(seat.poison + left), ...tally, ...dealt })
       // And the turn's own record of it, which is what spectacle reads. Only on the life half:
       // poison is not life lost (CR 120.3). See `recordLifeLost`.
-      : recordLifeLost(
-        replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt }),
-        target.seat, left,
-      );
+      // Dealt and tallied, and the life left where it is while it can't change (D733).
+      : lifeLocked(next, target.seat)
+        ? replaceSeat(next, target.seat, { ...tally, ...dealt })
+        : recordLifeLost(
+          replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt }),
+          target.seat, left,
+        );
     // After both branches, because both dealt damage: poison or life is what it *did* (D558).
     next = recordDamaged(next, target.seat, left);
   } else {
@@ -702,6 +705,8 @@ function recordDamage(
 
 export function gainLife(state: GameState, seat: SeatIndex, amount: number): GameState {
   if (amount <= 0) return state;
+  // "Your life total can't change" (D733): no life is gained, so nothing triggers on it.
+  if (lifeLocked(state, seat)) return state;
   const s = state.seats[seat];
   if (s === undefined) return state;
   const key = String(seat);
@@ -775,6 +780,7 @@ export function spendEnergy(state: GameState, seat: SeatIndex, amount: number): 
 
 export function loseLife(state: GameState, seat: SeatIndex, amount: number): GameState {
   if (amount <= 0) return state;
+  if (lifeLocked(state, seat)) return state;
   const s = state.seats[seat];
   if (s === undefined) return state;
   return recordLifeLost(replaceSeat(state, seat, { life: clampValue(s.life - amount) }), seat, amount);
@@ -1112,6 +1118,31 @@ export function scriptOfCard(def: CardDef | undefined): CardScript | undefined {
  * permanent's controller and the spell's; the spell's kind is its card's printed type line, which is
  * what a spell on the stack has (CR 112.1). A permanent that has lost its abilities says nothing.
  */
+/**
+ * Whether a player's life total can't change right now (D733): Teferi's Protection's effect, or a
+ * permanent of theirs with `CardScript.lifeTotalCantChange` (Platinum Emperion).
+ */
+export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
+  if (state.effects.some((e) => e.lifeLocked === true && e.scope.kind === 'seat' && e.scope.seat === seat)) return true;
+  if (scriptLookup === null) return false;
+  const lookup = scriptLookup;
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+    return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
+  });
+}
+
+/**
+ * Life a player could pay now (D733): none while their life total can't change (CR 119.8), else
+ * any amount that leaves them alive — the line D585 draws for every life cost here.
+ */
+export function canPayLife(state: GameState, seat: SeatIndex, amount: number): boolean {
+  if (amount <= 0) return true;
+  if (lifeLocked(state, seat)) return false;
+  return (state.seats[seat]?.life ?? 0) > amount;
+}
+
 function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {
   if (scriptLookup === null) return false;
   const lookup = scriptLookup;
@@ -2762,6 +2793,90 @@ export function pump(
  * turn, or that forced an attack without sending it elsewhere, would be a different and much worse
  * card. `controller` is the goading player, and every part of the effect is read relative to them.
  */
+/**
+ * Phasing out (D733, CR 702.26): each permanent is treated as though it does not exist until its
+ * controller's next untap step. No zone changes, so nothing triggers, and counters, damage, tapped
+ * state and attachments stay. What is attached to it phases out with it, indirectly (CR 702.26g).
+ * Out of combat, as a permanent that ceased to exist would be.
+ */
+export function phaseOut(state: GameState, ids: readonly string[]): GameState {
+  let next = state;
+  const direct = ids.filter((id) => next.instances[id]?.zone === 'battlefield');
+  const out = new Map<string, boolean>();
+  for (const id of direct) out.set(id, false);
+  // Attached to something phasing out, and so on down: an Aura on an Aura goes too.
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const inst of Object.values(next.instances)) {
+      if (inst.zone === 'battlefield' && inst.attachedTo !== null && out.has(inst.attachedTo) && !out.has(inst.id)) {
+        out.set(inst.id, true);
+        grew = true;
+      }
+    }
+  }
+  for (const [id, indirect] of out) {
+    const inst = next.instances[id]!;
+    const from = zoneKey(inst.zoneSeat, 'battlefield');
+    const to = zoneKey(inst.zoneSeat, 'phased');
+    next = withZones(next, {
+      [from]: listAt(next, from).filter((other) => other !== id),
+      [to]: [...listAt(next, to).filter((other) => other !== id), id],
+    });
+    next = withInstance(next, id, { zone: 'phased', ...(indirect ? { phasedIndirectly: true as const } : {}) });
+    next = removeFromCombat(next, id);
+  }
+  return next;
+}
+
+/**
+ * Phasing in (D733, CR 502.1): everything that phased out under this seat comes back as its untap
+ * step begins, before anything untaps, with whatever phased out indirectly with it. An indirectly
+ * phased permanent never phases in by itself.
+ */
+export function phaseIn(state: GameState, seat: SeatIndex): GameState {
+  const key = zoneKey(seat, 'phased');
+  const phased = listAt(state, key);
+  if (phased.length === 0) return state;
+  let next = state;
+  const coming = new Set(phased.filter((id) => next.instances[id]?.phasedIndirectly !== true));
+  // And what rode out on them, wherever it is held: another seat's Aura on this seat's creature.
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const inst of Object.values(next.instances)) {
+      if (inst.zone === 'phased' && inst.phasedIndirectly === true && inst.attachedTo !== null
+        && coming.has(inst.attachedTo) && !coming.has(inst.id)) {
+        coming.add(inst.id);
+        grew = true;
+      }
+    }
+  }
+  for (const id of coming) {
+    const inst = next.instances[id]!;
+    const from = zoneKey(inst.zoneSeat, 'phased');
+    const to = zoneKey(inst.zoneSeat, 'battlefield');
+    next = withZones(next, {
+      [from]: listAt(next, from).filter((other) => other !== id),
+      [to]: [...listAt(next, to).filter((other) => other !== id), id],
+    });
+    next = withInstance(next, id, { zone: 'battlefield', phasedIndirectly: undefined });
+  }
+  return next;
+}
+
+/**
+ * "Your life total can't change" until your next turn (D733, Teferi's Protection): life is neither
+ * gained nor lost, damage is still dealt, and no life can be paid (CR 119.7, 119.8).
+ */
+export function lockLife(state: GameState, seat: SeatIndex, source: string): GameState {
+  return pushEffect(state, {
+    source,
+    controller: seat,
+    scope: { kind: 'seat', seat },
+    lifeLocked: true,
+    duration: 'until-controllers-next-turn',
+  });
+}
+
 /** "You gain protection from everything until your next turn" (D718). See `playerProtection`. */
 export function protectPlayer(state: GameState, seat: SeatIndex, source: string): GameState {
   return pushEffect(state, {
