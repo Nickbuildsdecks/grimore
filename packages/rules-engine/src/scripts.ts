@@ -16188,11 +16188,24 @@ export function attachmentScriptFor(
       browser global will not be caught by `tsc` in this project's lib settings.
     */
     const selfName = selfRef(def.name);
+    /*
+      And a follow-up about that creature (D972): "… attach it to target creature you control. Untap
+      that creature." / "That creature gains first strike until end of turn." Read with "that
+      creature" as the same target, and run after the attach, so it lands on the creature now
+      carrying the Equipment.
+    */
     const attachTarget = new RegExp(
       `^When (?:${selfName}|this Equipment) ${ENTERS}, attach (?:it|this|${selfName})`
-      + ' to target creature you control$',
+      + ' to target creature you control(?:\\. (.+))?$',
       'i',
     );
+    const followUp = (rest: string | undefined): ReadEffect | null | undefined => {
+      if (rest === undefined) return undefined;
+      const read = composeEffects(clausesOf(rest.replace(/\bthat creature\b/gi, 'target creature you control')), def.name, 'battlefield');
+      const specs = read?.targets ?? [];
+      return read === null || specs.length !== 1 || specs[0]!.kind !== 'creature'
+        || (read.decisions ?? []).length > 0 || read.beforeDecisions !== undefined ? null : read;
+    };
     for (const line of lines) {
       const flat = plain(line).trim().replace(/\.$/, '');
       const rule = ARRIVES_ATTACHED[flat.toLowerCase()];
@@ -16216,7 +16229,9 @@ export function attachmentScriptFor(
           },
         };
       }
-      if (attachTarget.test(flat)) {
+      const attached = attachTarget.exec(flat);
+      const after = attached === null ? null : followUp(attached[1]);
+      if (attached !== null && after !== null) {
         return {
           line,
           trigger: {
@@ -16232,12 +16247,12 @@ export function attachmentScriptFor(
               */
               friendly: true as const,
             }],
-            description: 'attach it to target creature you control',
+            description: after === undefined ? 'attach it to target creature you control' : flat.replace(/^When [^,]+, /i, ''),
             effect: (c: EffectContext) => {
               const host = firstCardTarget(c);
-              return host === null
-                ? c.state
-                : equipTo(c.state, c.source, host, c.controller, equipBonus);
+              if (host === null) return c.state;
+              const state = equipTo(c.state, c.source, host, c.controller, equipBonus);
+              return after === undefined ? state : after.effect({ ...c, state });
             },
           },
         };
