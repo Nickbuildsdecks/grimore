@@ -27864,6 +27864,15 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
     return { additionalCost: { sacrifice: 'creature', sacrificeSubtypes: [typed[1]!] } };
   }
   if (/^discard a card$/i.test(cost)) return { additionalCost: { discard: true } };
+  // "Exile a creature card from your graveyard" (D967): D613's ability cost, on a spell.
+  const exiles = /^exile (an?|one|two|three|four|five) (?:(.+?) )?cards? from your graveyard$/i.exec(cost);
+  if (exiles !== null) {
+    const count = /^an?$/i.test(exiles[1]!) ? 1 : countFrom(exiles[1]!);
+    const matches = graveyardKind(exiles[2]);
+    if (count !== null && count > 0 && matches !== null) {
+      return { additionalCost: { exileFromGraveyard: { count, words: exiles[2] ?? '', matches } } };
+    }
+  }
   const life = /^pay (\d+) life$/i.exec(cost);
   if (life !== null && Number(life[1]) > 0) return { additionalCost: { life: Number(life[1]) } };
   return null;

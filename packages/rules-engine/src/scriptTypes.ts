@@ -3607,7 +3607,14 @@ export interface CardScript {
      * — because that is what it is; only the currency differs. `xMax` is the life the caster may
      * pay, by the rule every life cost here keeps.
      */
-    | { readonly lifeX: true };
+    | { readonly lifeX: true }
+    /**
+     * "As an additional cost to cast this spell, exile a creature card from your graveyard" (D967).
+     * The ability cost's shape (`AbilityCost.exileFromGraveyard`, D613), paid as the spell is cast:
+     * the engine chooses the cards with `graveyardCostPlan`, never the spell itself, and a spell
+     * whose graveyard holds too few is not offered (CR 601.2h).
+     */
+    | { readonly exileFromGraveyard: NonNullable<AbilityCost['exileFromGraveyard']> };
   /**
    * Which X to open on, for a spell whose best X is not its largest (D579).
    *

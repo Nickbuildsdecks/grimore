@@ -2011,6 +2011,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       why(id, `it costs ${lifeAsked} life, and you do not have that to pay`);
       continue;
     }
+    // Cards exiled from your graveyard as an additional cost (D967): too few, and it is not offered.
+    const graveAsked = script?.additionalCost !== undefined && 'exileFromGraveyard' in script.additionalCost
+      ? script.additionalCost.exileFromGraveyard
+      : undefined;
+    if (graveAsked !== undefined && graveyardCostPlan(state, seat, graveAsked, id) === null) {
+      why(id, `it costs ${graveAsked.count} ${graveAsked.words === '' ? '' : `${graveAsked.words} `}card${graveAsked.count === 1 ? '' : 's'} from your graveyard, and you have too few`);
+      continue;
+    }
     /*
       And the other half of an escape cost, which is paid in cards (CR 702.139).
 

@@ -21106,6 +21106,47 @@ describe('three or more keywords granted in one list (D966)', () => {
   });
 });
 
+describe('"exile a creature card from your graveyard" as an additional cost (D967)', () => {
+  const ROWS = [
+    { name: 'Test Harvest', type_line: 'Sorcery', oracle_text: 'As an additional cost to cast this spell, exile a creature card from your graveyard.\nDraw two cards.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd967', name: 'Graveyard cost',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (graveyard: string[]) => advanceTo(arena({
+    decks: { 0: 'd967', 1: 'd967' }, deckSpecs: { d967: deck.deck }, hands: { 0: ['Test Harvest'] },
+    battlefield: { 0: ['Swamp'], 1: [] }, graveyard: { 0: graveyard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with no creature card in the graveyard it is not offered, and refused if tried', () => {
+    const s = seated(['Test Relic']);
+    const card = find(s, 0, 'hand', 'Test Harvest');
+    expect(legalActions(s, 0).plays.some((p) => p.card === card)).toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card } as Action)).toContain('graveyard');
+  });
+
+  it('cast: the creature card is exiled as it is cast, the artifact stays, and it draws two', () => {
+    const s = seated(['Test Relic', 'Test Bear']);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    const relic = find(s, 0, 'graveyard', 'Test Relic');
+    const hand = ids(s, 0, 'hand').length - 1;
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Harvest') } as Action);
+    expect(t.instances[bear]!.zone).toBe('exile');
+    expect(t.instances[relic]!.zone).toBe('graveyard');
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    expect(ids(t, 0, 'hand').length).toBe(hand + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

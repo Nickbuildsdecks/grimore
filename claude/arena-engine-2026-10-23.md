@@ -32708,3 +32708,35 @@ classes are the same one-character change and are not pinned one by one.
     engine tests: 5,129, all passing
 
 Coverage: 12,561 of 31,743 cards (+11), 32,598 of 59,509 lines (+13). Staples: 241 of 244.
+
+## D967 — "Exile a creature card from your graveyard" as an additional cost
+
+"As an additional cost to cast this spell, exile a creature card from your graveyard"
+(Headless Skaab, Cobbled Lancer and four more), and "… exile two creature cards …" (Skaab
+Goliath). The same cost on an activated ability has read since D613. On a spell it was unread.
+
+How it is read:
+- **A new `additionalCost` variant, `exileFromGraveyard`**, with exactly D613's shape and its
+  grammar ("a / one … five", an optional kind read by `graveyardKind`).
+- **Offered only when it can be paid** (CR 601.2h). `legalActions` asks `graveyardCostPlan`, and
+  a spell whose graveyard holds too few is not offered. The reason says how many of what.
+- **Paid as the spell is cast**, in `castSpell`, after any delve: the cards are exiled before
+  anybody may respond, and never the spell itself. The engine chooses them with D613's plan, which
+  keeps cards with flashback or escape back where it can, as it does for abilities.
+
+7 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- with no creature card in the graveyard it is not offered, and refused if tried;
+- cast: the creature card is exiled as it is cast, the artifact stays, and it draws two.
+
+Superseded row: `compile.test.ts` listed "exile a creature card from your graveyard" among the
+additional costs the engine could not express. It is now a "reads" assertion of its own, on the two
+creature cards form.
+
+Faults injected by hand: 4 of 4 caught.
+
+    engine tests: 5,132, all passing
+
+Coverage: 12,568 of 31,743 cards (+7), 32,610 of 59,509 lines (+12). Staples: 241 of 244.

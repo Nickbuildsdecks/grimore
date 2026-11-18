@@ -999,6 +999,18 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (card === undefined) continue;
     next = relocate(next, card, 'exile', card.owner, 'bottom');
   }
+  // Cards exiled from the graveyard as an additional cost (D967), after any delve, never the spell.
+  if (script?.additionalCost !== undefined && 'exileFromGraveyard' in script.additionalCost) {
+    const want = script.additionalCost.exileFromGraveyard;
+    const plan = graveyardCostPlan(next, action.by, want, inst.id);
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have too few ${want.words === '' ? '' : `${want.words} `}cards in your graveyard to exile for ${characteristics.name}`);
+    }
+    for (const id of plan) {
+      const card = next.instances[id];
+      if (card !== undefined) next = relocate(next, card, 'exile', card.owner, 'bottom');
+    }
+  }
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     sacrificedName = characteristicsOf(next, victim).name;

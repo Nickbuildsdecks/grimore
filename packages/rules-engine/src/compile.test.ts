@@ -4757,8 +4757,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(field(read.script, 'additionalCost')).toEqual(want);
     });
 
+    // "Exile a creature card from your graveyard" was on this list until D967, which reads it.
+    it('reads an additional cost of exiling creature cards from your graveyard (D967)', () => {
+      const read = compileCard({
+        name: 'Other Cost', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'As an additional cost to cast this spell, exile two creature cards from your graveyard.\nDraw two cards.',
+      });
+      expect(read).toMatchObject({ ok: true, unread: [] });
+      const cost = field(read.ok ? read.script : undefined, 'additionalCost') as { exileFromGraveyard?: { count: number; words: string } };
+      expect(cost.exileFromGraveyard).toMatchObject({ count: 2, words: 'creature' });
+    });
+
     it.each([
-      ['exile a creature card from your graveyard'],
       // A count, and a pick the player does not make.
       ['discard two cards'],
       ['discard a card at random'],
