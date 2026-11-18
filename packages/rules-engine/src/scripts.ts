@@ -13719,8 +13719,8 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     the keyword may be printed before the size or after it.
   */
   const teamX = new RegExp(
-    `^(${MASS_PUMP_SUBJECTS})(?: gain ([a-z][a-z' ]*?) and)? get \\+X\\/\\+X`
-    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn(?:, where X is (.+))?$`,
+    `^(${MASS_PUMP_SUBJECTS})(?: gain ([a-z][a-z', ]*?) and)? get \\+X\\/\\+X`
+    + `(?: and gain ([a-z][a-z', ]*?))? until end of turn(?:, where X is (.+))?$`,
     'i',
   ).exec(text);
   if (teamX !== null) {
@@ -13746,7 +13746,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   const team = new RegExp(
     `^(${MASS_PUMP_SUBJECTS})`
     + ` get (-|\\+)(\\d+)\\/(-|\\+)(\\d+)`
-    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn$`,
+    + `(?: and gain ([a-z][a-z', ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (team !== null) {
@@ -13793,7 +13793,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     the creatures, frozen as it resolves (CR 611.2c) like the creature grant below; kept out of
     `MASS_PUMP_SUBJECTS` so a size can never be read onto a land.
   */
-  const permanentsGain = /^permanents you control gain ([a-z][a-z' ]*?) until end of turn$/i.exec(text);
+  const permanentsGain = /^permanents you control gain ([a-z][a-z', ]*?) until end of turn$/i.exec(text);
   if (permanentsGain !== null) {
     const words = grantedKeywordList(permanentsGain[1]!);
     if (words !== null) {
@@ -15214,7 +15214,7 @@ function selfEffect(
   if (countedTail !== null) {
     const grownBy = new RegExp(
       `^(?:(${self})|it) gets ([+-](?:X|\\d+))/([+-](?:X|\\d+))`
-        + `(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+        + `(?: and gains ([a-z][a-z', ]*?))? until end of turn$`,
       'i',
     ).exec(countedTail.body);
     if (grownBy !== null) {
@@ -15246,7 +15246,7 @@ function selfEffect(
     nothing, as it would at a table. The bot is not told the pump is a "self shrink": the creature
     that changes is not the one paying.
   */
-  const hosted = /^(?:enchanted|equipped) creature (gets ([+-]\d+)\/([+-]\d+)(?: and gains ([a-z][a-z' ]*?))?|gains ([a-z][a-z' ]*?)) until end of turn$/i.exec(text)
+  const hosted = /^(?:enchanted|equipped) creature (gets ([+-]\d+)\/([+-]\d+)(?: and gains ([a-z][a-z', ]*?))?|gains ([a-z][a-z', ]*?)) until end of turn$/i.exec(text)
     ?? /^regenerate (?:enchanted|equipped) creature$/i.exec(text);
   if (hosted !== null) {
     const hostOf = (c: Parameters<EffectFn>[0]): string | undefined => {
@@ -15302,7 +15302,7 @@ function selfEffect(
   }
 
   const grown = new RegExp(
-    `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z', ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (grown !== null) {
@@ -15333,7 +15333,7 @@ function selfEffect(
     granted until end of turn is a continuous effect like a pump, not a different mechanism.
   */
   const gained = new RegExp(
-    `^(?:(${self})|it) gains ([a-z][a-z' ]*?) until end of turn$`, 'i',
+    `^(?:(${self})|it) gains ([a-z][a-z', ]*?) until end of turn$`, 'i',
   ).exec(text);
   if (gained !== null) {
     const word = gained[2]!.trim().toLowerCase();
@@ -15485,7 +15485,8 @@ export interface WholeCardReading {
 
 /** The keyword list in `has trample and lifelink`, validated by the reader that reads it back. */
 function grantedKeywords(phrase: string): readonly Keyword[] | null {
-  const names = phrase.trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/)
+  // ", and" is one separator (D966): "flying, vigilance, and lifelink" left "and lifelink" behind.
+  const names = phrase.trim().replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+/)
     .map((k) => k.trim().toLowerCase()).filter((k) => k !== '');
   if (names.length === 0) return null;
   /*
@@ -22949,7 +22950,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   if (countedTarget !== null) {
     const sizedBy = new RegExp(
       "^(target creature(?: you control| an opponent controls| you don't control)?)"
-        + " gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z' ]*?))? until end of turn$",
+        + " gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z', ]*?))? until end of turn$",
       'i',
     ).exec(countedTarget.body);
     if (sizedBy !== null) {
@@ -23024,7 +23025,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     `PumpOptions` for both halves, so they expire together. A help to your own attacker.
   */
   const drawn = new RegExp(
-    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) (?:gets ([+]\\d+)\\/([+]\\d+)|gains ([a-z][a-z' ]*?))`
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) (?:gets ([+]\\d+)\\/([+]\\d+)|gains ([a-z][a-z', ]*?))`
     + ` until end of turn and must be blocked this turn if able$`,
     'i',
   ).exec(text);
@@ -23041,7 +23042,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
   const sized = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?)`
-    + ` gets ([-+]\\d+)\\/([-+]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    + ` gets ([-+]\\d+)\\/([-+]\\d+)(?: and gains ([a-z][a-z', ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (sized !== null) {
@@ -23221,7 +23222,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     "loses all abilities" riders; this is the same field on an until-end-of-turn effect. Aimed at
     the other side of the table by default, which is the only reason to print it.
   */
-  const stripped = /^(target creature(?: an opponent controls| you don't control)?) loses ([a-z][a-z' ]*?) until end of turn$/i
+  const stripped = /^(target creature(?: an opponent controls| you don't control)?) loses ([a-z][a-z', ]*?) until end of turn$/i
     .exec(text);
   if (stripped !== null) {
     const words = grantedKeywordList(stripped[2]!);
@@ -23235,7 +23236,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   const granted =
-    /^(target creature(?: you control)?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z' ]*?) until end of turn$/i
+    /^(target creature(?: you control)?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?) until end of turn$/i
       .exec(text);
   if (granted !== null) {
     const words = grantedKeywordList(granted[3]!);

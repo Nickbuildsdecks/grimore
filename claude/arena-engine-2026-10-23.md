@@ -32669,3 +32669,42 @@ first pin exercised the source but not the power. The own-power test now catches
     engine tests: 5,126, all passing
 
 Coverage: 12,550 of 31,743 cards (+2), 32,585 of 59,509 lines (+3). Staples: 241 of 244.
+
+## D966 — Three or more keywords granted in one list
+
+"Target creature you control gets +2/+2 and gains trample, hexproof, and indestructible until end
+of turn" (Overprotect). "Equipped creature has first strike, trample, and haste" (Chariot of
+Victory). "It gains reach, trample, and indestructible until end of turn" (Biosynthic Burst). Two
+keywords read; three did not, for two reasons:
+- **`grantedKeywords` split the list on ", " and on " and "**, so "flying, vigilance, and
+  lifelink" left "and lifelink" as a word, and no keyword is called that. ", and" is now one
+  separator, as `grantedKeywordList` (D668) already had it.
+- **Thirteen reader regexes took the list as `[a-z][a-z' ]*?`**, with no comma, so a list never
+  reached either parser. The comma is added to the class. Every one is anchored by "until end of
+  turn", and the parsers check each word is a keyword the engine knows, so the wider class reads
+  nothing new that is not a list of keywords.
+
+Logged across the corpus, the new readings are each the printed list:
+- Akroma's Will's two modes;
+- Asha's Favor, Chariot of Victory, Haunted Cloak and Peregrine Mask;
+- Biosynthic Burst, Overprotect, Power Matrix, Saved by the Shell and Titanic Ultimatum.
+
+Pod sweep on D965 (seeds 65001–65003): 156 pods, all decided.
+
+11 legal cards now read whole.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- the spell gives all three keywords, with the +2/+2;
+- the Equipment's bonus is all three, and they reach the creature it is attached to.
+
+Superseded row: `compile.test.ts` refused "Target creature gains flying, trample and haste" as
+three keywords, "nothing in the pool prints more". The pool does, eleven times. The row is now a
+"reads" assertion of its own.
+
+Faults injected by hand: 2 of 2 caught (the split, and the targeted pump's class). The other twelve
+classes are the same one-character change and are not pinned one by one.
+
+    engine tests: 5,129, all passing
+
+Coverage: 12,561 of 31,743 cards (+11), 32,598 of 59,509 lines (+13). Staples: 241 of 244.

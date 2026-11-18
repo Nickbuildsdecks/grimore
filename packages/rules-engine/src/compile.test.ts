@@ -6200,14 +6200,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     it.each([
       ['Target creature gains flying and soaring until end of turn.'],
       ['Target creature gains protection from red until end of turn.'],
-      ['Target creature gains flying, trample and haste until end of turn.'],
     ])('refuses %s, whose words this engine would ignore', (text) => {
       /*
         `isKeyword` is the gate: the engine's keyword list is what `characteristicsOf` consults, so a
         word outside it would compile to a creature that gains nothing and a spell that looks like it
-        worked. "Soaring" is made up, "protection from red" is a real ability this engine stores
-        elsewhere, and the third is three keywords — refused because the list takes one or two and
-        nothing in the pool prints more. Each is reported unread, to be played by hand (D362).
+        worked. "Soaring" is made up, and "protection from red" is a real ability this engine stores
+        elsewhere. Each is reported unread, to be played by hand (D362). Three keywords were refused
+        here too until D966, which reads any list of known keywords; see the row below.
       */
       const refused = compileCard({
         name: 'Grant Maker', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
@@ -6217,6 +6216,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (!refused.ok) return;
       expect(refused.script).toBeUndefined();
       expect(refused.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+
+    it('reads three keywords in one list (D966): flying, trample and haste', () => {
+      const read = compileCard({
+        name: 'Grant Maker', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: 'Target creature gains flying, trample and haste until end of turn.',
+      });
+      expect(read).toMatchObject({ ok: true, unread: [] });
     });
   });
   describe('every planeswalker in the pool, read end to end', () => {

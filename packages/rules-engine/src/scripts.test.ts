@@ -21064,6 +21064,48 @@ describe('"it deals …" on a trigger about another creature (D965)', () => {
   });
 });
 
+describe('three or more keywords granted in one list (D966)', () => {
+  const ROWS = [
+    { name: 'Test Blessing', type_line: 'Instant', oracle_text: 'Target creature gets +2/+2 and gains flying, vigilance, and lifelink until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Plate', type_line: 'Artifact — Equipment', oracle_text: 'Equipped creature has first strike, trample, and haste.\nEquip {0}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd966', name: 'Keyword lists',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string, mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd966', 1: 'd966' }, deckSpecs: { d966: deck.deck }, hands: { 0: [card] },
+    battlefield: { 0: ['Plains', 'Test Bear', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the spell gives all three, with the +2/+2', () => {
+    const s = seated('Test Blessing');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blessing'), targets: [{ kind: 'card', id: bear }] } as Action), 30);
+    for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    const got = characteristicsOf(t, t.instances[bear]!);
+    expect(got.power).toBe(4);
+    expect([...got.keywords]).toEqual(expect.arrayContaining(['flying', 'vigilance', 'lifelink']));
+  });
+
+  it('the Equipment gives all three to the creature it is attached to', () => {
+    const s = seated('Test Bear', ['Test Plate']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const read = compileCard(ROWS[1] as never);
+    const bonus = read.ok ? (read.script as { equipBonus?: Parameters<typeof equipTo>[4] }).equipBonus : undefined;
+    expect(bonus?.keywords).toEqual(['first strike', 'trample', 'haste']);
+    const t = equipTo(s, find(s, 0, 'battlefield', 'Test Plate'), bear, 0, bonus!);
+    expect([...characteristicsOf(t, t.instances[bear]!).keywords]).toEqual(expect.arrayContaining(['first strike', 'trample', 'haste']));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
