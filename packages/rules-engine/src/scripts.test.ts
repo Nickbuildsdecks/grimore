@@ -20864,6 +20864,65 @@ describe('one damage sentence, several targets (D962)', () => {
   });
 });
 
+describe('"defending player" as the subject of an attack trigger (D963)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Drainer', 'Whenever this creature attacks, defending player loses 1 life and you gain 1 life.'),
+    C('Test Taunter', 'Whenever this creature attacks, defending player discards a card.'),
+    C('Test Herald', 'Whenever this creature attacks, defending player may draw a card.'),
+  ];
+  const deck = customDeck({
+    id: 'd963', name: 'Defending player',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 54 }],
+    data: ROWS as never[],
+  }).deck;
+  /** Attacks seat 2 at a table of three, and resolves the trigger, answering any question with the first card. */
+  const attack = (name: string) => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd963', 1: 'd963', 2: 'd963' }, deckSpecs: { d963: deck },
+      battlefield: { 0: [name], 1: [], 2: [] }, hands: { 1: ['Swamp', 'Swamp'], 2: ['Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const before = s;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', name), defender: 2 }] });
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      const d = s.pendingDecision;
+      s = d === null ? drain(passBoth(s), 30)
+        : drain(apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, 1) } as Action), 30);
+    }
+    return { before, s };
+  };
+
+  it('reads whole', () => {
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the player attacked loses the life, not the other opponent', () => {
+    const { before, s } = attack('Test Drainer');
+    expect(s.seats[2]!.life).toBe(before.seats[2]!.life - 1);
+    expect(s.seats[1]!.life).toBe(before.seats[1]!.life);
+    expect(s.seats[0]!.life).toBe(before.seats[0]!.life + 1);
+  });
+
+  it('"defending player may draw": the player attacked is the one asked, and draws on a yes', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd963', 1: 'd963', 2: 'd963' }, deckSpecs: { d963: deck },
+      battlefield: { 0: ['Test Herald'], 1: [], 2: [] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const hand = ids(s, 2, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Herald'), defender: 2 }] });
+    for (let i = 0; i < 12 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 2, cards: [], option: 'Yes' } as Action), 30);
+    expect(ids(s, 2, 'hand').length).toBe(hand + 1);
+  });
+
+  it('the player attacked discards, not the other opponent', () => {
+    const { before, s } = attack('Test Taunter');
+    expect(ids(s, 2, 'hand').length).toBe(ids(before, 2, 'hand').length - 1);
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

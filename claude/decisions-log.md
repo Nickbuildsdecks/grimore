@@ -50024,3 +50024,36 @@ removed.
     engine tests: 5,112, all passing
 
 Coverage: 12,534 of 31,743 cards (+22), 32,559 of 59,509 lines (+24). Staples: 241 of 244.
+
+## D963 — "Defending player" as the subject of an attack trigger
+
+"Whenever ~ attacks, defending player loses 1 life and you gain 1 life." "… defending player
+discards a card." "… defending player mills ten cards." "Whenever a creature you control attacks,
+defending player loses 1 life." A combat-damage trigger's "that player" has read the player it hit
+since D530, through `c.attacked`. An attack event hands down the same seat (its `attacked`). The
+words "defending player", on an attack, were simply not a referent.
+
+How it is read: **"defending player" is a referent pronoun** on a trigger whose events are all
+attacks, attacks-unblocked or combat-damage hits. It is supplied from `c.attacked.defender`, and
+its questions are re-aimed to the hit player (`'hit-player'`), so a discard or a "may" is asked of
+the player attacked. "Becomes blocked" is not included: no `attacked` travels with it, and its one
+printed edict already reads through D918's reader.
+
+Logged across the corpus, the new readings are Agate-Blade Assassin, Campaign of Vengeance,
+Leeching Sliver, Nemesis of Reason, Shrieking Specter, Silent Skimmer, Nefarox and Thraximundar's
+edicts, and Harbor Guardian and Sibilant Spirit's "defending player may draw a card". Each means
+what the card says.
+
+10 legal cards now read whole.
+
+**Tests.** 4 engine tests at a table of three, attacking the third seat:
+- the cards read;
+- the attacked player loses the life, not the other opponent;
+- "defending player may draw": the attacked player is the one asked, and draws on a yes;
+- the attacked player discards, not the other opponent.
+
+Faults injected by hand: 3 of 3 caught.
+
+    engine tests: 5,116, all passing
+
+Coverage: 12,544 of 31,743 cards (+10), 32,577 of 59,509 lines (+18). Staples: 241 of 244.

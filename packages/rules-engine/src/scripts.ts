@@ -18871,7 +18871,9 @@ type ReferentPronoun =
    * borrowed object itself — see `ReferentSupply`.
    */
   | 'its controller' | "that creature's controller" | "that permanent's controller"
-  | "that land's controller" | "that spell's controller";
+  | "that land's controller" | "that spell's controller"
+  /** The player an attack is aimed at, on an attack or combat-damage trigger (D963). */
+  | 'defending player';
 type ReferentKind = 'creature' | 'player' | 'permanent';
 /**
  * How the borrowed object becomes the thing the clause is about.
@@ -19220,6 +19222,23 @@ function eventRelativeEffect(
       'hit-player',
     );
     if (hit !== null) return hit;
+  }
+  /*
+    **"Defending player"** (D963): "Whenever ~ attacks, defending player loses 1 life", "… defending
+    player discards a card", and the same on a combat-damage trigger, where the defending player is
+    the one it hit. Both events hand the seat down `c.attacked` (an attack's `attacked`, a hit's
+    `defender`), so it is `that player`'s hit referent with the attack events added. Whose turn or
+    whose creature is never consulted: the attack says who was attacked.
+  */
+  const ATTACK_EVENTS = new Set(['attacks', 'attacks-unblocked', ...HIT_EVENTS]);
+  if (events.length > 0 && events.every((one) => ATTACK_EVENTS.has(one.kind))) {
+    const defending = referentEffect(
+      text, 'defending player', 'player',
+      (c) => (c.attacked === undefined ? null : { kind: 'player', seat: c.attacked.defender }),
+      (swapped) => readEffect(swapped, name, null),
+      'hit-player',
+    );
+    if (defending !== null) return defending;
   }
   if (aboutAPlayer) {
     const acted = referentEffect(
