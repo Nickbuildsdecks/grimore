@@ -20310,6 +20310,80 @@ describe('two targeting sentences in one line (D953)', () => {
   });
 });
 
+describe('a card from your hand on the bottom of your library (D954)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    S('Test Temper', 'Test Temper deals 3 damage to any target. You may put a card from your hand on the bottom of your library. If you do, draw a card.'),
+    S('Test Sift', 'Draw two cards, then put a card from your hand on the bottom of your library.'),
+    S('Test Dig', 'Draw three cards, then put two cards from your hand on the bottom of your library.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd954', name: 'Hand to bottom',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 48 }],
+    data: ROWS as never[],
+  });
+  const seated = (card: string, hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd954', 1: 'd954' }, deckSpecs: { d954: deck.deck }, hands: { 0: [card, ...hand] },
+    battlefield: { 0: ['Mountain'], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const library = (s: GameState) => ids(s, 0, 'library');
+  /** Answers each question: `pick` for a card question, `option` for a yes-or-no. */
+  const answer = (s: GameState, pick: (candidates: readonly string[]) => string[], option = 'Yes') => {
+    let next = s;
+    for (let i = 0; i < 10 && (next.pendingDecision !== null || next.stackOrder.length > 0); i++) {
+      const d = next.pendingDecision;
+      if (d === null) { next = drain(passBoth(next), 30); continue; }
+      next = drain(apply(next, d.candidates.length > 0
+        ? { type: 'auto:decide', by: 0, cards: pick(d.candidates) } as Action
+        : { type: 'auto:decide', by: 0, cards: [], option: (d.options ?? []).find((o) => (option === 'Yes') === (o === 'Yes'))! } as Action), 30);
+    }
+    return next;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the may: yes puts the picked card on the bottom and draws; no does neither', () => {
+    const s = seated('Test Temper', ['Test Bear', 'Test Bear']);
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Temper'), targets: [{ kind: 'player', seat: 1 }] } as Action), 30);
+    const hand = ids(cast, 0, 'hand').length;
+    const top = library(cast)[0]!;
+    let picked = '';
+    const yes = answer(cast, (cands) => { picked = cands[0]!; return [picked]; });
+    expect(yes.seats[1]!.life).toBe(17);
+    expect(library(yes).at(-1)).toBe(picked);
+    expect(yes.instances[top]!.zone).toBe('hand');
+    expect(ids(yes, 0, 'hand').length).toBe(hand);
+    const no = answer(cast, (cands) => [cands[0]!], 'No');
+    expect(no.seats[1]!.life).toBe(17);
+    expect(library(no)).toEqual(library(cast));
+    expect(ids(no, 0, 'hand').length).toBe(hand);
+  });
+
+  it('draw first: the cards just drawn are among the ones offered, and the picked one goes to the bottom', () => {
+    const s = seated('Test Sift');
+    const [first, second] = library(s);
+    const cast = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sift') } as Action), 30);
+    const t = cast.stackOrder.length > 0 && cast.pendingDecision === null ? drain(passBoth(cast), 30) : cast;
+    expect(t.pendingDecision?.candidates).toEqual(expect.arrayContaining([first, second]));
+    const done = answer(t, () => [second!]);
+    expect(library(done).at(-1)).toBe(second);
+    expect(done.instances[first!]!.zone).toBe('hand');
+  });
+
+  it('two cards go in the order picked, the last picked at the very bottom', () => {
+    const s = seated('Test Dig');
+    const [a, b] = library(s);
+    const before = library(s).length;
+    const done = answer(drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dig') } as Action), 30), () => [a!, b!]);
+    expect(library(done).slice(-2)).toEqual([a, b]);
+    expect(library(done).length).toBe(before - 3 + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

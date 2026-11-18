@@ -1243,6 +1243,17 @@ export function putOnTopOfLibrary(state: GameState, id: string): GameState {
   return relocate(state, inst, 'library', inst.owner, 'top');
 }
 
+/**
+ * The bottom of its owner's library, one card at a time (D954) — "put a card from your hand on the
+ * bottom of your library". The sibling of `putOnTopOfLibrary`; a pile the player orders is this
+ * called once per card in the order picked, and `bottomPile` is the one for a random order.
+ */
+export function putOnBottomOfLibrary(state: GameState, id: string): GameState {
+  const inst = state.instances[id];
+  if (inst === undefined) return state;
+  return relocate(state, inst, 'library', inst.owner, 'bottom');
+}
+
 export function putOntoBattlefield(
   state: GameState, id: string, seat: SeatIndex, opts: { readonly tapped?: boolean } = {},
 ): GameState {

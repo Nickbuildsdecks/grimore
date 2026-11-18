@@ -32209,3 +32209,42 @@ Faults injected by hand: 6 of 6 caught.
     engine tests: 5,078, all passing
 
 Coverage: 12,407 of 31,743 cards (+39), 32,414 of 59,509 lines (+60). Staples: 241 of 244.
+
+## D954 — A card from your hand to the bottom of your library
+
+"You may put a card from your hand on the bottom of your library. If you do, draw a card" (Fiery
+Temper-style sorceries and their cycle-mates). "Draw two cards, then put a card from your hand on
+the bottom of your library." "Draw three cards, then put two cards from your hand on the bottom of
+your library." There was no clause for the sentence, so each of these lines was unread.
+
+How it is read:
+- **One clause reader, beside the discard.** It asks the same question from the same zone,
+  "a / one / two / three cards", and moves the cards picked to the bottom of the owner's library.
+  A new `putOnBottomOfLibrary` in `effects.ts` is the sibling of `putOnTopOfLibrary`.
+- **Nothing special for the draw first.** `composeEffects` already splits a chain at its first
+  question and runs what comes before it in `beforeDecisions` (D418). So the cards just drawn are
+  in the hand the question is planned against. A test pins it: the two cards drawn are among the
+  candidates, and the one picked ends at the bottom.
+- **Two or more go in the order picked**, each to the bottom, so the last one picked is the bottom
+  card. The owner orders them (CR 401.4).
+- **The "may … If you do" form** goes through `optionalEffect`, as the discard does (D952).
+
+5 legal cards now read whole, the enters-trigger form ("When this creature enters, draw two cards,
+then put two cards …") among them. Still unread: the one with a condition in the middle ("Then if
+you don't control a legendary creature, put …"), "put any number of cards … then draw that many
+plus one", and the digital-only seek line.
+
+Pod sweep on D953 (seeds 63001–63005; the worker restarted after two passes, so the last three
+were re-run as 63003–63005): 260 pods, all decided, none threw.
+
+**Tests.** 4 engine tests:
+- the three cards read;
+- the may: yes puts the picked card on the bottom and draws, no does neither;
+- draw first: the drawn cards are offered, and the one picked goes to the bottom;
+- two cards go in the order picked.
+
+Faults injected by hand: 5 of 5 caught.
+
+    engine tests: 5,082, all passing
+
+Coverage: 12,412 of 31,743 cards (+5), 32,421 of 59,509 lines (+7). Staples: 241 of 244.

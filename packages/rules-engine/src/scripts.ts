@@ -47,7 +47,7 @@ import {
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
+  addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, recordExpiry, pairCreatures,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -14375,6 +14375,33 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
           min: n, max: n, filter: filter.filter,
         }],
         effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
+    }
+  }
+
+  /*
+    "Put a card from your hand on the bottom of your library" (D954) — Fiery Temper's cycle-mates
+    ("You may put a card from your hand on the bottom of your library. If you do, draw a card"),
+    the draw-then-bottom looters, and the seek-then-bottom digital card. The same question as the
+    discard, from the same zone, with a different destination.
+
+    Nothing here has to know about the draw that usually comes first: `composeEffects` splits a
+    chain at its first question and runs everything before it in `beforeDecisions` (D418), so the
+    cards drawn are in the hand the question is planned against. Two or more go in the order picked,
+    each to the bottom, so the last picked is the bottom card — the player orders them (CR 401.4).
+  */
+  const handBottom = /^(?:you )?put (a|one|two|three) cards? from your hand on the bottom of your library(?: in any order)?$/i.exec(text);
+  if (handBottom !== null) {
+    const n = countFrom(handBottom[1]!);
+    if (n !== null && n > 0) {
+      return {
+        decisions: [{
+          who: 'controller', from: 'hand', min: n, max: n,
+          prompt: n === 1
+            ? 'Put a card from your hand on the bottom of your library'
+            : `Put ${handBottom[1]!} cards from your hand on the bottom of your library, in the order you pick them`,
+        }],
+        effect: (c) => chosenCards(c).reduce((state, id) => putOnBottomOfLibrary(state, id), c.state),
       };
     }
   }
