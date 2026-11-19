@@ -23931,6 +23931,69 @@ describe('"you may pay N life. If you do / When you do, …" (D989)', () => {
   });
 });
 
+describe('trigger openings with an event behind them: unblocked, "When … attacks", end of combat, any attacker (D990)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human Warrior', p = '2', t = '2') => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...(type.includes('Creature') ? { power: p, toughness: t } : {}) });
+  const ROWS = [
+    C('Test Raider', "Whenever this creature attacks and isn't blocked, you gain 3 life."),
+    C('Test Charger', 'When this creature attacks, you gain 1 life.'),
+    C('Test Horn', 'At end of combat, you gain 1 life.', 'Enchantment'),
+    C('Test Drum', 'Whenever a creature attacks, you gain 1 life.', 'Enchantment'),
+    C('Test Wall', '', 'Creature — Wall', '0', '4'),
+  ];
+  const deck = customDeck({ id: 'd990', name: 'Openings', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 30 }], data: ROWS as never[] });
+  const swing = (mine: string[], theirs: string[], attacker: string | null, block: boolean) => {
+    let s = arena({ decks: { 0: 'd990', 1: 'd990' }, deckSpecs: { d990: deck.deck }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[0]!.life;
+    const a = attacker === null ? null : find(s, 0, 'battlefield', attacker);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: a === null ? [] : [{ attacker: a, defender: 1 }] });
+    if (a !== null && theirs.includes('Test Wall')) {
+      s = passBoth(s);
+      s = apply(s, { type: 'auto:block', by: 1, blocks: block ? [{ blocker: find(s, 1, 'battlefield', 'Test Wall'), attacker: a }] : [] });
+    }
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    return { s, gained: s.seats[0]!.life - life };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of ['When this creature attacks or blocks, you gain 1 life.', 'When this creature blocks, you gain 1 life.']) {
+      expect(compileCard(C('Test Line', text) as never), text).toMatchObject({ ok: true, unread: [] });
+    }
+    const mine = compileCard(C('Test Bell', 'At end of combat on your turn, you gain 1 life.', 'Enchantment') as never);
+    expect(mine).toMatchObject({ ok: true, unread: [] });
+    expect(mine.ok && mine.script?.triggers?.[0]?.on).toEqual({ kind: 'step', step: 'end-combat', of: 'you' });
+  });
+
+  it('"attacks and isn\'t blocked": unblocked it gains, blocked it does not', () => {
+    expect(swing(['Test Raider'], ['Test Wall'], 'Test Raider', false).gained).toBe(3);
+    expect(swing(['Test Raider'], ['Test Wall'], 'Test Raider', true).gained).toBe(0);
+  });
+
+  it('"When this creature attacks" is the attack trigger', () => {
+    expect(swing(['Test Charger'], [], 'Test Charger', false).gained).toBe(1);
+  });
+
+  it('"At end of combat": once, with or without an attack', () => {
+    expect(swing(['Test Horn', 'Test Charger'], [], 'Test Charger', false).gained).toBe(2);
+    expect(swing(['Test Horn', 'Test Charger'], [], null, false).gained).toBe(1);
+  });
+
+  it('"Whenever a creature attacks": anybody\'s, once per attacker', () => {
+    expect(swing(['Test Drum', 'Test Wall'], [], 'Test Wall', false).gained).toBe(1);
+    // The opponent's attack fires it too.
+    let s = arena({ decks: { 0: 'd990', 1: 'd990' }, deckSpecs: { d990: deck.deck }, battlefield: { 0: ['Test Drum'], 1: ['Test Charger'] }, turn: 3, firstSeat: 1 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: find(s, 1, 'battlefield', 'Test Charger'), defender: 0 }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.seats[0]!.life).toBe(life + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
