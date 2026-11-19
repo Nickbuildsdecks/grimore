@@ -24853,6 +24853,163 @@ describe('"whenever you commit a crime" (D997, CR 700.13)', () => {
   });
 });
 
+describe('spell copies: "copy target instant or sorcery spell" and cast triggers that copy (D755)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Reverb', 'Instant', 'Copy target instant or sorcery spell. You may choose new targets for the copy.'),
+    card('Test Staff', 'Artifact', '{T}: Copy target instant or sorcery spell you control. You may choose new targets for the copy.'),
+    card('Test Echo', 'Enchantment', 'Whenever you cast an instant or sorcery spell, copy it. You may choose new targets for the copy.'),
+    card('Test Maybe Echo', 'Enchantment', 'Whenever you cast an instant or sorcery spell, you may copy that spell. You may choose new targets for the copy.'),
+    card('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.', { colors: ['R'] }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd755', name: 'Copies',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd755', 1: 'd755' }, deckSpecs: { d755: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castAt = (s: GameState, seat: 0 | 1, name: string, targets: Target[]) =>
+    apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), targets });
+  /** Resolves everything, declining each "point the copy somewhere else?" on the way. */
+  const settle = (s: GameState): GameState => {
+    let next = drain(passBoth(s));
+    for (let i = 0; i < 8 && next.pendingDecision !== null; i += 1) {
+      next = drain(passBoth(apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [] })));
+    }
+    return next;
+  };
+
+  it('reads them, and refuses a copy of an activation and a copy of an instant only', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A trigger whose event is not a cast has no spell to copy; a copy of an instant only is not read.
+    for (const [type, text] of [
+      ['Enchantment', 'Whenever a creature you control dies, copy it. You may choose new targets for the copy.'],
+      ['Instant', 'Copy target instant spell. You may choose new targets for the copy.'],
+    ] as const) {
+      const read = compileCard(card('Test Odd', type, text) as never);
+      expect(read.ok && read.unread.map((u) => u.line), text).toEqual([text]);
+    }
+  });
+
+  it('copy target spell: an opponent\'s Bolt at my face is copied, and both hit', () => {
+    let s = table({ hands: { 0: ['Test Reverb'], 1: ['Test Bolt'] } });
+    const mine = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = castAt(s, 1, 'Test Bolt', [{ kind: 'player', seat: 0 }]);
+    const bolt = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = castAt(s, 0, 'Test Reverb', [{ kind: 'card', id: bolt }]);
+    s = settle(s);
+    expect(s.seats[0]!.life).toBe(mine - 6);
+  });
+
+  it('copy target spell is not aimed at a creature spell', () => {
+    let s = table({ hands: { 0: ['Test Reverb', 'Test Bear'] } });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') });
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Reverb'), targets: [{ kind: 'card', id: s.stackOrder[0]! }] } as Action)).toBeTruthy();
+  });
+
+  it('"you control" on an ability: an opponent\'s spell is refused, my own is copied', () => {
+    let s = table({ hands: { 0: ['Test Bolt'], 1: ['Test Bolt'] }, battlefield: { 0: ['Test Staff'] } });
+    const staff = find(s, 0, 'battlefield', 'Test Staff');
+    const theirs = s.seats[1]!.life;
+    s = castAt(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]);
+    const bolt = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: staff, abilityIndex: 0, targets: [{ kind: 'card', id: bolt }] });
+    s = settle(s);
+    expect(s.seats[1]!.life).toBe(theirs - 6);
+    let t = table({ hands: { 1: ['Test Bolt'] }, battlefield: { 0: ['Test Staff'] } });
+    t = apply(t, { type: 'auto:pass', by: 0 });
+    t = castAt(t, 1, 'Test Bolt', [{ kind: 'player', seat: 0 }]);
+    t = apply(t, { type: 'auto:pass', by: 1 });
+    expect(t.priority).toBe(0);
+    expect(refusal(t, { type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Test Staff'), abilityIndex: 0, targets: [{ kind: 'card', id: t.stackOrder[0]! }] } as Action)).toBeTruthy();
+  });
+
+  it('a cast trigger copies my spell and not the opponent\'s', () => {
+    let s = table({ hands: { 0: ['Test Bolt'], 1: ['Test Bolt'] }, battlefield: { 0: ['Test Echo'] } });
+    const theirs = s.seats[1]!.life;
+    s = settle(castAt(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]));
+    expect(s.seats[1]!.life).toBe(theirs - 6);
+    const mine = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = settle(castAt(s, 1, 'Test Bolt', [{ kind: 'player', seat: 0 }]));
+    expect(s.seats[0]!.life).toBe(mine - 3);
+  });
+
+  it('"you may copy": declined, there is no copy and no question about its targets', () => {
+    const start = table({ hands: { 0: ['Test Bolt'] }, battlefield: { 0: ['Test Maybe Echo'] } });
+    const theirs = start.seats[1]!.life;
+    let s = drain(passBoth(castAt(start, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }])));
+    expect(s.pendingDecision?.options).toContain("Don't copy");
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: "Don't copy" } as Action);
+    expect(s.pendingDecision).toBeNull();
+    s = settle(s);
+    expect(s.seats[1]!.life).toBe(theirs - 3);
+    let t = drain(passBoth(castAt(start, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }])));
+    t = settle(apply(t, { type: 'auto:decide', by: 0, cards: [], option: 'Copy it' } as Action));
+    expect(t.seats[1]!.life).toBe(theirs - 6);
+  });
+});
+
+describe('named modes: "• Attack — Create a 2/2 …" (D756)', () => {
+  const card = (name: string, type: string, text: string) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const ROWS = [
+    card('Test Menu', 'Instant', 'Choose one —\n• Attack — Create a 2/2 white Knight creature token.\n• Item — You gain 4 life.'),
+    card('Test Pair', 'Sorcery', 'Choose one or both —\n• First Course — Draw a card.\n• Main Course — You gain 2 life.'),
+  ];
+  const deck = customDeck({
+    id: 'd756', name: 'Named modes',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 56 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd756', 1: 'd756' }, deckSpecs: { d756: deck.deck }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, modes: number[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), modes } as Action)));
+
+  it('reads them, the name kept in the description; a Siege\'s named choice and a nameless dash stay unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const menu = compileCard(ROWS[0] as never);
+    expect(menu.ok && menu.script?.modal?.modes.map((m) => m.description)).toEqual([
+      'Attack — Create a 2/2 white Knight creature token', 'Item — You gain 4 life',
+    ]);
+    const siege = 'As Test Siege enters, choose Khans or Dragons.\n• Khans — At the beginning of each of your main phases, add {G}{G}.\n• Dragons — You gain 1 life.';
+    const read = compileCard(card('Test Siege', 'Enchantment', siege) as never);
+    expect(read.ok && read.unread.length).toBeGreaterThan(0);
+    const odd = 'Choose one —\n• attack — Create a 2/2 white Knight creature token.\n• Item — You gain 4 life.';
+    const lower = compileCard(card('Test Odd', 'Instant', odd) as never);
+    expect(lower.ok && lower.unread.length).toBeGreaterThan(0);
+  });
+
+  it('each mode does what follows its name', () => {
+    let s = table(['Test Menu', 'Test Menu']);
+    const life = s.seats[0]!.life;
+    s = cast(s, 'Test Menu', [1]);
+    expect(s.seats[0]!.life).toBe(life + 4);
+    const before = ids(s, 0, 'battlefield').length;
+    s = cast(s, 'Test Menu', [0]);
+    expect(ids(s, 0, 'battlefield').length).toBe(before + 1);
+    expect(s.seats[0]!.life).toBe(life + 4);
+  });
+
+  it('"one or both" with names: both modes', () => {
+    let s = table(['Test Pair']);
+    const life = s.seats[0]!.life;
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Pair', [0, 1]);
+    expect(s.seats[0]!.life).toBe(life + 2);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

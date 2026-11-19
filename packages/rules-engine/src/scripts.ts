@@ -20507,6 +20507,43 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     (D960). "That player" is the one it hit, which is the defending player of its attack, so the
     phrase is read as "defending player controls" (see `parsedTargetPhrase`).
   */
+  /*
+    "Whenever you cast <a spell>, [you may] copy it / that spell. You may choose new targets for the
+    copy." (D755): the cast trigger's event read by this reader (with a stand-in effect), and the
+    copy made of the spell it saw, `answering`, as the hand-written cast copies (casualty,
+    replicate) make theirs. Only when every event the prologue gives is a cast: an activation or a
+    damage trigger has no spell to copy.
+  */
+  const copyCast = /^(.+?), (you may )?copy (?:it|that spell)\. You may choose new targets for the copy\.?$/i
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (copyCast !== null) {
+    const stand = triggerFromLine(`${copyCast[1]!}, draw a card.`, name);
+    const triggers = stand?.triggers ?? [];
+    if (stand === null || triggers.length === 0 || Object.keys(stand).some((key) => key !== 'triggers')
+      || triggers.some((t) => t.on.kind !== 'spell-cast' || (t.decisions ?? []).length > 0 || (t.targets ?? []).length > 0)) return null;
+    const optional = copyCast[2] !== undefined;
+    const COPY = 'Copy it';
+    const retarget: TargetDecisionSpec = {
+      ...NEW_TARGETS_FOR_THE_COPY,
+      retargets: (_state, object) => (object as { answering?: string }).answering,
+    };
+    return {
+      triggers: triggers.map((t) => ({
+        ...t,
+        description: `${optional ? 'you may ' : ''}copy that spell; you may choose new targets for the copy`,
+        decisions: optional
+          ? [{ who: 'controller', prompt: 'Copy that spell?', options: [COPY, "Don't copy"], best: () => COPY },
+            { ...retarget, askOnlyIfChosen: COPY }]
+          : [retarget],
+        effect: (c: EffectContext) => {
+          if (optional && chosenOption(c, 0) !== COPY) return c.state;
+          const id = c.answering;
+          if (id === undefined || c.state.stackObjects[id]?.kind !== 'spell') return c.state;
+          return copySpellOnStack(c.state, id, c.controller, c.decisions[optional ? 1 : 0]?.target);
+        },
+      })),
+    };
+  }
   const hitTarget = new RegExp(`^(Whenever (?:${selfRef(name)}) deals combat damage to a player, )(.*\\bthat player controls\\b.*)$`, 'i')
     .exec(withoutAbilityWord(plain(line).trim()));
   if (hitTarget !== null) {
@@ -26091,6 +26128,34 @@ function splitDamageClauses(clause: string): readonly string[] {
     .replace(/damage to (?:any other target|another target|a third target)$/i, 'damage to any target')}`);
 }
 
+/**
+ * "Copy target instant or sorcery spell [you control]. You may choose new targets for the copy."
+ * (D755): Twincast's hand-written reading, compiled. Reverberate and Lithoform Engine's ability
+ * say exactly this; the second sentence is the question, not an effect, which is why the two are
+ * read together. A copy of only an instant, or only a sorcery, is not read.
+ */
+function copyTargetSpell(clauses: readonly string[]): ReadEffect | null {
+  if (clauses.length !== 2 || !/^you may choose new targets for the copy\.?$/i.test(clauses[1]!.trim())) return null;
+  const aimed = /^copy target instant or sorcery spell( you control)?\.?$/i.exec(clauses[0]!.trim());
+  if (aimed === null) return null;
+  const yours = aimed[1] !== undefined;
+  return {
+    targets: [{
+      kind: 'spell',
+      description: `target instant or sorcery spell${yours ? ' you control' : ''}`,
+      filter: (state, candidate, controller) => candidate.kind === 'card'
+        && isInstantOrSorcerySpell(state, candidate.id)
+        && (!yours || state.stackObjects[candidate.id]?.controller === controller),
+    }],
+    decisions: [NEW_TARGETS_FOR_THE_COPY],
+    effect: (c) => {
+      const spell = c.targets[0];
+      if (spell === undefined || spell.kind !== 'card') return c.state;
+      return copySpellOnStack(c.state, spell.id, c.controller, c.decisions[0]?.target);
+    },
+  };
+}
+
 function composeEffects(
   printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -26107,6 +26172,9 @@ function composeEffects(
   // The same shape, one sentence over: the ability a token arrives with (D536).
   const granted = tokenAbilityRider(clauses, name);
   if (granted !== null) return granted;
+  // And Twincast's two sentences (D755): see `copyTargetSpell`.
+  const copied = copyTargetSpell(clauses);
+  if (copied !== null) return copied;
   /*
     **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
 
@@ -30132,6 +30200,14 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     if (bullet === null) return null;
     const printed = bullet[1]!.replace(/\s*\.\s*$/, '').trim();
     /*
+      A named mode (D756): "• Attack — Create a 2/2 white Knight creature token." The name has no
+      rules meaning under a "Choose …" header (an ability word's role, CR 207.2c), so the effect
+      after the dash is what is read; the description keeps the name for the table. Sieges, whose
+      names are the choice itself, have another header and never reach this reader.
+    */
+    const named = /^([A-Z0-9][^—•.:;"]{0,48}?) — (.+)$/.exec(printed);
+    const effectText = named === null ? printed : named[2]!.trim();
+    /*
       No `optionalEffect` here, and that is a measured refusal rather than an oversight (D525).
 
       15 legal modal bullets begin with "you may" and **one** reads — Witherbloom Charm's "You may
@@ -30144,7 +30220,7 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
       that makes it two can reverse this on evidence.
     */
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
-    const read = composeEffects(clausesOf(printed), name, null);
+    const read = composeEffects(clausesOf(effectText), name, null);
     if (read === null) return null;
     const flags = { ...(read.spellFlags ?? {}) } as Record<string, unknown>;
     const expires = flags['expiresAtEndOfTurn'] === true;

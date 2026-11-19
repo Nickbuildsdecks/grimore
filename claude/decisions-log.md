@@ -52092,3 +52092,70 @@ Faults injected by script: 10 of 10 caught (two after the self-target and own-sp
 
 Coverage: 13,448 of 31,900 cards (+11), 34,088 of 59,888 lines (+14), measured against the tree
 after the D754 merge.
+## D755 — Spell copies: "Copy target instant or sorcery spell", and cast triggers that copy
+
+"You may choose new targets for the copy." ends 131 unread lines. The engine has had
+`copySpellOnStack` and the new-targets question since the hand-written Twincast; the compiler read
+neither.
+
+- `copyTargetSpell`, a group reader in `composeEffects`: "Copy target instant or sorcery spell [you
+  control]. You may choose new targets for the copy." is Twincast's hand-written reading, on a
+  spell (Reverberate) or an ability (Lithoform Engine's first). The two sentences are read
+  together because the second is the question, not an effect. A copy of only an instant, or only
+  a sorcery, is not read.
+- A `triggerFromLine` pre-reader: "<cast prologue>, [you may] copy it / that spell. You may choose
+  new targets for the copy."
+  - The prologue is read by the trigger table with a stand-in effect, so every cast filter the
+    table knows works here.
+  - The copy is made of `answering`, the spell the cast event saw, as casualty and replicate make
+    theirs.
+  - Only when every event is a cast: an activation or a death has no spell to copy.
+  - "You may copy" asks first, and the new-targets question is asked only after "Copy it"
+    (`askOnlyIfChosen`, D725).
+- Not read: copying abilities, "your next instant or sorcery spell this turn" (Doublecast), and
+  cast filters the table cannot read ("from your library", "with hybrid mana").
+
+**Tests.** 6 engine tests:
+- the cards read; a death trigger's "copy it" and a copy of an instant only stay unread;
+- an opponent's Bolt is copied by Reverberate's shape and both copies hit;
+- copy target spell is refused a creature spell;
+- "spell you control" on an ability copies my own Bolt and is refused the opponent's;
+- the cast trigger copies my spell and not the opponent's;
+- "you may copy": declined, there is no copy and no target question; accepted, both hit.
+
+Faults injected by script: 7. 3 were caught at once. The 4 misses were test gaps, all fixed and
+now caught:
+- the opponent still held priority when "you control" was checked;
+- no test aimed the copy at a creature spell;
+- the non-cast refusal used a prologue that did not parse anyway;
+- the instant-only refusal was printed on an Enchantment, where a spell line never reads.
+
+    engine tests: 5,357, all passing (merged with the other session's D996)
+
+Coverage: 13,449 of 31,900 cards (+16), 34,087 of 59,888 lines (+21), against 5565d3e.
+
+## D756 — Named modes
+
+225 unread bullets on 97 cards print a name in front of the mode: "• Attack — Create a 2/2 white
+Knight creature token." (Battle Menu), "• Surgical Separation — Destroy target creature. …"
+(Impossible Choice). `modalScriptFor` read the whole bullet, name and all, and no effect reader
+knows a sentence that begins with a name.
+
+Under a "Choose …" header the name has no rules meaning, the role an ability word has (CR
+207.2c). So the effect after the dash is read, and the mode's description keeps the name for the
+table. The name must start with a capital letter or digit and hold no sentence punctuation.
+Sieges ("choose Khans or Dragons"), whose names are the choice itself, have another header and
+never reach this reader. Tiered spells ("• Fire — {0} — …") and modal triggers stay unread for
+the same reason.
+
+**Tests.** 3 engine tests:
+- the cards read, with the names in the descriptions; a Siege and a lower-case "name" stay unread;
+- each mode of a named "Choose one" does what follows its name;
+- "Choose one or both" with named modes, both chosen.
+
+Faults injected by script: 3 of 3 caught. The first gate stopped at the test typecheck: a
+`compileCard` script read without the optional chain it needs.
+
+    engine tests: 5,360, all passing
+
+Coverage: 13,471 of 31,900 cards (+17), 34,150 of 59,888 lines (+53), against aaaceb1.
