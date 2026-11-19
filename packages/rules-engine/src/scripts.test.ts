@@ -25153,6 +25153,59 @@ describe('edicts "of their choice" and "on the bottom of its owner\'s library" (
   });
 });
 
+describe('"… that was dealt damage this turn" (D759)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Finisher', 'Instant', 'Destroy target creature that was dealt damage this turn.', { colors: ['B'] }),
+    card('Test Ping', 'Instant', 'Test Ping deals 1 damage to target creature.'),
+    card('Test Ogre', 'Creature — Ogre', '', { power: '3', toughness: '3' }),
+    card('Test Warded', 'Creature — Spirit', 'Prevent all damage that would be dealt to Test Warded.', { colors: ['W'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd759', name: 'Damaged this turn',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd759', 1: 'd759' }, deckSpecs: { d759: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'card', id }] })));
+  const finish = (s: GameState, id: string): Action => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Finisher'), targets: [{ kind: 'card', id }] });
+
+  it('reads it', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('refuses an undamaged creature, and takes it once it has been dealt damage', () => {
+    let s = table({ hands: { 0: ['Test Finisher', 'Test Ping'] }, battlefield: { 1: ['Test Ogre'] } });
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    expect(refusal(s, finish(s, ogre))).toBeTruthy();
+    s = cast(s, 'Test Ping', ogre);
+    expect(s.instances[ogre]!.zone).toBe('battlefield');
+    s = drain(passBoth(apply(s, finish(s, ogre))));
+    expect(s.instances[ogre]!.zone).toBe('graveyard');
+  });
+
+  it('the record ends with the turn', () => {
+    let s = table({ hands: { 0: ['Test Finisher', 'Test Ping'] }, battlefield: { 1: ['Test Ogre'] } });
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = cast(s, 'Test Ping', ogre);
+    expect(s.permanentsDamagedThisTurn?.length).toBe(1);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.permanentsDamagedThisTurn ?? []).toEqual([]);
+  });
+
+  it('prevented damage was never dealt, so it does not count', () => {
+    let s = table({ hands: { 0: ['Test Finisher', 'Test Ping'] }, battlefield: { 1: ['Test Warded'] } });
+    const warded = find(s, 1, 'battlefield', 'Test Warded');
+    s = cast(s, 'Test Ping', warded);
+    expect(refusal(s, finish(s, warded))).toBeTruthy();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -40835,8 +40888,7 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       unrecognised word refuses the whole phrase and the line stays unread and flagged.
 
       Each of these is a real printed phrase with a stated reason, in `parsedTargetPhrase`'s
-      docblock: **dealt damage this turn** needs a per-turn record of who was dealt damage rather than how much
-      is marked on them now; a capitalised word ending in **`s`** may be a plural or a singular
+      docblock: a capitalised word ending in **`s`** may be a plural or a singular
       subtype (`Plains`, `Fungus`) and no rule here separates them, so reading one would be a spell
       that is never castable and never flagged (D486); a **negated** subtype is on none of the
       qualifier lists.
@@ -40847,9 +40899,9 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       is what carries the meaning — the same word lower-cased is a qualifier this parse does not
       know, and refusing it is right.
     */
-    // "Defending player controls" was on this list until D960, which reads it off the source's attack.
+    // "Defending player controls" was on this list until D960, which reads it off the source's attack;
+    // "that was dealt damage this turn" until D759, which keeps the per-turn record it needed.
     for (const phrase of [
-      'destroy target creature that was dealt damage this turn',
       'destroy target squirrel',
       'destroy target creature with squelching',
       'destroy target Sagas',
@@ -59583,8 +59635,9 @@ describe('a spell that costs less for what the board holds (D601)', () => {
     for (const text of [
       // A count that names the card itself: on a card in hand there is nothing to count (D601 break run).
       'This spell costs {1} less to cast for each +1/+1 counter on it.\nDraw a card.',
-      // A target condition the target reader cannot say (D611 reads the ones it can).
-      'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.\nDestroy target creature.',
+      // A target condition the target reader cannot say (D611 reads the ones it can; "that was dealt
+      // damage this turn" is one since D759, "combat damage" is not).
+      'This spell costs {3} less to cast if it targets a creature that was dealt combat damage this turn.\nDestroy target creature.',
       // Only generic mana moves.
       'This spell costs {U} less to cast if an opponent cast two or more spells this turn.\nDraw a card.',
       // A cost increase dropped would be a card better than printed.

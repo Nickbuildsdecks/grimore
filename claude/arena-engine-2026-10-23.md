@@ -34771,3 +34771,35 @@ no throw and no stall.
     engine tests: 5,376, all passing
 
 Coverage: 13,563 of 31,900 cards (+12), 34,415 of 59,888 lines (+24), against 6692231.
+
+## D759 — "… that was dealt damage this turn"
+
+28 unread lines aim at a creature "that was dealt damage this turn": the red-black finishers
+("Destroy target creature that was dealt damage this turn") and their creature and mode cousins.
+
+- **A turn fact, not marked damage.** `permanentsDamagedThisTurn` lists, as `id#objectSeq`, every
+  permanent damage landed on this turn. `recordDamage` writes it, whatever dealt the damage; the
+  older `damagedBy` record keeps only sources on the battlefield. It is cleared with the other turn
+  facts. Marked damage would be the wrong fact: regeneration removes it, and the creature was
+  still dealt the damage. The object sequence keeps a creature that left and came back from
+  counting as damaged (CR 400.7). `wasDealtDamageThisTurn` asks it.
+- **`targetSpecFrom` peels the phrase**, as it peels mana value, power and creature types: the inner
+  phrase must point at a permanent, and the filter asks the record.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- an undamaged creature is refused; pinged for one, the same creature is taken and destroyed;
+- the record is empty again next turn;
+- damage that was prevented was never dealt, so the target is still refused.
+
+Faults injected by script: 4. 3 were caught. The miss is equivalent: it dropped the `amount > 0`
+guard, and prevented damage never reaches `recordDamage`, so the guard is only defensive.
+
+The first gate failed four older tests that held the phrase as unreadable. D611's cost reduction
+"if it targets a creature that was dealt damage this turn" now reads through the same peel, so
+Bitter Downfall is whole. Two refusal rows now use "… combat damage this turn", which still does
+not read, and D469's refusal list drops the phrase.
+
+    engine tests: 5,380, all passing
+
+Coverage: 13,582 of 31,900 cards (+19), 34,442 of 59,888 lines (+27), against 20fdb27.
