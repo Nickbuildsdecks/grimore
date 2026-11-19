@@ -52029,3 +52029,45 @@ the row uses a word that is not a type.
     engine tests: 5,347, all passing
 
 Coverage: 13,433 of 31,900 cards (+42), 34,066 of 59,888 lines (+53), against 5d74447.
+
+## D755 — Spell copies: "Copy target instant or sorcery spell", and cast triggers that copy
+
+"You may choose new targets for the copy." ends 131 unread lines. The engine has had
+`copySpellOnStack` and the new-targets question since the hand-written Twincast; the compiler read
+neither.
+
+- `copyTargetSpell`, a group reader in `composeEffects`: "Copy target instant or sorcery spell [you
+  control]. You may choose new targets for the copy." is Twincast's hand-written reading, on a
+  spell (Reverberate) or an ability (Lithoform Engine's first). The two sentences are read
+  together because the second is the question, not an effect. A copy of only an instant, or only
+  a sorcery, is not read.
+- A `triggerFromLine` pre-reader: "<cast prologue>, [you may] copy it / that spell. You may choose
+  new targets for the copy."
+  - The prologue is read by the trigger table with a stand-in effect, so every cast filter the
+    table knows works here.
+  - The copy is made of `answering`, the spell the cast event saw, as casualty and replicate make
+    theirs.
+  - Only when every event is a cast: an activation or a death has no spell to copy.
+  - "You may copy" asks first, and the new-targets question is asked only after "Copy it"
+    (`askOnlyIfChosen`, D725).
+- Not read: copying abilities, "your next instant or sorcery spell this turn" (Doublecast), and
+  cast filters the table cannot read ("from your library", "with hybrid mana").
+
+**Tests.** 6 engine tests:
+- the cards read; a death trigger's "copy it" and a copy of an instant only stay unread;
+- an opponent's Bolt is copied by Reverberate's shape and both copies hit;
+- copy target spell is refused a creature spell;
+- "spell you control" on an ability copies my own Bolt and is refused the opponent's;
+- the cast trigger copies my spell and not the opponent's;
+- "you may copy": declined, there is no copy and no target question; accepted, both hit.
+
+Faults injected by script: 7. 3 were caught at once. The 4 misses were test gaps, all fixed and
+now caught:
+- the opponent still held priority when "you control" was checked;
+- no test aimed the copy at a creature spell;
+- the non-cast refusal used a prologue that did not parse anyway;
+- the instant-only refusal was printed on an Enchantment, where a spell line never reads.
+
+    engine tests: 5,353, all passing
+
+Coverage: 13,449 of 31,900 cards (+16), 34,087 of 59,888 lines (+21), against 5565d3e.
