@@ -53266,3 +53266,42 @@ The first gate failed two older compile tests, both for the right reason:
 
 Coverage: 13,894 of 31,900 cards (+7), 35,008 of 59,888 lines (+53), against 8ced5e3.
 Pod sweep 59801 (100 games on this build): every game finished, with no throw and no stall.
+
+## D1024 — "one or two target creatures"
+
+"One or two target creatures each get +2/+1 until end of turn" (Heroic Teamwork, Appeal to Eirdu),
+"One or two target creatures gain flying" (Wind Sail), "Return one or two target creatures to
+their owners' hands" (Counterintelligence), "Return one or two target creature cards from your
+graveyard to your hand" (Infernal Rebirth), "Tap one, two, or three target creatures", "One or two
+target creatures can't block this turn". 51 legal cards print "one or two target" and 17 print "one,
+two, or three target". These are "up to" with a floor of one (CR 601.2c, 115.1).
+
+- **`TargetSpec.min`.** With `optional`, it is the fewest that may be chosen. It is asked in the
+  three places that read `optional`:
+  - `checkTargets` refuses an announcement with fewer than the minimum;
+  - `hasAnyLegalTargets` needs that many legal targets before a spell is castable or a trigger is
+    put on the stack;
+  - D750's removal of a trigger whose targets have gone before it is aimed counts them against it.
+- **Compiler.**
+  - `TARGET_QUANTIFIERS` gains "one or two", "one or two other" and "one, two, or three", with
+    `min: 1`, through both spec builders and `targetSpecFrom`'s quantifier group.
+  - Two readers that spelt their own quantifiers now use `TARGET_QUANTIFIER_PREFIX`: "… can't
+    block / be blocked this turn" (so "two target creatures can't block" reads too) and "… each get
+    +N/+N".
+  - A plural keyword grant, "[quantifier] target creatures gain <keywords> until end of turn", has
+    the singular reader's three-way hint.
+
+**Tests.** 5 engine tests:
+- the rows read whole;
+- one target is a cast, two is the most, three is "too many", and none is refused;
+- with an empty graveyard the spell is not castable, and one card is enough;
+- an entry trigger with nothing to aim at is not put on the stack;
+- a trigger whose only card leaves before it is aimed is removed;
+- the plural grant, the three-target tap and the plural "can't block" all work.
+
+Faults injected by script: 8. 7 are caught, two of them after tests added for that purpose. A
+spawned trigger with no targets resolves to nothing, so the castability rule is now asserted
+directly. The 8th was a plural-only guard that nothing printed could reach, and it was folded away.
+
+Coverage: 13,926 of 31,900 cards (+11), 35,057 of 59,888 lines (+20), measured against the merged
+tree with the other session's D765 (13,915 / 35,037).
