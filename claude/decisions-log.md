@@ -51871,3 +51871,35 @@ away).
     engine tests: 5,330, all passing
 
 Coverage: 13,334 of 31,900 cards (+3), 33,926 of 59,888 lines (+3).
+
+## D995 — "Whenever an artifact / enchantment / land is put into a graveyard from the battlefield"
+
+The next openings on D990's prologue list (7 + 7 lines, and a tail of lands, tribes and nontoken
+artifacts). "Dies" is the word Magic keeps for creatures (CR 700.4), so every other permanent says
+the zone change out. The engine already raises `dies` for every permanent that reaches a graveyard
+from the battlefield, with its types and its controller as it left, so this is a parse onto that
+event.
+
+- One row: "Whenever a / an / another [nontoken] <artifact | enchantment | land | creature |
+  permanent | Tribe> [you control | an opponent controls] [with …] is put into a graveyard from the
+  battlefield". With no controller named, it is anybody's.
+- `dies` takes `what: 'land'`, asked off the permanent's last type line. Only this spelling reads
+  it: "whenever a land dies" is still refused.
+- "Put into **your** graveyard" (the owner) is a different question, and this row does not match it.
+
+**Tests.** 5 engine tests:
+- the cards read, and "nontoken" stays on the trigger;
+- "an artifact an opponent controls": theirs fires it and yours does not;
+- "an enchantment you control": yours fires it and theirs does not;
+- "a land": either side's land fires it;
+- "another Goblin you control": yours fires it and theirs does not, and no land trigger hears a
+  creature.
+
+The refusal row "an artifact you control is put into a graveyard from the battlefield" in
+compile.test.ts now reads, so it is gone.
+
+Faults injected by script: 6 of 6 caught (the nontoken one after the reads test pinned it).
+
+    engine tests: 5,334, all passing
+
+Coverage: 13,354 of 31,900 cards (+20), 33,951 of 59,888 lines (+25).
