@@ -24592,6 +24592,9 @@ describe('"attacks you [or a planeswalker you control]" (D996)', () => {
 
   it('at a planeswalker: only the "or a planeswalker you control" rows hear it', () => {
     expect(attack(['Test Bird'], true)).toEqual({ mine: 0, theirs: 2 + 16 });
+  });
+});
+
 describe('spell additional costs: sacrifice a land / a permanent / a nonland permanent, pay X life (D753)', () => {
   const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
   const ROWS = [
