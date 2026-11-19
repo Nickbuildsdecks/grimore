@@ -26315,6 +26315,44 @@ describe('"if ~ is in your graveyard": Bridge from Below and the upkeep returner
   });
 });
 
+describe('"if it had counters on it" on a death (D1015)', () => {
+  const C = (name: string, text: string, power = '0', toughness = '4') => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness });
+  const ROWS = [
+    C('Test Grub', 'When this creature dies, if it had no time counters on it, you gain 3 life.', '1', '1'),
+    C('Test Sergeant', 'Whenever another creature you control dies, if it had a +1/+1 counter on it, you gain 5 life.'),
+    C('Test Angel', 'Whenever another creature you control dies, if it had counters on it, you gain 7 life.'),
+    C('Test Bear', '', '2', '2'),
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1015', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const killWith = (victim: string, counters: Record<string, number>) => {
+    let s = advanceTo(arena({ decks: { 0: 'd1015', 1: 'd1015' }, deckSpecs: { d1015: deck.deck }, hands: { 0: ['Test Kill'] }, battlefield: { 0: ['Test Sergeant', 'Test Angel', victim] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const id = find(s, 0, 'battlefield', victim);
+    s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters } } };
+    const life = s.seats[0]!.life;
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id }] } as Action));
+    expect(s.instances[id]!.zone).toBe('graveyard');
+    return s.seats[0]!.life - life;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a +1/+1 counter" and "counters": read off what it had as it died', () => {
+    expect(killWith('Test Bear', {})).toBe(0);
+    expect(killWith('Test Bear', { '+1/+1': 1 })).toBe(5 + 7);
+    expect(killWith('Test Bear', { charge: 2 })).toBe(7);
+  });
+
+  it('"no time counters": its own death, with and without one', () => {
+    expect(killWith('Test Grub', {})).toBe(3);
+    expect(killWith('Test Grub', { time: 1 })).toBe(7);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

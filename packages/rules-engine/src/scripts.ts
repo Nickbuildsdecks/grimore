@@ -30201,6 +30201,22 @@ function interveningConditionRows(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
   const text = plain(printed).trim();
+  /*
+    "If it had counters on it", "if it had a +1/+1 counter on it", "if it had no time counters on it"
+    (D1015): the counters the permanent had as it left, which the event carries for both asks of an
+    intervening-if (CR 603.4, 603.10a) — Undying's own reason. "Counters" with no kind is any counter.
+  */
+  const had = /^it had (?:(no|one or more|an?) )?(?:([+-]\d+\/[+-]\d+|[a-z]+) )?counters? on it$/i.exec(text);
+  if (had !== null) {
+    const kind = had[2];
+    const count = (c: EffectContext): number => {
+      const counters = c.subjectCounters ?? {};
+      return kind === undefined
+        ? Object.values(counters).reduce((sum, n) => sum + Math.max(0, n), 0)
+        : Math.max(0, counters[kind] ?? 0);
+    };
+    return (had[1] ?? '').toLowerCase() === 'no' ? (c) => count(c) === 0 : (c) => count(c) > 0;
+  }
   // "If this spell was cast from a graveyard" (D715): see `castFromAGraveyard`.
   if (/^this spell was cast from a graveyard$/i.test(text)) return castFromAGraveyard;
   /*
