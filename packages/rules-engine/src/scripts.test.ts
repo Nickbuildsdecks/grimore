@@ -24486,6 +24486,80 @@ describe('the printed "prevent all damage" statics and auras (D752)', () => {
   });
 });
 
+describe('spell additional costs: sacrifice a land / a permanent / a nonland permanent, pay X life (D753)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Volley', 'Instant', 'As an additional cost to cast this spell, sacrifice a land.\nTest Volley deals 3 damage to any target.', { colors: ['R'] }),
+    card('Test Purge', 'Sorcery', 'As an additional cost to cast this spell, sacrifice a permanent.\nYou gain 4 life.', { colors: ['W'] }),
+    card('Test Rite', 'Sorcery', 'As an additional cost to cast this spell, sacrifice a nonland permanent.\nDraw a card.'),
+    card('Test Deluge', 'Sorcery', 'As an additional cost to cast this spell, pay X life.\nAll creatures get -X/-X until end of turn.'),
+    card('Test Agony', 'Sorcery', 'As an additional cost to cast this spell, pay X life.\nEach other player loses X life.'),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    card('Test Ogre', 'Creature — Ogre', '', { colors: ['R'], power: '3', toughness: '3' }),
+  ];
+  const deck = customDeck({
+    id: 'd753', name: 'Additional costs',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 46 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd753', 1: 'd753' }, deckSpecs: { d753: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, extra: object) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra } as Action)));
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ script: { additionalCost: { sacrifice: 'land' } } });
+    expect(compileCard(ROWS[3] as never)).toMatchObject({ script: { additionalCost: { lifeX: true } } });
+  });
+
+  it('sacrifice a land: the land goes as it is cast, and only a land will do', () => {
+    let s = table({ hands: { 0: ['Test Volley'] }, battlefield: { 0: ['Forest', 'Test Bear'] } });
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Volley'), sacrifice: bear, targets: [{ kind: 'player', seat: 1 }] } as Action))
+      .toMatch(/cannot be sacrificed/);
+    const life = s.seats[1]!.life;
+    s = cast(s, 'Test Volley', { sacrifice: forest, targets: [{ kind: 'player', seat: 1 }] });
+    expect(s.instances[forest]!.zone).toBe('graveyard');
+    expect(s.seats[1]!.life).toBe(life - 3);
+  });
+
+  it('sacrifice a permanent takes a land too; a nonland permanent is not offered with only lands', () => {
+    let s = table({ hands: { 0: ['Test Purge', 'Test Rite'] }, battlefield: { 0: ['Forest'] } });
+    const rite = find(s, 0, 'hand', 'Test Rite');
+    expect(legalActions(s, 0).plays.some((p) => p.card === rite)).toBe(false);
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    const life = s.seats[0]!.life;
+    s = cast(s, 'Test Purge', { sacrifice: forest });
+    expect(s.instances[forest]!.zone).toBe('graveyard');
+    expect(s.seats[0]!.life).toBe(life + 4);
+  });
+
+  it('pay X life: X life is paid as it is cast, and every creature gets -X/-X', () => {
+    let s = table({ hands: { 0: ['Test Deluge'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Ogre'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    const life = s.seats[0]!.life;
+    s = cast(s, 'Test Deluge', { x: 2 });
+    expect(s.seats[0]!.life).toBe(life - 2);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.instances[ogre]!.zone).toBe('battlefield');
+  });
+
+  it('pay X life: each other player loses the same X', () => {
+    let s = table({ hands: { 0: ['Test Agony'] } });
+    const mine = s.seats[0]!.life;
+    const theirs = s.seats[1]!.life;
+    s = cast(s, 'Test Agony', { x: 5 });
+    expect(s.seats[0]!.life).toBe(mine - 5);
+    expect(s.seats[1]!.life).toBe(theirs - 5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

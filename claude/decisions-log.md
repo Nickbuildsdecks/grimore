@@ -51915,3 +51915,42 @@ Bank change, and it now reaches only the noncombat form, which no test card prin
     engine tests: 5,336, all passing (merged with the other session's D993 and D994)
 
 Coverage: 13,346 of 31,900 cards (+18), 33,944 of 59,888 lines (+23), against 874e99c.
+
+## D753 — Spell additional costs: sacrifice a land, a permanent, a nonland permanent; pay X life
+
+"As an additional cost to cast this spell, …" is the third-largest opening among unread lines (184).
+The engine's spell path already pays any sacrifice kind `sacrificeOptions` answers (D609), and
+D579 gave it `lifeX` for Toxic Deluge. The compiler read neither.
+
+- `additionalCostFromLine`: "sacrifice a land / a permanent / a nonland permanent / an
+  enchantment" give `additionalCost.sacrifice` of that kind, and "pay X life" gives `lifeX`.
+- X in two body readers, the X the spell was cast with: "<subject> get -X/-X until end of turn"
+  in the mass pump (either side may be X, with either sign), and "each opponent loses X life"
+  (so also "each other player loses X life").
+- **Toxic Deluge now compiles, and the compiled-vs-written test caught it.** The compiled card
+  lacked the hand-written card's two bot hints, `removesACreature` and `bestX`. The hand-written
+  `bestX` is now a named function, `sweepBestX`. The compiled "All creatures get -X/-X until end of
+  turn" carries both hints, so the two readings agree again and the disagreement table stays
+  empty.
+- Not yet: costs with a choice ("sacrifice a creature or pay {3}"), counted sacrifices on a spell
+  ("sacrifice two creatures"; the spell path carries one `sacrifice`), "discard X cards", "discard
+  a card at random".
+
+**Tests.** 5 engine tests:
+- the five cards read, with the cost shapes;
+- "sacrifice a land" refuses a creature, takes the land as the spell is cast, and the spell
+  resolves;
+- "sacrifice a permanent" takes a land; "sacrifice a nonland permanent" is not offered with only
+  lands;
+- "pay X life" pays X as it is cast, and -X/-X kills a 2/2 and spares a 3/3;
+- "each other player loses X life" takes the same X.
+
+Faults injected by script: 7 of 7 caught.
+
+The first gate failed three rows of compile.test.ts's "refuses an additional cost … which the
+engine cannot express" table: "sacrifice a land", "sacrifice a permanent" and "pay X life". The
+engine can now express them, so the rows are gone and the table's comments say why.
+
+    engine tests: 5,338, all passing
+
+Coverage: 13,371 of 31,900 cards (+18), 33,988 of 59,888 lines (+37), against 2a0e8f6.

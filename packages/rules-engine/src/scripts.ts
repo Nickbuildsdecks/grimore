@@ -8383,39 +8383,45 @@ const HANGARBACK_WALKER: CardScript = {
  * number that kills more of theirs than of mine, and nought when no number does — and the table
  * opens its question on the same number rather than on "all your life but one".
  */
+/**
+ * Toxic Deluge's X for the bot (D579), shared with the compiled "All creatures get -X/-X until end of
+ * turn" (D753): the smallest X that kills more of the other players' creatures than of the chooser's.
+ */
+function sweepBestX(state: GameState, chooser: SeatIndex, xMax: number): number {
+  // The smallest number that is worth more to this seat than it costs, which is what a person
+  // works out by looking: how many of theirs dies, how many of mine, and is the trade good.
+  // Nothing above the biggest toughness on the board kills anything more, so the search stops
+  // there: -9/-9 and -4/-4 are the same sweep when nothing has five.
+  const cap = Math.min(xMax, biggestToughness(state));
+  let best = 0;
+  let bestGain = 0;
+  for (let x = 1; x <= cap; x += 1) {
+    let theirs = 0;
+    let mine = 0;
+    for (const id of battlefield(state)) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isCreature || ch.toughness > x) continue;
+      if (inst.zoneSeat === chooser) mine += 1;
+      else theirs += 1;
+    }
+    // Life is a resource and this is the one card here that spends it, so a number that trades
+    // three life for one creature apiece is not an improvement on doing nothing.
+    const gain = theirs - mine;
+    if (gain > bestGain) {
+      bestGain = gain;
+      best = x;
+    }
+  }
+  return best;
+}
+
 const TOXIC_DELUGE: CardScript = {
   name: 'Toxic Deluge',
   removesACreature: true,
   additionalCost: { lifeX: true },
-  bestX: (state, chooser, xMax) => {
-    // The smallest number that is worth more to this seat than it costs, which is what a person
-    // works out by looking: how many of theirs dies, how many of mine, and is the trade good.
-    // Nothing above the biggest toughness on the board kills anything more, so the search stops
-    // there: -9/-9 and -4/-4 are the same sweep when nothing has five.
-    const cap = Math.min(xMax, biggestToughness(state));
-    let best = 0;
-    let bestGain = 0;
-    for (let x = 1; x <= cap; x += 1) {
-      let theirs = 0;
-      let mine = 0;
-      for (const id of battlefield(state)) {
-        const inst = state.instances[id];
-        if (inst === undefined) continue;
-        const ch = characteristicsOf(state, inst);
-        if (!ch.isCreature || ch.toughness > x) continue;
-        if (inst.zoneSeat === chooser) mine += 1;
-        else theirs += 1;
-      }
-      // Life is a resource and this is the one card here that spends it, so a number that trades
-      // three life for one creature apiece is not an improvement on doing nothing.
-      const gain = theirs - mine;
-      if (gain > bestGain) {
-        bestGain = gain;
-        best = x;
-      }
-    }
-    return best;
-  },
+  bestX: sweepBestX,
   onResolve: (c) => (c.x <= 0
     ? c.state
     : pumpAll(c.state, c.source, c.controller, { power: -c.x, toughness: -c.x })),
@@ -13356,14 +13362,15 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       ),
     };
   }
-  const drained = /^each opponent loses (\d+) life(?: and you gain (\d+) life)?$/i.exec(text);
+  // X (D753) is the X the spell was cast with: Bond of Agony's "each other player loses X life".
+  const drained = /^each opponent loses (\d+|X) life(?: and you gain (\d+) life)?$/.exec(text.replace(/^Each/, 'each'));
   if (drained !== null) {
-    const lost = Number(drained[1]);
+    const lost = (c: EffectContext) => (drained[1] === 'X' ? c.x : Number(drained[1]));
     const gained = drained[2] === undefined ? 0 : Number(drained[2]);
     return {
       effect: (c) => {
         const after = opponentsOf(c.state, c.controller)
-          .reduce((state, seat) => loseLife(state, seat, lost), c.state);
+          .reduce((state, seat) => loseLife(state, seat, lost(c)), c.state);
         return gained === 0 ? after : gainLife(after, c.controller, gained);
       },
     };
@@ -13917,21 +13924,29 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    X in either place (D753) is the X the spell was cast with, read as it resolves: Toxic Deluge's
+    "All creatures get -X/-X until end of turn", whose X is the life paid.
+  */
   const team = new RegExp(
     `^(${MASS_PUMP_SUBJECTS})`
-    + ` get (-|\\+)(\\d+)\\/(-|\\+)(\\d+)`
+    + ` get (-|\\+)(\\d+|X)\\/(-|\\+)(\\d+|X)`
     + `(?: and gain ([a-z][a-z', ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (team !== null) {
     const subject = massPumpSubject(team[1]!);
-    const bonus = pumpAndGrant(
-      Number(`${team[2]}${team[3]}`), Number(`${team[4]}${team[5]}`), team[6],
-    );
+    const side = (sign: string, n: string, x: number) => (sign === '-' ? -1 : 1) * (n === 'X' ? x : Number(n));
+    const sized = (x: number) => pumpAndGrant(side(team[2]!, team[3]!, x), side(team[4]!, team[5]!, x), team[6]);
+    const bonus = sized(1);
+    // Toxic Deluge's shape (D753): the hand-written card's two bot hints, so the bot picks its X.
+    const deluge = team[1]!.toLowerCase() === 'all creatures' && team[2] === '-' && team[3] === 'X'
+      && team[4] === '-' && team[5] === 'X' && team[6] === undefined;
     if (subject !== null && bonus !== null) {
       return {
         ...(subject.targets === undefined ? {} : { targets: subject.targets }),
-        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, bonus),
+        ...(deluge ? { spellFlags: { removesACreature: true, bestX: sweepBestX } } : {}),
+        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, sized(c.x) ?? bonus),
         /*
           **The bot hint, and only where it was calibrated.** `expiresAtEndOfTurn` is "hold this for
           the combat", and it has been set on a bonus to your own team since the hand-written
@@ -29092,6 +29107,16 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
     return { additionalCost: { sacrifice: 'creature', sacrificeColours: [COLOUR_WORDS[colouredVictim[1]!.toLowerCase()]!] } };
   }
   if (/^sacrifice an artifact$/i.test(cost)) return { additionalCost: { sacrifice: 'artifact' } };
+  /*
+    The wider kinds D609 gave an ability's cost, on a spell (D753): "sacrifice a land" (Harrow,
+    Shard Volley), "a permanent" (Foundry Helix), "a nonland permanent" (Fatal Grudge). The spell
+    path already pays any kind `sacrificeOptions` answers; only the reading was missing.
+  */
+  const wider: Readonly<Record<string, NonNullable<AbilityCost['sacrifice']>>> = {
+    'a land': 'land', 'a permanent': 'permanent', 'a nonland permanent': 'nonland-permanent', 'an enchantment': 'enchantment',
+  };
+  const widerKind = wider[/^sacrifice (an? .+)$/i.exec(cost)?.[1]?.toLowerCase() ?? ''];
+  if (widerKind !== undefined) return { additionalCost: { sacrifice: widerKind } };
   if (/^sacrifice an artifact or creature$/i.test(cost)) {
     return { additionalCost: { sacrifice: 'artifact-or-creature' } };
   }
@@ -29110,6 +29135,8 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
       return { additionalCost: { exileFromGraveyard: { count, words: exiles[2] ?? '', matches } } };
     }
   }
+  // "Pay X life" (D753): D579's `lifeX`, which Toxic Deluge's hand-written script already uses.
+  if (/^pay X life$/.test(cost)) return { additionalCost: { lifeX: true } };
   const life = /^pay (\d+) life$/i.exec(cost);
   if (life !== null && Number(life[1]) > 0) return { additionalCost: { life: Number(life[1]) } };
   return null;
