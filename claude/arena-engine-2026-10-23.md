@@ -35708,3 +35708,37 @@ moved to this very phrase; it now holds "… died under an opponent's control", 
 
 Coverage: 13,875 of 31,900 cards (+2), 34,940 of 59,888 lines (+3), against c721e9e. Of the 8 lines
 that print it, the rest have another unread clause.
+
+## D1023 — phasing
+
+"Phasing" (CR 702.26a): "As the untap step begins, all phased-in permanents with phasing that the
+active player controls phase out, and simultaneously all phased-out permanents that had phased out
+under that player's control phase in." Printed on Teferi's Drake, Sandbar Crocodile, Merfolk
+Raiders, Breezekeeper, Tolarian Drake, Teferi's Isle and the rest of the Mirage block. D733 had
+already built phasing out and in for Teferi's Protection.
+
+- `phasing` joins `KEYWORDS`. The keyword line reads, and so does a grant ("creatures you control
+  have phasing").
+- The untap step in `onEnterStep` gathers the active seat's battlefield permanents that have
+  phasing before anything phases in, phases in, then phases those out. The two halves are one
+  moment, so a permanent that comes back this step stays until the next one.
+- "All lands / creatures / artifacts / enchantments you control phase out" (Taniwha), and "it
+  phases out" as the event's permanent. With D1021 that reads "whenever a creature you control
+  becomes the target of a spell an opponent controls, it phases out", and the spell then has no
+  target.
+- Not read: "whenever ~ phases in / out" triggers (Teferi's Imp, Warping Wurm, Shimmering Efreet).
+  Phasing raises no event.
+
+**Tests.** 5 engine tests:
+- the rows read whole, and so does "gains phasing until end of turn" (compile.test's refusal row now stands on banding);
+- out at its own untap step, unchanged on the other seat's turn, in at its next own untap step,
+  and out again at the one after;
+- a granted phasing takes the creature and not the enchantment granting it;
+- Taniwha's lands go out at upkeep, come back at the untap step, and go out again;
+- a targeted creature phases out and the spell does nothing.
+
+Faults injected by script: 8 of 8 caught. One of the first run's mutations did not compile, so it
+was rerun as a well-formed one (always reading seat 0's battlefield) and is caught.
+
+Coverage: 13,908 of 31,900 cards (+7), 34,984 of 59,888 lines (+14). Both are measured against
+13,901 / 34,970, the merged tree with the other session's D764 and without this increment.
