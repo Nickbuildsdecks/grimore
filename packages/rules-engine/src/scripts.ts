@@ -634,6 +634,7 @@ const ARMORY_OF_IROAS: CardScript = {
 
 const scry = (count: number): CardsDecisionSpec => ({
   who: 'controller',
+  keyword: 'scry',
   from: 'library-top',
   look: count,
   prompt: `Scry ${count} — put any of these on the bottom`,
@@ -657,6 +658,7 @@ const scry = (count: number): CardsDecisionSpec => ({
  */
 const surveil = (count: number): CardsDecisionSpec => ({
   who: 'controller',
+  keyword: 'surveil',
   from: 'library-top',
   look: count,
   chosenGoTo: 'graveyard',
@@ -18477,6 +18479,19 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you' }],
+  },
+  // "Whenever you scry", "… surveil", "… scry or surveil" (D991): the `scries` event.
+  {
+    prologue: () => /^Whenever you scry, (.+)$/i,
+    on: [{ kind: 'scries', what: 'scry' }],
+  },
+  {
+    prologue: () => /^Whenever you surveil, (.+)$/i,
+    on: [{ kind: 'scries', what: 'surveil' }],
+  },
+  {
+    prologue: () => /^Whenever you scry or surveil, (.+)$/i,
+    on: [{ kind: 'scries', what: 'either' }],
   },
   // And anybody's (D990): "Whenever a creature attacks" — Aggression, War Cadence's shape.
   {

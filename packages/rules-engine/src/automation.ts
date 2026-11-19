@@ -1285,6 +1285,16 @@ function triggerMatches(
       if (actorSeat === undefined) return false;
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
+    // "Whenever you scry / surveil" (D991): whose scry, and which keyword.
+    case 'scries': {
+      const what = want.kind === 'scries' ? want.what ?? 'either' : 'either';
+      const did = (event as { did?: 'scry' | 'surveil' }).did;
+      if (what !== 'either' && did !== what) return false;
+      const by = want.kind === 'scries' ? want.by ?? 'you' : 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     case 'discards':
     case 'cycles': {
       if (want.kind === 'cycles' && want.self === true) return isSubject;
@@ -5019,6 +5029,9 @@ export function answerDecision(
       next, asked !== undefined && !isCountersDecision(asked) && asked.from === 'library-top' ? asked : undefined,
       pending.seat, picked,
     );
+    // "Whenever you scry / surveil" (D991): the keyword happened, whatever was picked.
+    const keyword = asked !== undefined && !isCountersDecision(asked) && 'keyword' in asked ? asked.keyword : undefined;
+    if (keyword !== undefined) next = raise(next, { kind: 'scries', did: keyword }, pending.seat);
   }
   // The object leaving the stack mid-resolution should not be possible — nothing else can happen
   // while a decision is outstanding — but a resolution with nothing to resolve is simply over.

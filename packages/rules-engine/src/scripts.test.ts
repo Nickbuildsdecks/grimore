@@ -7970,6 +7970,8 @@ describe('deck coverage', () => {
       // Prepare (D978): 50 legal cards carry both faces; the compiler reads them, no pool deck plays one.
       'script entersPrepared',
       'trigger reflexive',
+      // D991: "whenever you scry / surveil" — 17 legal lines; the compiler reads them, no pool deck plays one.
+      'trigger scries',
     ]);
 
     const declared = [
@@ -24112,6 +24114,48 @@ describe('a trigger whose targets are gone before it is aimed is removed (D750)'
     const life = s.seats[0]!.life;
     s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [] })), 20);
     expect(s.seats[0]!.life).toBe(life + 2);
+  });
+});
+
+describe('"Whenever you scry / surveil / scry or surveil" (D991)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human Wizard', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' });
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const ROWS = [
+    C('Test Seer', 'Whenever you scry, put a +1/+1 counter on this creature.'),
+    C('Test Mourner', 'Whenever you surveil, put a +1/+1 counter on this creature.'),
+    C('Test Augur', 'Whenever you scry or surveil, put a +1/+1 counter on this creature.'),
+    S('Test Glimpse', 'Scry 2.'),
+    S('Test Peek', 'Surveil 1.'),
+  ];
+  const deck = customDeck({ id: 'd991', name: 'Scry', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 30 }], data: ROWS as never[] });
+  const counters = (spell: string, caster: 0 | 1 = 0) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd991', 1: 'd991' }, deckSpecs: { d991: deck.deck },
+      hands: { [caster]: [spell] }, battlefield: { 0: ['Test Seer', 'Test Mourner', 'Test Augur'], 1: [] }, turn: 3, firstSeat: caster,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: caster, card: find(s, caster, 'hand', spell) } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(apply(s, { type: 'auto:decide', by: caster, cards: [] } as Action), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const of = (name: string) => s.instances[find(s, 0, 'battlefield', name)]!.counters['+1/+1'] ?? 0;
+    return [of('Test Seer'), of('Test Mourner'), of('Test Augur')];
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a scry fires "scry" and "scry or surveil", not "surveil"', () => {
+    expect(counters('Test Glimpse')).toEqual([1, 0, 1]);
+  });
+
+  it('a surveil fires "surveil" and "scry or surveil", not "scry"', () => {
+    expect(counters('Test Peek')).toEqual([0, 1, 1]);
+  });
+
+  it('an opponent\'s scry fires none of yours', () => {
+    expect(counters('Test Glimpse', 1)).toEqual([0, 0, 0]);
   });
 });
 

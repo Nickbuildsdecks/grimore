@@ -1209,6 +1209,17 @@ export type TriggerEvent =
       readonly subject?: string;
     }
   /**
+   * "Whenever you scry", "… surveil", "… scry or surveil" (D991): raised as a scry or surveil
+   * question is answered, once per scry, whoever's ability asked it. `what` is which keyword the
+   * trigger listens for (`either` for both); the engine sets `did` to the one that happened.
+   */
+  | {
+      readonly kind: 'scries';
+      readonly by?: 'you' | 'opponent' | 'any';
+      readonly what?: 'scry' | 'surveil' | 'either';
+      readonly did?: 'scry' | 'surveil';
+    }
+  /**
    * "Whenever one or more +1/+1 counters are put on ~" (D633), and on a creature or a permanent you
    * control. One event per placement on one permanent, however many counters it added — the "one or
    * more" every printing says. Watched from the battlefield; the subject is the permanent the
@@ -1548,6 +1559,8 @@ export interface CardsDecisionSpec {
    * `auto:decide` answer is checked against — rather than off a second rule that could disagree
    * with it. That is the discipline scry already uses for a library.
    */
+  /** Set by `scry` and `surveil` (D991): the keyword this question is, for "whenever you scry". */
+  readonly keyword?: 'scry' | 'surveil';
   readonly fromSeat?: 'chooser' | 'target-player'
     /**
      * "That player reveals their hand. You choose a card from it" on a combat-damage trigger (D987):
