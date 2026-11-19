@@ -4774,9 +4774,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ['discard two cards'],
       ['discard a card at random'],
       ['discard a creature card'],
-      // Kinds the sacrifice has no value for.
-      ['sacrifice a land'],
-      ['sacrifice a permanent'],
+      // Kinds the sacrifice has no value for. ("Sacrifice a land" and "a permanent" read since D753.)
       ['sacrifice a creature or enchantment'],
       ['sacrifice two creatures'],
       // A capitalised word that is not a creature type is not read as one.
@@ -4786,8 +4784,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ['sacrifice a creature or pay {3}{B}'],
       ['discard a card or pay 3 life'],
       ['you may sacrifice an artifact'],
-      // X, announced as the spell is cast; and nothing at all.
-      ['pay X life'],
+      // Nothing at all. ("Pay X life", D579's lifeX, reads since D753.)
       ['pay 0 life'],
       // Other verbs and other zones.
       ['reveal a creature card from your hand'],
