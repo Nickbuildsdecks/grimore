@@ -35408,3 +35408,26 @@ Faults injected by script: 7 of 7 caught (two after the response pin and the own
     engine tests: 5,468, all passing
 
 Coverage: 13,831 of 31,900 cards (+8), 34,872 of 59,888 lines (+11).
+
+## D1015 — "If it had counters on it" on a death
+
+From the intervening-if tally: "if it had counters on it" (10), "if it had a +1/+1 counter on it" (4),
+"if it had one or more counters on it" (3), and "if it had no time counters on it" (Chronozoa, Deadly
+Grub). Basri's Lieutenant, Buzzard-Wasp Colony and Ambitious Augmenter print them.
+
+- An intervening-if row in `interveningConditionRows`: "it had [no | one or more | a] [<kind>]
+  counter(s) on it", read off the counters the permanent had as it left. Both asks of an
+  intervening-if (CR 603.4) already receive that snapshot, for Undying's reason (CR 603.10a). With no
+  kind named it is any counter.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- another creature dying with no counters fires neither; with a +1/+1 counter it fires "a +1/+1
+  counter" and "counters"; with only charge counters it fires "counters";
+- "no time counters" on its own death fires without one and not with one.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 5,471, all passing
+
+Coverage: 13,837 of 31,900 cards (+6), 34,879 of 59,888 lines (+7).
