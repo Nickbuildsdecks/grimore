@@ -52058,3 +52058,37 @@ the row uses a word that is not a type.
     engine tests: 5,347, all passing
 
 Coverage: 13,433 of 31,900 cards (+42), 34,066 of 59,888 lines (+53), against 5d74447.
+
+## D997 — "Whenever you commit a crime" (CR 700.13)
+
+The next opening on D990's prologue list (13 lines), with "an opponent commits a crime" and "a
+player commits a crime" beside it.
+
+- A player commits a crime when a spell they cast, an ability they activate, or a triggered
+  ability they put on the stack targets an opponent, a permanent an opponent controls, a spell or
+  ability an opponent controls, or a card in an opponent's graveyard.
+- `raiseTargeted` is already the one place every stack object announces its targets, so the check
+  is made there. One `crime` event per object, however many of its targets were criminal, with the
+  object's controller as the actor.
+- `crime` takes `by: 'you' | 'opponent' | 'any'`, defaulting to `you`. "This ability triggers only
+  once each turn" already reads (D532) and applies here.
+- "Whenever a player commits a crime, **they** may draw a card" still does not read: "they" is the
+  criminal, a reference this row does not supply. "If you've committed a crime this turn" is not
+  done.
+
+**Tests.** 6 engine tests:
+- the cards read;
+- a spell at the opponent fires yours and their "an opponent commits a crime", and "once each turn"
+  holds on the second;
+- your own creature or yourself is no crime; their creature is;
+- a card in their graveyard is a crime; one in yours is not;
+- countering your own ability or spell is no crime; their counterspell at your spell is theirs;
+  countering their ability is yours;
+- an activated ability at the opponent is a crime.
+
+Faults injected by script: 10 of 10 caught (two after the self-target and own-spell pins).
+
+    engine tests: 5,357, all passing
+
+Coverage: 13,448 of 31,900 cards (+11), 34,088 of 59,888 lines (+14), measured against the tree
+after the D754 merge.
