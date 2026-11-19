@@ -35022,3 +35022,30 @@ after it survived a fault: D961's guard already makes it unreachable.
 
 Coverage: 13,641 of 31,900 cards (+2), 34,572 of 59,888 lines (+2), measured against the tree
 after the D762 merge.
+
+## D1002 — Expend: "Whenever you expend N"
+
+From the refreshed prologue list (9 lines unread for this reason alone, Bloomburrow's Raccoons and
+Muerra, Trash Tactician). "You expend 4 as you spend your fourth total mana to cast spells during a
+turn."
+
+- `payFrom` now reports how much mana a payment spent in all (`manaSpent`), beside D917's colours.
+- `GameState.manaSpentOnSpellsThisTurn`, per seat, counts what casting spells spent. It is cleared at
+  the end of each turn and by a table reset. Mana spent on activated abilities is not counted.
+- Casting a spell adds its payment to the seat's total and raises one `expend` event for each
+  threshold the total crosses, so a three-mana spell after a two-mana one raises 3, 4 and 5.
+- `expend` takes `n` and fires only for its own seat.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- a two-mana spell fires "expend 2", and a three-mana spell after it fires "expend 4", each once;
+  the opponent's "expend 2" stays quiet;
+- mana spent on an activated ability is not expended;
+- the count starts again each turn;
+- a table reset clears it.
+
+Faults injected by script: 9 of 9 caught (two after the opponent and reset pins).
+
+    engine tests: 5,422, all passing
+
+Coverage: 13,649 of 31,900 cards (+8), 34,582 of 59,888 lines (+10).
