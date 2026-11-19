@@ -1464,6 +1464,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(after?.zones[zoneKey(0 as SeatIndex, 'battlefield')]).toHaveLength(2);
     });
 
+    it('reads a token with an inline quoted ability since D1006', () => {
+      const read = compileCard({
+        name: 'Token Maker', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."',
+      });
+      expect(read.ok && read.unread).toEqual([]);
+    });
+
     it.each([
       /*
         Both counted grammars have now **left** this list: "Create X … tokens, where X is …" went
@@ -1471,8 +1479,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         every row about the **token**, not about how many of it there are — which is the useful
         division, because a count is arithmetic and a token's own text is a second card.
       */
-      // A granted ability, not a keyword: `printedKeywords` reads nothing out of it.
-      ['Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."'],
+      /*
+        "Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."" **left**
+        this list (D1006): the inline quoted ability is split off and checked as the "It has" rider
+        is, and written into the token's own text. The reads test below holds it.
+      */
       /*
         "Create a Treasure token." **left** this list, and the reason is worth keeping where the
         refusal was. It was refused for having no printed power and toughness and carrying rules

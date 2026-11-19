@@ -25834,6 +25834,67 @@ describe('basic land types and Lesson in a card filter (D1005)', () => {
   });
 });
 
+describe('tokens with toxic and an inline quoted ability: the Phyrexian Mite (D1006)', () => {
+  const C = (name: string, text: string, power = '1', toughness = '1') => ({ name, type_line: 'Creature — Phyrexian', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power, toughness });
+  const ROWS = [
+    C('Test Carrier', 'When this creature dies, create a 1/1 colorless Phyrexian Mite artifact creature token with toxic 1 and "This creature can\'t block."'),
+    C('Test Breeder', 'When this creature dies, create a 1/1 black and green Pest creature token with "When this creature dies, you gain 1 life."'),
+    C('Test Bear', '', '2', '2'),
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1006', name: 'Mites', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const killed = (who: string, seat: 0 | 1 = 0) => {
+    let s = arena({ decks: { 0: 'd1006', 1: 'd1006' }, deckSpecs: { d1006: deck.deck }, hands: { 0: ['Test Kill', 'Test Kill'] }, battlefield: { 0: [who], 1: ['Test Bear'] }, turn: 3, firstSeat: 0 });
+    s = advanceTo(s, 'precombat-main');
+    return settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, seat, 'battlefield', who) }] } as Action));
+  };
+  const tokenOf = (s: GameState) => ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A quoted sentence nothing reads is still refused.
+    const nonsense = compileCard(C('Test Moon', 'When this creature dies, create a 1/1 green Insect creature token with "Fly over the moon."') as never);
+    expect(nonsense.ok && nonsense.unread).toHaveLength(1);
+  });
+
+  it('the Mite is a 1/1 artifact creature token with toxic 1 that cannot block', () => {
+    let s = killed('Test Carrier');
+    const mite = tokenOf(s);
+    expect(mite).toBeDefined();
+    const ch = characteristicsOf(s, s.instances[mite]!);
+    expect(ch.isCreature).toBe(true);
+    expect(ch.typeLine.types).toContain('Artifact');
+    expect(ch.typeLine.subtypes).toEqual(['Phyrexian', 'Mite']);
+    // It cannot block the opponent's Bear.
+    s = { ...s, activeSeat: 1 } as GameState;
+    expect(canBlock(s, mite, find(s, 1, 'battlefield', 'Test Bear'), 0)).not.toBeNull();
+  });
+
+  it('its hit gives a poison counter as well as the damage', () => {
+    let s = killed('Test Carrier');
+    const mite = tokenOf(s);
+    s = nextTurn(nextTurn(s));
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[1]!.life;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: mite, defender: 1 }] });
+    for (let i = 0; i < 6 && s.step !== 'declare-blockers'; i++) s = settle(passBoth(s));
+    if (ids(s, 1, 'battlefield').length > 0) s = apply(s, { type: 'auto:block', by: 1, blocks: [] });
+    for (let i = 0; i < 12 && s.step !== 'end-combat' && s.step !== 'postcombat-main'; i++) s = settle(passBoth(s));
+    expect(s.seats[1]!.life).toBe(life - 1);
+    expect(s.seats[1]!.poison).toBe(1);
+  });
+
+  it('the Pest\'s quoted "When this creature dies" works on the token', () => {
+    let s = killed('Test Breeder');
+    const pest = tokenOf(s);
+    const life = s.seats[0]!.life;
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: pest }] } as Action));
+    expect(s.seats[0]!.life).toBe(life + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

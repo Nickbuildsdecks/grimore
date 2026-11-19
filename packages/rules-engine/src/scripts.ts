@@ -18,7 +18,7 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  cardHasSubtype, characteristicsOf, conditionHolds, devotionTo, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
+  cardHasSubtype, characteristicsOf, conditionHolds, devotionTo, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword, isPrintedAbilityLine,
   isLegendary,
   parseTypeLine,
   printedKeywords,
@@ -19124,7 +19124,13 @@ function tokenFrom(
     until #324: printed landwalk did nothing at all, so writing it down would have been a token whose
     text lied. Now that it is read, the token can have it, and this is the line that lets it.
   */
-  const readBack = printedKeywords(oracleText).length + printedLandwalk(oracleText).length;
+  /*
+    And toxic (D1006): "a Phyrexian Mite artifact creature token with toxic 1" — a number, so not a
+    \`Keyword\`, but read off the token's own text by \`printedToxic\` the way combat reads any card's,
+    and "toxic" with digits is exactly the part that reader accepts.
+  */
+  const toxicNamed = named.filter((k) => /^toxic \d+$/i.test(k)).length;
+  const readBack = printedKeywords(oracleText).length + printedLandwalk(oracleText).length + toxicNamed;
   if (readBack !== named.length) return null;
 
   const token: CardDef = {
@@ -19163,7 +19169,9 @@ function tokenFrom(
       `printedKeywords` on the def, the static through the same compiled script — and refusing them
       would have cost printings for a caution that bought nothing.
     */
-    if (lineScriptFor(granted, subtype) === null) return null;
+    // Or a line read off the card definition (D1006): "This creature can't block." is a printed
+    // static the characteristics layer applies, with no script behind it.
+    if (lineScriptFor(granted, subtype) === null && !isPrintedAbilityLine(granted, subtype)) return null;
   }
   return { token, printed: made[1]! };
 }
@@ -19458,6 +19466,18 @@ function tokenEffect(
     Reading both is what `tokenEffect`'s docblock listed as missing in two separate bullets, and they
     turn out to be one gap: the count, not the sentence.
   */
+  /*
+    The quoted ability printed inline (D1006): "… token with "This creature can't block."", or after a
+    keyword list, "… token with toxic 1 and "This creature can't block."". Split off here and handed
+    on as the rider \`tokenAbilityRider\` hands on, so \`tokenFrom\` checks it the same way.
+  */
+  const inline = granted === undefined
+    ? /^(.*? tokens?)(?: with (.+?) and| with) "([^"]+)"\.?$/i.exec(clause.trim())
+    : null;
+  if (inline !== null) {
+    const body = inline[2] === undefined ? inline[1]! : `${inline[1]!} with ${inline[2]!}`;
+    return tokenEffect(body, name, inline[3]!.trim(), recipients);
+  }
   const flat = clause.trim().replace(/\.$/, '');
   const announced = /^(.*?),\s*where X is (.+)$/i.exec(flat);
   const perThing = announced !== null ? null : /^(.*?) for each (.+)$/i.exec(flat);
