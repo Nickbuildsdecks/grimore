@@ -21327,6 +21327,37 @@ function targetSpecFrom(
   */
   const printed = trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
   const helped = friendly ? { friendly: true as const } : {};
+  if (parsed) {
+    /*
+      "Other than ~" (D1010): "target creature other than Faceless Butcher", "target permanent other
+      than this creature". The same rule as "another" — not the permanent whose ability this is — so
+      the phrase is read without the clause and the filter refuses the source. The name is taken by
+      its printed capital, as a card name is; a lower-case word ("other than a Wall") is not this.
+    */
+    const otherThan = /^(.+?) other than (?:[A-Z][^,.]*|this (?:creature|permanent|artifact|enchantment|land))$/.exec(trimmed);
+    if (otherThan !== null) {
+      const inner = targetSpecFrom(otherThan[1]!, friendly, parsed);
+      if (inner === null) return null;
+      const filter = inner.filter;
+      return {
+        ...inner, description: printed,
+        filter: (state, candidate, controller, source) => (candidate.kind !== 'card' || candidate.id !== source)
+          && (filter === undefined || filter(state, candidate, controller, source)),
+      };
+    }
+    /*
+      Two colours as alternatives (D1010): "target green or white creature", "target black or red
+      permanent". A colour list on the filter is already an any-of, so the pair reads as the two
+      words side by side; the description keeps the printed "or".
+    */
+    // Permanents only: a spell phrase reads adjacent words as "both" (D490's "blue instant"), so
+    // "white or blue spell" is its own grammar and is left to it.
+    const pair = /^((?:another )?target) (white|blue|black|red|green) or (white|blue|black|red|green) ((?:creature|permanent|nonland permanent|planeswalker|artifact|enchantment)\b.*)$/i.exec(trimmed);
+    if (pair !== null) {
+      const inner = targetSpecFrom(`${pair[1]} ${pair[2]} ${pair[3]} ${pair[4]}`, friendly, parsed);
+      return inner === null ? null : { ...inner, description: printed };
+    }
+  }
   const spec = (rest: Omit<TargetSpec, 'description'>): TargetSpec =>
     ({ ...rest, description: printed, ...helped });
 

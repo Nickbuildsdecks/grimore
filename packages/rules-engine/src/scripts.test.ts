@@ -26039,6 +26039,55 @@ describe('exile from a hand until ~ leaves: Tidehollow Sculler (D1009)', () => {
   });
 });
 
+describe('"other than ~" and two-colour targets (D1010)', () => {
+  const C = (name: string, type: string, colors: string[], text = '') => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors, layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    { name: 'Test Hex', type_line: 'Sorcery', oracle_text: 'Destroy target green or white creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    C('Test Butcher', 'Creature — Nightmare Horror', ['B'], 'When this creature enters, destroy target creature other than this creature.'),
+    C('Test Bear', 'Creature — Bear', ['G']),
+    C('Test Knight', 'Creature — Human Knight', ['W']),
+    C('Test Zombie', 'Creature — Zombie', ['B']),
+    C('Test Ringer', 'Creature — Horror', ['W'], 'When this creature enters, destroy target nonland permanent other than this creature.'),
+  ];
+  const deck = customDeck({ id: 'd1010', name: 'Targets', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], theirs: string[]) => advanceTo(arena({ decks: { 0: 'd1010', 1: 'd1010' }, deckSpecs: { d1010: deck.deck }, hands: { 0: hand }, battlefield: { 0: [], 1: theirs }, turn: 3, firstSeat: 0 }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A lower-case "other than a Wall" is not a name, and is not read as one.
+    const wall = compileCard(C('Test Wall', 'Creature — Wall', ['B'], 'When this creature enters, destroy target creature other than a Wall.') as never);
+    expect(wall.ok && wall.unread).toHaveLength(1);
+  });
+
+  it('"target green or white creature": either colour, and not a black one', () => {
+    const s = table(['Test Hex'], ['Test Bear', 'Test Knight', 'Test Zombie']);
+    const hex = find(s, 0, 'hand', 'Test Hex');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: hex, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Zombie') }] } as Action)).not.toBeNull();
+    for (const name of ['Test Bear', 'Test Knight']) {
+      const after = settle(apply(s, { type: 'auto:cast', by: 0, card: hex, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', name) }] } as Action));
+      expect(namesIn(after, 1, 'graveyard')).toContain(name);
+    }
+  });
+
+  it('"other than this creature": alone, it kills nothing, and with another creature about it kills that one', () => {
+    const alone = settle(apply(table(['Test Butcher'], []), { type: 'auto:cast', by: 0, card: find(table(['Test Butcher'], []), 0, 'hand', 'Test Butcher') } as Action));
+    expect(namesIn(alone, 0, 'battlefield')).toContain('Test Butcher');
+    const s = table(['Test Butcher'], ['Test Zombie']);
+    const after = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Butcher') } as Action));
+    expect(namesIn(after, 0, 'battlefield')).toContain('Test Butcher');
+    expect(namesIn(after, 1, 'graveyard')).toContain('Test Zombie');
+  });
+
+  it('the rest of the phrase still holds: "nonland permanent other than this creature" never takes a land', () => {
+    const s = table(['Test Ringer'], ['Swamp']);
+    const after = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ringer') } as Action));
+    expect(namesIn(after, 1, 'battlefield')).toContain('Swamp');
+    expect(namesIn(after, 0, 'battlefield')).toContain('Test Ringer');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

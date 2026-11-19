@@ -9924,11 +9924,18 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
     ['two types at once', 'Enchant artifact or creature'],      // 22
     ['a type and a subtype', 'Enchant creature or Vehicle'],    // 10
     ['a controller on a land', 'Enchant land you control'],     // 7
-    ['a colour', 'Enchant red or green creature'],              // 3
+    // 'a colour' ("Enchant red or green creature") reads since D1010: D939 reads a narrower creature
+    // host through the parsed vocabulary, and D1010 taught that vocabulary the two-colour pair.
   ])('refuses "enchant %s"', (_label, declaration) => {
     const compiled = aura(`${declaration as string}\nWhen this Aura enters, you gain 2 life.`);
     expect(attachment(compiled)).toBeUndefined();
     expect(unreadLines(compiled)).toContain(declaration as string);
+  });
+
+  it('reads "Enchant red or green creature" since D1010', () => {
+    const compiled = aura('Enchant red or green creature\nWhen this Aura enters, you gain 2 life.');
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(attachment(compiled)).toBeDefined();
   });
 
   it('still refuses an Aura whose whole card is the declaration', () => {
