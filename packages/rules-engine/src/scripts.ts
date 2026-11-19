@@ -24769,6 +24769,33 @@ function readEffect(
       const made = tokenFrom(`create X ${manyTokens[1]!}`);
       if (made !== null) return { effect: (c) => (n(c) === 0 ? c.state : createToken(c.state, c.controller, made.token, n(c))) };
     }
+    // D1007: more of the same — the amount milled, drawn, lost or dealt again.
+    if (/^you mill \u000e many cards$/i.test(text)) return { effect: (c) => mill(c.state, c.controller, n(c)) };
+    if (/^you and that player each draw \u000e many cards$/i.test(text)) {
+      return {
+        effect: (c) => {
+          const seat = hit(c);
+          const mine = drawLater(c.state, c.controller, n(c));
+          return seat === undefined ? mine : drawLater(mine, seat, n(c));
+        },
+      };
+    }
+    if (/^target opponent loses \u000e much life$/i.test(text)) {
+      return {
+        targets: [TARGET_OPPONENT],
+        effect: (c) => {
+          const t = c.targets[0];
+          return t !== undefined && t.kind === 'player' ? loseLife(c.state, t.seat, n(c)) : c.state;
+        },
+      };
+    }
+    // "Each other opponent": every opponent but the one that was hit.
+    if (new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to each other opponent$`, 'i').test(text)) {
+      return {
+        effect: (c) => opponentsOf(c.state, c.controller).filter((seat) => seat !== hit(c)).reduce(
+          (state, seat) => dealDamage(state, { kind: 'player', seat }, n(c), { controller: c.controller, source: c.source }), c.state),
+      };
+    }
     if (/^that player mills \u000e many cards$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };
     }

@@ -25895,6 +25895,54 @@ describe('tokens with toxic and an inline quoted ability: the Phyrexian Mite (D1
   });
 });
 
+describe('"that many / that much" after a hit: mill, both draw, target opponent loses, each other opponent (D1007)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Miller', 'Whenever this creature deals combat damage to a player, you mill that many cards.'),
+    C('Test Sharer', 'Whenever this creature deals combat damage to a player, you and that player each draw that many cards.'),
+    C('Test Leech', 'Whenever this creature deals combat damage to a player, target opponent loses that much life.'),
+    C('Test Spreader', 'Whenever this creature deals combat damage to a player, it deals that much damage to each other opponent.'),
+  ];
+  const deck = customDeck({ id: 'd1007', name: 'Hits', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const swing = (name: string) => {
+    let s = arena({ decks: { 0: 'd1007', 1: 'd1007' }, deckSpecs: { d1007: deck.deck }, battlefield: { 0: [name] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const before = { lives: [s.seats[0]!.life, s.seats[1]!.life], hands: [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length], library: ids(s, 0, 'library').length };
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', name), defender: 1 }] });
+    for (let i = 0; i < 12 && s.step !== 'end-combat' && s.step !== 'postcombat-main'; i++) s = settle(passBoth(s));
+    s = settle(s);
+    return { s, before };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"you mill that many cards": two damage, two cards milled', () => {
+    const { s, before } = swing('Test Miller');
+    expect(before.library - ids(s, 0, 'library').length).toBe(2);
+  });
+
+  it('"you and that player each draw that many cards": two each', () => {
+    const { s, before } = swing('Test Sharer');
+    expect(ids(s, 0, 'hand').length - before.hands[0]!).toBe(2);
+    expect(ids(s, 1, 'hand').length - before.hands[1]!).toBe(2);
+  });
+
+  it('"target opponent loses that much life": two more on top of the hit', () => {
+    const { s, before } = swing('Test Leech');
+    expect(before.lives[1]! - s.seats[1]!.life).toBe(4);
+  });
+
+  it('"each other opponent" leaves out the one that was hit: in a duel, nothing more', () => {
+    const { s, before } = swing('Test Spreader');
+    expect(before.lives[1]! - s.seats[1]!.life).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
