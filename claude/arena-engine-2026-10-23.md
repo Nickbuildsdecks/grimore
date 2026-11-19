@@ -35163,3 +35163,31 @@ after it survived a fault: the digits the regex requires are exactly what that r
     engine tests: 5,437, all passing
 
 Coverage: 13,729 of 31,900 cards (+49), 34,709 of 59,888 lines (+83).
+
+## D1007 — More "that many / that much" after a hit or a life loss
+
+From the effect tails behind "Whenever ~ deals combat damage to a player, …": D903 marks "that
+many / that much" after a damage event (and, since D999, a life-loss event) as the event's amount.
+Four more sentences now read through that mark:
+
+- "you [may] mill that many cards";
+- "you and that player each draw that many cards";
+- "target opponent loses that much life";
+- "it deals that much damage to each other opponent": every opponent except the one that was hit.
+
+"It deals that much damage to each creature that player controls" was tried and dropped: the
+referent rewrite for "that player" changes the sentence before this reader sees it, so the row
+could never match.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- a 2-power hit mills two;
+- a 2-power hit draws two for each of you;
+- "target opponent loses that much life" takes two more on top of the hit;
+- "each other opponent" in a duel adds nothing: the one opponent was the one hit.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,442, all passing
+
+Coverage: 13,735 of 31,900 cards (+6), 34,722 of 59,888 lines (+13).
