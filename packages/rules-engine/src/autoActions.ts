@@ -1285,6 +1285,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   next = raise(next, {
     kind: 'spell-cast',
     spell: spellKind,
+    // How much mana it cost to cast (D1019), for Increment.
+    manaSpent: paid.manaSpent,
     // Which of this caster's spells it is, this turn, for "whenever you cast your second spell each
     // turn" — on the event rather than read at resolution, because by then the tally has moved on
     // (D436's rule, third time). See `GameState.spellsCastThisTurnBy`.

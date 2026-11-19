@@ -1898,6 +1898,12 @@ function fireTrigger(
       return o !== undefined && o.kind === 'triggered' && o.source === holder && o.abilityIndex === abilityIndex;
     })) return next;
   }
+  // Increment (D1019): more mana spent on the spell than this creature's power or its toughness.
+  if (trigger.on.kind === 'spell-cast' && trigger.on.manaSpentOverSelf === true) {
+    const spent = event.kind === 'spell-cast' ? event.manaSpent ?? 0 : 0;
+    const size = characteristicsOf(next, inst);
+    if (!(spent > size.power || spent > size.toughness)) return next;
+  }
   if (trigger.on.kind === 'dies' && trigger.on.damagedBy === 'self') {
     const hitBy = event.kind === 'dies' ? event.subjectDamagedBy ?? [] : [];
     if (!hitBy.includes(damageSourceRef(next, holder))) return next;

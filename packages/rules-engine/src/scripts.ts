@@ -11606,6 +11606,20 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   // Undaunted (D984, CR 702.125a): "This spell costs {1} less to cast for each opponent you have."
   if (/^undaunted$/i.test(text)) return selfCostChangeFromLine('This spell costs {1} less to cast for each opponent.', name);
+  /*
+    Increment (D1019): "Whenever you cast a spell, if the amount of mana you spent is greater than this
+    creature's power or toughness, put a +1/+1 counter on this creature." The cast event carries the
+    mana spent; the comparison is with the creature's live size as the ability triggers.
+  */
+  if (/^increment$/i.test(text)) {
+    return {
+      triggers: [{
+        on: { kind: 'spell-cast', by: 'you', manaSpentOverSelf: true },
+        description: 'Increment (if the mana you spent is greater than this creature\u2019s power or toughness, put a +1/+1 counter on it)',
+        effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield' ? addCounters(c.state, c.source, '+1/+1', 1) : c.state),
+      }],
+    };
+  }
   const outlast = /^outlast\s+((?:\{[^}]*\})+)$/i.exec(text);
   if (outlast !== null) {
     const mana = outlast[1]!;

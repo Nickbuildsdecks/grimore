@@ -955,6 +955,13 @@ export type TriggerEvent =
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
       /**
+       * Increment's condition (D1019): "if the amount of mana you spent is greater than this
+       * creature's power or toughness". Asked in \`fireTrigger\` against the watcher's live size.
+       */
+      readonly manaSpentOverSelf?: true;
+      /** Set by the engine (D1019): how much mana the cast spent, for Increment. */
+      readonly manaSpent?: number;
+      /**
        * "Your **second** spell each turn" — the ordinal this cast has to be for the trigger to
        * fire, counted per caster rather than for the table. 47 legal lines print the second and 3
        * the first (D440).

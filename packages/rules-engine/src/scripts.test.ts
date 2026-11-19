@@ -26534,6 +26534,37 @@ describe('spell targets: whose spell, and what it targets (D1018)', () => {
   });
 });
 
+describe('Increment: more mana spent than this creature\'s power or toughness (D1019)', () => {
+  const I = (name: string, cost: string, cmc: number) => ({ name, type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: cost, cmc, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    { name: 'Test Graffalon', type_line: 'Creature — Giraffe', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '3',
+      oracle_text: 'Increment (Whenever you cast a spell, if the amount of mana you spent is greater than this creature\'s power or toughness, put a +1/+1 counter on this creature.)' },
+    I('Test Two', '{1}{G}', 2), I('Test Three', '{2}{G}', 3), I('Test Free', '{0}', 0),
+  ];
+  const deck = customDeck({ id: 'd1019', name: 'Increment', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const counterAfter = (spell: string, by: 0 | 1 = 0) => {
+    let s = advanceTo(arena({ decks: { 0: 'd1019', 1: 'd1019' }, deckSpecs: { d1019: deck.deck }, hands: { [by]: [spell] }, battlefield: { 0: ['Test Graffalon', 'Forest', 'Forest', 'Forest'], 1: ['Forest', 'Forest', 'Forest'] }, turn: 3, firstSeat: by }), 'precombat-main');
+    s = settle(apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', spell) } as Action));
+    return s.instances[find(s, 0, 'battlefield', 'Test Graffalon')]!.counters['+1/+1'] ?? 0;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 2/3: three mana is more than its power, two is not more than either, nothing is nothing', () => {
+    expect(counterAfter('Test Three')).toBe(1);
+    expect(counterAfter('Test Two')).toBe(0);
+    expect(counterAfter('Test Free')).toBe(0);
+  });
+
+  it('only your own spells', () => {
+    expect(counterAfter('Test Three', 1)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
