@@ -52807,3 +52807,36 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,460, all passing
 
 Coverage: 13,803 of 31,900 cards (+6), 34,829 of 59,888 lines (+7).
+
+## D1013 — Conjunctions in a card filter: "legendary creature card", "noncreature, nonland card"
+
+A tally of the graveyard-card target phrases inside unread lines, each tried as "Return target <X>
+card from your graveyard to your hand.", found the refused ones were all conjunctions: "noncreature,
+nonland card" (6), "legendary creature card" (4), "artifact creature card", "Zombie creature card",
+"enchantment creature card", "nonlegendary creature card", "multicolored card", "black card".
+
+- `graveyardTypeTest` reads several words with no "or" as a conjunction: each word is a test the card
+  must pass. The words are a card type, its negation, a real subtype (by its capital), legendary or
+  nonlegendary, a colour, multicolored or colorless. They are read off the printed card, like the
+  rest of the function. Any other word refuses the phrase.
+- D919's subtype branch now takes single-word parts only, so "Zombie creature" reaches the
+  conjunction instead of being refused there.
+- Every reader of the helper gets it: graveyard targets, the dig's "you may reveal a … card", and the
+  hand-reveal choices.
+
+- **A wrong reading caught by the pregate.** D1010's colour-pair rewrite also reached graveyard phrases
+  ("target white or black creature card from your graveyard"). With this increment that became "white
+  black creature", read as a conjunction: white and black. D527's refusal row failed on it. The pair
+  rewrite now leaves card phrases alone, so the line is unread again, as it should be.
+
+**Tests.** 2 engine tests:
+- the cards read; an unknown word refuses;
+- with a legendary creature, a Bear, an artifact, an artifact creature, a Zombie, a two-colour
+  creature and a land in the graveyard, each spell can target exactly the one card that passes every
+  word.
+
+Faults injected by script: 6 of 6 caught.
+
+    engine tests: 5,462, all passing
+
+Coverage: 13,823 of 31,900 cards (+20), 34,861 of 59,888 lines (+32).
