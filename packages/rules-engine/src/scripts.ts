@@ -30320,7 +30320,8 @@ function interveningConditionRows(
       ? c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0
       : c.state.spellsCastThisTurnByKind?.[`${c.controller}:${kind}`] ?? 0) >= atLeast;
   }
-  if (/^you haven't cast a spell this turn$/i.test(text)) {
+  // "If you didn't cast a spell this turn" (D763): the same fact in the other tense.
+  if (/^you (?:haven't|didn't) cast a spell this turn$/i.test(text)) {
     return (c) => (c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0) === 0;
   }
   /*
@@ -30354,6 +30355,29 @@ function interveningConditionRows(
   }
   if (/^you gained life this turn$/i.test(text)) {
     return (c) => turnFacts.lifeGained(c.state, c.controller) > 0;
+  }
+  /*
+    Life lost this turn (D763), off `lifeLostThisTurn`: "if you lost life this turn", "if you gained
+    or lost life this turn", "if an opponent / a player lost N or more life this turn". Damage turned
+    into poison is not life lost, which that record already keeps.
+  */
+  const lostOf = (state: GameState, seat: SeatIndex): number => state.lifeLostThisTurn[String(seat)] ?? 0;
+  if (/^you lost life this turn$/i.test(text)) return (c) => lostOf(c.state, c.controller) > 0;
+  if (/^you gained or lost life this turn$/i.test(text)) {
+    return (c) => turnFacts.lifeGained(c.state, c.controller) > 0 || lostOf(c.state, c.controller) > 0;
+  }
+  const someoneLost = /^(an opponent|a player) lost (\w+) or more life this turn$/i.exec(text);
+  if (someoneLost !== null) {
+    const atLeast = number(someoneLost[2]!);
+    const opponents = someoneLost[1]!.toLowerCase() === 'an opponent';
+    if (atLeast !== undefined && atLeast >= 1) {
+      return (c) => c.state.seats.some((seat) => (!opponents || seat.index !== c.controller)
+        && lostOf(c.state, seat.index) >= atLeast);
+    }
+  }
+  // "If you didn't attack with a creature this turn" (D763): raid's record, read the other way.
+  if (/^you didn't attack with a creature this turn$/i.test(text)) {
+    return (c) => turnFacts.attacked(c.state, c.controller) === 0;
   }
   // "If you descended this turn" (D612): a permanent card went to your graveyard this turn.
   /*

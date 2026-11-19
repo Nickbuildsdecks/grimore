@@ -35454,3 +35454,34 @@ Faults injected by script: 5 of 5 caught.
     engine tests: 5,474, all passing
 
 Coverage: 13,838 of 31,900 cards (+1), 34,883 of 59,888 lines (+4).
+
+## D763 — Turn facts: life lost, no spell cast, no attack
+
+End-step triggers were the second shape in the re-measured beta queue (40 four-player pods, seed
+59701: 51.1% of the cards players met had an unread line, down from 70.2% at D518). Their bodies
+mostly fail on a turn fact. Several of those facts the engine already records, and only the
+words were missing. New rows in `interveningConditionRows`, so they serve triggers, spells and
+activation restrictions alike:
+- "if you lost life this turn", and "if you gained or lost life this turn", off `lifeLostThisTurn`
+  (life paid counts; damage turned into poison does not, as that record keeps);
+- "if an opponent / a player lost N or more life this turn";
+- "if you didn't cast a spell this turn", the existing "haven't" row in the other tense;
+- "if you didn't attack with a creature this turn", raid's record read the other way.
+
+Not read: "a creature died under your control this turn", which needs a per-seat death record.
+
+**Tests.** 5 engine tests, each an end-step draw checked with and without its fact:
+- the cards read;
+- "lost life" and "gained or lost life": nothing on a quiet turn, both after paying 2 life;
+- "an opponent lost 3 or more": not after 2, yes after 3;
+- "didn't cast a spell": a quiet turn draws, a spell turns it off;
+- "didn't attack with a creature": declaring no attackers draws, an attack turns it off.
+
+Faults injected by script: 5 of 5 caught. The first gate failed a D563 refusal row that held "if
+you lost life this turn" unread; it reads now, as the controller's own record, so the row uses the
+per-player death count instead.
+
+    engine tests: 5,479, all passing (with the other session's D1016 merged)
+
+Coverage: 13,842 of 31,900 cards (+4), 34,888 of 59,888 lines (+7), against 5309345. Most of
+these triggers have a second unread clause.

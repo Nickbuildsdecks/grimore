@@ -26390,6 +26390,69 @@ describe('intervening-if table facts: monarch, initiative, an empty battlefield,
   });
 });
 
+describe('end-step turn facts: life lost, no spell cast, no attack (D763)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const end = (cond: string) => `At the beginning of your end step, if ${cond}, draw a card.`;
+  const ROWS = [
+    card('Test Lost', 'Enchantment', end('you lost life this turn')),
+    card('Test Swing', 'Enchantment', end('you gained or lost life this turn')),
+    card('Test Bled', 'Enchantment', end('an opponent lost 3 or more life this turn')),
+    card('Test Quiet', 'Enchantment', end("you didn't cast a spell this turn")),
+    card('Test Calm', 'Enchantment', end("you didn't attack with a creature this turn")),
+    card('Test Pact', 'Sorcery', 'You lose 2 life.'),
+    card('Test Drain Two', 'Sorcery', 'Each opponent loses 2 life.'),
+    card('Test Drain Three', 'Sorcery', 'Each opponent loses 3 life.'),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd763', name: 'Turn facts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd763', 1: 'd763' }, deckSpecs: { d763: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+  /** The hand's size after seat 0's end step has resolved, against before it. */
+  const drewAtEnd = (s0: GameState): number => {
+    const before = ids(s0, 0, 'hand').length;
+    const s = drain(passBoth(advanceTo(s0, 'end')), 20);
+    return ids(s, 0, 'hand').length - before;
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('you lost life / gained or lost life: only after the life went', () => {
+    expect(drewAtEnd(table({ battlefield: { 0: ['Test Lost', 'Test Swing'] } }))).toBe(0);
+    const s = cast(table({ hands: { 0: ['Test Pact'] }, battlefield: { 0: ['Test Lost', 'Test Swing'] } }), 'Test Pact');
+    expect(drewAtEnd(s)).toBe(2);
+  });
+
+  it('an opponent lost 3 or more: two is not enough, three is', () => {
+    expect(drewAtEnd(cast(table({ hands: { 0: ['Test Drain Two'] }, battlefield: { 0: ['Test Bled'] } }), 'Test Drain Two'))).toBe(0);
+    expect(drewAtEnd(cast(table({ hands: { 0: ['Test Drain Three'] }, battlefield: { 0: ['Test Bled'] } }), 'Test Drain Three'))).toBe(1);
+  });
+
+  it("you didn't cast a spell: a quiet turn draws, a spell turns it off", () => {
+    expect(drewAtEnd(table({ battlefield: { 0: ['Test Quiet'] } }))).toBe(1);
+    expect(drewAtEnd(cast(table({ hands: { 0: ['Test Drain Two'] }, battlefield: { 0: ['Test Quiet'] } }), 'Test Drain Two'))).toBe(0);
+  });
+
+  it("you didn't attack with a creature: an attack turns it off", () => {
+    const quiet = apply(advanceTo(table({ battlefield: { 0: ['Test Calm', 'Test Bear'] } }), 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    expect(drewAtEnd(quiet)).toBe(1);
+    let s = table({ battlefield: { 0: ['Test Calm', 'Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    expect(drewAtEnd(s)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
