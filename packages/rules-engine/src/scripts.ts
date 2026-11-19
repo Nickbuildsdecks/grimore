@@ -21572,6 +21572,7 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
     },
     ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
     ...(quantifier.optional === true ? { optional: true } : {}),
+    ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
   };
 }
 
@@ -22163,8 +22164,13 @@ const TARGET_QUANTIFIERS: Readonly<Record<string, {
   readonly count?: number;
   readonly optional?: true;
   readonly another?: true;
+  readonly min?: number;
 }>> = {
   '': {},
+  // "One or two target creatures" (D1024): up to two, and at least one. See `TargetSpec.min`.
+  'one or two': { optional: true, count: 2, min: 1 },
+  'one or two other': { optional: true, count: 2, min: 1, another: true },
+  'one, two, or three': { optional: true, count: 3, min: 1 },
   another: { another: true },
   'up to one': { optional: true },
   'up to one other': { optional: true, another: true },
@@ -22291,7 +22297,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     capital is a subtype (CR 205.3) and lower case is a card type off an allow-list.
   */
   const whole = printed.trim();
-  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|each of two|each of three|two|three)?\s*target\s+(.+)$/i
+  const opened = /^(one, two, or three|one or two other|one or two|another|up to one other|up to one|up to two other|up to two|up to three other|up to three|each of up to two other|each of up to two|each of up to three other|each of up to three|each of two|each of three|two|three)?\s*target\s+(.+)$/i
     .exec(whole);
   if (opened === null) return null;
   const quantifier = TARGET_QUANTIFIERS[(opened[1] ?? '').trim().toLowerCase()];
@@ -22299,6 +22305,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
   const counted = {
     ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
     ...(quantifier.optional === true ? { optional: true } : {}),
+    ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
   };
   let body = opened[2]!.trim();
 
@@ -24314,8 +24321,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     Blow Your House Down that unblocked one of three creatures would be a card doing a third of what
     it prints.
   */
+  // The quantifier is the shared one (D1024), so "one or two target creatures" and "two target creatures" read too.
   const blocking =
-    /^((?:another )?(?:up to \w+ )?target [^.]+?) can'?t (be blocked|block) this turn$/i.exec(text);
+    new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}?target [^.]+?) can'?t (be blocked|block) this turn$`, 'i').exec(text);
   if (blocking !== null) {
     const unblockable = blocking[2]!.toLowerCase() === 'be blocked';
     const spec = targetSpecFrom(blocking[1]!, unblockable);
@@ -24521,7 +24529,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     turn", "Two target creatures each get +2/+0 and gain first strike until end of turn". Every
     creature chosen gets the same bonus; the aim follows the toughness as the single form's does.
   */
-  const each = /^((?:up to )?(?:two|three) target .+?) each get ([-+]\d+)\/([-+]\d+)(?: and gain ([a-z][a-z', ]*?))? until end of turn$/i.exec(text);
+  // Any plural quantifier (D1024): "one or two target creatures each get +2/+1".
+  const each = new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}target .+?) each get ([-+]\\d+)\\/([-+]\\d+)(?: and gain ([a-z][a-z', ]*?))? until end of turn$`, 'i').exec(text);
   if (each !== null) {
     const power = Number(each[2]);
     const toughness = Number(each[3]);
@@ -24799,6 +24808,29 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           So the grants that are about the attack carry no flag, and the ones that are about
           surviving or about size keep theirs.
         */
+        ...(protective
+          ? { spellFlags: { protectsACreature: true } }
+          : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
+      };
+    }
+  }
+
+  /*
+    The plural grant (D1024): "one or two target creatures gain flying until end of turn" (Wind
+    Sail), "up to two target creatures gain haste". Each target gains the words, with the singular
+    reader's three-way hint: hexproof or shroud protects, haste or infect is for the attack, and
+    the rest waits for blockers.
+  */
+  const grantedMany = new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}target .+?) (?:each )?gain ([a-z][a-z', ]*?) until end of turn$`, 'i').exec(text);
+  if (grantedMany !== null) {
+    const words = grantedKeywordList(grantedMany[2]!);
+    const spec = targetSpecFrom(grantedMany[1]!, true);
+    if (words !== null && spec !== null) {
+      const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
+      const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
+      return {
+        targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
+        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], c.source, c.controller, { keywords: words })),
         ...(protective
           ? { spellFlags: { protectsACreature: true } }
           : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),

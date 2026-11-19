@@ -39,7 +39,7 @@ import {
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
-import { preferredOption, settle as engineSettle } from './automation.js';
+import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor } from './legalActions.js';
 import { reducedCostText } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
@@ -26975,6 +26975,92 @@ describe('Curses: Auras that enchant a player (D765)', () => {
     s = drain(passBoth(advanceTo(s, 'draw')), 20);
     expect(libraries()[2]).toBe(before[2]! - 1);
     expect(libraries()[1]).toBe(after[1]);
+  });
+});
+
+describe('"one or two target creatures" (D1024)', () => {
+  const I = (name: string, text: string, type = 'Instant') => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    I('Test Sail', 'One or two target creatures gain flying until end of turn.'),
+    I('Test Teamwork', 'One or two target creatures each get +2/+1 until end of turn.'),
+    I('Test Rebirth', 'Return one or two target creature cards from your graveyard to your hand.', 'Sorcery'),
+    I('Test Tangle', 'Tap one, two, or three target creatures.'),
+    I('Test Snag', 'One or two target creatures can\'t block this turn.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Herald', type_line: 'Creature — Spirit', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'When Test Herald enters, return one or two target creature cards from your graveyard to your hand.' },
+  ];
+  const deck = customDeck({ id: 'd1024', name: 'One or two', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 36 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string, mine: readonly string[], theirs: readonly string[] = [], graveyard: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1024', 1: 'd1024' }, deckSpecs: { d1024: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: ['Island', ...theirs] }, hands: { 0: [hand] }, graveyard: { 0: [...graveyard] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets: readonly Target[]) => ({
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets,
+  } as Action);
+  const at = (...xs: string[]) => xs.map((id) => ({ kind: 'card', id }) as Target);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one is enough, two is the most, and none is not a cast', () => {
+    const s = table('Test Teamwork', ['Test Bear', 'Test Bear'], ['Test Bear']);
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    expect(refusal(s, cast(s, 'Test Teamwork', []))).not.toBeNull();
+    expect(refusal(s, cast(s, 'Test Teamwork', at(a!, b!, theirs)))).toMatch(/too many/);
+    let one = settle(apply(s, cast(s, 'Test Teamwork', at(a!))));
+    expect([power(one, a!), power(one, b!)]).toEqual([4, 2]);
+    one = settle(apply(s, cast(s, 'Test Teamwork', at(a!, theirs))));
+    expect([power(one, a!), power(one, theirs)]).toEqual([4, 4]);
+  });
+
+  it('a card with nothing to aim at cannot be cast; with one card it can', () => {
+    let s = table('Test Rebirth', []);
+    expect(refusal(s, cast(s, 'Test Rebirth', []))).not.toBeNull();
+    s = table('Test Rebirth', [], [], ['Test Bear']);
+    s = settle(apply(s, cast(s, 'Test Rebirth', at(find(s, 0, 'graveyard', 'Test Bear')))));
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bear');
+  });
+
+  it('a trigger with nothing to aim at is not put on the stack; one whose card goes before it is aimed is removed', () => {
+    let s = table('Test Herald', []);
+    s = drain(passBoth(drain(apply(s, cast(s, 'Test Herald', [])), 30)), 30);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Herald');
+    expect(s.stackOrder).toEqual([]);
+    expect(s.pendingChoice).toBeNull();
+
+    // "One or two" needs one: none in the graveyard is no target at all, one is enough.
+    const rebirth = compileCard(ROWS.find((r) => r.name === 'Test Rebirth') as never);
+    const specs = rebirth.ok ? rebirth.script?.targets ?? [] : [];
+    expect(specs.map((spec) => [spec.count, spec.optional, spec.min])).toEqual([[2, true, 1]]);
+    expect(hasAnyLegalTargets(s, specs, 0)).toBe(false);
+
+    s = table('Test Herald', [], [], ['Test Bear']);
+    expect(hasAnyLegalTargets(s, specs, 0)).toBe(true);
+    s = drain(passBoth(drain(apply(s, cast(s, 'Test Herald', [])), 30)), 30);
+    expect(s.pendingChoice?.seat).toBe(0);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    s = apply(s, { type: 'card:move', by: 0, card: bear, toZone: 'exile' } as Action);
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [] } as Action);
+    expect(s.pendingChoice).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('the plural grant, the plural tap, the plural can\'t-block', () => {
+    let s = table('Test Sail', ['Test Bear', 'Test Bear']);
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = settle(apply(s, cast(s, 'Test Sail', at(a!, b!))));
+    expect([a!, b!].map((id) => characteristicsOf(s, s.instances[id]!).keywords.has('flying'))).toEqual([true, true]);
+    s = table('Test Tangle', [], ['Test Bear', 'Test Bear', 'Test Bear']);
+    const theirs = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = settle(apply(s, cast(s, 'Test Tangle', at(...theirs))));
+    expect(theirs.map((id) => s.instances[id]!.tapped)).toEqual([true, true, true]);
+    s = table('Test Snag', [], ['Test Bear']);
+    expect(refusal(s, cast(s, 'Test Snag', []))).not.toBeNull();
   });
 });
 

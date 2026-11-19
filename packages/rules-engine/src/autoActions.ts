@@ -3226,8 +3226,8 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
     controls" after that player left the game, and with them the attack. Refusing every answer
     instead left the table waiting on a choice nobody could make — sweep seed 59203.
   */
-  const unaimable = specs.some((spec) => spec.optional !== true
-    && legalTargets(state, spec, action.by, object.source).length === 0);
+  const unaimable = specs.some((spec) => legalTargets(state, spec, action.by, object.source).length
+    < (spec.optional === true ? spec.min ?? 0 : 1));
   if (unaimable) {
     const objects = { ...state.stackObjects };
     delete objects[object.id];

@@ -52,6 +52,12 @@ export interface TargetSpec {
   /** "up to": the spell is castable with fewer, including none. */
   readonly optional?: boolean;
   /**
+   * With `optional`, the fewest that may be chosen (D1024): "**one or two** target creatures" is
+   * `count: 2, optional: true, min: 1`. A spell or ability needs that many legal targets to be cast
+   * or put on the stack, and is announced with no fewer.
+   */
+  readonly min?: number;
+  /**
    * Advice to the bot: how many of an "any number of targets" spec to take (D579).
    *
    * The bot fills a spec to its `count`, which is right for "up to two target creatures" and

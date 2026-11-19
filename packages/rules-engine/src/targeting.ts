@@ -284,8 +284,9 @@ export function checkTargets(
       index += 1;
     }
     if (taken.length < want) {
-      // "Up to" lets you choose fewer, including none; a required target does not.
-      if (spec.optional) continue;
+      // "Up to" lets you choose fewer, including none; a required target does not; and "one or
+      // two" lets you choose fewer, down to its minimum (D1024).
+      if (spec.optional && taken.length >= (spec.min ?? 0)) continue;
       if (available.length === 0) return { ok: false, reason: `there is no legal ${spec.description}` };
       return { ok: false, reason: `choose ${spec.description}` };
     }
@@ -455,5 +456,7 @@ export function stillHasLegalTarget(
 export function hasAnyLegalTargets(
   state: GameState, specs: readonly TargetSpec[], controller: SeatIndex, source?: string,
 ): boolean {
-  return specs.every((spec) => spec.optional || legalTargets(state, spec, controller, source).length > 0);
+  return specs.every((spec) => (spec.optional
+    ? (spec.min ?? 0) === 0 || legalTargets(state, spec, controller, source).length >= spec.min!
+    : legalTargets(state, spec, controller, source).length > 0));
 }
