@@ -52657,3 +52657,32 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,442, all passing
 
 Coverage: 13,735 of 31,900 cards (+6), 34,722 of 59,888 lines (+13).
+
+## D1008 — Filtered attack triggers and "with a counter on it"
+
+From the "Whenever a creature you control …" tails: "Whenever a creature you control with a +1/+1
+counter on it attacks" and "… with a counter on it deals combat damage to a player".
+
+- **A filter on the attacker.** "Whenever a creature you control with <filter> attacks" reads every
+  `boardFilter` filter: power and toughness bounds, a named counter, a keyword. The attack event now
+  carries the attacker's live toughness and counters beside the keywords and power D996 added, and
+  `attacks` joins the shared characteristic check, which replaces D996's two attack-only lines.
+- **"With a counter on it"** is any counter: `withCounter: 'any'`. It reads on every board event that
+  takes the filter (enters, dies, combat damage, attacks).
+- "With power equal to its toughness" is still refused.
+
+**Tests.** 4 engine tests:
+- the cards read; "power equal to its toughness" stays unread;
+- a 2/2 with no counters fires only "power 2 or less";
+- a +1/+1 counter makes it 3/3: "with a +1/+1 counter", "with a counter" and "toughness 3 or greater"
+  fire, and "power 2 or less" does not;
+- another kind of counter is "a counter" but not "a +1/+1 counter".
+
+D478's refusal row "a creature you control with a counter on it dies" in compile.test.ts now reads,
+so it became a reads test.
+
+Faults injected by script: 8 of 8 caught (one after the toughness pin).
+
+    engine tests: 5,446, all passing
+
+Coverage: 13,742 of 31,900 cards (+7), 34,735 of 59,888 lines (+13).
