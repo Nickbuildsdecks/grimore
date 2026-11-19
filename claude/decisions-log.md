@@ -52574,3 +52574,25 @@ after it survived a fault: `settle` only offers the event to permanents on the b
     engine tests: 5,430, all passing
 
 Coverage: 13,674 of 31,900 cards (+16), 34,619 of 59,888 lines (+26).
+
+## D1005 — Basic land types and "Lesson" in a card filter
+
+From the effect tails behind "When ~ enters, …": the Eclipsed cycle's "You may reveal a Goblin,
+Swamp or Mountain card from among them" and Guru Pathik's "a Lesson, Saga, or Shrine card" were
+refused for one word each. `graveyardTypeTest` reads a subtype only from a known list
+(`CARD_SUBTYPES_READ`, D919), and the five basic land types and `Lesson` were not on it.
+
+- `CARD_SUBTYPES_READ` adds Plains, Island, Swamp, Mountain, Forest and Lesson. Every reader that
+  uses the helper gets them: the dig, the graveyard targets, and the hand-reveal choices.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- "a Goblin, Swamp or Mountain card" offers the Goblin, the Swamp and the Mountain, and not a Forest
+  or a Bear;
+- "a Lesson, Saga, or Shrine card" offers the Lesson and the Saga, and not an artifact.
+
+Faults injected by script: 2 of 2 caught.
+
+    engine tests: 5,433, all passing
+
+Coverage: 13,680 of 31,900 cards (+6), 34,626 of 59,888 lines (+7).
