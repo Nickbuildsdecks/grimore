@@ -7974,6 +7974,8 @@ describe('deck coverage', () => {
       'trigger scries',
       // D997: "whenever you commit a crime" — 13 legal lines; the compiler reads them, no pool deck plays one.
       'trigger crime',
+      // D999: "whenever an opponent loses life" (Exquisite Blood); the compiler reads it, no pool deck plays one.
+      'trigger life-lost',
     ]);
 
     const declared = [
@@ -25237,6 +25239,48 @@ describe('edicts "of their choice" and "on the bottom of its owner\'s library" (
     const library = ids(s, 1, 'library');
     expect(library[library.length - 1]).toBe(bear);
     expect(library[0]).not.toBe(bear);
+  });
+});
+
+describe('"whenever an opponent loses life" (D999)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Enchantment', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    C('Test Blood', 'Whenever an opponent loses life, you gain that much life.'),
+    C('Test Crank', 'Whenever an opponent loses life, that player mills that many cards.'),
+    C('Test Grief', 'Whenever you lose life, draw a card.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Zap', type_line: 'Instant', oracle_text: 'Test Zap deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Drain', type_line: 'Instant', oracle_text: 'Target player loses 2 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd999', name: 'Blood', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const run = (spell: string, target: (s: GameState) => Target) => {
+    let s = arena({ decks: { 0: 'd999', 1: 'd999' }, deckSpecs: { d999: deck.deck }, hands: { 0: [spell] }, battlefield: { 0: ['Test Blood', 'Test Crank', 'Test Grief'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0 });
+    s = advanceTo(s, 'precombat-main');
+    const before = { life: s.seats[0]!.life, hand: ids(s, 0, 'hand').length, library: ids(s, 1, 'library').length };
+    const after = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [target(s)] } as Action));
+    return { gained: after.seats[0]!.life - before.life, drew: ids(after, 0, 'hand').length - (before.hand - 1), milled: before.library - ids(after, 1, 'library').length };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('damage to the opponent is life lost: "that much" is the damage, and "that player" is who lost it', () => {
+    expect(run('Test Zap', () => ({ kind: 'player', seat: 1 }))).toEqual({ gained: 3, drew: 0, milled: 3 });
+  });
+
+  it('"loses 2 life" is the same event without damage', () => {
+    expect(run('Test Drain', () => ({ kind: 'player', seat: 1 }))).toEqual({ gained: 2, drew: 0, milled: 2 });
+  });
+
+  it('your own loss fires "you lose life" and not "an opponent"', () => {
+    expect(run('Test Drain', () => ({ kind: 'player', seat: 0 }))).toEqual({ gained: -2, drew: 1, milled: 0 });
+  });
+
+  it('damage to their creature is no life lost', () => {
+    expect(run('Test Zap', (s) => ({ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }))).toEqual({ gained: 0, drew: 0, milled: 0 });
   });
 });
 
