@@ -35839,3 +35839,52 @@ directly. The 8th was a plural-only guard that nothing printed could reach, and 
 
 Coverage: 13,926 of 31,900 cards (+11), 35,057 of 59,888 lines (+20), measured against the merged
 tree with the other session's D765 (13,915 / 35,037).
+
+## D766 — Phyrexian mana
+
+`parseManaCost` refused `{B/P}` outright (`unsupported`). So **33 legal cards with a Phyrexian
+symbol in their mana cost could not be cast at all**: Dismember, Gitaxian Probe, Gut Shot, Mental
+Misstep, Birthing Pod, Mutagenic Growth and the rest, several of them Commander staples. 38
+activated abilities print one in a cost and were unread. Found by grouping the unread lines that
+end "Activate only as a sorcery." (the Phyrexian transform creatures).
+
+**One mana of that colour, or 2 life (CR 107.4f).**
+- `parseManaCost` counts each Phyrexian symbol in `colors` and notes it in `ManaCost.phyrexian`.
+  Every check that knows nothing of life therefore reads the cost as payable with mana only,
+  which is never cheaper than the card; none of the 62 call sites had to change to stay correct.
+- `phyrexianWays` lists the ways to pay: each subset of the symbols paid with 2 life apiece,
+  fewest life payments first. `phyrexianPayment` picks the first way the pool and the sources
+  can cover within a life budget. `canAfford` takes that budget as an optional argument, default
+  none.
+- `payFrom`, the one payer, pays mana first and 2 life for each symbol the mana cannot cover,
+  within `canPayLife`'s line (never the last life point; nothing while life can't change). The
+  life is paid as part of the cost.
+- `legalActions` passes the same budget (`phyrexianLife`) to the spell, activated-ability and
+  tapped-cost affordability checks. The side options (kicker, buyback, entwine) stay mana-only,
+  the conservative side: such a play is not offered rather than charged wrongly.
+- Not done: choosing to pay life while holding the mana, so a player can keep mana open, which
+  needs a choice on the cast; and hybrid Phyrexian `{G/U/P}`, which stays refused.
+
+**Tests.** 5 engine tests:
+- `{1}{B/P}{B/P}` parses as two black noted Phyrexian, mana value 3, and the cards read;
+- three Swamps: Dismember kills the 3/3 for no life;
+- a Swamp and a Mountain: one symbol in mana, the other for 2 life;
+- a Mountain alone: offered, and paid with 4 life. At 4 life it is not offered, and sent anyway
+  it is refused by the payment itself; at 5 it is offered;
+- an ability's `{1}{R/P}` off a Swamp alone: the Swamp and 2 life, and the pump resolves.
+
+Faults injected by script: 7. 6 were caught at once. The miss (the payer allowed the last life
+point) was hidden behind the offer's own refusal; the direct cast at 4 life now catches it.
+
+The first gate failed three mana.test.ts rows that pinned `{R/P}` as unsupported. They now assert
+the new reading: its colour, noted, payable by life only with a budget. The "refuses rather than
+guessing" and "first unsupported symbol" rows use snow, monocoloured hybrid and hybrid Phyrexian,
+which are still refused.
+
+Pod sweeps 59901, 60001 and 60101 (300 games on this build, D765 and D766): every game finished,
+with no throw and no stall.
+
+    engine tests: 5,525, all passing (with the other session's D1023 and D1024 merged)
+
+Coverage: 13,923 of 31,900 cards (+14), 35,051 of 59,888 lines (+26), against fe4462f. The cards
+that become castable are not in the line count: their lines were already read.

@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   EMPTY_POOL,
   addMana,
+  canAfford,
   canPay,
   characteristicsOf,
   costColors,
@@ -89,20 +90,31 @@ describe('parseManaCost', () => {
     expect(parseManaCost('{2}{R}{R}').hybrids).toBeUndefined();
   });
 
-  it('still refuses phyrexian, snow and monocoloured hybrid rather than guessing', () => {
+  it('still refuses snow and monocoloured hybrid rather than guessing', () => {
     /*
-      Each of the three is a *different* shape from colour hybrid, and approximating any of them
-      into it would be wrong in a way a player would feel: `{2/W}` is two generic **or** one white,
-      and `{R/P}` is one red or two life.
+      Each is a *different* shape from colour hybrid, and approximating either into it would be wrong
+      in a way a player would feel: `{2/W}` is two generic **or** one white. Phyrexian was on this
+      list until D766, which reads it (below).
     */
-    expect(parseManaCost('{R/P}').unsupported).toBe('R/P');
     expect(parseManaCost('{2}{S}').unsupported).toBe('S');
     expect(parseManaCost('{2/W}').unsupported).toBe('2/W');
-    expect(canPay(pool({ R: 9, G: 9, C: 9 }), parseManaCost('{R/P}'))).toBe(false);
+    expect(parseManaCost('{G/U/P}').unsupported).toBe('G/U/P');
+  });
+
+  it('reads phyrexian as its colour, noted, so only a life budget can pay it otherwise (D766)', () => {
+    const cost = parseManaCost('{R/P}');
+    expect(cost.unsupported).toBeUndefined();
+    expect(cost.colors.R).toBe(1);
+    expect(cost.phyrexian).toEqual(['R']);
+    // With no life to spend it is one red mana, and nothing else pays it.
+    expect(canPay(pool({ R: 1 }), cost)).toBe(true);
+    expect(canPay(pool({ G: 9, C: 9 }), cost)).toBe(false);
+    expect(canAfford(pool({ G: 9 }), cost, [], 0, 0)).toBe(false);
+    expect(canAfford(pool({ G: 9 }), cost, [], 0, 2)).toBe(true);
   });
 
   it('reports the first unsupported symbol it meets, not the last', () => {
-    expect(parseManaCost('{R/P}{S}').unsupported).toBe('R/P');
+    expect(parseManaCost('{S}{2/W}').unsupported).toBe('S');
   });
 
   it('solves two hybrid symbols that compete for the same mana', () => {
@@ -297,7 +309,7 @@ describe('solveTap', () => {
   });
 
   it('refuses a cost it cannot read rather than tapping hopefully', () => {
-    expect(solveTap(EMPTY_POOL, parseManaCost('{R/P}'), [land('m1', 'R')])).toBeNull();
+    expect(solveTap(EMPTY_POOL, parseManaCost('{S}'), [land('m1', 'R')])).toBeNull();
   });
 
   it('pays for X out of the sources available', () => {

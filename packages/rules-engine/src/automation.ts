@@ -45,7 +45,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  canPayLife, drawLater, energyOf, opponentsOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
+  canPayLife, lifeLocked, drawLater, energyOf, opponentsOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
@@ -58,6 +58,7 @@ import { EngineError, type GameState, type Outcome, type SeatIndex } from './typ
 import { reducedCostText,
   EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
+  phyrexianPayment,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, RIOT, scriptFor, soleTargetSpecOf } from './scripts.js';
@@ -4594,8 +4595,23 @@ function payFrom(
     : parseManaCost(costText);
   // `extraGeneric` is the commander tax (CR 903.8): generic mana on top of the printed cost, which
   // the card itself has not changed.
-  const cost = extraGeneric > 0 ? { ...printed, generic: printed.generic + extraGeneric } : printed;
+  const charged = extraGeneric > 0 ? { ...printed, generic: printed.generic + extraGeneric } : printed;
   let next = state;
+  /*
+    Phyrexian symbols (D766, CR 107.4f): mana first, and 2 life for each symbol the mana cannot
+    cover, as long as the life can be paid (`canPayLife`'s line: never the life that ends the game).
+    The life is paid here, as part of the cost, before anything is tapped.
+  */
+  let cost = charged;
+  if ((charged.phyrexian ?? []).length > 0) {
+    const budget = lifeLocked(state, seat) ? 0 : Math.max(0, (state.seats[seat]?.life ?? 0) - 1);
+    const way = phyrexianPayment(poolOf(state, seat), charged,
+      manaSources(state, seat, paying).filter((source) => exclude?.has(source.key) !== true), x, budget);
+    if (way !== null && way.life > 0) {
+      cost = way.cost;
+      next = loseLife(next, seat, way.life);
+    }
+  }
   let tapped: readonly string[] = [];
   const floating = poolOf(state, seat);
   /** What the restricted sources tapped here made, by type — see the end of this function. */

@@ -22,7 +22,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { canPayLife, energyOf, paymentWords, poolOf, preparedCopyOf } from './effects.js';
+import { canPayLife, energyOf, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
@@ -2161,7 +2161,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       && !canAfford(poolOf(state, seat), payable, restrictedMana
         // A restricted mana source counts for a spell its restriction allows (D595).
         ? manaSources(state, seat, payingFor(state, id, def))
-        : sources)) {
+        : sources, 0, phyrexianLife(state, seat))) {
       why(id, 'not enough mana, counting every land you could still tap');
       continue;
     }
@@ -2660,7 +2660,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       if (ability.cost.mana
         && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), restrictedMana
           ? manaSources(state, seat, { abilityOf: ch.typeLine })
-          : sources)) continue;
+          : sources, 0, phyrexianLife(state, seat))) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
       // a Mana Confluence stops making mana at one life and a City of Brass does not.
       const lifeCost = abilityLifeCost(state, seat, ability.cost);
@@ -2729,7 +2729,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources;
         const spent = new Set<string>([...(ability.cost.tap ? [id] : []), ...(crew ?? []), ...(tapped ?? [])]);
         const affords = (also?: string) => canAfford(poolOf(state, seat), cost,
-          all.filter((source) => !spent.has(source.key) && source.key !== also));
+          all.filter((source) => !spent.has(source.key) && source.key !== also), 0, phyrexianLife(state, seat));
         if (spent.size > 0 && !affords()) continue;
         if (ability.cost.sacrifice !== undefined) {
           fodder = victims.filter((victim) => affords(victim));
@@ -2924,6 +2924,14 @@ export function withCostChange(cost: ManaCost, change: number): ManaCost {
 }
 
 /** Everything `seat` may do in the current state. */
+/**
+ * The life a seat may pay toward Phyrexian symbols (D766): all but the last point, as every life
+ * payment here (`canPayLife`), and none while its life total can't change.
+ */
+function phyrexianLife(state: GameState, seat: SeatIndex): number {
+  return lifeLocked(state, seat) ? 0 : Math.max(0, (state.seats[seat]?.life ?? 0) - 1);
+}
+
 export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   /**
    * Holding priority, which is not the same as being named in `state.priority`.

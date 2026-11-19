@@ -71,6 +71,13 @@ export interface ManaCost {
    * Absent means none, so every cost written before this field existed reads the same.
    */
   readonly hybrids?: readonly (readonly ManaType[])[];
+  /**
+   * The Phyrexian symbols (D766, CR 107.4f): `{B/P}` is one black mana **or 2 life**. Each is also
+   * counted in `colors`, so every check that knows nothing of life reads the cost as payable with
+   * mana only, which is never cheaper than the card. Only the checks that are given a life budget
+   * (`canAfford`'s, and `payFrom`) may pay some of them with life instead. Absent means none.
+   */
+  readonly phyrexian?: readonly Color[];
   readonly unsupported?: string;
 }
 
@@ -106,6 +113,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   let xCount = 0;
   let unsupported: string | undefined;
   const hybrids: ManaType[][] = [];
+  const phyrexian: Color[] = [];
   const colors: Record<ManaType, number> = { ...EMPTY_POOL };
   for (const match of text.matchAll(SYMBOL)) {
     const symbol = (match[1] ?? '').trim().toUpperCase();
@@ -135,7 +143,15 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
       hybrids.push(halves as ManaType[]);
       continue;
     }
-    // Phyrexian, snow, monocoloured hybrid: refused rather than guessed at.
+    // Phyrexian (D766): its colour, and noted, so life can be offered for it. See `ManaCost.phyrexian`.
+    const phy = /^([WUBRG])\/P$/.exec(symbol);
+    if (phy !== null) {
+      colors[phy[1] as ManaType] += 1;
+      phyrexian.push(phy[1] as Color);
+      continue;
+    }
+    // Hybrid Phyrexian, snow, monocoloured hybrid: refused rather than guessed at.
+
     unsupported ??= symbol;
   }
   const x = xCount > 0;
@@ -144,7 +160,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   const extra = xCount > 1 ? { xCount } : {};
   // Same reasoning as `xCount`: only written when there is one, so a cost with no hybrid symbol is
   // deep-equal to what it parsed to before this field existed.
-  const mixed = hybrids.length > 0 ? { hybrids } : {};
+  const mixed = { ...(hybrids.length > 0 ? { hybrids } : {}), ...(phyrexian.length > 0 ? { phyrexian } : {}) };
   return unsupported === undefined
     ? { generic, colors, x, ...extra, ...mixed }
     : { generic, colors, x, ...extra, ...mixed, unsupported };
@@ -520,9 +536,45 @@ export function solveTap(
  */
 export function canAfford(
   pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0,
+  /** Life that may be paid for Phyrexian symbols (D766); none unless a caller says so. */
+  lifeBudget = 0,
 ): boolean {
-  if (canPay(pool, cost, xAmount)) return true;
-  return solveTap(pool, cost, sources, xAmount) !== null;
+  return phyrexianPayment(pool, cost, sources, xAmount, lifeBudget) !== null;
+}
+
+/**
+ * The ways to pay a cost's Phyrexian symbols (D766): each subset of them paid with 2 life apiece and
+ * the rest with mana, fewest life payments first. A cost with none has one way, itself.
+ */
+export function phyrexianWays(cost: ManaCost): { readonly cost: ManaCost; readonly life: number }[] {
+  const symbols = cost.phyrexian ?? [];
+  if (symbols.length === 0) return [{ cost, life: 0 }];
+  const ways: { cost: ManaCost; life: number }[] = [];
+  for (let mask = 0; mask < 1 << symbols.length; mask++) {
+    const colors = { ...cost.colors };
+    let life = 0;
+    symbols.forEach((colour, i) => {
+      if ((mask & (1 << i)) === 0) return;
+      colors[colour] -= 1;
+      life += 2;
+    });
+    ways.push({ cost: { ...cost, colors }, life });
+  }
+  return ways.sort((a, b) => a.life - b.life);
+}
+
+/**
+ * How a cost can be paid out of a pool and what is left to tap, with up to `lifeBudget` life spent on
+ * its Phyrexian symbols (D766), mana first: the cost left for mana and the life to pay, or null.
+ */
+export function phyrexianPayment(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0, lifeBudget = 0,
+): { readonly cost: ManaCost; readonly life: number } | null {
+  for (const way of phyrexianWays(cost)) {
+    if (way.life > lifeBudget) continue;
+    if (canPay(pool, way.cost, xAmount) || solveTap(pool, way.cost, sources, xAmount) !== null) return way;
+  }
+  return null;
 }
 
 /** The most X can be, given a pool, the rest of a cost, and what is left to tap. */

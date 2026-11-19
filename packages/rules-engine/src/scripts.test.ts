@@ -24,7 +24,7 @@ import {
   manaSources, potentialMana,
   parseTypeLine,
   compileCard,
-  packView, parseManaCost, pendingDeclaration, isPrintedAbilityLine, printedKeywords,
+  packView, parseManaCost, costValue, pendingDeclaration, isPrintedAbilityLine, printedKeywords,
   printedLandwalk, printedProtection, proliferate,
   proliferateCandidates, protectedFrom,
   preventDamage,
@@ -27064,6 +27064,80 @@ describe('"one or two target creatures" (D1024)', () => {
   });
 });
 
+describe('Phyrexian mana: one coloured mana or 2 life (D766)', () => {
+  const card = (name: string, type: string, cost: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 3, colors: ['B'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Dismember', 'Instant', '{1}{B/P}{B/P}', 'Target creature gets -5/-5 until end of turn.'),
+    card('Test Raider', 'Creature — Phyrexian', '{2}', '{1}{R/P}: Test Raider gets +2/+0 until end of turn.', { colors: ['R'], cmc: 2, power: '1', toughness: '1' }),
+    card('Test Ogre', 'Creature — Ogre', '{0}', '', { colors: ['R'], cmc: 0, power: '3', toughness: '3' }),
+  ];
+  const deck = customDeck({
+    id: 'd766', name: 'Phyrexian mana',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 27 }, { name: 'Mountain', count: 27 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], life?: number) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd766', 1: 'd766' }, deckSpecs: { d766: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: mine, 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return life === undefined ? s : { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+  };
+  const dismember = (s: GameState) => {
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dismember'), targets: [{ kind: 'card', id: ogre }] })));
+    return { after, ogre };
+  };
+  const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Dismember'));
+
+  it('parses as its colour, noted as Phyrexian, with mana value counting each symbol', () => {
+    const cost = parseManaCost('{1}{B/P}{B/P}');
+    expect(cost.unsupported).toBeUndefined();
+    expect(cost.colors.B).toBe(2);
+    expect(cost.phyrexian).toEqual(['B', 'B']);
+    expect(costValue(cost)).toBe(3);
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('paid in mana when the mana is there: no life', () => {
+    const s = table(['Test Dismember'], ['Swamp', 'Swamp', 'Swamp']);
+    const { after, ogre } = dismember(s);
+    expect(after.instances[ogre]!.zone).toBe('graveyard');
+    expect(after.seats[0]!.life).toBe(s.seats[0]!.life);
+  });
+
+  it('one Swamp and one Mountain: one symbol in mana, the other for 2 life', () => {
+    const s = table(['Test Dismember'], ['Swamp', 'Mountain']);
+    const { after, ogre } = dismember(s);
+    expect(after.instances[ogre]!.zone).toBe('graveyard');
+    expect(after.seats[0]!.life).toBe(s.seats[0]!.life - 2);
+  });
+
+  it('only a Mountain: both symbols for 4 life; at 4 life it is not offered', () => {
+    const s = table(['Test Dismember'], ['Mountain']);
+    expect(offered(s)).toBe(true);
+    const { after } = dismember(s);
+    expect(after.seats[0]!.life).toBe(s.seats[0]!.life - 4);
+    expect(offered(table(['Test Dismember'], ['Mountain'], 4))).toBe(false);
+    // And sent anyway, the payment itself refuses the life that would end the game.
+    const low = table(['Test Dismember'], ['Mountain'], 4);
+    expect(refusal(low, { type: 'auto:cast', by: 0, card: find(low, 0, 'hand', 'Test Dismember'), targets: [{ kind: 'card', id: find(low, 1, 'battlefield', 'Test Ogre') }] } as Action)).toBeTruthy();
+    expect(offered(table(['Test Dismember'], ['Mountain'], 5))).toBe(true);
+  });
+
+  it('an ability cost: {1}{R/P} off a Swamp alone is the Swamp and 2 life', () => {
+    let s = table([], ['Test Raider', 'Swamp']);
+    const raider = find(s, 0, 'battlefield', 'Test Raider');
+    const life = s.seats[0]!.life;
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === raider);
+    expect(play).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: raider, abilityIndex: play!.abilityIndex ?? 0 })));
+    expect(s.seats[0]!.life).toBe(life - 2);
+    expect(characteristicsOf(s, s.instances[raider]!).power).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -52664,7 +52738,8 @@ describe('a free cast is not refused on a cost it never pays (D550)', () => {
     game of forty, with "Dismember has a mana cost the engine cannot pay yet" and the whole table
     going down with it.
 
-    Dismember is `{1}{B/P}{B/P}`. Phyrexian mana is a symbol `parseManaCost` does not read yet, and
+    Dismember is `{1}{B/P}{B/P}`. Phyrexian mana was a symbol `parseManaCost` did not read (it does
+    since D766, which makes Dismember castable from hand as well), and
     `castSpell` refused the cast on that — **before** reaching the line that decides which cost this
     casting actually pays. A cascade pays nothing: `toPay` is overwritten from
     `pendingOfferedCast.cost`, the empty string. So the refusal was about a cost the casting was
