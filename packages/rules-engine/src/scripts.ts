@@ -18770,6 +18770,15 @@ const TRIGGER_SHAPES: readonly ({
       none: { whose: 'any' as const, type: (matched.groups?.a ?? matched.groups?.b ?? '').replace(/s$/, '') },
     }],
   },
+  // "Whenever a [nontoken] creature is put into your / an opponent's graveyard from the battlefield" (D1014).
+  {
+    prologue: () => /^When(?:ever)? a (?<nontoken>nontoken )?creature is put into (?<whose>your|an opponent's) graveyard from the battlefield, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'dies' as const, who: 'any' as const, what: 'creature' as const,
+      owner: /^your$/i.test(matched.groups?.whose ?? '') ? 'you' as const : 'opponent' as const,
+      ...(matched.groups?.nontoken === undefined ? {} : { nontoken: true }),
+    }],
+  },
   // "Whenever you expend N" (D1002): your Nth total mana spent on spells this turn.
   {
     prologue: () => /^Whenever you expend (?<n>\d+), (?<clause>.+)$/i,
@@ -20891,6 +20900,37 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       permanent bouncing itself. Only for events a permanent watches from the battlefield: a death
       or a trip to the graveyard already fires from there for its own card.
     */
+    /*
+      **"If ~ is in your graveyard, …"** (D1014): Bridge from Below, Ghastly Remains, Genesis, Blood
+      Operative, Auntie's Snitch. The same graveyard-only ability D632 reads, with the zone spelled
+      out as an intervening-if (CR 603.4): asked as it triggers and again as it resolves, so a card
+      exiled from the graveyard in response does nothing. "Return ~ to your hand" in such a line is
+      the card returning itself from there.
+    */
+    // Any event: the condition names the zone outright, so it does not depend on where the event's
+    // own subject is (a Bridge from Below hears another creature's death from the graveyard).
+    const yardIf = new RegExp(`^if (?:${self}|this card) is in your graveyard, (.+)$`, 'i').exec(clause);
+    if (yardIf !== null) {
+      const rest = yardIf[1]!.replace(
+        new RegExp(`\\breturn (${self}|this card) to (your hand|the battlefield)`, 'i'), 'return $1 from your graveyard to $2');
+      const own = (text: string): ReadEffect | null => graveyardSelfReturn(text, name)
+        ?? composeEffects(clausesOf(text), name, 'graveyard');
+      const back = own(rest) ?? optionalEffect(rest, own);
+      if (back === null || back.beforeDecisions !== undefined) return null;
+      const inYard: NonNullable<TriggerDef['condition']> = (c) => c.state.instances[c.source]?.zone === 'graveyard';
+      return {
+        triggers: on.map((event) => ({
+          on: event,
+          description: clause,
+          inGraveyard: true as const,
+          condition: inYard,
+          ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
+          ...(back.targets === undefined ? {} : { targets: back.targets }),
+          ...(back.decisions === undefined ? {} : { decisions: back.decisions }),
+          effect: back.effect,
+        } as TriggerDef)),
+      };
+    }
     const fromYard = where === 'battlefield'
       && new RegExp(`\\b(?:return|put) (?:${self}|this card) from your graveyard\\b`, 'i').test(clause);
     if (fromYard) {

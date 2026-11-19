@@ -348,6 +348,14 @@ export type TriggerEvent =
        * accident. A token dying is still a creature dying; it is just not this trigger's business.
        */
       readonly nontoken?: boolean;
+      /**
+       * "… is put into **your** / **an opponent's** graveyard from the battlefield" (D1014): whose
+       * graveyard it went to, which is its owner's (CR 400.3) — not who controlled it. Asked of
+       * `subjectOwner`, which the engine carries because a dying token has no instance left.
+       */
+      readonly owner?: 'you' | 'opponent';
+      /** Set by the engine (D1014): the dying permanent's owner, whose graveyard it goes to. */
+      readonly subjectOwner?: SeatIndex;
       readonly subjectSeat?: SeatIndex;
       readonly subjectIsCreature?: boolean;
       /** Set by the engine when it raises the event. */

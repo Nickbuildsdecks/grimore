@@ -1506,7 +1506,7 @@ function triggerMatches(
       if (want.kind === 'deals-damage' && want.combatOnly === true
         && (event as { combat?: boolean }).combat !== true) return false;
       const e = event as {
-        subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
+        subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean; subjectOwner?: SeatIndex;
         subjectIsLand?: boolean; subjectTypes?: readonly string[];
         subjectPower?: number; subjectToughness?: number;
         subjectKeywords?: readonly string[]; subjectSubtypes?: readonly string[];
@@ -1515,6 +1515,9 @@ function triggerMatches(
       };
       // "a nontoken creature you control dies", and since D484 the same filter on the entry: both
       // events carry `subjectIsToken`, and both are printed with this word for the same reason.
+      // Whose graveyard (D1014): a death is raised for the seat whose graveyard the card went to.
+      if (want.kind === 'dies' && want.owner !== undefined
+        && (e.subjectOwner === undefined || (want.owner === 'you') !== (e.subjectOwner === sourceSeat))) return false;
       if ((want.kind === 'dies' || want.kind === 'etb') && want.nontoken === true
         && e.subjectIsToken === true) return false;
       // And its opposite on the entry (D706): "whenever you create a token".
@@ -2232,6 +2235,9 @@ function raise(
         ...event,
         subjectSeat: inst.zoneSeat,
         subjectIsCreature: live.isCreature,
+        // And its owner (D1014), for "put into **your** graveyard": a token has ceased to exist by now,
+        // so the seat the event is raised for cannot say whose graveyard it went to.
+        ...(event.kind === 'dies' ? { subjectOwner: inst.owner } : {}),
         // And whether it was a land, for the landfall templating. Only on an entry: "whenever a
         // land dies" is not a card, and a field nothing reads is a field that drifts.
         ...(event.kind === 'etb' ? { subjectIsLand: live.isLand, subjectTapped: inst.tapped } : {}),

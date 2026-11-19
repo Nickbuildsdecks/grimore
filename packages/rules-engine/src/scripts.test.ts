@@ -26249,6 +26249,72 @@ describe('conjunctions in a card filter: "legendary creature card", "noncreature
   });
 });
 
+describe('"if ~ is in your graveyard": Bridge from Below and the upkeep returners (D1014)', () => {
+  const ROWS = [
+    { name: 'Test Bridge', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Whenever a nontoken creature is put into your graveyard from the battlefield, if this card is in your graveyard, create a 2/2 black Zombie creature token.\nWhen a creature is put into an opponent\'s graveyard from the battlefield, if this card is in your graveyard, exile this card.' },
+    { name: 'Test Phoenix', type_line: 'Creature — Phoenix', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'At the beginning of your upkeep, if this creature is in your graveyard, return this creature to your hand.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Brood', type_line: 'Sorcery', oracle_text: 'Create a 1/1 black Rat creature token.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Dig', type_line: 'Instant', oracle_text: 'Exile target card from a graveyard.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1014', name: 'Yard', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (setup: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]>; graveyard?: Record<number, string[]> }) =>
+    advanceTo(arena({ decks: { 0: 'd1014', 1: 'd1014' }, deckSpecs: { d1014: deck.deck }, ...setup, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const kill = (s: GameState, id: string) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id }] } as Action));
+  const zombies = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken === true && nameOf(s, id) === 'Zombie').length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('from the graveyard, your nontoken creature dying makes a Zombie; a token dying does not', () => {
+    let s = table({ hands: { 0: ['Test Kill', 'Test Kill', 'Test Brood'] }, battlefield: { 0: ['Test Bear'] }, graveyard: { 0: ['Test Bridge'] } });
+    s = kill(s, find(s, 0, 'battlefield', 'Test Bear'));
+    expect(zombies(s)).toBe(1);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brood') } as Action));
+    const rat = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Rat')!;
+    s = kill(s, rat);
+    expect(zombies(s)).toBe(1);
+  });
+
+  it('exiled from the graveyard in response, the Bridge makes nothing (an intervening-if, CR 603.4)', () => {
+    let s = table({ hands: { 0: ['Test Kill', 'Test Dig'] }, battlefield: { 0: ['Test Bear'] }, graveyard: { 0: ['Test Bridge'] } });
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }] } as Action);
+    s = passBoth(s); // the Kill resolves; the Bridge's trigger is on the stack
+    expect(s.stackOrder.length).toBe(1);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dig'), targets: [{ kind: 'card', id: find(s, 0, 'graveyard', 'Test Bridge') }] } as Action));
+    expect(namesIn(s, 0, 'exile')).toContain('Test Bridge');
+    expect(zombies(s)).toBe(0);
+  });
+
+  it('an opponent\'s creature dying exiles it from your graveyard', () => {
+    let s = table({ hands: { 0: ['Test Kill'] }, battlefield: { 1: ['Test Bear'] }, graveyard: { 0: ['Test Bridge'] } });
+    s = kill(s, find(s, 1, 'battlefield', 'Test Bear'));
+    expect(namesIn(s, 0, 'exile')).toContain('Test Bridge');
+    expect(zombies(s)).toBe(0);
+  });
+
+  it('nothing from a card that is not in the graveyard: the Bridge in hand hears no death', () => {
+    let s = table({ hands: { 0: ['Test Kill', 'Test Bridge'] }, battlefield: { 0: ['Test Bear'] } });
+    s = kill(s, find(s, 0, 'battlefield', 'Test Bear'));
+    expect(zombies(s)).toBe(0);
+  });
+
+  it('the upkeep returner comes back from the graveyard, and does nothing on the battlefield', () => {
+    let s = table({ graveyard: { 0: ['Test Phoenix'] } });
+    s = settle(advanceTo(nextTurn(nextTurn(s)), 'draw'));
+    expect(namesIn(s, 0, 'hand')).toContain('Test Phoenix');
+    let t = table({ battlefield: { 0: ['Test Phoenix'] } });
+    t = settle(advanceTo(nextTurn(nextTurn(t)), 'draw'));
+    expect(namesIn(t, 0, 'battlefield')).toContain('Test Phoenix');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
