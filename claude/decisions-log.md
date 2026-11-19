@@ -52542,3 +52542,35 @@ Also: one pregate run failed "answers the questions cards ask mid-resolution" on
 games take about 48 seconds by themselves and went past the suite's 60-second default with the whole
 engine suite running beside them, with every assertion passing. That test now has its own
 180-second limit; its game count is unchanged.
+
+## D1004 — State triggers: "When you control no Islands, sacrifice ~" (CR 603.8)
+
+The old sea creatures' drawback (Dandân, Sea Serpent, Pirate Ship, Island Fish Jasconius), its
+Swamp, Forest and artifact cousins (Bog Serpent, Gorilla Pack, Covetous Dragon), Emperor
+Crocodile's "no other creatures", and "When there are no creatures on the battlefield" (Drop of
+Honey, Porphyry Nodes). 26 legal lines.
+
+- A new `state` trigger with `none: { whose, type | subtype, other }`. At the end of every `settle`,
+  each permanent carrying one is offered a `state` event, and `fireTrigger` asks two things: does the
+  state hold, and is this ability already on the stack. It triggers whenever the state matches and
+  not again while it waits (CR 603.8).
+- **Read only with a sacrifice after it**, which is every legal card that prints one. A state
+  trigger triggers again as soon as its ability leaves the stack if the state still holds, so an
+  effect that did not end the state would trigger forever. The sacrifice removes the watcher.
+- Basic land types and card types only. "Snow lands", "permanents with … counters" and "the chosen
+  color" are not read.
+
+**Tests.** 5 engine tests:
+- the cards read; "When you control no Islands, you gain 1 life" stays unread;
+- losing the last Island sacrifices the Serpent; losing one of two does not;
+- the trigger is on the stack once, and casting another spell over it does not add a second;
+- "no other creatures" counts only your creatures, and not the Crocodile itself;
+- "no creatures on the battlefield" counts everybody's: one Bear left on the other side keeps it,
+  and a wrath ends it.
+
+Faults injected by script: 11 of 11 caught. A battlefield check in the new helper was folded away
+after it survived a fault: `settle` only offers the event to permanents on the battlefield.
+
+    engine tests: 5,430, all passing
+
+Coverage: 13,674 of 31,900 cards (+16), 34,619 of 59,888 lines (+26).
