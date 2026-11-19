@@ -52,7 +52,7 @@ import { blockRequirementIssue } from './combat.js';
 */
 import { scriptForCard } from './derive.js';
 import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, type CardScript, type TargetSpec } from './scriptTypes.js';
-import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
+import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
   bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
@@ -3198,6 +3198,29 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
 
   // `scriptForCard`, so a compiled card's trigger can be answered at all (D485).
   const specs = abilityTargetSpecs(state, object, scriptForCard);
+  /*
+    A trigger whose targets have all gone before it was aimed (D750) is removed, as one with no
+    legal target is as it triggers (CR 603.3d): a Schema Thief's "target artifact that player
+    controls" after that player left the game, and with them the attack. Refusing every answer
+    instead left the table waiting on a choice nobody could make — sweep seed 59203.
+  */
+  const unaimable = specs.some((spec) => spec.optional !== true
+    && legalTargets(state, spec, action.by, object.source).length === 0);
+  if (unaimable) {
+    const objects = { ...state.stackObjects };
+    delete objects[object.id];
+    const removed: GameState = {
+      ...state,
+      stackObjects: objects,
+      stackOrder: state.stackOrder.filter((id) => id !== object.id),
+      pendingChoice: null,
+    };
+    return {
+      state: resetPriority(settle(removed, state)),
+      message: `${object.description} has no legal target left and is removed`,
+      data: { ability: object.id, targets: 0 },
+    };
+  }
   const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
   // And a *trigger* that divides something, refused for the same reason an activated ability is:

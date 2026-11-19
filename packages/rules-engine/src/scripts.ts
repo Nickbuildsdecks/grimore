@@ -14729,6 +14729,16 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     if (base === null) return null;
     return negated ? (line) => !base(line) : base;
   };
+  // The state words (D749): "all tapped creatures", "each attacking creature", read live.
+  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped'];
+  const states = rest.split(/\s+/).filter((word) => STATE_WORDS.includes(word.toLowerCase())).map((word) => word.toLowerCase());
+  rest = rest.split(/\s+/).filter((word) => !STATE_WORDS.includes(word.toLowerCase())).join(' ');
+  const inState = (state: GameState, id: string, tapped: boolean): boolean => states.every((word) => {
+    if (word === 'tapped') return tapped;
+    if (word === 'untapped') return !tapped;
+    if (word === 'attacking') return state.combat.attacks.some(({ attacker }) => attacker === id);
+    return state.combat.attacks.some(({ blockers }) => blockers.includes(id));
+  });
   const alternatives = rest.split(/,\s*(?:and\s+|or\s+)?|\s+and\s+/).map((part) => part.trim()).filter(Boolean);
   if (alternatives.length === 0) return null;
   const tests: ((line: TypeLine) => boolean)[] = [];
@@ -14744,6 +14754,7 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     if (who === 'you' && inst.zoneSeat !== c.controller) return false;
     if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
     if (bound !== null && !bound(c.state, inst)) return false;
+    if (!inState(c.state, id, inst.tapped)) return false;
     const { typeLine } = characteristicsOf(c.state, inst);
     return tests.some((test) => test(typeLine));
   });
@@ -14799,15 +14810,30 @@ function boardScope(phrase: string): {
     day a controller pattern loses its `\s+`, an empty word list would mean every permanent you
     control, lands included — a silent wrong answer rather than a refusal.
   */
-  const words = rest.trim().split(/\s+/).filter((word) => word !== '');
+  /*
+    And the state words (D749), each a fact about the permanent rather than its type line:
+    "each attacking creature", "each blocking creature", "each untapped creature", "each tapped
+    creature". Read live, as the effect resolves.
+  */
+  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped'];
+  const allWords = rest.trim().split(/\s+/).filter((word) => word !== '');
+  const states = allWords.filter((word) => STATE_WORDS.includes(word.toLowerCase())).map((word) => word.toLowerCase());
+  const words = allWords.filter((word) => !STATE_WORDS.includes(word.toLowerCase()));
   if (words.length < 1) return null;
   const matchers = words.map(permanentWordMatch);
   if (matchers.some((matcher) => matcher === null)) return null;
+  const inState = (c: EffectContext, id: string, tapped: boolean): boolean => states.every((word) => {
+    if (word === 'tapped') return tapped;
+    if (word === 'untapped') return !tapped;
+    if (word === 'attacking') return c.state.combat.attacks.some(({ attacker }) => attacker === id);
+    return c.state.combat.attacks.some(({ blockers }) => blockers.includes(id));
+  });
 
   return {
     ids: (c) => battlefield(c.state, (id) => {
       const inst = c.state.instances[id];
       if (inst === undefined) return false;
+      if (!inState(c, id, inst.tapped)) return false;
       if (other && id === c.source) return false;
       if (who === 'you' && inst.zoneSeat !== c.controller) return false;
       if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
@@ -21816,21 +21842,35 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     protection, prevention and deathtouch each have to be asked about separately. Both hand-written
     cards are written exactly this way.
   */
+  /*
+    D749: "among **any number of** targets" (the count is the damage, since each target is
+    assigned at least one), and a typed target in the plural ("target creatures", "target attacking
+    or blocking creatures", "target creatures with flying"), read as the singular phrase.
+  */
   const shared = new RegExp(
-    `^(?:${self}|it) deals (\\d+) damage divided as you choose among ([a-z, ]+?) targets$`, 'i',
+    `^(?:${self}|it) deals (\\d+) damage divided as you choose among (any number of|[a-z, ]+?) (targets|target .+?)$`, 'i',
   ).exec(clause.trim().replace(/\.\s*$/, ''));
   if (shared !== null) {
-    // Split on both separators the list uses, and on "or" wherever it sits: "one, two, or three"
-    // leaves an empty piece between the comma and the word, which the filter below drops.
-    const words = shared[2]!.split(/\s*(?:,|\bor\b)\s*/).map((word) => word.trim())
-      .filter((word) => word !== '');
-    const counts = words.map((word) => countFrom(word));
-    if (counts.length === 0 || counts.some((n) => n === null)) return null;
-    const count = Math.max(...(counts as number[]));
-    const spec = targetSpecFrom('any target', false);
-    if (spec === null || count < 2) return null;
+    const amount = Number(shared[1]);
+    let count: number;
+    if (/^any number of$/i.test(shared[2]!)) {
+      count = amount;
+    } else {
+      // Split on both separators the list uses, and on "or" wherever it sits: "one, two, or three"
+      // leaves an empty piece between the comma and the word, which the filter below drops.
+      const words = shared[2]!.split(/\s*(?:,|\bor\b)\s*/).map((word) => word.trim())
+        .filter((word) => word !== '');
+      const counts = words.map((word) => countFrom(word));
+      if (counts.length === 0 || counts.some((n) => n === null)) return null;
+      count = Math.max(...(counts as number[]));
+    }
+    const phrase = /^targets$/i.test(shared[3]!) ? 'any target'
+      : shared[3]!.replace(/\b(creature|planeswalker|player|permanent)s\b/i, '$1');
+    const spec = targetSpecFrom(phrase, false);
+    if (spec === null || count < 2 || spec.kind === 'spell' || spec.kind === 'ability') return null;
     return {
-      targets: [{ ...spec, count, optional: true, divided: Number(shared[1]) }],
+      // "Any number of" is a ceiling, not advice: the bot puts it all on one target (D579's hint).
+      targets: [{ ...spec, count, optional: true, divided: amount, ...(/^any number of$/i.test(shared[2]!) ? { botTakes: 1 } : {}) }],
       effect: (c) => dividedAmong(c).reduce(
         (state, { target, amount }) => dealDamage(state, target, amount, {
           controller: c.controller, source: c.source,
