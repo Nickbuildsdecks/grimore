@@ -24385,6 +24385,60 @@ describe('"enchanted creature is dealt damage / becomes tapped" (D994)', () => {
   });
 });
 
+describe('"<a permanent> is put into a graveyard from the battlefield" (D995)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    C('Test Scrapper', 'Whenever an artifact an opponent controls is put into a graveyard from the battlefield, you gain 1 life.'),
+    C('Test Mourner', 'Whenever an enchantment you control is put into a graveyard from the battlefield, you gain 2 life.'),
+    C('Test Quaker', 'Whenever a land is put into a graveyard from the battlefield, you gain 4 life.'),
+    C('Test Wailer', 'Whenever another Goblin you control is put into a graveyard from the battlefield, you gain 8 life.'),
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Ruin', type_line: 'Instant', oracle_text: 'Destroy target permanent.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd995', name: 'Graveyards', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const board = ['Test Scrapper', 'Test Mourner', 'Test Quaker', 'Test Wailer', 'Test Goblin', 'Test Relic', 'Test Charm', 'Plains'];
+  const ruin = (seat: 0 | 1, name: string) => {
+    let s = arena({ decks: { 0: 'd995', 1: 'd995' }, deckSpecs: { d995: deck.deck }, hands: { 0: ['Test Ruin'] }, battlefield: { 0: board, 1: ['Test Relic', 'Test Charm', 'Plains', 'Test Goblin'] }, turn: 3, firstSeat: 0 });
+    s = advanceTo(s, 'precombat-main');
+    const life = s.seats[0]!.life;
+    const target = find(s, seat, 'battlefield', name);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ruin'), targets: [{ kind: 'card', id: target }] } as Action));
+    expect(s.instances[target]!.zone).toBe('graveyard');
+    return s.seats[0]!.life - life;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // "nontoken" is a filter on the subject, kept as the death triggers keep it.
+    const smith = compileCard(C('Test Smith', 'Whenever a nontoken artifact you control is put into a graveyard from the battlefield, you gain 1 life.') as never);
+    expect(JSON.stringify(smith)).toContain('"nontoken":true');
+  });
+
+  it('"an artifact an opponent controls": theirs fires it, yours does not', () => {
+    expect(ruin(1, 'Test Relic')).toBe(1);
+    expect(ruin(0, 'Test Relic')).toBe(0);
+  });
+
+  it('"an enchantment you control": yours fires it, theirs does not', () => {
+    expect(ruin(0, 'Test Charm')).toBe(2);
+    expect(ruin(1, 'Test Charm')).toBe(0);
+  });
+
+  it('"a land": either side\'s land fires it, and a creature is not a land', () => {
+    expect(ruin(0, 'Plains')).toBe(4);
+    expect(ruin(1, 'Plains')).toBe(4);
+  });
+
+  it('"another Goblin you control": your Goblin fires it, theirs does not', () => {
+    expect(ruin(0, 'Test Goblin')).toBe(8);
+    expect(ruin(1, 'Test Goblin')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

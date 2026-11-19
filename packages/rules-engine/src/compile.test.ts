@@ -7786,8 +7786,6 @@ describe('the board trigger, read off the prologue', () => {
       + ' filter nothing ever has'],
     ['Whenever another creature you control leaves the battlefield',
       'a different event, whose filters this parse did not widen'],
-    ['Whenever an artifact you control is put into a graveyard from the battlefield',
-      '`to-graveyard`, which has no `what` yet'],
     ['Whenever a land you control dies',
       'dies is defined for creatures only (CR 700.4), so the parse refuses it'],
   ])('leaves "%s" unread: %s', (prologue) => {

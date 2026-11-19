@@ -17108,6 +17108,39 @@ function combatSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on
   return null;
 }
 
+/**
+ * "Whenever a[nother] <kind> [you control | an opponent controls] [<filter>] is put into a graveyard
+ * from the battlefield" (D995).
+ *
+ * The long spelling of "dies", which Magic keeps for creatures (CR 700.4): an artifact, an
+ * enchantment, a land or a permanent has to say the zone change out. The engine already raises
+ * `dies` for every permanent that reaches a graveyard from the battlefield and carries its types
+ * and its controller as it left, so this is a parse onto that event and not a new one.
+ *
+ * Whose is the controller as it left, as for a death: "an artifact **an opponent controls**". With
+ * no controller named, it is anybody's. "Into **your** graveyard" is the owner, a different
+ * question, and is not matched by this row's regex.
+ */
+function graveyardFromPlayTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
+  const groups = matched.groups ?? {};
+  const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+  const filter = boardFilter(groups.filter ?? '');
+  if (who === undefined || filter === null) return null;
+  const of = ({ ' you control': 'you', ' an opponent controls': 'opponent' } as const)[
+    (groups.of ?? '').toLowerCase() as ' you control' | ' an opponent controls'
+  ] ?? 'any';
+  const nonToken = /^nontoken /i.test((groups.what ?? '').trim()) ? { nontoken: true as const } : {};
+  const printed = (groups.what ?? '').trim().replace(/^nontoken /i, '');
+  // A tribe, as `boardTrigger` reads one: "another Goblin you control".
+  if (/^[A-Z][A-Za-z'-]*$/.test(printed)) {
+    return [{ kind: 'dies', who, of, what: 'permanent', ofSubtypes: [printed], ...nonToken, ...filter } as BoardEvent];
+  }
+  const what = printed.toLowerCase();
+  if (what !== 'creature' && what !== 'artifact' && what !== 'enchantment'
+    && what !== 'land' && what !== 'permanent') return null;
+  return [{ kind: 'dies', who, of, what, ...nonToken, ...filter } as BoardEvent];
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -17748,6 +17781,15 @@ const TRIGGER_SHAPES: readonly ({
       'i',
     ),
     from: boardTrigger,
+  },
+  {
+    prologue: () => new RegExp(
+      `^When(?:ever)? (?<who>a|an|another) (?<what>(?:nontoken )?[A-Za-z'-]+)`
+      + `(?<of> you control| an opponent controls)?(?<filter>[^,]*?)`
+      + ` is put into a graveyard from the battlefield, (?<clause>.+)$`,
+      'i',
+    ),
+    from: graveyardFromPlayTrigger,
   },
   /*
     ── The cast family, parsed rather than enumerated ──────────────────────────────────────
