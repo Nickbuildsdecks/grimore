@@ -723,6 +723,18 @@ function recordDamage(
   return next;
 }
 
+/**
+ * A player **gets N poison counters** (D1022): "target opponent gets two poison counters", "each
+ * opponent gets a poison counter", and the hit player's "that player gets a poison counter". Not
+ * damage and not life: the same counters toxic and infect give (CR 122.1f), and ten of them lose
+ * the game in the state-based check that already reads `poison`.
+ */
+export function givePoison(state: GameState, seat: SeatIndex, amount: number): GameState {
+  const player = state.seats[seat];
+  if (player === undefined) return state;
+  return replaceSeat(state, seat, { poison: clampValue(player.poison + amount) });
+}
+
 export function gainLife(state: GameState, seat: SeatIndex, amount: number): GameState {
   if (amount <= 0) return state;
   // "Your life total can't change" (D733): no life is gained, so nothing triggers on it.

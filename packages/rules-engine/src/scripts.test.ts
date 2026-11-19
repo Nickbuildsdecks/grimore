@@ -26714,6 +26714,57 @@ describe('one of yours becoming a target (D1021)', () => {
   });
 });
 
+describe('poison counters from an effect (D1022)', () => {
+  const S = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    S('Test Bite', 'Instant', 'Target opponent gets two poison counters.'),
+    S('Test Spores', 'Sorcery', 'Each opponent gets a poison counter.'),
+    S('Test Rats', 'Creature — Rat', 'When Test Rats enters, each player gets a poison counter.', ['1', '1']),
+    S('Test Mother', 'Creature — Horror', 'When Test Mother enters, you get a poison counter.', ['3', '3']),
+    S('Test Cobra', 'Creature — Snake', 'Whenever Test Cobra attacks, defending player gets a poison counter.', ['3', '2']),
+  ];
+  const deck = customDeck({ id: 'd1022', name: 'Poison', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 40 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: readonly string[], mine: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1022', 1: 'd1022' }, deckSpecs: { d1022: deck.deck },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Swamp'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: readonly Target[]) => settle(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action));
+  const poison = (s: GameState) => [s.seats[0]!.poison, s.seats[1]!.poison];
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the target, each opponent, each player, and you', () => {
+    expect(poison(cast(table(['Test Bite']), 'Test Bite', [{ kind: 'player', seat: 1 }]))).toEqual([0, 2]);
+    expect(poison(cast(table(['Test Spores']), 'Test Spores'))).toEqual([0, 1]);
+    expect(poison(cast(table(['Test Rats']), 'Test Rats'))).toEqual([1, 1]);
+    expect(poison(cast(table(['Test Mother']), 'Test Mother'))).toEqual([1, 0]);
+  });
+
+  it('"defending player" is the one attacked, and ten is a loss', () => {
+    let s = drain(apply(advanceTo(table([], ['Test Cobra']), 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: find(table([], ['Test Cobra']), 0, 'battlefield', 'Test Cobra'), defender: 1 }],
+    } as Action));
+    s = settle(s);
+    expect(poison(s)).toEqual([0, 1]);
+
+    s = table(['Test Bite']);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 8 } : seat)) };
+    s = cast(s, 'Test Bite', [{ kind: 'player', seat: 1 }]);
+    expect(s.seats[1]!.poison).toBe(10);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.winnerSeat).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

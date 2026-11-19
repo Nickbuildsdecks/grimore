@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, createTappedTokens, gainControl, gainLife, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -23403,6 +23403,38 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           const seat = firstPlayerTarget(c);
           return seat === null ? c.state : loseLife(c.state, seat, amount);
         },
+      };
+    }
+  }
+
+  /*
+    **Poison counters** (D1022): "target opponent gets two poison counters", "each opponent gets a
+    poison counter" (Infectious Bite), "each player gets a poison counter" (Ichor Rats), "you get a
+    poison counter" (Phyrexian Vatmother). "That player" and "defending player" reach here as
+    "target player" through the referent swap, which is where Norn's Decree and Crypt Cobra come
+    from.
+  */
+  const poisoned = /^(target player|target opponent|each opponent|each player|you) gets? (a|an|one|two|three|four|five|\d+) poison counters?$/i.exec(text);
+  if (poisoned !== null) {
+    const amount = countFrom(poisoned[2]!)!;
+    const who = poisoned[1]!.toLowerCase();
+    if (who.startsWith('target')) {
+      const spec = targetSpecFrom(poisoned[1]!, false);
+      if (spec !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const seat = firstPlayerTarget(c);
+            return seat === null ? c.state : givePoison(c.state, seat, amount);
+          },
+        };
+      }
+    } else {
+      return {
+        effect: (c) => (who === 'you' ? [c.controller]
+          : who === 'each opponent' ? opponentsOf(c.state, c.controller)
+            : c.state.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index))
+          .reduce((state, seat) => givePoison(state, seat, amount), c.state),
       };
     }
   }
