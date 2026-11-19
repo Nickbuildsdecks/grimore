@@ -35049,3 +35049,30 @@ Faults injected by script: 9 of 9 caught (two after the opponent and reset pins)
     engine tests: 5,422, all passing
 
 Coverage: 13,649 of 31,900 cards (+8), 34,582 of 59,888 lines (+10).
+
+## D1003 — Two-tribe "attacks alone" and "a player casts their second spell each turn"
+
+Two openings from the refreshed prologue list.
+
+- **"Whenever a Samurai or Warrior you control attacks alone"** (10 lines, Kamigawa: Neon Dynasty's
+  bushido-style Samurai): `attacks` with `alone` and both tribes as an any-of `ofSubtypes`. Both
+  words must be creature types the engine knows, or the line stays unread.
+- **"Whenever a player / an opponent casts their second spell each turn"**: the existing per-caster
+  `onNth: 2` count, with `by: 'any'` or `by: 'opponent'` where D436 read only `you`.
+
+**Tests.** 3 engine tests:
+- the cards read; two words that are not creature types refuse;
+- a Samurai attacking alone fires it; a Bear alone does not; the Samurai with company does not;
+- the second spell seat 0 casts fires "a player" on seat 0's side and "an opponent" on seat 1's
+  side, and not seat 0's own "an opponent" copy.
+
+Faults injected by script: 5 of 5 caught (two after the creature-type and own-side pins).
+
+    engine tests: 5,425, all passing
+
+Coverage: 13,658 of 31,900 cards (+9), 34,593 of 59,888 lines (+11).
+
+Also: one pregate run failed "answers the questions cards ask mid-resolution" on time alone. Its 24
+games take about 48 seconds by themselves and went past the suite's 60-second default with the whole
+engine suite running beside them, with every assertion passing. That test now has its own
+180-second limit; its game count is unchanged.
