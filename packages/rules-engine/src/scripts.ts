@@ -21141,8 +21141,15 @@ function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => b
  * graveyard" is a phrase the pool prints (Deathrite Shaman, and the switch above has it by hand).
  * The absence of `land` from the spell list is a rule about casting, not about this zone.
  */
-/** The noncreature subtypes `graveyardTypeTest` reads by name (D919): the ones the corpus prints there. */
-const CARD_SUBTYPES_READ: readonly string[] = ['Aura', 'Equipment', 'Vehicle', 'Saga', 'Curse', 'Shrine'];
+/**
+ * The noncreature subtypes `graveyardTypeTest` reads by name (D919): the ones the corpus prints there.
+ * The five basic land types and `Lesson` since D1005: "a Goblin, Swamp, or Mountain card" (the
+ * Eclipsed cycle), "a Lesson, Saga, or Shrine card".
+ */
+const CARD_SUBTYPES_READ: readonly string[] = [
+  'Aura', 'Equipment', 'Vehicle', 'Saga', 'Curse', 'Shrine',
+  'Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Lesson',
+];
 
 const GRAVEYARD_CARD_TYPES: readonly string[] = [
   'artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery',

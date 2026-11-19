@@ -25788,6 +25788,52 @@ describe('state triggers: "When you control no Islands, sacrifice ~" (D1004, CR 
   });
 });
 
+describe('basic land types and Lesson in a card filter (D1005)', () => {
+  const C = (name: string, type_line: string) => ({ name, type_line, oracle_text: '', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', ...(type_line.includes('Creature') ? { power: '1', toughness: '1' } : {}) });
+  const ROWS = [
+    { name: 'Test Boggart', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Look at the top five cards of your library. You may reveal a Goblin, Swamp or Mountain card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    { name: 'Test Guru', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+      oracle_text: 'Look at the top five cards of your library. You may reveal a Lesson, Saga, or Shrine card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    C('Test Goblin', 'Creature — Goblin'),
+    C('Test Bear', 'Creature — Bear'),
+    C('Test Lesson', 'Sorcery — Lesson'),
+    C('Test Saga', 'Enchantment — Saga'),
+    C('Test Relic', 'Artifact'),
+  ];
+  const deck = customDeck({
+    id: 'd1005', name: 'Kinds',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 10 }, { name: 'Mountain', count: 10 }, { name: 'Forest', count: 10 }],
+    data: ROWS as never[],
+  });
+  const dig = (spell: string, top: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1005', 1: 'd1005' }, deckSpecs: { d1005: deck.deck }, hands: { 0: [spell] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = ids(s, 0, 'library');
+    const picked: string[] = [];
+    for (const name of top) picked.push(lib.find((id) => nameOf(s, id) === name && !picked.includes(id))!);
+    s = { ...s, zones: { ...s.zones, '0:library': [...picked, ...lib.filter((id) => !picked.includes(id))] } };
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 40);
+  };
+  const offered = (s: GameState) => (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)).sort();
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a Goblin, Swamp or Mountain card": the Goblin and both basic land types, not a Forest or a Bear', () => {
+    const s = dig('Test Boggart', ['Test Goblin', 'Swamp', 'Mountain', 'Forest', 'Test Bear']);
+    expect(offered(s)).toEqual(['Mountain', 'Swamp', 'Test Goblin']);
+  });
+
+  it('"a Lesson, Saga, or Shrine card": the Lesson and the Saga, not an artifact', () => {
+    const s = dig('Test Guru', ['Test Lesson', 'Test Saga', 'Test Relic', 'Forest', 'Test Bear']);
+    expect(offered(s)).toEqual(['Test Lesson', 'Test Saga']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
