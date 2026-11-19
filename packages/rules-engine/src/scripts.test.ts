@@ -26211,6 +26211,44 @@ describe('target shapes: keyword before controller, attacking or blocking with m
   });
 });
 
+describe('conjunctions in a card filter: "legendary creature card", "noncreature, nonland card" (D1013)', () => {
+  const R = (name: string, phrase: string) => ({ name, type_line: 'Sorcery', oracle_text: `Return target ${phrase} card from your graveyard to your hand.`, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const C = (name: string, type: string, colors: string[]) => ({ name, type_line: type, oracle_text: '', mana_cost: '{9}', cmc: 9, colors, layout: 'normal', ...(type.includes('Creature') ? { power: '2', toughness: '2' } : {}) });
+  const ROWS = [
+    R('Test Raise', 'legendary creature'),
+    R('Test Forge', 'artifact creature'),
+    R('Test Necro', 'Zombie creature'),
+    R('Test Prism', 'multicolored'),
+    R('Test Rite', 'noncreature, nonland'),
+    C('Test Legend', 'Legendary Creature — Human', ['W']),
+    C('Test Bear', 'Creature — Bear', ['G']),
+    C('Test Relic', 'Artifact', []),
+    C('Test Golem', 'Artifact Creature — Golem', []),
+    C('Test Zombie', 'Creature — Zombie', ['B']),
+    C('Test Gold', 'Creature — Bird', ['W', 'U']),
+  ];
+  const deck = customDeck({ id: 'd1013', name: 'Graves', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const GRAVE = ['Test Legend', 'Test Bear', 'Test Relic', 'Test Golem', 'Test Zombie', 'Test Gold', 'Swamp'];
+  const table = () => advanceTo(arena({ decks: { 0: 'd1013', 1: 'd1013' }, deckSpecs: { d1013: deck.deck }, hands: { 0: ROWS.slice(0, 5).map((r) => r.name) }, graveyard: { 0: GRAVE }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const takes = (s: GameState, spell: string) => GRAVE.filter((name) => refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: find(s, 0, 'graveyard', name) }] } as Action) === null).sort();
+
+  it('reads whole; a word that is no type stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard(R('Test Odd', 'wizzle creature') as never);
+    expect(odd.ok && odd.unread).toHaveLength(1);
+  });
+
+  it('each word is a test the card must pass', () => {
+    const s = table();
+    expect(takes(s, 'Test Raise')).toEqual(['Test Legend']);
+    expect(takes(s, 'Test Forge')).toEqual(['Test Golem']);
+    expect(takes(s, 'Test Necro')).toEqual(['Test Zombie']);
+    expect(takes(s, 'Test Prism')).toEqual(['Test Gold']);
+    expect(takes(s, 'Test Rite')).toEqual(['Test Relic']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

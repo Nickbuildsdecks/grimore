@@ -21185,6 +21185,7 @@ const permanentFilter = (
  * and matches nothing).
  */
 function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => boolean) | null {
+  const words_ = words;
   const text = words.trim().toLowerCase();
   /*
     **Historic and subtypes** (D919): "a historic card" (artifact, legendary or Saga, CR 700.6), "a
@@ -21195,7 +21196,8 @@ function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => b
     mix ("creature or Vehicle").
   */
   const printedParts = words.trim().split(/\s+or\s+/);
-  if (printedParts.length > 0 && printedParts.length <= 3
+  // Single-word parts only: "Zombie creature" is a conjunction, read below (D1013).
+  if (printedParts.length > 0 && printedParts.length <= 3 && printedParts.every((part) => !/\s/.test(part))
     && printedParts.some((part) => part === 'historic' || /^[A-Z]/.test(part))) {
     const tests = printedParts.map((part): ((line: TypeLine, def?: CardDef) => boolean) | null => {
       if (part === 'historic') {
@@ -21231,6 +21233,34 @@ function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => b
     future card type would have to be classified rather than assumed to be a permanent.
   */
   if (text === 'permanent') return (line) => PERMANENT_TYPES.some((type) => hasType(line, type));
+  /*
+    **A conjunction of words** (D1013): "legendary creature", "artifact creature", "Zombie creature",
+    "enchantment creature", "nonlegendary creature", "multicolored", "black", and the comma-joined
+    negatives "noncreature, nonland". Several words with no "or" are each a test the card must pass.
+    Read off the printed card, like everything else here: a card in a graveyard has no effects on it.
+  */
+  if (!/\bor\b/.test(text)) {
+    const words = words_.trim().split(/,\s*|\s+/).filter((w) => w !== '');
+    if (words.length > 1 || /^(?:legendary|nonlegendary|multicolored|colorless|white|blue|black|red|green)$/.test(text)) {
+      const tests = words.map((printed): ((line: TypeLine, def?: CardDef) => boolean) | null => {
+        const word = printed.toLowerCase();
+        if (word === 'legendary') return (line) => isLegendary(line);
+        if (word === 'nonlegendary') return (line) => !isLegendary(line);
+        if (word === 'multicolored') return (_line, def) => (def?.colors ?? []).length > 1;
+        if (word === 'colorless') return (_line, def) => def !== undefined && def.colors.length === 0;
+        const colour = COLOUR_WORDS[word];
+        if (colour !== undefined) return (_line, def) => (def?.colors ?? []).includes(colour);
+        if (word.startsWith('non') && GRAVEYARD_CARD_TYPES.includes(word.slice(3))) return (line) => !hasType(line, word.slice(3));
+        if (GRAVEYARD_CARD_TYPES.includes(word)) return (line) => hasType(line, word);
+        if (/^[A-Z][a-z'-]+$/.test(printed) && (isCreatureType(printed) || CARD_SUBTYPES_READ.includes(printed))) {
+          return (line, def) => (def !== undefined ? cardHasSubtype(def, printed) : hasSubtype(line, printed));
+        }
+        return null;
+      });
+      if (tests.some((test) => test === null)) return null;
+      return (line, def) => tests.every((test) => test!(line, def));
+    }
+  }
   const parts = text.split(/\s+or\s+/);
   if (!parts.every((part) => GRAVEYARD_CARD_TYPES.includes(part))) return null;
   return (line) => parts.some((part) => hasType(line, part));
@@ -21434,7 +21464,9 @@ function targetSpecFrom(
     // Permanents only: a spell phrase reads adjacent words as "both" (D490's "blue instant"), so
     // "white or blue spell" is its own grammar and is left to it.
     const pair = /^((?:another )?target) (white|blue|black|red|green) or (white|blue|black|red|green) ((?:creature|permanent|nonland permanent|planeswalker|artifact|enchantment)\b.*)$/i.exec(trimmed);
-    if (pair !== null) {
+    // Not a card in a zone ("… creature card from your graveyard"): the card filter reads adjacent
+    // words as "both" since D1013, so the pair would become a conjunction there.
+    if (pair !== null && !/\bcards?\b/i.test(pair[4]!)) {
       const inner = targetSpecFrom(`${pair[1]} ${pair[2]} ${pair[3]} ${pair[4]}`, friendly, parsed);
       return inner === null ? null : { ...inner, description: printed };
     }
