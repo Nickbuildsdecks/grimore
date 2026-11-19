@@ -22232,8 +22232,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  // And the plural (D751): "Return up to two target creatures to their owners' hands".
   const bounced = new RegExp(
-    `^return (${TARGET_QUANTIFIER_PREFIX}target .+) to its owner's hand$`, 'i',
+    `^return (${TARGET_QUANTIFIER_PREFIX}target .+?) to (?:its owner's hand|their owners' hands|their owner's hands?)$`, 'i',
   ).exec(text);
   if (bounced !== null) {
     const spec = targetSpecFrom(bounced[1]!, false);
