@@ -51815,3 +51815,47 @@ so it uses a real "Proliferate." spell.
 
 Coverage: 13,327 of 31,900 cards (+25), 33,919 of 59,888 lines (+29) (with the other session's D751
 merged).
+
+## D752 — The printed "prevent all damage" statics and auras
+
+D738 read "Prevent all damage that would be dealt to / by …" on spells that last for one turn. The
+same sentence printed on a permanent, lasting while it is on the battlefield, stayed unread: 90
+lines in the corpus begin "Prevent all".
+
+- The D738 flags (`preventsDamageTo`, `preventsDamageFrom`, `preventsCombatOnly`,
+  `preventsDamageToPlayers`) are now in `PumpOptions` and carried by `modsFrom`, so a static or an
+  attachment can hold them. A new `preventsNoncombatOnly` is the other half of "combat only", and
+  `damagePrevented` lets combat damage through it.
+- `preventionStaticFromLine`: "Prevent all [combat / noncombat] damage that would be dealt to / by /
+  to and dealt by ~" (Dawn Elemental, Cho-Manno) on the permanent itself, and "… dealt to [you and]
+  [other] creatures you control" or "… to creatures" (Inner Sanctum, Blessed Sanctuary, Bubble
+  Matrix) on its scope.
+- `attachmentBonus`: "… dealt by / to / to and dealt by enchanted (equipped) creature" (Muzzle,
+  Defang, Gaseous Form), harmful when only the host's own damage is stopped. The attachment reader's
+  subject pattern now finds that line.
+- "Combat damage that would be dealt to and dealt by" one creature compiles to the existing
+  `preventsCombatDamage`, the flag combat asks of both creatures in a fight. The first gate found
+  this: the compiled Fog Bank disagreed with its hand-written script, which uses that flag. Gaseous
+  Form's Aura takes the same flag.
+- Not the bot's `preventsDamage` hint: that holds a Fog until there is an attack, and a permanent
+  should be cast like any other.
+- Refused: a source filter ("by artifact sources", "by creatures blocking it", "by Deserts"). The
+  flags have none, and a shield against everything would be a stronger card than the printed one.
+
+**Tests.** 6 engine tests:
+- the five cards read;
+- a muzzled pinger deals nothing;
+- a creature under "combat damage to and dealt by enchanted creature" deals nothing when it attacks
+  and still dies to a Bolt;
+- a creature shielding itself survives a Bolt, and a Bear beside it does not;
+- "to creatures you control" spares your creature, not you, and not the other side's creature;
+- "noncombat damage to you and creatures you control" stops a Bolt to the face, not an attack.
+
+Faults injected by script: 8. 6 were caught at once. One fault string matched nothing; rewritten,
+it was caught. One miss (the self static widened to every creature) is now pinned by the Bear
+beside Dawn Elemental. The fault that read "to and dealt by" as "to" was written before the Fog
+Bank change, and it now reaches only the noncombat form, which no test card prints.
+
+    engine tests: 5,328, all passing
+
+Coverage: 13,346 of 31,900 cards (+18), 33,944 of 59,888 lines (+23), against 874e99c.

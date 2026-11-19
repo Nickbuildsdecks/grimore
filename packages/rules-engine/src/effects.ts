@@ -1159,6 +1159,7 @@ function damagePrevented(state: GameState, target: Target, source: string | null
   const from = source === null ? undefined : state.instances[source];
   return (state.effects ?? []).some((effect) => {
     if (effect.preventsCombatOnly === true && !combat) return false;
+    if (effect.preventsNoncombatOnly === true && combat) return false;
     if (effect.preventsDamageToPlayers !== undefined && target.kind === 'player'
       && (effect.preventsDamageToPlayers === 'all' || effect.controller === target.seat)) return true;
     if (effect.preventsDamageTo === true && target.kind === 'card') {
@@ -2734,6 +2735,15 @@ export interface PumpOptions {
   readonly preventsCombatDamage?: boolean;
   /** See `ContinuousEffect.assignsNoCombatDamage`: the creature deals none, and may still be hit. */
   readonly assignsNoCombatDamage?: boolean;
+  /**
+   * The D738 prevention flags as a static or an attachment carries them (D752): Muzzle ("by
+   * enchanted creature"), Dawn Elemental ("to ~"), Inner Sanctum ("to creatures you control").
+   */
+  readonly preventsDamageTo?: true;
+  readonly preventsDamageFrom?: true;
+  readonly preventsCombatOnly?: true;
+  readonly preventsNoncombatOnly?: true;
+  readonly preventsDamageToPlayers?: 'controller' | 'all';
   /** See `ContinuousEffect.exiledInsteadOfDying` — "exile it instead" (D539). */
   readonly exiledInsteadOfDying?: boolean;
   /** See `ContinuousEffect.mustAttack` — "attacks each combat if able" (CR 508.1d). */
@@ -2837,6 +2847,11 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.doesntUntap ? { doesntUntap: true } : {}),
     ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
     ...(opts.assignsNoCombatDamage ? { assignsNoCombatDamage: true } : {}),
+    ...(opts.preventsDamageTo ? { preventsDamageTo: true as const } : {}),
+    ...(opts.preventsDamageFrom ? { preventsDamageFrom: true as const } : {}),
+    ...(opts.preventsCombatOnly ? { preventsCombatOnly: true as const } : {}),
+    ...(opts.preventsNoncombatOnly ? { preventsNoncombatOnly: true as const } : {}),
+    ...(opts.preventsDamageToPlayers === undefined ? {} : { preventsDamageToPlayers: opts.preventsDamageToPlayers }),
     ...(opts.exiledInsteadOfDying ? { exiledInsteadOfDying: true } : {}),
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.mustBlock ? { mustBlock: true } : {}),
