@@ -24201,6 +24201,85 @@ describe("'Return up to two target creatures to their owners hands' (D751)", () 
   });
 });
 
+describe('"becomes monstrous", and damage dealt to ~ in combat or by a source (D992)', () => {
+  const C = (name: string, text: string, p = '2', t = '2') => ({ name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: p, toughness: t });
+  const ROWS = [
+    C('Test Hydra', '{0}: Monstrosity 2.\nWhen this creature becomes monstrous, you gain 3 life.\nAs long as this creature is monstrous, it has trample.'),
+    C('Test Hide', 'Whenever this creature is dealt combat damage, you gain 2 life.', '1', '5'),
+    C('Test Skin', 'Whenever a source deals damage to this creature, you gain 2 life.', '1', '5'),
+    C('Test Pinger', '{T}: This creature deals 1 damage to any target.', '1', '1'),
+    { name: 'Test Spread', type_line: 'Sorcery', oracle_text: 'Proliferate.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd992', name: 'Monsters', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[] = [], hand: string[] = []) => {
+    let s = arena({ decks: { 0: 'd992', 1: 'd992' }, deckSpecs: { d992: deck.deck }, battlefield: { 0: mine, 1: theirs }, hands: { 0: hand }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('monstrosity: counters, the designation, the trigger and the static; and only once, even without its counters', () => {
+    const s = table(['Test Hydra']);
+    const hydra = find(s, 0, 'battlefield', 'Test Hydra');
+    const life = s.seats[0]!.life;
+    const grown = settle(apply(s, { type: 'auto:activate', by: 0, card: hydra, abilityIndex: 0 } as Action));
+    expect(grown.instances[hydra]!.counters['+1/+1']).toBe(2);
+    expect(grown.seats[0]!.life).toBe(life + 3);
+    expect(characteristicsOf(grown, grown.instances[hydra]!).keywords.has('trample')).toBe(true);
+    expect(legalActions(grown, 0).plays.some((p) => p.card === hydra && p.kind === 'activate')).toBe(false);
+    // Its +1/+1 counters gone, it is still monstrous (CR 701.32b): still trample, still no second go.
+    const { '+1/+1': _gone, ...rest } = grown.instances[hydra]!.counters;
+    const stripped = { ...grown, instances: { ...grown.instances, [hydra]: { ...grown.instances[hydra]!, counters: rest } } };
+    expect(characteristicsOf(stripped, stripped.instances[hydra]!).keywords.has('trample')).toBe(true);
+    expect(legalActions(stripped, 0).plays.some((p) => p.card === hydra && p.kind === 'activate')).toBe(false);
+  });
+
+  it('activated twice in response to itself, it grows once (CR 701.32a); proliferate does not make it monstrous again', () => {
+    const s = table(['Test Hydra'], [], ['Test Spread']);
+    const hydra = find(s, 0, 'battlefield', 'Test Hydra');
+    const life = s.seats[0]!.life;
+    let t = apply(s, { type: 'auto:activate', by: 0, card: hydra, abilityIndex: 0 } as Action);
+    t = apply(t, { type: 'auto:activate', by: 0, card: hydra, abilityIndex: 0 } as Action);
+    t = settle(t);
+    expect(t.instances[hydra]!.counters['+1/+1']).toBe(2);
+    expect(t.seats[0]!.life).toBe(life + 3);
+    // A real proliferate, so the engine announces whatever counters it put.
+    let p = apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Spread') } as Action);
+    for (let i = 0; i < 6 && p.pendingDecision === null && p.stackOrder.length > 0; i++) p = passBoth(p);
+    p = settle(apply(p, { type: 'auto:decide', by: 0, cards: [hydra] } as Action));
+    expect(p.instances[hydra]!.counters['+1/+1']).toBe(3);
+    expect(p.seats[0]!.life).toBe(life + 3);
+  });
+
+  it('"is dealt combat damage": not by a ping; "a source deals damage to ~": by a ping', () => {
+    const s = table(['Test Pinger'], ['Test Hide', 'Test Skin']);
+    const pinger = find(s, 0, 'battlefield', 'Test Pinger');
+    const ping = (target: string) => {
+      const t = settle(apply(s, { type: 'auto:activate', by: 0, card: pinger, abilityIndex: 0, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', target) }] } as Action));
+      return t.seats[1]!.life - s.seats[1]!.life;
+    };
+    expect(ping('Test Hide')).toBe(0);
+    expect(ping('Test Skin')).toBe(2);
+  });
+
+  it('"is dealt combat damage": by a blocked attacker', () => {
+    let s = table(['Test Pinger'], ['Test Hide']);
+    const pinger = find(s, 0, 'battlefield', 'Test Pinger');
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[1]!.life;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pinger, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Hide'), attacker: pinger }] });
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    expect(s.seats[1]!.life).toBe(life + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

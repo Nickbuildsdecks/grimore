@@ -1610,7 +1610,9 @@ function triggerMatches(
     case 'becomes-tapped':
     case 'leaves':
     // "Whenever ~ is dealt damage" (D566): its own permanent only, narrowed by `raise`.
+    // "Is dealt combat damage" (D992): the combat event only.
     case 'damaged':
+      return !(want.kind === 'damaged' && want.combatOnly === true && (event as { combat?: boolean }).combat !== true);
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
     case 'turned-face-up':
@@ -3667,7 +3669,8 @@ function settle(state: GameState, before: GameState): GameState {
         }
         const amount = record.combat === true ? combatTotal.get(id) ?? record.amount : record.amount;
         next = raise(
-          next, { kind: 'damaged', amount }, (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
+          next, { kind: 'damaged', amount, ...(record.combat === true ? { combat: true } : {}) },
+          (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
         );
       } else if (record.source !== null && record.sourceInPlay) {
         /*

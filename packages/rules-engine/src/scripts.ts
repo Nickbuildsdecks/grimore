@@ -45,7 +45,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED, MONSTROUS,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, flipPermanent, recordExpiry, pairCreatures,
@@ -10536,8 +10536,11 @@ const monstrosity = (n: number, cost: string): AbilityDef => ({
   description: `Monstrosity ${n} (${cost}: Put ${n} +1/+1 counters on this and it becomes monstrous. `
     + `Activate only if it isn't monstrous.)`,
   // The clause that makes it one-shot, where the ability is offered rather than where it resolves.
-  activateOnlyIf: (state, source) => (state.instances[source]?.counters['+1/+1'] ?? 0) === 0,
-  effect: (c) => addCounters(c.state, c.source, '+1/+1', n),
+  // Since D992 it asks the designation, not the counters it came with (CR 701.32b).
+  activateOnlyIf: (state, source) => (state.instances[source]?.counters[MONSTROUS] ?? 0) === 0,
+  effect: (c) => (c.state.instances[c.source]?.zone !== 'battlefield' || (c.state.instances[c.source]?.counters[MONSTROUS] ?? 0) > 0
+    ? c.state
+    : addCounters(addCounters(c.state, c.source, '+1/+1', n), c.source, MONSTROUS, 1)),
 });
 
 const adapt = (n: number, cost: string): AbilityDef => ({
@@ -10574,7 +10577,7 @@ const FLEECEMANE_LION: CardScript = {
     scope: 'self',
     effect: {
       keywords: ['hexproof', 'indestructible'],
-      while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+      while: { kind: 'source-has-counter', counter: MONSTROUS, atLeast: 1 },
     },
   }],
 };
@@ -18195,8 +18198,13 @@ const TRIGGER_SHAPES: readonly ({
     `combat-damage`, where it has been since D439, and nothing here re-reads it.
   */
   {
-    prologue: (self) => new RegExp(`^Whenever ${self} is dealt damage, (.+)$`, 'i'),
+    // "Whenever a source deals damage to ~" (D992) is the same sentence the other way round.
+    prologue: (self) => new RegExp(`^Whenever (?:${self} is dealt damage|a source deals damage to ${self}), (.+)$`, 'i'),
     on: [{ kind: 'damaged' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} is dealt combat damage, (.+)$`, 'i'),
+    on: [{ kind: 'damaged', combatOnly: true }],
   },
   // "Whenever ~ deals damage", to anything (D904): see the event's `to: 'any'`.
   {
@@ -18479,6 +18487,11 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you' }],
+  },
+  // "When ~ becomes monstrous" (D992): the `MONSTROUS` marker put on it, as counters put on it are.
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} becomes monstrous, (.+)$`, 'i'),
+    on: [{ kind: 'counters-put', counter: MONSTROUS }],
   },
   // "Whenever you scry", "… surveil", "… scry or surveil" (D991): the `scries` event.
   {
@@ -28239,7 +28252,7 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
         scope: 'self',
         effect: {
           keywords,
-          while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+          while: { kind: 'source-has-counter', counter: MONSTROUS, atLeast: 1 },
         },
       }],
     };

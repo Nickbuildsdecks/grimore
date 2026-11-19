@@ -952,6 +952,12 @@ export const FADE = 'fade';
  * counters, so renown is available again — which is exactly what the rules say.
  */
 export const RENOWNED = 'renowned';
+/**
+ * Monstrous (D992, CR 701.32b): a designation, kept as a marker counter as `RENOWNED` is. Set by
+ * monstrosity alongside its +1/+1 counters, so a creature that later loses those counters is still
+ * monstrous, and recorded as counters put on it so "When ~ becomes monstrous" can trigger.
+ */
+export const MONSTROUS = 'monstrous';
 
 /**
  * The keys in `counters` that are **markers**, not counters (D638): facts the engine keeps on the
@@ -964,7 +970,7 @@ export const RENOWNED = 'renowned';
  * thing with counters on it.
  */
 // And the records D924, D928 and D933 write: squad's count, a surge and a blitz.
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED]);
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS]);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
@@ -2132,7 +2138,8 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
     putting them on. A permanent entering with counters gets them through here too, and that counts
     as putting them on (CR 122.6).
   */
-  if (amount > 0 && inst.zone === 'battlefield' && (key === '+1/+1' || key === '-1/-1' || key === 'loyalty')) {
+  // And becoming monstrous (D992), for "When ~ becomes monstrous".
+  if (amount > 0 && inst.zone === 'battlefield' && (key === '+1/+1' || key === '-1/-1' || key === 'loyalty' || key === MONSTROUS)) {
     return { ...placed, countersPut: [...(placed.countersPut ?? []), { card: id, counter: key }] };
   }
   return placed;

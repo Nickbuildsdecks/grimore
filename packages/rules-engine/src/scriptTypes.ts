@@ -686,6 +686,10 @@ export type TriggerEvent =
       readonly kind: 'damaged';
       /** Set by the engine: which permanent was dealt the damage. */
       readonly subject?: string;
+      /** "Whenever ~ is dealt **combat** damage" (D992): only the combat damage step's event. */
+      readonly combatOnly?: true;
+      /** Set by the engine (D992): whether it was combat damage. */
+      readonly combat?: boolean;
       /** Set by the engine: how much it was dealt (D904); combat damage is summed, as one event. */
       readonly amount?: number;
     }
