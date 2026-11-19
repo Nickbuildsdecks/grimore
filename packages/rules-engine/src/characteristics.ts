@@ -2034,6 +2034,8 @@ export interface ContinuousEffect {
      * answerable inside `characteristicsOf` — see `devotionTo`.
      */
     | { readonly kind: 'controller-devotion'; readonly colours: readonly string[]; readonly atLeast?: number; readonly below?: number }
+    /** "As long as you have the city's blessing" (D762): the controller's `Seat.citysBlessing`. */
+    | { readonly kind: 'controller-citys-blessing' }
     /** "It's your turn" / "it's not your turn". */
     | { readonly kind: 'turn'; readonly yours: boolean }
     /**
@@ -2369,6 +2371,7 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     — Galvanic Blast's count — runs while a spell resolves rather than inside this computation, so
     it reads live and is not subject to this.
   */
+  if (cond.kind === 'controller-citys-blessing') return state.seats[effect.controller]?.citysBlessing === true;
   if (cond.kind === 'controller-devotion') {
     const devotion = devotionTo(state, effect.controller, new Set(cond.colours));
     return devotion >= (cond.atLeast ?? 0) && (cond.below === undefined || devotion < cond.below);

@@ -242,6 +242,8 @@ export interface SeatView {
   readonly counters: Readonly<Record<string, number>>;
   readonly eliminated: boolean;
   readonly eliminatedReason: EliminatedReason | null;
+  /** The city's blessing (D762), public like every player designation. See `Seat.citysBlessing`. */
+  readonly citysBlessing?: boolean;
   readonly commanderTax: number;
   readonly mulligans: number;
   readonly deckId: string | null;
@@ -769,6 +771,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     counters: seat.counters,
     eliminated: seat.eliminated,
     eliminatedReason: seat.eliminatedReason,
+    citysBlessing: seat.citysBlessing === true,
     commanderTax: seat.commanderTax,
     mulligans: seat.mulligans,
     deckId: seat.deckId,
