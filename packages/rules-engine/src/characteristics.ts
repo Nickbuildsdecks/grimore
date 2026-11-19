@@ -973,12 +973,17 @@ function printedCombatFlags(oracleText: string | null | undefined, name?: string
  * the one creature type in Magic that is two words, split by a derivation that works a word at a
  * time. Nothing asks for either, so they are left in rather than special-cased — named here so
  * the next reader knows they were seen.
+ *
+ * **And one added by hand (D754): `Blinkmoth`.** A real creature type (CR 205.3m) that no printed
+ * creature card carries: only Blinkmoth Nexus and Inkmoth Nexus give it, in the text of their
+ * animation. A derivation from type lines cannot see it, so the creature lands that print it were
+ * refused. 317 in all.
  */
 export const CREATURE_TYPES: readonly string[] = [
   'Advisor', 'Aetherborn', 'Alien', 'Ally', 'Andorian', 'Angel', 'Antelope', 'Ape', 'Archer', 'Archon',
   'Armadillo', 'Artificer', 'Assassin', 'Assembly-Worker', 'Astartes', 'Atog', 'Aurochs', 'Avatar',
   'Azra', 'Badger', 'Barbarian', 'Bard', 'Basilisk', 'Bat', 'Bear', 'Beast', 'Beaver', 'Beeble',
-  'Beholder', 'Berserker', 'Bird', 'Bison', 'Boar', 'Borg', 'Bringer', 'Brushwagg', "C'tan", 'Caitian',
+  'Beholder', 'Berserker', 'Bird', 'Bison', 'Blinkmoth', 'Boar', 'Borg', 'Bringer', 'Brushwagg', "C'tan", 'Caitian',
   'Camel', 'Capybara', 'Carrier', 'Cat', 'Centaur', 'Chimera', 'Citizen', 'Cleric', 'Clown', 'Cockatrice',
   'Construct', 'Coward', 'Coyote', 'Crab', 'Crocodile', 'Custodes', 'Cyberman', 'Cyclops', 'Dalek',
   'Dauthi', 'Demigod', 'Demon', 'Detective', 'Devil', 'Dinosaur', 'Djinn', 'Doctor', 'Dog', 'Dragon',

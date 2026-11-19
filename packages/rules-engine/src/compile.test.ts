@@ -9574,8 +9574,9 @@ describe('the shrink, which is the pump with one character changed (D454)', () =
     ['a shrink that grants a keyword', 'Target creature gets -2/-2 and gains menace until end of turn.'],
     // No duration at all, which would be a permanent effect rather than a trick.
     ['a shrink with no duration', 'Target creature gets -2/-2.'],
-    // A type-restricted phrase `targetSpecFrom` cannot build (#341).
-    ['a subtype phrase', 'Target Kavu creature gets -1/-1 until end of turn.'],
+    // A type-restricted phrase `targetSpecFrom` cannot build (#341). "Target Kavu creature" reads
+    // since D754, which peels a real creature type; a word that is not one is still refused.
+    ['a subtype phrase', 'Target Zzyzx creature gets -1/-1 until end of turn.'],
   ])('refuses %s', (_label, text) => {
     expect(unreadLines(spell(text as string))).toEqual([text]);
   });
@@ -12489,9 +12490,10 @@ describe('Changeling: every creature type (D506)', () => {
     /*
       The list is 316 names pulled out of the corpus, and the spot-check is what caught the
       derivation being wrong twice (see `CREATURE_TYPES`). These are the eighteen tribes the first
-      pass dropped, plus the ten artifact/enchantment/land subtypes it wrongly kept.
+      pass dropped, plus the ten artifact/enchantment/land subtypes it wrongly kept. Blinkmoth
+      (D754) was added by hand: no type line carries it.
     */
-    expect(CREATURE_TYPES).toHaveLength(316);
+    expect(CREATURE_TYPES).toHaveLength(317);
     for (const tribe of ['Goblin', 'Elf', 'Wizard', 'Demon', 'Elemental', 'Soldier', 'Warrior',
       'Merfolk', 'Kithkin', 'Faerie', 'Giant', 'Shaman', 'Shapeshifter', 'Rebel', 'Rogue',
       'Treefolk', 'Eldrazi', 'Lhurgoyf', 'Wall', 'Spirit']) {

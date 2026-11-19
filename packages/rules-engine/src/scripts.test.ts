@@ -24614,6 +24614,102 @@ describe('spell additional costs: sacrifice a land / a permanent / a nonland per
   });
 });
 
+describe('creature lands and typed creature targets (D754)', () => {
+  const land = (name: string, text: string) => ({ name, type_line: 'Land', oracle_text: text, mana_cost: '', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    land('Test Ape Village', '{T}: Add {G}.\n{1}: Test Ape Village becomes a 3/3 green Ape creature with trample until end of turn. It\'s still a land.'),
+    land('Test Colonnade', '{T}: Add {W}.\n{1}: Until end of turn, Test Colonnade becomes a 4/4 white and blue Elemental creature with flying and vigilance. It\'s still a land.'),
+    land('Test Factory', '{T}: Add {C}.\n{1}: Test Factory becomes a 2/2 Assembly-Worker artifact creature until end of turn. It\'s still a land.\n{T}: Target Assembly-Worker creature gets +1/+1 until end of turn.'),
+    { name: 'Test Goblin Bane', type_line: 'Instant', oracle_text: 'Destroy target Goblin creature.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd754', name: 'Creature lands',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd754', 1: 'd754' }, deckSpecs: { d754: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Taps a Forest for the {1}, then animates `id` (its ability 1) and lets it resolve. */
+  const animate = (s0: GameState, id: string) => {
+    const forest = ids(s0, 0, 'battlefield').find((x) => nameOf(s0, x) === 'Forest' && !s0.instances[x]!.tapped)!;
+    let s = apply(s0, { type: 'auto:activate', by: 0, card: forest, abilityIndex: 0 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 1 });
+    return drain(passBoth(s));
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // Blinkmoth is a creature type no type line prints (CR 205.3m).
+    expect(compileCard(land('Test Nexus', '{1}: Test Nexus becomes a 1/1 Blinkmoth artifact creature with flying until end of turn. It\'s still a land.') as never))
+      .toMatchObject({ ok: true, unread: [] });
+    // Refused: no duration, a quoted ability, a word that is not a creature type, in the land or the target.
+    for (const text of [
+      '{1}: Test Odd becomes a 2/2 Bear creature. It\'s still a land.',
+      '{1}: Test Odd becomes a 2/2 Bear creature with "{T}: Draw a card." until end of turn. It\'s still a land.',
+      '{1}: Test Odd becomes a 2/2 Zzyzx creature until end of turn. It\'s still a land.',
+      '{T}: Target Zzyzx creature gets +1/+1 until end of turn.',
+    ]) {
+      const read = compileCard(land('Test Odd', text) as never);
+      expect(read.ok && read.unread.map((u) => u.line), text).toEqual([text]);
+    }
+  });
+
+  it('"becomes a 3/3 green Ape creature with trample until end of turn": all of it, and still a land', () => {
+    let s = table({ battlefield: { 0: ['Test Ape Village', 'Forest'] } });
+    const id = find(s, 0, 'battlefield', 'Test Ape Village');
+    s = animate(s, id);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect([ch.isCreature, ch.isLand]).toEqual([true, true]);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(ch.colors).toEqual(['G']);
+    expect(hasSubtype(ch.typeLine, 'ape')).toBe(true);
+    expect(ch.keywords.has('trample')).toBe(true);
+    const later = nextTurn(s);
+    expect(characteristicsOf(later, later.instances[id]!).isCreature).toBe(false);
+  });
+
+  it('"Until end of turn, ~ becomes a 4/4 white and blue Elemental creature with flying and vigilance"', () => {
+    let s = table({ battlefield: { 0: ['Test Colonnade', 'Forest'] } });
+    const id = find(s, 0, 'battlefield', 'Test Colonnade');
+    s = animate(s, id);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect([ch.power, ch.toughness]).toEqual([4, 4]);
+    expect([...ch.colors].sort()).toEqual(['U', 'W']);
+    expect(ch.keywords.has('flying') && ch.keywords.has('vigilance')).toBe(true);
+    expect(legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === id && p.abilityIndex === 1)).toBeDefined();
+  });
+
+  it('an Assembly-Worker artifact creature, which the other Factory may pump and a Bear is not', () => {
+    let s = table({ battlefield: { 0: ['Test Factory', 'Test Factory', 'Forest', 'Test Bear'] } });
+    const [one, two] = ids(s, 0, 'battlefield').filter((x) => nameOf(s, x) === 'Test Factory');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = animate(s, one!);
+    const ch = characteristicsOf(s, s.instances[one!]!);
+    expect(ch.isCreature && hasType(ch.typeLine, 'artifact') && ch.isLand).toBe(true);
+    expect(hasSubtype(ch.typeLine, 'assembly-worker')).toBe(true);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: two!, abilityIndex: 2, targets: [{ kind: 'card', id: bear }] } as Action)).toBeTruthy();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: two!, abilityIndex: 2, targets: [{ kind: 'card', id: one! }] })));
+    const pumped = characteristicsOf(s, s.instances[one!]!);
+    expect([pumped.power, pumped.toughness]).toEqual([3, 3]);
+  });
+
+  it('"destroy target Goblin creature" takes a Goblin and refuses a Bear', () => {
+    let s = table({ hands: { 0: ['Test Goblin Bane'] }, battlefield: { 1: ['Test Goblin', 'Test Bear'] } });
+    const goblin = find(s, 1, 'battlefield', 'Test Goblin');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const bane = find(s, 0, 'hand', 'Test Goblin Bane');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: bane, targets: [{ kind: 'card', id: bear }] } as Action)).toBeTruthy();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bane, targets: [{ kind: 'card', id: goblin }] })));
+    expect(s.instances[goblin]!.zone).toBe('graveyard');
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
