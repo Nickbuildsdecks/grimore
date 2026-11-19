@@ -34865,3 +34865,41 @@ not read, and D469's refusal list drops the phrase.
     engine tests: 5,386, all passing (merged with the other session's D998)
 
 Coverage: 13,582 of 31,900 cards (+19), 34,442 of 59,888 lines (+27), against 20fdb27.
+
+## D760 — Gaining control, for good and until end of turn
+
+Two gaps in one family. 149 unread lines print "gain control".
+
+**For good.** "Gain control of target <permanent>." had no reader: Agent of Treachery's enters
+trigger, the sorcery cousins of Treachery, and "Gain control of target artifact". `readEffect` now
+reads it with `gainControl`, which moves the permanent to the new controller's battlefield
+(control is which battlefield a permanent is on here), and nothing moves it back. A phrase with
+"until end of turn" or "for as long as" is not taken by this reader.
+
+**Until end of turn, more widely.** D516's `stealPrefix` (the Act of Treason sentence) took only
+the bare "target creature".
+- The target now goes through `targetSpecFrom`, so "… an opponent controls" and "… with mana value
+  3 or less" read. That also reads the creatures' and planeswalkers' steals, which print the
+  narrower phrase.
+- Any permanent, with "Untap that permanent" (Zealous Conscripts); `stealUntilEndOfTurn` already
+  works on one.
+- Threaten's order, "Untap target creature and gain control of it until end of turn. That creature
+  gains haste until end of turn.", is read as the three-sentence form.
+
+Zealous Conscripts reading whole completes the Kiki-Jiki, Mirror Breaker combo's pieces, both
+compiled.
+
+**Tests.** 6 engine tests:
+- the cards read, and a bare "until end of turn" steal with no untap stays unread;
+- for good: the creature is the caster's, and still is two turns later;
+- an enters trigger takes a land for good;
+- Threaten's order: untapped, hasty, and back with its owner as the turn ends;
+- Conscripts' form on a land: taken, and back next turn;
+- "an opponent controls" on the steal refuses the caster's own creature.
+
+Faults injected by script: 5. 4 were caught. The miss is equivalent: it dropped the duration guard
+on the lasting reader, and `targetSpecFrom` refuses "target creature until end of turn" anyway.
+
+    engine tests: 5,392, all passing
+
+Coverage: 13,617 of 31,900 cards (+26), 34,489 of 59,888 lines (+38), against 676129d.
