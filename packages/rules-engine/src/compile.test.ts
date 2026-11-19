@@ -5963,9 +5963,9 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         ability their makers quote in reminder text. The comment that stood here is the argument
         for doing it that way: it gave Food's text from memory as "Sacrifice this artifact", and
         the cards print "Sacrifice this token". Powerstone left the list at D740, written the same
-        way from the reminder text its makers print.
+        way from the reminder text its makers print, and Gold at D765, the same way.
       */
-      for (const named of ['Map', 'Junk', 'Gold']) {
+      for (const named of ['Map', 'Junk']) {
         const card = compileCard({
           name: `Larder ${named}`, type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
           oracle_text: `Create a ${named} token.`,
@@ -9900,22 +9900,20 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
     expect(unreadLines(compiled)).toEqual([]);
   });
 
-  it('refuses "enchant player", although the target phrase itself reads', () => {
+  it('reads "enchant player" since D765, and leaves an unread Curse trigger flagged', () => {
     /*
-      **The deliberate refusal, and the reason it is not an oversight.** `targetSpecFrom` can build
-      `target player`, so without this the 42 legal Auras printing `Enchant player` would compile.
-
-      The engine attaches an Aura by writing `attachedTo` with the id of a **card** — the resolution
-      looks for `targets.find((t) => t.kind === 'card')` — so an Aura pointed at a seat would
-      resolve, find no card among its targets, and sit on the battlefield attached to nothing. That
-      is the "works and does nothing" shape this reader exists to avoid, and it is worse than the
-      badge because nothing at the table would say so.
+      **This was the deliberate refusal**, for a reason that held until D765: the engine attached an
+      Aura only by writing `attachedTo` with a card's id, so an Aura aimed at a seat would resolve
+      attached to nothing. D765 gave the Aura `enchantedSeat` and the state-based check a rule for
+      it, so the declaration reads as a player-targeting Aura. What the Curse does is in its own
+      lines, and one the compiler cannot read ("the upkeep of enchanted player" is not the printed
+      wording it knows) stays flagged rather than dropped.
     */
     const text = 'Enchant player\nAt the beginning of the upkeep of enchanted player, that player'
       + ' loses 1 life.';
     const compiled = aura(text);
-    expect(attachment(compiled)).toBeUndefined();
-    expect(unreadLines(compiled)).toContain('Enchant player');
+    expect(attachment(compiled)).toMatchObject({ target: { kind: 'player' } });
+    expect(unreadLines(compiled)).toEqual(['At the beginning of the upkeep of enchanted player, that player loses 1 life.']);
   });
 
   it.each([

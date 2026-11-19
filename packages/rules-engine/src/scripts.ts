@@ -1486,6 +1486,16 @@ export const FOOD_TOKEN: CardDef = {
   oracleText: '{2}, {T}, Sacrifice this token: You gain 3 life.', colors: [],
 };
 
+/**
+ * Gold (D765): Treasure without the tap. The text is the reminder its makers print (Curse of
+ * Opulence, Gild, The First Iroan Games): "Sacrifice this token", not "this artifact", which is
+ * the slip D582 records for Food.
+ */
+export const GOLD_TOKEN: CardDef = {
+  name: 'Gold', typeLine: 'Token Artifact — Gold', manaCost: '', cmc: 0,
+  oracleText: 'Sacrifice this token: Add one mana of any color.', colors: [],
+};
+
 export const BLOOD_TOKEN: CardDef = {
   name: 'Blood', typeLine: 'Token Artifact — Blood', manaCost: '', cmc: 0,
   oracleText: '{1}, {T}, Discard a card, Sacrifice this token: Draw a card.', colors: [],
@@ -8502,8 +8512,8 @@ export const TOKEN_DEFS: readonly CardDef[] = [
   TREASURE_TOKEN, CLUE_TOKEN,
   // And the two D582 added, on the same terms.
   FOOD_TOKEN, BLOOD_TOKEN,
-  // And Powerstone (D740).
-  POWERSTONE_TOKEN,
+  // And Powerstone (D740), and Gold (D765).
+  POWERSTONE_TOKEN, GOLD_TOKEN,
 ];
 
 /*
@@ -16358,7 +16368,18 @@ export function attachmentScriptFor(
     }
     const declared = enchant[0]!;
     const thing = enchant[1]!.trim().toLowerCase();
-    if (thing === 'player') return null;
+    /*
+      "Enchant player" (D765): a Curse, attached to the player it is aimed at (`enchantedSeat`).
+      Nothing on the player changes by attaching; what the Curse does is in its own triggers, read
+      through the line path ("enchanted player's upkeep", "enchanted player is attacked"). No
+      `friendly` hint: almost every one is aimed at an opponent, and the bot reads the board.
+    */
+    if (thing === 'player') {
+      return {
+        fragment: { aura: { target: { kind: 'player', description: 'enchant player' }, effect: {} } },
+        claimed: [declared],
+      };
+    }
     /*
       "You control enchanted creature" (D938): Control Magic's family, 40 legal Auras. Never
       friendly, whatever else the Aura does to its host: it is for somebody else's permanent.
@@ -19558,6 +19579,7 @@ const NAMED_TOKENS: Readonly<Record<string, CardDef>> = {
   Food: FOOD_TOKEN,
   Blood: BLOOD_TOKEN,
   Powerstone: POWERSTONE_TOKEN,
+  Gold: GOLD_TOKEN,
 };
 
 function namedTokenFrom(body: string): { token: CardDef; printed: string } | null {
@@ -20818,6 +20840,76 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     (D960). "That player" is the one it hit, which is the defending player of its attack, so the
     phrase is read as "defending player controls" (see `parsedTargetPhrase`).
   */
+  /*
+    A Curse's triggers (D765), about the player it is attached to (`enchantedSeat`).
+
+    - "At the beginning of enchanted player's upkeep / draw step / end step, <effect>": that step of
+      each player's, when the active player is the enchanted one, so "that player" and "they" read
+      as they do on "each player's upkeep".
+    - "Whenever a creature attacks enchanted player, <effect>": the per-attacker attack, when what it
+      attacks is that player (not a planeswalker of theirs).
+    - "Whenever enchanted player is attacked, <effect>. [Each opponent attacking that player does the
+      same.]": once per attack declaration that reaches that player; the effect is the Curse
+      controller's, and with the second sentence each opponent of theirs attacking that player
+      does it too, as its own controller (the Commander 2017 Curses).
+  */
+  const enchantedSeatOf = (state: GameState, source: string): SeatIndex | undefined => state.instances[source]?.enchantedSeat;
+  const cursed = withoutAbilityWord(plain(line).trim());
+  const cursedStep = /^At the beginning of enchanted player's (upkeep|draw step|end step), (.+)$/i.exec(cursed);
+  if (cursedStep !== null) {
+    const body = cursedStep[2]!.replace(/^they /i, 'that player ');
+    const read = triggerFromLine(`At the beginning of each player's ${cursedStep[1]!}, ${body}`, name);
+    const trigger = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
+    if (trigger === null) return null;
+    const own = trigger.condition;
+    return {
+      triggers: [{
+        ...trigger,
+        condition: (c) => c.state.activeSeat === enchantedSeatOf(c.state, c.source) && (own === undefined || own(c)),
+      }],
+    };
+  }
+  const attacksCursed = /^Whenever a creature attacks enchanted player, (.+)$/i.exec(cursed);
+  if (attacksCursed !== null) {
+    const read = triggerFromLine(`Whenever a creature attacks, ${attacksCursed[1]!}`, name);
+    const trigger = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
+    if (trigger === null) return null;
+    const own = trigger.condition;
+    return {
+      triggers: [{
+        ...trigger,
+        condition: (c) => c.attacked !== undefined && c.attacked.planeswalker === undefined
+          && c.attacked.defender === enchantedSeatOf(c.state, c.source) && (own === undefined || own(c)),
+      }],
+    };
+  }
+  const isAttacked = /^Whenever enchanted player is attacked, (.+?)(\. Each opponent attacking that player does the same)?\.?$/i.exec(cursed);
+  if (isAttacked !== null) {
+    const effect = composeEffects(clausesOf(isAttacked[1]!.trim()), name, 'battlefield');
+    if (effect === null || (effect.targets ?? []).length > 0 || (effect.decisions ?? []).length > 0
+      || effect.beforeDecisions !== undefined || effect.reflexive !== undefined) return null;
+    const theSame = isAttacked[2] !== undefined;
+    const attackingIt = (state: GameState, seat: SeatIndex | undefined): SeatIndex[] => (seat === undefined ? [] : [
+      ...new Set((state.combat?.attacks ?? []).filter((a) => a.defender === seat && a.planeswalker === undefined)
+        .map((a) => state.instances[a.attacker]?.zoneSeat).filter((s): s is SeatIndex => s !== undefined)),
+    ]);
+    return {
+      triggers: [{
+        on: { kind: 'attack-declared', by: 'any' },
+        description: `whenever enchanted player is attacked, ${isAttacked[1]!.trim()}${theSame ? '; each opponent attacking that player does the same' : ''}`,
+        condition: (c) => attackingIt(c.state, enchantedSeatOf(c.state, c.source)).length > 0,
+        effect: (c) => {
+          let next = effect.effect(c);
+          if (!theSame) return next;
+          for (const seat of attackingIt(c.state, enchantedSeatOf(c.state, c.source))) {
+            if (seat === c.controller) continue;
+            next = effect.effect({ ...c, state: next, controller: seat });
+          }
+          return next;
+        },
+      }],
+    };
+  }
   /*
     "Whenever you cast <a spell>, [you may] copy it / that spell. You may choose new targets for the
     copy." (D755): the cast trigger's event read by this reader (with a stand-in effect), and the

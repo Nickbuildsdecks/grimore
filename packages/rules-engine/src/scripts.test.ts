@@ -26885,6 +26885,99 @@ describe('phasing (D1023)', () => {
   });
 });
 
+describe('Curses: Auras that enchant a player (D765)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const curse = (name: string, text: string) => card(name, 'Enchantment — Aura Curse', `Enchant player\n${text}`);
+  const ROWS = [
+    curse('Test Opulence', 'Whenever enchanted player is attacked, create a Gold token. Each opponent attacking that player does the same.'),
+    curse('Test Tome', "At the beginning of enchanted player's upkeep, that player mills two cards."),
+    curse('Test Predation', 'Whenever a creature attacks enchanted player, put a +1/+1 counter on it.'),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd765', name: 'Curses',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 52 }],
+    data: ROWS as never[],
+  });
+  const pod = (battlefield: Record<number, string[]>, hands: Record<number, string[]> = {}) => arena({
+    format: 'pod', seats: 3, decks: { 0: 'd765', 1: 'd765', 2: 'd765' }, deckSpecs: { d765: deck.deck },
+    battlefield, hands, turn: 3, firstSeat: 0,
+  } as never);
+  /**
+   * A Curse put from its controller's hand straight onto the battlefield, attached to `seat`. Set up
+   * unattached it would be put into the graveyard at once, as an Aura attached to nothing is.
+   */
+  const attach = (s: GameState, controller: 0 | 1 | 2, name: string, seat: 0 | 1 | 2): GameState => {
+    const id = find(s, controller, 'hand', name);
+    const hand = `${controller}:hand`;
+    const field = `${controller}:battlefield`;
+    return {
+      ...s,
+      instances: { ...s.instances, [id]: { ...s.instances[id]!, zone: 'battlefield', zoneSeat: controller, enchantedSeat: seat } },
+      zones: { ...s.zones, [hand]: s.zones[hand]!.filter((x) => x !== id), [field]: [...(s.zones[field] ?? []), id] },
+    };
+  };
+  const gold = (s: GameState, seat: number) => namesIn(s, seat, 'battlefield').filter((n) => n === 'Gold').length;
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(card('Test Gold Maker', 'Sorcery', 'Create a Gold token.') as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast at a player, it attaches to that player and stays', () => {
+    let s = advanceTo(arena({ decks: { 0: 'd765', 1: 'd765' }, deckSpecs: { d765: deck.deck }, hands: { 0: ['Test Tome'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tome'), targets: [{ kind: 'player', seat: 1 }] })));
+    const tome = find(s, 0, 'battlefield', 'Test Tome');
+    expect(s.instances[tome]!.enchantedSeat).toBe(1);
+    expect(s.instances[tome]!.attachedTo).toBeNull();
+  });
+
+  it('enchanted player is attacked: its controller and each attacking opponent get a Gold', () => {
+    let s = attach(pod({ 0: ['Test Bear'] }, { 2: ['Test Opulence'] }), 2, 'Test Opulence', 1);
+    s = advanceTo(s, 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] })), 20);
+    expect([gold(s, 0), gold(s, 1), gold(s, 2)]).toEqual([1, 0, 1]);
+  });
+
+  it('an attack on somebody else gives nothing', () => {
+    let s = attach(pod({ 0: ['Test Bear'] }, { 2: ['Test Opulence'] }), 2, 'Test Opulence', 1);
+    s = advanceTo(s, 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 2 }] })), 20);
+    expect([gold(s, 0), gold(s, 1), gold(s, 2)]).toEqual([0, 0, 0]);
+  });
+
+  it('a creature attacking enchanted player gets the counter; one attacking another player does not', () => {
+    let s = attach(pod({ 0: ['Test Bear', 'Test Bear'] }, { 0: ['Test Predation'] }), 0, 'Test Predation', 1);
+    s = advanceTo(s, 'declare-attackers');
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: a!, defender: 1 }, { attacker: b!, defender: 2 }] })), 20);
+    expect(s.instances[a!]!.counters['+1/+1'] ?? 0).toBe(1);
+    expect(s.instances[b!]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it("enchanted player's upkeep: that player mills, and nobody else's upkeep does anything", () => {
+    let s = attach(pod({}, { 0: ['Test Tome'] }), 0, 'Test Tome', 1);
+    const libraries = () => [0, 1, 2].map((seat) => ids(s, seat, 'library').length);
+    const before = libraries();
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(1);
+    s = drain(passBoth(advanceTo(s, 'draw')), 20);
+    const after = libraries();
+    // Seat 1 milled two and then drew one for its turn.
+    expect(after[1]).toBe(before[1]! - 3);
+    expect(after[2]).toBe(before[2]);
+    // Seat 2's own upkeep mills nobody: it only draws for its turn.
+    s = nextTurn(s);
+    expect(s.activeSeat).toBe(2);
+    s = drain(passBoth(advanceTo(s, 'draw')), 20);
+    expect(libraries()[2]).toBe(before[2]! - 1);
+    expect(libraries()[1]).toBe(after[1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

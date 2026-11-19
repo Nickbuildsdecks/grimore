@@ -1969,6 +1969,10 @@ function fireTrigger(
       trigger they could respond to for a spell that was never going to be countered.
     */
     ...(answeringFor(event) === undefined ? {} : { answering: answeringFor(event) }),
+    // And what an attack was aimed at (D765), which the second ask reads off the stack object:
+    // "whenever a creature attacks enchanted player" is a condition on it.
+    ...((event.kind === 'attacks' || event.kind === 'attacks-unblocked') && event.attacked !== undefined
+      ? { attacked: event.attacked } : {}),
     /*
       And what the subject had on it, which the second ask has always had for the same reason.
 
@@ -3127,6 +3131,14 @@ export function stateBasedActions(state: GameState): GameState {
           the fallback is which way to fail for a card added later, and keeping a permanent that
           may be fine beats destroying one that was.
         */
+        // A Curse (D765): legal while the player it is attached to is in the game (CR 704.5m).
+        if (hasSubtype(ch.typeLine, 'aura') && inst.enchantedSeat !== undefined) {
+          if (next.seats[inst.enchantedSeat]?.eliminated === true) {
+            next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+            changed = true;
+          }
+          continue;
+        }
         if (hasSubtype(ch.typeLine, 'aura')) {
           const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
           const auraDef = scriptForCard(next.cardDefs[inst.defKey])?.aura;
@@ -6015,6 +6027,11 @@ function completeResolution(
         if (host && host.kind === 'card') {
           next = withInstance(next, inst.id, { attachedTo: host.id });
           next = addAuraEffect(next, inst.id, object.controller, host.id, script);
+        }
+        // "Enchant player" (D765): attached to the player it was aimed at.
+        const player = object.targets.find((t) => t.kind === 'player');
+        if (!host && player !== undefined && player.kind === 'player') {
+          next = withInstance(next, inst.id, { enchantedSeat: player.seat });
         }
       }
       /*
