@@ -53121,3 +53121,30 @@ Faults injected by script: 16 of 16 caught. Of the first 16, 14 were caught and 
   unread.
 
 Coverage: 13,884 of 31,900 cards (+12), 34,950 of 59,888 lines (+15).
+
+## D1022 — poison counters from an effect
+
+"Target opponent gets two poison counters", "Each opponent gets a poison counter" (Infectious Bite),
+"each player gets a poison counter" (Ichor Rats), "you get a poison counter" (Phyrexian
+Vatmother). "Defending player gets a poison counter" (Crypt Cobra) and "that player gets …" on a hit
+or on a player's action also read, because the referent swap turns them into "target player". The
+same goes for D1021's "a creature you control becomes the target of a spell, target opponent gets a
+poison counter" (Venerated Rotpriest).
+
+- `givePoison` in effects.ts adds the counters (CR 122.1f). It is not damage and not life loss, so
+  nothing that watches those fires. The ten-poison loss is the state-based check that already reads
+  `poison` for toxic and infect.
+- `readEffect` reads "(target player | target opponent | each opponent | each player | you)
+  get(s) (a | one … five | N) poison counter(s)". "Each player" skips eliminated seats.
+- "Its controller gets a poison counter" after a target is a separate reader and is not this one.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- the target gets two, each opponent and each player one, and "you" yourself;
+- "defending player" is the one attacked;
+- 8 + 2 poison eliminates the seat and seat 0 wins.
+
+Faults injected by script: 6. 5 were caught; the 6th was a guard against a non-positive amount
+that no printed line can reach, and it was folded away.
+
+Coverage: 13,899 of 31,900 cards (+15), 34,967 of 59,888 lines (+17).
