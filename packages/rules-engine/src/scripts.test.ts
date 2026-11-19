@@ -7976,6 +7976,8 @@ describe('deck coverage', () => {
       'trigger crime',
       // D999: "whenever an opponent loses life" (Exquisite Blood); the compiler reads it, no pool deck plays one.
       'trigger life-lost',
+      // D1000: "whenever one or more other creatures die" (Morbid Opportunist); no pool deck plays one.
+      'trigger creatures-died',
     ]);
 
     const declared = [
@@ -25410,6 +25412,68 @@ describe('gaining control: for good, and the until-end-of-turn steal more widely
     const s = table({ hands: { 0: ['Test Grab'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] } });
     const mine = find(s, 0, 'battlefield', 'Test Bear');
     expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Grab'), targets: [{ kind: 'card', id: mine }] } as Action)).toBeTruthy();
+  });
+});
+
+describe('"whenever one or more [other] creatures die" (D1000)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    C('Test Opportunist', 'Whenever one or more other creatures die, you gain 1 life.'),
+    C('Test Mourner', 'Whenever one or more nontoken creatures you control die, you gain 2 life.'),
+    C('Test Gloater', 'Whenever one or more creatures your opponents control die, you gain 4 life.'),
+    C('Test Smith', 'Whenever one or more artifact creatures you control die, you gain 8 life.'),
+    C('Test Bear', ''),
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Wrath', type_line: 'Sorcery', oracle_text: 'Destroy all creatures.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Shatter', type_line: 'Instant', oracle_text: 'Destroy target artifact.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Brood', type_line: 'Sorcery', oracle_text: 'Create a 1/1 black Rat creature token.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1000', name: 'Deaths', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[]) => advanceTo(arena({ decks: { 0: 'd1000', 1: 'd1000' }, deckSpecs: { d1000: deck.deck }, hands: { 0: hand }, battlefield: { 0: ['Test Opportunist', 'Test Mourner', 'Test Gloater', 'Test Smith', 'Test Bear', 'Test Golem', 'Test Relic'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const cast = (s: GameState, spell: string, target?: Target) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...(target === undefined ? {} : { targets: [target] }) } as Action));
+  const run = (spell: string, target?: (s: GameState) => Target) => {
+    const s = table([spell]);
+    return cast(s, spell, target?.(s)).seats[0]!.life - s.seats[0]!.life;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one of your creatures dies: "other" and "you control" fire; "your opponents control" and "artifact" do not', () => {
+    expect(run('Test Kill', (s) => ({ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }))).toBe(1 + 2);
+  });
+
+  it('your artifact creature dies: "artifact creatures you control" fires too', () => {
+    expect(run('Test Kill', (s) => ({ kind: 'card', id: find(s, 0, 'battlefield', 'Test Golem') }))).toBe(1 + 2 + 8);
+  });
+
+  it('a noncreature artifact going to the graveyard is no creature dying', () => {
+    expect(run('Test Shatter', (s) => ({ kind: 'card', id: find(s, 0, 'battlefield', 'Test Relic') }))).toBe(0);
+  });
+
+  it('one of theirs dies: "other" and "your opponents control" fire', () => {
+    expect(run('Test Kill', (s) => ({ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }))).toBe(1 + 4);
+  });
+
+  it('"other" is not the watcher itself', () => {
+    expect(run('Test Kill', (s) => ({ kind: 'card', id: find(s, 0, 'battlefield', 'Test Opportunist') }))).toBe(2);
+  });
+
+  it('your token dying is not "nontoken"', () => {
+    let s = table(['Test Brood', 'Test Kill']);
+    s = cast(s, 'Test Brood');
+    const rat = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+    expect(rat).toBeDefined();
+    expect(cast(s, 'Test Kill', { kind: 'card', id: rat }).seats[0]!.life - s.seats[0]!.life).toBe(1);
+  });
+
+  it('a wrath fires each once, the watchers dying in it included', () => {
+    expect(run('Test Wrath')).toBe(1 + 2 + 4 + 8);
   });
 });
 

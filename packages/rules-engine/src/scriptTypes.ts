@@ -1194,6 +1194,22 @@ export type TriggerEvent =
    * per object however many of its targets were criminal. `by` defaults to `you`.
    */
   | { readonly kind: 'crime'; readonly by?: 'you' | 'opponent' | 'any' }
+  /**
+   * "Whenever **one or more** [other] [nontoken] creatures [you control] **die**" (D1000): Morbid
+   * Opportunist, Midnight Reaper's batched cousins. One event per settle for every creature that died
+   * in it, so a board wipe fires it once. The filters are asked of the list in `fireTrigger`, which
+   * knows which permanent is watching: `other` leaves the watcher out of the count, and a watcher
+   * that died in the same wipe still sees the others go (CR 603.10a).
+   */
+  | {
+      readonly kind: 'creatures-died';
+      readonly other?: true;
+      readonly of?: 'you' | 'opponent' | 'any';
+      readonly nontoken?: true;
+      readonly what?: 'artifact';
+      /** Set by the engine: the creatures that died, as they last were. */
+      readonly died?: readonly DiedCreature[];
+    }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
@@ -4240,6 +4256,15 @@ export interface CardScript {
 }
 
 /** The zone changes a card's `replaces` entry can be written against. See `CardScript.replaces`. */
+/** One creature in a `creatures-died` batch (D1000), read as it last existed. */
+export interface DiedCreature {
+  readonly id: string;
+  /** Who controlled it as it died. */
+  readonly seat: SeatIndex;
+  readonly token: boolean;
+  readonly types: readonly string[];
+}
+
 export type ReplacementEvent = 'dies' | 'to-graveyard' | 'leaves-battlefield';
 
 /**

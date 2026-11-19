@@ -18627,6 +18627,20 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you scry or surveil, (.+)$/i,
     on: [{ kind: 'scries', what: 'either' }],
   },
+  // "Whenever one or more [other] [nontoken] [artifact] creatures [you control] die" (D1000).
+  {
+    prologue: () => /^Whenever one or more (?<other>other )?(?<nontoken>nontoken )?(?<artifact>artifact )?creatures(?<of> you control| your opponents control)? die, (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      return [{
+        kind: 'creatures-died' as const,
+        ...(g.other === undefined ? {} : { other: true as const }),
+        ...(g.nontoken === undefined ? {} : { nontoken: true as const }),
+        ...(g.artifact === undefined ? {} : { what: 'artifact' as const }),
+        of: g.of === undefined ? 'any' as const : /you control/i.test(g.of) ? 'you' as const : 'opponent' as const,
+      }];
+    },
+  },
   // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
   {
     prologue: () => /^Whenever (?<by>you lose|an opponent loses|a player loses) life, (?<clause>.+)$/i,

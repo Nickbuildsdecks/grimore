@@ -1254,6 +1254,9 @@ function triggerMatches(
       }
       return e.spell === spell;
     }
+    // Asked in `fireTrigger`, which knows the watcher (D1000).
+    case 'creatures-died':
+      return true;
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
     // "Whenever you / an opponent / a player loses life" (D999): whose loss.
@@ -1863,6 +1866,17 @@ function fireTrigger(
     const host = next.instances[next.instances[holder]?.attachedTo ?? ''];
     if (host === undefined || host.zone !== 'battlefield' || host.zoneSeat !== actor) return next;
   }
+  // "One or more [other] [nontoken] creatures [you control] die" (D1000): at least one in the batch
+  // has to be what the trigger names, and "other" is asked of the watcher itself.
+  if (trigger.on.kind === 'creatures-died') {
+    const want = trigger.on;
+    const died = event.kind === 'creatures-died' ? event.died ?? [] : [];
+    const of = want.of ?? 'any';
+    if (!died.some((d) => (want.other !== true || d.id !== holder)
+      && (want.nontoken !== true || !d.token)
+      && (want.what === undefined || d.types.includes(want.what))
+      && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
+  }
   if (trigger.on.kind === 'dies' && trigger.on.damagedBy === 'self') {
     const hitBy = event.kind === 'dies' ? event.subjectDamagedBy ?? [] : [];
     if (!hitBy.includes(damageSourceRef(next, holder))) return next;
@@ -2326,7 +2340,10 @@ function raise(
       */
       : event.kind === 'spell-cast' && subject !== undefined
         ? [subject, ...everyBattlefield.filter((id) => id !== subject)]
-        : everyBattlefield;
+        // The batch's own dead are watchers too (D1000): Morbid Opportunist dying in the wipe.
+        : event.kind === 'creatures-died'
+          ? [...new Set([...everyBattlefield, ...(event.died ?? []).map((d) => d.id)])]
+          : everyBattlefield;
   for (const id of watchers) {
     /*
       A token that has ceased to exist is still the subject of its own death: its last state is in
@@ -2358,7 +2375,9 @@ function raise(
       included because the condition is about where the watcher *is*, and asking which card type
       wrote the trigger would be a worse rule than asking whether the event was about its host.
     */
-    const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
+    // A creature that died in the batch it watches still sees the others go (D1000, CR 603.10a).
+    const diedInBatch = event.kind === 'creatures-died' && (event.died ?? []).some((d) => d.id === id);
+    const fromGraveyard = diedInBatch || (event.kind === 'dies' || event.kind === 'leaves'
       || event.kind === 'to-graveyard'
       // The Aura a lethal hit detached (D994): it was attached when the damage was dealt.
       || (event.kind === 'damaged' && id !== subject)
@@ -3927,6 +3946,18 @@ function settle(state: GameState, before: GameState): GameState {
     // Leaving comes after dying, so a card that does both raises the narrower event first and its
     // death trigger goes on the stack under the leave trigger — which is the order the rules put
     // them in for one event raising two abilities of the same controller.
+    /*
+      And the batch (D1000): "whenever one or more creatures die", once for every creature that died
+      in this pass, each read as it last was.
+    */
+    const diedCreatures = dead.flatMap((id) => {
+      const was = next.vanished[id] ?? next.instances[id];
+      if (was === undefined) return [];
+      const ch = characteristicsOf(next, was);
+      if (!ch.isCreature) return [];
+      return [{ id, seat: was.zoneSeat, token: was.isToken === true, types: ch.typeLine.types.map((t) => t.toLowerCase()) }];
+    });
+    if (diedCreatures.length > 0) next = raise(next, { kind: 'creatures-died', died: diedCreatures }, undefined);
     for (const id of gone) next = raise(next, { kind: 'leaves' }, next.instances[id]?.zoneSeat, id);
     /*
       And the card arriving in a graveyard, which is a different event from the death that often
