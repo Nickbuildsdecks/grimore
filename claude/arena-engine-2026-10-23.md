@@ -34217,6 +34217,41 @@ unaimable). Seed 59203 replays to a finish.
 
     engine tests: 5,306, all passing (merged with the other session's D988 and D989)
 
+## D990 — Trigger openings with an event already behind them
+
+A new probe (`prologue-gap.mjs`) asks which cards are one line short only because of the trigger's
+opening. It compiles the opening with a trivial effect ("you gain 1 life") and keeps the lines where
+that fails: 1,686 of them. The commonest openings had events the engine already raised:
+
+- **"Whenever ~ attacks and isn't blocked"** (28 lines): Ophidian's `attacks-unblocked` event,
+  raised once every defender has declared blockers. Only the hand-written Ophidian used it.
+- **"When ~ attacks", "When ~ blocks", "When ~ attacks or blocks"** (17 lines): the "When"
+  spelling of three rows that read only "Whenever". It is the same event (CR 603.2), as the
+  combat-damage row has read both since D592.
+- **"At end of combat"** (8) and "… on your turn": the `end-combat` step event, raised for every
+  step entered.
+- **"Whenever a creature attacks"**: anybody's attacker, as "… a creature you control attacks"
+  reads yours.
+
+The rest of the list stays for later. It needs events or fields the engine lacks: scry and surveil,
+discarding, "becomes monstrous", "a source deals damage to ~", "an artifact is put into a graveyard
+from the battlefield" (no type on `to-graveyard`). "Whenever you crank ~" is an un-set mechanic.
+
+**Tests.** 5 engine tests:
+- the cards read, and so do the "When" block forms and "At end of combat on your turn" (on the
+  end-of-combat step, yours);
+- "attacks and isn't blocked" gains unblocked, and nothing when blocked;
+- "When this creature attacks" fires on the attack;
+- "At end of combat" fires once, with an attack and without one;
+- "Whenever a creature attacks" fires for your attacker and for the opponent's.
+
+Faults injected by script: 7. 4 were caught at once. The 3 misses (two "When" spellings, and "on
+your turn") are now pinned by the reads test.
+
+    engine tests: 5,311, all passing (merged with the other session's D749 and D750)
+
+Coverage: 13,243 of 31,900 cards (+13), 33,820 of 59,888 lines (+15).
+
 ## D751 — "Return up to two target creatures to their owners' hands"
 
 The bounce reader read "Return target … to its owner's hand", with any quantifier the target phrase

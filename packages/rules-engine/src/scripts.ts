@@ -17450,7 +17450,8 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'etb', who: 'self' }, { kind: 'attacks' }],
   },
   {
-    prologue: (self) => new RegExp(`^Whenever ${self} attacks or blocks, (.+)$`, 'i'),
+    // "When" too (D990): the same event (CR 603.2), as Uninvited Geist's combat-damage row below.
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} attacks or blocks, (.+)$`, 'i'),
     on: [{ kind: 'attacks' }, { kind: 'blocking-creature' }],
   },
   {
@@ -17512,17 +17513,25 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(
       // The long spellings first: regex alternation is ordered, so a bare `blocks` listed before
       // `blocks a creature` would claim the longer sentence and lose its filter.
-      `^Whenever ${self} (?<shape>blocks or becomes blocked by a creature`
+      `^When(?:ever)? ${self} (?<shape>blocks or becomes blocked by a creature`
       + '|blocks or becomes blocked|blocks a creature|becomes blocked by a creature'
       + '|becomes blocked|blocks), (?<clause>.+)$',
       'i',
     ),
     from: blockTrigger,
   },
-  // Borderland Marauder.
+  // Borderland Marauder. "When" too (D990).
   {
-    prologue: (self) => new RegExp(`^Whenever ${self} attacks, (.+)$`, 'i'),
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} attacks, (.+)$`, 'i'),
     on: [{ kind: 'attacks' }],
+  },
+  /*
+    "Whenever ~ attacks and isn't blocked" (D990): Ophidian's event, raised once every defender has
+    declared blockers (see `OPHIDIAN`), which no row read. 28 legal lines one card short opened so.
+  */
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} attacks and isn't blocked, (.+)$`, 'i'),
+    on: [{ kind: 'attacks-unblocked' }],
   },
   // Thieving Magpie. "When" too (D592): Uninvited Geist's spelling, the same event (CR 603.2).
   {
@@ -17947,6 +17956,15 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^At the beginning of combat on your turn, (.+)$/i,
     on: [{ kind: 'step', step: 'begin-combat', of: 'you' }],
+  },
+  // "At end of combat" (D990): the end-of-combat step of every turn, which every combat has (CR 511).
+  {
+    prologue: () => /^At end of combat, (.+)$/i,
+    on: [{ kind: 'step', step: 'end-combat', of: 'any' }],
+  },
+  {
+    prologue: () => /^At end of combat on your turn, (.+)$/i,
+    on: [{ kind: 'step', step: 'end-combat', of: 'you' }],
   },
   /*
     ── The same steps, on somebody else's turn ─────────────────────────────────────────────
@@ -18459,6 +18477,11 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you' }],
+  },
+  // And anybody's (D990): "Whenever a creature attacks" — Aggression, War Cadence's shape.
+  {
+    prologue: () => /^Whenever a creature attacks, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'any', of: 'any' }],
   },
   /*
     "Whenever a Dragon you control attacks" (D635): Atarka, Kolaghan, Utvara Hellkite. One
