@@ -35708,3 +35708,62 @@ moved to this very phrase; it now holds "… died under an opponent's control", 
 
 Coverage: 13,875 of 31,900 cards (+2), 34,940 of 59,888 lines (+3), against c721e9e. Of the 8 lines
 that print it, the rest have another unread clause.
+
+## D765 — Curses: Auras that enchant a player
+
+"Enchant player" was refused outright: an Aura here could only be attached to a permanent. 45
+legal cards print it, and the Curses are a Commander theme of their own.
+
+**The engine.**
+- `CardInstance.enchantedSeat` (CR 303.4): an Aura cast at a player records that player as it
+  resolves; `attachedTo` stays null. `relocate` clears it when the Aura leaves the battlefield.
+- The state-based check (CR 704.5m) keeps a Curse while that player is in the game, and puts it
+  into its owner's graveyard when they leave. Before this an Aura attached to nothing was always
+  binned.
+- The first ask of a trigger's condition now carries `attacked` for an attack event, as the
+  second ask (off the stack object) always did.
+- `GOLD_TOKEN`, "Sacrifice this token: Add one mana of any color." from its makers' reminder text, joins the named tokens: Curse of Opulence makes them.
+
+**The compiler.**
+- `attachmentScriptFor`: "Enchant player" is a player-targeting Aura with no bonus of its own. Its
+  triggers come through the line path, and any it cannot read stay flagged (D456's rule).
+- `triggerFromLine` reads a Curse's three common openings, as conditions on events the trigger
+  table already knows:
+  - "At the beginning of enchanted player's upkeep / draw step / end step, …" is that step of
+    each player's, when the active player is the enchanted one. "That player" and "they" read
+    as on "each player's upkeep".
+  - "Whenever a creature attacks enchanted player, …" is the per-attacker attack, aimed at that
+    player and not at a planeswalker of theirs.
+  - "Whenever enchanted player is attacked, … [Each opponent attacking that player does the
+    same.]" is once per declaration that reaches that player. The effect is the Curse
+    controller's, and with the second sentence each other player attacking that player does it
+    too, as its own controller. These are the Commander 2017 Curses: Opulence, Verbosity,
+    Vitality, Disturbance.
+- Not read: Curses that change the enchanted player's creatures or what they can do (statics with
+  a player scope), "that attacking player may …", and replacement effects (Curse of
+  Bloodletting).
+
+**Tests.** 6 engine tests:
+- the Curses and a Gold token read;
+- cast at a player, a Curse attaches to that player and stays;
+- in a three-player pod, an attack on the enchanted player gives the Curse's controller a Gold
+  and the attacking opponent a Gold, and nothing to the enchanted player;
+- an attack on somebody else gives nothing;
+- of two attackers, the one aimed at the enchanted player gets the counter and the other does not;
+- the enchanted player's upkeep mills that player, and the next player's upkeep mills nobody.
+
+Faults injected by script: 8. 7 were caught at once. The miss (the upkeep condition dropped) was a
+test that never reached another player's upkeep; it does now and catches it.
+
+The first gate failed two older compile tests, both for the right reason:
+- D456's "refuses enchant player" recorded the refusal and its cause (an Aura could attach only
+  to a card), which this increment removes. It now asserts the player Aura and a still-unread
+  Curse line.
+- The undefined-token test held Gold in its list. Gold's text was first written from memory as
+  "Sacrifice this artifact", the slip that test's note records for Food. Its makers print
+  "Sacrifice this token", and the definition now says so.
+
+    engine tests: 5,509, all passing (with the other session's D1022 merged)
+
+Coverage: 13,894 of 31,900 cards (+7), 35,008 of 59,888 lines (+53), against 8ced5e3.
+Pod sweep 59801 (100 games on this build): every game finished, with no throw and no stall.

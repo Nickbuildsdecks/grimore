@@ -249,6 +249,12 @@ export interface CardInstance {
   /** Equipment, auras and anything else physically on another card. */
   readonly attachedTo: string | null;
   /**
+   * The player an Aura is attached to (D765, CR 303.4): "Enchant player", the Curses. Set as the
+   * Aura resolves aimed at a player; `attachedTo` stays null. Cleared when the Aura leaves the
+   * battlefield.
+   */
+  readonly enchantedSeat?: SeatIndex;
+  /**
    * Phased out **indirectly** (D733, CR 702.26g): an Aura or Equipment that phased out because the
    * permanent it is attached to did. It phases in only with that permanent, still attached.
    */

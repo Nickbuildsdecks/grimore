@@ -418,6 +418,8 @@ export function relocate(
       ? {}
       : entersWithLoyalty ? { ...inst.counters, loyalty: printedLoyalty } : inst.counters,
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
+    // And the player a Curse is attached to (D765).
+    ...(toZone === 'battlefield' ? {} : { enchantedSeat: undefined }),
     /*
       Three zones keep an orientation, and the stack is the one that is not obvious.
 
