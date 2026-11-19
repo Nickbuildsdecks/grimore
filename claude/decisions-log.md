@@ -52342,3 +52342,23 @@ on the lasting reader, and `targetSpecFrom` refuses "target creature until end o
     engine tests: 5,392, all passing
 
 Coverage: 13,617 of 31,900 cards (+26), 34,489 of 59,888 lines (+38), against 676129d.
+
+## D761 — "~ can be your commander."
+
+35 unread lines are this sentence, on the planeswalkers and the few other cards that may lead a
+deck (CR 903.3d). It is a deck-construction statement with no effect once the game starts, and
+nothing here restricts which card a deck names as its commander. So, like D670's "Partner" and
+"Choose a Background", the permanent loop in compile.ts counts it compiled and emits nothing. The
+subject must be the card's own name or its short name ("Svega can be your commander."). The one
+sorcery that prints it (Ashaya's Enduring Bond) takes the spell path and still shows it unread.
+
+**Tests.** 2 compile tests through `compileCard`:
+- the line reads with the full name and with the short name;
+- naming another card leaves it unread.
+
+Faults injected by script: 2 of 2 caught.
+
+    engine tests: 5,394, all passing
+
+Coverage: 13,617 of 31,900 cards (+0: each of these cards has other unread abilities), 34,519 of
+59,888 lines (+30), against 65c8c51.

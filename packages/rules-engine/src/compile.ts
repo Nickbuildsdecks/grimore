@@ -901,6 +901,17 @@ function compileSingle(row: CardDataRow): Compilation {
       continue;
     }
     /*
+      "~ can be your commander." (D761): the planeswalkers and other cards that may lead a deck
+      (CR 903.3d). A deck-construction statement with no effect once the game starts, and nothing
+      here restricts which card a deck names as its commander, so the line is compiled and emits
+      nothing. The subject is the card's name or its short name ("Svega can be your commander").
+    */
+    const leader = /^(.+?) can be your commander\.?$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (leader !== null && (def.name === leader[1] || def.name.startsWith(`${leader[1]!},`) || def.name.startsWith(`${leader[1]!} `))) {
+      compiled.push(line);
+      continue;
+    }
+    /*
       **Backup N** (D671, CR 702.165): "When this creature enters, put N +1/+1 counters on target
       creature. If that's another creature, it gains the following abilities until end of turn."
       Read when every line after it is a printed keyword line (Deathtouch, Lifelink, "Flying, first
