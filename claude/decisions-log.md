@@ -52748,3 +52748,37 @@ Faults injected by script: 4 of 4 caught (one after the land pin).
     engine tests: 5,453, all passing
 
 Coverage: 13,765 of 31,900 cards (+21), 34,769 of 59,888 lines (+30).
+
+## D1011 — Target qualifiers: nontoken, non-<Subtype>, monocolored, face-down, nonattacking, with a counter
+
+A tally of the target phrases inside unread lines, each tested as "Destroy target <phrase>.", put
+these at the top of the permanent ones: "nontoken creature" (15 with "you control"), "creature with a
++1/+1 counter on it" (16), "non-Human creature" and the other "non-<Subtype>" forms (15), "with a
+counter on it", "monocolored", "face-down" and "nonattacking".
+
+- `permanentFilter` takes six more tests, each read live: `nontoken`, `notSubtypes`, `monocolored`
+  (exactly one colour, CR 105.2b), `faceDown`, `nonattacking`, and `withCounter` (a counter by name,
+  or `any`).
+- The words are read in `targetSpecFrom`'s qualifier loop. "Non-<Subtype>" needs a real subtype (a
+  creature type, or one of `CARD_SUBTYPES_READ`), so "non-Wizzle creature" stays unread.
+- "With a +1/+1 counter on it" / "with a counter on it" is a wrapper at the front, like D1010's "other
+  than ~", so no early return in the parse can drop it.
+
+**Tests.** 6 engine tests:
+- the cards read; an unknown subtype refuses;
+- "nontoken" takes the Bear and refuses the Rat token;
+- "non-Human" refuses the Human; "monocolored" refuses the white-blue creature;
+- "with a +1/+1 counter on it" refuses a creature with no counters or with a different counter, and takes one
+  with a +1/+1 counter; "with a counter on it" takes any counter;
+- "face-down" takes only the face-down creature;
+- "nonattacking" refuses the attacking Bear and takes the one at home.
+
+Four refusal rows that named the negated subtype now read and were retired: D486's "Destroy target
+non-Human creature", D496's Avacynian Priest tap, the counter-clause row, and D469's spec list,
+which now refuses "non-Wizzle" instead.
+
+Faults injected by script: 9 of 9 caught.
+
+    engine tests: 5,456, all passing
+
+Coverage: 13,797 of 31,900 cards (+32), 34,822 of 59,888 lines (+53).
