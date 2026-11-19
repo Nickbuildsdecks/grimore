@@ -52897,3 +52897,26 @@ Faults injected by script: 3 of 3 caught.
     engine tests: 5,471, all passing
 
 Coverage: 13,837 of 31,900 cards (+6), 34,879 of 59,888 lines (+7).
+
+## D1016 — Intervening-if table facts: monarch, initiative, an empty battlefield, hand sizes
+
+Five more rows from the intervening-if tally, each a fact read live at both asks (CR 603.4):
+
+- "there is no monarch"; "you have the initiative";
+- "there are no creatures on the battlefield" / "no creatures are on the battlefield", which counts
+  every player's creatures;
+- "you have more cards in hand than each opponent"; "an opponent has no cards in hand".
+
+Small in cards (most lines printing these have another unread clause), and cheap: each is one line
+against state the engine already keeps.
+
+**Tests.** 3 engine tests, which call the compiled conditions directly on crafted states:
+- no monarch and someone as monarch; the initiative held by you and by them;
+- an empty battlefield, and one Grizzly Bears on the other side;
+- more cards than the opponent, and the opponent's empty hand, against equal hands.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,474, all passing
+
+Coverage: 13,838 of 31,900 cards (+1), 34,883 of 59,888 lines (+4).
