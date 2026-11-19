@@ -25684,6 +25684,52 @@ describe('"whenever you expend N" (D1002)', () => {
   });
 });
 
+describe('two-tribe "attacks alone" and "a player casts their second spell each turn" (D1003)', () => {
+  const C = (name: string, type: string, text: string) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Dojo', 'Creature — Human Monk', 'Whenever a Samurai or Warrior you control attacks alone, you gain 3 life.'),
+    C('Test Ronin', 'Creature — Human Samurai', ''),
+    C('Test Bear', 'Creature — Bear', ''),
+    C('Test Watcher', 'Creature — Human', 'Whenever a player casts their second spell each turn, you gain 2 life.'),
+    C('Test Spy', 'Creature — Human', 'Whenever an opponent casts their second spell each turn, you gain 5 life.'),
+    { name: 'Test Ponder', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1003', name: 'Alone', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const attack = (names: string[]) => {
+    let s = arena({ decks: { 0: 'd1003', 1: 'd1003' }, deckSpecs: { d1003: deck.deck }, battlefield: { 0: ['Test Dojo', 'Test Ronin', 'Test Bear'] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: names.map((name) => ({ attacker: find(s, 0, 'battlefield', name), defender: 1 })) });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return s.seats[0]!.life - life;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const name of ['Test Dojo', 'Test Watcher', 'Test Spy']) expect(compileCard(ROWS.find((r) => r.name === name) as never), name).toMatchObject({ ok: true, unread: [] });
+    // Two words that are not creature types refuse rather than reading as tribes.
+    const lands = compileCard(C('Test Odd', 'Creature — Human', 'Whenever a Plains or Island you control attacks alone, you gain 1 life.') as never);
+    expect(lands.ok && lands.unread).toHaveLength(1);
+  });
+
+  it('a Samurai attacking alone fires it; a Bear alone does not; the Samurai with company does not', () => {
+    expect(attack(['Test Ronin'])).toBe(3);
+    expect(attack(['Test Bear'])).toBe(0);
+    expect(attack(['Test Ronin', 'Test Bear'])).toBe(0);
+  });
+
+  it('the second spell a player casts fires "a player" for anyone and "an opponent" for the other side', () => {
+    let s = advanceTo(arena({ decks: { 0: 'd1003', 1: 'd1003' }, deckSpecs: { d1003: deck.deck }, hands: { 0: ['Test Ponder', 'Test Ponder'] }, battlefield: { 0: ['Test Watcher', 'Test Spy'], 1: ['Test Spy'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const lives = [s.seats[0]!.life, s.seats[1]!.life];
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ponder') } as Action));
+    expect([s.seats[0]!.life, s.seats[1]!.life]).toEqual(lives);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ponder') } as Action));
+    expect([s.seats[0]!.life - lives[0]!, s.seats[1]!.life - lives[1]!]).toEqual([2, 5]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

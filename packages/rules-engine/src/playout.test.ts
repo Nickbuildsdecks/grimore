@@ -626,7 +626,12 @@ describe('a whole automated game', () => {
       // one ranking read in opposite directions, so getting it backwards shows up right here.
       expect(mean(tutored)).toBeGreaterThan(mean(pitched));
     }
-  });
+    /*
+      Its own limit (D1003): 24 games is about 48 seconds alone and over the suite's 60-second default
+      when the whole engine suite runs beside it, which failed one pregate run with every assertion
+      passing. The games are the point of the test, so the limit moves rather than the count.
+    */
+  }, 180_000);
 
   it('never offers a play it then refuses', () => {
     // The strongest form of the claim: take every action the bot chose from `legalActions`, and

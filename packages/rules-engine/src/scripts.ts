@@ -18028,6 +18028,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you cast your first spell each turn, (.+)$/i,
     on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
   },
+  // Anybody's second (D1003): "Whenever a player casts their second spell each turn", counted per caster.
+  {
+    prologue: () => /^Whenever a player casts their second spell each turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'any', onNth: 2 }],
+  },
+  {
+    prologue: () => /^Whenever an opponent casts their second spell each turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'opponent', onNth: 2 }],
+  },
   // Esper Sentinel (D678): the opponent's first noncreature spell, counted among their noncreature
   // spells only — a creature cast first does not use it up.
   {
@@ -18431,6 +18440,16 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
+  },
+  // "Whenever a Samurai or Warrior you control attacks alone" (D1003): two tribes, any of them.
+  {
+    prologue: () => /^Whenever an? (?<a>[A-Z][a-z]+) or (?<b>[A-Z][a-z]+) you control attacks alone, (?<clause>.+)$/,
+    from: (matched) => {
+      const tribes = [matched.groups!.a!, matched.groups!.b!];
+      return tribes.every(isCreatureType)
+        ? [{ kind: 'attacks' as const, who: 'any' as const, of: 'you' as const, alone: true, ofSubtypes: tribes }]
+        : null;
+    },
   },
   {
     prologue: (self) => new RegExp(`^Whenever ${self} deals damage to an opponent, (.+)$`, 'i'),

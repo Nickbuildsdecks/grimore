@@ -18162,11 +18162,19 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
       'When a spell or ability an opponent controls causes you to discard Drannith Healer, you gain 1 life.'],
     ['a first-cycle-each-turn restriction',
       'Whenever you cycle another card for the first time each turn, you gain 1 life.'],
-    ['a tribe attacking alone', 'Whenever a Samurai or Warrior you control attacks alone, you gain 1 life.'],
+    // 'a tribe attacking alone' ("a Samurai or Warrior you control attacks alone") reads since D1003.
   ])('leaves %s unread', (_what, line) => {
     const got = card(line);
     expect(got.script?.triggers ?? []).toEqual([]);
     expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  it('reads two tribes attacking alone since D1003', () => {
+    const got = card('Whenever a Samurai or Warrior you control attacks alone, you gain 1 life.');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([
+      { kind: 'attacks', who: 'any', of: 'you', alone: true, ofSubtypes: ['Samurai', 'Warrior'] },
+    ]);
   });
 
   it('reads a batched discard since D993', () => {
