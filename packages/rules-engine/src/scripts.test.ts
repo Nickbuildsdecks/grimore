@@ -24439,6 +24439,107 @@ describe('"<a permanent> is put into a graveyard from the battlefield" (D995)', 
   });
 });
 
+describe('the printed "prevent all damage" statics and auras (D752)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra });
+  const body = { power: '2', toughness: '2' };
+  const ROWS = [
+    card('Test Muzzle', 'Enchantment — Aura', 'Enchant creature\nPrevent all damage that would be dealt by enchanted creature.'),
+    card('Test Mist Form', 'Enchantment — Aura', 'Enchant creature\nPrevent all combat damage that would be dealt to and dealt by enchanted creature.'),
+    card('Test Dawn', 'Creature — Elemental', 'Prevent all damage that would be dealt to Test Dawn.', body),
+    card('Test Sanctum', 'Enchantment', 'Prevent all damage that would be dealt to creatures you control.'),
+    card('Test Sanctuary', 'Enchantment', 'Prevent all noncombat damage that would be dealt to you and creatures you control.'),
+    card('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.', { colors: ['R'] }),
+    card('Test Pinger', 'Creature — Human', '{T}: Test Pinger deals 1 damage to any target.', { colors: ['R'], power: '1', toughness: '1' }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], ...body }),
+  ];
+  const deck = customDeck({
+    id: 'd752', name: 'Printed prevention',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: r.name === 'Test Bolt' ? 4 : 2 })), { name: 'Forest', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd752', 1: 'd752' }, deckSpecs: { d752: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolve = (s: GameState, seat: 0 | 1, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name), ...(targets ? { targets } : {}) })));
+  const ping = (s: GameState, seat: 0 | 1, target: Target) => {
+    const pinger = find(s, seat, 'battlefield', 'Test Pinger');
+    const play = legalActions(s, seat).plays.find((p) => p.kind === 'activate' && p.card === pinger)!;
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: seat, card: pinger, abilityIndex: play.abilityIndex ?? 0, targets: [target] })));
+  };
+  const swing = (s0: GameState, attacker: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    // With nothing able to block, the engine has declared no blocks itself.
+    if (s.combat?.blockersDeclaredBy.includes(1) !== true) s = apply(s, { type: 'auto:block', by: 1, blocks: [] });
+    return drain(advanceTo(s, 'postcombat-main'), 20);
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('by enchanted creature: a muzzled pinger deals nothing', () => {
+    let s = table({ hands: { 0: ['Test Muzzle'] }, battlefield: { 0: ['Test Pinger'] } });
+    const pinger = find(s, 0, 'battlefield', 'Test Pinger');
+    s = resolve(s, 0, 'Test Muzzle', [{ kind: 'card', id: pinger }]);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Muzzle')]!.attachedTo).toBe(pinger);
+    const life = s.seats[1]!.life;
+    s = ping(s, 0, { kind: 'player', seat: 1 });
+    expect(s.seats[1]!.life).toBe(life);
+  });
+
+  it('combat damage to and by enchanted creature: its attack deals nothing, a Bolt still kills it', () => {
+    let s = table({ hands: { 0: ['Test Mist Form', 'Test Bolt'] }, battlefield: { 0: ['Test Bear'] } });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Mist Form', [{ kind: 'card', id: bear }]);
+    const life = s.seats[1]!.life;
+    s = swing(s, bear);
+    expect(s.seats[1]!.life).toBe(life);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('to ~: a Bolt leaves it unhurt, and a Bear beside it is not shielded', () => {
+    let s = table({ hands: { 0: ['Test Bolt', 'Test Bolt'] }, battlefield: { 0: ['Test Dawn', 'Test Bear'] } });
+    const dawn = find(s, 0, 'battlefield', 'Test Dawn');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'card', id: dawn }]);
+    expect(s.instances[dawn]!.zone).toBe('battlefield');
+    expect(s.instances[dawn]!.damage).toBe(0);
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('to creatures you control: mine are spared, the player and the other side are not', () => {
+    let s = table({ hands: { 1: ['Test Bolt', 'Test Bolt', 'Test Bolt'] }, battlefield: { 0: ['Test Sanctum', 'Test Bear'], 1: ['Test Bear'] } });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'card', id: mine }]);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'player', seat: 0 }]);
+    expect(s.seats[0]!.life).toBe(life - 3);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolve(s, 1, 'Test Bolt', [{ kind: 'card', id: theirs }]);
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('noncombat damage to you and creatures you control: a Bolt to the face is prevented, an attack is not', () => {
+    let s = table({ hands: { 0: ['Test Bolt'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Sanctuary'] } });
+    const life = s.seats[1]!.life;
+    s = resolve(s, 0, 'Test Bolt', [{ kind: 'player', seat: 1 }]);
+    expect(s.seats[1]!.life).toBe(life);
+    s = swing(s, find(s, 0, 'battlefield', 'Test Bear'));
+    expect(s.seats[1]!.life).toBe(life - 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

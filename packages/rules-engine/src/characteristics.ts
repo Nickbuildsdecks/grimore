@@ -1765,6 +1765,8 @@ export interface ContinuousEffect {
   readonly preventsDamageTo?: true;
   readonly preventsDamageFrom?: true;
   readonly preventsCombatOnly?: true;
+  /** "Prevent all **noncombat** damage that would be dealt to …" (D752): the other half of the line. */
+  readonly preventsNoncombatOnly?: true;
   /**
    * "… dealt to you" / "… to players" (D738): the controller alone, or every player. Read by
    * `dealDamage` with the scope ignored, which is about permanents.

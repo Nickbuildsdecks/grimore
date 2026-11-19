@@ -15924,6 +15924,25 @@ function attachmentBonus(
   if (/^all creatures able to block (?:enchanted|equipped) creature do so\.?$/i.test(plain(line).trim())) {
     return { bonus: { lure: true }, harmful: false };
   }
+  /*
+    "Prevent all [combat] damage that would be dealt by / to / to and dealt by enchanted creature"
+    (D752): Muzzle and Pacifism's cousins, the D738 flags on the host. Harmful when it stops only
+    the host's own damage.
+  */
+  const shielded = /^prevent all (combat )?damage that would be dealt (to and dealt by|to|by) (?:enchanted|equipped) creature\.?$/i.exec(plain(line).trim());
+  if (shielded !== null) {
+    const which = shielded[2]!.toLowerCase();
+    // Gaseous Form: the Fog Bank flag, as on the permanent itself.
+    if (shielded[1] !== undefined && which === 'to and dealt by') return { bonus: { preventsCombatDamage: true }, harmful: false };
+    return {
+      bonus: {
+        ...(which === 'by' ? {} : { preventsDamageTo: true as const }),
+        ...(which === 'to' ? {} : { preventsDamageFrom: true as const }),
+        ...(shielded[1] === undefined ? {} : { preventsCombatOnly: true as const }),
+      },
+      harmful: which === 'by',
+    };
+  }
   const matched = /^(?:equipped|enchanted) (?:creature|land|artifact|enchantment|permanent) (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   // "Has ward {2}" is the ward trigger granted (D736): the quoted form the grant readers know.
@@ -16192,8 +16211,8 @@ export function attachmentScriptFor(
   */
   // Lure's line names its subject in the middle (D914); see `attachmentBonus`.
   const subject = isAura
-    ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so)/i
-    : /^(?:equipped creature|all creatures able to block equipped creature do so)/i;
+    ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) enchanted creature\.?$)/i
+    : /^(?:equipped creature|all creatures able to block equipped creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) equipped creature\.?$)/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
   const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
   /*
@@ -28619,6 +28638,52 @@ function spellsFromTopFromLine(line: string): Partial<CardScript> | null {
 /** A continuous effect's scope, for the prevention readers (D738). */
 type EffectScope = NonNullable<Parameters<typeof preventDamageThisTurn>[3]['scope']>;
 
+/**
+ * The printed "prevent all damage" statics (D752), the D738 flags held for as long as the permanent
+ * is on the battlefield: "Prevent all damage that would be dealt to ~" (Dawn Elemental), "… combat
+ * damage that would be dealt to and dealt by ~", "… damage that would be dealt to creatures you
+ * control" (Inner Sanctum), "… noncombat damage that would be dealt to you and creatures you
+ * control" (Blessed Sanctuary). Damage from particular sources ("by artifact sources") is refused:
+ * the flags have no source filter.
+ */
+function preventionStaticFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  const read = new RegExp(`^prevent all (combat |noncombat )?damage that would be dealt (to and dealt by|to|by) (.+)$`, 'i').exec(text);
+  if (read === null) return null;
+  const kind = read[1]?.trim().toLowerCase();
+  const which = read[2]!.toLowerCase();
+  const subject = read[3]!.trim();
+  const timing = kind === 'combat' ? { preventsCombatOnly: true as const }
+    : kind === 'noncombat' ? { preventsNoncombatOnly: true as const } : {};
+  const flags = {
+    ...(which === 'by' ? {} : { preventsDamageTo: true as const }),
+    ...(which === 'to' ? {} : { preventsDamageFrom: true as const }),
+    ...timing,
+  };
+  type Scope = NonNullable<CardScript['statics']>[number]['scope'];
+  /*
+    Combat damage "to and dealt by" one creature is a Fog Bank, the `preventsCombatDamage` that
+    combat asks about both creatures in a fight; Fog Bank's hand-written script says the same.
+  */
+  const fogBank = kind === 'combat' && which === 'to and dealt by';
+  if (new RegExp(`^${selfRef(name)}$`, 'i').test(subject)) {
+    if (fogBank) return { statics: [{ scope: 'self', effect: { preventsCombatDamage: true } }] };
+    return { statics: [{ scope: 'self', effect: flags }] };
+  }
+  if (which !== 'to') return null;
+  const scopes: Readonly<Record<string, Scope>> = {
+    'creatures you control': 'controller-creatures',
+    'other creatures you control': 'other-controller-creatures',
+    creatures: 'all-creatures',
+  };
+  const players = /^you and (.+)$/i.exec(subject);
+  const scope = scopes[(players?.[1] ?? subject).toLowerCase()];
+  if (scope === undefined) return null;
+  return {
+    statics: [{ scope, effect: { ...flags, ...(players === null ? {} : { preventsDamageToPlayers: 'controller' as const }) } }],
+  };
+}
+
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
@@ -29836,6 +29901,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? chooseAsEntersFromLine(line, name)
     ?? chosenSelfStaticFromLine(line, name)
     ?? staticFromLine(line)
+    ?? preventionStaticFromLine(line, name)
     ?? costModifierFromLine(line, name)
     ?? groupStaticFromLine(line, name)
     ?? conditionalStaticFromLine(line, name)
