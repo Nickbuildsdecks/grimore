@@ -25987,6 +25987,58 @@ describe('filtered attack triggers and "with a counter on it" (D1008)', () => {
   });
 });
 
+describe('exile from a hand until ~ leaves: Tidehollow Sculler (D1009)', () => {
+  const ROWS = [
+    { name: 'Test Sculler', type_line: 'Artifact Creature — Zombie', mana_cost: '{0}', cmc: 0, colors: ['W', 'B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'When Test Sculler enters, target opponent reveals their hand and you choose a nonland card from it. Exile that card.\nWhen Test Sculler leaves the battlefield, return the exiled card to its owner\'s hand.' },
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1009', name: 'Sculler', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({ decks: { 0: 'd1009', 1: 'd1009' }, deckSpecs: { d1009: deck.deck }, hands: { 0: ['Test Sculler', 'Test Kill'], 1: ['Test Bolt', 'Test Kill', 'Forest'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const castSculler = (s: GameState) => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sculler') } as Action);
+  // Resolve until the Sculler's question is asked, then take the Bolt.
+  const take = (s: GameState) => {
+    let t = s;
+    for (let i = 0; i < 8 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    expect(t.pendingDecision).not.toBeNull();
+    // Their two spells are offered; the Forest is not.
+    const offered = (t.pendingDecision?.candidates ?? []).map((id) => nameOf(t, id)).sort();
+    expect(offered).toEqual(['Test Bolt', 'Test Kill']);
+    return drain(apply(t, { type: 'auto:decide', by: 0, cards: [find(t, 1, 'hand', 'Test Bolt')] } as Action), 30);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    // Without the return line it is permanent exile, and no leave trigger gives anything back.
+    const keeper = compileCard({ ...ROWS[0], name: 'Test Keeper', oracle_text: 'When Test Keeper enters, target opponent reveals their hand and you choose a nonland card from it. Exile that card.' } as never);
+    expect(keeper.ok).toBe(true);
+    expect((keeper.ok ? keeper.script?.triggers ?? [] : []).map((t) => t.on.kind)).not.toContain('leaves');
+  });
+
+  it('takes a nonland card out of their hand, and gives it back to that hand when it dies', () => {
+    let s = take(castSculler(table()));
+    expect(namesIn(s, 1, 'exile')).toContain('Test Bolt');
+    expect(namesIn(s, 1, 'hand')).not.toContain('Test Bolt');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Sculler') }] } as Action);
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(namesIn(s, 1, 'hand')).toContain('Test Bolt');
+    expect(namesIn(s, 1, 'exile')).not.toContain('Test Bolt');
+  });
+
+  it('killed in response to its own entry, it gives back nothing and the card stays exiled', () => {
+    let s = castSculler(table());
+    s = passBoth(s); // the Sculler resolves; its entry trigger is on the stack
+    const sculler = find(s, 0, 'battlefield', 'Test Sculler');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: sculler }] } as Action);
+    s = passBoth(s); // the Kill resolves first; the leave trigger goes on top and resolves with nothing to return
+    s = take(s);
+    expect(namesIn(s, 1, 'exile')).toContain('Test Bolt');
+    expect(namesIn(s, 1, 'hand')).not.toContain('Test Bolt');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

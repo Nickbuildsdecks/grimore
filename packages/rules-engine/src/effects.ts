@@ -1291,7 +1291,11 @@ export function exileUntilLeaves(state: GameState, id: string, exiledBy: string)
  * steps. A card that has since left exile — exiled again by something else, or shuffled away — is
  * skipped rather than dragged back from wherever it is now.
  */
-export function returnExiledBy(state: GameState, exiledBy: string): GameState {
+export function returnExiledBy(
+  state: GameState, exiledBy: string,
+  /** Where it goes back to: the battlefield, or its owner's hand (D1009, Tidehollow Sculler). */
+  to: 'battlefield' | 'hand' = 'battlefield',
+): GameState {
   let next = state;
   for (const [id, inst] of Object.entries(state.instances)) {
     if (inst.exiledBy !== exiledBy) continue;
@@ -1299,7 +1303,7 @@ export function returnExiledBy(state: GameState, exiledBy: string): GameState {
     next = withInstance(next, id, { exiledBy: undefined });
     const current = next.instances[id];
     if (current === undefined) continue;
-    next = relocate(next, current, 'battlefield', current.owner, 'bottom');
+    next = relocate(next, current, to, current.owner, 'bottom');
   }
   return next;
 }

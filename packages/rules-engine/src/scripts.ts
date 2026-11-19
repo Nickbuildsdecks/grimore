@@ -16679,6 +16679,55 @@ export function attachmentScriptFor(
  * casting the card" is a fact about the **whole card**, and this is the one reader that has the
  * whole card. A per-line reading could only ever guess at what the rest of the text does.
  */
+function handExileUntilLeavesShapeFor(
+  def: CardDef, lines: readonly string[],
+): WholeCardReading | null {
+  /*
+    The hand version (D1009): Tidehollow Sculler and Mesmeric Fiend. "When ~ enters, target opponent
+    reveals their hand and you choose a nonland card from it. Exile that card." with "When ~ leaves
+    the battlefield, return the exiled card to its owner's hand." Two triggers and one link, as the
+    battlefield version is: the card exiled carries `exiledBy`, and the leave trigger hands back
+    what points at it. If the Sculler leaves before its entry resolves, the leave trigger finds
+    nothing and the card is exiled for good, which is the printed rule.
+  */
+  const self = selfRef(def.name);
+  const taking = new RegExp(
+    `^When ${self} ${ENTERS}, target opponent reveals their hand and you choose an? (nonland )?card from it\\. Exile that card\\.?$`, 'i');
+  const giving = new RegExp(`^When ${self} leaves the battlefield, return the exiled card to its owner's hand\\.?$`, 'i');
+  const take = lines.find((line) => taking.test(plain(line).trim()));
+  const give = lines.find((line) => giving.test(plain(line).trim()));
+  if (take === undefined || give === undefined) return null;
+  const nonland = /you choose a nonland card/i.test(take);
+  return {
+    fragment: {
+      triggers: [
+        {
+          on: { kind: 'etb' },
+          targets: [TARGET_OPPONENT],
+          description: `target opponent reveals their hand; exile a ${nonland ? 'nonland ' : ''}card from it until ${def.name} leaves the battlefield`,
+          decisions: [{
+            who: 'controller', fromSeat: 'target-player', from: 'hand',
+            prompt: `Choose a ${nonland ? 'nonland ' : ''}card to exile`, min: 1, max: 1,
+            ...(nonland ? {
+              filter: (state: GameState, id: string) => {
+                const inst = state.instances[id];
+                return inst !== undefined && !hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'land');
+              },
+            } : {}),
+          }],
+          effect: (c) => chosenCards(c).reduce((state, id) => exileUntilLeaves(state, id, c.source), c.state),
+        },
+        {
+          on: { kind: 'leaves' },
+          description: 'return the exiled card to its owner\u2019s hand',
+          effect: (c) => returnExiledBy(c.state, c.source, 'hand'),
+        },
+      ],
+    },
+    claimed: [take, give],
+  };
+}
+
 function exileUntilLeavesShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
@@ -16976,6 +17025,7 @@ export function wholeCardShapeFor(
 ): WholeCardReading | null {
   return attachmentScriptFor(def, lines)
     ?? exileUntilLeavesShapeFor(def, lines)
+    ?? handExileUntilLeavesShapeFor(def, lines)
     ?? soulbondShapeFor(def, lines)
     ?? evokeShapeFor(lines)
     ?? kickerPermanentShapeFor(def, lines)
