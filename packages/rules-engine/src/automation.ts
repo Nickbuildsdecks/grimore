@@ -45,7 +45,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  canPayLife, drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
+  canPayLife, drawLater, energyOf, opponentsOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
@@ -1604,6 +1604,13 @@ function triggerMatches(
       to `you`. Without that default a Ward {2} would counter its own controller's Giant Growth,
       which is the one thing ward never does.
     */
+    // "Whenever you / an opponent / a player commits a crime" (D997): whose crime.
+    case 'crime': {
+      const by = want.by ?? 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     case 'targeted': {
       const by = want.by ?? 'opponent';
       if (by === 'any') return true;
@@ -2587,7 +2594,32 @@ export function raiseTargeted(state: GameState, objectId: string): GameState {
     if (inst === undefined || inst.zone !== 'battlefield') continue;
     next = raise(next, { kind: 'targeted', object: objectId }, object.controller, target.id);
   }
-  return next;
+  return isCrime(next, object) ? raise(next, { kind: 'crime' }, object.controller) : next;
+}
+
+/**
+ * Whether a stack object's targets make it a crime (D997, CR 700.13): an opponent, a permanent an
+ * opponent controls, a spell or ability an opponent controls, or a card in an opponent's graveyard.
+ * A card in any other zone — exile, a hand — is not one of those.
+ */
+function isCrime(state: GameState, object: StackObject): boolean {
+  const opponents = opponentsOf(state, object.controller);
+  return object.targets.some((target) => {
+    if (target.kind === 'player') return opponents.includes(target.seat);
+    if (target.kind === 'ability') {
+      const ability = state.stackObjects[target.id];
+      return ability !== undefined && opponents.includes(ability.controller);
+    }
+    const inst = state.instances[target.id];
+    if (inst === undefined) return false;
+    if (inst.zone === 'battlefield') return opponents.includes(inst.zoneSeat);
+    if (inst.zone === 'graveyard') return opponents.includes(inst.owner);
+    if (inst.zone === 'stack') {
+      const spell = Object.values(state.stackObjects).find((o) => o.kind === 'spell' && o.source === target.id);
+      return spell !== undefined && opponents.includes(spell.controller);
+    }
+    return false;
+  });
 }
 
 /**

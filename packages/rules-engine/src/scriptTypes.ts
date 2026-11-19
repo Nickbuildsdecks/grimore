@@ -1172,6 +1172,13 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event: the stack object that did the targeting. */
       readonly object?: string;
     }
+  /**
+   * "Whenever you **commit a crime**" (D997, CR 700.13): a player cast a spell, activated an
+   * ability, or put a triggered ability on the stack that targets an opponent, anything an opponent
+   * controls (a permanent, a spell, an ability), or a card in an opponent's graveyard. Raised once
+   * per object however many of its targets were criminal. `by` defaults to `you`.
+   */
+  | { readonly kind: 'crime'; readonly by?: 'you' | 'opponent' | 'any' }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
    * "Whenever you **discard** a card" — and "whenever you **cycle or discard** a card", which is

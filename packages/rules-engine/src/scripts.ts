@@ -18604,6 +18604,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you scry or surveil, (.+)$/i,
     on: [{ kind: 'scries', what: 'either' }],
   },
+  // "Whenever you / an opponent / a player commits a crime" (D997, CR 700.13).
+  {
+    prologue: () => /^Whenever (?<by>you commit|an opponent commits|a player commits) a crime, (?<clause>.+)$/i,
+    from: (matched) => {
+      const by = ({ 'you commit': 'you', 'an opponent commits': 'opponent', 'a player commits': 'any' } as const)[
+        (matched.groups?.by ?? '').toLowerCase() as 'you commit' | 'an opponent commits' | 'a player commits'];
+      return by === undefined ? null : [{ kind: 'crime' as const, by }];
+    },
+  },
   // And anybody's (D990): "Whenever a creature attacks" — Aggression, War Cadence's shape.
   {
     prologue: () => /^Whenever a creature attacks, (.+)$/i,

@@ -7972,6 +7972,8 @@ describe('deck coverage', () => {
       'trigger reflexive',
       // D991: "whenever you scry / surveil" — 17 legal lines; the compiler reads them, no pool deck plays one.
       'trigger scries',
+      // D997: "whenever you commit a crime" — 13 legal lines; the compiler reads them, no pool deck plays one.
+      'trigger crime',
     ]);
 
     const declared = [
@@ -24762,6 +24764,92 @@ describe('creature lands and typed creature targets (D754)', () => {
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bane, targets: [{ kind: 'card', id: goblin }] })));
     expect(s.instances[goblin]!.zone).toBe('graveyard');
     expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+});
+
+describe('"whenever you commit a crime" (D997, CR 700.13)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '3' });
+  const ROWS = [
+    C('Test Outlaw', 'Whenever you commit a crime, you gain 1 life. This ability triggers only once each turn.'),
+    C('Test Fence', 'Whenever you commit a crime, you gain 4 life.'),
+    C('Test Snitch', 'Whenever an opponent commits a crime, you gain 2 life.'),
+    C('Test Pinger', '{T}: This creature deals 1 damage to any target.'),
+    { name: 'Test Zap', type_line: 'Instant', oracle_text: 'Test Zap deals 1 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Dig', type_line: 'Instant', oracle_text: 'Exile target card from a graveyard.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Hush', type_line: 'Instant', oracle_text: 'Counter target spell.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Squash', type_line: 'Instant', oracle_text: 'Counter target activated ability.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd997', name: 'Crimes', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = () => {
+    let s = arena({ decks: { 0: 'd997', 1: 'd997' }, deckSpecs: { d997: deck.deck }, hands: { 0: ['Test Zap', 'Test Zap', 'Test Dig'] }, battlefield: { 0: ['Test Outlaw', 'Test Fence', 'Test Pinger'], 1: ['Test Snitch'] }, graveyard: { 0: ['Swamp'], 1: ['Swamp'] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+  const cast = (s: GameState, name: string, target: Target) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [target] } as Action));
+  const gains = (before: GameState, after: GameState) => [after.seats[0]!.life - before.seats[0]!.life, after.seats[1]!.life - before.seats[1]!.life];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a spell at the opponent is a crime: yours fire, theirs hears it, and "once each turn" holds', () => {
+    const s = table();
+    const once = cast(s, 'Test Zap', { kind: 'player', seat: 1 });
+    expect(gains(s, once)).toEqual([1 + 4, 2 - 1]);
+    const twice = cast(once, 'Test Zap', { kind: 'player', seat: 1 });
+    expect(gains(once, twice)).toEqual([4, 2 - 1]);
+  });
+
+  it('aimed at your own creature it is no crime; at theirs it is', () => {
+    const s = table();
+    expect(gains(s, cast(s, 'Test Zap', { kind: 'card', id: find(s, 0, 'battlefield', 'Test Fence') }))).toEqual([0, 0]);
+    expect(gains(s, cast(s, 'Test Zap', { kind: 'player', seat: 0 }))).toEqual([-1, 0]);
+    expect(gains(s, cast(s, 'Test Zap', { kind: 'card', id: find(s, 1, 'battlefield', 'Test Snitch') }))).toEqual([5, 2]);
+  });
+
+  it('a card in their graveyard is a crime; one in yours is not', () => {
+    const s = table();
+    expect(gains(s, cast(s, 'Test Dig', { kind: 'card', id: find(s, 0, 'graveyard', 'Swamp') }))).toEqual([0, 0]);
+    expect(gains(s, cast(s, 'Test Dig', { kind: 'card', id: find(s, 1, 'graveyard', 'Swamp') }))).toEqual([5, 2]);
+  });
+
+  it('their spell or their ability on the stack is a crime to target, and yours is not', () => {
+    let s = arena({ decks: { 0: 'd997', 1: 'd997' }, deckSpecs: { d997: deck.deck }, hands: { 0: ['Test Zap', 'Test Zap', 'Test Hush', 'Test Squash', 'Test Squash'], 1: ['Test Hush'] }, battlefield: { 0: ['Test Outlaw', 'Test Fence', 'Test Snitch', 'Test Pinger'], 1: ['Test Snitch', 'Test Pinger'] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'precombat-main');
+    const start = s;
+    // Your own ability, countered by your own spell: no crime anywhere.
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Fence') }] } as Action);
+    const mine = s.stackOrder[s.stackOrder.length - 1]!;
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Squash'), targets: [{ kind: 'ability', id: mine }] } as Action));
+    // Nor your own spell, countered by your own counterspell.
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Zap'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Fence') }] } as Action);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hush'), targets: [{ kind: 'card', id: ids(s, 0, 'stack')[0]! }] } as Action));
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Test Zap')).toHaveLength(1);
+    expect(gains(start, s)).toEqual([0, 0]);
+    // Their counterspell at your Zap is their crime: your "an opponent commits a crime" hears it.
+    const before = s;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Zap'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Fence') }] } as Action);
+    const zap = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = settle(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Hush'), targets: [{ kind: 'card', id: zap }] } as Action));
+    expect(gains(before, s)).toEqual([2, 0]);
+    // Their ability, aimed at nobody of yours, countered by you: your crime.
+    const third = s;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Snitch') }] } as Action);
+    const theirs = s.stackOrder[s.stackOrder.length - 1]!;
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Squash'), targets: [{ kind: 'ability', id: theirs }] } as Action));
+    expect(gains(third, s)).toEqual([5, 2]);
+  });
+
+  it('an activated ability at the opponent is a crime too', () => {
+    const s = table();
+    const after = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] } as Action));
+    expect(gains(s, after)).toEqual([5, 2 - 1]);
   });
 });
 
