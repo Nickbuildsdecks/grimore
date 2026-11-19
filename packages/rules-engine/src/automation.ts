@@ -1535,10 +1535,6 @@ function triggerMatches(
         if (at === undefined || at.defender !== sourceSeat) return false;
         if (want.at === 'you' && at.planeswalker !== undefined) return false;
       }
-      if (want.kind === 'attacks' && want.withKeyword !== undefined
-        && !(e.subjectKeywords ?? []).includes(want.withKeyword)) return false;
-      if (want.kind === 'attacks' && want.powerAtLeast !== undefined
-        && !(e.subjectPower !== undefined && e.subjectPower >= want.powerAtLeast)) return false;
       // "Whenever a Dragon you control attacks" (D635), the tribe asked as the board events ask it.
       if (want.kind === 'attacks' && want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
         (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
@@ -1593,7 +1589,8 @@ function triggerMatches(
       if (want.kind === 'combat-damage' && want.what === 'artifact'
         && !(e.subjectTypes ?? []).includes('artifact')) return false;
       // The same characteristic filters on the creature that hit (D602) as on the board events.
-      if (want.kind === 'etb' || want.kind === 'dies' || want.kind === 'combat-damage') {
+      // And on the attacker (D996, D1008): "a creature you control with a +1/+1 counter on it attacks".
+      if (want.kind === 'etb' || want.kind === 'dies' || want.kind === 'combat-damage' || want.kind === 'attacks') {
         if (want.powerAtLeast !== undefined
           && !(e.subjectPower !== undefined && e.subjectPower >= want.powerAtLeast)) return false;
         if (want.powerAtMost !== undefined
@@ -1604,8 +1601,10 @@ function triggerMatches(
         if (want.toughnessAtMost !== undefined
           && !(e.subjectToughness !== undefined
             && e.subjectToughness <= want.toughnessAtMost)) return false;
-        if (want.withCounter !== undefined
-          && (e.subjectCounters?.[want.withCounter] ?? 0) < 1) return false;
+        // "With a counter on it" (D1008) is any counter at all.
+        if (want.withCounter !== undefined && (want.withCounter === 'any'
+          ? !Object.values(e.subjectCounters ?? {}).some((count) => count > 0)
+          : (e.subjectCounters?.[want.withCounter] ?? 0) < 1)) return false;
         if (want.withKeyword !== undefined
           && !(e.subjectKeywords ?? []).includes(want.withKeyword)) return false;
         /*
@@ -2201,6 +2200,9 @@ function raise(
       event = {
         ...event, subjectSubtypes: live.typeLine.subtypes,
         subjectKeywords: [...live.keywords], subjectPower: live.power,
+        // And its toughness and counters (D1008), for the rest of the characteristic filters.
+        subjectToughness: live.toughness,
+        ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       };
     }
   }

@@ -25943,6 +25943,50 @@ describe('"that many / that much" after a hit: mill, both draw, target opponent 
   });
 });
 
+describe('filtered attack triggers and "with a counter on it" (D1008)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness });
+  const ROWS = [
+    C('Test Captain', 'Whenever a creature you control with a +1/+1 counter on it attacks, you gain 1 life.', '0', '4'),
+    C('Test Scout', 'Whenever a creature you control with a counter on it deals combat damage to a player, you gain 2 life.', '0', '4'),
+    C('Test Rider', 'Whenever a creature you control with power 2 or less attacks, you gain 4 life.', '0', '4'),
+    C('Test Tower', 'Whenever a creature you control with toughness 3 or greater attacks, you gain 16 life.', '0', '1'),
+    C('Test Bear', ''),
+  ];
+  const deck = customDeck({ id: 'd1008', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const swing = (counters: Record<string, number>) => {
+    let s = arena({ decks: { 0: 'd1008', 1: 'd1008' }, deckSpecs: { d1008: deck.deck }, battlefield: { 0: ['Test Captain', 'Test Scout', 'Test Rider', 'Test Tower', 'Test Bear'] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, counters } } };
+    s = advanceTo(s, 'declare-attackers');
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    for (let i = 0; i < 12 && s.step !== 'end-combat' && s.step !== 'postcombat-main'; i++) s = settle(passBoth(s));
+    return settle(s).seats[0]!.life - life;
+  };
+
+  it('reads whole; "power equal to its toughness" stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const equal = compileCard(C('Test Equal', 'Whenever a creature you control with power equal to its toughness attacks, you gain 1 life.') as never);
+    expect(equal.ok && equal.unread).toHaveLength(1);
+  });
+
+  it('a 2/2 with no counters: only "power 2 or less" fires', () => {
+    expect(swing({})).toBe(4);
+  });
+
+  it('a +1/+1 counter makes it 3/3: "with a +1/+1 counter", "with a counter" and "toughness 3" fire, "power 2 or less" does not', () => {
+    // And it is 3/3 now, which "toughness 3 or greater" reads off the attack.
+    expect(swing({ '+1/+1': 1 })).toBe(1 + 2 + 16);
+  });
+
+  it('another kind of counter is "a counter" but not "a +1/+1 counter"', () => {
+    expect(swing({ charge: 1 })).toBe(2 + 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -7787,8 +7787,7 @@ describe('the board trigger, read off the prologue', () => {
       'a comparison between two of its own characteristics, which no field asks'],
     ['Whenever a creature you control with power or toughness 1 or less dies',
       'an or across two bounds; `powerAtMost` and `toughnessAtMost` are an and'],
-    ['Whenever a creature you control with a counter on it dies',
-      'any counter rather than a named one, which `withCounter` cannot say'],
+    // "with a counter on it" (any counter) reads since D1008: `withCounter: 'any'`.
     ['Whenever a creature you control with annihilator enters',
       'a word this engine has no keyword for: `isKeyword` refuses it rather than compiling a'
       + ' filter nothing ever has'],
@@ -7802,6 +7801,13 @@ describe('the board trigger, read off the prologue', () => {
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  it('reads "with a counter on it" as any counter since D1008', () => {
+    const read = permanent('Whenever a creature you control with a counter on it dies, you gain 1 life.');
+    expect(read.ok && read.unread).toEqual([]);
+    if (!read.ok) return;
+    expect(field(read.script, 'triggers')).toMatchObject([{ on: { kind: 'dies', who: 'any', of: 'you', what: 'creature', withCounter: 'any' } }]);
   });
 });
 

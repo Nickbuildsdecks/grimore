@@ -17008,6 +17008,8 @@ function boardFilter(printed: string): Partial<BoardEvent> | null {
   }
   const counter = /^with a (\+1\/\+1|-1\/-1) counter on it$/i.exec(text);
   if (counter !== null) return { withCounter: counter[1]! };
+  // "With a counter on it" (D1008): any counter at all.
+  if (/^with a counter on it$/i.test(text)) return { withCounter: 'any' };
   /*
     A keyword, and `isKeyword` is the whole of the check: a word this engine does not implement
     would compile into a filter nothing ever has, which is a trigger that never fires — the same
@@ -18440,6 +18442,15 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
+  },
+  // "Whenever a creature you control with <filter> attacks" (D1008): \`boardFilter\`'s filters on the attacker.
+  {
+    prologue: () => /^Whenever a creature you control(?<filter> with [^,]+?) attacks, (?<clause>.+)$/i,
+    from: (matched) => {
+      const filter = boardFilter(matched.groups?.filter ?? '');
+      return filter === null ? null
+        : [{ kind: 'attacks' as const, who: 'any' as const, of: 'you' as const, ...filter } as TriggerDef['on']];
+    },
   },
   // "Whenever a Samurai or Warrior you control attacks alone" (D1003): two tribes, any of them.
   {

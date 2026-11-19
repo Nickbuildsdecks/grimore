@@ -561,9 +561,21 @@ export type TriggerEvent =
       readonly withKeyword?: Keyword;
       /** "A creature **with power 4 or greater** attacks you" (D996), off its live power. */
       readonly powerAtLeast?: number;
-      /** Set by the engine (D996): the attacker's live keywords and power, for the two above. */
+      /**
+       * The rest of \`boardFilter\`'s characteristic filters (D1008): "a creature you control **with a
+       * +1/+1 counter on it** attacks", "… with power 2 or less attacks". Asked as the board events ask
+       * them, off what the event carries.
+       */
+      readonly powerAtMost?: number;
+      readonly toughnessAtLeast?: number;
+      readonly toughnessAtMost?: number;
+      /** A counter by name, or \`any\` for "with a counter on it". */
+      readonly withCounter?: string;
+      /** Set by the engine (D996, D1008): the attacker's live keywords, power, toughness and counters. */
       readonly subjectKeywords?: readonly string[];
       readonly subjectPower?: number;
+      readonly subjectToughness?: number;
+      readonly subjectCounters?: Readonly<Record<string, number>>;
       /** Set by the engine when it raises the event: *which* creature attacked. See `subject`. */
       readonly subject?: string;
     }
