@@ -2045,6 +2045,15 @@ function fireTrigger(
     ...(event.kind === 'dies' && event.subjectCounters !== undefined
       ? { subjectCounters: event.subjectCounters }
       : {}),
+    /*
+      And its size as the event happened (D1020): the four events that measure their creature
+      carry it, and a reader measures live while that creature is still there, falling back to
+      this once it has gone (CR 608.2h). See `StackObject.subjectStats`.
+    */
+    ...('subjectPower' in event && event.subjectPower !== undefined
+      && 'subjectToughness' in event && event.subjectToughness !== undefined
+      ? { subjectStats: { power: event.subjectPower, toughness: event.subjectToughness } }
+      : {}),
   };
   /*
     A modal trigger (D757): the mode is chosen as it goes on the stack, before targets (CR 700.2b).
@@ -2804,6 +2813,8 @@ interface TriggerAbout {
   readonly enteringAttack?: { readonly defender: SeatIndex; readonly planeswalker?: string };
   /** The counters the subject had before the event. See `StackObject.subjectCounters`. */
   readonly subjectCounters?: Readonly<Record<string, number>>;
+  /** Its power and toughness as the event happened (D1020). See `StackObject.subjectStats`. */
+  readonly subjectStats?: { readonly power: number; readonly toughness: number };
   /**
    * What was sacrificed to activate it, as it last was. The one field here that is about the
    * **cost** rather than the event, and here because this is how an ability's object is told
@@ -2901,6 +2912,7 @@ function pushAbility(
     ...(about.subject === undefined ? {} : { subject: about.subject }),
     ...(about.actor === undefined ? {} : { actor: about.actor }),
     ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
+    ...(about.subjectStats === undefined ? {} : { subjectStats: about.subjectStats }),
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     ...(about.sacrificed === undefined ? {} : { sacrificedStats: about.sacrificed }),
     ...(about.tappedPower === undefined ? {} : { tappedPower: about.tappedPower }),
@@ -5578,6 +5590,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       ...aboutNow(state, object),
       answering: object.answering,
       actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
+      ...(object.subjectStats === undefined ? {} : { subjectStats: object.subjectStats }),
       ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
       enteringAttack: object.enteringAttack,
       ...(object.division === undefined ? {} : { division: object.division }),
@@ -5670,6 +5683,8 @@ function completeResolution(
     // And what that permanent had on it before the event, for one that counts counters that are
     // gone by now. See `StackObject.subjectCounters`.
     subjectCounters: object.subjectCounters,
+    // And its size as the event happened (D1020), for "equal to its toughness" once it has gone.
+    ...(object.subjectStats === undefined ? {} : { subjectStats: object.subjectStats }),
     // And the attack it is about to join, for a ninja arriving mid-combat.
     enteringAttack: object.enteringAttack,
     // And whose action it was, for one that has to say "that player".

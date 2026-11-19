@@ -26565,6 +26565,78 @@ describe('Increment: more mana spent than this creature\'s power or toughness (D
   });
 });
 
+describe('a measure of the event\'s creature: "life equal to its toughness" (D1020)', () => {
+  const ROWS = [
+    { name: 'Test Chorus', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Whenever a creature you control enters, you gain life equal to its toughness.' },
+    { name: 'Test Burial', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: "Whenever a creature you control dies, you gain life equal to that creature's toughness." },
+    { name: 'Test Usurper', type_line: 'Creature — Cat', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: "Whenever a creature you control deals combat damage to a player, you gain life equal to that creature's toughness." },
+    { name: 'Test Golems', type_line: 'Artifact Creature — Golem', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'When Test Golems dies, you gain life equal to its power.' },
+    { name: 'Test Wits', type_line: 'Creature — Naga', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: 'When Test Wits enters, you may draw cards equal to its power.' },
+    { name: 'Test Looter', type_line: 'Creature — Naga', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: 'When Test Looter enters, you may draw cards equal to its power. If you do, discard a card.' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '4', oracle_text: '' },
+    { name: 'Test Bolt', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Bolt deals 5 damage to target creature.' },
+  ];
+  const deck = customDeck({ id: 'd1020', name: 'Measure', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 32 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (mine: readonly string[], hand: readonly string[] = [], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1020', 1: 'd1020' }, deckSpecs: { d1020: deck.deck },
+    battlefield: { 0: ['Plains', ...mine], 1: ['Plains', ...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: readonly Target[]) => settle(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action));
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an entry gains its toughness, a death gains it as it last was', () => {
+    // The 1/4 enters: four.
+    expect(life(cast(table(['Test Chorus'], ['Test Wall']), 'Test Wall'), 0)).toBe(24);
+    // The 1/4 with a +1/+1 counter dies: five, the toughness it had, not the printed four.
+    let s = table(['Test Burial', 'Test Wall'], ['Test Bolt']);
+    const wall = find(s, 0, 'battlefield', 'Test Wall');
+    s = { ...s, instances: { ...s.instances, [wall]: { ...s.instances[wall]!, counters: { '+1/+1': 1 } } } };
+    s = cast(s, 'Test Bolt', [{ kind: 'card', id: wall }]);
+    expect(s.instances[wall]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(25);
+    // Its own death: "its power" is its own, three.
+    s = table(['Test Golems'], ['Test Bolt']);
+    s = cast(s, 'Test Bolt', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Golems') }]);
+    expect(life(s, 0)).toBe(23);
+  });
+
+  it('a combat hit gains the hitter\'s toughness, and an entry draws its power', () => {
+    let s = drain(apply(advanceTo(table(['Test Usurper', 'Test Wall']), 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: find(table(['Test Usurper', 'Test Wall']), 0, 'battlefield', 'Test Wall'), defender: 1 }],
+    } as Action));
+    s = settle(drain(advanceTo(s, 'postcombat-main')));
+    expect(life(s, 1)).toBe(19);
+    expect(life(s, 0)).toBe(24);
+
+    s = table([], ['Test Wits']);
+    const before = ids(s, 0, 'hand').length;
+    s = settle(say(cast(s, 'Test Wits'), 0, 'Yes'));
+    // The Wits leaves the hand, then two are drawn: its power.
+    expect(ids(s, 0, 'hand').length).toBe(before - 1 + 2);
+
+    // With a second half, both are drawn before the discard: one card left the hand, two came
+    // and one went. Drawing late would leave one fewer.
+    s = table([], ['Test Looter']);
+    const held = ids(s, 0, 'hand').length;
+    s = settle(say(cast(s, 'Test Looter'), 0, 'Yes'));
+    expect(ids(s, 0, 'hand').length).toBe(held);
+    expect(ids(s, 0, 'graveyard').length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

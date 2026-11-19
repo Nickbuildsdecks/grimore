@@ -369,6 +369,13 @@ export interface StackObject {
    * rather than a whole snapshot of the instance.
    */
   readonly subjectCounters?: Readonly<Record<string, number>>;
+  /**
+   * The power and toughness the permanent this ability is about had **as the event happened**
+   * (D1020), for "you gain life equal to its toughness" once that permanent has gone: a creature
+   * that died, or one blinked in response, is measured as it last existed on the battlefield
+   * (CR 608.2h). One still there is measured live, so this is only ever the fallback.
+   */
+  readonly subjectStats?: { readonly power: number; readonly toughness: number };
   readonly targetSeqs?: Readonly<Record<string, number>>;
   /**
    * The targets as chosen, position by position, with \`null\` where one has since stopped being the

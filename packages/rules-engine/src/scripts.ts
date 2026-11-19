@@ -19949,6 +19949,43 @@ function eventRelativeEffect(
   const HIT_EVENTS = new Set(['combat-damage', 'combat-damage-dealt', 'deals-damage']);
   const aboutTheHitPlayer = events.length > 0 && events.every((one) => HIT_EVENTS.has(one.kind));
 
+  /*
+    **A measure of the event's creature** (D1020): "Whenever a creature you control deals combat
+    damage to a player, you gain life equal to that creature's toughness" (Ikra Shidiqi), "When
+    Bottle Golems dies, you gain life equal to its power", "Whenever a creature you control
+    enters, you gain life equal to its toughness" (Angelic Chorus), "When Champion of Wits enters,
+    you may draw cards equal to its power".
+
+    Only on the four events that are about one creature and carry its size: an entry, a death, an
+    attack and a combat hit. "Its" and "that creature's" are then the same creature, the event's
+    subject (the card itself on its own trigger). Measured live while it is still on the
+    battlefield, so a pump in response counts, and as it last was once it has gone (CR 608.2h),
+    from the snapshot the trigger carries: a creature that died, or one blinked in response, which
+    is a new object (CR 400.7) and not the one the trigger meant.
+  */
+  const MEASURED_EVENTS = new Set(['etb', 'dies', 'attacks', 'combat-damage']);
+  if (events.length > 0 && events.every((one) => MEASURED_EVENTS.has(one.kind))) {
+    const MEASURE = "equal to (?:its|that creature's) (power|toughness)";
+    const life = new RegExp(`^(?:you )?gain life ${MEASURE}$`, 'i').exec(text);
+    const drawn = new RegExp(`^(?:you )?draw cards ${MEASURE}$`, 'i').exec(text);
+    const stat = (life ?? drawn)?.[1]?.toLowerCase() as 'power' | 'toughness' | undefined;
+    if (stat !== undefined) {
+      const measure = (c: EffectContext): number => {
+        const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+        return inst !== undefined && inst.zone === 'battlefield'
+          ? characteristicsOf(c.state, inst)[stat]
+          : c.subjectStats?.[stat] ?? 0;
+      };
+      // A power below zero draws and gains nothing: both refuse an amount that is not positive.
+      return drawn !== null
+        ? {
+          effect: (c) => drawLater(c.state, c.controller, measure(c)),
+          immediate: (c) => draw(c.state, c.controller, measure(c)),
+        }
+        : { effect: (c) => gainLife(c.state, c.controller, measure(c)) };
+    }
+  }
+
   // Kambal: "that player loses 2 life and you gain 2 life".
   const drained = /^that player loses (\d+) life and you gain (\d+) life$/i.exec(text);
   if (drained !== null && aboutAPlayer) {

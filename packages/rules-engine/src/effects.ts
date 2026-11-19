@@ -156,6 +156,8 @@ export interface EffectContext {
    * (CR 608.2h). See `StackObject.subjectCounters`.
    */
   readonly subjectCounters?: Readonly<Record<string, number>>;
+  /** The subject's power and toughness as the event happened (D1020). See `StackObject.subjectStats`. */
+  readonly subjectStats?: { readonly power: number; readonly toughness: number };
   /**
    * The permanent sacrificed to pay for this spell or ability, as it last was (D586).
    *
