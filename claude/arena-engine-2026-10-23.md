@@ -34376,6 +34376,36 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 13,331 of 31,900 cards (+4), 33,923 of 59,888 lines (+4).
 
+## D994 — "Whenever enchanted creature is dealt damage / becomes tapped"
+
+The next openings on D990's prologue list. An Aura that watches its host: "Whenever enchanted
+creature is dealt damage, …" and "Whenever enchanted creature (or land, artifact, permanent) becomes
+tapped, …".
+
+- A damage record now notes what was attached to the damaged permanent at that moment (`hosted`),
+  so an Aura whose host died of the damage still hears it from the graveyard, the way a creature's
+  own "is dealt damage" trigger already does.
+- `damaged` and `becomes-tapped` triggers take `who: 'self' | 'attached'`. The engine offers each
+  event to the permanent and to whatever is attached to it.
+- An attached permanent's own "this … is dealt damage / becomes tapped" still asks about itself:
+  an Aura's "Whenever this enchantment becomes tapped" does not hear its host tapping.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- a ping fires the Aura's trigger and the creature's own;
+- a lethal hit fires the Aura's trigger from the graveyard;
+- attacking taps the host and fires "enchanted creature becomes tapped";
+- the Aura's own "this enchantment becomes tapped" stays quiet when its host taps.
+
+The D566 damage tests pass unchanged.
+
+Faults injected by script: 7 of 7 caught (one check that only the watcher list reached was folded
+away).
+
+    engine tests: 5,330, all passing
+
+Coverage: 13,334 of 31,900 cards (+3), 33,926 of 59,888 lines (+3).
+
 ## D752 — The printed "prevent all damage" statics and auras
 
 D738 read "Prevent all damage that would be dealt to / by …" on spells that last for one turn. The
@@ -34416,6 +34446,6 @@ it was caught. One miss (the self static widened to every creature) is now pinne
 beside Dawn Elemental. The fault that read "to and dealt by" as "to" was written before the Fog
 Bank change, and it now reaches only the noncombat form, which no test card prints.
 
-    engine tests: 5,331, all passing (merged with the other session's D993)
+    engine tests: 5,336, all passing (merged with the other session's D993 and D994)
 
 Coverage: 13,346 of 31,900 cards (+18), 33,944 of 59,888 lines (+23), against 874e99c.

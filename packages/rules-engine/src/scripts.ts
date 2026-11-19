@@ -18225,6 +18225,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} is dealt combat damage, (.+)$`, 'i'),
     on: [{ kind: 'damaged', combatOnly: true }],
   },
+  // "Enchanted creature is dealt damage", "enchanted creature / land becomes tapped" (D994).
+  {
+    prologue: () => /^When(?:ever)? enchanted creature is dealt damage, (.+)$/i,
+    on: [{ kind: 'damaged', who: 'attached' }],
+  },
+  {
+    prologue: () => /^When(?:ever)? enchanted (?:creature|land|permanent|artifact) becomes tapped, (.+)$/i,
+    on: [{ kind: 'becomes-tapped', who: 'attached' }],
+  },
   // "Whenever ~ deals damage", to anything (D904): see the event's `to: 'any'`.
   {
     prologue: (self) => new RegExp(`^Whenever ${self} deals damage, (.+)$`, 'i'),
