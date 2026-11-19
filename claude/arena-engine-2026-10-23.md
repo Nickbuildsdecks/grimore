@@ -34694,6 +34694,41 @@ Faults injected by script: 3 of 3 caught. The first gate stopped at the test typ
 
 Coverage: 13,471 of 31,900 cards (+17), 34,150 of 59,888 lines (+53), against aaaceb1.
 
+## D998 — "When enchanted creature becomes the target …" and "Whenever ~ blocks a creature with flying"
+
+Two openings from D990's prologue list: the Aura that watches its host being targeted (7 lines:
+Ice Cage, Illusionary Armor, Sleeping Potion, Spectral Prison, Crystallization) and the reach
+creature that rewards blocking a flier (7 lines: Netcaster Spider, Skystinger, Woolly Spider).
+
+- **Targeted host.** `raiseTargeted` now carries what is attached to the targeted permanent, and
+  `targeted` takes `who: 'self' | 'attached'` the way D994's damage and tapping events do. The
+  event also says whether the targeting object was a spell, so "the target of **a spell**" (Spectral
+  Prison) keeps to spells and an activated ability does not break it.
+- An Aura's own "this enchantment becomes the target" still means the Aura, and targeting the Aura
+  is not targeting its host.
+- Casting a second Aura on the host is a spell that targets it, so an Ice Cage on that creature goes.
+  That is the printed rule, and a test holds it.
+- **Blocked flier.** The `blocks` event carries the attacker's live keywords at the block, and
+  `blocks` takes `blockedKeyword`. "Blocks a creature with <word>" reads only when the word is a
+  keyword the engine knows.
+- "Destroy / exile **that creature**" and "that spell or ability's controller gains control" after
+  the targeted host are not read yet.
+
+**Tests.** 6 engine tests:
+- the cards read; a non-keyword refuses; "an opponent controls" keeps `by: 'opponent'`;
+- targeting the Aura itself does not fire its host trigger;
+- a spell at the host fires the Aura, and the Aura's own "this enchantment" trigger stays quiet;
+- casting a second Aura on the host sacrifices the first;
+- an ability at the host fires "a spell or ability" and not "a spell"; targeting a player fires
+  nothing;
+- blocking the flier fires "blocks a creature with flying"; blocking the bear does not.
+
+Faults injected by script: 11 of 11 caught (three after the pins above).
+
+    engine tests: 5,372, all passing
+
+Coverage: 13,490 of 31,900 cards (+9), 34,171 of 59,888 lines (+9), measured against the tree
+after the D756 merge.
 ## D757 — Modal triggered abilities
 
 "When ~ enters, choose one —" and its kin ("When ~ dies", "Landfall — …", "At the beginning of your
@@ -34800,6 +34835,6 @@ The first gate failed four older tests that held the phrase as unreadable. D611'
 Bitter Downfall is whole. Two refusal rows now use "… combat damage this turn", which still does
 not read, and D469's refusal list drops the phrase.
 
-    engine tests: 5,380, all passing
+    engine tests: 5,386, all passing (merged with the other session's D998)
 
 Coverage: 13,582 of 31,900 cards (+19), 34,442 of 59,888 lines (+27), against 20fdb27.

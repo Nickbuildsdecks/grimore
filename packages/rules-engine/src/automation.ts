@@ -1505,6 +1505,9 @@ function triggerMatches(
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
+      // "Whenever ~ blocks a creature with flying" (D998), off the attacker's keywords at the block.
+      if (want.kind === 'blocks' && want.blockedKeyword !== undefined
+        && !((event as { blockedKeywords?: readonly string[] }).blockedKeywords ?? []).includes(want.blockedKeyword)) return false;
       // "A creature [with flying] attacks you [or a planeswalker you control]" (D996).
       if (want.kind === 'attacks' && want.at !== undefined) {
         const at = (event as { attacked?: AttackedTarget }).attacked;
@@ -1614,6 +1617,9 @@ function triggerMatches(
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
     case 'targeted': {
+      // Its own permanent, or its host (D998): `raise` offers the event to both.
+      if ((want.who ?? 'self') === 'self' ? !isSubject : !isAttachedSubject) return false;
+      if (want.spellOnly === true && (event as { bySpell?: boolean }).bySpell !== true) return false;
       const by = want.by ?? 'opponent';
       if (by === 'any') return true;
       if (actorSeat === undefined) return false;
@@ -2283,6 +2289,7 @@ function raise(
     in both lists and a trigger offered the same event twice would fire twice.
   */
   const attachedWatchers = event.kind === 'dies' || event.kind === 'damaged' || event.kind === 'becomes-tapped'
+    || event.kind === 'targeted'
     ? (event as { attachments?: readonly string[] }).attachments ?? []
     : [];
   const everyBattlefieldAndAttached = attachedWatchers.length === 0
@@ -2623,7 +2630,13 @@ export function raiseTargeted(state: GameState, objectId: string): GameState {
     if (target.kind !== 'card') continue;
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') continue;
-    next = raise(next, { kind: 'targeted', object: objectId }, object.controller, target.id);
+    // With what is attached to it (D998), for "when enchanted creature becomes the target".
+    const attachments = Object.values(next.instances)
+      .filter((other) => other.zone === 'battlefield' && other.attachedTo === target.id).map((other) => other.id);
+    next = raise(next, {
+      kind: 'targeted', object: objectId, bySpell: object.kind === 'spell',
+      ...(attachments.length === 0 ? {} : { attachments }),
+    }, object.controller, target.id);
   }
   return isCrime(next, object) ? raise(next, { kind: 'crime' }, object.controller) : next;
 }

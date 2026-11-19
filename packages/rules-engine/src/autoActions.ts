@@ -2904,7 +2904,11 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     for (const blocker of attack.blockers) {
       next = raise(
         next,
-        { kind: 'blocks', subjectSeat: action.by, blocked: attack.attacker },
+        {
+          kind: 'blocks', subjectSeat: action.by, blocked: attack.attacker,
+          // The attacker's live keywords (D998), for "blocks a creature with flying".
+          blockedKeywords: [...characteristicsOf(next, requireInstance(next, attack.attacker)).keywords],
+        },
         action.by,
         blocker,
       );

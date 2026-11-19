@@ -592,6 +592,10 @@ export type TriggerEvent =
       readonly subject?: string;
       /** Set by the engine: the attacker it blocked. See `EffectContext.blocked`. */
       readonly blocked?: string;
+      /** "Whenever ~ blocks a creature **with flying**" (D998): a keyword the blocked attacker has. */
+      readonly blockedKeyword?: Keyword;
+      /** Set by the engine (D998): the blocked attacker's live keywords. */
+      readonly blockedKeywords?: readonly string[];
     }
   /**
    * "Whenever this creature becomes blocked by a creature" (CR 509.1h).
@@ -1169,6 +1173,17 @@ export type TriggerEvent =
   | {
       readonly kind: 'targeted';
       readonly by?: 'you' | 'opponent' | 'any';
+      /**
+       * `attached` (D998) is "when **enchanted creature** becomes the target of a spell or
+       * ability": the Aura watching its host. `self`, the default, is the permanent itself.
+       */
+      readonly who?: 'self' | 'attached';
+      /** Set by the engine (D998): what was attached to the targeted permanent. */
+      readonly attachments?: readonly string[];
+      /** "A spell" without "or ability" (D998): only a spell's targeting counts. */
+      readonly spellOnly?: boolean;
+      /** Set by the engine (D998): the targeting object was a spell. */
+      readonly bySpell?: boolean;
       /** Set by the engine when it raises the event: the stack object that did the targeting. */
       readonly object?: string;
     }

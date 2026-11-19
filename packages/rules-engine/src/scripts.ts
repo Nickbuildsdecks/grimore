@@ -17091,6 +17091,11 @@ function sacrificeTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][]
 function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
   const shape = (matched.groups?.shape ?? '').toLowerCase();
   if (shape === 'blocks a creature') return [{ kind: 'blocks' }];
+  // "Blocks a creature with flying" (D998): a keyword the attacker has, checked at the block.
+  const withKeyword = /^blocks a creature with ([a-z]+)$/.exec(shape);
+  if (withKeyword !== null) {
+    return isKeyword(withKeyword[1]!) ? [{ kind: 'blocks', blockedKeyword: withKeyword[1]! as Keyword }] : null;
+  }
   if (shape === 'becomes blocked by a creature') return [{ kind: 'becomes-blocked' }];
   /*
     Both halves off one line, which `on` has taken as a list since D134 — and the pair is what
@@ -17591,7 +17596,7 @@ const TRIGGER_SHAPES: readonly ({
       // The long spellings first: regex alternation is ordered, so a bare `blocks` listed before
       // `blocks a creature` would claim the longer sentence and lose its filter.
       `^When(?:ever)? ${self} (?<shape>blocks or becomes blocked by a creature`
-      + '|blocks or becomes blocked|blocks a creature|becomes blocked by a creature'
+      + '|blocks or becomes blocked|blocks a creature with [a-z]+|blocks a creature|becomes blocked by a creature'
       + '|becomes blocked|blocks), (?<clause>.+)$',
       'i',
     ),
@@ -17728,6 +17733,19 @@ const TRIGGER_SHAPES: readonly ({
       'i',
     ),
     on: [{ kind: 'targeted', by: 'opponent' }],
+  },
+  /*
+    "When **enchanted creature** becomes the target of a spell or ability" (D998): the Aura watching
+    its host, as D994's damage and tapping rows do. "Of a spell" alone is the narrower sentence and
+    keeps to spells.
+  */
+  {
+    prologue: () => /^When(?:ever)? enchanted creature becomes the target of a (?<what>spell or ability|spell)(?<opp> an opponent controls)?, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'targeted' as const, who: 'attached' as const,
+      by: matched.groups?.opp === undefined ? 'any' as const : 'opponent' as const,
+      ...(/^spell$/i.test(matched.groups?.what ?? '') ? { spellOnly: true } : {}),
+    }],
   },
   /*
     **The block family: the per-creature half is read (D480), the batched half is not.**

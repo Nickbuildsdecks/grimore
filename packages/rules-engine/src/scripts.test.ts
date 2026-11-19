@@ -25010,6 +25010,93 @@ describe('named modes: "• Attack — Create a 2/2 …" (D756)', () => {
   });
 });
 
+describe('"enchanted creature becomes the target" and "blocks a creature with flying" (D998)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Enchantment — Aura', oracle_text: `Enchant creature\n${text}`, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({ name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness });
+  const ROWS = [
+    A('Test Cage', 'When enchanted creature becomes the target of a spell or ability, sacrifice this enchantment.'),
+    A('Test Prison', 'When enchanted creature becomes the target of a spell, sacrifice this enchantment.'),
+    A('Test Charm', 'Whenever this enchantment becomes the target of a spell or ability, you gain 5 life.'),
+    C('Test Archer', 'Reach\nWhenever this creature blocks a creature with flying, you gain 3 life.', '1', '4'),
+    C('Test Bear', ''),
+    C('Test Bird', 'Flying', '1', '1'),
+    C('Test Pinger', '{T}: This creature deals 1 damage to any target.', '1', '1'),
+    { name: 'Test Pump', type_line: 'Instant', oracle_text: 'Target creature gets +1/+1 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Snap', type_line: 'Instant', oracle_text: 'Tap target permanent.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd998', name: 'Cages', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const enchanted = (auras: string[]) => {
+    let s = arena({ decks: { 0: 'd998', 1: 'd998' }, deckSpecs: { d998: deck.deck }, hands: { 0: [...auras, 'Test Pump', 'Test Snap'] }, battlefield: { 0: ['Test Bear', 'Test Pinger'], 1: [] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    for (const aura of auras) s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: bear }] } as Action));
+    return { s, bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A word that is not a keyword refuses the line; "an opponent controls" keeps its `by`.
+    const wings = compileCard(C('Test Wings', 'Whenever this creature blocks a creature with wings, you gain 1 life.') as never);
+    expect(wings.ok && wings.unread).toHaveLength(1);
+    expect(JSON.stringify(compileCard(A('Test Hex', 'Whenever enchanted creature becomes the target of a spell or ability an opponent controls, you gain 1 life.') as never))).toContain('"by":"opponent"');
+  });
+
+  it('targeting the Aura itself is not targeting its host', () => {
+    const { s } = enchanted(['Test Cage']);
+    const after = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Snap'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Cage') }] } as Action));
+    expect(after.instances[find(s, 0, 'battlefield', 'Test Cage')]!.zone).toBe('battlefield');
+  });
+
+  it('a spell at the host fires the Aura; the Aura\'s own "this enchantment" does not hear it', () => {
+    const { s, bear } = enchanted(['Test Charm', 'Test Cage']);
+    const life = s.seats[0]!.life;
+    const after = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pump'), targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(namesIn(after, 0, 'graveyard')).toContain('Test Cage');
+    expect(namesIn(after, 0, 'battlefield')).toContain('Test Charm');
+    expect(after.seats[0]!.life).toBe(life);
+  });
+
+  it('casting a second Aura on the host is a spell targeting it: the first Aura goes', () => {
+    const { s } = enchanted(['Test Cage', 'Test Prison']);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Cage');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Prison');
+  });
+
+  it('an ability at the host fires "a spell or ability" and not "a spell"; targeting something else fires nothing', () => {
+    const cage = enchanted(['Test Cage']);
+    const pingerOf = (t: GameState) => find(t, 0, 'battlefield', 'Test Pinger');
+    const other = settle(apply(cage.s, { type: 'auto:activate', by: 0, card: pingerOf(cage.s), abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] } as Action));
+    expect(namesIn(other, 0, 'battlefield')).toContain('Test Cage');
+    const hit = settle(apply(cage.s, { type: 'auto:activate', by: 0, card: pingerOf(cage.s), abilityIndex: 0, targets: [{ kind: 'card', id: cage.bear }] } as Action));
+    expect(namesIn(hit, 0, 'graveyard')).toContain('Test Cage');
+    const prison = enchanted(['Test Prison']);
+    const pinged = settle(apply(prison.s, { type: 'auto:activate', by: 0, card: pingerOf(prison.s), abilityIndex: 0, targets: [{ kind: 'card', id: prison.bear }] } as Action));
+    expect(namesIn(pinged, 0, 'battlefield')).toContain('Test Prison');
+    const pumped = settle(apply(pinged, { type: 'auto:cast', by: 0, card: find(pinged, 0, 'hand', 'Test Pump'), targets: [{ kind: 'card', id: prison.bear }] } as Action));
+    expect(namesIn(pumped, 0, 'graveyard')).toContain('Test Prison');
+  });
+
+  it('"blocks a creature with flying": blocking the flier fires it, blocking the bear does not', () => {
+    const block = (attackerName: string) => {
+      let s = arena({ decks: { 0: 'd998', 1: 'd998' }, deckSpecs: { d998: deck.deck }, battlefield: { 0: ['Test Bird', 'Test Bear'], 1: ['Test Archer'] }, turn: 3, firstSeat: 0 });
+      s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+      s = advanceTo(s, 'declare-attackers');
+      const attacker = find(s, 0, 'battlefield', attackerName);
+      s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+      for (let i = 0; i < 4 && s.step !== 'declare-blockers'; i++) s = passBoth(s);
+      const life = s.seats[1]!.life;
+      s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Archer'), attacker }] });
+      for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+      return s.seats[1]!.life - life;
+    };
+    expect(block('Test Bird')).toBe(3);
+    expect(block('Test Bear')).toBe(0);
+  });
+});
+
 describe('modal triggered abilities: "When ~ enters, choose one —" (D757)', () => {
   const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra });
   const body = { power: '1', toughness: '1' };
