@@ -35316,3 +35316,28 @@ Faults injected by script: 9 of 9 caught.
     engine tests: 5,456, all passing
 
 Coverage: 13,797 of 31,900 cards (+32), 34,822 of 59,888 lines (+53).
+
+## D1012 — Target shapes: keyword before controller, "attacking or blocking" with more, power up to this one's
+
+Three more target phrases from D1011's tally, each read at the front of `targetSpecFrom`:
+
+- **"Target creature with flying an opponent controls"**: the keyword printed before the controller
+  clause, where the parse expects it last. Reordered and read again.
+- **"Target attacking or blocking creature an opponent controls / with flying"**: the exact phrase
+  Divine Verdict uses, with more after it. Read as "target creature …" plus the
+  attacking-or-blocking test.
+- **"… with power less than or equal to this creature's power"**: the candidate's live power against
+  the source's, checked as each target is chosen.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- "with flying an opponent controls" takes their flier, and refuses yours and their ground creature;
+- "attacking or blocking creature an opponent controls" takes their attacker and refuses their
+  creature at home;
+- a 3/3's "power less than or equal to this creature's power" kills a 2/2 and cannot target a 4/4.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,460, all passing
+
+Coverage: 13,803 of 31,900 cards (+6), 34,829 of 59,888 lines (+7).
