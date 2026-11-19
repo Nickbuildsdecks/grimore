@@ -53000,3 +53000,30 @@ Faults injected by script: 6 of 6 caught (two after the own-caster pins).
 
 Coverage: 13,854 of 31,900 cards (+8), 34,906 of 59,888 lines (+11), measured against the tree
 after the D763 merge.
+
+## D1019 — Increment
+
+"Increment (Whenever you cast a spell, if the amount of mana you spent is greater than this
+creature's power or toughness, put a +1/+1 counter on this creature.)" A keyword printed on 10
+legal creatures (Hungry Graffalon, Cuboid Colony, Textbook Tabulator, Pensive Professor and the rest
+of the set). It needs the mana a cast spent, which D1002 started counting.
+
+- The `spell-cast` event carries `manaSpent`, from the payment's own count.
+- The keyword reads as a "whenever you cast a spell" trigger with `manaSpentOverSelf`. `fireTrigger`
+  compares the mana spent with the creature's live power and toughness as it triggers, and the trigger
+  puts a +1/+1 counter on it.
+- The second ask of the "if" at resolution is not made: the event's amount does not travel to the
+  stack object. It only matters if the creature's size changes while the trigger waits, and then the
+  counter still arrives.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- on a 2/3, a three-mana spell adds a counter; a two-mana spell (not more than 2 or 3) and a free
+  spell do not;
+- the opponent's three-mana spell does not.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,487, all passing
+
+Coverage: 13,858 of 31,900 cards (+4), 34,915 of 59,888 lines (+9).
