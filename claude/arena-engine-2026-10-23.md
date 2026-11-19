@@ -35220,3 +35220,31 @@ Faults injected by script: 8 of 8 caught (one after the toughness pin).
     engine tests: 5,446, all passing
 
 Coverage: 13,742 of 31,900 cards (+7), 34,735 of 59,888 lines (+13).
+
+## D1009 — Exile from a hand until ~ leaves: Tidehollow Sculler
+
+From the "When ~ leaves the battlefield, …" tails: Tidehollow Sculler (a Legacy staple) and Mesmeric
+Fiend print the hand version of the exile-until-it-leaves pair. "When ~ enters, target opponent
+reveals their hand and you choose a nonland card from it. Exile that card." and "When ~ leaves the
+battlefield, return the exiled card to its owner's hand."
+
+- A whole-card shape, beside the battlefield one (Journey to Nowhere, Banisher Priest), because the
+  two triggers are one effect and neither line is a unit. Both lines must be present; the exile line
+  alone stays what it was.
+- The chosen card is exiled with `exiledBy` set to the Sculler, and the leave trigger hands back what
+  points at it. `returnExiledBy` now takes where it goes back to: the battlefield, or the owner's hand.
+- If the Sculler leaves before its entry trigger resolves, the leave trigger finds nothing and the
+  card stays exiled, which is the printed rule (and a well-known play).
+
+**Tests.** 3 engine tests:
+- the card reads; without the return line there is no leave trigger;
+- the opponent's two spells are offered and their land is not; the chosen card goes to exile, and
+  returns to that player's hand when the Sculler dies;
+- killed in response to its own entry trigger, the Sculler gives nothing back and the card stays
+  exiled.
+
+Faults injected by script: 5 of 5 caught (one after the exile-line-alone pin).
+
+    engine tests: 5,449, all passing
+
+Coverage: 13,744 of 31,900 cards (+2), 34,739 of 59,888 lines (+4).
