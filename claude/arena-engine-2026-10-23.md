@@ -35505,3 +35505,32 @@ per-player death count instead.
 
 Coverage: 13,842 of 31,900 cards (+4), 34,888 of 59,888 lines (+7), against 5309345. Most of
 these triggers have a second unread clause.
+
+## D1018 — Spell targets: whose spell, and what it targets
+
+A tally of the spell-target phrases inside unread lines, each tried as "Counter target <X>.", found
+two clauses D490's spell grammar did not take after the noun:
+
+- **Whose spell**: "target instant or sorcery spell you control" (7), "target spell an opponent
+  controls", "creature spell you control", "noncreature spell an opponent controls". Read off the
+  spell's controller on the stack.
+- **What it targets**: "target spell that targets you", "… that targets a permanent you control",
+  "… a creature [you control]" (about 12). Read off the spell's own targets on the stack.
+
+Both read the spell's stack object; a card on the stack has exactly one. "Target spell" with only a
+clause and no kind word reads too.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- with seat 0's Bolt on the stack, seat 0's "instant or sorcery spell you control" may target it and
+  its "spell an opponent controls" may not; after seat 0 passes, seat 1's are the other way round;
+- a Bolt at seat 1 may be countered by seat 1's "that targets you" and not by "that targets a
+  permanent you control", and a Bolt at seat 1's Bear the reverse. A Bolt at its own caster, or at
+  the caster's own creature, is neither.
+
+Faults injected by script: 6 of 6 caught (two after the own-caster pins).
+
+    engine tests: 5,484, all passing
+
+Coverage: 13,854 of 31,900 cards (+8), 34,906 of 59,888 lines (+11), measured against the tree
+after the D763 merge.
