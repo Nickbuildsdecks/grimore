@@ -52840,3 +52840,37 @@ Faults injected by script: 6 of 6 caught.
     engine tests: 5,462, all passing
 
 Coverage: 13,823 of 31,900 cards (+20), 34,861 of 59,888 lines (+32).
+
+## D1014 — "If ~ is in your graveyard, …": Bridge from Below and the upkeep returners
+
+From a tally of the intervening-if conditions inside unread lines: "if ~ is in your graveyard" was
+17 lines (Bridge from Below, Ghastly Remains, Gigapede, Genesis, Blood Operative). These are
+abilities that work only from the graveyard. D632 built that machinery (`TriggerDef.inGraveyard`);
+these lines spell the zone out instead of implying it.
+
+- **The condition.** "<prologue>, if ~ is in your graveyard, <effect>" is read as a graveyard-only
+  trigger with that intervening-if (CR 603.4), checked as it triggers and again as it resolves. A
+  card exiled from the graveyard in response does nothing. "Return ~ to your hand" in such a line is
+  the card returning itself from there. Read for any event, because the condition names the zone
+  itself.
+- **Bridge from Below's prologues.** "Whenever a [nontoken] creature is put into your / an opponent's
+  graveyard from the battlefield": a death with `owner`. That is the owner's graveyard (CR 400.3), not
+  the controller's.
+- **A fact the death event lacked.** A dying token has ceased to exist when its death is announced,
+  so nothing could say whose graveyard it went to. The event now carries `subjectOwner`, read from
+  the last-known card. The first fault run found this: with "nontoken" removed, a token's death still
+  made no Zombie.
+
+**Tests.** 6 engine tests:
+- the cards read;
+- from the graveyard, your nontoken creature dying makes a Zombie, and a token dying does not;
+- exiled from the graveyard in response, the Bridge makes nothing;
+- an opponent's creature dying exiles the Bridge;
+- the Bridge in hand hears no death;
+- the upkeep returner comes back from the graveyard and does nothing on the battlefield.
+
+Faults injected by script: 7 of 7 caught (two after the response pin and the owner fix).
+
+    engine tests: 5,468, all passing
+
+Coverage: 13,831 of 31,900 cards (+8), 34,872 of 59,888 lines (+11).
