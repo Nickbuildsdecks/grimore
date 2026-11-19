@@ -51735,7 +51735,7 @@ cards print it, so that assertion now checks the count of two instead.
 
 Faults injected by script: 2 of 2 caught.
 
-    engine tests: 5,308, all passing
+    engine tests: 5,313, all passing (merged with the other session's D990)
 
 Coverage: 13,294 of 31,900 cards (+17), 33,880 of 59,888 lines (+20), against 92f21d1. Pod sweep
 59301 (100 games, D749–D750): every game finished.
