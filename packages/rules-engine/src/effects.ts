@@ -673,6 +673,11 @@ export function damageSourceRef(state: GameState, id: string): string {
   return `${id}#${state.instances[id]?.objectSeq ?? 0}`;
 }
 
+/** Whether this permanent, as the object it is now, was dealt damage this turn (D759). */
+export function wasDealtDamageThisTurn(state: GameState, id: string): boolean {
+  return (state.permanentsDamagedThisTurn ?? []).includes(damageSourceRef(state, id));
+}
+
 /**
  * Writes down damage that landed — `AutomationState.damageDealt` for the events `settle` raises,
  * and `damagedBy` for the turn's memory of who hit which permanent (D566).
@@ -699,6 +704,13 @@ function recordDamage(
     ...state,
     damageDealt: [...(state.damageDealt ?? []), { to, source, sourceInPlay, amount, ...(hosted.length === 0 ? {} : { hosted }) }],
   };
+  // "Was dealt damage this turn" (D759), whatever dealt it.
+  if (to.kind === 'card' && amount > 0) {
+    const self = damageSourceRef(next, to.id);
+    if (!(next.permanentsDamagedThisTurn ?? []).includes(self)) {
+      next = { ...next, permanentsDamagedThisTurn: [...(next.permanentsDamagedThisTurn ?? []), self] };
+    }
+  }
   if (to.kind === 'card' && source !== null && sourceInPlay) {
     const ref = damageSourceRef(next, source);
     const before = next.damagedBy?.[to.id] ?? [];

@@ -47,7 +47,7 @@ import {
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED, MONSTROUS,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, reboundOffer, FADE, TIME, enterAttacking,
+  addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, wasDealtDamageThisTurn, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, flipPermanent, recordExpiry, pairCreatures,
   type EffectContext, type PumpOptions,
 } from './effects.js';
@@ -21249,6 +21249,22 @@ function targetSpecFrom(
       return inner.filter === undefined || inner.filter(state, candidate, controller, source);
     };
     return { ...inner, description: printed, filter: withinBound };
+  }
+
+  /*
+    **"… that was dealt damage this turn", peeled the same way (D759):** "Destroy target creature
+    that was dealt damage this turn" (Spikefield Hazard's family of finishers). The fact is
+    `wasDealtDamageThisTurn`, the turn's record of permanents damage landed on.
+  */
+  const hurt = /^(.*?) that was dealt damage this turn$/i.exec(printed);
+  if (hurt !== null && parsed) {
+    const inner = targetSpecFrom(hurt[1]!.trim(), friendly, parsed);
+    if (inner === null || !pointsAtAPermanent(inner)) return null;
+    const damaged: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card' || !wasDealtDamageThisTurn(state, candidate.id)) return false;
+      return inner.filter === undefined || inner.filter(state, candidate, controller, source);
+    };
+    return { ...inner, description: printed, filter: damaged };
   }
 
   /*

@@ -1145,6 +1145,8 @@ export function endTurnCleanup(state: GameState): GameState {
     // And D564's four: who attacked, what died, what left and who gained life.
     attackedThisTurn: {},
     attackersThisTurn: [],
+    // And which permanents were dealt damage (D759).
+    permanentsDamagedThisTurn: [],
     // And who dealt combat damage to a player (D935), prowl's and freerunning's fact.
     combatHitsThisTurn: {},
     creaturesDiedThisTurn: 0,

@@ -1382,6 +1382,14 @@ export interface AutomationState {
    */
   readonly attackersThisTurn?: readonly string[];
   /**
+   * Which permanents were dealt damage this turn (D759), as `id#objectSeq` for the reason
+   * `attackersThisTurn` gives: "destroy target creature that was dealt damage this turn". Marked
+   * damage is not the same fact, since regeneration removes it and the creature was
+   * still dealt the damage. Written by `recordDamage`, so prevented damage, which was never dealt,
+   * is not here. Cleared with the other turn facts.
+   */
+  readonly permanentsDamagedThisTurn?: readonly string[];
+  /**
    * Combat damage dealt to a player this turn (D935), keyed by the seat that **controlled** the
    * creature as it dealt it: its creature types then, and whether it was a commander. Prowl's fact
    * ("a source you controlled that had any of this spell's creature types", CR 702.76a) and

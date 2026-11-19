@@ -10341,7 +10341,8 @@ describe("a spell's non-resolution lines (D487)", () => {
   it.each([
     // A cost modification: a way to cast the card, exactly like a keyword (64 lines). Since D611
     // "if it targets a tapped creature" reads; a target condition the reader cannot say does not.
-    'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.',
+    // ("… that was dealt damage this turn" reads since D759; "combat damage" does not.)
+    'This spell costs {3} less to cast if it targets a creature that was dealt combat damage this turn.',
     'This spell costs {2} less to cast if it was bargained.',
     // A triggered ability, which on a spell functions somewhere other than resolution (36).
     'Whenever an opponent gains life, you may pay {R}. If you do, return Flinging Thing from your'
@@ -15563,12 +15564,12 @@ describe('the possessive referent: "its controller" (D537)', () => {
     if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 
-  it("reads Bitter Downfall's removal line, and leaves its cost line unread", () => {
+  it("reads Bitter Downfall's removal line, and since D759 its cost line too", () => {
     /*
-      An honest partial: the card is not finished, because "This spell costs {3} less to cast if it
-      targets a creature that was dealt damage this turn" is its own unread row (10 cards in the
-      queue). What this increment bought is the second line, and the test says exactly that rather
-      than claiming the card.
+      This was an honest partial: "This spell costs {3} less to cast if it targets a creature that
+      was dealt damage this turn" was its own unread row (10 cards in the queue). D759 keeps the
+      per-turn record of permanents dealt damage, so the target condition reads and the card is
+      whole.
     */
     const read = spell(
       'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.\n'
@@ -15577,9 +15578,7 @@ describe('the possessive referent: "its controller" (D537)', () => {
     );
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual([
-      'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.',
-    ]);
+    expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 
   it('reads the possessive on a SPELL target since D646', () => {
