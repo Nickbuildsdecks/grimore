@@ -26390,6 +26390,33 @@ describe('intervening-if table facts: monarch, initiative, an empty battlefield,
   });
 });
 
+describe('"if that player has two or fewer cards in hand" on each opponent\'s upkeep (D1017)', () => {
+  const ROWS = [
+    { name: 'Test Mongrel', type_line: 'Creature — Dog', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'At the beginning of each opponent\'s upkeep, if that player has two or fewer cards in hand, this creature deals 2 damage to that player.' },
+  ];
+  const deck = customDeck({ id: 'd1017', name: 'Mongrel', entries: [{ name: 'Test Mongrel', count: 4 }, { name: 'Mountain', count: 40 }], data: ROWS as never[] });
+  const theirUpkeep = (hand: number) => {
+    let s = advanceTo(arena({ decks: { 0: 'd1017', 1: 'd1017' }, deckSpecs: { d1017: deck.deck }, hands: { 0: [], 1: Array(hand).fill('Mountain') }, battlefield: { 0: ['Test Mongrel'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    const life = s.seats[1]!.life;
+    s = advanceTo(nextTurn(s), 'draw');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.activeSeat).toBe(1);
+    return life - s.seats[1]!.life;
+  };
+
+  it('reads whole; "that player" on your own upkeep is not read', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const own = compileCard({ ...ROWS[0], name: 'Test Own', oracle_text: 'At the beginning of your upkeep, if that player has no cards in hand, you gain 1 life.' } as never);
+    expect(own.ok && own.unread).toHaveLength(1);
+  });
+
+  it('two cards in hand: 2 damage; three: none', () => {
+    expect(theirUpkeep(2)).toBe(2);
+    expect(theirUpkeep(3)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -30553,7 +30553,20 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
   const text = plain(withoutAbilityWord(line)).trim();
   const clause = /^((?:When|Whenever|At the beginning of) [^,]+), if ([^,]+), (.+)$/i.exec(text);
   if (clause === null) return null;
-  const condition = interveningConditionFor(clause[2]!, name);
+  /*
+    "At the beginning of each opponent's / each player's upkeep, if that player has two or fewer cards
+    in hand, …" (D1017): Hellfire Mongrel, Lavaborn Muse, Paupers' Cage, Ghirapur Orrery. "That
+    player" is whoever's upkeep it is, the active player, which is what both asks read. Only on those
+    prologues: anywhere else "that player" is some other event's player.
+  */
+  const handCount = /^each (?:opponent's|player's) upkeep$/i.test(clause[1]!.replace(/^At the beginning of /i, ''))
+    ? /^that player has (no|one or fewer|two or fewer|three or fewer) cards in hand$/i.exec(clause[2]!.trim())
+    : null;
+  const most = handCount === null ? undefined
+    : ({ no: 0, 'one or fewer': 1, 'two or fewer': 2, 'three or fewer': 3 } as Record<string, number>)[handCount[1]!.toLowerCase()];
+  const condition = most !== undefined
+    ? (c: EffectContext) => (c.state.zones[`${c.state.activeSeat}:hand`] ?? []).length <= most
+    : interveningConditionFor(clause[2]!, name);
   if (condition === null) return null;
   const read = lineScriptFor(`${clause[1]!}, ${clause[3]!}`, name);
   if (read === null) return null;
