@@ -34349,3 +34349,29 @@ so it uses a real "Proliferate." spell.
 
 Coverage: 13,327 of 31,900 cards (+25), 33,919 of 59,888 lines (+29) (with the other session's D751
 merged).
+
+## D993 — "Whenever you discard one or more cards"
+
+The next opening on D990's list (9 lines). "Whenever you discard a card" has read since D567, one
+event per card. "One or more cards" is the batch: one trigger for a discard of three.
+
+- The engine raises a **batch** `discards` event once per player per pass, beside the per-card
+  events. It carries `amount`, for "that many".
+- A trigger hears only its own kind. `batch: true` hears batches and nothing else, and every older
+  discard trigger hears single cards as before.
+- Rows for "you", "an opponent" and "a player / one or more players".
+
+**Tests.** 3 engine tests:
+- the cards read;
+- "target player discards two cards" aimed at yourself fires the batch trigger once and the per-card
+  trigger twice;
+- aimed at the opponent, it fires "an opponent discards one or more cards" once and none of yours.
+
+The D567 and D719 discard tests pass unchanged. D567's refusal row "a batched discard" is now a
+reads row.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,325, all passing
+
+Coverage: 13,331 of 31,900 cards (+4), 33,923 of 59,888 lines (+4).
