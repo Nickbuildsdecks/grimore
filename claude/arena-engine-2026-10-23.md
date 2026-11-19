@@ -34806,3 +34806,31 @@ no throw and no stall.
     engine tests: 5,376, all passing
 
 Coverage: 13,563 of 31,900 cards (+12), 34,415 of 59,888 lines (+24), against 6692231.
+
+## D999 — "Whenever an opponent loses life" (Exquisite Blood)
+
+From the refreshed prologue list: Exquisite Blood, Bloodthirsty Conqueror and Mindcrank, with
+"whenever you lose life" and "whenever a player loses life" beside them.
+
+- A new `life-lost` event, raised once per seat per settle with the life that seat lost there. It
+  is read off `lifeLostThisTurn`, the record damage and "loses N life" both write, so damage counts
+  (CR 120.3a) and poison does not.
+- `by: 'you' | 'opponent' | 'any'`, defaulting to `you`.
+- "That much" / "that many" after it is the amount, the same mark D903 gave damage triggers.
+- "That player" is the player who lost the life: the event fills the slot the damage triggers use
+  for the player who was hit, so Mindcrank's "that player mills that many cards" mills the right
+  library.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- 3 damage to the opponent: Exquisite Blood gains 3 and Mindcrank mills 3;
+- "target player loses 2 life" on the opponent: gains 2, mills 2;
+- the same on yourself fires "whenever you lose life" and neither opponent trigger;
+- damage to the opponent's creature is no life lost.
+
+Faults injected by script: 8 of 8 caught.
+
+    engine tests: 5,387, all passing
+
+Coverage: 13,575 of 31,900 cards (+4), 34,427 of 59,888 lines (+5), measured against the tree
+after the D758 merge.
