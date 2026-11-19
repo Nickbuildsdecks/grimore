@@ -21892,8 +21892,44 @@ function spellWordMatch(word: string): SpellWord | null {
  * `isCreatureSpell`'s own docblock makes.
  */
 function spellTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
-  const opened = /^target\s+(.+?)\s+spell$/i.exec(printed.trim());
-  if (opened === null) return null;
+  /*
+    D1018: two clauses after the noun. Whose spell — "you control", "an opponent controls", "you
+    don't control", read off the spell's controller on the stack — and what it targets — "that
+    targets you", "… a permanent you control", "… a creature [you control]", read off the spell's own
+    targets. Either needs the spell's stack object; a card on the stack has exactly one.
+  */
+  const full = /^target\s+(?:(.+?)\s+)?spell(?:\s+(you control|an opponent controls|you don't control))?(?:\s+that targets (you|a permanent you control|a creature|a creature you control))?$/i
+    .exec(printed.trim());
+  if (full === null) return null;
+  const whose = full[2]?.toLowerCase();
+  const aimed = full[3]?.toLowerCase();
+  if (full[1] === undefined && whose === undefined && aimed === undefined) return null;
+  const objectOf = (state: GameState, id: string) => Object.values(state.stackObjects)
+    .find((o) => o.kind === 'spell' && o.source === id);
+  const clauses = (state: GameState, id: string, controller: SeatIndex): boolean => {
+    if (whose === undefined && aimed === undefined) return true;
+    const object = objectOf(state, id);
+    if (object === undefined) return false;
+    if (whose === 'you control' && object.controller !== controller) return false;
+    if ((whose === 'an opponent controls' || whose === "you don't control") && object.controller === controller) return false;
+    if (aimed === undefined) return true;
+    return object.targets.some((t) => {
+      if (aimed === 'you') return t.kind === 'player' && t.seat === controller;
+      if (t.kind !== 'card') return false;
+      const inst = state.instances[t.id];
+      if (inst === undefined || inst.zone !== 'battlefield') return false;
+      if (aimed === 'a permanent you control') return inst.zoneSeat === controller;
+      if (!characteristicsOf(state, inst).isCreature) return false;
+      return aimed === 'a creature' || inst.zoneSeat === controller;
+    });
+  };
+  if (full[1] === undefined) {
+    return {
+      kind: 'spell',
+      filter: (state, candidate, controller) => candidate.kind === 'card' && clauses(state, candidate.id, controller),
+    };
+  }
+  const opened = [printed, full[1]] as const;
   const terms = opened[1]!.split(/,\s*or\s+|\s+or\s+|,\s*/).map((term) => term.trim())
     .filter((term) => term !== '');
   if (terms.length === 0) return null;
@@ -21910,12 +21946,12 @@ function spellTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | n
   }
   return {
     kind: 'spell',
-    filter: (state, candidate) => {
+    filter: (state, candidate, controller) => {
       if (candidate.kind !== 'card') return false;
       const inst = state.instances[candidate.id];
       if (inst === undefined) return false;
       const live = characteristicsOf(state, inst);
-      return alternatives.some((term) => term.every((asks) => asks(live)));
+      return alternatives.some((term) => term.every((asks) => asks(live))) && clauses(state, candidate.id, controller);
     },
   };
 }

@@ -26480,6 +26480,60 @@ describe('end-step turn facts: life lost, no spell cast, no attack (D763)', () =
   });
 });
 
+describe('spell targets: whose spell, and what it targets (D1018)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const ROWS = [
+    I('Test Denial', 'Counter target spell an opponent controls.'),
+    I('Test Shield', 'Counter target spell that targets a permanent you control.'),
+    I('Test Mirror', 'Counter target spell that targets you.'),
+    I('Test Echo', 'Counter target instant or sorcery spell you control.'),
+    I('Test Bolt', 'Test Bolt deals 1 damage to any target.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1018', name: 'Stack', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 30 }], data: ROWS as never[] });
+  const SPELLS = ['Test Denial', 'Test Shield', 'Test Mirror', 'Test Echo', 'Test Bolt'];
+  const table = () => advanceTo(arena({ decks: { 0: 'd1018', 1: 'd1018' }, deckSpecs: { d1018: deck.deck }, hands: { 0: [...SPELLS], 1: [...SPELLS] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  // Seat 0 casts its Bolt at `target`, and passes so seat 1 may answer.
+  const bolted = (target: Target) => {
+    let s = table();
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [target] } as Action);
+    const bolt = ids(s, 0, 'stack')[0]!;
+    return { s, bolt };
+  };
+  const aims = (s: GameState, by: 0 | 1, spell: string, id: string) => refusal(s, { type: 'auto:cast', by, card: find(s, by, 'hand', spell), targets: [{ kind: 'card', id }] } as Action) === null;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"an opponent controls" and "you control": whose spell it is', () => {
+    const { s, bolt } = bolted({ kind: 'player', seat: 1 });
+    // Seat 0 still has priority: its own Echo may target its own Bolt, its Denial may not.
+    expect(aims(s, 0, 'Test Echo', bolt)).toBe(true);
+    expect(aims(s, 0, 'Test Denial', bolt)).toBe(false);
+    const passed = apply(s, { type: 'auto:pass', by: 0 });
+    expect(aims(passed, 1, 'Test Denial', bolt)).toBe(true);
+    expect(aims(passed, 1, 'Test Echo', bolt)).toBe(false);
+  });
+
+  it('"that targets you" and "that targets a permanent you control": what the spell is aimed at', () => {
+    const atPlayer = bolted({ kind: 'player', seat: 1 });
+    const p = apply(atPlayer.s, { type: 'auto:pass', by: 0 });
+    expect(aims(p, 1, 'Test Mirror', atPlayer.bolt)).toBe(true);
+    expect(aims(p, 1, 'Test Shield', atPlayer.bolt)).toBe(false);
+    const atBear = bolted({ kind: 'card', id: find(table(), 1, 'battlefield', 'Test Bear') });
+    const q = apply(atBear.s, { type: 'auto:pass', by: 0 });
+    expect(aims(q, 1, 'Test Shield', atBear.bolt)).toBe(true);
+    expect(aims(q, 1, 'Test Mirror', atBear.bolt)).toBe(false);
+    // Aimed at its own caster, or at the caster's own creature: neither is "you" or "yours" for seat 1.
+    const atSelf = bolted({ kind: 'player', seat: 0 });
+    expect(aims(apply(atSelf.s, { type: 'auto:pass', by: 0 }), 1, 'Test Mirror', atSelf.bolt)).toBe(false);
+    const atOwn = bolted({ kind: 'card', id: find(table(), 0, 'battlefield', 'Test Bear') });
+    expect(aims(apply(atOwn.s, { type: 'auto:pass', by: 0 }), 1, 'Test Shield', atOwn.bolt)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
