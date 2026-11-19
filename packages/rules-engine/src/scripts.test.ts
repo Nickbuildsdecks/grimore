@@ -25477,6 +25477,21 @@ describe('"whenever one or more [other] creatures die" (D1000)', () => {
   });
 });
 
+describe('"~ can be your commander." (D761)', () => {
+  const walker = (name: string, extra: string) => ({
+    name, type_line: 'Legendary Planeswalker — Test', mana_cost: '{2}', cmc: 2, colors: ['U'], layout: 'normal', loyalty: '3',
+    oracle_text: `+1: Draw a card.\n${extra}`,
+  });
+  it('is read as a deck-building line on the card it names, by full or short name', () => {
+    expect(compileCard(walker('Test Sage', 'Test Sage can be your commander.') as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(walker('Test Sage, the Wise', 'Test Sage can be your commander.') as never)).toMatchObject({ ok: true, unread: [] });
+  });
+  it('is not read when it names another card', () => {
+    const read = compileCard(walker('Test Sage', 'Other Card can be your commander.') as never);
+    expect(read.ok && read.unread.map((u) => u.line)).toEqual(['Other Card can be your commander.']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
