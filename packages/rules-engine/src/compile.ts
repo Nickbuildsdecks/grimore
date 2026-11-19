@@ -48,7 +48,7 @@ import {
 } from './fromCardData.js';
 import {
   classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor,
-  manaSpentScryTrigger, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
+  manaSpentScryTrigger, modalTriggerFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_COLOR, CHOSEN_TYPE, KICKED, copyAsToken, pump } from './effects.js';
@@ -858,6 +858,13 @@ function compileSingle(row: CardDataRow): Compilation {
     for (const line of levelled.claimed) claimed.add(line);
     compiled.push(...levelled.claimed);
     firstBand = -1;
+  }
+
+  // A modal trigger and its bullets (D757), read as one group before the lines are offered one by one.
+  const modalTrigger = firstBand >= 0 ? null : modalTriggerFor(lines.filter((line) => !claimed.has(line)), def.name);
+  if (modalTrigger !== null && merge(built, modalTrigger.fragment) === 'merged') {
+    for (const line of modalTrigger.claimed) claimed.add(line);
+    compiled.push(...modalTrigger.claimed);
   }
 
   for (const [index, line] of lines.entries()) {

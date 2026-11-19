@@ -1586,6 +1586,12 @@ export interface AutomationState {
      * needs to know to pick by whose counters they are.
      */
     readonly counters?: true;
+    /**
+     * The mode question of a modal triggered ability (D757), asked as it goes on the stack: the
+     * mode index each of `options` stands for. Present exactly when this is that question; the
+     * answer sets the stack object's `modes` and the ability is then aimed as any other.
+     */
+    readonly modeChoice?: readonly number[];
     readonly resume: {
       /** Every question this resolution asks, in order: a spec index and who answers it. */
       readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];

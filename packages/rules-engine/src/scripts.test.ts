@@ -25010,6 +25010,92 @@ describe('named modes: "• Attack — Create a 2/2 …" (D756)', () => {
   });
 });
 
+describe('modal triggered abilities: "When ~ enters, choose one —" (D757)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra });
+  const body = { power: '1', toughness: '1' };
+  const ROWS = [
+    card('Test Channeler', 'Creature — Human Wizard', 'When Test Channeler enters, choose one —\n• Create a 1/1 white Bird creature token with flying.\n• Return another target nonland permanent to its owner\'s hand.\n• Draw a card.', body),
+    card('Test Arbiter', 'Creature — Construct', 'When Test Arbiter enters, choose one —\n• Destroy target creature an opponent controls.\n• Return target creature card from your graveyard to your hand.', body),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd757', name: 'Modal triggers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 54 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd757', 1: 'd757' }, deckSpecs: { d757: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts `name` from seat 0's hand and lets it resolve, stopping at the first question. */
+  const arrive = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+  const choose = (s: GameState, option: string) => apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action);
+
+  it('reads them, and refuses the group when one mode does not read', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(ROWS[0] as never);
+    expect(read.ok && read.script?.triggers?.[0]?.modal?.modes.length).toBe(3);
+    const odd = card('Test Odd', 'Creature — Human', 'When Test Odd enters, choose one —\n• Draw a card.\n• Zzyzx the frobnicator.', body);
+    const refused = compileCard(odd as never);
+    expect(refused.ok && refused.unread.length).toBe(3);
+  });
+
+  it('asks for the mode as the trigger goes on the stack, and does that mode', () => {
+    let s = arrive(table({ hands: { 0: ['Test Channeler'] } }), 'Test Channeler');
+    expect(s.pendingDecision?.options).toEqual([
+      'Create a 1/1 white Bird creature token with flying', 'Draw a card',
+    ]);
+    expect(s.pendingDecision?.prompt).toBe('Test Channeler: choose one');
+    // On the stack already, its mode not yet known: the question comes before anybody can respond.
+    expect(s.stackOrder.length).toBe(1);
+    const hand = ids(s, 0, 'hand').length;
+    s = choose(s, 'Draw a card');
+    // The chosen mode is public, so the stack says it.
+    expect(s.stackObjects[s.stackOrder[0]!]!.description).toBe('Draw a card');
+    s = drain(passBoth(s));
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('offers a mode with targets only when it can be aimed, then aims it', () => {
+    let s = arrive(table({ hands: { 0: ['Test Channeler'] }, battlefield: { 1: ['Test Bear', 'Test Bear'] } }), 'Test Channeler');
+    expect(s.pendingDecision?.options).toContain("Return another target nonland permanent to its owner's hand");
+    s = choose(s, "Return another target nonland permanent to its owner's hand");
+    expect(s.pendingChoice).not.toBeNull();
+    const bear = ids(s, 1, 'battlefield').find((id) => nameOf(s, id) === 'Test Bear')!;
+    s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action)));
+    expect(s.instances[bear]!.zone).toBe('hand');
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear').length).toBe(1);
+  });
+
+  it('one aimable mode is chosen for its controller, and an obvious target taken', () => {
+    const start = table({ hands: { 0: ['Test Arbiter'] }, battlefield: { 1: ['Test Bear'] } });
+    const bear = find(start, 1, 'battlefield', 'Test Bear');
+    const s = drain(passBoth(arrive(start, 'Test Arbiter')));
+    expect(s.pendingDecision).toBeNull();
+    expect(s.pendingChoice).toBeNull();
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('with no aimable mode the ability is not put on the stack', () => {
+    const s = arrive(table({ hands: { 0: ['Test Arbiter'] } }), 'Test Arbiter');
+    expect(s.pendingDecision).toBeNull();
+    expect(s.pendingChoice).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+    expect(find(s, 0, 'battlefield', 'Test Arbiter')).toBeTruthy();
+  });
+
+  it('the bot answers the mode question and plays on', () => {
+    let s = arrive(table({ hands: { 0: ['Test Channeler'] } }), 'Test Channeler');
+    const action = botAction(s, 0);
+    expect(action).toMatchObject({ type: 'auto:decide' });
+    s = drain(passBoth(apply(s, action!)));
+    expect(s.pendingDecision).toBeNull();
+    expect(s.stackOrder).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
