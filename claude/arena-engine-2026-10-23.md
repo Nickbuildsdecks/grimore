@@ -35130,3 +35130,36 @@ Faults injected by script: 2 of 2 caught.
     engine tests: 5,433, all passing
 
 Coverage: 13,680 of 31,900 cards (+6), 34,626 of 59,888 lines (+7).
+
+## D1006 — Tokens with toxic and an inline quoted ability (the Phyrexian Mite)
+
+From the effect tails behind "When ~ dies, …" and "When ~ enters, …": "create a 1/1 colorless
+Phyrexian Mite artifact creature token with toxic 1 and "This creature can't block."" is printed on
+23 lines, and the Pest's "token with "When this creature dies, you gain 1 life."" beside it. Three
+things kept them unread.
+
+- **Toxic on a token.** `tokenFrom` checks that every keyword it names can be read back from the
+  token's text. "Toxic 1" is a number, not a `Keyword`, so it never counted. It now counts the
+  "toxic N" parts, which `printedToxic` reads off any card's text, combat included.
+- **The quoted ability inline.** "… token with "X"" and "… token with <keywords> and "X"" are split
+  in `tokenEffect` and handed on as the quoted rider D536 reads after "It has", so the same check
+  applies.
+- **A printed static as the quoted ability.** The quoted text had to compile to a script, and "This
+  creature can't block." is a static the characteristics layer applies with no script behind it.
+  The check now also accepts a line `isPrintedAbilityLine` reads. A sentence neither reads ("Fly over
+  the moon.") is still refused.
+
+**Tests.** 4 engine tests:
+- the cards read; an unreadable quoted sentence still refuses;
+- the Mite is a 1/1 Phyrexian Mite artifact creature token and cannot block;
+- its unblocked hit deals 1 damage and gives 1 poison counter;
+- the Pest token's own quoted "When this creature dies, you gain 1 life" fires.
+
+The compile.test refusal row for the Pest token now reads, so it became a reads test.
+
+Faults injected by script: 6 of 6 caught. A `printedToxic` check in the read-back was folded away
+after it survived a fault: the digits the regex requires are exactly what that reader accepts.
+
+    engine tests: 5,437, all passing
+
+Coverage: 13,729 of 31,900 cards (+49), 34,709 of 59,888 lines (+83).
