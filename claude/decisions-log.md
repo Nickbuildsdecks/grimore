@@ -51682,3 +51682,25 @@ Faults injected by script: 2 of 2 caught, one after pinning (an optional target 
 unaimable). Seed 59203 replays to a finish.
 
     engine tests: 5,306, all passing (merged with the other session's D988 and D989)
+
+## D751 — "Return up to two target creatures to their owners' hands"
+
+The bounce reader read "Return target … to its owner's hand", with any quantifier the target phrase
+reads, so "two target creatures" was a spec with a count of two. The plural sentence still stayed
+unread, because it says "to their owners' hands". It reads now. Every target chosen goes back to
+its own owner's hand, and "up to" may take fewer.
+
+A D470 test stated that no printing reaches the plural bounce and asserted it unread. Six legal
+cards print it, so that assertion now checks the count of two instead.
+
+**Tests.** 2 engine tests:
+- the card reads, and its target spec is two and optional;
+- one of each player's creatures goes back to its own owner's hand, a third stays, and with one
+  target only that one goes.
+
+Faults injected by script: 2 of 2 caught.
+
+    engine tests: 5,308, all passing
+
+Coverage: 13,294 of 31,900 cards (+17), 33,880 of 59,888 lines (+20), against 92f21d1. Pod sweep
+59301 (100 games, D749–D750): every game finished.

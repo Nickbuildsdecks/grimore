@@ -24052,6 +24052,48 @@ describe('a trigger whose targets are gone before it is aimed is removed (D750)'
   });
 });
 
+describe("'Return up to two target creatures to their owners hands' (D751)", () => {
+  const ROWS = [
+    { name: 'Test Wave', type_line: 'Instant', oracle_text: "Return up to two target creatures to their owners' hands.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd751', name: 'Bounce',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd751', 1: 'd751' }, deckSpecs: { d751: deck.deck }, hands: { 0: ['Test Wave'] },
+    battlefield: { 0: ['Test Bear'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, targets: string[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wave'), targets: targets.map((id) => ({ kind: 'card' as const, id })),
+  })));
+
+  it('reads it, with two optional targets', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const s = table();
+    const play = legalActions(s, 0).plays.find((p) => p.card === find(s, 0, 'hand', 'Test Wave'))!;
+    expect(play.targetSpecs[0]).toMatchObject({ count: 2, optional: true });
+  });
+
+  it("returns both to their owners' hands, one of each player's, or just one", () => {
+    const s = table();
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const [theirs, other] = ids(s, 1, 'battlefield');
+    const both = cast(s, [mine, theirs!]);
+    expect(both.instances[mine]!.zone).toBe('hand');
+    expect(both.instances[mine]!.zoneSeat).toBe(0);
+    expect(both.instances[theirs!]!.zone).toBe('hand');
+    expect(both.instances[theirs!]!.zoneSeat).toBe(1);
+    expect(both.instances[other!]!.zone).toBe('battlefield');
+    const one = cast(s, [theirs!]);
+    expect(one.instances[theirs!]!.zone).toBe('hand');
+    expect(one.instances[mine]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -40074,7 +40116,8 @@ describe('every target the phrase asked for, not the first (D470)', () => {
       .toMatchObject({ count: 2, optional: true, friendly: true });
     // The two with no printing behind them, asserted as unread rather than as something they do.
     expect(specOf('Counter up to two target spells')).toBeNull();
-    expect(specOf("Return two target creatures to their owners' hands")).toBeNull();
+    // The plural bounce reads since D751: "to their owners' hands" was the wording it lacked.
+    expect(specOf("Return two target creatures to their owners' hands")).toMatchObject({ count: 2 });
   });
 });
 
