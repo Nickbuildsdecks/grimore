@@ -2150,6 +2150,13 @@ export interface TriggerDef {
    * asking. A condition must not change the game — it is asked, not run.
    */
   readonly condition?: ConditionFn;
+  /**
+   * A **modal** triggered ability (D757): "When ~ enters, choose one — • … • …" (CR 700.2b). The
+   * mode is chosen as the ability is put on the stack, before its targets, and the ability then
+   * has that mode's targets, questions and effect (`abilityOrTrigger` builds the reading). Only
+   * "choose one": `effect` is unused and the trigger's own `targets` and `decisions` are absent.
+   */
+  readonly modal?: ModalDef;
   readonly targets?: readonly TargetSpec[];
   /** Questions asked while it resolves. See `DecisionSpec`. */
   readonly decisions?: readonly DecisionSpecOf[];

@@ -7050,9 +7050,14 @@ export function abilityTargetSpecs(
       : grantor?.grantedTriggers?.[object.grantedBy.index]?.targets) ?? [];
   }
   const script = resolve(state.cardDefs[object.cardKey]);
+  // A modal trigger aims with its chosen mode's targets (D757).
+  const trigger = object.kind === 'activated' ? undefined : script?.triggers?.[object.abilityIndex];
+  if (trigger?.modal !== undefined) {
+    return (object.modes ?? []).flatMap((i) => [...(trigger.modal!.modes[i]?.targets ?? [])]);
+  }
   return (object.kind === 'activated'
     ? script?.abilities?.[object.abilityIndex]?.targets
-    : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
+    : trigger?.targets) ?? [];
 }
 
 /**
@@ -30185,6 +30190,52 @@ export interface SpellReading {
  * argument exists for it and a silently dropped hint is a card that plays badly with nothing to
  * flag it (D362).
  */
+/**
+ * A **modal triggered ability** (D757): "When ~ enters, choose one —" and the bullets under it, on a
+ * permanent. The prologue is read by `triggerFromLine` with a stand-in effect, so every event the
+ * trigger table knows works here, and each bullet as its own effect, its name stripped as D756 strips
+ * one. The engine asks for the mode as the ability goes on the stack (`TriggerDef.modal`). Only
+ * "choose one"; a bullet that does not read, or reads with a reflexive trigger, refuses the whole
+ * group, as one unreadable mode refuses a modal spell.
+ */
+export function modalTriggerFor(
+  lines: readonly string[], name: string,
+): { readonly fragment: Partial<CardScript>; readonly claimed: readonly string[] } | null {
+  const at = lines.findIndex((line) => /^.+, choose one\s*[—-]$/i.test(plain(line).trim()));
+  if (at < 0) return null;
+  const prologue = /^(.+), choose one\s*[—-]$/i.exec(plain(lines[at]!).trim())![1]!;
+  const bullets: string[] = [];
+  for (let i = at + 1; i < lines.length && /^[•\u2022]/.test(plain(lines[i]!).trim()); i++) bullets.push(lines[i]!);
+  if (bullets.length < 2) return null;
+  const stand = triggerFromLine(`${prologue}, draw a card.`, name);
+  const trigger = stand?.triggers?.length === 1 && Object.keys(stand).length === 1 ? stand.triggers[0]! : null;
+  if (trigger === null || (trigger.targets ?? []).length > 0 || (trigger.decisions ?? []).length > 0
+    || trigger.beforeDecisions !== undefined) return null;
+  const modes: ModeDef[] = [];
+  for (const bullet of bullets) {
+    const printed = plain(bullet).trim().replace(/^[•\u2022]\s*/, '').replace(/\s*\.\s*$/, '').trim();
+    const named = /^([A-Z0-9][^—•.:;"]{0,48}?) — (.+)$/.exec(printed);
+    const read = composeEffects(clausesOf(named === null ? printed : named[2]!.trim()), name, 'battlefield');
+    // `immediate` is the reading for a clause something follows, and a mode is the last thing its
+    // ability does; `abilityFlags` belong to activated abilities. A reflexive trigger, or a clause
+    // that returns the object, has nowhere to go on a mode.
+    if (read === null || read.reflexive !== undefined || read.returnsTheObject !== undefined) return null;
+    modes.push({
+      description: printed,
+      ...(read.targets === undefined ? {} : { targets: read.targets }),
+      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
+      effect: read.effect,
+    });
+  }
+  return {
+    fragment: {
+      triggers: [{ ...trigger, description: 'choose one', modal: { modes }, effect: (c) => c.state }],
+    },
+    claimed: [lines[at]!, ...bullets],
+  };
+}
+
 function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef; kicker?: CardScript['kicker'] } | null {
   if (lines.length < 3) return null;
   /*

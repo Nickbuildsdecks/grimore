@@ -52195,3 +52195,50 @@ Faults injected by script: 11 of 11 caught (three after the pins above).
 
 Coverage: 13,490 of 31,900 cards (+9), 34,171 of 59,888 lines (+9), measured against the tree
 after the D756 merge.
+## D757 — Modal triggered abilities
+
+"When ~ enters, choose one —" and its kin ("When ~ dies", "Landfall — …", "At the beginning of your
+end step, …") were 193 unread trigger headers, each with its bullets unread under it. Triggers had
+no modes at all: only spells did (`ModalDef`, D664).
+
+**The engine.**
+- `TriggerDef.modal` holds the modes. Only "choose one".
+- **The mode is chosen as the ability goes on the stack, before its targets (CR 700.2b).**
+  `fireTrigger` pushes the ability and asks a `pendingDecision` with `options` (one per mode) and
+  `modeChoice` (the mode index each option stands for). This is the word question the table and
+  the bot already answer, so neither needed a new prompt.
+- Only modes that can be aimed are offered. With none, the ability is not put on the stack, as a
+  trigger with no legal target is not (CR 603.3c). With one, it is chosen for its controller.
+- The answer, in `answerDecision`, records `modes` on the stack object, as a modal spell's are.
+  The stack object's description becomes the chosen mode, which is public from then on. The
+  ability is then aimed as `fireTrigger` aims any other (`aimModalTrigger`): by the engine where
+  the targets are obvious, otherwise through `pendingChoice`. With no answer (its controller left
+  the game) the ability is removed.
+- `abilityOrTrigger` returns, for a modal trigger with its mode chosen, a reading built from that
+  mode (`modalReading`): its targets, questions and effect, run by `runModes` as a modal spell's
+  are. The fizzle check, the questions and the resolution all go through it unchanged.
+  `abilityTargetSpecs` gives the chosen mode's targets, for `chooseTargets` and the table's offer.
+
+**The compiler.** `modalTriggerFor` reads the header and the bullets under it as one group, called
+from the permanent loop in compile.ts before lines are offered one by one.
+- The prologue is read by `triggerFromLine` with a stand-in effect, so every event the trigger
+  table knows works here.
+- Each bullet is read by `composeEffects`, a name stripped as D756 strips one.
+- A bullet that does not read, or reads with a reflexive trigger, refuses the group, as one
+  unreadable mode refuses a modal spell.
+
+**Tests.** 6 engine tests:
+- the cards read with three modes, and one unreadable bullet refuses all three lines;
+- the mode is asked as the trigger goes on the stack ("Test Channeler: choose one"), the stack then
+  shows the chosen mode, and it is done;
+- a mode with targets is offered only when it can be aimed, and is then aimed by its controller;
+- one aimable mode is chosen for its controller and its obvious target taken;
+- with no aimable mode the ability never reaches the stack;
+- the bot answers the mode question and play goes on.
+
+Faults injected by script: 8 of 8 caught.
+
+    engine tests: 5,372, all passing (with the other session's D997 merged)
+
+Coverage: 13,540 of 31,900 cards (+69), 34,377 of 59,888 lines (+227), against 99812fd.
+Pod sweep 59501 (100 games on this build) was still running at push; its result is recorded with the next increment.

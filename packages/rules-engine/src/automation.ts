@@ -1991,6 +1991,35 @@ function fireTrigger(
       ? { subjectCounters: event.subjectCounters }
       : {}),
   };
+  /*
+    A modal trigger (D757): the mode is chosen as it goes on the stack, before targets (CR 700.2b).
+    Only modes that could be aimed are offered; with none the ability is not put on the stack, as
+    a trigger with no legal target is not (CR 603.3c), and with one it is chosen for its controller.
+  */
+  if (trigger.modal !== undefined) {
+    const seat = inst.zoneSeat;
+    const legal = trigger.modal.modes.flatMap((mode, i) => {
+      const wants = mode.targets ?? [];
+      return wants.length === 0 || hasAnyLegalTargets(next, wants, seat, holder) ? [i] : [];
+    });
+    if (legal.length === 0) return next;
+    next = pushAbility(next, holder, seat, abilityIndex, [], 'triggered', trigger.description, about, grantedBy);
+    const stackId = next.stackOrder[next.stackOrder.length - 1]!;
+    if (legal.length === 1) return aimModalTrigger(next, stackId, legal[0]!, trigger);
+    return {
+      ...next,
+      priority: null,
+      passed: [],
+      pendingDecision: {
+        seat, stackId,
+        prompt: `${next.cardDefs[inst.defKey]?.name ?? 'This ability'}: choose one`,
+        candidates: [], min: 0, max: 0,
+        options: legal.map((i) => trigger.modal!.modes[i]!.description),
+        modeChoice: legal,
+        resume: { plan: [], at: 0, answers: [] },
+      },
+    };
+  }
   if (specs.length === 0) {
     return pushAbility(
       next, holder, inst.zoneSeat, abilityIndex, [], 'triggered', trigger.description, about,
@@ -5098,6 +5127,21 @@ export function answerDecision(
   if (pending === null) return { state, message: 'nothing to decide' };
   const object = state.stackObjects[pending.stackId];
   let next: GameState = { ...state, pendingDecision: null };
+  /*
+    A modal trigger's mode (D757), answered: recorded, then the ability is aimed. No answer (its
+    controller left the game) removes the ability, which nobody can now choose for.
+  */
+  if (pending.modeChoice !== undefined) {
+    const at = option === undefined ? -1 : (pending.options ?? []).indexOf(option);
+    const mode = pending.modeChoice[at];
+    const trigger = object === undefined ? undefined : abilityOrTrigger(scriptOnStack(next, object), { ...object, modes: undefined }, next.cardDefs);
+    if (mode === undefined || object === undefined || trigger === undefined || !('modal' in trigger)) {
+      const objects = { ...next.stackObjects };
+      delete objects[pending.stackId];
+      return { state: { ...next, stackObjects: objects, stackOrder: next.stackOrder.filter((id) => id !== pending.stackId) }, message: 'the ability is removed' };
+    }
+    return { state: aimModalTrigger(next, pending.stackId, mode, trigger as TriggerDef), message: `the mode is ${option!}` };
+  }
   if (pending.from === 'library') {
     const key = zoneKey(pending.seat, 'library');
     const rng = mulberry32(actionSeed(next.rngSeed, next.stateVersion + next.autoSeq));
@@ -5919,7 +5963,55 @@ function abilityOrTrigger(
   }
   if (script === undefined) return undefined;
   if (object.kind === 'activated') return script.abilities?.[object.abilityIndex];
-  return script.triggers?.[object.abilityIndex];
+  const trigger = script.triggers?.[object.abilityIndex];
+  return trigger?.modal === undefined ? trigger : modalReading(trigger, object.modes);
+}
+
+/**
+ * A modal trigger once its mode is chosen (D757): that mode's targets, questions and effect, run
+ * by `runModes` as a modal spell's are. Before the choice it is the trigger itself, which has none.
+ */
+function modalReading(trigger: TriggerDef, chosen: readonly number[] | undefined): Resolvable {
+  const modes = (chosen ?? []).map((i) => trigger.modal!.modes[i]).filter((m): m is ModeDef => m !== undefined);
+  if (modes.length === 0) return trigger;
+  return {
+    ...(trigger.condition === undefined ? {} : { condition: trigger.condition }),
+    targets: modeTargetSpecs(modes),
+    decisions: modes.flatMap((mode) => [...(mode.decisions ?? [])]),
+    ...(modes.length === 1 && modes[0]!.beforeDecisions !== undefined ? { beforeDecisions: modes[0]!.beforeDecisions } : {}),
+    effect: (ctx) => runModes(ctx.state, modes, ctx),
+  };
+}
+
+/**
+ * A modal trigger on the stack, its mode chosen (D757): the mode is recorded, and the ability is
+ * aimed as `fireTrigger` aims any other — by the engine where the answer is obvious, else by its
+ * controller through `pendingChoice`.
+ */
+function aimModalTrigger(state: GameState, stackId: string, mode: number, trigger: TriggerDef): GameState {
+  const object = state.stackObjects[stackId];
+  const chosen = trigger.modal?.modes[mode];
+  if (object === undefined || chosen === undefined) return state;
+  // The chosen mode is public from here (CR 700.2b), so the stack says it.
+  let next: GameState = { ...state, stackObjects: { ...state.stackObjects, [stackId]: { ...object, modes: [mode], description: chosen.description } } };
+  const specs = chosen.targets ?? [];
+  if (specs.length === 0) return next;
+  const auto = obviousTargets(next, specs, object.controller, object.source);
+  if (auto !== null) {
+    next = { ...next, stackObjects: { ...next.stackObjects, [stackId]: { ...next.stackObjects[stackId]!, targets: auto, targetSeqs: targetSeqsFor(next, auto) } } };
+    return raiseTargeted(next, stackId);
+  }
+  return {
+    ...next,
+    priority: null,
+    passed: [],
+    pendingChoice: {
+      seat: object.controller,
+      stackId,
+      description: chosen.description,
+      remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
+    },
+  };
 }
 
 const PERMANENT_TYPES = ['creature', 'artifact', 'enchantment', 'land', 'planeswalker', 'battle'];
