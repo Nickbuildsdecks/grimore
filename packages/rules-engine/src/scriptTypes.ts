@@ -452,6 +452,15 @@ export type TriggerEvent =
        * fires only when the declaration had at least this many.
        */
       readonly atLeast?: number;
+      /**
+       * "Whenever an opponent attacks **you**" / "one or more creatures attack you" (D996), on the
+       * **watched** event: the declaration had an attacker aimed at the watcher's own seat — the
+       * player only for `you`, the player or one of their planeswalkers for `you-or-planeswalker`.
+       */
+      readonly at?: 'you' | 'you-or-planeswalker';
+      /** Set by the engine (D996): the seats attacked as players, and the seats attacked at all. */
+      readonly playersAttacked?: readonly SeatIndex[];
+      readonly seatsAttacked?: readonly SeatIndex[];
     }
   | {
       readonly kind: 'attacks';
@@ -542,6 +551,19 @@ export type TriggerEvent =
       readonly ofSubtypes?: readonly string[];
       /** Set by the engine: the attacker's live subtypes, for `ofSubtypes` (D635). */
       readonly subjectSubtypes?: readonly string[];
+      /**
+       * "Whenever a creature attacks **you**" and "… attacks you **or a planeswalker you control**"
+       * (D996), asked of the watcher's own seat against the event's `attacked`. `you` is the player
+       * only; `you-or-planeswalker` is either. Absent asks nothing, which is every older row.
+       */
+      readonly at?: 'you' | 'you-or-planeswalker';
+      /** "A creature **with flying** attacks you" (D996), off the attacker's live keywords. */
+      readonly withKeyword?: Keyword;
+      /** "A creature **with power 4 or greater** attacks you" (D996), off its live power. */
+      readonly powerAtLeast?: number;
+      /** Set by the engine (D996): the attacker's live keywords and power, for the two above. */
+      readonly subjectKeywords?: readonly string[];
+      readonly subjectPower?: number;
       /** Set by the engine when it raises the event: *which* creature attacked. See `subject`. */
       readonly subject?: string;
     }

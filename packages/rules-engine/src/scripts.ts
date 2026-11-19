@@ -18610,6 +18610,34 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'attacks', who: 'any', of: 'any' }],
   },
   /*
+    "Whenever a creature [with flying] attacks **you** [or a planeswalker you control]" (D996): one
+    trigger per attacker, asked of the watcher's own seat against what the attack was aimed at.
+    The filter is `boardFilter`'s, and only the two the attack event carries are kept: a keyword and
+    a lower bound on power. Any other refuses the line.
+  */
+  {
+    prologue: () => /^When(?:ever)? a creature(?<filter> with [^,]+?)? attacks you(?<pw> or a planeswalker you control)?, (?<clause>.+)$/i,
+    from: (matched) => {
+      const filter = boardFilter(matched.groups?.filter ?? '');
+      if (filter === null || Object.keys(filter).some((key) => key !== 'withKeyword' && key !== 'powerAtLeast')) return null;
+      const at = matched.groups?.pw === undefined ? 'you' as const : 'you-or-planeswalker' as const;
+      return [{ kind: 'attacks' as const, who: 'any' as const, of: 'any' as const, at, ...filter } as TriggerDef['on']];
+    },
+  },
+  /*
+    And the declaration (D996): "Whenever a player / an opponent attacks you", "Whenever one or more
+    creatures attack you", once however many creatures came. "And/or one or more planeswalkers you
+    control" is the planeswalker half, as on the per-creature row.
+  */
+  {
+    prologue: () => /^Whenever (?<by>a player|an opponent|one or more creatures) attacks? you(?<pw> or a planeswalker you control| and\/or one or more planeswalkers you control)?, (?<clause>.+)$/i,
+    from: (matched) => {
+      const by = /^an opponent$/i.test(matched.groups?.by ?? '') ? 'opponent' as const : 'any' as const;
+      const at = matched.groups?.pw === undefined ? 'you' as const : 'you-or-planeswalker' as const;
+      return [{ kind: 'attack-declared' as const, by, at }];
+    },
+  },
+  /*
     "Whenever a Dragon you control attacks" (D635): Atarka, Kolaghan, Utvara Hellkite. One
     capitalised creature type, checked against the attacker's live subtypes.
   */

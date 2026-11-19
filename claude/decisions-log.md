@@ -51947,6 +51947,35 @@ Bank change, and it now reaches only the noncombat form, which no test card prin
 
 Coverage: 13,346 of 31,900 cards (+18), 33,944 of 59,888 lines (+23), against 874e99c.
 
+## D996 — "Whenever a creature attacks you [or a planeswalker you control]"
+
+The next opening on D990's prologue list (11 lines), with the rest of its family: "a player / an
+opponent attacks you", "one or more creatures attack you", "a creature with flying attacks you",
+"a creature with power 4 or greater attacks you".
+
+- **Per attacker.** `attacks` takes `at: 'you' | 'you-or-planeswalker'`, asked of the watcher's own
+  seat against the attack's `attacked`. "You" is the player only.
+- **Per declaration.** `attack-declared` carries the seats it reached, as players and at all, and
+  takes the same `at`. "An opponent attacks you" keeps `by: 'opponent'`; "a player" and "one or more
+  creatures" are anybody.
+- **Filters.** The attack event now carries the attacker's live keywords and power, so "with
+  flying" and "with power N or greater" read. Any other filter ("without flying", toughness,
+  counters) refuses the line rather than widening it.
+
+**Tests.** 4 engine tests:
+- the cards read; "without flying" and "toughness 4 or greater" stay unread; "an opponent" and
+  "a player" keep their `by`;
+- two creatures at the player: the per-creature rows fire twice, the declaration rows once, and the
+  attacker's own "attacks you" never;
+- a flier at the player fires "with flying" and not "power 4 or greater";
+- an attack on a planeswalker is heard only by the "or a planeswalker you control" rows.
+
+Faults injected by script: 13 of 13 caught.
+
+    engine tests: 5,344, all passing
+
+Coverage: 13,377 of 31,900 cards (+5), 33,984 of 59,888 lines (+10), measured against the tree
+after the D752 merge.
 ## D753 — Spell additional costs: sacrifice a land, a permanent, a nonland permanent; pay X life
 
 "As an additional cost to cast this spell, …" is the third-largest opening among unread lines (184).
@@ -52068,6 +52097,6 @@ now caught:
 - the non-cast refusal used a prologue that did not parse anyway;
 - the instant-only refusal was printed on an Enchantment, where a spell line never reads.
 
-    engine tests: 5,353, all passing
+    engine tests: 5,357, all passing (merged with the other session's D996)
 
 Coverage: 13,449 of 31,900 cards (+16), 34,087 of 59,888 lines (+21), against 5565d3e.

@@ -24540,6 +24540,61 @@ describe('the printed "prevent all damage" statics and auras (D752)', () => {
   });
 });
 
+describe('"attacks you [or a planeswalker you control]" (D996)', () => {
+  const C = (name: string, text: string, power = '1', toughness = '1') => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power, toughness });
+  const ROWS = [
+    C('Test Sentry', 'Whenever a creature attacks you, you gain 1 life.'),
+    C('Test Warden', 'Whenever a creature attacks you or a planeswalker you control, you gain 2 life.'),
+    C('Test Skywatch', 'Whenever a creature with flying attacks you, you gain 4 life.'),
+    C('Test Herald', 'Whenever an opponent attacks you, you gain 8 life.'),
+    C('Test Bastion', 'Whenever an opponent attacks you and/or one or more planeswalkers you control, you gain 16 life.'),
+    C('Test Giantwatch', 'Whenever a creature with power 4 or greater attacks you, you gain 32 life.'),
+    C('Test Bear', '', '2', '2'),
+    C('Test Bird', 'Flying'),
+    C('Test Giant', '', '4', '4'),
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Testa', oracle_text: '+1: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', loyalty: '5' },
+  ];
+  const deck = customDeck({ id: 'd996', name: 'Watchers', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const watchers = ROWS.slice(0, 6).map((r) => r.name);
+  const attack = (who: string[], atWalker = false) => {
+    let s = arena({ decks: { 0: 'd996', 1: 'd996' }, deckSpecs: { d996: deck.deck }, battlefield: { 0: ['Test Bear', 'Test Bird', 'Test Giant', 'Test Sentry'], 1: [...watchers, 'Test Walker'] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const lives = [s.seats[0]!.life, s.seats[1]!.life];
+    const walker = find(s, 1, 'battlefield', 'Test Walker');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: who.map((name) => ({ attacker: find(s, 0, 'battlefield', name), defender: 1, ...(atWalker ? { planeswalker: walker } : {}) })) } as Action);
+    for (let i = 0; i < 12 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.stackOrder).toHaveLength(0);
+    return { mine: s.seats[0]!.life - lives[0]!, theirs: s.seats[1]!.life - lives[1]! };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 6)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    // A filter the attack event does not carry refuses the line rather than widening it.
+    const grounded = compileCard(C('Test Grounded', 'Whenever a creature without flying attacks you, you gain 1 life.') as never);
+    expect(grounded.ok && grounded.unread).toHaveLength(1);
+    const tough = compileCard(C('Test Tough', 'Whenever a creature with toughness 4 or greater attacks you, you gain 1 life.') as never);
+    expect(tough.ok && tough.unread).toHaveLength(1);
+    // "An opponent" is kept as the declaration's `by`; "a player" is anybody.
+    expect(JSON.stringify(compileCard(ROWS[3] as never))).toContain('"by":"opponent"');
+    expect(JSON.stringify(compileCard(C('Test Porch', 'Whenever a player attacks you, you gain 1 life.') as never))).toContain('"by":"any"');
+  });
+
+  it('two creatures at the player: the per-creature rows fire twice, the declaration rows once, the attacker\'s side never', () => {
+    // Sentry 1+1, Warden 2+2, Herald 8, Bastion 16, Giantwatch 32 (the Giant only), Skywatch none.
+    expect(attack(['Test Bear', 'Test Giant'])).toEqual({ mine: 0, theirs: 62 });
+  });
+
+  it('a flier at the player fires "with flying", and not "power 4 or greater"', () => {
+    expect(attack(['Test Bird'])).toEqual({ mine: 0, theirs: 1 + 2 + 4 + 8 + 16 });
+  });
+
+  it('at a planeswalker: only the "or a planeswalker you control" rows hear it', () => {
+    expect(attack(['Test Bird'], true)).toEqual({ mine: 0, theirs: 2 + 16 });
+  });
+});
+
 describe('spell additional costs: sacrifice a land / a permanent / a nonland permanent, pay X life (D753)', () => {
   const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
   const ROWS = [
