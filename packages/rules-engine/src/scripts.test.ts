@@ -25293,6 +25293,82 @@ describe('"… that was dealt damage this turn" (D759)', () => {
   });
 });
 
+describe('gaining control: for good, and the until-end-of-turn steal more widely (D760)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Mind Steal', 'Sorcery', 'Gain control of target creature.'),
+    card('Test Agent', 'Creature — Human Rogue', 'When Test Agent enters, gain control of target permanent.', { power: '2', toughness: '3' }),
+    card('Test Threaten', 'Sorcery', 'Untap target creature and gain control of it until end of turn. That creature gains haste until end of turn.', { colors: ['R'] }),
+    card('Test Conscripts', 'Creature — Human Warrior', 'When Test Conscripts enters, gain control of target permanent until end of turn. Untap that permanent. It gains haste until end of turn.', { colors: ['R'], power: '3', toughness: '2' }),
+    card('Test Grab', 'Sorcery', 'Gain control of target creature an opponent controls until end of turn. Untap that creature. It gains haste until end of turn.', { colors: ['R'] }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd760', name: 'Control',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd760', 1: 'd760' }, deckSpecs: { d760: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(targets ? { targets } : {}) })));
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 5)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // "Until end of turn" with nothing after it is a different card, and not read as a lasting one.
+    const bare = compileCard(card('Test Bare', 'Sorcery', 'Gain control of target creature until end of turn.') as never);
+    expect(bare.ok && bare.unread.length).toBe(1);
+  });
+
+  it('for good: the creature is mine, and still mine next turn', () => {
+    let s = table({ hands: { 0: ['Test Mind Steal'] }, battlefield: { 1: ['Test Bear'] } });
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Mind Steal', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+  });
+
+  it('an enters trigger takes any permanent for good', () => {
+    let s = table({ hands: { 0: ['Test Agent'] }, battlefield: { 1: ['Island'] } });
+    const land = find(s, 1, 'battlefield', 'Island');
+    s = cast(s, 'Test Agent');
+    if (s.pendingChoice !== null) s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: land }] } as Action)));
+    expect(s.instances[land]!.zoneSeat).toBe(0);
+  });
+
+  it('Threaten\'s order: untapped, hasty, and back at end of turn', () => {
+    let s = table({ hands: { 0: ['Test Threaten'] }, battlefield: { 1: ['Test Bear'] } });
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, tapped: true } } };
+    s = cast(s, 'Test Threaten', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    expect(s.instances[bear]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('haste')).toBe(true);
+    s = nextTurn(s);
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
+  });
+
+  it('a permanent until end of turn (Conscripts): a land comes back too', () => {
+    let s = table({ hands: { 0: ['Test Conscripts'] }, battlefield: { 1: ['Island'] } });
+    const land = find(s, 1, 'battlefield', 'Island');
+    s = cast(s, 'Test Conscripts');
+    if (s.pendingChoice !== null) s = drain(passBoth(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: land }] } as Action)));
+    expect(s.instances[land]!.zoneSeat).toBe(0);
+    s = nextTurn(s);
+    expect(s.instances[land]!.zoneSeat).toBe(1);
+  });
+
+  it('"an opponent controls" on the steal is honoured', () => {
+    const s = table({ hands: { 0: ['Test Grab'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] } });
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Grab'), targets: [{ kind: 'card', id: mine }] } as Action)).toBeTruthy();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

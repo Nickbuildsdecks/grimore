@@ -24453,6 +24453,25 @@ function readEffect(
   const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
   if (theirChoice !== null) return readEffect(`${theirChoice[1]!}${theirChoice[2]!}`, name, where);
   /*
+    "Gain control of target <permanent>." (D760), for good: Agent of Treachery, Treachery's sorcery
+    cousins. `gainControl` moves it to the new controller's battlefield (control is which battlefield
+    a permanent is on here), and nothing moves it back. "Until end of turn" and "for as long as"
+    are other sentences and are not read here.
+  */
+  const takes = /^gain control of (target .+)$/i.exec(clause.trim());
+  if (takes !== null && !/\b(?:until end of turn|for as long as)\b/i.test(takes[1]!)) {
+    const spec = targetSpecFrom(takes[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : gainControl(c.state, id, c.controller);
+        },
+      };
+    }
+  }
+  /*
     **Support N** (D946, CR 701.32): "put a +1/+1 counter on each of up to N other target
     creatures" — "other" only matters on a creature, and on a spell there is no permanent to
     exclude, so it is read the same everywhere. The counter clause is read as printed for two and
@@ -25184,10 +25203,27 @@ function clausesOf(line: string): readonly string[] {
 function stealPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
+  /*
+    Threaten's order (D760): "Untap target creature and gain control of it until end of turn. That
+    creature gains haste until end of turn." The same play, read as the three-sentence form.
+  */
+  const threaten = clauses.length >= 2
+    ? /^untap (target .+) and gain control of it until end of turn$/i.exec(clauses[0]!.trim())
+    : null;
+  if (threaten !== null && /^that (?:creature|permanent) gains /i.test(clauses[1]!.trim())) {
+    return stealPrefix([
+      `gain control of ${threaten[1]!} until end of turn`, 'untap it',
+      clauses[1]!.trim().replace(/^that (?:creature|permanent) /i, 'it '), ...clauses.slice(2),
+    ]);
+  }
   if (clauses.length < 3) return null;
-  const control = /^gain control of target creature until end of turn$/i
-    .test(clauses[0]!.trim());
-  const untap = /^untap (?:that creature|it)$/i.test(clauses[1]!.trim());
+  // The target through the parsed vocabulary (D760): "… an opponent controls", "… with mana value
+  // 3 or less". Still a creature, which is what the untap and the haste are about.
+  const controlled = /^gain control of (target .+) until end of turn$/i.exec(clauses[0]!.trim());
+  const spec = controlled === null ? null : targetSpecFrom(controlled[1]!, false);
+  // Or any permanent (Zealous Conscripts): an animated land or a crewed Vehicle attacks with it.
+  const control = spec !== null && pointsAtAPermanent(spec);
+  const untap = /^untap (?:that creature|that permanent|it)$/i.test(clauses[1]!.trim());
   const tail = clauses[2]!.trim();
   const gains = /^it (?:gets ([+-]\d+)\/([+-]\d+) and )?gains (.+) until end of turn$/i.exec(tail)
     ?? /^until end of turn, it (?:gets ([+-]\d+)\/([+-]\d+) and )?gains (.+)$/i.exec(tail);
@@ -25200,7 +25236,7 @@ function stealPrefix(
   if (bonus === null) return null;
   return {
     read: {
-      targets: [TARGET_CREATURE],
+      targets: [spec!],
       effect: (c) => {
         const id = firstCardTarget(c);
         return id === null
