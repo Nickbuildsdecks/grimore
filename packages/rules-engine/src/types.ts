@@ -58,6 +58,12 @@ export interface Seat {
   readonly name: string;
   readonly life: number;
   readonly poison: number;
+  /**
+   * The city's blessing (D762, CR 702.131c): got once, through ascend, and kept for the rest of the
+   * game. A player designation rather than anything on a permanent, so it outlives the card that
+   * gave it.
+   */
+  readonly citysBlessing?: true;
   /** Damage dealt to this seat by each other seat's commander, keyed by seat index. */
   readonly commanderDamage: Readonly<Record<string, number>>;
   /**

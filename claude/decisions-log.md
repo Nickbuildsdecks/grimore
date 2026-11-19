@@ -52391,3 +52391,38 @@ Pod sweep 59601 (100 games on the D758–D760 build): every game finished, with 
 
 Coverage: 13,617 of 31,900 cards (+0: each of these cards has other unread abilities), 34,519 of
 59,888 lines (+30), against 65c8c51.
+
+## D762 — Ascend and the city's blessing
+
+29 unread "Ascend" lines, and 29 more that ask "if / as long as you have the city's blessing". The
+engine had neither the keyword nor the designation.
+
+- **`Seat.citysBlessing`** (CR 702.131c): a player designation, got once and kept for the rest of
+  the game, so it outlives the card that gave it. `SeatView.citysBlessing` carries it to the
+  table, which shows a "city's blessing" badge beside the monarch's.
+- **`CardScript.ascend`**, compiled from the bare keyword.
+  - On a permanent it is a static ability (CR 702.131b). `ascendBlessings`, in the state-based
+    loop beside `auraControl`, blesses a player who controls ten or more permanents, one of them
+    with ascend and its abilities on.
+  - On an instant or sorcery it is checked once, first, as the spell resolves (CR 702.131a).
+- **The condition**: `controller-citys-blessing` for statics ("~ gets +2/+2 as long as you have
+  the city's blessing"), and a row in `interveningConditionRows` for triggers, spells and "Activate
+  only if".
+- Not read: the "If you have the city's blessing, <X> instead" sentence on spells, which is the
+  reversed form of D693's "instead if" and has no reader yet.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- a permanent with ascend: the tenth permanent (a land played) brings the blessing and the +2/+2;
+  taken back to nine, the blessing and the bonus remain next turn;
+- nine permanents with ascend are not enough, and an opponent with twelve and no ascend is not
+  blessed;
+- an ascend sorcery blesses at ten and not at nine;
+- "if you have the city's blessing" on an attack trigger, without and with the blessing.
+
+Faults injected by script: 8 of 8 caught. The first gate stopped at the deck-coverage test: no
+pool deck plays ascend, so `ascend` joins its list of mechanics only the compiler reads.
+
+    engine tests: 5,404, all passing
+
+Coverage: 13,632 of 31,900 cards (+11), 34,562 of 59,888 lines (+38), against 973b26b.

@@ -2510,6 +2510,34 @@ function raise(
  *   one holds it: a new Aura, one whose controller changed, or one under an end-of-turn steal that
  *   just expired.
  */
+/**
+ * Ascend on a permanent (D762, CR 702.131b): a player who controls ten or more permanents, one of
+ * them with ascend whose abilities are on, gets the city's blessing. Once got it is never lost.
+ */
+function ascendBlessings(state: GameState): GameState {
+  let next = state;
+  for (const seat of state.seats) {
+    if (seat.citysBlessing === true || seat.eliminated) continue;
+    const mine = listAt(state, zoneKey(seat.index, 'battlefield'));
+    if (mine.length < 10) continue;
+    const ascends = mine.some((id) => {
+      const inst = state.instances[id];
+      return inst !== undefined && !inst.faceDown && !allAbilitiesLost(state, inst)
+        && scriptForCard(state.cardDefs[inst.defKey])?.ascend === true;
+    });
+    if (ascends) next = blessSeat(next, seat.index);
+  }
+  return next;
+}
+
+/** The city's blessing for one seat (D762). */
+function blessSeat(state: GameState, seat: SeatIndex): GameState {
+  return {
+    ...state,
+    seats: state.seats.map((s) => (s.index === seat ? { ...s, citysBlessing: true as const } : s)),
+  };
+}
+
 function auraControl(state: GameState): GameState {
   let next = state;
   const chainOn = (host: string): ContinuousEffect[] => next.effects.filter((e) => e.duration === 'permanent'
@@ -3117,6 +3145,13 @@ export function stateBasedActions(state: GameState): GameState {
           changed = true;
         }
       }
+    }
+
+    // Ascend on a permanent (D762): ten or more permanents, and the city's blessing for good.
+    const blessed = ascendBlessings(next);
+    if (blessed !== next) {
+      next = blessed;
+      changed = true;
     }
 
     // Control Magic's family (D938): before the expiry below, which would drop what it gives back.
@@ -5557,6 +5592,11 @@ function completeResolution(
       card cannot be both — nothing printed has overload and modes, and if one did, the overload
       text would be what replaced the modal text.
     */
+    // Ascend on an instant or sorcery (D762, CR 702.131a): checked once, as it resolves, first.
+    if (script?.ascend === true && next.seats[object.controller]?.citysBlessing !== true
+      && listAt(next, zoneKey(object.controller, 'battlefield')).length >= 10) {
+      next = blessSeat(next, object.controller);
+    }
     if (object.overloaded === true && script?.overload !== undefined) {
       next = script.overload.onResolve({ ...ctx, state: next });
     }

@@ -11424,6 +11424,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     whole of the reading.
   */
   if (word === 'improvise') return { improvise: true };
+  // Ascend (D762): see `CardScript.ascend`.
+  if (word === 'ascend') return { ascend: true };
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };
@@ -28719,6 +28721,8 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   const self = `(?:${selfRef(name)}|it)`;
   const n = (word: string): number | null => (/^an?$/i.test(word) ? 1 : countFrom(word));
 
+  // "As long as you have the city's blessing" (D762).
+  if (/^you have the city's blessing$/i.test(text)) return { kind: 'controller-citys-blessing' };
   const threshold = /^there are (\S+) or more (permanent )?cards in your graveyard$/i.exec(text);
   if (threshold !== null) {
     const atLeast = n(threshold[1]!);
@@ -29957,6 +29961,8 @@ function interveningConditionRows(
 
   // Facts about a player, read off the seat.
   if (/^you(?:'re| are) the monarch$/i.test(text)) return (c) => c.state.monarch === c.controller;
+  // "If you have the city's blessing" (D762).
+  if (/^you have the city's blessing$/i.test(text)) return (c) => c.state.seats[c.controller]?.citysBlessing === true;
   const life = /^you have (\w+) or (less|more) life$/i.exec(text);
   if (life !== null) {
     const bound = number(life[1]!);

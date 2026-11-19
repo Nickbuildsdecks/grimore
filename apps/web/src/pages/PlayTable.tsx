@@ -1086,6 +1086,15 @@ function SeatStrip({
           monarch
         </span>
       ) : null}
+      {/* The city's blessing (D762): ascend's reward, kept for the rest of the game. */}
+      {seat.citysBlessing ? (
+        <span
+          data-testid={`blessing-${seat.index}`}
+          className="rounded bg-[var(--g-gold-400)]/15 px-1 text-[9px] font-bold uppercase tracking-wide text-[var(--g-gold-400)] ring-1 ring-[var(--g-gold-400)]/40"
+        >
+          city's blessing
+        </span>
+      ) : null}
       {seat.eliminated ? (
         <span className="text-[var(--g-mana-r)]">{eliminatedLabel(seat.eliminatedReason)}</span>
       ) : null}

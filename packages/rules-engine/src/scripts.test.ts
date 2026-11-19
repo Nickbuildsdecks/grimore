@@ -7976,6 +7976,8 @@ describe('deck coverage', () => {
       'trigger crime',
       // D999: "whenever an opponent loses life" (Exquisite Blood); the compiler reads it, no pool deck plays one.
       'trigger life-lost',
+      // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
+      'script ascend',
     ]);
 
     const declared = [
@@ -25425,6 +25427,80 @@ describe('"~ can be your commander." (D761)', () => {
   it('is not read when it names another card', () => {
     const read = compileCard(walker('Test Sage', 'Other Card can be your commander.') as never);
     expect(read.ok && read.unread.map((u) => u.line)).toEqual(['Other Card can be your commander.']);
+  });
+});
+
+describe('ascend and the city\'s blessing (D762)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Ascender', 'Creature — Vampire', 'Ascend (If you control ten or more permanents, you get the city\'s blessing for the rest of the game.)\nTest Ascender gets +2/+2 as long as you have the city\'s blessing.', { power: '1', toughness: '1' }),
+    card('Test Rise', 'Sorcery', 'Ascend (If you control ten or more permanents, you get the city\'s blessing for the rest of the game.)\nDraw a card.', { colors: ['U'] }),
+    card('Test Raider', 'Creature — Pirate', 'Whenever Test Raider attacks, if you have the city\'s blessing, put a +1/+1 counter on it.', { colors: ['R'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd762', name: 'Ascend',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 54 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd762', 1: 'd762' }, deckSpecs: { d762: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const plains = (n: number) => Array.from({ length: n }, () => 'Plains');
+  const size = (s: GameState, id: string) => { const ch = characteristicsOf(s, s.instances[id]!); return [ch.power, ch.toughness]; };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a permanent with ascend: the tenth permanent brings the blessing, and it is kept', () => {
+    let s = table({ hands: { 0: ['Plains'] }, battlefield: { 0: ['Test Ascender', ...plains(8)] } });
+    const ascender = find(s, 0, 'battlefield', 'Test Ascender');
+    expect(s.seats[0]!.citysBlessing).toBeUndefined();
+    expect(size(s, ascender)).toEqual([1, 1]);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') });
+    expect(s.seats[0]!.citysBlessing).toBe(true);
+    expect(size(s, ascender)).toEqual([3, 3]);
+    // Down to nine again, a Plains taken off the battlefield: the blessing is for the rest of the game.
+    const land = find(s, 0, 'battlefield', 'Plains');
+    s = {
+      ...s,
+      instances: { ...s.instances, [land]: { ...s.instances[land]!, zone: 'graveyard' } },
+      zones: { ...s.zones, '0:battlefield': s.zones['0:battlefield']!.filter((id) => id !== land), '0:graveyard': [...(s.zones['0:graveyard'] ?? []), land] },
+    };
+    expect(ids(s, 0, 'battlefield').length).toBe(9);
+    s = nextTurn(s);
+    expect(s.seats[0]!.citysBlessing).toBe(true);
+    expect(size(s, ascender)).toEqual([3, 3]);
+  });
+
+  it('nine permanents and ascend is not enough; the opponent is not blessed by mine', () => {
+    const s = table({ battlefield: { 0: ['Test Ascender', ...plains(7)], 1: plains(12) } });
+    expect(s.seats[0]!.citysBlessing).toBeUndefined();
+    expect(s.seats[1]!.citysBlessing).toBeUndefined();
+  });
+
+  it('an ascend sorcery checks as it resolves', () => {
+    let s = table({ hands: { 0: ['Test Rise', 'Test Rise'] }, battlefield: { 0: plains(9) } });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rise') })));
+    expect(s.seats[0]!.citysBlessing).toBeUndefined();
+    let t = table({ hands: { 0: ['Test Rise'] }, battlefield: { 0: plains(10) } });
+    t = drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Rise') })));
+    expect(t.seats[0]!.citysBlessing).toBe(true);
+  });
+
+  it('"if you have the city\'s blessing" on a trigger', () => {
+    const attack = (s0: GameState) => {
+      const raider = find(s0, 0, 'battlefield', 'Test Raider');
+      let s = advanceTo(s0, 'declare-attackers');
+      s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: raider, defender: 1 }] })));
+      return s.instances[raider]!.counters['+1/+1'] ?? 0;
+    };
+    const plain = table({ battlefield: { 0: ['Test Raider'] } });
+    expect(attack(plain)).toBe(0);
+    const blessed = { ...plain, seats: plain.seats.map((seat) => (seat.index === 0 ? { ...seat, citysBlessing: true as const } : seat)) };
+    expect(attack(blessed)).toBe(1);
   });
 });
 

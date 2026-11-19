@@ -2770,6 +2770,12 @@ export interface CardScript {
    * and they can only do that by asking one function.
    */
   readonly improvise?: boolean;
+  /**
+   * **Ascend** (D762, CR 702.131). On a permanent, a static ability: whenever its controller controls
+   * ten or more permanents they get the city's blessing (`Seat.citysBlessing`), checked with the
+   * state-based actions. On an instant or sorcery, the check is made once as it resolves, first.
+   */
+  readonly ascend?: true;
   /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
   /** "Choose one —". See `ModalDef`. */
