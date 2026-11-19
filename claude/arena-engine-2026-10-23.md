@@ -35655,3 +35655,30 @@ Faults injected by script: 16 of 16 caught. Of the first 16, 14 were caught and 
   unread.
 
 Coverage: 13,884 of 31,900 cards (+12), 34,950 of 59,888 lines (+15).
+
+## D764 — "If a creature died under your control this turn"
+
+The condition D763 left out because it needed a record the engine did not keep. Morbid's
+`creaturesDiedThisTurn` counts every creature that died; this one counts only the creatures its
+controller controlled as they died.
+
+- `creaturesDiedThisTurnBy`, keyed by the seat that **controlled** the creature as it died. It is
+  written where morbid's count is written (`relocate`, asked of the permanent as it was on the
+  battlefield, so last-known information decides; CR 700.4) and cleared with the other turn
+  facts in all three places they are reset.
+- `turnFacts.creaturesDiedUnder`, and a row in `interveningConditionRows` for "if a creature died
+  under your control this turn" and "… you controlled died this turn".
+
+**Tests.** 3 engine tests:
+- the card reads;
+- my creature destroyed: the record holds one and the end step draws. An opponent's creature
+  destroyed: morbid's count is one, and the end step does not draw;
+- the record is empty next turn.
+
+Faults injected by script: 3 of 3 caught. The first gate failed the D563 refusal row that D763 had
+moved to this very phrase; it now holds "… died under an opponent's control", which is not read.
+
+    engine tests: 5,500, all passing (with the other session's D1021 merged)
+
+Coverage: 13,875 of 31,900 cards (+2), 34,940 of 59,888 lines (+3), against c721e9e. Of the 8 lines
+that print it, the rest have another unread clause.

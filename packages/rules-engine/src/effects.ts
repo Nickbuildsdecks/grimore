@@ -746,6 +746,9 @@ export const turnFacts = {
   attacked: (state: GameState, seat: SeatIndex): number =>
     state.attackedThisTurn?.[String(seat)] ?? 0,
   creaturesDied: (state: GameState): number => state.creaturesDiedThisTurn ?? 0,
+  /** Creatures that died this turn under this seat's control (D764). */
+  creaturesDiedUnder: (state: GameState, seat: SeatIndex): number =>
+    state.creaturesDiedThisTurnBy?.[String(seat)] ?? 0,
   leftBattlefield: (state: GameState, seat: SeatIndex): number =>
     state.leftBattlefieldThisTurn?.[String(seat)] ?? 0,
   lifeGained: (state: GameState, seat: SeatIndex): number =>

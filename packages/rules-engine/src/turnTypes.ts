@@ -1406,6 +1406,11 @@ export interface AutomationState {
    */
   readonly combatHitsThisTurn?: Readonly<Record<string, readonly CombatHit[]>>;
   readonly creaturesDiedThisTurn?: number;
+  /**
+   * `creaturesDiedThisTurn` per seat that **controlled** the creature as it died (D764): "if a
+   * creature died under your control this turn". Optional, like the rest; cleared with them.
+   */
+  readonly creaturesDiedThisTurnBy?: Readonly<Record<string, number>>;
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
   /**

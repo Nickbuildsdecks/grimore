@@ -17947,10 +17947,10 @@ describe('an intervening-if in a trigger (D563)', () => {
       'When this creature enters, if you control an artifact, each player votes for wind or rain.'],
     ['an "if" that is not the first clause after the event',
       'When this creature enters, draw a card, then if you control an artifact, draw a card.'],
-    // "If you lost life this turn" reads since D763, as the controller's own record; a per-seat
-    // death count is still out of reach.
-    ['a death record kept per player',
-      'When this creature enters, if a creature died under your control this turn, draw a card.'],
+    // "If you lost life this turn" reads since D763 and "… died under your control" since D764;
+    // a death under an opponent's control is not read.
+    ['a death under an opponent\'s control',
+      'When this creature enters, if a creature died under an opponent\'s control this turn, draw a card.'],
   ])('leaves %s unread', (_what, line) => {
     const got = creature(line);
     expect(got.script?.triggers ?? []).toEqual([]);

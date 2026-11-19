@@ -1150,6 +1150,7 @@ export function endTurnCleanup(state: GameState): GameState {
     // And who dealt combat damage to a player (D935), prowl's and freerunning's fact.
     combatHitsThisTurn: {},
     creaturesDiedThisTurn: 0,
+    creaturesDiedThisTurnBy: {},
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
     manaSpentOnSpellsThisTurn: {},

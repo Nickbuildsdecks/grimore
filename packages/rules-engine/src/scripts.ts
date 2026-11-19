@@ -30511,6 +30511,10 @@ function interveningConditionRows(
         && lostOf(c.state, seat.index) >= atLeast);
     }
   }
+  // "If a creature died under your control this turn" (D764): morbid's record per controller.
+  if (/^a creature (?:died under your control|you controlled died) this turn$/i.test(text)) {
+    return (c) => turnFacts.creaturesDiedUnder(c.state, c.controller) > 0;
+  }
   // "If you didn't attack with a creature this turn" (D763): raid's record, read the other way.
   if (/^you didn't attack with a creature this turn$/i.test(text)) {
     return (c) => turnFacts.attacked(c.state, c.controller) === 0;
