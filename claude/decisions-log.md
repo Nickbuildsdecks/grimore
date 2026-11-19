@@ -53027,3 +53027,41 @@ Faults injected by script: 4 of 4 caught.
     engine tests: 5,487, all passing
 
 Coverage: 13,858 of 31,900 cards (+4), 34,915 of 59,888 lines (+9).
+
+## D1020 — a measure of the event's creature: "life equal to its toughness"
+
+"Whenever a creature you control deals combat damage to a player, you gain life equal to that
+creature's toughness" (Ikra Shidiqi), "Whenever a creature you control dies, you gain life equal to
+that creature's toughness" (Proper Burial), "When Bottle Golems dies, you gain life equal to its
+power", "Whenever a creature you control enters, you gain life equal to its toughness" (Angelic
+Chorus, Verdant Sun's Avatar), "When Champion of Wits enters, you may draw cards equal to its power.
+If you do, discard two cards."
+
+- `eventRelativeEffect` reads "[you] gain life / [you] draw cards equal to its | that creature's
+  power | toughness". It only does so on triggers whose every event is an entry, a death, an attack
+  or a combat hit: the four events that are about one creature and carry its size. "Its" and "that
+  creature's" are both the event's subject; on the card's own trigger that is the card itself.
+- Measured live while that creature is still on the battlefield, so a pump in response counts.
+- Once it has gone, it is measured as it last was (CR 608.2h). That covers a death, and a blink in
+  response, which makes a new object (CR 400.7). The size comes from a new snapshot:
+  - `StackObject.subjectStats` (`{power, toughness}`) is taken in `fireTrigger` from the event's
+    `subjectPower`/`subjectToughness`;
+  - it is carried through `TriggerAbout`;
+  - it is handed to the resolution and to `beforeDecisions` as `EffectContext.subjectStats`.
+  The dead creature's counters are still part of its size, which the printed numbers would miss.
+- Lose-life and each-opponent drains with the same measure are not read. Nothing legal prints them on
+  these events.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- a 1/4 entering gains 4;
+- the same 1/4 with a +1/+1 counter dying gains 5, not the printed 4;
+- the card's own death gains its own power;
+- a 1/4 connecting gains 4;
+- an entry draws its power;
+- with "If you do, discard a card" the draws come before the discard.
+
+Faults injected by script: 8 of 8 caught. The draw-before-discard fault was missed at first and is
+now pinned by the looter test.
+
+Coverage: 13,872 of 31,900 cards (+14), 34,935 of 59,888 lines (+20).
