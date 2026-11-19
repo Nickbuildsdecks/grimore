@@ -327,7 +327,12 @@ export type TriggerEvent =
       readonly subjectDamagedBy?: readonly string[];
       /** As `etb`'s, minus `land`: "whenever a land dies" is not a sentence Magic prints. */
       /** `creature-or-planeswalker` is Cruel Celebrant's: "dies" is said of exactly those two (CR 700.4). */
-      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment' | 'creature-or-planeswalker';
+      /**
+       * `land` (D995) only from "a land is put into a graveyard from the battlefield", which is the
+       * same event spelled out: the engine raises `dies` for every permanent that reaches a
+       * graveyard from the battlefield, and "dies" is the word Magic keeps for creatures.
+       */
+      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment' | 'land' | 'creature-or-planeswalker';
       /**
        * Set by the engine when it raises the event: what was attached to the dying permanent as it
        * left the battlefield, which is what `who: 'attached'` is answered from.

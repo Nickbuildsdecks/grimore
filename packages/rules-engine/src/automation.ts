@@ -1532,6 +1532,8 @@ function triggerMatches(
       if ((want.kind === 'etb' || want.kind === 'dies')
         && (want.what === 'artifact' || want.what === 'enchantment')
         && !(e.subjectTypes ?? []).includes(want.what)) return false;
+      // "A land is put into a graveyard from the battlefield" (D995), off the same live type line.
+      if (want.kind === 'dies' && want.what === 'land' && !(e.subjectTypes ?? []).includes('land')) return false;
       // "A creature or planeswalker dies" (D576): either type, off the same live type line.
       if (want.kind === 'dies' && want.what === 'creature-or-planeswalker'
         && e.subjectIsCreature !== true && !(e.subjectTypes ?? []).includes('planeswalker')) return false;
