@@ -26164,6 +26164,53 @@ describe('target qualifiers: nontoken, non-<Subtype>, monocolored, face-down, no
   });
 });
 
+describe('target shapes: keyword before controller, attacking or blocking with more, power up to this one\'s (D1012)', () => {
+  const C = (name: string, text: string, power: string, toughness: string, kw = '') => ({ name, type_line: 'Creature — Beast', oracle_text: [kw, text].filter((x) => x !== '').join('\n'), mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness });
+  const ROWS = [
+    { name: 'Test Sniper', type_line: 'Instant', oracle_text: 'Destroy target creature with flying an opponent controls.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Verdict', type_line: 'Instant', oracle_text: 'Destroy target attacking or blocking creature an opponent controls.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    C('Test Ambusher', 'When this creature enters, destroy target creature an opponent controls with power less than or equal to this creature\'s power.', '3', '3'),
+    C('Test Bear', '', '2', '2'),
+    C('Test Bird', '', '1', '1', 'Flying'),
+    C('Test Giant', '', '4', '4'),
+  ];
+  const deck = customDeck({ id: 'd1012', name: 'Shapes', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const aims = (s: GameState, by: 0 | 1, spell: string, id: string) => refusal(s, { type: 'auto:cast', by, card: find(s, by, 'hand', spell), targets: [{ kind: 'card', id }] } as Action) === null;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"with flying an opponent controls": their flier, not yours and not their ground creature', () => {
+    const s = advanceTo(arena({ decks: { 0: 'd1012', 1: 'd1012' }, deckSpecs: { d1012: deck.deck }, hands: { 0: ['Test Sniper'] }, battlefield: { 0: ['Test Bird'], 1: ['Test Bird', 'Test Bear'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    expect(aims(s, 0, 'Test Sniper', find(s, 1, 'battlefield', 'Test Bird'))).toBe(true);
+    expect(aims(s, 0, 'Test Sniper', find(s, 0, 'battlefield', 'Test Bird'))).toBe(false);
+    expect(aims(s, 0, 'Test Sniper', find(s, 1, 'battlefield', 'Test Bear'))).toBe(false);
+  });
+
+  it('"attacking or blocking creature an opponent controls": their attacker, not their creature at home', () => {
+    let s = arena({ decks: { 0: 'd1012', 1: 'd1012' }, deckSpecs: { d1012: deck.deck }, hands: { 0: ['Test Verdict'] }, battlefield: { 1: ['Test Bear', 'Test Giant'] }, turn: 3, firstSeat: 1 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'declare-attackers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] });
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    expect(aims(s, 0, 'Test Verdict', bear)).toBe(true);
+    expect(aims(s, 0, 'Test Verdict', find(s, 1, 'battlefield', 'Test Giant'))).toBe(false);
+  });
+
+  it('"power less than or equal to this creature\'s power": a 3/3 kills the 2/2 and cannot touch the 4/4', () => {
+    const cast = (theirs: string[]) => {
+      const s = advanceTo(arena({ decks: { 0: 'd1012', 1: 'd1012' }, deckSpecs: { d1012: deck.deck }, hands: { 0: ['Test Ambusher'] }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0 }), 'precombat-main');
+      return settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ambusher') } as Action));
+    };
+    expect(namesIn(cast(['Test Bear']), 1, 'graveyard')).toContain('Test Bear');
+    expect(namesIn(cast(['Test Giant']), 1, 'battlefield')).toContain('Test Giant');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

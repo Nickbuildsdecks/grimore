@@ -21356,6 +21356,49 @@ function targetSpecFrom(
       its printed capital, as a card name is; a lower-case word ("other than a Wall") is not this.
     */
     /*
+      D1012: three more shapes read by rewriting or wrapping, ahead of the rest of the parse.
+
+      - "target creature **with flying an opponent controls**": the keyword printed before the
+        controller clause, where the parse expects it last. Reordered and read again.
+      - "target **attacking or blocking** creature …" with anything after it: the exact phrase's
+        own test, on the rest of the phrase read as "target creature …".
+      - "… **with power less than or equal to this creature's power**": the candidate's live power
+        against the source's, read as each target is chosen (Ambush Commander's kin, Gruul Ragebeast).
+    */
+    const keywordFirst = /^(.+?) (with(?:out)? [a-z]+) (you control|an opponent controls|you don't control|your opponents control)$/i.exec(trimmed);
+    if (keywordFirst !== null) {
+      const inner = targetSpecFrom(`${keywordFirst[1]} ${keywordFirst[3]} ${keywordFirst[2]}`, friendly, parsed);
+      return inner === null ? null : { ...inner, description: printed };
+    }
+    const fighting = /^((?:another )?target) attacking or blocking creature (.+)$/i.exec(trimmed);
+    if (fighting !== null) {
+      const inner = targetSpecFrom(`${fighting[1]} creature ${fighting[2]}`, friendly, parsed);
+      if (inner === null || inner.kind !== 'creature') return null;
+      const own = inner.filter;
+      return {
+        ...inner, description: printed,
+        filter: (state, candidate, controller, source) => attackingOrBlocking(state, candidate, controller, source)
+          && (own === undefined || own(state, candidate, controller, source)),
+      };
+    }
+    const smaller = /^(.+?) with power less than or equal to (?:this creature's|its|~'s|[A-Z][^,.]*?'s) power$/.exec(trimmed);
+    if (smaller !== null) {
+      const inner = targetSpecFrom(smaller[1]!, friendly, parsed);
+      if (inner === null || !pointsAtAPermanent(inner)) return null;
+      const own = inner.filter;
+      return {
+        ...inner, description: printed,
+        filter: (state, candidate, controller, source) => {
+          if (candidate.kind !== 'card' || source === undefined) return false;
+          const target = state.instances[candidate.id];
+          const self = state.instances[source] ?? state.vanished[source];
+          if (target === undefined || self === undefined) return false;
+          if (characteristicsOf(state, target).power > characteristicsOf(state, self).power) return false;
+          return own === undefined || own(state, candidate, controller, source);
+        },
+      };
+    }
+    /*
       "With a +1/+1 counter on it", "with a counter on it" (D1011): a counter the permanent has now.
       Read as a wrapper, like "other than ~", so no path through the rest of the parse can drop it.
     */
