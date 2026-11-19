@@ -51739,3 +51739,37 @@ Faults injected by script: 2 of 2 caught.
 
 Coverage: 13,294 of 31,900 cards (+17), 33,880 of 59,888 lines (+20), against 92f21d1. Pod sweep
 59301 (100 games, D749–D750): every game finished.
+
+## D991 — "Whenever you scry / surveil / scry or surveil"
+
+Next on D990's list of unread trigger openings: 17 lines one card short begin "Whenever you scry",
+"Whenever you surveil" or "Whenever you scry or surveil".
+
+- `CardsDecisionSpec.keyword`: `scry` and `surveil` (the two spec builders) say which keyword their
+  question is. The other `library-top` questions ("look at the top N…") are not scries and carry
+  none.
+- A new `scries` event is raised in `answerDecision` once the scry or surveil question is answered
+  and the cards are placed: once per scry, whatever was picked, with the seat that scried and
+  `did` naming the keyword.
+- Matching is in `triggerMatches`. `what` is `scry`, `surveil` or `either`, and `by` (default
+  `you`) is whose scry, as `cycles` asks it.
+- Three prologue rows read the three openings.
+
+**A fall-through, caught by the pregate.** The new `case 'scries'` was first written between
+`case 'discards':` and `case 'cycles':`. `discards` falls through into `cycles` on purpose, so it
+then fell into the scry case instead, and every discard trigger stopped firing. 7 existing discard
+tests and the cleanup-step tests went red. The case now sits above the pair. `scries` is also on
+the deck-coverage list of compiler-only mechanics: no pool deck plays one.
+
+**Tests.** 4 engine tests:
+- the three cards read;
+- a scry fires "scry" and "scry or surveil" and not "surveil";
+- a surveil fires "surveil" and "scry or surveil" and not "scry";
+- an opponent's scry fires none of yours.
+
+Faults injected by script: 6 of 6 caught.
+
+    engine tests: 5,317, all passing (merged with the other session's D751)
+
+Coverage: 13,302 of 31,900 cards, 33,890 of 59,888 lines (with the other session's D749 and D750
+merged).
