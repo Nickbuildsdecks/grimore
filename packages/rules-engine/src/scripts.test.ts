@@ -24318,6 +24318,73 @@ describe('"Whenever you discard one or more cards": once per discard (D993)', ()
   });
 });
 
+describe('"enchanted creature is dealt damage / becomes tapped" (D994)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Enchantment — Aura', oracle_text: `Enchant creature\n${text}`, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const ROWS = [
+    A('Test Ward', 'Whenever enchanted creature is dealt damage, you gain 2 life.'),
+    A('Test Leash', 'Whenever enchanted creature becomes tapped, you gain 2 life.'),
+    A('Test Bell', 'Whenever this enchantment becomes tapped, you gain 5 life.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: 'Whenever this creature is dealt damage, put a +1/+1 counter on it.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Pinger', type_line: 'Creature — Human', oracle_text: '{T}: This creature deals 1 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd994', name: 'Auras', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const enchanted = (aura: string, extraHand: string[] = []) => {
+    let s = arena({ decks: { 0: 'd994', 1: 'd994' }, deckSpecs: { d994: deck.deck }, hands: { 0: [aura, ...extraHand] }, battlefield: { 0: ['Test Bear', 'Test Pinger'], 1: [] }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = advanceTo(s, 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', aura), targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(s.instances[find(s, 0, 'battlefield', aura)]!.attachedTo).toBe(bear);
+    return { s, bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a ping on the enchanted creature fires the Aura, and the creature\'s own trigger still fires for itself', () => {
+    const { s, bear } = enchanted('Test Ward');
+    const life = s.seats[0]!.life;
+    const pinged = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(pinged.seats[0]!.life).toBe(life + 2);
+    expect(pinged.instances[bear]!.counters['+1/+1']).toBe(1);
+    // Damage to another creature is not the enchanted one's.
+    const other = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Pinger') }] } as Action));
+    expect(other.seats[0]!.life).toBe(life);
+  });
+
+  it('a lethal hit still fires it, from the graveyard the Aura went to', () => {
+    const { s, bear } = enchanted('Test Ward', ['Test Bolt']);
+    const life = s.seats[0]!.life;
+    const dead = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(dead.instances[bear]!.zone).toBe('graveyard');
+    expect(namesIn(dead, 0, 'graveyard')).toContain('Test Ward');
+    expect(dead.seats[0]!.life).toBe(life + 2);
+  });
+
+  it('an Aura\'s own "this enchantment becomes tapped" does not hear its host tapping', () => {
+    let { s, bear } = enchanted('Test Bell');
+    const life = s.seats[0]!.life;
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.instances[bear]!.tapped).toBe(true);
+    expect(s.seats[0]!.life).toBe(life);
+  });
+
+  it('"enchanted creature becomes tapped": its attack taps it', () => {
+    let { s, bear } = enchanted('Test Leash');
+    const life = s.seats[0]!.life;
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.seats[0]!.life).toBe(life + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

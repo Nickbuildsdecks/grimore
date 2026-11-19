@@ -665,7 +665,11 @@ export type TriggerEvent =
    * and nothing in the pool does.
    */
   | { readonly kind: 'leaves' }
-  | { readonly kind: 'becomes-tapped' }
+  /**
+   * `who: 'attached'` (D994): "Whenever enchanted creature / enchanted land becomes tapped". The
+   * engine sets `attachments` to what was attached as it tapped.
+   */
+  | { readonly kind: 'becomes-tapped'; readonly who?: 'self' | 'attached'; readonly attachments?: readonly string[] }
   /**
    * "Whenever ~ **is dealt damage**" — enrage, and every card printed before the word (D566).
    *
@@ -688,6 +692,10 @@ export type TriggerEvent =
       readonly subject?: string;
       /** "Whenever ~ is dealt **combat** damage" (D992): only the combat damage step's event. */
       readonly combatOnly?: true;
+      /** `attached` (D994): "Whenever enchanted creature is dealt damage". */
+      readonly who?: 'self' | 'attached';
+      /** Set by the engine (D994): what was attached to it as the damage was dealt. */
+      readonly attachments?: readonly string[];
       /** Set by the engine (D992): whether it was combat damage. */
       readonly combat?: boolean;
       /** Set by the engine: how much it was dealt (D904); combat damage is summed, as one event. */

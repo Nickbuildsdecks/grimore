@@ -691,9 +691,13 @@ function recordDamage(
   const to = target.kind === 'player'
     ? { kind: 'player' as const, seat: target.seat }
     : { kind: 'card' as const, id: target.id };
+  // What is attached to it now (D994), before any state-based action can detach it.
+  const hosted = to.kind === 'card'
+    ? Object.values(state.instances).filter((inst) => inst.zone === 'battlefield' && inst.attachedTo === to.id).map((inst) => inst.id)
+    : [];
   let next: GameState = {
     ...state,
-    damageDealt: [...(state.damageDealt ?? []), { to, source, sourceInPlay, amount }],
+    damageDealt: [...(state.damageDealt ?? []), { to, source, sourceInPlay, amount, ...(hosted.length === 0 ? {} : { hosted }) }],
   };
   if (to.kind === 'card' && source !== null && sourceInPlay) {
     const ref = damageSourceRef(next, source);

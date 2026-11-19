@@ -118,6 +118,11 @@ export interface DamageRecord {
   readonly sourceInPlay: boolean;
   readonly amount: number;
   readonly combat?: true;
+  /**
+   * The Auras and Equipment on the permanent as the damage was dealt (D994), for "enchanted
+   * creature is dealt damage": damage that kills it has detached them by the time it is announced.
+   */
+  readonly hosted?: readonly string[];
 }
 
 /** One clock that ran out: which object, which counter it was counting, and what it was called. */

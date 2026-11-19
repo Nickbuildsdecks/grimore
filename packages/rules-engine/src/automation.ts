@@ -1609,12 +1609,20 @@ function triggerMatches(
       const e = event as Extract<TriggerEvent, { kind: 'chapter' }>;
       return isSubject && e.n === want.n;
     }
+    /*
+      "Whenever ~ is dealt damage" (D566) and "becomes tapped": its own permanent, or since D994 the
+      permanent this Aura or Equipment was attached to (`who: 'attached'`). `raise` offers both.
+      "Is dealt combat damage" (D992): the combat event only.
+    */
     case 'becomes-tapped':
-    case 'leaves':
-    // "Whenever ~ is dealt damage" (D566): its own permanent only, narrowed by `raise`.
-    // "Is dealt combat damage" (D992): the combat event only.
-    case 'damaged':
+    case 'damaged': {
+      // An attached watcher is only ever offered its own host's event by `raise`, so only `self`
+      // needs asking: an Aura's own "this enchantment becomes tapped" is not its host tapping.
+      const who = (want as { who?: 'self' | 'attached' }).who ?? 'self';
+      if (who === 'self' && !isSubject) return false;
       return !(want.kind === 'damaged' && want.combatOnly === true && (event as { combat?: boolean }).combat !== true);
+    }
+    case 'leaves':
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
     case 'turned-face-up':
@@ -2211,7 +2219,7 @@ function raise(
     Added with a `Set` rather than appended blindly, because an Equipment on the dying creature is
     in both lists and a trigger offered the same event twice would fire twice.
   */
-  const attachedWatchers = event.kind === 'dies'
+  const attachedWatchers = event.kind === 'dies' || event.kind === 'damaged' || event.kind === 'becomes-tapped'
     ? (event as { attachments?: readonly string[] }).attachments ?? []
     : [];
   const everyBattlefieldAndAttached = attachedWatchers.length === 0
@@ -2223,7 +2231,8 @@ function raise(
     || event.kind === 'attacks-unblocked'
     ? everyBattlefieldAndAttached
     : selfOnly.has(event.kind)
-      ? subject === undefined ? [] : [subject]
+      // And, for the two that have them (D994), what was attached to it.
+      ? subject === undefined ? [] : [...new Set([subject, ...attachedWatchers])]
       /*
         A cast is watched from the battlefield **and** by the spell being cast (CR 603.2d).
 
@@ -2269,6 +2278,8 @@ function raise(
     */
     const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
       || event.kind === 'to-graveyard'
+      // The Aura a lethal hit detached (D994): it was attached when the damage was dealt.
+      || (event.kind === 'damaged' && id !== subject)
       // A sacrificed permanent sees its own sacrifice, like its own death (D570, CR 603.10a).
       || event.kind === 'sacrifices')
       && (id === subject || attachedWatchers.includes(id));
@@ -3670,8 +3681,10 @@ function settle(state: GameState, before: GameState): GameState {
           hurtInCombat.add(id);
         }
         const amount = record.combat === true ? combatTotal.get(id) ?? record.amount : record.amount;
+        // What was on it (D994): the union over its records in this pass, as they were dealt.
+        const hosted = [...new Set(landed.filter((r) => r.to.kind === 'card' && r.to.id === id).flatMap((r) => r.hosted ?? []))];
         next = raise(
-          next, { kind: 'damaged', amount, ...(record.combat === true ? { combat: true } : {}) },
+          next, { kind: 'damaged', amount, ...(record.combat === true ? { combat: true } : {}), ...(hosted.length === 0 ? {} : { attachments: hosted }) },
           (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
         );
       } else if (record.source !== null && record.sourceInPlay) {
@@ -4009,7 +4022,9 @@ function settle(state: GameState, before: GameState): GameState {
       const was = before.instances[id];
       if (now === undefined || !now.tapped) continue;
       if (was === undefined || was.tapped || was.zone !== 'battlefield') continue;
-      next = raise(next, { kind: 'becomes-tapped' }, now.zoneSeat, id);
+      // With what is attached to it (D994), for "whenever enchanted creature becomes tapped".
+      const hosted = Object.values(next.instances).filter((other) => other.zone === 'battlefield' && other.attachedTo === id).map((other) => other.id);
+      next = raise(next, { kind: 'becomes-tapped', ...(hosted.length === 0 ? {} : { attachments: hosted }) }, now.zoneSeat, id);
     }
   }
   for (const seat of next.seats) {
