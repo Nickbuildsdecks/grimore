@@ -35839,3 +35839,39 @@ directly. The 8th was a plural-only guard that nothing printed could reach, and 
 
 Coverage: 13,926 of 31,900 cards (+11), 35,057 of 59,888 lines (+20), measured against the merged
 tree with the other session's D765 (13,915 / 35,037).
+
+## D1025 — the edict that takes the biggest
+
+These edicts take the biggest permanent:
+- "Each opponent sacrifices a creature with the greatest power among creatures that player
+  controls" (Crackling Doom, and Myrkul's Edict's 20 row);
+- "… a creature or planeswalker with the highest / greatest mana value among creatures and
+  planeswalkers they control" (Soul Shatter, Flare of Malice);
+- Szat's Will's "a creature they control with the greatest power";
+- the same aimed at "target opponent" (Break Under Pressure, Riveteers Charm, Consumed by Greed).
+
+13 legal cards print one.
+
+- `readEffect` reads each opponent or one target opponent / player. Each sacrificing player chooses
+  from their own permanents that are tied for the most, as the spell resolves.
+- The filter is measured against the chooser's own board: a bigger creature of yours does not make
+  their 5/5 safe. A tie is their choice, and nothing smaller can be given up.
+- Power is live, mana value is printed, and a token's is 0. Both forms really sacrifice, so
+  sacrifice triggers fire.
+- Not read: the second sentences some of these cards add ("You gain life equal to the greatest
+  power among creatures sacrificed this way", Will of the Abzan's "any number of target opponents
+  each … and lose 3 life").
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- the 5/5 goes rather than the 1/1 that costs 6, even with your own 7/7 on the table, and yours
+  stays;
+- the highest mana value goes and a mana-value-9 artifact stays;
+- aimed at one opponent;
+- with two tied 2/2s both are offered and the 1/1 is not.
+
+Faults injected by script: 7. 6 are caught, two of them after the tests above were added for them.
+The 7th was a battlefield check that nothing could reach (the candidates and the comparison both
+come from the battlefield), and it was folded away.
+
+Coverage: 13,930 of 31,900 cards (+4), 35,065 of 59,888 lines (+8).
