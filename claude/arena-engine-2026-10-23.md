@@ -34307,3 +34307,45 @@ Faults injected by script: 6 of 6 caught.
 
 Coverage: 13,302 of 31,900 cards, 33,890 of 59,888 lines (with the other session's D749 and D750
 merged).
+
+## D992 — Monstrous as a designation, and two more damage openings
+
+Three more openings from D990's list:
+
+**"When ~ becomes monstrous"** (10 lines). Monstrosity used to be its +1/+1 counters: "is it
+monstrous" was "does it have one". D182 wrote down the visible edge of that: a creature that lost
+its counters became monstrous-able again. Now:
+- `MONSTROUS` is a marker counter, a designation kept as `RENOWNED` is (CR 701.32b), and it is in
+  `MARKERS` so proliferate and counter replacement leave it alone.
+- Monstrosity puts its +1/+1 counters **and** the marker. It does nothing if the creature is
+  already monstrous or has left (CR 701.32a), which covers two activations in response to each
+  other.
+- "Activate only if it isn't monstrous", Fleecemane Lion's static and the compiled "as long as ~
+  is monstrous" all ask the marker.
+- Putting the marker is recorded as counters put on the permanent, so "When ~ becomes monstrous"
+  is a `counters-put` trigger on it.
+
+**"Whenever a source deals damage to ~"** (5): the "is dealt damage" sentence the other way round,
+the same row.
+
+**"Whenever ~ is dealt combat damage"** (4): `damaged` with `combatOnly`. The engine now sets
+`combat` on the `damaged` event it raises for combat damage.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- monstrosity puts two counters, gains 3 life (the trigger) and gives trample (the static), is not
+  offered again, and is still monstrous with its +1/+1 counters removed;
+- activated twice in response to itself it grows once and triggers once, and a real proliferate
+  adds a +1/+1 counter without making it monstrous again;
+- a ping fires "a source deals damage to ~" and not "is dealt combat damage";
+- a blocked attacker's damage fires "is dealt combat damage".
+
+Faults injected by script: 9. 7 were caught at once. The 2 misses (the marker's place in `MARKERS`,
+and the "already monstrous" guard) are now pinned by the proliferate and double-activation test.
+The first attempt at that pin called `proliferate` directly, which skips the engine's announcement,
+so it uses a real "Proliferate." spell.
+
+    engine tests: 5,322, all passing
+
+Coverage: 13,327 of 31,900 cards (+25), 33,919 of 59,888 lines (+29) (with the other session's D751
+merged).
