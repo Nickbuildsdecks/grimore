@@ -35454,3 +35454,24 @@ Faults injected by script: 5 of 5 caught.
     engine tests: 5,474, all passing
 
 Coverage: 13,838 of 31,900 cards (+1), 34,883 of 59,888 lines (+4).
+
+## D1017 — "If that player has two or fewer cards in hand" on each opponent's upkeep
+
+From the intervening-if tally (9 lines): Hellfire Mongrel, Lavaborn Muse, Paupers' Cage, Asylum
+Visitor, Bandit's Talent, Shrieking Affliction. "At the beginning of each opponent's / each player's
+upkeep, if that player has no / one or fewer / two or fewer / three or fewer cards in hand, …".
+
+- On those two prologues "that player" is whoever's upkeep it is, the active player, so the condition
+  counts the active player's hand at both asks (CR 603.4). It is read there and nowhere else: on any
+  other prologue "that player" belongs to some other event, and the line stays unread.
+- The effects ("~ deals 2 damage to that player", "that player draws three cards") already read.
+
+**Tests.** 2 engine tests:
+- the card reads; the same condition on "your upkeep" stays unread;
+- on the opponent's upkeep, two cards in their hand take 2 damage and three take none.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 5,476, all passing
+
+Coverage: 13,842 of 31,900 cards (+4), 34,888 of 59,888 lines (+5).
