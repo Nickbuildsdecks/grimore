@@ -18678,6 +18678,37 @@ const TRIGGER_SHAPES: readonly ({
       }];
     },
   },
+  /*
+    State triggers (D1004, CR 603.8): "When you control no Islands, sacrifice ~" — the old sea
+    creatures' drawback — and "When there are no creatures on the battlefield". Basic land types and
+    card types only: "snow lands", "permanents with … counters" and "the chosen color" are not read.
+
+    **Only with a sacrifice after it**, which is every legal card that prints one. A state trigger
+    fires again as soon as its ability leaves the stack if the state still holds (CR 603.8), so an
+    effect that does not end the state would trigger forever; the sacrifice takes the watcher away.
+  */
+  {
+    prologue: () => /^When you control no (?<other>other )?(?<what>Islands|Swamps|Forests|Mountains|Plains|artifacts|enchantments|lands|creatures), (?<clause>sacrifice .+)$/,
+    from: (matched) => {
+      const what = matched.groups!.what!;
+      const subtype = ({ Islands: 'Island', Swamps: 'Swamp', Forests: 'Forest', Mountains: 'Mountain', Plains: 'Plains' } as Record<string, string>)[what];
+      return [{
+        kind: 'state' as const,
+        none: {
+          whose: 'you' as const,
+          ...(subtype === undefined ? { type: what.replace(/s$/, '') } : { subtype }),
+          ...(matched.groups?.other === undefined ? {} : { other: true as const }),
+        },
+      }];
+    },
+  },
+  {
+    prologue: () => /^When (?:there are no (?<a>creatures|lands) on the battlefield|no (?<b>creatures) are on the battlefield), (?<clause>sacrifice .+)$/,
+    from: (matched) => [{
+      kind: 'state' as const,
+      none: { whose: 'any' as const, type: (matched.groups?.a ?? matched.groups?.b ?? '').replace(/s$/, '') },
+    }],
+  },
   // "Whenever you expend N" (D1002): your Nth total mana spent on spells this turn.
   {
     prologue: () => /^Whenever you expend (?<n>\d+), (?<clause>.+)$/i,

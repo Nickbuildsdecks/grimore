@@ -1258,6 +1258,9 @@ function triggerMatches(
     // Asked in `fireTrigger`, which knows the watcher (D1000).
     case 'creatures-died':
       return true;
+    // Asked in \`fireTrigger\`, which knows the watcher and the state (D1004).
+    case 'state':
+      return true;
     // "Whenever you expend N" (D1002): this seat's Nth mana on spells this turn.
     case 'expend':
       return actorSeat === sourceSeat && (event as { n?: number }).n === want.n;
@@ -1885,6 +1888,14 @@ function fireTrigger(
       && (want.what === undefined || d.types.includes(want.what))
       && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
   }
+  // A state trigger (D1004, CR 603.8): only while the state holds, and not again while it is on the stack.
+  if (trigger.on.kind === 'state') {
+    if (trigger.on.none === undefined || !stateHolds(next, holder, trigger.on.none)) return next;
+    if (next.stackOrder.some((id) => {
+      const o = next.stackObjects[id];
+      return o !== undefined && o.kind === 'triggered' && o.source === holder && o.abilityIndex === abilityIndex;
+    })) return next;
+  }
   if (trigger.on.kind === 'dies' && trigger.on.damagedBy === 'self') {
     const hitBy = event.kind === 'dies' ? event.subjectDamagedBy ?? [] : [];
     if (!hitBy.includes(damageSourceRef(next, holder))) return next;
@@ -2286,7 +2297,7 @@ function raise(
     it from the condition. One lever, so one break can move it.
   */
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'targeted', 'turned-face-up', 'transformed',
+    'becomes-tapped', 'leaves', 'targeted', 'turned-face-up', 'transformed', 'state',
     'chapter',
     // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
     // permanent itself, and this event is raised for every landing of damage in every combat the
@@ -2706,6 +2717,33 @@ export function raiseTargeted(state: GameState, objectId: string): GameState {
     }, object.controller, target.id);
   }
   return isCrime(next, object) ? raise(next, { kind: 'crime' }, object.controller) : next;
+}
+
+/**
+ * Whether a state trigger's state holds (D1004): no permanent of the named kind, yours or anybody's,
+ * on the battlefield — leaving the watcher out when the line says "other".
+ */
+function stateHolds(
+  state: GameState, holder: string,
+  none: { readonly whose: 'you' | 'any'; readonly type?: string; readonly subtype?: string; readonly other?: true },
+): boolean {
+  const watcher = state.instances[holder];
+  // Only a permanent on the battlefield is ever offered the event (\`settle\` walks the battlefield).
+  if (watcher === undefined) return false;
+  for (const key of Object.keys(state.zones)) {
+    if (!key.endsWith(':battlefield')) continue;
+    for (const id of state.zones[key] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      if (none.other === true && id === holder) continue;
+      if (none.whose === 'you' && inst.zoneSeat !== watcher.zoneSeat) continue;
+      const line = characteristicsOf(state, inst).typeLine;
+      if (none.type !== undefined && !line.types.some((t) => t.toLowerCase() === none.type)) continue;
+      if (none.subtype !== undefined && !line.subtypes.some((t) => t.toLowerCase() === none.subtype!.toLowerCase())) continue;
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -4225,6 +4263,18 @@ function settle(state: GameState, before: GameState): GameState {
     const key = String(seat.index);
     const lost = (next.lifeLostThisTurn?.[key] ?? 0) - (before.lifeLostThisTurn?.[key] ?? 0);
     if (lost > 0) next = raise(next, { kind: 'life-lost', amount: lost }, seat.index);
+  }
+  /*
+    State triggers (D1004, CR 603.8), asked after everything else this pass raised: each permanent
+    carrying one is offered a \`state\` event, and \`fireTrigger\` asks whether the state holds and
+    whether the ability is already on the stack.
+  */
+  for (const key of Object.keys(next.zones)) {
+    if (!key.endsWith(':battlefield')) continue;
+    for (const id of next.zones[key] ?? []) {
+      if (!(scriptOf(next, id)?.triggers ?? []).some((t) => t.on.kind === 'state')) continue;
+      next = raise(next, { kind: 'state' }, next.instances[id]?.zoneSeat, id);
+    }
   }
   /*
     And the tokens that stopped existing are now finished with: their triggers are on the stack, so

@@ -7980,6 +7980,8 @@ describe('deck coverage', () => {
       'trigger creatures-died',
       // D1002: "whenever you expend N" (Bloomburrow); the compiler reads it, no pool deck plays one.
       'trigger expend',
+      // D1004: state triggers ("When you control no Islands, sacrifice ~"); no pool deck plays one.
+      'trigger state',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
       'script ascend',
     ]);
@@ -25727,6 +25729,62 @@ describe('two-tribe "attacks alone" and "a player casts their second spell each 
     expect([s.seats[0]!.life, s.seats[1]!.life]).toEqual(lives);
     s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ponder') } as Action));
     expect([s.seats[0]!.life - lives[0]!, s.seats[1]!.life - lives[1]!]).toEqual([2, 5]);
+  });
+});
+
+describe('state triggers: "When you control no Islands, sacrifice ~" (D1004, CR 603.8)', () => {
+  const ROWS = [
+    { name: 'Test Serpent', type_line: 'Creature — Serpent', oracle_text: 'When you control no Islands, sacrifice this creature.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Croc', type_line: 'Creature — Crocodile', oracle_text: 'When you control no other creatures, sacrifice this creature.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Honey', type_line: 'Enchantment', oracle_text: 'When there are no creatures on the battlefield, sacrifice this enchantment.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Flood', type_line: 'Instant', oracle_text: 'Destroy target land.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Kill', type_line: 'Instant', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Wrath', type_line: 'Sorcery', oracle_text: 'Destroy all creatures.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1004', name: 'States', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => advanceTo(arena({ decks: { 0: 'd1004', 1: 'd1004' }, deckSpecs: { d1004: deck.deck }, hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const cast = (s: GameState, name: string, target?: Target) => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(target === undefined ? {} : { targets: [target] }) } as Action);
+
+  it('reads whole; a line that would not end its own state stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const loop = compileCard({ ...ROWS[0], name: 'Test Loop', oracle_text: 'When you control no Islands, you gain 1 life.' } as never);
+    expect(loop.ok && loop.unread).toHaveLength(1);
+  });
+
+  it('losing the last Island sacrifices the Serpent; losing one of two does not', () => {
+    const one = table(['Test Flood'], ['Test Serpent', 'Island']);
+    const gone = settle(cast(one, 'Test Flood', { kind: 'card', id: find(one, 0, 'battlefield', 'Island') }));
+    expect(namesIn(gone, 0, 'graveyard')).toContain('Test Serpent');
+    const two = table(['Test Flood'], ['Test Serpent', 'Island', 'Island']);
+    const kept = settle(cast(two, 'Test Flood', { kind: 'card', id: find(two, 0, 'battlefield', 'Island') }));
+    expect(namesIn(kept, 0, 'battlefield')).toContain('Test Serpent');
+  });
+
+  it('it goes on the stack once, however many times the state is checked while it waits', () => {
+    const s = table(['Test Flood', 'Test Kill'], ['Test Serpent', 'Island', 'Test Bear']);
+    // Resolve the Flood only, so the trigger is waiting; then cast another spell over it.
+    let t = passBoth(cast(s, 'Test Flood', { kind: 'card', id: find(s, 0, 'battlefield', 'Island') }));
+    const serpentTriggers = (x: GameState) => x.stackOrder.filter((id) => x.stackObjects[id]?.kind === 'triggered' && x.stackObjects[id]?.source === find(s, 0, 'battlefield', 'Test Serpent')).length;
+    expect(serpentTriggers(t)).toBe(1);
+    t = cast(t, 'Test Kill', { kind: 'card', id: find(t, 0, 'battlefield', 'Test Bear') });
+    expect(serpentTriggers(t)).toBe(1);
+  });
+
+  it('"no other creatures" counts only yours, and not itself', () => {
+    const s = table(['Test Kill'], ['Test Croc', 'Test Bear'], ['Test Bear']);
+    const after = settle(cast(s, 'Test Kill', { kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }));
+    expect(namesIn(after, 0, 'graveyard')).toContain('Test Croc');
+  });
+
+  it('"no creatures on the battlefield" counts everybody\'s', () => {
+    const theirs = table(['Test Kill'], ['Test Honey', 'Test Bear'], ['Test Bear']);
+    const one = settle(cast(theirs, 'Test Kill', { kind: 'card', id: find(theirs, 0, 'battlefield', 'Test Bear') }));
+    expect(namesIn(one, 0, 'battlefield')).toContain('Test Honey');
+    const wiped = settle(cast(table(['Test Wrath'], ['Test Honey', 'Test Bear'], ['Test Bear']), 'Test Wrath'));
+    expect(namesIn(wiped, 0, 'graveyard')).toContain('Test Honey');
   });
 });
 

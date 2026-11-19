@@ -1218,6 +1218,22 @@ export type TriggerEvent =
    * nothing spent before raises 1 to 5.
    */
   | { readonly kind: 'expend'; readonly n: number }
+  /**
+   * A **state trigger** (D1004, CR 603.8): "When you control no Islands", "When there are no creatures
+   * on the battlefield". It triggers whenever the game state matches, checked after every action,
+   * and does not trigger again while its ability is on the stack. `none` is what must be absent:
+   * permanents of a card type or a subtype, yours or anybody's, the watcher itself left out by `other`.
+   */
+  | {
+      readonly kind: 'state';
+      /** Required on a trigger; the raised event carries none. */
+      readonly none?: {
+        readonly whose: 'you' | 'any';
+        readonly type?: string;
+        readonly subtype?: string;
+        readonly other?: true;
+      };
+    }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
