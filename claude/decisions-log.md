@@ -53065,3 +53065,59 @@ Faults injected by script: 8 of 8 caught. The draw-before-discard fault was miss
 now pinned by the looter test.
 
 Coverage: 13,872 of 31,900 cards (+14), 34,935 of 59,888 lines (+20).
+
+## D1021 — one of yours becoming a target
+
+"Whenever a creature you control becomes the target of a spell or ability an opponent controls, you
+may draw a card" (Shapers' Sanctuary, Battle Mammoth's permanent version). The same prologue appears
+on:
+- MACO Strike Team;
+- "a Dragon you control … deals 3 damage to that player" (Thunderbreak Regent);
+- "a Cleric creature you control" (Daru Spiritualist);
+- "a creature you control with a +1/+1 counter on it" (Swarm Shambler);
+- "a Wolf or Werewolf you control … of an instant or sorcery spell" (Silverfur Partisan);
+- "… that creature gets +3/+3" (Wild Defiance);
+- "another permanent you control … return that permanent to its owner's hand" (Cloud Cover);
+- "a creature you control becomes the target of a spell, ~ fights up to one target creature you
+  don't control" (Gargos);
+- "~ or another Spirit you control" (King of the Oathbreakers' prologue).
+
+Until now `targeted` was offered only to the targeted permanent itself and to its attachments (D998).
+
+- **Engine.**
+  - `raise` offers `targeted` to every permanent, as it does entries and deaths.
+  - `raiseTargeted` puts the targeted permanent's controller, live types, subtypes and counters on
+    the event, and whether an instant or sorcery did the targeting (an Aura spell targets too, and
+    is neither).
+  - The matcher's new `who: 'any' | 'another'` arm asks `of: 'you'`, `what` (creature, or creature
+    or planeswalker), `ofSubtypes`, `withCounter` and `instantOrSorcery`. `orSelf` passes ~ itself
+    whatever its types.
+  - On those triggers the event's permanent is the trigger's subject, so "that creature" is the
+    one targeted.
+- **Compiler.**
+  - One parsed prologue row reads the family. It refuses a tribe that is not a creature type and
+    any `with` filter but a counter.
+  - `targeted` joins the player-action events: "that player" is the controller of the spell or
+    ability that targeted, which the engine already passes as the actor.
+  - "That permanent" joins D964's "that creature" rewrite to "it" on triggers about another
+    permanent.
+
+**Tests.** 7 engine tests:
+- the rows read whole, and a non-creature-type tribe does not;
+- an opponent's spell at your creature fires, your own spell does not, and their spell at their
+  own creature does not;
+- a Dragon fires and "that player" is the caster, while a Bear does not fire;
+- "~ or another Spirit" fires for itself (a Giant) and for a Spirit, but not for a Bear;
+- an instant pumps "that creature" and an Aura spell does not;
+- "that permanent" is returned to hand;
+- "another" leaves the watcher out, "a creature" leaves an enchantment out, and the counter filter
+  is asked.
+
+Faults injected by script: 16 of 16 caught. Of the first 16, 14 were caught and 2 survived:
+- Naming `targeted` among the board events was redundant: anything outside `selfOnly` already walks
+  the board. It was folded away, and its replacement fault, putting `targeted` back in `selfOnly`,
+  is caught.
+- The creature-type refusal is now pinned by a "Whenever a Vehicle you control …" row that stays
+  unread.
+
+Coverage: 13,884 of 31,900 cards (+12), 34,950 of 59,888 lines (+15).
