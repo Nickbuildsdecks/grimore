@@ -27064,6 +27064,57 @@ describe('"one or two target creatures" (D1024)', () => {
   });
 });
 
+describe('the edict that takes the biggest (D1025)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const C = (name: string, cost: string, cmc: number, p: string) => ({ name, type_line: 'Creature — Beast', mana_cost: cost, cmc, colors: ['G'], layout: 'normal', power: p, toughness: p, oracle_text: '' });
+  const ROWS = [
+    I('Test Doom', 'Each opponent sacrifices a creature with the greatest power among creatures that player controls.'),
+    I('Test Shatter', 'Each opponent sacrifices a creature or planeswalker with the highest mana value among creatures and planeswalkers they control.'),
+    I('Test Greed', 'Target opponent sacrifices a creature with the greatest power among creatures they control.'),
+    C('Test Big', '{G}', 1, '5'), C('Test Small', '{6}', 6, '1'), C('Test Mid', '{2}', 2, '2'), C('Test Huge', '{G}', 1, '7'),
+    { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{9}', cmc: 9, colors: [], layout: 'normal', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1025', name: 'Greatest', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 36 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const after = (spell: string, theirs: readonly string[], mine: readonly string[] = [], targets?: readonly Target[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1025', 1: 'd1025' }, deckSpecs: { d1025: deck.deck },
+      battlefield: { 0: ['Swamp', ...mine], 1: ['Swamp', ...theirs] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...(targets === undefined ? {} : { targets }) } as Action);
+    return settle(s);
+  };
+  const creatures = (s: GameState, seat: SeatIndex) => namesIn(s, seat, 'battlefield').filter((n) => n.startsWith('Test')).sort();
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the greatest power goes, not the greatest mana value, and none of yours', () => {
+    // Measured on that player's own board: your bigger creature does not make their 5/5 safe.
+    const s = after('Test Doom', ['Test Big', 'Test Small'], ['Test Huge']);
+    expect(creatures(s, 1)).toEqual(['Test Small']);
+    expect(creatures(s, 0)).toEqual(['Test Huge']);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Big');
+  });
+
+  it('the highest mana value goes, not the greatest power, and only a creature or planeswalker', () => {
+    const s = after('Test Shatter', ['Test Big', 'Test Small', 'Test Relic']);
+    expect(creatures(s, 1)).toEqual(['Test Big', 'Test Relic']);
+  });
+
+  it('aimed at one opponent; a tie leaves one of the tied and nothing smaller', () => {
+    expect(creatures(after('Test Greed', ['Test Big', 'Test Mid'], [], [{ kind: 'player', seat: 1 }]), 1)).toEqual(['Test Mid']);
+    let s = after('Test Doom', ['Test Mid', 'Test Mid', 'Test Small']);
+    // Both Mids are offered, and the Small is not.
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision!.candidates.map((id) => nameOf(s, id))).toEqual(['Test Mid', 'Test Mid']);
+    s = settle(apply(s, { type: 'auto:decide', by: 1, cards: [s.pendingDecision!.candidates[1]!] } as Action));
+    expect(creatures(s, 1)).toEqual(['Test Mid', 'Test Small']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
