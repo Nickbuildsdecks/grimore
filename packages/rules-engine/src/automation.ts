@@ -1152,6 +1152,7 @@ export function endTurnCleanup(state: GameState): GameState {
     creaturesDiedThisTurn: 0,
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
+    manaSpentOnSpellsThisTurn: {},
     descendedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
@@ -1257,6 +1258,9 @@ function triggerMatches(
     // Asked in `fireTrigger`, which knows the watcher (D1000).
     case 'creatures-died':
       return true;
+    // "Whenever you expend N" (D1002): this seat's Nth mana on spells this turn.
+    case 'expend':
+      return actorSeat === sourceSeat && (event as { n?: number }).n === want.n;
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
     // "Whenever you / an opponent / a player loses life" (D999): whose loss.
@@ -4449,7 +4453,7 @@ function payFrom(
    * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
    */
   exclude?: ReadonlySet<string>,
-): { state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[] } {
+): { state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number } {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
   const printed = typeof costText === 'object' && costText !== null
@@ -4500,6 +4504,11 @@ function payFrom(
     ? COLOR_SYMBOLS.filter((type) => (beforePaying[type] ?? 0) > ((result.pool as ManaPool)[type] ?? 0))
     : [];
   const coloursSpent = colorsSpent.length;
+  // And how much mana in all (D1002), for expend: every type the pool holds less of now.
+  const manaSpent = result.paid
+    ? (Object.keys(beforePaying) as ManaType[]).reduce((sum, type) => (
+      sum + Math.max(0, (beforePaying[type] ?? 0) - ((result.pool as ManaPool)[type] ?? 0))), 0)
+    : 0;
   if (!result.paid) {
     const asText = typeof costText === 'string' || costText === undefined ? costText : null;
     const shown = asText === null
@@ -4519,7 +4528,7 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent };
+  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */

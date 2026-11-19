@@ -18659,6 +18659,14 @@ const TRIGGER_SHAPES: readonly ({
       }];
     },
   },
+  // "Whenever you expend N" (D1002): your Nth total mana spent on spells this turn.
+  {
+    prologue: () => /^Whenever you expend (?<n>\d+), (?<clause>.+)$/i,
+    from: (matched) => {
+      const n = Number(matched.groups?.n);
+      return Number.isInteger(n) && n > 0 ? [{ kind: 'expend' as const, n }] : null;
+    },
+  },
   // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
   {
     prologue: () => /^Whenever (?<by>you lose|an opponent loses|a player loses) life, (?<clause>.+)$/i,

@@ -1331,6 +1331,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // keywords printed as "when you cast this spell". See the `self` field on the trigger.
   }, action.by, inst.id);
   /*
+    Expend (D1002): the mana this spell's cost spent, added to the seat's total for the turn, and one
+    event for each threshold the total crossed.
+  */
+  if (paid.manaSpent > 0) {
+    const key = String(action.by);
+    const was = next.manaSpentOnSpellsThisTurn?.[key] ?? 0;
+    next = { ...next, manaSpentOnSpellsThisTurn: { ...next.manaSpentOnSpellsThisTurn, [key]: was + paid.manaSpent } };
+    for (let n = was + 1; n <= was + paid.manaSpent; n++) next = raise(next, { kind: 'expend', n }, action.by);
+  }
+  /*
     "When that mana is spent to cast a creature spell that shares a creature type with your
     commander" (D729, Path of Ancestry): a source this payment tapped whose script has the rider,
     and a creature spell sharing a creature type with one of the caster's commanders, puts the

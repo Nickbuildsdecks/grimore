@@ -1402,6 +1402,12 @@ export interface AutomationState {
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * How much mana each seat has spent **to cast spells** this turn (D1002), for expend: "you expend
+   * 4 as you spend your fourth total mana to cast spells during a turn". Activated abilities do not
+   * count.
+   */
+  readonly manaSpentOnSpellsThisTurn?: Readonly<Record<string, number>>;
+  /**
    * "If you descended this turn" (D612): how many **permanent cards** each seat has had put into
    * its graveyard this turn, from anywhere — which is what "descend" means on the cards that print it.
    * Keyed by the **owner**, since a graveyard is its owner's; a token is not a card and

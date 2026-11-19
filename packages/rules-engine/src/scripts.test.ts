@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  KEYWORDS, STEPS,
+  KEYWORDS, STEPS, applyAction,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock, evaluate,
   destroy, forcedAttackers,
   characteristicsOf, commanderTaxFor, customDeck, devotionTo,
@@ -7978,6 +7978,8 @@ describe('deck coverage', () => {
       'trigger life-lost',
       // D1000: "whenever one or more other creatures die" (Morbid Opportunist); no pool deck plays one.
       'trigger creatures-died',
+      // D1002: "whenever you expend N" (Bloomburrow); the compiler reads it, no pool deck plays one.
+      'trigger expend',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
       'script ascend',
     ]);
@@ -25628,6 +25630,57 @@ describe('"enters or deals combat damage", "deals combat damage to you", "a toke
     const token = cast(s, 'Test Brood');
     expect(token.seats[0]!.life - s.seats[0]!.life).toBe(5);
     expect(cast(token, 'Test Bear').seats[0]!.life).toBe(token.seats[0]!.life);
+  });
+});
+
+describe('"whenever you expend N" (D1002)', () => {
+  const ROWS = [
+    { name: 'Test Muerra', type_line: 'Creature — Raccoon', oracle_text: 'Whenever you expend 4, you gain 3 life. (You expend 4 as you spend your fourth total mana to cast spells during a turn.)', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Hoarder', type_line: 'Creature — Raccoon', oracle_text: 'Whenever you expend 2, you gain 10 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Duo', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal' },
+    { name: 'Test Trio', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal' },
+    { name: 'Test Rod', type_line: 'Artifact', oracle_text: '{2}, {T}: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1002', name: 'Expend', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = () => advanceTo(arena({ decks: { 0: 'd1002', 1: 'd1002' }, deckSpecs: { d1002: deck.deck }, hands: { 0: ['Test Duo', 'Test Trio'] }, battlefield: { 0: ['Test Muerra', 'Test Hoarder', 'Test Rod', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Test Hoarder'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const cast = (s: GameState, name: string) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two spells: the second mana fires "expend 2", the fourth fires "expend 4", each once', () => {
+    const s = table();
+    const duo = cast(s, 'Test Duo');
+    expect(duo.seats[0]!.life - s.seats[0]!.life).toBe(10);
+    // Your expend is yours: their "whenever you expend 2" stays quiet.
+    expect(duo.seats[1]!.life).toBe(s.seats[1]!.life);
+    const trio = cast(duo, 'Test Trio');
+    expect(trio.seats[0]!.life - duo.seats[0]!.life).toBe(3);
+    expect(trio.manaSpentOnSpellsThisTurn?.['0']).toBe(5);
+  });
+
+  it('mana spent on an activated ability is not expended', () => {
+    let s = table();
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Rod'), abilityIndex: 0 } as Action));
+    expect(s.manaSpentOnSpellsThisTurn?.['0'] ?? 0).toBe(0);
+    const duo = cast(s, 'Test Duo');
+    expect(duo.manaSpentOnSpellsThisTurn?.['0']).toBe(2);
+  });
+
+  it('the count starts again each turn', () => {
+    const s = cast(table(), 'Test Duo');
+    expect(s.manaSpentOnSpellsThisTurn?.['0']).toBe(2);
+    const later = nextTurn(s);
+    expect(later.manaSpentOnSpellsThisTurn?.['0'] ?? 0).toBe(0);
+  });
+
+  it('a table reset starts it again too', () => {
+    const s = cast(table(), 'Test Duo');
+    const fresh = applyAction(s, { type: 'game:reset', by: 0 }, { isHost: true });
+    expect(fresh.manaSpentOnSpellsThisTurn?.['0'] ?? 0).toBe(0);
   });
 });
 

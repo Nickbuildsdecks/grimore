@@ -1212,6 +1212,12 @@ export type TriggerEvent =
       /** Set by the engine: the creatures that died, as they last were. */
       readonly died?: readonly DiedCreature[];
     }
+  /**
+   * "Whenever you **expend N**" (D1002): you spent your Nth total mana on spells this turn. Raised
+   * once for each threshold a payment crosses, with `n` the threshold, so a 5-mana spell cast with
+   * nothing spent before raises 1 to 5.
+   */
+  | { readonly kind: 'expend'; readonly n: number }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
