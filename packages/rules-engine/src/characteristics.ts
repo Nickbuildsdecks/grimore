@@ -84,6 +84,14 @@ export const KEYWORDS = [
   */
   'fear', 'shadow', 'horsemanship', 'intimidate', 'skulk',
   /*
+    Phasing (CR 702.26a, D1023): "As the untap step begins, all phased-in permanents with phasing that
+    the active player controls phase out, and simultaneously all phased-out permanents that had
+    phased out under that player's control phase in." The untap step in `onEnterStep` is the
+    implementation, as `declareAttackers` is myriad's, and a grant ("creatures you control have
+    phasing") is a keyword grant like any other.
+  */
+  'phasing',
+  /*
     Wither (CR 702.78a), which is **infect's creature half and nothing else** (D504).
 
     "Damage this source would deal to a creature is dealt in the form of -1/-1 counters" is word for

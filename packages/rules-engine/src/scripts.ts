@@ -25327,8 +25327,23 @@ function readEffect(
   if (/^all permanents you control phase out$/i.test(clause.trim())) {
     return { effect: (c) => phaseOut(c.state, listAt(c.state, zoneKey(c.controller, 'battlefield'))) };
   }
+  // One card type of yours (D1023): Taniwha's "all lands you control phase out".
+  const phasedType = /^all (artifacts|creatures|enchantments|lands) you control phase out$/i.exec(clause.trim());
+  if (phasedType !== null) {
+    const type = phasedType[1]!.toLowerCase().replace(/s$/, '');
+    return {
+      effect: (c) => phaseOut(c.state, listAt(c.state, zoneKey(c.controller, 'battlefield')).filter((id) => {
+        const inst = c.state.instances[id];
+        return inst !== undefined && characteristicsOf(c.state, inst).typeLine.types.some((t) => t.toLowerCase() === type);
+      })),
+    };
+  }
   if (new RegExp(`^(?:${selfRef(name)}) phases out$`, 'i').test(clause.trim())) {
     return { effect: (c) => phaseOut(c.state, [c.source]) };
+  }
+  // "It phases out" (D1023): the event's permanent, King of the Oathbreakers' Spirit that was targeted.
+  if (/^it phases out$/i.test(clause.trim())) {
+    return { effect: (c) => phaseOut(c.state, [itMeans(undefined, c)]) };
   }
   if (/^(?:enchanted|equipped) creature phases out$/i.test(clause.trim())) {
     return {

@@ -49,7 +49,7 @@ import {
   suspendedCast,
   madnessOffer, miracleOffer,
   gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
-  spendRegeneration, spendUmbraArmor, untapAll, phaseIn, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
+  spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
 } from './effects.js';
@@ -874,7 +874,18 @@ function onEnterStep(state: GameState, step: Step): GameState {
   switch (step) {
     case 'untap':
       // Phasing first (CR 502.1): what phased out under this seat phases in, then everything untaps.
-      next = phaseIn(next, next.activeSeat);
+      {
+        /*
+          And, at the same moment, what has phasing phases out (D1023, CR 702.26a). Read before the
+          phasing in, because the two are simultaneous: a permanent coming back this step is not
+          one that was "phased-in" as the step began, so it stays in until the next one.
+        */
+        const phasing = listAt(next, zoneKey(next.activeSeat, 'battlefield')).filter((id) => {
+          const inst = next.instances[id];
+          return inst !== undefined && characteristicsOf(next, inst).keywords.has('phasing');
+        });
+        next = phaseOut(phaseIn(next, next.activeSeat), phasing);
+      }
       next = untapAll(next, next.activeSeat);
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
       for (const seat of next.seats) {

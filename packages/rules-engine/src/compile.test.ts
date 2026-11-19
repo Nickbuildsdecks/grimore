@@ -2283,12 +2283,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         real card this guards against; the engine models it, but not as a keyword a pump can grant.
 
         The second row was **flanking** until D554 gave the engine that keyword, at which point this
-        test was asserting the past (D516) and failed as it should. Phasing stands in now: a keyword
-        the rules define and nothing here models, which is the property the row needs.
+        test was asserting the past (D516) and failed as it should. Phasing stood in until D1023 gave
+        the engine that keyword too; banding stands in now, a keyword the rules define and nothing
+        here models, which is the property the row needs.
       */
       for (const text of [
         'Target creature gets +2/+2 and gains protection from red until end of turn.',
-        'Target creature gets +2/+2 and gains phasing until end of turn.',
+        'Target creature gets +2/+2 and gains banding until end of turn.',
       ]) {
         const spell = compileCard({
           name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],

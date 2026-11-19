@@ -7927,11 +7927,13 @@ describe('deck coverage', () => {
       - `script cipher` (D936): cipher. No pool deck has one. Driven at runtime by "cipher, and casting a copy of a card (D936)".
       - `script umbraArmor` (D947): umbra armor. No pool deck has one. Driven at runtime by "umbra armor (D947)".
       - `trigger reflexive` (D948): "When you do". No pool deck has one. Driven at runtime by "reflexive triggers (D948)".
+      - `keyword phasing` (D1023): phasing. No pool deck has one. Driven at runtime by "phasing (D1023)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
+      'keyword phasing',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
       'script bloodthirst',
       'script kickedEntersWith',
@@ -26808,6 +26810,78 @@ describe('"if a creature died under your control this turn" (D764)', () => {
     const start = table({ hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Test Mourner', 'Test Bear'] } });
     const s = nextTurn(murder(start, find(start, 0, 'battlefield', 'Test Bear')));
     expect(s.creaturesDiedThisTurnBy?.['0'] ?? 0).toBe(0);
+  });
+});
+
+describe('phasing (D1023)', () => {
+  const ROWS = [
+    { name: 'Test Drake', type_line: 'Creature — Drake', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '3', toughness: '3', oracle_text: 'Flying\nPhasing' },
+    { name: 'Test Shimmer', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Creatures you control have phasing.' },
+    { name: 'Test Taniwha', type_line: 'Legendary Creature — Serpent', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '7', toughness: '7',
+      oracle_text: 'At the beginning of your upkeep, all lands you control phase out.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Veil', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+      oracle_text: 'Whenever a creature you control becomes the target of a spell an opponent controls, it phases out.' },
+    { name: 'Test Zap', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Zap deals 3 damage to target creature.' },
+  ];
+  const deck = customDeck({ id: 'd1023', name: 'Phasing', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }], data: ROWS as never[] });
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1023', 1: 'd1023' }, deckSpecs: { d1023: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: ['Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const zoneOf = (s: GameState, id: string) => s.instances[id]!.zone;
+  /** On to seat 0's next turn, into its main phase. */
+  const ownNext = (s: GameState) => advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+
+  it('reads every row whole, and a grant of it (the stand-in compile.test refused until now)', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard({ name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+      oracle_text: 'Target creature gets +2/+2 and gains phasing until end of turn.' } as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('out at its controller\'s untap step, in at the next, and out again at the one after', () => {
+    // The table is set at seat 0's turn, so its untap step has already come: out.
+    let s = table(['Test Drake']);
+    const drake = find(s, 0, 'phased', 'Test Drake');
+    // The other seat's turn changes nothing.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(zoneOf(s, drake)).toBe('phased');
+    // Its own: in, and not straight back out, because the two happen at once.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(zoneOf(s, drake)).toBe('battlefield');
+    s = ownNext(s);
+    expect(zoneOf(s, drake)).toBe('phased');
+  });
+
+  it('granted phasing, and only what has it', () => {
+    const s = table(['Test Shimmer', 'Test Bear']);
+    expect(namesIn(s, 0, 'phased')).toEqual(['Test Bear']);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Shimmer');
+  });
+
+  it('"it phases out" is the creature targeted, and the spell finds nothing', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1023', 1: 'd1023' }, deckSpecs: { d1023: deck.deck },
+      battlefield: { 0: ['Island', 'Test Veil', 'Test Bear'], 1: ['Island'] }, hands: { 1: ['Test Zap'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Zap'), targets: [{ kind: 'card', id: bear }] } as Action);
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || i === 0); i++) s = drain(passBoth(drain(s, 30)), 30);
+    expect(zoneOf(s, bear)).toBe('phased');
+    expect(s.instances[bear]!.damage ?? 0).toBe(0);
+    expect(zoneOf(s, find(s, 0, 'battlefield', 'Test Veil'))).toBe('battlefield');
+  });
+
+  it('"all lands you control phase out", and only lands; they come back at the next untap', () => {
+    let s = table(['Test Taniwha']);
+    expect(namesIn(s, 0, 'phased')).toEqual(['Island']);
+    expect(namesIn(s, 0, 'battlefield')).toEqual(['Test Taniwha']);
+    // Back at the untap step, and out again once the upkeep trigger resolves.
+    s = nextTurn(nextTurn(s));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Island');
+    s = advanceTo(s, 'draw');
+    expect(namesIn(s, 0, 'phased')).toEqual(['Island']);
   });
 });
 
