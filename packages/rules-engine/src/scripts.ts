@@ -18256,6 +18256,19 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever an opponent discards a card, (.+)$/i,
     on: [{ kind: 'discards', by: 'opponent' }],
   },
+  // "One or more cards" (D993): the batch, once per discard however many cards.
+  {
+    prologue: () => /^Whenever you discard one or more cards, (.+)$/i,
+    on: [{ kind: 'discards', by: 'you', batch: true }],
+  },
+  {
+    prologue: () => /^Whenever an opponent discards one or more cards, (.+)$/i,
+    on: [{ kind: 'discards', by: 'opponent', batch: true }],
+  },
+  {
+    prologue: () => /^Whenever (?:a player|one or more players) discards? one or more cards, (.+)$/i,
+    on: [{ kind: 'discards', by: 'any', batch: true }],
+  },
   {
     prologue: () => /^Whenever a player discards a card, (.+)$/i,
     on: [{ kind: 'discards', by: 'any' }],

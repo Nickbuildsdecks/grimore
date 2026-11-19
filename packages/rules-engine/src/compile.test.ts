@@ -18161,7 +18161,7 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
 
   it.each([
     ['a discard narrowed by card type', 'Whenever you discard a creature card, you gain 1 life.'],
-    ['a batched discard', 'Whenever you discard one or more cards, you gain 1 life.'],
+    // 'a batched discard' ("Whenever you discard one or more cards") reads since D993: the batch event.
     ['a discard somebody else caused',
       'When a spell or ability an opponent controls causes you to discard Drannith Healer, you gain 1 life.'],
     ['a first-cycle-each-turn restriction',
@@ -18171,6 +18171,12 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
     const got = card(line);
     expect(got.script?.triggers ?? []).toEqual([]);
     expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  it('reads a batched discard since D993', () => {
+    const got = card('Whenever you discard one or more cards, you gain 1 life.');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([{ kind: 'discards', by: 'you', batch: true }]);
   });
 });
 

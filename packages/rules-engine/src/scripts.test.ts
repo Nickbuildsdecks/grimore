@@ -24280,6 +24280,44 @@ describe('"becomes monstrous", and damage dealt to ~ in combat or by a source (D
   });
 });
 
+describe('"Whenever you discard one or more cards": once per discard (D993)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human Rogue', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    C('Test Hoarder', 'Whenever you discard one or more cards, you gain 1 life.'),
+    C('Test Collector', 'Whenever you discard a card, put a +1/+1 counter on this creature.'),
+    C('Test Taunter', 'Whenever an opponent discards one or more cards, put a +1/+1 counter on this creature.'),
+    { name: 'Test Purge', type_line: 'Sorcery', oracle_text: 'Target player discards two cards.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd993', name: 'Discard', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const purge = (victim: 0 | 1) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd993', 1: 'd993' }, deckSpecs: { d993: deck.deck },
+      hands: { 0: ['Test Purge', 'Swamp', 'Swamp', 'Swamp'], 1: ['Swamp', 'Swamp', 'Swamp'] },
+      battlefield: { 0: ['Test Hoarder', 'Test Collector', 'Test Taunter'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const life = s.seats[0]!.life;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Purge'), targets: [{ kind: 'player', seat: victim }] } as Action);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(apply(s, { type: 'auto:decide', by: victim, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action), 30);
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const c = (name: string) => s.instances[find(s, 0, 'battlefield', name)]!.counters['+1/+1'] ?? 0;
+    return { gained: s.seats[0]!.life - life, perCard: c('Test Collector'), theirs: c('Test Taunter') };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two cards discarded at once: the batch trigger once, the per-card trigger twice', () => {
+    expect(purge(0)).toEqual({ gained: 1, perCard: 2, theirs: 0 });
+  });
+
+  it('the opponent discarding fires "an opponent discards one or more cards" once, and none of yours', () => {
+    expect(purge(1)).toEqual({ gained: 0, perCard: 0, theirs: 1 });
+  });
+});
+
 describe('the printed "prevent all damage" statics and auras (D752)', () => {
   const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra });
   const body = { power: '2', toughness: '2' };
