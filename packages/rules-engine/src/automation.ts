@@ -1256,6 +1256,13 @@ function triggerMatches(
     }
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
+    // "Whenever you / an opponent / a player loses life" (D999): whose loss.
+    case 'life-lost': {
+      const by = want.by ?? 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     /*
       A discard or a cycling (D567): whose, asked of the seat that did it.
 
@@ -1947,7 +1954,10 @@ function fireTrigger(
       || event.kind === 'deals-damage')
       && event.defender !== undefined
       ? { defender: event.defender }
-      : undefined;
+      // The player who lost the life (D999), for Mindcrank's "that player mills that many cards".
+      : event.kind === 'life-lost' && actor !== undefined
+        ? { defender: actor }
+        : undefined;
   const answering = answeringFor(event);
   // And which permanent it was about, for a trigger that has to say "that creature". Only for
   // the three events that have a subject other than the watcher itself — a card watching its
@@ -1958,7 +1968,9 @@ function fireTrigger(
     ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
     ...(attacked === undefined ? {} : { attacked }),
     // How much damage the event was, for "that many" (D903).
-    ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged')
+    ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged'
+      // And the life lost (D999), for Exquisite Blood's "that much".
+      || event.kind === 'life-lost')
       && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
@@ -4132,6 +4144,13 @@ function settle(state: GameState, before: GameState): GameState {
     const was = before.seats[seat.index];
     if (was === undefined || seat.eliminated) continue;
     if (seat.life > was.life) next = raise(next, { kind: 'life-gained' }, seat.index);
+  }
+  // And life lost (D999), with how much: what this pass added to the turn's record of it.
+  for (const seat of next.seats) {
+    if (seat.eliminated) continue;
+    const key = String(seat.index);
+    const lost = (next.lifeLostThisTurn?.[key] ?? 0) - (before.lifeLostThisTurn?.[key] ?? 0);
+    if (lost > 0) next = raise(next, { kind: 'life-lost', amount: lost }, seat.index);
   }
   /*
     And the tokens that stopped existing are now finished with: their triggers are on the stack, so

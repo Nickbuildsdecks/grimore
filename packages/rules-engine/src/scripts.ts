@@ -18627,6 +18627,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you scry or surveil, (.+)$/i,
     on: [{ kind: 'scries', what: 'either' }],
   },
+  // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
+  {
+    prologue: () => /^Whenever (?<by>you lose|an opponent loses|a player loses) life, (?<clause>.+)$/i,
+    from: (matched) => {
+      const by = ({ 'you lose': 'you', 'an opponent loses': 'opponent', 'a player loses': 'any' } as const)[
+        (matched.groups?.by ?? '').toLowerCase() as 'you lose' | 'an opponent loses' | 'a player loses'];
+      return by === undefined ? null : [{ kind: 'life-lost' as const, by }];
+    },
+  },
   // "Whenever you / an opponent / a player commits a crime" (D997, CR 700.13).
   {
     prologue: () => /^Whenever (?<by>you commit|an opponent commits|a player commits) a crime, (?<clause>.+)$/i,
@@ -20672,7 +20681,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       the words name some other number, and no reader knows the mark.
     */
     const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
-    const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged')
+    const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged'
+      || k.kind === 'life-lost')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;

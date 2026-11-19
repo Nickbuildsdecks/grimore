@@ -1196,6 +1196,12 @@ export type TriggerEvent =
   | { readonly kind: 'crime'; readonly by?: 'you' | 'opponent' | 'any' }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
+   * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
+   * Conqueror. Raised once per seat per settle, with `amount` the life it lost there — read off
+   * `lifeLostThisTurn`, so damage counts (CR 120.3a) and poison does not. `by` defaults to `you`.
+   */
+  | { readonly kind: 'life-lost'; readonly by?: 'you' | 'opponent' | 'any'; readonly amount?: number }
+  /**
    * "Whenever you **discard** a card" — and "whenever you **cycle or discard** a card", which is
    * the same event (D567).
    *

@@ -52273,6 +52273,33 @@ no throw and no stall.
 
 Coverage: 13,563 of 31,900 cards (+12), 34,415 of 59,888 lines (+24), against 6692231.
 
+## D999 — "Whenever an opponent loses life" (Exquisite Blood)
+
+From the refreshed prologue list: Exquisite Blood, Bloodthirsty Conqueror and Mindcrank, with
+"whenever you lose life" and "whenever a player loses life" beside them.
+
+- A new `life-lost` event, raised once per seat per settle with the life that seat lost there. It
+  is read off `lifeLostThisTurn`, the record damage and "loses N life" both write, so damage counts
+  (CR 120.3a) and poison does not.
+- `by: 'you' | 'opponent' | 'any'`, defaulting to `you`.
+- "That much" / "that many" after it is the amount, the same mark D903 gave damage triggers.
+- "That player" is the player who lost the life: the event fills the slot the damage triggers use
+  for the player who was hit, so Mindcrank's "that player mills that many cards" mills the right
+  library.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- 3 damage to the opponent: Exquisite Blood gains 3 and Mindcrank mills 3;
+- "target player loses 2 life" on the opponent: gains 2, mills 2;
+- the same on yourself fires "whenever you lose life" and neither opponent trigger;
+- damage to the opponent's creature is no life lost.
+
+Faults injected by script: 8 of 8 caught.
+
+    engine tests: 5,387, all passing
+
+Coverage: 13,575 of 31,900 cards (+4), 34,427 of 59,888 lines (+5), measured against the tree
+after the D758 merge.
 ## D759 — "… that was dealt damage this turn"
 
 28 unread lines aim at a creature "that was dealt damage this turn": the red-black finishers
@@ -52358,7 +52385,9 @@ sorcery that prints it (Ashaya's Enduring Bond) takes the spell path and still s
 
 Faults injected by script: 2 of 2 caught.
 
-    engine tests: 5,394, all passing
+    engine tests: 5,399, all passing (merged with the other session's D999)
+
+Pod sweep 59601 (100 games on the D758–D760 build): every game finished, with no throw and no stall.
 
 Coverage: 13,617 of 31,900 cards (+0: each of these cards has other unread abilities), 34,519 of
 59,888 lines (+30), against 65c8c51.
