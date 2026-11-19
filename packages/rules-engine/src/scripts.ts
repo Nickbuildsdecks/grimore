@@ -21068,6 +21068,18 @@ const permanentFilter = (
      * Human is a legal "target Human".
      */
     readonly anyOf?: readonly ((line: TypeLine) => boolean)[];
+    /**
+     * D1011's qualifiers: "target **nontoken** creature", "target **non-Human** creature" (a subtype
+     * it must not have, read live), "target **monocolored** creature" (exactly one colour, CR 105.2b),
+     * "target **face-down** creature", "target **nonattacking** creature", and "target creature
+     * **with a +1/+1 counter on it**" (\`any\` for "with a counter on it").
+     */
+    readonly nontoken?: true;
+    readonly notSubtypes?: readonly string[];
+    readonly monocolored?: true;
+    readonly faceDown?: true;
+    readonly nonattacking?: true;
+    readonly withCounter?: string;
   },
 ): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
   if (candidate.kind !== 'card') return false;
@@ -21118,6 +21130,15 @@ const permanentFilter = (
     && !state.combat.attacks.some((a) => a.attacker === candidate.id)) return false;
   if (opts.blocking === true
     && !state.combat.attacks.some((a) => a.blockers.includes(candidate.id))) return false;
+  // D1011's qualifiers. See their declaration.
+  if (opts.nontoken === true && inst.isToken === true) return false;
+  if (opts.notSubtypes !== undefined && opts.notSubtypes.some((sub) => hasSubtype(live.typeLine, sub))) return false;
+  if (opts.monocolored === true && live.colors.length !== 1) return false;
+  if (opts.faceDown === true && inst.faceDown !== true) return false;
+  if (opts.nonattacking === true && state.combat.attacks.some((a) => a.attacker === candidate.id)) return false;
+  if (opts.withCounter !== undefined && (opts.withCounter === 'any'
+    ? !Object.values(inst.counters).some((n) => n > 0)
+    : (inst.counters[opts.withCounter] ?? 0) < 1)) return false;
   return true;
 };
 
@@ -21334,6 +21355,23 @@ function targetSpecFrom(
       the phrase is read without the clause and the filter refuses the source. The name is taken by
       its printed capital, as a card name is; a lower-case word ("other than a Wall") is not this.
     */
+    /*
+      "With a +1/+1 counter on it", "with a counter on it" (D1011): a counter the permanent has now.
+      Read as a wrapper, like "other than ~", so no path through the rest of the parse can drop it.
+    */
+    const countered = /^(.+?) with an? (\+1\/\+1 |-1\/-1 )?counter on it$/i.exec(trimmed);
+    if (countered !== null) {
+      const inner = targetSpecFrom(countered[1]!, friendly, parsed);
+      if (inner === null || !pointsAtAPermanent(inner)) return null;
+      const want = countered[2] === undefined ? 'any' : countered[2].trim();
+      const has = permanentFilter({ withCounter: want });
+      const own = inner.filter;
+      return {
+        ...inner, description: printed,
+        filter: (state, candidate, controller, source) => has(state, candidate, controller, source)
+          && (own === undefined || own(state, candidate, controller, source)),
+      };
+    }
     const otherThan = /^(.+?) other than (?:[A-Z][^,.]*|this (?:creature|permanent|artifact|enchantment|land))$/.exec(trimmed);
     if (otherThan !== null) {
       const inner = targetSpecFrom(otherThan[1]!, friendly, parsed);
@@ -22054,6 +22092,11 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
   let blocking: true | undefined;
   let legendary: boolean | undefined;
   let basic: boolean | undefined;
+  let nontoken: true | undefined;
+  let monocolored: true | undefined;
+  let faceDown: true | undefined;
+  let nonattacking: true | undefined;
+  const notSubtypes: string[] = [];
   const types = [...(noun?.types ?? [])];
   for (const cased of words) {
     // Lower-cased here rather than up front: the noun position above needs the printed capital, and
@@ -22074,6 +22117,16 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     if (word === 'nonlegendary') { legendary = false; continue; }
     if (word === 'basic') { basic = true; continue; }
     if (word === 'nonbasic') { basic = false; continue; }
+    // D1011: nontoken, monocolored, face-down, nonattacking, and "non-<Subtype>" (a real subtype only).
+    if (word === 'nontoken') { nontoken = true; continue; }
+    if (word === 'monocolored') { monocolored = true; continue; }
+    if (word === 'face-down') { faceDown = true; continue; }
+    if (word === 'nonattacking') { nonattacking = true; continue; }
+    const notSub = /^non-([A-Z][a-z'-]+)$/.exec(cased);
+    if (notSub !== null && (isCreatureType(notSub[1]!) || CARD_SUBTYPES_READ.includes(notSub[1]!))) {
+      notSubtypes.push(notSub[1]!);
+      continue;
+    }
     /*
       A type word in front of the noun — "target **artifact** creature" — which is a second type the
       candidate must also have, not an alternative to the noun's.
@@ -22099,6 +22152,11 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     ...(keyword === undefined ? {} : { keyword }),
     ...(withoutKeyword === undefined ? {} : { withoutKeyword }),
     ...(subtype === undefined ? {} : { anyOf: [subtype] }),
+    ...(nontoken === undefined ? {} : { nontoken }),
+    ...(monocolored === undefined ? {} : { monocolored }),
+    ...(faceDown === undefined ? {} : { faceDown }),
+    ...(nonattacking === undefined ? {} : { nonattacking }),
+    ...(notSubtypes.length === 0 ? {} : { notSubtypes }),
   });
   return { kind: noun?.kind ?? 'permanent', filter, ...counted };
 }

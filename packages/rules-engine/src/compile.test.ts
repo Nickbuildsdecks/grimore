@@ -10249,8 +10249,7 @@ describe('the counter clause, read off the printed phrase', () => {
     ['Put a loyalty counter on target creature.', 'a counter kind with its own rules'],
     ['Put a +1/+1 counter on target Sagas you control.',
       'a plural subtype, which no rule separates from the singulars ending in s (D486)'],
-    ['Put a +1/+1 counter on target non-Human creature.',
-      'a negated subtype: the qualifier run has no list it is on'],
+    // 'Put a +1/+1 counter on target non-Human creature.' reads since D1011 (a negated subtype).
     ['Put a +1/+1 counter on enchanted creature.', 'the Aura host, which is a different question'],
   ])('leaves "%s" unread: %s', (text) => {
     const read = sorcery(text as string);
@@ -10315,7 +10314,7 @@ describe('a subtype in the target noun position (D486)', () => {
     */
     ['Destroy target Sagas.', 'a capitalised word ending in s: plural or subtype, unknowable here'],
     ['Destroy target Plains.', 'the same shape, and the cost of refusing it'],
-    ['Destroy target non-Human creature.', 'a negated subtype, on none of the qualifier lists'],
+    // 'Destroy target non-Human creature.' reads since D1011: a negated subtype, if it is a real one.
     ['Destroy target tapped Goblin or Elf.', 'a qualifier inside a disjunction'],
     ['Destroy target Goblin or player.', 'a player is not a permanent, so the run is refused'],
     ['Destroy target Goblin and Elf.', 'a conjunction, which is not one target'],
@@ -11212,8 +11211,7 @@ describe('tap target, and a self-pump that shrinks (D496)', () => {
       cannot read yet, so the tap has nothing to point at. Rows rather than silence, because these
       are the next increment in this family and not oversights.
     */
-    ['Avacynian Priest: `non` in front of a capitalised creature type',
-      '{1}, {T}: Tap target non-Human creature.'],
+    // Avacynian Priest's "Tap target non-Human creature" reads since D1011 (a negated subtype).
     // Blinkmoth Well's `noncreature artifact` was a row here until D650, which reads a negated
     // card type in front of the noun ("nonartifact creature", "noncreature artifact").
     /*

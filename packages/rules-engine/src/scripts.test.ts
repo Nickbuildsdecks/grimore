@@ -26088,6 +26088,82 @@ describe('"other than ~" and two-colour targets (D1010)', () => {
   });
 });
 
+describe('target qualifiers: nontoken, non-<Subtype>, monocolored, face-down, nonattacking, with a counter (D1011)', () => {
+  const S = (name: string, phrase: string) => ({ name, type_line: 'Instant', oracle_text: `Destroy target ${phrase}.`, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const C = (name: string, type: string, colors: string[]) => ({ name, type_line: type, oracle_text: '', mana_cost: '{0}', cmc: 0, colors, layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    S('Test Purge', 'nontoken creature'),
+    S('Test Cull', 'non-Human creature'),
+    S('Test Prism', 'monocolored creature'),
+    S('Test Mark', 'creature with a +1/+1 counter on it'),
+    S('Test Brand', 'creature with a counter on it'),
+    S('Test Unmask', 'face-down creature'),
+    S('Test Ambush', 'nonattacking creature'),
+    { name: 'Test Brood', type_line: 'Sorcery', oracle_text: 'Create a 1/1 black Rat creature token.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    C('Test Bear', 'Creature — Bear', ['G']),
+    C('Test Human', 'Creature — Human Soldier', ['W']),
+    C('Test Gold', 'Creature — Bird', ['W', 'U']),
+  ];
+  const deck = customDeck({ id: 'd1011', name: 'Qualifiers', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const SPELLS = ROWS.slice(0, 7).map((r) => r.name);
+  const table = (mine: string[] = ['Test Bear', 'Test Bear', 'Test Human', 'Test Gold']) => advanceTo(arena({ decks: { 0: 'd1011', 1: 'd1011' }, deckSpecs: { d1011: deck.deck }, hands: { 0: [...SPELLS, 'Test Brood'] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const aims = (s: GameState, spell: string, id: string) => refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action) === null;
+  const withCounters = (s: GameState, id: string, counters: Record<string, number>) => ({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters } } });
+
+  it('reads whole; a subtype nothing has stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 7)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard(S('Test Odd', 'non-Wizzle creature') as never);
+    expect(odd.ok && odd.unread).toHaveLength(1);
+  });
+
+  it('"nontoken": the Bear, not the Rat token', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Brood') } as Action)), 30);
+    const rat = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+    expect(aims(s, 'Test Purge', rat)).toBe(false);
+    expect(aims(s, 'Test Purge', find(s, 0, 'battlefield', 'Test Bear'))).toBe(true);
+  });
+
+  it('"non-Human" and "monocolored"', () => {
+    const s = table();
+    expect(aims(s, 'Test Cull', find(s, 0, 'battlefield', 'Test Human'))).toBe(false);
+    expect(aims(s, 'Test Cull', find(s, 0, 'battlefield', 'Test Bear'))).toBe(true);
+    expect(aims(s, 'Test Prism', find(s, 0, 'battlefield', 'Test Gold'))).toBe(false);
+    expect(aims(s, 'Test Prism', find(s, 0, 'battlefield', 'Test Bear'))).toBe(true);
+  });
+
+  it('"with a +1/+1 counter on it" and "with a counter on it"', () => {
+    let s = table();
+    const [plain, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = withCounters(s, other!, { charge: 1 });
+    expect(aims(s, 'Test Mark', plain!)).toBe(false);
+    expect(aims(s, 'Test Mark', other!)).toBe(false);
+    expect(aims(s, 'Test Brand', plain!)).toBe(false);
+    expect(aims(s, 'Test Brand', other!)).toBe(true);
+    s = withCounters(s, plain!, { '+1/+1': 1 });
+    expect(aims(s, 'Test Mark', plain!)).toBe(true);
+  });
+
+  it('"face-down"', () => {
+    let s = table();
+    const [up, down] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [down!]: { ...s.instances[down!]!, faceDown: true } } };
+    expect(aims(s, 'Test Unmask', up!)).toBe(false);
+    expect(aims(s, 'Test Unmask', down!)).toBe(true);
+  });
+
+  it('"nonattacking": a creature in the attack is not a legal target, one at home is', () => {
+    let s = table();
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    const [attacker, home] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: attacker!, defender: 1 }] });
+    expect(aims(s, 'Test Ambush', attacker!)).toBe(false);
+    expect(aims(s, 'Test Ambush', home!)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -41787,11 +41863,13 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       'destroy target squirrel',
       'destroy target creature with squelching',
       'destroy target Sagas',
-      'destroy target non-Human creature',
       'destroy target tapped Goblin or Elf',
+      // A negated subtype reads since D1011 when it is a real one; a word nothing has does not.
+      'destroy target non-Wizzle creature',
     ]) {
       expect(specOf(phrase), phrase).toBeNull();
     }
+    expect(specOf('destroy target non-Human creature')).not.toBeNull();
   });
 
   it('builds a filter that discriminates on a real board', () => {
