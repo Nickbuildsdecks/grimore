@@ -7978,9 +7978,6 @@ describe('deck coverage', () => {
       'trigger life-lost',
       // D1000: "whenever one or more other creatures die" (Morbid Opportunist); no pool deck plays one.
       'trigger creatures-died',
-  });
-});
-
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
       'script ascend',
     ]);
