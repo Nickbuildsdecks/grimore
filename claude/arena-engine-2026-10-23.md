@@ -34634,3 +34634,29 @@ now caught:
     engine tests: 5,357, all passing (merged with the other session's D996)
 
 Coverage: 13,449 of 31,900 cards (+16), 34,087 of 59,888 lines (+21), against 5565d3e.
+
+## D756 — Named modes
+
+225 unread bullets on 97 cards print a name in front of the mode: "• Attack — Create a 2/2 white
+Knight creature token." (Battle Menu), "• Surgical Separation — Destroy target creature. …"
+(Impossible Choice). `modalScriptFor` read the whole bullet, name and all, and no effect reader
+knows a sentence that begins with a name.
+
+Under a "Choose …" header the name has no rules meaning, the role an ability word has (CR
+207.2c). So the effect after the dash is read, and the mode's description keeps the name for the
+table. The name must start with a capital letter or digit and hold no sentence punctuation.
+Sieges ("choose Khans or Dragons"), whose names are the choice itself, have another header and
+never reach this reader. Tiered spells ("• Fire — {0} — …") and modal triggers stay unread for
+the same reason.
+
+**Tests.** 3 engine tests:
+- the cards read, with the names in the descriptions; a Siege and a lower-case "name" stay unread;
+- each mode of a named "Choose one" does what follows its name;
+- "Choose one or both" with named modes, both chosen.
+
+Faults injected by script: 3 of 3 caught. The first gate stopped at the test typecheck: a
+`compileCard` script read without the optional chain it needs.
+
+    engine tests: 5,360, all passing
+
+Coverage: 13,471 of 31,900 cards (+17), 34,150 of 59,888 lines (+53), against aaaceb1.

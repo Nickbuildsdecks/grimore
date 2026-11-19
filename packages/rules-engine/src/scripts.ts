@@ -30191,6 +30191,14 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     if (bullet === null) return null;
     const printed = bullet[1]!.replace(/\s*\.\s*$/, '').trim();
     /*
+      A named mode (D756): "• Attack — Create a 2/2 white Knight creature token." The name has no
+      rules meaning under a "Choose …" header (an ability word's role, CR 207.2c), so the effect
+      after the dash is what is read; the description keeps the name for the table. Sieges, whose
+      names are the choice itself, have another header and never reach this reader.
+    */
+    const named = /^([A-Z0-9][^—•.:;"]{0,48}?) — (.+)$/.exec(printed);
+    const effectText = named === null ? printed : named[2]!.trim();
+    /*
       No `optionalEffect` here, and that is a measured refusal rather than an oversight (D525).
 
       15 legal modal bullets begin with "you may" and **one** reads — Witherbloom Charm's "You may
@@ -30203,7 +30211,7 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
       that makes it two can reverse this on evidence.
     */
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
-    const read = composeEffects(clausesOf(printed), name, null);
+    const read = composeEffects(clausesOf(effectText), name, null);
     if (read === null) return null;
     const flags = { ...(read.spellFlags ?? {}) } as Record<string, unknown>;
     const expires = flags['expiresAtEndOfTurn'] === true;

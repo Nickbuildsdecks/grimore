@@ -24869,6 +24869,59 @@ describe('spell copies: "copy target instant or sorcery spell" and cast triggers
   });
 });
 
+describe('named modes: "• Attack — Create a 2/2 …" (D756)', () => {
+  const card = (name: string, type: string, text: string) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const ROWS = [
+    card('Test Menu', 'Instant', 'Choose one —\n• Attack — Create a 2/2 white Knight creature token.\n• Item — You gain 4 life.'),
+    card('Test Pair', 'Sorcery', 'Choose one or both —\n• First Course — Draw a card.\n• Main Course — You gain 2 life.'),
+  ];
+  const deck = customDeck({
+    id: 'd756', name: 'Named modes',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 56 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd756', 1: 'd756' }, deckSpecs: { d756: deck.deck }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, modes: number[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), modes } as Action)));
+
+  it('reads them, the name kept in the description; a Siege\'s named choice and a nameless dash stay unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const menu = compileCard(ROWS[0] as never);
+    expect(menu.ok && menu.script?.modal?.modes.map((m) => m.description)).toEqual([
+      'Attack — Create a 2/2 white Knight creature token', 'Item — You gain 4 life',
+    ]);
+    const siege = 'As Test Siege enters, choose Khans or Dragons.\n• Khans — At the beginning of each of your main phases, add {G}{G}.\n• Dragons — You gain 1 life.';
+    const read = compileCard(card('Test Siege', 'Enchantment', siege) as never);
+    expect(read.ok && read.unread.length).toBeGreaterThan(0);
+    const odd = 'Choose one —\n• attack — Create a 2/2 white Knight creature token.\n• Item — You gain 4 life.';
+    const lower = compileCard(card('Test Odd', 'Instant', odd) as never);
+    expect(lower.ok && lower.unread.length).toBeGreaterThan(0);
+  });
+
+  it('each mode does what follows its name', () => {
+    let s = table(['Test Menu', 'Test Menu']);
+    const life = s.seats[0]!.life;
+    s = cast(s, 'Test Menu', [1]);
+    expect(s.seats[0]!.life).toBe(life + 4);
+    const before = ids(s, 0, 'battlefield').length;
+    s = cast(s, 'Test Menu', [0]);
+    expect(ids(s, 0, 'battlefield').length).toBe(before + 1);
+    expect(s.seats[0]!.life).toBe(life + 4);
+  });
+
+  it('"one or both" with names: both modes', () => {
+    let s = table(['Test Pair']);
+    const life = s.seats[0]!.life;
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Pair', [0, 1]);
+    expect(s.seats[0]!.life).toBe(life + 2);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
