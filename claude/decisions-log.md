@@ -52014,3 +52014,47 @@ engine can now express them, so the rows are gone and the table's comments say w
     engine tests: 5,342, all passing (merged with the other session's D995)
 
 Coverage: 13,371 of 31,900 cards (+18), 33,988 of 59,888 lines (+37), against 2a0e8f6.
+
+## D754 — Creature lands, and "target <creature type> creature"
+
+`animateSelf` read Mutavault's exact wording and nothing else, so 41 creature-land lines on lands
+stayed unread: Celestial Colonnade, Treetop Village, Faerie Conclave, Mishra's Factory and the
+rest.
+
+- `animateSelf` now reads "~ becomes a N/N [colours] [creature types] [artifact] creature [with
+  <keywords>] until end of turn. It's still a land.", with "Until end of turn" first or last
+  (exactly once).
+  - Colour words set the colour (layer 5; a land has none of its own).
+  - Each creature type must be a real one, and is added.
+  - "Artifact creature" adds both types.
+  - The keyword list may end "and all creature types" (D577's flag).
+  - Refused: a quoted ability granted with it (Raging Ravine, Spawning Pool), "can't be blocked"
+    (Creeping Tar Pit), an X size, and no duration.
+- **`Blinkmoth`** is added to `CREATURE_TYPES` by hand, which makes it 317 types. It is a real
+  creature type (CR 205.3m) that no type line prints: only Blinkmoth Nexus and Inkmoth Nexus give
+  it. "Llama" is the other word this family prints that the list lacks; it is left out until it
+  can be checked against the rules.
+- **`targetSpecFrom` peels a creature type** off "(another) target <Type> creature [you control /
+  an opponent controls / you don't control]", as it already peels mana value and power. The type
+  must be real, and it is read live from characteristics, so changelings and an animated
+  Mutavault count. 50 unread lines carried a typed target; Mishra's Factory's and Blinkmoth
+  Nexus's pump lines were two of them.
+
+**Tests.** 5 engine tests:
+- the cards read, a Blinkmoth line reads, and four refusals stay unread (no duration, a quoted
+  ability, and an unknown type in the animation or in the target);
+- a green Ape with trample: size, colour, type and keyword, still a land, and not a creature next
+  turn;
+- the "Until end of turn, …" order, two colours, two keywords;
+- an Assembly-Worker artifact creature: the other Factory may pump it and is refused a Bear;
+- "destroy target Goblin creature" takes a Goblin and refuses a Bear.
+
+Faults injected by script: 9 of 9 caught.
+
+The first gate failed one compile.test.ts row, which held "Target Kavu creature gets -1/-1" as a
+phrase `targetSpecFrom` cannot build (#341). Kavu is a creature type, so the phrase reads now;
+the row uses a word that is not a type.
+
+    engine tests: 5,347, all passing
+
+Coverage: 13,433 of 31,900 cards (+42), 34,066 of 59,888 lines (+53), against 5d74447.

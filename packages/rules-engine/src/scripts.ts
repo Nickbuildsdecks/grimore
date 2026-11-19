@@ -21172,6 +21172,26 @@ function targetSpecFrom(
     return { ...inner, description: printed, filter: withinBound };
   }
 
+  /*
+    **A creature type, peeled the same way (D754).** "Target Assembly-Worker creature gets +1/+1"
+    (Mishra's Factory), "target Blinkmoth creature" (Blinkmoth Nexus), "destroy target Goblin
+    creature". The word must be a real creature type, and the inner phrase is the same one without
+    it. The type is read live, so a changeling or an animated Mutavault counts.
+  */
+  const typed = /^((?:another )?target) ([A-Z][A-Za-z'-]*) (creature(?: you control| an opponent controls| you don't control)?)$/.exec(printed);
+  if (typed !== null && parsed && isCreatureType(typed[2]!)) {
+    const inner = targetSpecFrom(`${typed[1]!} ${typed[3]!}`, friendly, parsed);
+    if (inner === null || inner.kind !== 'creature') return null;
+    const subtype = typed[2]!.toLowerCase();
+    const ofType: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined || !hasSubtype(characteristicsOf(state, inst).typeLine, subtype)) return false;
+      return inner.filter === undefined || inner.filter(state, candidate, controller, source);
+    };
+    return { ...inner, description: printed, filter: ofType };
+  }
+
   switch (printed.toLowerCase()) {
     case 'any target': return spec({ kind: 'any' });
     case 'target creature': return spec({ kind: 'creature' });
@@ -26675,19 +26695,43 @@ function composeEffects(
  */
 function animateSelf(clause: string, name: string): ReadEffect | null {
   const self = selfRef(name);
-  // "…with all creature types" (D577) is Mutavault's printed text, and the only wording it has.
+  /*
+    The creature lands (D754): "~ becomes a 3/3 green Ape creature with trample until end of turn",
+    "Until end of turn, ~ becomes a 2/3 white and blue Bird creature with flying", "a 1/1 Blinkmoth
+    artifact creature". Colour words set the colour (layer 5: a land has none of its own), the
+    creature types are added and must be real ones, "artifact" is a type added with "creature", and
+    "with …" is a keyword list, optionally ending "and all creature types". "Until end of turn"
+    comes before or after, once. A quoted ability granted with it ("with \"{B}: Regenerate this
+    creature\"") and an X size are refused.
+  */
   const becomes = new RegExp(
-    `^(?:${self}|it) becomes a (\\d+)/(\\d+) creature( with all creature types)? until end of turn\\.\\s*it['’]s still a land$`,
+    `^(until end of turn, )?(?:${self}|it) becomes an? (\\d+)/(\\d+) `
+    + '((?:(?:white|blue|black|red|green)(?:,? and |, | ))*)'
+    + "((?:(?!artifact )[A-Z][A-Za-z'-]* )*)(artifact )?creature(?: with ([^\"]+?))?( until end of turn)?"
+    + "\\.\\s*it['’]s still a land$",
     'i',
   ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
-  if (becomes === null) return null;
-  const power = Number(becomes[1]);
-  const toughness = Number(becomes[2]);
-  const everyType = becomes[3] !== undefined;
+  if (becomes === null || (becomes[1] === undefined) === (becomes[8] === undefined)) return null;
+  const power = Number(becomes[2]);
+  const toughness = Number(becomes[3]);
+  const setColors = (becomes[4] ?? '').toLowerCase().split(/,? and |, | /).filter((w) => w !== '')
+    .map((w) => COLOUR_WORDS[w]!);
+  const subtypes = (becomes[5] ?? '').trim().split(/\s+/).filter((w) => w !== '');
+  if (!subtypes.every((word) => isCreatureType(word))) return null;
+  let granted = becomes[7]?.trim();
+  // "With all creature types" (D577) is Mutavault's printed text; "with vigilance and all creature types" another's.
+  const everyType = granted !== undefined && /(?:^|,? and )all creature types$/i.test(granted);
+  if (everyType) granted = granted!.replace(/(?:^|,? and )all creature types$/i, '').trim();
+  const keywords = granted === undefined || granted === '' ? [] : grantedKeywordList(granted);
+  if (keywords === null) return null;
   return {
     abilityFlags: { animates: true },
     effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
-      addTypes: ['Creature'], ...(everyType ? { allCreatureTypes: true } : {}),
+      addTypes: becomes[6] === undefined ? ['Creature'] : ['Artifact', 'Creature'],
+      ...(everyType ? { allCreatureTypes: true } : {}),
+      ...(subtypes.length === 0 ? {} : { addSubtypes: subtypes }),
+      ...(setColors.length === 0 ? {} : { setColors }),
+      ...(keywords.length === 0 ? {} : { keywords }),
       setPower: power, setToughness: toughness,
     }),
   };
