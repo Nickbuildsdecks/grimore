@@ -1206,7 +1206,27 @@ export type TriggerEvent =
        * `attached` (D998) is "when **enchanted creature** becomes the target of a spell or
        * ability": the Aura watching its host. `self`, the default, is the permanent itself.
        */
-      readonly who?: 'self' | 'attached';
+      readonly who?: 'self' | 'attached' | 'any' | 'another';
+      /**
+       * The board watchers (D1021): "whenever **a creature you control** becomes the target of a
+       * spell" (`who: 'any'`, `of: 'you'`), "a Dragon you control", "a creature you control with a
+       * +1/+1 counter on it", "~ or another Spirit you control" (`orSelf`, which passes ~ whatever
+       * its types). Asked of the targeted permanent as it is targeted.
+       */
+      readonly of?: 'you';
+      readonly what?: 'creature' | 'permanent' | 'creature-or-planeswalker';
+      readonly ofSubtypes?: readonly string[];
+      readonly withCounter?: string;
+      readonly orSelf?: true;
+      /** "Becomes the target of an **instant or sorcery** spell" (D1021). */
+      readonly instantOrSorcery?: true;
+      /** Set by the engine (D1021): the targeting object was an instant or sorcery spell. */
+      readonly byInstantOrSorcery?: boolean;
+      /** Set by the engine (D1021): the targeted permanent's controller, live types and counters. */
+      readonly subjectSeat?: SeatIndex;
+      readonly subjectTypes?: readonly string[];
+      readonly subjectSubtypes?: readonly string[];
+      readonly subjectCounters?: Readonly<Record<string, number>>;
       /** Set by the engine (D998): what was attached to the targeted permanent. */
       readonly attachments?: readonly string[];
       /** "A spell" without "or ability" (D998): only a spell's targeting counts. */

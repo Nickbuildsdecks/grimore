@@ -26637,6 +26637,83 @@ describe('a measure of the event\'s creature: "life equal to its toughness" (D10
   });
 });
 
+describe('one of yours becoming a target (D1021)', () => {
+  const C = (name: string, type: string, p: string, t: string, text = '') => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: p, toughness: t, oracle_text: text });
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    E('Test Sanctuary', 'Whenever a creature you control becomes the target of a spell or ability an opponent controls, you gain 2 life.'),
+    E('Test Defiance', 'Whenever a creature you control becomes the target of an instant or sorcery spell, that creature gets +3/+3 until end of turn.'),
+    E('Test Cover', "Whenever another permanent you control becomes the target of a spell or ability an opponent controls, you may return that permanent to its owner's hand."),
+    C('Test Regent', 'Creature — Dragon', '4', '4', 'Whenever a Dragon you control becomes the target of a spell or ability an opponent controls, Test Regent deals 3 damage to that player.'),
+    C('Test King', 'Creature — Giant', '1', '5', 'Whenever Test King or another Spirit you control becomes the target of a spell, you gain 1 life.'),
+    C('Test Bear', 'Creature — Bear', '2', '2'), C('Test Drake', 'Creature — Dragon', '2', '2'), C('Test Sprite', 'Creature — Spirit', '1', '3'),
+    { name: 'Test Shock', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Shock deals 1 damage to target creature.' },
+    C('Test Cloak', 'Creature — Elf', '1', '1', 'Whenever another creature you control becomes the target of a spell, you gain 1 life.'),
+    E('Test Shambler', 'Whenever a creature you control with a +1/+1 counter on it becomes the target of a spell an opponent controls, you gain 3 life.'),
+    { name: 'Test Naturalize', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Destroy target enchantment.' },
+    { name: 'Test Aura', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+0.' },
+  ];
+  const deck = customDeck({ id: 'd1021', name: 'Targeted', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 28 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  /** Seat 0's board; `by` casts a Test Shock at the named creature on `whose` battlefield. */
+  const shock = (mine: readonly string[], at: string, by: 0 | 1 = 1, whose: 0 | 1 = 0, theirs: readonly string[] = [], answer?: 'Yes' | 'No', spell = 'Test Shock', counter = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1021', 1: 'd1021' }, deckSpecs: { d1021: deck.deck },
+      battlefield: { 0: ['Forest', ...mine], 1: ['Forest', ...theirs] }, hands: { [by]: [spell] }, turn: 3, firstSeat: by,
+    }), 'precombat-main');
+    const aim = find(s, whose, 'battlefield', at);
+    if (counter) s = { ...s, instances: { ...s.instances, [aim]: { ...s.instances[aim]!, counters: { '+1/+1': 1 } } } };
+    s = apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', spell), targets: [{ kind: 'card', id: aim }] } as Action);
+    s = drain(s, 30);
+    if (answer !== undefined) s = say(s, 0, answer);
+    return settle(s);
+  };
+
+  it('reads every row whole, and not a tribe that is no creature type', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const vehicle = compileCard(E('Test Garage', 'Whenever a Vehicle you control becomes the target of a spell, you gain 1 life.') as never);
+    expect(vehicle.ok && vehicle.unread.length).toBe(1);
+  });
+
+  it('an opponent targeting one of yours; not your own spell, and not their own creature', () => {
+    expect(life(shock(['Test Sanctuary', 'Test Bear'], 'Test Bear'), 0)).toBe(22);
+    expect(life(shock(['Test Sanctuary', 'Test Bear'], 'Test Bear', 0), 0)).toBe(20);
+    expect(life(shock(['Test Sanctuary'], 'Test Bear', 1, 1, ['Test Bear']), 0)).toBe(20);
+  });
+
+  it('a tribe, and "that player" is the one who targeted', () => {
+    expect(life(shock(['Test Regent', 'Test Drake'], 'Test Drake'), 1)).toBe(17);
+    expect(life(shock(['Test Regent', 'Test Bear'], 'Test Bear'), 1)).toBe(20);
+  });
+
+  it('"~ or another Spirit": itself whatever it is, a Spirit, and not a Bear', () => {
+    expect(life(shock(['Test King'], 'Test King', 0), 0)).toBe(21);
+    expect(life(shock(['Test King', 'Test Sprite'], 'Test Sprite', 0), 0)).toBe(21);
+    expect(life(shock(['Test King', 'Test Bear'], 'Test Bear', 0), 0)).toBe(20);
+  });
+
+  it('"that creature" is the one targeted, and an instant counts where an Aura spell does not', () => {
+    let s = shock(['Test Defiance', 'Test Bear'], 'Test Bear', 0);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(5);
+    s = shock(['Test Defiance', 'Test Bear'], 'Test Bear', 0, 0, [], undefined, 'Test Aura');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(3);
+  });
+
+  it('"that permanent" goes home', () => {
+    const s = shock(['Test Cover', 'Test Bear'], 'Test Bear', 1, 0, [], 'Yes');
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bear');
+  });
+
+  it('"another" leaves the watcher out; "a creature" leaves an enchantment out; the counter is asked', () => {
+    expect(life(shock(['Test Cloak', 'Test Bear'], 'Test Bear', 0), 0)).toBe(21);
+    expect(life(shock(['Test Cloak'], 'Test Cloak', 0), 0)).toBe(20);
+    expect(life(shock(['Test Sanctuary', 'Test Defiance'], 'Test Defiance', 1, 0, [], undefined, 'Test Naturalize'), 0)).toBe(20);
+    expect(life(shock(['Test Shambler', 'Test Bear'], 'Test Bear', 1, 0, [], undefined, 'Test Shock', true), 0)).toBe(23);
+    expect(life(shock(['Test Shambler', 'Test Bear'], 'Test Bear'), 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

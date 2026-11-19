@@ -1640,9 +1640,25 @@ function triggerMatches(
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
     case 'targeted': {
-      // Its own permanent, or its host (D998): `raise` offers the event to both.
-      if ((want.who ?? 'self') === 'self' ? !isSubject : !isAttachedSubject) return false;
+      // Its own permanent, or its host (D998), or one of the watcher's controller's (D1021).
+      const who = want.who ?? 'self';
+      if (who === 'self' && !isSubject) return false;
+      if (who === 'attached' && !isAttachedSubject) return false;
+      if (who === 'another' && isSubject) return false;
+      if ((who === 'any' || who === 'another') && !(want.orSelf === true && isSubject)) {
+        const e = event as Extract<TriggerEvent, { kind: 'targeted' }>;
+        if (want.of === 'you' && e.subjectSeat !== sourceSeat) return false;
+        const types = e.subjectTypes ?? [];
+        if (want.what === 'creature' && !types.includes('creature')) return false;
+        if (want.what === 'creature-or-planeswalker' && !types.includes('creature') && !types.includes('planeswalker')) return false;
+        if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+          (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+        ))) return false;
+        if (want.withCounter !== undefined && (e.subjectCounters?.[want.withCounter] ?? 0) < 1) return false;
+      }
       if (want.spellOnly === true && (event as { bySpell?: boolean }).bySpell !== true) return false;
+      if (want.instantOrSorcery === true
+        && (event as { byInstantOrSorcery?: boolean }).byInstantOrSorcery !== true) return false;
       const by = want.by ?? 'opponent';
       if (by === 'any') return true;
       if (actorSeat === undefined) return false;
@@ -2028,7 +2044,10 @@ function fireTrigger(
         // subject was always the watcher, so a card had no "that creature" to mean.
         || event.kind === 'combat-damage'
         // And the card discarded, for Necropotence's "exile that card" (D719).
-        || event.kind === 'discards')
+        || event.kind === 'discards'
+        // And the permanent a board watcher saw targeted (D1021), for "that creature gets +3/+3".
+        || (event.kind === 'targeted' && trigger.on.kind === 'targeted'
+          && (trigger.on.who === 'any' || trigger.on.who === 'another')))
       ? {}
       : { subject }),
     // The attacker a block was against, for "that creature". Its own field rather than the
@@ -2319,8 +2338,10 @@ function raise(
     first and the break run is what caught it: re-adding the name here passed, and so did removing
     it from the condition. One lever, so one break can move it.
   */
+  // \`targeted\` left this set in D1021, for "whenever a creature you control becomes the target of
+  // a spell": it falls through to the whole board below, with its attachments.
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'targeted', 'turned-face-up', 'transformed', 'state',
+    'becomes-tapped', 'leaves', 'turned-face-up', 'transformed', 'state',
     'chapter',
     // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
     // permanent itself, and this event is raised for every landing of damage in every combat the
@@ -2734,8 +2755,20 @@ export function raiseTargeted(state: GameState, objectId: string): GameState {
     // With what is attached to it (D998), for "when enchanted creature becomes the target".
     const attachments = Object.values(next.instances)
       .filter((other) => other.zone === 'battlefield' && other.attachedTo === target.id).map((other) => other.id);
+    /*
+      And what the targeted permanent is (D1021), for the board watchers' filters: whose it is, its
+      live types and tribes, and its counters, as it is targeted. And whether an instant or sorcery
+      did the targeting, off the spell card's own type line.
+    */
+    const live = characteristicsOf(next, inst);
+    const spellLine = object.kind === 'spell' ? next.cardDefs[object.cardKey]?.typeLine ?? '' : '';
     next = raise(next, {
       kind: 'targeted', object: objectId, bySpell: object.kind === 'spell',
+      byInstantOrSorcery: /\b(?:Instant|Sorcery)\b/.test(spellLine.split('\u2014')[0] ?? ''),
+      subjectSeat: inst.zoneSeat,
+      subjectTypes: live.typeLine.types.map((type) => type.toLowerCase()),
+      subjectSubtypes: live.typeLine.subtypes,
+      ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       ...(attachments.length === 0 ? {} : { attachments }),
     }, object.controller, target.id);
   }

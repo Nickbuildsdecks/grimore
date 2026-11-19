@@ -323,6 +323,13 @@ const PLAYER_ACTION_EVENTS: ReadonlySet<string> = new Set([
   'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
   // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
   'sacrifices',
+  /*
+    And the controller of the spell or ability that targeted (D1021): Thunderbreak Regent's "Whenever
+    a Dragon you control becomes the target of a spell or ability an opponent controls, Thunderbreak
+    Regent deals 3 damage to that player". `raiseTargeted` raises with the targeting object's
+    controller, and `fireTrigger` passes it on as `actor` whenever it is not the watcher's own.
+  */
+  'targeted',
 ]);
 
 function punisherEffect(
@@ -17822,6 +17829,47 @@ const TRIGGER_SHAPES: readonly ({
     }],
   },
   /*
+    **One of yours becoming a target** (D1021): "Whenever a creature you control becomes the target
+    of a spell or ability an opponent controls, you may draw a card" (Shapers' Sanctuary, Fey
+    Steed, MACO Strike Team), "a Dragon you control" (Thunderbreak Regent), "a Sliver creature you
+    control", "a creature you control with a +1/+1 counter on it" (Elrond), "a Wolf or Werewolf
+    you control … of an instant or sorcery spell" (Silverfur Partisan), "~ or another Spirit you
+    control" (King of the Oathbreakers), and "another permanent you control" (Cloud Cover).
+
+    The engine offers the event to every permanent (`raise`), and the filters are asked of the
+    targeted permanent as it is targeted. "That creature" in the clause is that permanent. A line
+    that names a target noun this does not know, or a tribe that is not a creature type, is refused.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? (?:(?<self>${self}) or another (?<selftribe>[A-Z][\\w'-]+)|(?<det>an?|another) (?:(?<tribe>[A-Z][\\w'-]+(?: or [A-Z][\\w'-]+)?) )?(?<noun>creature or planeswalker|creature|permanent)?) ?you control(?<filter> with [^,]+?)? becomes the target of (?<by>a spell or ability|a spell|an instant or sorcery spell)(?<opp> an opponent controls)?, (?<clause>.+)$`,
+    ),
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const tribes = g.selftribe !== undefined ? [g.selftribe] : g.tribe === undefined ? [] : g.tribe.split(' or ');
+      if (!tribes.every(isCreatureType)) return null;
+      // "A creature you control" and "a Dragon you control" name something; "a you control" does not.
+      if (tribes.length === 0 && g.noun === undefined) return null;
+      const filter = g.filter === undefined ? {} : boardFilter(g.filter);
+      if (filter === null || Object.keys(filter).some((key) => key !== 'withCounter')) return null;
+      const what = g.noun === undefined ? undefined
+        : ({ 'creature or planeswalker': 'creature-or-planeswalker', creature: 'creature', permanent: 'permanent' } as const)[
+          g.noun.toLowerCase() as 'creature or planeswalker' | 'creature' | 'permanent'];
+      return [{
+        kind: 'targeted' as const,
+        who: g.det?.toLowerCase() === 'another' ? 'another' as const : 'any' as const,
+        of: 'you' as const,
+        by: g.opp === undefined ? 'any' as const : 'opponent' as const,
+        ...(what === undefined || what === 'permanent' ? {} : { what }),
+        ...(tribes.length === 0 ? {} : { ofSubtypes: tribes }),
+        ...(g.self === undefined ? {} : { orSelf: true as const }),
+        ...filter,
+        ...(/^a spell$/i.test(g.by ?? '') ? { spellOnly: true } : {}),
+        ...(/instant or sorcery/i.test(g.by ?? '') ? { spellOnly: true, instantOrSorcery: true as const } : {}),
+      } as TriggerDef['on']];
+    },
+  },
+  /*
     **The block family: the per-creature half is read (D480), the batched half is not.**
 
     What D480 took is the three spellings that carry "a creature", because the engine raises
@@ -21025,9 +21073,10 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       const who = (event as { readonly who?: string }).who;
       return who === 'any' || who === 'another';
     });
-    const thatCreature = clause.search(/\bthat creature\b(?!['\u2019]s)/i);
+    // And "that permanent" (D1021): Cloud Cover's "you may return that permanent to its owner's hand".
+    const thatCreature = clause.search(/\bthat (?:creature|permanent)\b(?!['\u2019]s)/i);
     const asRead = aboutAnother && thatCreature >= 0
-      ? clause.replace(/\bthat creature\b(?!['\u2019]s)/gi, 'it')
+      ? clause.replace(/\bthat (?:creature|permanent)\b(?!['\u2019]s)/gi, 'it')
       : clause;
     const read = reader(asRead) ?? optionalEffect(asRead, reader, true) ?? punisherEffect(asRead, reader, on, name);
     if (read === null) return null;
