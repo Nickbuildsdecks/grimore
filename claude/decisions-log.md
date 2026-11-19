@@ -52457,3 +52457,34 @@ pool deck plays ascend, so `ascend` joins its list of mechanics only the compile
     engine tests: 5,404, all passing
 
 Coverage: 13,632 of 31,900 cards (+11), 34,562 of 59,888 lines (+38), against 973b26b.
+
+## D1001 — "~ enters or deals combat damage to a player", "a creature deals combat damage to you", "a token you control enters"
+
+Three small openings from the refreshed prologue list.
+
+- **"Whenever ~ enters or deals combat damage to a player"** (Tomebound Lich, Misfortune Teller,
+  Aerial Extortionist): the two events D565's pairs table already joins, one more row.
+- **"Whenever a creature deals combat damage to you"** (Teysa, Envoy of Ghosts, Strixhaven Stadium,
+  Hixus): `combat-damage` takes `toYou`, asked of the player hit against the watcher's own seat.
+  A hit on a planeswalker never reaches it: D961 already refuses those for any trigger that does
+  not say "or planeswalker".
+- **"Whenever a token you control enters"** (Wildwood Mentor, Junk Winder): the same entry D706
+  reads for "whenever you create a token".
+
+Most of these cards print a second line that does not read yet ("destroy that creature", "remove a
+point counter"), which is why the card count moves less than the line count.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- entering fires "enters or deals combat damage", and so does the unblocked hit;
+- the defender's "deals combat damage to you" fires and the attacker's own copy does not;
+- a hit on the defender's planeswalker is not combat damage to them;
+- a token fires "a token you control enters"; a card does not.
+
+Faults injected by script: 5 of 5 caught. A planeswalker clause in the new check was folded away
+after it survived a fault: D961's guard already makes it unreachable.
+
+    engine tests: 5,417, all passing
+
+Coverage: 13,641 of 31,900 cards (+2), 34,572 of 59,888 lines (+2), measured against the tree
+after the D762 merge.
