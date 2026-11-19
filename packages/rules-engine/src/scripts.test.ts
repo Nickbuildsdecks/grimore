@@ -25568,6 +25568,69 @@ describe('ascend and the city\'s blessing (D762)', () => {
   });
 });
 
+describe('"enters or deals combat damage", "deals combat damage to you", "a token you control enters" (D1001)', () => {
+  const C = (name: string, text: string, power = '1', toughness = '1') => ({ name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power, toughness });
+  const ROWS = [
+    C('Test Lich', 'Whenever this creature enters or deals combat damage to a player, you gain 3 life.', '2', '2'),
+    C('Test Sentinel', 'Whenever a creature deals combat damage to you, you gain 1 life.', '0', '4'),
+    C('Test Mentor', 'Whenever a token you control enters, you gain 5 life.'),
+    C('Test Bear', '', '2', '2'),
+    { name: 'Test Brood', type_line: 'Sorcery', oracle_text: 'Create a 1/1 black Rat creature token.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Testa', oracle_text: '+1: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', loyalty: '5' },
+  ];
+  const deck = customDeck({ id: 'd1001', name: 'Hits', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 30 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], mine: string[], theirs: string[]) => {
+    let s = arena({ decks: { 0: 'd1001', 1: 'd1001' }, deckSpecs: { d1001: deck.deck }, hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0 });
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    return advanceTo(s, 'precombat-main');
+  };
+  const cast = (s: GameState, name: string) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+  const swing = (s: GameState, name: string, walker?: string) => {
+    let t = advanceTo(s, 'declare-attackers');
+    t = apply(t, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(t, 0, 'battlefield', name), defender: 1, ...(walker === undefined ? {} : { planeswalker: walker }) }] } as Action);
+    for (let i = 0; i < 6 && t.step !== 'declare-blockers'; i++) t = settle(passBoth(t));
+    // No blocks, said out loud when the defender has a creature to block with.
+    if (ids(t, 1, 'battlefield').length > 0) t = apply(t, { type: 'auto:block', by: 1, blocks: [] });
+    for (let i = 0; i < 12 && t.step !== 'end-combat' && t.step !== 'postcombat-main'; i++) t = settle(passBoth(t));
+    return settle(t);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"enters or deals combat damage to a player": entering fires it, and so does the hit', () => {
+    const s = table(['Test Lich'], [], []);
+    const entered = cast(s, 'Test Lich');
+    expect(entered.seats[0]!.life - s.seats[0]!.life).toBe(3);
+    const hit = swing(table([], ['Test Lich'], []), 'Test Lich');
+    expect(hit.seats[0]!.life - s.seats[0]!.life).toBe(3);
+    expect(hit.seats[1]!.life).toBe(s.seats[1]!.life - 2);
+  });
+
+  it('"deals combat damage to you": the defender\'s fires; the attacker\'s own does not', () => {
+    const s = table([], ['Test Bear', 'Test Sentinel'], ['Test Sentinel']);
+    const after = swing(s, 'Test Bear');
+    expect(after.seats[1]!.life).toBe(s.seats[1]!.life - 2 + 1);
+    expect(after.seats[0]!.life).toBe(s.seats[0]!.life);
+  });
+
+  it('a hit on your planeswalker is not combat damage to you', () => {
+    const s = table([], ['Test Bear'], ['Test Sentinel', 'Test Walker']);
+    const after = swing(s, 'Test Bear', find(s, 1, 'battlefield', 'Test Walker'));
+    expect(after.seats[1]!.life).toBe(s.seats[1]!.life);
+  });
+
+  it('"a token you control enters": a token fires it, a card does not', () => {
+    const s = table(['Test Brood', 'Test Bear'], ['Test Mentor'], []);
+    const token = cast(s, 'Test Brood');
+    expect(token.seats[0]!.life - s.seats[0]!.life).toBe(5);
+    expect(cast(token, 'Test Bear').seats[0]!.life).toBe(token.seats[0]!.life);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

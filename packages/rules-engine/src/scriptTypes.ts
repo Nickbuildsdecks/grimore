@@ -851,6 +851,8 @@ export type TriggerEvent =
       readonly planeswalker?: true;
       /** "… to a player **or planeswalker**" (D961): this trigger hears planeswalker hits too. */
       readonly orPlaneswalker?: true;
+      /** "Whenever a creature deals combat damage **to you**" (D1001): the hit landed on the watcher's own seat, as a player. */
+      readonly toYou?: true;
       /** Set by the engine: how much damage landed (D903). */
       readonly amount?: number;
       /**

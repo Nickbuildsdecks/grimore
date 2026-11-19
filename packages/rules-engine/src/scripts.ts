@@ -17623,6 +17623,12 @@ const TRIGGER_SHAPES: readonly ({
       new RegExp(`^When(?:ever)? ${self} deals combat damage to a player, (.+)$`, 'i'),
     on: [{ kind: 'combat-damage' }],
   },
+  // "Whenever ~ enters or deals combat damage to a player" (D1001): two events, one effect.
+  {
+    prologue: (self) =>
+      new RegExp(`^When(?:ever)? ${self} ${ENTERS} or deals combat damage to a player, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'combat-damage' }],
+  },
   // "… to a player or planeswalker" (D961): the same, and a hit on a planeswalker too.
   {
     prologue: (self) =>
@@ -17942,6 +17948,16 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever you create a token, (.+)$/i,
     on: [{ kind: 'etb', who: 'any', of: 'you', what: 'permanent', token: true }],
+  },
+  // "Whenever a token you control enters" (D1001): the same event, the arrival spelled out.
+  {
+    prologue: () => /^Whenever a token you control enters, (.+)$/i,
+    on: [{ kind: 'etb', who: 'any', of: 'you', what: 'permanent', token: true }],
+  },
+  // "Whenever a creature deals combat damage to you" (D1001): anybody's creature, the hit on your seat.
+  {
+    prologue: () => /^Whenever a creature deals combat damage to you, (.+)$/i,
+    on: [{ kind: 'combat-damage', who: 'any', of: 'any', toYou: true }],
   },
   {
     prologue: () => /^Whenever you create or sacrifice a token, (.+)$/i,

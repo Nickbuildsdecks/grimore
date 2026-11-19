@@ -1515,6 +1515,10 @@ function triggerMatches(
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
+      // "Whenever a creature deals combat damage to you" (D1001): the player hit is the watcher's seat.
+      // A hit on a planeswalker is already refused above (D961), so this asks only whose seat.
+      if (want.kind === 'combat-damage' && want.toYou === true
+        && (event as { defender?: SeatIndex }).defender !== sourceSeat) return false;
       // "Whenever ~ blocks a creature with flying" (D998), off the attacker's keywords at the block.
       if (want.kind === 'blocks' && want.blockedKeyword !== undefined
         && !((event as { blockedKeywords?: readonly string[] }).blockedKeywords ?? []).includes(want.blockedKeyword)) return false;
