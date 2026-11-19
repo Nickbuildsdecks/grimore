@@ -34741,3 +34741,33 @@ Faults injected by script: 8 of 8 caught.
 
 Coverage: 13,540 of 31,900 cards (+69), 34,377 of 59,888 lines (+227), against 99812fd.
 Pod sweep 59501 (100 games on this build) was still running at push; its result is recorded with the next increment.
+
+## D758 — Edicts "of their choice", and "on the bottom of its owner's library"
+
+**Edicts in today's wording.** Oracle now prints every edict as "… sacrifices a creature of their
+choice". The words say what an edict always meant, since the sacrificing player chooses (CR
+701.21a), but none of the edict readers knew them: 42 unread lines in the corpus. Live Scryfall
+data, which is what a pasted deck brings, uses the new wording throughout. `readEffect` now reads
+"… sacrifices <a / one … five / X> <thing> of their choice" as the same sentence without the last
+three words. "Target player sacrifices two creatures" stays unread in either wording; that is a
+gap in the edict reader, not in this change.
+
+**The bottom of the library.** "Put target creature on top of its owner's library" read (D546) and
+"… on the bottom of …" did not. The same reader takes both now, with `putOnBottomOfLibrary`
+(D954).
+
+**Tests.** 4 engine tests:
+- the cards read, and "of their choice" compiles to the same script keys as the older wording;
+- an opponent's edict: the opponent is asked, the creature they pick goes, and nothing of the
+  caster's;
+- "two creatures of their choice": two go;
+- the tucked creature is last in its owner's library, not first.
+
+Faults injected by script: 3 of 3 caught.
+
+D757's pod sweep (seed 59501, 100 games on the modal-trigger build): every game finished, with
+no throw and no stall.
+
+    engine tests: 5,376, all passing
+
+Coverage: 13,563 of 31,900 cards (+12), 34,415 of 59,888 lines (+24), against 6692231.

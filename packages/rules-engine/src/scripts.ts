@@ -22570,15 +22570,17 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  // And the bottom (D758): "Put target creature on the bottom of its owner's library" — `putOnBottomOfLibrary`.
   const toLibraryTop = new RegExp(
-    `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on top of its owner's library$`, 'i',
+    `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on (top|the bottom) of its owner's library$`, 'i',
   ).exec(text);
   if (toLibraryTop !== null) {
     const spec = targetSpecFrom(toLibraryTop[1]!, false);
+    const bottom = toLibraryTop[2]!.toLowerCase() === 'the bottom';
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
-        effect: (c) => foldCardTargets(c, putOnTopOfLibrary),
+        effect: (c) => foldCardTargets(c, bottom ? putOnBottomOfLibrary : putOnTopOfLibrary),
       };
     }
   }
@@ -24409,6 +24411,13 @@ function anotherPlayersMay(
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  /*
+    "… sacrifices a creature of their choice" (D758): the current Oracle wording of every edict,
+    which says in words what an edict always meant, since the player sacrificing chooses (CR
+    701.21a). Read as the older wording, which the edict readers know.
+  */
+  const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
+  if (theirChoice !== null) return readEffect(`${theirChoice[1]!}${theirChoice[2]!}`, name, where);
   /*
     **Support N** (D946, CR 701.32): "put a +1/+1 counter on each of up to N other target
     creatures" — "other" only matters on a creature, and on a spell there is no permanent to
