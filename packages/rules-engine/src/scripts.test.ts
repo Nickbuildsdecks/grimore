@@ -26765,6 +26765,52 @@ describe('poison counters from an effect (D1022)', () => {
   });
 });
 
+describe('"if a creature died under your control this turn" (D764)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Mourner', 'Enchantment', 'At the beginning of your end step, if a creature died under your control this turn, draw a card.'),
+    card('Test Murder', 'Instant', 'Destroy target creature.'),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd764', name: 'Died under your control',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 54 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd764', 1: 'd764' }, deckSpecs: { d764: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const murder = (s: GameState, id: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Murder'), targets: [{ kind: 'card', id }] })));
+  const drewAtEnd = (s0: GameState): number => {
+    const before = ids(s0, 0, 'hand').length;
+    const s = drain(passBoth(advanceTo(s0, 'end')), 20);
+    return ids(s, 0, 'hand').length - before;
+  };
+
+  it('reads it', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('my creature dying draws; an opponent\'s does not, though morbid would see both', () => {
+    const mine = table({ hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Test Mourner', 'Test Bear'] } });
+    let s = murder(mine, find(mine, 0, 'battlefield', 'Test Bear'));
+    expect(s.creaturesDiedThisTurnBy?.['0']).toBe(1);
+    expect(drewAtEnd(s)).toBe(1);
+    const theirs = table({ hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Test Mourner'], 1: ['Test Bear'] } });
+    s = murder(theirs, find(theirs, 1, 'battlefield', 'Test Bear'));
+    expect(s.creaturesDiedThisTurn).toBe(1);
+    expect(drewAtEnd(s)).toBe(0);
+  });
+
+  it('the record ends with the turn', () => {
+    const start = table({ hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Test Mourner', 'Test Bear'] } });
+    const s = nextTurn(murder(start, find(start, 0, 'battlefield', 'Test Bear')));
+    expect(s.creaturesDiedThisTurnBy?.['0'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

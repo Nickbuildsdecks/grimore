@@ -204,7 +204,13 @@ export function relocate(
       which is what "died" is defined over (CR 700.4, 603.10a).
     */
     if (characteristicsOf(state, inst).isCreature) {
-      next = { ...next, creaturesDiedThisTurn: (next.creaturesDiedThisTurn ?? 0) + 1 };
+      // And per controller as it died (D764): "if a creature died under your control this turn".
+      const by = String(inst.zoneSeat);
+      next = {
+        ...next,
+        creaturesDiedThisTurn: (next.creaturesDiedThisTurn ?? 0) + 1,
+        creaturesDiedThisTurnBy: { ...(next.creaturesDiedThisTurnBy ?? {}), [by]: (next.creaturesDiedThisTurnBy?.[by] ?? 0) + 1 },
+      };
     }
   }
   /*
