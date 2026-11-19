@@ -52714,3 +52714,37 @@ Faults injected by script: 5 of 5 caught (one after the exile-line-alone pin).
     engine tests: 5,449, all passing
 
 Coverage: 13,744 of 31,900 cards (+2), 34,739 of 59,888 lines (+4).
+
+## D1010 — "Other than ~" and two-colour targets
+
+Two target phrases that kept exile-until-it-leaves cards (Faceless Butcher, Slithery Stalker) and
+about 30 other lines unread, both read at the front of `targetSpecFrom` so every reader that uses
+it gets them.
+
+- **"Target creature other than ~"** (and "permanent", "nonland permanent", "other than this
+  creature"): the same rule as "another", that the target is not the permanent whose ability this is. The
+  phrase is read without the clause and the filter refuses the source. The name is taken by its
+  printed capital; "other than a Wall" is not a name and stays unread.
+- **"Target green or white creature"**, "target black or red permanent": the colour list on a target
+  filter is already an any-of, so the two colours read side by side. The description keeps the
+  printed "or".
+
+- The pair reads for permanent nouns only. A spell phrase reads adjacent words as "both" (D490's
+  "blue instant"), so "white or blue spell" keeps its own grammar; the first pregate caught the
+  rewrite reaching it.
+- An Aura's "Enchant red or green creature" now reads too, through D939's narrower-creature host;
+  the compile.test refusal row for it became a reads test.
+
+**Tests.** 4 engine tests:
+- the cards read; "other than a Wall" stays unread;
+- "target green or white creature" takes the green Bear or the white Knight, and refuses the black
+  Zombie;
+- "other than this creature": alone it kills nothing and survives; with a Zombie on the other side it
+  kills the Zombie;
+- "nonland permanent other than this creature" never takes a land.
+
+Faults injected by script: 4 of 4 caught (one after the land pin).
+
+    engine tests: 5,453, all passing
+
+Coverage: 13,765 of 31,900 cards (+21), 34,769 of 59,888 lines (+30).
