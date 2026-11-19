@@ -1156,6 +1156,13 @@ export type TriggerEvent =
       readonly by?: 'you' | 'opponent' | 'any';
       /** Set by the engine (D719): which card was discarded, for "exile that card". */
       readonly subject?: string;
+      /**
+       * "Whenever you discard **one or more** cards" (D993): one event per player per discard,
+       * however many cards, beside the per-card ones. A trigger hears only its own kind.
+       */
+      readonly batch?: true;
+      /** Set by the engine on a batch: how many cards, for "that many". */
+      readonly amount?: number;
     }
   /**
    * "Whenever you **sacrifice** a permanent" — the act, not the death (D570).

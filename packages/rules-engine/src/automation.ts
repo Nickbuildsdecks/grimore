@@ -1297,6 +1297,8 @@ function triggerMatches(
     }
     case 'discards':
     case 'cycles': {
+      // Per card or per batch (D993): each trigger hears only its own kind of discard event.
+      if (want.kind === 'discards' && (want.batch === true) !== ((event as { batch?: true }).batch === true)) return false;
       if (want.kind === 'cycles' && want.self === true) return isSubject;
       const by = want.by ?? 'you';
       if (by === 'any') return true;
@@ -3726,6 +3728,13 @@ function settle(state: GameState, before: GameState): GameState {
       // With the card as its subject (D719): Necropotence's "exile that card from your graveyard".
       if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner, id);
     }
+    // And one batch per player (D993), for "whenever you discard one or more cards".
+    const discardedBy = new Map<SeatIndex, number>();
+    for (const id of thrown) {
+      const owner = next.instances[id]?.owner;
+      if (owner !== undefined) discardedBy.set(owner, (discardedBy.get(owner) ?? 0) + 1);
+    }
+    for (const [owner, amount] of discardedBy) next = raise(next, { kind: 'discards', batch: true, amount }, owner);
     for (const { card, seat } of cycledNow) next = raise(next, { kind: 'cycles' }, seat, card);
     /*
       Counters put on permanents (D633), with whose permanent it was and whether it was a creature
