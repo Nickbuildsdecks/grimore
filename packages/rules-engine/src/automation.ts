@@ -1332,6 +1332,12 @@ function triggerMatches(
       // "With three or more creatures" (D631): the count travels on the raised event.
       if (want.atLeast !== undefined
         && ((event as Extract<TriggerEvent, { kind: 'attack-declared' }>).attackers ?? 0) < want.atLeast) return false;
+      // "Attacks you [or a planeswalker you control]" (D996): the seats it reached travel on the event.
+      if (want.at !== undefined) {
+        const declared = event as Extract<TriggerEvent, { kind: 'attack-declared' }>;
+        const reached = want.at === 'you' ? declared.playersAttacked : declared.seatsAttacked;
+        if (!(reached ?? []).includes(sourceSeat)) return false;
+      }
       const by = want.by ?? 'you';
       if (by === 'you') return actorSeat === sourceSeat;
       if (by === 'opponent') return actorSeat !== sourceSeat;
@@ -1497,6 +1503,16 @@ function triggerMatches(
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
+      // "A creature [with flying] attacks you [or a planeswalker you control]" (D996).
+      if (want.kind === 'attacks' && want.at !== undefined) {
+        const at = (event as { attacked?: AttackedTarget }).attacked;
+        if (at === undefined || at.defender !== sourceSeat) return false;
+        if (want.at === 'you' && at.planeswalker !== undefined) return false;
+      }
+      if (want.kind === 'attacks' && want.withKeyword !== undefined
+        && !(e.subjectKeywords ?? []).includes(want.withKeyword)) return false;
+      if (want.kind === 'attacks' && want.powerAtLeast !== undefined
+        && !(e.subjectPower !== undefined && e.subjectPower >= want.powerAtLeast)) return false;
       // "Whenever a Dragon you control attacks" (D635), the tribe asked as the board events ask it.
       if (want.kind === 'attacks' && want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
         (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
@@ -2087,10 +2103,17 @@ function raise(
       };
     }
   }
-  // The attacker's live subtypes, for "whenever a Dragon you control attacks" (D635).
+  // The attacker's live subtypes, for "whenever a Dragon you control attacks" (D635), and its
+  // keywords and power for "a creature with flying attacks you" (D996).
   if (subject !== undefined && event.kind === 'attacks') {
     const inst = next.instances[subject];
-    if (inst !== undefined) event = { ...event, subjectSubtypes: characteristicsOf(next, inst).typeLine.subtypes };
+    if (inst !== undefined) {
+      const live = characteristicsOf(next, inst);
+      event = {
+        ...event, subjectSubtypes: live.typeLine.subtypes,
+        subjectKeywords: [...live.keywords], subjectPower: live.power,
+      };
+    }
   }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher

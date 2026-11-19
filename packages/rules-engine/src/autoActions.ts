@@ -2787,7 +2787,13 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     battalion's count.
   */
   if (attacks.length > 0) {
-    next = raise(next, { kind: 'attack-declared', attackers: attacks.length }, action.by);
+    // Which seats it reached (D996), for "whenever an opponent attacks you [or a planeswalker you
+    // control]": as players, and at all.
+    next = raise(next, {
+      kind: 'attack-declared', attackers: attacks.length,
+      playersAttacked: [...new Set(attacks.filter((a) => a.planeswalker === undefined).map((a) => a.defender))],
+      seatsAttacked: [...new Set(attacks.map((a) => a.defender))],
+    }, action.by);
   }
   next = resetPriority(settle(next, state));
   return {
