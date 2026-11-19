@@ -25183,6 +25183,63 @@ describe('modal triggered abilities: "When ~ enters, choose one —" (D757)', ()
   });
 });
 
+describe('edicts "of their choice" and "on the bottom of its owner\'s library" (D758)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Edict', 'Sorcery', 'Each opponent sacrifices a creature of their choice.'),
+    card('Test Two Edict', 'Sorcery', 'Each opponent sacrifices two creatures of their choice.'),
+    card('Test Tuck', 'Instant', 'Put target creature on the bottom of its owner\'s library.', { colors: ['W'] }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({
+    id: 'd758', name: 'Edicts and tucks',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (opts: { hands?: Record<number, string[]>; battlefield?: Record<number, string[]> }) => advanceTo(arena({
+    decks: { 0: 'd758', 1: 'd758' }, deckSpecs: { d758: deck.deck },
+    hands: opts.hands ?? {}, battlefield: opts.battlefield ?? {}, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, targets?: Target[]) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(targets ? { targets } : {}) })));
+
+  it('reads them, and the older wording reads the same', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const old = compileCard(card('Test Old', 'Sorcery', 'Each opponent sacrifices a creature.') as never);
+    const now = compileCard(ROWS[0] as never);
+    expect(now.ok && old.ok && Object.keys(now.script ?? {}).sort()).toEqual(old.ok ? Object.keys(old.script ?? {}).sort() : null);
+  });
+
+  it('the opponent sacrifices, and chooses which', () => {
+    let s = table({ hands: { 0: ['Test Edict'] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear', 'Test Bear'] } });
+    s = cast(s, 'Test Edict');
+    expect(s.pendingDecision?.seat).toBe(1);
+    const pick = s.pendingDecision!.candidates[1]!;
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 1, cards: [pick] })));
+    expect(s.instances[pick]!.zone).toBe('graveyard');
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear').length).toBe(1);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear').length).toBe(1);
+  });
+
+  it('two creatures of their choice: both go', () => {
+    let s = table({ hands: { 0: ['Test Two Edict'] }, battlefield: { 1: ['Test Bear', 'Test Bear', 'Test Bear'] } });
+    s = cast(s, 'Test Two Edict');
+    const two = s.pendingDecision!.candidates.slice(0, 2);
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 1, cards: [...two] })));
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear').length).toBe(1);
+  });
+
+  it('the bottom of its owner\'s library, not the top', () => {
+    let s = table({ hands: { 0: ['Test Tuck'] }, battlefield: { 1: ['Test Bear'] } });
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Tuck', [{ kind: 'card', id: bear }]);
+    const library = ids(s, 1, 'library');
+    expect(library[library.length - 1]).toBe(bear);
+    expect(library[0]).not.toBe(bear);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
