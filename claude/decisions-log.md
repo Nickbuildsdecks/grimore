@@ -52369,3 +52369,35 @@ on the lasting reader, and `targetSpecFrom` refuses "target creature until end o
     engine tests: 5,392, all passing
 
 Coverage: 13,617 of 31,900 cards (+26), 34,489 of 59,888 lines (+38), against 676129d.
+
+## D1000 — "Whenever one or more [other] creatures [you control] die" (Morbid Opportunist)
+
+From the refreshed prologue list: Morbid Opportunist, Sengir Connoisseur, Great Fierce Bee and the
+"nontoken / you control / your opponents control / artifact" spellings (about 20 lines).
+
+- A new `creatures-died` batch event, raised once per settle with every creature that died in it,
+  each read as it last was: who controlled it, whether it was a token, its types. A wrath fires it
+  once.
+- The filters are asked in `fireTrigger`, which knows the watcher: `other` leaves the watcher itself
+  out, and `nontoken`, `of` and `what: 'artifact'` need at least one creature in the batch to match.
+- A watcher that died in the same batch still sees the others go (CR 603.10a), so Morbid
+  Opportunist dying in a wrath still draws.
+- A noncreature permanent going to a graveyard is not in the batch.
+- Tribal spellings ("other Cats") and "attacking" are not read yet.
+
+**Tests.** 8 engine tests:
+- the cards read;
+- your Bear dies: "other" and "you control" fire; "your opponents control" and "artifact" do not;
+- your artifact creature dies: "artifact creatures you control" fires too;
+- a noncreature artifact destroyed fires nothing;
+- their Bear dies: "other" and "your opponents control" fire;
+- the watcher itself dying is not "other";
+- your token dying is not "nontoken";
+- a wrath fires each trigger once, including on the watchers that died in it.
+
+Faults injected by script: 11 of 11 caught (four after the artifact, noncreature and token pins).
+
+    engine tests: 5,405, all passing
+
+Coverage: 13,628 of 31,900 cards (+8), 34,502 of 59,888 lines (+10), measured against the tree
+after the D760 merge.
