@@ -30217,6 +30217,21 @@ function interveningConditionRows(
     };
     return (had[1] ?? '').toLowerCase() === 'no' ? (c) => count(c) === 0 : (c) => count(c) > 0;
   }
+  /*
+    D1016: five board and table facts, each read live as both asks of the intervening-if are made.
+  */
+  if (/^there is no monarch$/i.test(text)) return (c) => c.state.monarch === null;
+  if (/^you have the initiative$/i.test(text)) return (c) => c.state.initiative === c.controller;
+  if (/^(?:there are no creatures on the battlefield|no creatures are on the battlefield)$/i.test(text)) {
+    return (c) => c.state.seats.every((seat) => creaturesControlledBy(c.state, seat.index).length === 0);
+  }
+  const handOf = (c: EffectContext, seat: SeatIndex): number => (c.state.zones[`${seat}:hand`] ?? []).length;
+  if (/^you have more cards in hand than each opponent$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).every((seat) => handOf(c, c.controller) > handOf(c, seat));
+  }
+  if (/^an opponent has no cards in hand$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).some((seat) => handOf(c, seat) === 0);
+  }
   // "If this spell was cast from a graveyard" (D715): see `castFromAGraveyard`.
   if (/^this spell was cast from a graveyard$/i.test(text)) return castFromAGraveyard;
   /*

@@ -26353,6 +26353,43 @@ describe('"if it had counters on it" on a death (D1015)', () => {
   });
 });
 
+describe('intervening-if table facts: monarch, initiative, an empty battlefield, hand sizes (D1016)', () => {
+  const ask = (condition: string, s: GameState): boolean => {
+    const read = compileCard({ name: 'Test Asker', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: `At the beginning of your upkeep, if ${condition}, you gain 1 life.` } as never);
+    expect(read.ok && read.unread, condition).toEqual([]);
+    const trigger = read.ok ? read.script?.triggers?.[0] : undefined;
+    return trigger!.condition!({ state: s, controller: 0, source: 'none', targets: [], x: 0, decisions: [], kicked: false } as never);
+  };
+  const base = () => advanceTo(arena({ hands: { 0: ['Mountain', 'Mountain'], 1: ['Forest'] }, battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+  const emptyHand = (s: GameState, seat: number): GameState => ({ ...s, zones: { ...s.zones, [`${seat}:hand`]: [] } });
+
+  it('"there is no monarch" and "you have the initiative"', () => {
+    const s = base();
+    expect(ask('there is no monarch', s)).toBe(true);
+    expect(ask('there is no monarch', { ...s, monarch: 1 })).toBe(false);
+    expect(ask('you have the initiative', { ...s, initiative: 0 })).toBe(true);
+    expect(ask('you have the initiative', { ...s, initiative: 1 })).toBe(false);
+  });
+
+  it('"no creatures are on the battlefield", either side\'s creature counting', () => {
+    const empty = base();
+    expect(ask('no creatures are on the battlefield', empty)).toBe(true);
+    const theirs = advanceTo(arena({ battlefield: { 0: [], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0 }), 'precombat-main');
+    expect(ask('there are no creatures on the battlefield', theirs)).toBe(false);
+  });
+
+  it('"more cards in hand than each opponent" and "an opponent has no cards in hand"', () => {
+    const s = emptyHand(base(), 1);
+    const mine = (s.zones['0:hand'] ?? []).length;
+    expect(mine).toBeGreaterThan(0);
+    expect(ask('you have more cards in hand than each opponent', s)).toBe(true);
+    expect(ask('an opponent has no cards in hand', s)).toBe(true);
+    const even = { ...s, zones: { ...s.zones, '1:hand': s.zones['0:hand']! } };
+    expect(ask('you have more cards in hand than each opponent', even)).toBe(false);
+    expect(ask('an opponent has no cards in hand', even)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
