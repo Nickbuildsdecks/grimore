@@ -36723,3 +36723,27 @@ are printed on legal cards.
 Faults injected by script: 2, both caught (refusing the phrase, and dropping the second negation).
 
 Coverage: 14,199 of 31,900 cards (+8), 35,508 of 59,888 lines (+15).
+
+## D1046 — enters with counters if something happened this turn
+
+"Raid — ~ enters with two +1/+1 counters on it if you attacked this turn", "… if a creature died
+this turn" (morbid), "… if an opponent lost life this turn", "… if a permanent you controlled left
+the battlefield this turn" (revolt). About 30 legal lines.
+
+- `CardScript.entersWith.if`: a condition asked as the permanent arrives, by the arrival pass, of
+  the table and under its new controller. The context it gets has no event, no targets and no X.
+- `entersWithFromLine` reads "<enters with …> if <condition>" with the enters trigger's own
+  condition reader (`interveningConditionFor`). Only conditions that end "this turn" are taken:
+  they are facts of the table, where a condition about "it" would ask about an event a replacement
+  does not have.
+- A printed number only. X is applied where the cast is known, and no condition rides on it, so an
+  X with a condition stays unread.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and an X with a condition does not;
+- raid: no counters when cast before combat, two when cast after an attack;
+- morbid: none on a quiet turn, one after a creature died.
+
+Faults injected by script: 4. All are caught, the X refusal after the test asserted it.
+
+Coverage: 14,217 of 31,900 cards (+18), 35,527 of 59,888 lines (+19).
