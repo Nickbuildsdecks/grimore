@@ -78,6 +78,13 @@ export interface ManaCost {
    * (`canAfford`'s, and `payFrom`) may pay some of them with life instead. Absent means none.
    */
   readonly phyrexian?: readonly Color[];
+  /**
+   * The monocoloured hybrid symbols (D767, CR 107.4e): `{2/W}` is two generic **or** one white. Each
+   * is counted in `colors` as its colour, the cheaper half, so a check that knows nothing of this
+   * field still asks for real mana; `phyrexianWays` offers the two-generic half as well. A `{2/W}`
+   * is 2 towards mana value (CR 202.3f), which `costValue` adds.
+   */
+  readonly monoHybrid?: readonly Color[];
   readonly unsupported?: string;
 }
 
@@ -114,6 +121,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   let unsupported: string | undefined;
   const hybrids: ManaType[][] = [];
   const phyrexian: Color[] = [];
+  const monoHybrid: Color[] = [];
   const colors: Record<ManaType, number> = { ...EMPTY_POOL };
   for (const match of text.matchAll(SYMBOL)) {
     const symbol = (match[1] ?? '').trim().toUpperCase();
@@ -150,7 +158,14 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
       phyrexian.push(phy[1] as Color);
       continue;
     }
-    // Hybrid Phyrexian, snow, monocoloured hybrid: refused rather than guessed at.
+    // Monocoloured hybrid (D767): its colour, and noted, so two generic can be offered instead.
+    const mono = /^2\/([WUBRG])$/.exec(symbol);
+    if (mono !== null) {
+      colors[mono[1] as ManaType] += 1;
+      monoHybrid.push(mono[1] as Color);
+      continue;
+    }
+    // Hybrid Phyrexian and snow: refused rather than guessed at.
 
     unsupported ??= symbol;
   }
@@ -160,7 +175,11 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   const extra = xCount > 1 ? { xCount } : {};
   // Same reasoning as `xCount`: only written when there is one, so a cost with no hybrid symbol is
   // deep-equal to what it parsed to before this field existed.
-  const mixed = { ...(hybrids.length > 0 ? { hybrids } : {}), ...(phyrexian.length > 0 ? { phyrexian } : {}) };
+  const mixed = {
+    ...(hybrids.length > 0 ? { hybrids } : {}),
+    ...(phyrexian.length > 0 ? { phyrexian } : {}),
+    ...(monoHybrid.length > 0 ? { monoHybrid } : {}),
+  };
   return unsupported === undefined
     ? { generic, colors, x, ...extra, ...mixed }
     : { generic, colors, x, ...extra, ...mixed, unsupported };
@@ -170,7 +189,9 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
 export function costValue(cost: ManaCost): number {
   // A hybrid symbol is one mana towards the mana value, whichever half pays it (CR 202.3f).
   return cost.generic + MANA_TYPES.reduce((n, t) => n + cost.colors[t], 0)
-    + (cost.hybrids?.length ?? 0);
+    + (cost.hybrids?.length ?? 0)
+    // A `{2/W}` is counted once in `colors` and is worth 2 (D767, CR 202.3f).
+    + (cost.monoHybrid?.length ?? 0);
 }
 
 /** The cost with `extra` generic added — commander tax, kicker-style surcharges. */
@@ -548,19 +569,30 @@ export function canAfford(
  */
 export function phyrexianWays(cost: ManaCost): { readonly cost: ManaCost; readonly life: number }[] {
   const symbols = cost.phyrexian ?? [];
-  if (symbols.length === 0) return [{ cost, life: 0 }];
-  const ways: { cost: ManaCost; life: number }[] = [];
+  const monos = cost.monoHybrid ?? [];
+  if (symbols.length === 0 && monos.length === 0) return [{ cost, life: 0 }];
+  const ways: { cost: ManaCost; life: number; generics: number }[] = [];
   for (let mask = 0; mask < 1 << symbols.length; mask++) {
-    const colors = { ...cost.colors };
-    let life = 0;
-    symbols.forEach((colour, i) => {
-      if ((mask & (1 << i)) === 0) return;
-      colors[colour] -= 1;
-      life += 2;
-    });
-    ways.push({ cost: { ...cost, colors }, life });
+    // And each monocoloured hybrid paid as its colour or as two generic (D767).
+    for (let mono = 0; mono < 1 << monos.length; mono++) {
+      const colors = { ...cost.colors };
+      let life = 0;
+      let generics = 0;
+      symbols.forEach((colour, i) => {
+        if ((mask & (1 << i)) === 0) return;
+        colors[colour] -= 1;
+        life += 2;
+      });
+      monos.forEach((colour, i) => {
+        if ((mono & (1 << i)) === 0) return;
+        colors[colour] -= 1;
+        generics += 1;
+      });
+      ways.push({ cost: { ...cost, colors, generic: cost.generic + 2 * generics }, life, generics });
+    }
   }
-  return ways.sort((a, b) => a.life - b.life);
+  // Fewest life payments first, then the fewest symbols paid as two generic: the cheaper way.
+  return ways.sort((a, b) => a.life - b.life || a.generics - b.generics).map(({ cost: c, life }) => ({ cost: c, life }));
 }
 
 /**

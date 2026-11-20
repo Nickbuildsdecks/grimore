@@ -35956,3 +35956,36 @@ by the unread row.
 
 Coverage: 13,958 of 31,900 cards (+14), 35,109 of 59,888 lines (+18), measured against the merged
 tree with the other session's D766 (13,944 / 35,091).
+## D767 — Monocoloured hybrid: {2/W}
+
+The other refused cost symbol worth reading. **21 legal cards print `{2/X}` in their mana cost and
+could not be cast**: Spectral Procession, Beseech the Queen, Flame Javelin, Reaper King,
+Advice from the Fae and the rest. Found by asking `parseManaCost` of every legal mana cost what it
+refuses. The tail of that list is 4 hybrid-Phyrexian planeswalkers (`{G/U/P}`) and 2 snow costs,
+which stay refused.
+
+- `parseManaCost` counts a `{2/W}` as one white in `colors`, the cheaper half, and notes it in
+  `ManaCost.monoHybrid`. So, as with D766, a check that knows nothing of the field never
+  undercharges.
+- `costValue` adds one for each, since a `{2/W}` is 2 towards mana value (CR 202.3f).
+- `phyrexianWays` also enumerates each monocoloured symbol paid as its colour or as two generic:
+  fewest life payments first, then the fewest paid as two. `canAfford` and `payFrom` take the
+  first way that can be covered, so the colour is spent where there is one and generic mana
+  covers the rest.
+
+**Tests.** 5 engine tests (one is a parse test):
+- `{2/W}{2/W}{2/W}` parses as three white, noted, mana value six, and the card reads;
+- three Plains pay it as white, tapping three lands;
+- six Mountains pay it as generic;
+- one Plains and four Mountains: one white and two twos, five lands;
+- five Mountains are not enough, and it is not offered.
+
+D766's mana.test.ts row that still held `{2/W}` as refused now asserts that it reads, and the
+"first unsupported symbol" row uses snow and hybrid Phyrexian.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,534, all passing (merged with the other session's D1025)
+
+Coverage: unchanged at 13,941 of 31,900 cards and 35,085 of 59,888 lines against 6db1f99. These
+cards' lines were already read; what changed is that they can be cast.

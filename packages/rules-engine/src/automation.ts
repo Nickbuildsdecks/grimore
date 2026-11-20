@@ -4603,13 +4603,13 @@ function payFrom(
     The life is paid here, as part of the cost, before anything is tapped.
   */
   let cost = charged;
-  if ((charged.phyrexian ?? []).length > 0) {
+  if ((charged.phyrexian ?? []).length > 0 || (charged.monoHybrid ?? []).length > 0) {
     const budget = lifeLocked(state, seat) ? 0 : Math.max(0, (state.seats[seat]?.life ?? 0) - 1);
     const way = phyrexianPayment(poolOf(state, seat), charged,
       manaSources(state, seat, paying).filter((source) => exclude?.has(source.key) !== true), x, budget);
-    if (way !== null && way.life > 0) {
+    if (way !== null) {
       cost = way.cost;
-      next = loseLife(next, seat, way.life);
+      if (way.life > 0) next = loseLife(next, seat, way.life);
     }
   }
   let tapped: readonly string[] = [];

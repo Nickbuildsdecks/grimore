@@ -27246,6 +27246,54 @@ describe('a trailing "if" (D1026)', () => {
   });
 });
 
+describe('monocoloured hybrid: {2/W} is two generic or one white (D767)', () => {
+  const PROCESSION = { name: 'Test Procession', type_line: 'Sorcery', mana_cost: '{2/W}{2/W}{2/W}', cmc: 6, colors: ['W'], layout: 'normal', oracle_text: 'Create three 1/1 white Spirit creature tokens with flying.' };
+  const deck = customDeck({
+    id: 'd767', name: 'Monocoloured hybrid',
+    entries: [{ name: 'Test Procession', count: 2 }, { name: 'Plains', count: 29 }, { name: 'Mountain', count: 29 }],
+    data: [PROCESSION] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd767', 1: 'd767' }, deckSpecs: { d767: deck.deck },
+    hands: { 0: ['Test Procession'] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Procession'));
+  const cast = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Procession') })));
+  const spirits = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n.includes('Spirit')).length;
+  const tapped = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+
+  it('parses as three white, noted, mana value six', () => {
+    const cost = parseManaCost('{2/W}{2/W}{2/W}');
+    expect(cost.unsupported).toBeUndefined();
+    expect(cost.colors.W).toBe(3);
+    expect(cost.monoHybrid).toEqual(['W', 'W', 'W']);
+    expect(costValue(cost)).toBe(6);
+    expect(compileCard(PROCESSION as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three Plains pay it as white: three lands tapped', () => {
+    const s = cast(table(['Plains', 'Plains', 'Plains', 'Mountain', 'Mountain', 'Mountain']));
+    expect(spirits(s)).toBe(3);
+    expect(tapped(s)).toBe(3);
+  });
+
+  it('six Mountains pay it as generic', () => {
+    const s = table(['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain']);
+    expect(offered(s)).toBe(true);
+    expect(spirits(cast(s))).toBe(3);
+  });
+
+  it('one Plains and four Mountains: one white, two twos', () => {
+    const s = cast(table(['Plains', 'Mountain', 'Mountain', 'Mountain', 'Mountain']));
+    expect(spirits(s)).toBe(3);
+    expect(tapped(s)).toBe(5);
+  });
+
+  it('five Mountains are not enough, and it is not offered', () => {
+    expect(offered(table(['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain']))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
