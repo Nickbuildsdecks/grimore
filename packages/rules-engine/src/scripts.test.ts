@@ -29040,6 +29040,73 @@ describe('"~ or enchanted creature deals combat damage" (D774)', () => {
     expect(drawsFrom(s, ['Test Ox'])).toBe(1);
   });
 });
+describe('reconfigure (D775)', () => {
+  const LIZARD = { name: 'Test Lizard', type_line: 'Artifact Creature — Equipment Lizard', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Equipped creature gets +2/+2.\nReconfigure {2}' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd775', name: 'Reconfigure',
+    entries: [{ name: 'Test Lizard', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Forest', count: 54 }],
+    data: [LIZARD, OX] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd775', 1: 'd775' }, deckSpecs: { d775: deck.deck },
+    battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Test Lizard', 'Test Ox'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ch = (s: GameState, name: string) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+  const attach = (s: GameState) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Lizard'), abilityIndex: 0,
+    targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Ox') }],
+  })));
+
+  it('reads, and cannot attach to itself', () => {
+    expect(compileCard(LIZARD as never)).toMatchObject({ ok: true, unread: [] });
+    const s = table();
+    const lizard = find(s, 0, 'battlefield', 'Test Lizard');
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: lizard, abilityIndex: 0, targets: [{ kind: 'card', id: lizard }] })).toBeTruthy();
+  });
+
+  it('attached: the host gets the bonus and the Equipment stops being a creature', () => {
+    const s = attach(table());
+    expect(ch(s, 'Test Ox').power).toBe(4);
+    expect(ch(s, 'Test Lizard').isCreature).toBe(false);
+    expect(ch(s, 'Test Lizard').typeLine.subtypes).toEqual(['Equipment']);
+  });
+
+  it('unattached for the same cost: a creature again, and the bonus is gone', () => {
+    let s = attach(table());
+    const lizard = find(s, 0, 'battlefield', 'Test Lizard');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === lizard && p.abilityIndex === 1)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: lizard, abilityIndex: 1 })));
+    expect(ch(s, 'Test Lizard').isCreature).toBe(true);
+    expect(ch(s, 'Test Ox').power).toBe(2);
+  });
+
+  it('the unattach is not offered while it is unattached', () => {
+    const s = table();
+    const lizard = find(s, 0, 'battlefield', 'Test Lizard');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === lizard && p.abilityIndex === 1)).toBe(false);
+  });
+
+  it('the bot does not attach and unattach back and forth in one turn', () => {
+    let s = table();
+    let activations = 0;
+    for (let i = 0; i < 40 && s.step === 'precombat-main'; i++) {
+      const seat = s.priority ?? s.activeSeat;
+      const action = botAction(s, seat as never);
+      if (action === null) break;
+      if (action.type === 'auto:activate' && action.card === find(s, 0, 'battlefield', 'Test Lizard')) activations += 1;
+      s = drain(apply(s, action));
+    }
+    expect(activations).toBeLessThanOrEqual(1);
+  });
+
+  it('when the host dies, it comes unattached and is a creature again', () => {
+    let s = attach(table());
+    s = drain(destroy(s, find(s, 0, 'battlefield', 'Test Ox')));
+    expect(ch(s, 'Test Lizard').isCreature).toBe(true);
+    expect(ch(s, 'Test Lizard').power).toBe(2);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

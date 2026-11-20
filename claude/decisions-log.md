@@ -54491,3 +54491,39 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 14,288 to 14,310 of 31,900 cards with every line read, and 35,620 to 35,685 of 59,888
 lines, against bdad2c5.
+
+## D775 — Reconfigure
+
+21 legal cards print Reconfigure (CR 702.151), the Kamigawa Equipment creatures: Lion Sash, Lizard
+Blades, Acquisition Octopus and the rest. The engine had no notion of it, so each was a creature with
+an unread keyword and an unread bonus line.
+
+- `attachmentScriptFor` reads "Reconfigure {cost}" as the equip line, so the attach ability and the
+  bonus are the ones every Equipment already uses. The card must be a creature.
+- The equip ability's target filter now excludes the Equipment itself, which only a reconfigure
+  creature could ever have targeted.
+- An unattach ability for the same cost, also sorcery speed, offered only while it is attached
+  (`activateOnlyIf`).
+- `characteristicsOf`: an attached permanent printing Reconfigure is not a creature and has no
+  creature types (`reconfiguredTypeLine`, beside `bestowTypeLine`). Unattached, whether by its
+  ability or because its host left (CR 301.5c), it is a creature again.
+- **The bot never unattaches** (`buysNothingIf`). A test caught it attaching and unattaching in one
+  main phase, spending mana twice to end where it started. A person can still press it.
+
+**18 of the 21** now read their Reconfigure and bonus lines (8 more cards read whole: some print other lines this does not read). The other three: a bonus that sets base power and toughness and
+adds types, a quoted "can't lose the game" grant, and a cost paid in mana or energy.
+
+**Tests.** 6 engine tests: the card reads and cannot attach to itself; attached, the host gets +2/+2
+and the Equipment is not a creature, with only "Equipment" left in its subtypes; unattached for the
+same cost it is a creature again and the bonus is gone; the unattach is not offered while it is
+unattached; when the host dies it comes unattached and is a 2/2 creature again; the bot does not
+attach and unattach in one turn.
+
+Faults injected by script: 6 of 7 caught. The miss leaves the bonus effect in place when the ability
+unattaches; the CR 301.5c check in the state-based actions removes an unattached Equipment's bonus
+anyway, so the card behaves the same.
+
+    engine tests: 5,656, all passing (on c3fc7cc)
+
+Coverage: 14,310 to 14,318 of 31,900 cards with every line read, and 35,685 to 35,711 of 59,888
+lines, against c3fc7cc.

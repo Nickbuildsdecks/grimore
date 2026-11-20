@@ -42,7 +42,7 @@ import {
   createEmblem, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
-  putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
+  putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED, MONSTROUS,
@@ -592,7 +592,9 @@ export const equipFragment = (
         filter: (state, candidate, controller, source) =>
           creatureYouControl(state, candidate, controller)
           && !(candidate.kind === 'card' && source !== undefined
-            && state.instances[source]?.attachedTo === candidate.id),
+            && state.instances[source]?.attachedTo === candidate.id)
+          // Never itself: a reconfigure creature equips another creature (D775).
+          && !(candidate.kind === 'card' && candidate.id === source),
       }],
       effect: (c) => {
         const host = firstCardTarget(c);
@@ -16680,10 +16682,14 @@ export function attachmentScriptFor(
     };
   }
 
+  // Reconfigure (D775, CR 702.151) is the equip ability on a creature, plus an unattach for the
+  // same cost; the type change while attached is `characteristicsOf`'s.
   const equip = lines
-    .map((line) => /^equip\s*(\{[^\n]+\})$/i.exec(plain(line).trim()))
+    .map((line) => /^(?:equip|reconfigure)\s*(\{[^\n]+\})$/i.exec(plain(line).trim()))
     .find((m) => m !== null);
   if (equip === undefined || equip === null) return null;
+  const reconfigures = /^reconfigure/i.test(plain(equip.input).trim());
+  if (reconfigures && !hasType(typeLine, 'creature')) return null;
   /*
     **The bonus is hoisted** (D547), because two things need it now: the equip ability, and the
     trigger of an Equipment that attaches itself. It was built inline inside `equipFragment`'s
@@ -16804,7 +16810,7 @@ export function attachmentScriptFor(
     return null;
   })();
 
-  return {
+  const built: WholeCardReading = {
     fragment: {
       ...equipFragment(
         equip[1]!,
@@ -16862,6 +16868,29 @@ export function attachmentScriptFor(
       // And the arrival line, which is now accounted for rather than recognised-and-ignored.
       ...(arrival === null ? [] : [arrival.line]),
     ],
+  };
+  if (!reconfigures) return built;
+  /*
+    Reconfigure's other half (D775): "or unattach from a creature", for the same cost and also only
+    as a sorcery, offered only while it is attached. Unattached, it is a creature again.
+  */
+  const cost = equip[1]!;
+  const unattach: AbilityDef = {
+    cost: { mana: cost },
+    sorcerySpeed: true,
+    description: `Reconfigure ${cost} — unattach it`,
+    activateOnlyIf: (state, source) => state.instances[source]?.attachedTo != null,
+    // A player's choice, never the bot's: it attached for a reason, and the Equipment comes off by
+    // itself when its host dies. Without this the bot attached and unattached in one main phase.
+    buysNothingIf: () => true,
+    effect: (c) => removeEffectsFrom(withInstance(c.state, c.source, { attachedTo: null }), c.source),
+  };
+  return {
+    ...built,
+    fragment: {
+      ...built.fragment,
+      abilities: [...(built.fragment.abilities ?? []), unattach],
+    },
   };
 }
 
