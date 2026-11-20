@@ -53996,3 +53996,34 @@ Faults injected by script: 5, all caught (the dropped bookkeeping of the read li
 converted D487 test).
 
 Coverage: 14,150 of 31,900 cards (+6), 35,388 of 59,888 lines (+6).
+## D772 — "As though it weren't blocked", granted
+
+D770's choice, given by other cards:
+
+- **Predatory Focus**: "You may have creatures you control assign their combat damage this turn as
+  though they weren't blocked." A spell clause, read as a pump of your creatures until end of turn
+  that carries the flag (`PumpOptions.assignsAsUnblocked` → `ContinuousEffect.assignsAsUnblocked`
+  → `Characteristics.assignsAsUnblocked`).
+- **Gurzigost**: "{G}{G}, Discard a card: You may have ~ assign its combat damage this turn as
+  though it weren't blocked." The same clause, of the creature itself. Its upkeep line ("sacrifice
+  it unless you put two cards from your graveyard on the bottom of your library") is still unread.
+- **Indomitable Might**: "Enchanted creature's controller may have it assign its combat damage as
+  though it weren't blocked", after "Enchanted creature gets +3/+3". `attachmentScriptFor` reads one
+  bonus line, so this second line is merged into it on the plain Aura path and claimed. On its own it
+  is read by `attachmentBonus`.
+
+The choice is still asked with the damage order, exactly as for a creature that prints it.
+
+Not yet: Garruk, Savage Herald's −7 and Proud Wildbonder grant it as a quoted ability, Siege Behemoth
+and Ruxa grant it under a condition, and Outmaneuver gives it to X targets.
+
+**Tests.** 4 engine tests: the three cards read; the instant gives the choice to your creatures
+that turn (before it, a blocked creature owes nothing); the activated ability gives it to the
+creature itself; the Aura gives it to the creature it enchants.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,596, all passing (merged with the other session's D1038)
+
+Coverage: 14,143 to 14,145 of 31,900 cards with every line read, and 35,378 to 35,381 of 59,888
+lines, against 04eda22.

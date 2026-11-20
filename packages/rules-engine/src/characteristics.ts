@@ -1652,6 +1652,8 @@ export interface ContinuousEffect {
   readonly lure?: boolean;
   /** "Can't be blocked by more than one creature" (D937, CR 509.1b). */
   readonly blockedByOne?: boolean;
+  /** "May assign its combat damage as though it weren't blocked", granted (D772). */
+  readonly assignsAsUnblocked?: boolean;
   /** "Its activated abilities can't be activated" (D943): Arrest, mana abilities included. */
   readonly cantActivate?: boolean;
   /** "… unless they're mana abilities" (D944): Faith's Fetters, which leaves the mana abilities. */
@@ -3239,6 +3241,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.mustBeBlocked) mustBeBlocked = true;
     if (effect.lure) lure = true;
     if (effect.blockedByOne) blockedByOne = true;
+    if (effect.assignsAsUnblocked) assignsAsUnblocked = true;
     if (effect.cantActivate) cantActivate = true;
     if (effect.cantActivateNonMana) cantActivateNonMana = true;
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {

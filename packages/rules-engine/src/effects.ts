@@ -2812,6 +2812,8 @@ export interface PumpOptions {
   readonly lure?: boolean;
   /** See `ContinuousEffect.blockedByOne` (D937). */
   readonly blockedByOne?: boolean;
+  /** See `ContinuousEffect.assignsAsUnblocked` (D772). */
+  readonly assignsAsUnblocked?: boolean;
   /** See `ContinuousEffect.cantActivate` (D943). */
   readonly cantActivate?: boolean;
   /** See `ContinuousEffect.cantActivateNonMana` (D944). */
@@ -2916,6 +2918,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.mustBeBlocked ? { mustBeBlocked: true } : {}),
     ...(opts.lure ? { lure: true } : {}),
     ...(opts.blockedByOne ? { blockedByOne: true } : {}),
+    ...(opts.assignsAsUnblocked ? { assignsAsUnblocked: true } : {}),
     ...(opts.cantActivate ? { cantActivate: true } : {}),
     ...(opts.cantActivateNonMana ? { cantActivateNonMana: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
