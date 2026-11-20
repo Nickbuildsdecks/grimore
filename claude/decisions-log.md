@@ -54378,3 +54378,32 @@ D602's row that held "a modified creature" as refused now holds "a face-down cre
 
 Coverage: 14,241 to 14,248 of 31,900 cards with every line read, and 35,560 to 35,571 of 59,888
 lines, against 760997f.
+
+## D1052 — counters on the token just made
+
+"When this enchantment enters, create a 0/0 green and blue Fractal creature token. Put three +1/+1
+counters on it." Additive Evolution and Recon Craft Theta were counted as read and were wrong. "It"
+fell back to the source, so the counters went on the enchantment or the Vehicle, and the 0/0 token
+died to the state-based actions.
+
+- `clausesOf` holds "create a(n) … token(s). Put N / X +1/+1 counters on it/them[, where X is …]"
+  together as one clause.
+- `readEffect` reads the token clause as it always did. It then puts the counters on exactly the
+  instances that effect created, which are the tokens, since nothing else arrives during one effect
+  (a trigger they cause waits for the stack).
+- N is printed. X is the X paid (Fractal Summoning), or a count `countTailOf` reads (Leyline
+  Invocation's lands, Manifestation Sage's hand).
+- A fix for two misread cards as well as new ones: Additive Evolution and Recon Craft Theta now do
+  what they print. Counts the vocabulary does not have (cards in your library, differently named
+  lands) stay unread.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- the Fractal is a 3/3, and the enchantment that made it has no counters;
+- X paid makes a 2/2; a second Summon puts its counter on the new Fractal only; and X counted from
+  three lands makes a 3/3.
+
+Faults injected by script: 4. 3 are caught, one after the second-Summon assertion. The 4th was a
+token-and-battlefield filter on the new instances that nothing else can be, and it was folded away.
+
+Coverage: 14,262 of 31,900 cards (+7), 35,590 of 59,888 lines (+12).
