@@ -36372,7 +36372,7 @@ owes its order; the toggle does nothing for an attacker the engine did not offer
 
 Faults injected by script: 7 of 7 caught.
 
-    engine tests: 5,579, all passing (on 5d43a1a)
+    engine tests: 5,583, all passing (merged with the other session's D1035)
 
 Coverage: 14,101 to 14,110 of 31,900 cards with every line read, and 35,323 to 35,332 of 59,888
 lines, against 5d43a1a.
