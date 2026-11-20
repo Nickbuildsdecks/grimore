@@ -2875,6 +2875,14 @@ export interface CardScript {
    * state-based actions. On an instant or sorcery, the check is made once as it resolves, first.
    */
   readonly ascend?: true;
+  /**
+   * "You may choose not to untap ~ during your untap step" (D1041, CR 502.3): Vedalken Shackles,
+   * Helm of Possession, Willow Satyr. The untap step keeps it tapped while it holds a control change
+   * that lasts "for as long as ~ remains tapped" (D1040), and untaps it otherwise: the table
+   * answers the choice the way its controller wants it answered, since keeping one down for
+   * nothing has no use the engine models.
+   */
+  readonly mayStayTapped?: true;
   /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
   /** "Choose one —". See `ModalDef`. */

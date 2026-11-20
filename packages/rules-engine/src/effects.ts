@@ -2053,7 +2053,8 @@ export function becomeMonarch(state: GameState, seat: SeatIndex): GameState {
 }
 
 export function untapAll(
-  state: GameState, seat: SeatIndex, opts: { readonly othersStep?: boolean } = {},
+  state: GameState, seat: SeatIndex,
+  opts: { readonly othersStep?: boolean; readonly keep?: ReadonlySet<string> } = {},
 ): GameState {
   let next = state;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
@@ -2078,6 +2079,8 @@ export function untapAll(
     }
     // And one held down for as long as an effect says so (D589): Apathy, a Basalt Monolith.
     if (inst.tapped && characteristicsOf(next, inst).doesntUntap) continue;
+    // And one its controller chose to keep tapped (D1041, CR 502.3): see `CardScript.mayStayTapped`.
+    if (opts.keep?.has(id) === true) continue;
     // Through the stun counter's replacement (D723, CR 122.1d).
     if (inst.tapped) next = untapPermanent(next, id);
   }

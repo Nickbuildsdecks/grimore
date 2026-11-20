@@ -7988,6 +7988,8 @@ describe('deck coverage', () => {
       'trigger state',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
       'script ascend',
+      // D1041: "you may choose not to untap ~" (Helm of Possession); no pool deck plays one.
+      'script mayStayTapped',
     ]);
 
     const declared = [
@@ -28303,6 +28305,67 @@ describe('control for as long as the terms hold (D1040)', () => {
       s = nextTurn(s);
       expect(s.instances[bear]!.zoneSeat, card).toBe(1);
     }
+  });
+});
+
+describe('"you may choose not to untap ~" (D1041)', () => {
+  const ROWS = [
+    { name: 'Test Satyr', type_line: 'Creature — Satyr', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'You may choose not to untap Test Satyr during your untap step.\n{T}: Gain control of target creature for as long as you control Test Satyr and Test Satyr remains tapped.' },
+    { name: 'Test Kill', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1041', name: 'Stay tapped', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const held = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1041', 1: 'd1041' }, deckSpecs: { d1041: deck.deck },
+      battlefield: { 0: ['Forest', 'Test Satyr'], 1: ['Forest', 'Test Bear'] }, hands: { 0: ['Test Kill'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const satyr = find(s, 0, 'battlefield', 'Test Satyr');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: satyr, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    return { s, bear, satyr };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.mayStayTapped).toBe(true);
+  });
+
+  it('kept tapped through its own untap step while it holds the Bear', () => {
+    let { s, bear, satyr } = held();
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[satyr]!.tapped).toBe(true);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+  });
+
+  /*
+    A tripwire, not a feature. The table answers "you may choose not to untap" only for a control
+    change that needs it (see `CardScript.mayStayTapped`). A storage land keeps itself tapped to
+    gain counters, a choice the table cannot make for its controller, so it must stay flagged for a
+    human. Its storage mana ability is unread today; whoever reads it has to give this choice a real
+    question first.
+  */
+  it('a storage land is not claimed: keeping it tapped is a choice the table cannot make', () => {
+    const vault = compileCard({
+      name: 'Bottomless Vault', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: 'Bottomless Vault enters tapped.\nYou may choose not to untap Bottomless Vault during your untap step.\n'
+        + 'At the beginning of your upkeep, if Bottomless Vault is tapped, put a storage counter on it.\n'
+        + '{T}, Remove any number of storage counters from Bottomless Vault: Add {B} for each storage counter removed this way.',
+    } as never);
+    expect(vault.ok && vault.unread.length).toBeGreaterThan(0);
+  });
+
+  it('with nothing held it untaps as usual', () => {
+    let { s, bear, satyr } = held();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[satyr]!.tapped).toBe(false);
   });
 });
 

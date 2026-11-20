@@ -11459,6 +11459,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'improvise') return { improvise: true };
   // Ascend (D762): see `CardScript.ascend`.
   if (word === 'ascend') return { ascend: true };
+  // "You may choose not to untap ~ during your untap step" (D1041): see `CardScript.mayStayTapped`.
+  if (new RegExp(`^you may choose not to untap ${selfRef(name)} during your untap step\\.?$`, 'i').test(text)) return { mayStayTapped: true };
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
   if (word === 'dethrone') return { triggers: [DETHRONE_TRIGGER] };

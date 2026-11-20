@@ -905,7 +905,19 @@ function onEnterStep(state: GameState, step: Step): GameState {
         });
         next = phaseOut(phaseIn(next, next.activeSeat), phasing);
       }
-      next = untapAll(next, next.activeSeat);
+      /*
+        "You may choose not to untap ~ during your untap step" (D1041, CR 502.3): kept tapped while
+        it holds a "for as long as ~ remains tapped" control change (D1040), the one reason to.
+        Only in its controller's own untap step: Seedborn Muse's untap below is in somebody else's,
+        where the card offers no choice.
+      */
+      const keep = new Set(listAt(next, zoneKey(next.activeSeat, 'battlefield')).filter((id) => {
+        const inst = next.instances[id];
+        return inst !== undefined && inst.tapped && !allAbilitiesLost(next, inst)
+          && scriptForCard(next.cardDefs[inst.defKey])?.mayStayTapped === true
+          && next.effects.some((e) => e.source === id && e.controlWhile?.tapped === true);
+      }));
+      next = untapAll(next, next.activeSeat, { keep });
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
       for (const seat of next.seats) {
         if (seat.index !== next.activeSeat && !seat.eliminated && untapsDuringOthersUntap(next, seat.index)) {
