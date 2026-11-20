@@ -48,7 +48,7 @@ import {
   canPayLife, lifeLocked, drawLater, energyOf, opponentsOf, exileCard, loseLife, mill, moveToGraveyard, moveToHand, sacrifice, spendEnergy,
   suspendedCast,
   madnessOffer, miracleOffer,
-  gainControl, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
+  gainControl, controlTermsHold, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
@@ -2672,6 +2672,9 @@ function auraControl(state: GameState): GameState {
   const chainOn = (host: string): ContinuousEffect[] => next.effects.filter((e) => e.duration === 'permanent'
     && e.controlRevertTo !== undefined && e.scope.kind === 'cards' && e.scope.ids[0] === host);
   const holds = (effect: ContinuousEffect): boolean => {
+    // "For as long as you control ~" and the rest (D1040). A stolen permanent that leaves takes its
+    // effects with it on the way out, so only the terms are asked here.
+    if (effect.controlWhile !== undefined) return controlTermsHold(next, effect.source, effect.controller, effect.controlWhile);
     const aura = next.instances[effect.source];
     return effect.scope.kind === 'cards' && aura !== undefined && aura.zone === 'battlefield'
       && aura.attachedTo === effect.scope.ids[0] && !allAbilitiesLost(next, aura);

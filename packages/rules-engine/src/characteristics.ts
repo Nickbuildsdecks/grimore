@@ -2217,6 +2217,14 @@ export interface ContinuousEffect {
    * this when the effect expires and moves the permanent home.
    */
   readonly controlRevertTo?: SeatIndex;
+  /**
+   * "Gain control of target creature for as long as you control ~" (D1040): the terms that keep a
+   * `permanent` control change with `controlRevertTo` in force. The source must be on the
+   * battlefield; `controlled` adds that its controller is still the effect's controller ("you
+   * control ~"), `tapped` that it is still tapped ("~ remains tapped"). `auraControl` drops the
+   * effect, and sends the permanent home, the first time a settle finds them false.
+   */
+  readonly controlWhile?: { readonly controlled?: boolean; readonly tapped?: boolean };
 }
 
 export interface Characteristics {

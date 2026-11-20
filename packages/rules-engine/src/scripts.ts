@@ -35,7 +35,7 @@ import {
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
-  REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget,
+  REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
@@ -25446,6 +25446,31 @@ function readEffect(
     a permanent is on here), and nothing moves it back. "Until end of turn" and "for as long as"
     are other sentences and are not read here.
   */
+  /*
+    "Gain control of target creature for as long as you control ~" (D1040), and "… as long as ~
+    remains on the battlefield", "… remains tapped", "… you control ~ and ~ remains tapped":
+    `stealWhile`, whose effect ends when the terms do. Other terms ("as long as that creature is
+    enchanted", "as long as they're the monarch") are not read.
+  */
+  const self = `(?:${selfRef(name)}|this (?:creature|artifact|enchantment|vehicle|saga))`;
+  const whileTerms = new RegExp(`^gain control of ((?:up to one )?target .+?) for as long as (?:(you control ${self})(?: and ${self} (remains tapped))?|${self} (remains on the battlefield|remains tapped))$`, 'i')
+    .exec(clause.trim());
+  if (whileTerms !== null) {
+    const spec = targetSpecFrom(whileTerms[1]!, false);
+    const terms = {
+      ...(whileTerms[2] !== undefined ? { controlled: true } : {}),
+      ...(whileTerms[3] !== undefined || /tapped/i.test(whileTerms[4] ?? '') ? { tapped: true } : {}),
+    };
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : stealWhile(c.state, id, c.controller, c.source, terms);
+        },
+      };
+    }
+  }
   const takes = /^gain control of (target .+)$/i.exec(clause.trim());
   if (takes !== null && !/\b(?:until end of turn|for as long as)\b/i.test(takes[1]!)) {
     const spec = targetSpecFrom(takes[1]!, false);

@@ -28200,6 +28200,112 @@ describe('"as though it weren\'t blocked", granted (D772)', () => {
     expect(life(goFree(swingAndBlock(s, 'Test Ox')), 1)).toBe(14);
   });
 });
+describe('control for as long as the terms hold (D1040)', () => {
+  const C = (name: string, text: string, pt = '1/1') => ({ name, type_line: 'Creature — Faerie', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    power: pt.split('/')[0], toughness: pt.split('/')[1], oracle_text: text });
+  const ROWS = [
+    C('Test Sower', 'When Test Sower enters, gain control of target creature for as long as Test Sower remains on the battlefield.'),
+    C('Test Lord', 'When Test Lord enters, gain control of target creature for as long as you control Test Lord.'),
+    { name: 'Test Shackles', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: '{T}: Gain control of target creature for as long as Test Shackles remains tapped.' },
+    { name: 'Test Helm', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: '{T}: Gain control of target creature for as long as you control Test Helm and Test Helm remains tapped.' },
+    { name: 'Test Kill', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1040', name: 'As long as', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 36 }], data: ROWS as never[] });
+  const table = (hand: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1040', 1: 'd1040' }, deckSpecs: { d1040: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: ['Island', 'Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts `card` from seat 0's hand and resolves it, aiming any trigger at seat 1's Bear. */
+  const enter = (s: GameState, card: string, bear: string) => {
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+    if (s.pendingChoice !== null) s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] }), 30);
+    return s;
+  };
+  const kill = (s: GameState, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: target }],
+  } as Action)), 30);
+
+  it('reads every row whole, with its terms', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"remains on the battlefield": the Bear stays while the Sower does, and goes home when it dies', () => {
+    let s = table(['Test Sower', 'Test Kill']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = enter(s, 'Test Sower', bear);
+    s = drain(passBoth(s), 30);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    expect(s.effects.find((e) => e.controlWhile !== undefined)).toMatchObject({ controlRevertTo: 1, controlWhile: {} });
+    s = kill(s, find(s, 0, 'battlefield', 'Test Sower'));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
+    expect(s.effects.some((e) => e.controlWhile !== undefined)).toBe(false);
+  });
+
+  it('"you control ~": gone before it resolves, nothing changes hands (CR 611.2b)', () => {
+    let s = table(['Test Lord', 'Test Kill']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Lord') } as Action));
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] });
+    // The trigger is on the stack; the Lord dies in response.
+    expect(s.stackOrder.length).toBe(1);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Lord') }] } as Action), 30);
+    s = drain(passBoth(s), 30);
+    s = drain(passBoth(s), 30);
+    expect(s.stackOrder.length).toBe(0);
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
+    expect(s.effects.some((e) => e.controlWhile !== undefined)).toBe(false);
+    // Not taken and handed back either: a control change would have marked it for echo (D760).
+    expect(s.instances[bear]!.echoDue).not.toBe(true);
+  });
+
+  it('"you control ~": when the Lord changes hands, the Bear goes back; the Sower\'s steal does not care', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1040', 1: 'd1040' }, deckSpecs: { d1040: deck.deck },
+      battlefield: { 0: ['Island'], 1: ['Island', 'Test Bear'] }, hands: { 0: ['Test Lord'], 1: ['Test Sower'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(enter(s, 'Test Lord', bear)), 30);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    const lord = find(s, 0, 'battlefield', 'Test Lord');
+    // Seat 1's Sower takes the Lord: the Lord's terms fail, and the Bear goes home.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Sower') } as Action)), 30);
+    if (s.pendingChoice !== null) s = drain(apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: lord }] }), 30);
+    s = drain(passBoth(s), 30);
+    expect(s.instances[lord]!.zoneSeat).toBe(1);
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
+    expect(s.effects.filter((e) => e.controlWhile !== undefined).map((e) => e.controlWhile)).toEqual([{}]);
+  });
+
+  it('a stolen permanent that leaves takes the effect with it', () => {
+    let s = table(['Test Sower', 'Test Kill']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(enter(s, 'Test Sower', bear)), 30);
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    s = kill(s, bear);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.effects.some((e) => e.controlWhile !== undefined)).toBe(false);
+  });
+
+  it('"remains tapped": held through the turn, and back when the untap step untaps it', () => {
+    for (const card of ['Test Shackles', 'Test Helm']) {
+      let s = table([], [card]);
+      const bear = find(s, 1, 'battlefield', 'Test Bear');
+      s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', card), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+      expect(s.instances[bear]!.zoneSeat, card).toBe(0);
+      s = nextTurn(s);
+      expect(s.instances[bear]!.zoneSeat, card).toBe(0);
+      s = nextTurn(s);
+      expect(s.instances[bear]!.zoneSeat, card).toBe(1);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

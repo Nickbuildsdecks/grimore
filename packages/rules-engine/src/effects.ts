@@ -2701,6 +2701,51 @@ export function gainControl(state: GameState, id: string, seat: SeatIndex): Game
 }
 
 /**
+ * Whether a "for as long as" control change still holds (D1040): its source on the battlefield,
+ * and, as its terms ask, still controlled by `controller` and still tapped. A phased-out source is
+ * not on the battlefield, so its control change ends too (CR 702.26b).
+ */
+export function controlTermsHold(
+  state: GameState, source: string, controller: SeatIndex,
+  terms: { readonly controlled?: boolean; readonly tapped?: boolean },
+): boolean {
+  const from = state.instances[source];
+  if (from === undefined || from.zone !== 'battlefield') return false;
+  if (terms.controlled === true && from.zoneSeat !== controller) return false;
+  return terms.tapped !== true || from.tapped;
+}
+
+/**
+ * "Gain control of target creature for as long as you control ~ / ~ remains on the battlefield /
+ * ~ remains tapped" (D1040): Sower of Temptation, Vedalken Shackles, Dragonlord Silumgar.
+ *
+ * The control move, and a `permanent` effect with `controlRevertTo` and the terms, which
+ * `auraControl` keeps true of the board the way it keeps a control Aura's (D938): the newest
+ * change on a permanent holds it, and when the terms fail the permanent goes back. If the terms
+ * are already false as it resolves — the Sower bounced in response — the duration ended before it
+ * began and nothing changes hands (CR 611.2b).
+ */
+export function stealWhile(
+  state: GameState, id: string, controller: SeatIndex, source: string,
+  terms: { readonly controlled?: boolean; readonly tapped?: boolean },
+): GameState {
+  const target = state.instances[id];
+  if (target === undefined || target.zone !== 'battlefield') return state;
+  if (!controlTermsHold(state, source, controller, terms)) return state;
+  const from = target.zoneSeat;
+  const next = from === controller ? state : gainControl(state, id, controller);
+  const seq = next.autoSeq + 1;
+  return {
+    ...next,
+    autoSeq: seq,
+    effects: [...next.effects, {
+      id: `fx${seq}`, source, controller, scope: { kind: 'cards', ids: [id] }, duration: 'permanent',
+      createdTurn: next.turn, controlRevertTo: from, controlWhile: terms,
+    }],
+  };
+}
+
+/**
  * "Gain control of target creature until end of turn. Untap that creature. It gains haste until end
  * of turn." — the Act of Treason sentence, as one function (D516).
  *
