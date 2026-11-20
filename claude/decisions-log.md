@@ -54095,3 +54095,23 @@ Faults injected by script: 5, all caught (the script-flag check by D1040's Shack
 no such line and so untaps).
 
 Coverage: 14,161 of 31,900 cards (+2), 35,451 of 59,888 lines (+46).
+
+## D1042 — a token's quoted ability of two sentences
+
+"Create a 1/1 red Mercenary creature token with "{T}: Target creature you control gets +1/+0 until
+end of turn. Activate only as a sorcery."" is the Mercenary token Outlaws of Thunder Junction prints
+on a dozen cards. The quote holds two sentences, and `clausesOf` split the line at the first
+period inside it, so neither half was a token.
+
+- The quoted ability after "token(s) with" has its punctuation hidden from the splitter, as an
+  emblem's already was (D734, `hideEmblemText`). The inline reader in `tokenEffect` puts it back
+  before the token's own text is read and checked (`showEmblemText`).
+- Prickly Pair, Wanted Griffin, Nezumi Linkbreaker, Lassoed by the Law and Brimstone Roundup read
+  whole. Form a Posse ("Create X …") does not, because the count is X.
+
+**Tests.** 1 engine test: the row reads whole, and the token's text is both sentences restored. A
+turn later the Mercenary is refused once combat has begun and pumps the Bear in a main phase.
+
+Faults injected by script: 2, both caught.
+
+Coverage: 14,167 of 31,900 cards (+6), 35,464 of 59,888 lines (+13).
