@@ -36017,3 +36017,35 @@ Faults injected by script: 6. 5 are caught; the 6th was an empty-board check tha
 answers, and it was folded away.
 
 Coverage: 13,966 of 31,900 cards (+8), 35,118 of 59,888 lines (+9).
+
+## D1028 — half a life total, "that much life", and an aimed edict with a count
+
+"Whenever equipped creature deals combat damage to a player, that player loses half their life,
+rounded up" (Quietus Spike, Scytheclaw, Radioactive Man), "you lose half your life, rounded up",
+"each opponent loses half their life, rounded down", "that player loses that much life" on a damage
+trigger, and "that player sacrifices two permanents" (Greater Harvester).
+
+- `readEffect` reads "(target player | target opponent | each opponent | each player | you) lose(s)
+  half (their | your) life, rounded (up | down)". The half is taken from the life total as the
+  clause resolves; at 0 or less there is nothing positive to lose. "That player" on a combat hit
+  reaches this as "target player" through the referent swap (D530).
+- D1007's damage-amount readers gain "that player loses that much life": the hit player loses the
+  damage dealt.
+- The aimed edict gains a count: "target player / target opponent sacrifices two | three … <noun>s".
+  The player chooses that many of their own; it is a real sacrifice.
+- Not read: "that player discards that many cards" (Dreamstealer, Needle Specter). Its question
+  would need a size that is the event's amount, which a decision does not yet carry.
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- a 3-power hit leaves 20 - 3 = 17, then half rounded up, 9, leaves 8;
+- "that much life" doubles a 2-power hit;
+- at 15, half rounded up takes 8 and half rounded down takes 7;
+- "each player" halves both;
+- the hit player is asked to choose two of their three permanents;
+- the target sacrifices both creatures.
+
+Faults injected by script: 7 of 7 caught, one of them after the "each player" row was added. One
+more guard (life 0 or less) duplicated `loseLife`'s own refusal and was folded away.
+
+Coverage: 13,976 of 31,900 cards (+10), 35,133 of 59,888 lines (+15).
