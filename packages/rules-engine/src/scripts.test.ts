@@ -27294,6 +27294,55 @@ describe('monocoloured hybrid: {2/W} is two generic or one white (D767)', () => 
   });
 });
 
+describe('"if you don\'t control an Ogre" and "the creature with the greatest power" (D1027)', () => {
+  const C = (name: string, type: string, p: string, text = '') => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: p, toughness: p, oracle_text: text });
+  const ROWS = [
+    C('Test Numai', 'Creature — Demon Spirit', '1', 'At the beginning of your upkeep, you lose 2 life if you don\'t control an Ogre.'),
+    C('Test Ogre', 'Creature — Ogre', '2'),
+    C('Test Big', 'Creature — Beast', '5'), C('Test Giant', 'Creature — Giant', '6'),
+    { name: 'Test Triumph', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'At the beginning of your upkeep, draw a card if you control the creature with the greatest power or tied for the greatest power.' },
+    { name: 'Test Balm', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'If you don\'t control an Ogre, you gain 3 life.' },
+  ];
+  const deck = customDeck({ id: 'd1027', name: 'Ogres', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 36 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1027', 1: 'd1027' }, deckSpecs: { d1027: deck.deck },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Swamp', ...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Seat 0's next upkeep, resolved. */
+  const upkeep = (s: GameState) => settle(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"if you don\'t control an Ogre", trailing on a trigger and leading on a spell', () => {
+    // Each from the table as set, whose own upkeep has already come once.
+    const lost = (mine: readonly string[]) => { const s = table(mine); return life(s, 0) - life(upkeep(s), 0); };
+    expect(lost(['Test Numai'])).toBe(2);
+    expect(lost(['Test Numai', 'Test Ogre'])).toBe(0);
+    let s = table([], [], ['Test Balm']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Balm') } as Action));
+    expect(life(s, 0)).toBe(23);
+    s = table(['Test Ogre'], [], ['Test Balm']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Balm') } as Action));
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('the greatest power on the battlefield: a tie is enough, a bigger one of theirs is not, and none is no', () => {
+    const drew = (mine: readonly string[], theirs: readonly string[]) => {
+      const s = table(['Test Triumph', ...mine], theirs);
+      return ids(upkeep(s), 0, 'hand').length - ids(s, 0, 'hand').length;
+    };
+    // The draw step's card, plus the trigger's.
+    expect(drew(['Test Big'], ['Test Big'])).toBe(2);
+    expect(drew(['Test Big'], ['Test Giant'])).toBe(1);
+    expect(drew([], [])).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

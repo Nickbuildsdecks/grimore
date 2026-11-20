@@ -25471,7 +25471,8 @@ function readEffect(
   // A spell's sentence only (`where` is null): on a trigger an "if" is intervening (CR 603.4) and
   // is asked as it triggers too, which `interveningIfFromLine` reads.
   const guarded = where !== null ? null : /^if ([^,]+), (.+)$/i.exec(clause.trim());
-  if (guarded !== null && !/^you do\b|^you don't\b|^x is\b/i.test(guarded[1]!.trim())) {
+  // "If you do" / "if you don't" whole (their own readers); "if you don't control an Ogre" is a condition (D1027).
+  if (guarded !== null && !/^(?:you do|you don't)$|^x is\b/i.test(guarded[1]!.trim())) {
     const condition = interveningConditionFor(guarded[1]!.trim(), name);
     const then = condition === null ? null : readEffect(guarded[2]!, name, where);
     if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
@@ -25493,7 +25494,7 @@ function readEffect(
   */
   const trailing = /^(.+) if ([^,]+)$/i.exec(clause.trim());
   if (trailing !== null && !/^if\b/i.test(clause.trim())
-    && !/^(?:able|possible|you do|you don't|they do|they don't|it does|it doesn't|that player does|that player doesn't)\b/i.test(trailing[2]!.trim())) {
+    && !/^(?:able|possible|you do|you don't|they do|they don't|it does|it doesn't|that player does|that player doesn't)$/i.test(trailing[2]!.trim())) {
     const condition = interveningConditionFor(trailing[2]!.trim(), name);
     const then = condition === null ? null : readEffect(trailing[1]!.trim(), name, where);
     if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
@@ -30586,6 +30587,16 @@ function interveningConditionFor(
   */
   const rows = interveningConditionRows(printed, name);
   if (rows !== null) return rows;
+  /*
+    "You don't control a(n) X" (D1027): Scourge of Numai's "you lose 2 life if you don't control an
+    Ogre", the Oni's "… a Demon". The negation of the same condition with "control", so it reads
+    exactly what "if you control an Ogre" reads, and nothing else.
+  */
+  const lacking = /^you don't control (an? .+)$/i.exec(plain(printed).trim());
+  if (lacking !== null) {
+    const holds = interveningConditionFor(`you control ${lacking[1]!}`, name);
+    return holds === null ? null : (c) => !holds(c);
+  }
   const asStatic = staticCondition(printed, name);
   return asStatic === null ? null : (c) => conditionHolds(c.state, asStatic, c.controller, c.source);
 }
@@ -30624,6 +30635,23 @@ function interveningConditionRows(
   }
   if (/^an opponent has no cards in hand$/i.test(text)) {
     return (c) => opponentsOf(c.state, c.controller).some((seat) => handOf(c, seat) === 0);
+  }
+  /*
+    The biggest creature on the battlefield (D1027): "if you control the creature with the greatest
+    power or tied for the greatest power" (Triumph of Ferocity), "… toughness" (Abzan Beastmaster),
+    "if you control a creature with the greatest power among creatures on the battlefield" (High
+    Score). Every creature on the battlefield is measured live; one of yours at the most, ties
+    included, is enough. With no creatures at all, nobody controls it.
+  */
+  const greatest = /^you control (?:the|a) creature with the greatest (power|toughness)(?: or (?:a creature )?tied for the greatest (?:power|toughness)| among creatures on the battlefield)?$/i.exec(text);
+  if (greatest !== null) {
+    const stat = greatest[1]!.toLowerCase() as 'power' | 'toughness';
+    return (c) => {
+      const all = c.state.seats.flatMap((seat) => creaturesControlledBy(c.state, seat.index)
+        .map((id) => ({ seat: seat.index, size: characteristicsOf(c.state, c.state.instances[id]!)[stat] })));
+      const most = Math.max(...all.map((one) => one.size));
+      return all.some((one) => one.seat === c.controller && one.size === most);
+    };
   }
   // "If this spell was cast from a graveyard" (D715): see `castFromAGraveyard`.
   if (/^this spell was cast from a graveyard$/i.test(text)) return castFromAGraveyard;
