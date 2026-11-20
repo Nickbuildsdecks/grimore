@@ -29107,6 +29107,67 @@ describe('reconfigure (D775)', () => {
     expect(ch(s, 'Test Lizard').power).toBe(2);
   });
 });
+describe('saddle (D776)', () => {
+  const STEED = { name: 'Test Steed', type_line: 'Creature — Horse Mount', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever this creature attacks while saddled, it gets +2/+2 until end of turn.\nSaddle 1' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd776', name: 'Saddle',
+    entries: [{ name: 'Test Steed', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Plains', count: 54 }],
+    data: [STEED, OX] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd776', 1: 'd776' }, deckSpecs: { d776: deck.deck },
+    battlefield: { 0: ['Test Steed', 'Test Ox'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const steedOf = (s: GameState) => find(s, 0, 'battlefield', 'Test Steed');
+  const saddle = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: steedOf(s), abilityIndex: 0 })));
+  const attackWithSteed = (s0: GameState) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: steedOf(s), defender: 1 }] });
+    return drain(passBoth(s));
+  };
+
+  it('reads', () => {
+    expect(compileCard(STEED as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('saddled by tapping another creature, it gets the bonus when it attacks', () => {
+    let s = saddle(table());
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Ox')]!.tapped).toBe(true);
+    expect(s.instances[steedOf(s)]!.saddledTurn).toBe(s.turn);
+    s = attackWithSteed(s);
+    expect(characteristicsOf(s, s.instances[steedOf(s)]!).power).toBe(4);
+  });
+
+  it('unsaddled, the attack does nothing extra', () => {
+    const s = attackWithSteed(table());
+    expect(characteristicsOf(s, s.instances[steedOf(s)]!).power).toBe(2);
+  });
+
+  it('only as a sorcery, once a turn, and not into the next turn', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd776', 1: 'd776' }, deckSpecs: { d776: deck.deck },
+      battlefield: { 0: ['Test Steed', 'Test Ox', 'Test Ox'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const steed = steedOf(s);
+    const offered = (st: GameState) => legalActions(st, 0).plays.some((p) => p.kind === 'activate' && p.card === steed);
+    expect(offered(s)).toBe(true);
+    // Not in our own end step, with priority and an untapped Ox: sorcery timing.
+    let late = advanceTo(s, 'declare-attackers');
+    late = advanceTo(apply(late, { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    expect(late.priority).toBe(0);
+    expect(offered(late)).toBe(false);
+    // Once a turn, though the second Ox could pay again.
+    s = saddle(s);
+    expect(offered(s)).toBe(false);
+    // And not saddled on our next turn: the attack then gets nothing.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[steed]!.saddledTurn === s.turn).toBe(false);
+    s = advanceTo(s, 'precombat-main');
+    s = attackWithSteed(s);
+    expect(characteristicsOf(s, s.instances[steed]!).power).toBe(2);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

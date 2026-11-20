@@ -420,6 +420,8 @@ export function relocate(
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
     // And the player a Curse is attached to (D765).
     ...(toZone === 'battlefield' ? {} : { enchantedSeat: undefined }),
+    // And saddled (D776): a new object is not saddled.
+    ...(inst.zone === toZone ? {} : { saddledTurn: undefined }),
     /*
       Three zones keep an orientation, and the stack is the one that is not obvious.
 
