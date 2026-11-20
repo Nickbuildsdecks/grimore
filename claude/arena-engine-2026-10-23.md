@@ -36971,3 +36971,28 @@ Illusionist).
 Faults injected by script: 4. All are caught, two after the second attacker and the player row; the friendliness one by `compiled-vs-written.test.ts`.
 
 Coverage: 14,273 of 31,900 cards (+11), 35,602 of 59,888 lines (+12).
+
+## D1054 — searches for exactly N, or for one of two kinds
+
+"Search your library for an instant or sorcery card with mana value 1" (Micromancer), "an Equipment
+card with mana value 2" (Maximus), and "a basic land card or Gate card" / "… or a Gate card"
+(District Guide, Gatecreeper Vine).
+
+- `libraryFilter`'s measure clause takes a bare number as "exactly", beside "N or less" and "N or
+  greater". The D1044 measure test answers it for mana value, power and toughness. A bare number
+  was left unread before only for want of a reading, and equality is the reading.
+- Two whole card phrases joined by "or" are read as either one, each by `libraryFilter`. The split
+  needs both halves to end in "card", so "an artifact or creature card" (one phrase whose type words
+  take the "or") keeps its own reading. For the same reason neither half can carry a "with mana value
+  X" bound.
+- Dig and hand-pick readers that use `libraryFilter` take both shapes too.
+
+**Tests.** 3 engine tests, and three compile refusal rows (two filters, Shefet Monitor's two filters, a bare mana value) turned into notes:
+- the rows read whole;
+- "mana value 2" offers the Bear and not the one-drop or the three-drop;
+- "a basic land card or Gate card" offers Islands and the Gate, not a nonbasic land or a creature.
+
+Faults injected by script: 4. 3 are caught. The 4th, an X-bound guard on the two halves, cannot be
+reached because both halves end in "card", and it was folded away.
+
+Coverage: 14,287 of 31,900 cards (+14), 35,618 of 59,888 lines (+16).
