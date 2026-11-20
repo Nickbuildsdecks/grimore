@@ -29002,6 +29002,44 @@ describe('searches for exactly N, or for one of two kinds (D1054)', () => {
   });
 });
 
+describe('"~ or enchanted creature deals combat damage" (D774)', () => {
+  const EMISSARY = { name: "Test Emissary", type_line: 'Enchantment Creature — Crab', mana_cost: '{4}{U}', cmc: 5, colors: ['U'], layout: 'normal', power: '3', toughness: '3', oracle_text: "Bestow {5}{U}\nWhenever Test Emissary or enchanted creature deals combat damage to a player, draw a card.\nEnchanted creature gets +3/+3." };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd774', name: 'Emissary',
+    entries: [{ name: 'Test Emissary', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Island', count: 54 }],
+    data: [EMISSARY, OX] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd774', 1: 'd774' }, deckSpecs: { d774: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 2, firstSeat: 0,
+  }), 'precombat-main');
+  const drawsFrom = (s0: GameState, attackers: string[]) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    const before = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: attackers.map((name) => ({ attacker: find(s, 0, 'battlefield', name), defender: 1 })) });
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s));
+    return ids(s, 0, 'hand').length - before;
+  };
+
+  it('reads', () => {
+    expect(compileCard(EMISSARY as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('as a creature: it draws when it connects, and an Ox beside it does not', () => {
+    expect(drawsFrom(table(['Test Emissary', 'Test Ox']), ['Test Emissary', 'Test Ox'])).toBe(1);
+  });
+
+  it('bestowed: the creature it enchants draws once when it connects', () => {
+    let s = table(['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Test Ox'], ['Test Emissary']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Emissary'), bestowed: true,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Ox') }],
+    })));
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Ox')]!).power).toBe(5);
+    expect(drawsFrom(s, ['Test Ox'])).toBe(1);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
