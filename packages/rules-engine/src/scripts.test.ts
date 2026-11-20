@@ -28580,6 +28580,41 @@ describe('enters with counters if something happened this turn (D1046)', () => {
   });
 });
 
+describe('enters with a counter for each (D1047)', () => {
+  const ROWS = [
+    { name: 'Test Captain', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Test Captain enters with a +1/+1 counter on it for each other creature you control.' },
+    { name: 'Test Scavenger', type_line: 'Creature — Zombie', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '0', toughness: '1',
+      oracle_text: 'Test Scavenger enters with a +1/+1 counter on it for each creature card in your graveyard.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1047', name: 'For each', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  const enter = (card: string, battlefield: string[], graveyard: string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1047', 1: 'd1047' }, deckSpecs: { d1047: deck.deck },
+      battlefield: { 0: battlefield, 1: ['Test Bear'] }, hands: { 0: [card] }, graveyard: { 0: graveyard }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+    return s.instances[find(s, 0, 'battlefield', card)]!.counters['+1/+1'] ?? 0;
+  };
+
+  it('reads every row whole, and a count it would be in itself stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const itself = compileCard({ ...ROWS[0], oracle_text: 'Test Captain enters with a +1/+1 counter on it for each creature you control.' } as never);
+    expect(itself.ok && itself.unread.length).toBe(1);
+  });
+
+  it('counts the other creatures, not itself and not the opponent\'s', () => {
+    expect(enter('Test Captain', ['Plains'])).toBe(0);
+    expect(enter('Test Captain', ['Plains', 'Test Bear', 'Test Bear'])).toBe(2);
+  });
+
+  it('counts the creature cards in the graveyard', () => {
+    expect(enter('Test Scavenger', ['Plains'], ['Test Bear', 'Test Bear', 'Plains'])).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

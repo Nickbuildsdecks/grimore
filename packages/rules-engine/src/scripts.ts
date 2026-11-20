@@ -30543,6 +30543,21 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     of the table, where a condition about "it" would be asking about an event a replacement has not
     got.
   */
+  /*
+    And a count (D1047): "~ enters with a +1/+1 counter on it for each other creature you control",
+    "… for each creature card in your graveyard", "… for each creature that died this turn". Read
+    with `forEachCount`, and only a count the permanent itself cannot be in: the arrival pass runs
+    with it on the battlefield already, where the rule counts before it arrives (CR 614.1c).
+  */
+  const perThing = /^(.+) for each (.+)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
+  if (perThing !== null && !/color of mana|time it was kicked/i.test(perThing[2]!)) {
+    if (!/\bother\b|graveyard|died|your opponents control|an opponent controls/i.test(perThing[2]!)) return null;
+    const count = forEachCount(perThing[2]!, name);
+    const plainRead = count === null ? null : entersWithFromLine(perThing[1]!, name);
+    const fixed = plainRead?.entersWith;
+    if (count === null || plainRead === null || fixed === undefined || fixed.amount === 'x' || Object.keys(plainRead).length !== 1) return null;
+    return { entersWith: { ...fixed, per: count } };
+  }
   const conditioned = /^(.+) if (.+ this turn)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
   if (conditioned !== null) {
     const holds = interveningConditionFor(conditioned[2]!, name);

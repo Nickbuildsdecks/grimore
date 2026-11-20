@@ -16,7 +16,7 @@
  */
 import type { CardDef, ZoneId } from './cards.js';
 import type { Keyword, TypeLine } from './characteristics.js';
-import type { EffectFn, PumpOptions } from './effects.js';
+import type { EffectContext, EffectFn, PumpOptions } from './effects.js';
 import type { Color, ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { ActivationTiming, AttackedTarget, DecisionAnswer, DecisionZone, Step, Target } from './turnTypes.js';
@@ -3153,6 +3153,12 @@ export interface CardScript {
      * of the table, with no event behind it. Only a printed number takes one.
      */
     readonly if?: ConditionFn;
+    /**
+     * "… a +1/+1 counter on it for each other creature you control" (D1047): `amount` per thing
+     * counted, as it arrives. Only counts that cannot include the permanent itself are read, because
+     * the arrival pass runs with it already on the battlefield.
+     */
+    readonly per?: (c: EffectContext) => number;
   };
   /**
    * Bloodthirst N (CR 702.54a): this creature enters with N +1/+1 counters **if an opponent was

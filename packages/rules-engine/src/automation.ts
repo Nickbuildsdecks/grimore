@@ -3708,12 +3708,12 @@ function arrivalReplacements(state: GameState, done: Set<string>): GameState {
     if (inst === undefined || inst.zone !== 'battlefield') continue;
     const script = scriptOf(next, id);
     const arrives = script?.entersWith;
+    // A condition (D1046) and a count (D1047) are asked of the table as it arrives, under its new controller.
+    const asked = { state: next, source: id, controller: inst.zoneSeat, targets: [], x: 0, decisions: [], kicked: false };
     if (arrives !== undefined && arrives.amount !== 'x' && arrives.amount > 0
-      // A condition (D1046) is asked of the table as it arrives, under its new controller.
-      && (arrives.if === undefined || arrives.if({
-        state: next, source: id, controller: inst.zoneSeat, targets: [], x: 0, decisions: [], kicked: false,
-      }))) {
-      next = addCounters(next, id, arrives.counter, arrives.amount);
+      && (arrives.if === undefined || arrives.if(asked))) {
+      const amount = arrives.amount * (arrives.per === undefined ? 1 : arrives.per(asked));
+      if (amount > 0) next = addCounters(next, id, arrives.counter, amount);
     }
     /*
       Bloodthirst (CR 702.54a): "if an opponent was dealt damage this turn, this creature enters
