@@ -27343,6 +27343,65 @@ describe('"if you don\'t control an Ogre" and "the creature with the greatest po
   });
 });
 
+describe('half a life total, "that much life", and an aimed edict with a count (D1028)', () => {
+  const C = (name: string, p: string, text = '') => ({ name, type_line: 'Creature — Horror', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: p, toughness: p, oracle_text: text });
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    C('Test Spike', '3', 'Whenever Test Spike deals combat damage to a player, that player loses half their life, rounded up.'),
+    C('Test Leech', '2', 'Whenever Test Leech deals combat damage to a player, that player loses that much life.'),
+    C('Test Harvester', '3', 'Whenever Test Harvester deals combat damage to a player, that player sacrifices two permanents.'),
+    C('Test Bear', '2'),
+    S('Test Pact', 'You lose half your life, rounded up.'),
+    S('Test Halve', 'Each opponent loses half their life, rounded down.'),
+    S('Test Bite', 'Target opponent sacrifices two creatures.'),
+    S('Test Plague', 'Each player loses half their life, rounded up.'),
+  ];
+  const deck = customDeck({ id: 'd1028', name: 'Half', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 36 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (mine: readonly string[], theirs: readonly string[] = [], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1028', 1: 'd1028' }, deckSpecs: { d1028: deck.deck },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Swamp', ...theirs] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const swing = (s: GameState, name: string) => drain(apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', name), defender: 1 }],
+  } as Action));
+  const cast = (s: GameState, card: string, targets?: readonly Target[]) => settle(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action));
+  const withLife = (s: GameState, seat: SeatIndex, life: number) => ({ ...s, seats: s.seats.map((one) => (one.index === seat ? { ...one, life } : one)) });
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the hit player loses half of what is left, rounded up; "that much" is the damage', () => {
+    // 20 - 3 = 17, and half of 17 rounded up is 9.
+    expect(life(settle(advanceTo(swing(table(['Test Spike']), 'Test Spike'), 'postcombat-main')), 1)).toBe(8);
+    expect(life(settle(advanceTo(swing(table(['Test Leech']), 'Test Leech'), 'postcombat-main')), 1)).toBe(16);
+  });
+
+  it('half, rounded up for you and down for each opponent', () => {
+    expect(life(cast(withLife(table([], [], ['Test Pact']), 0, 15), 'Test Pact'), 0)).toBe(7);
+    expect(life(cast(withLife(table([], [], ['Test Halve']), 1, 15), 'Test Halve'), 1)).toBe(8);
+    const both = cast(withLife(table([], [], ['Test Plague']), 1, 9), 'Test Plague');
+    expect([life(both, 0), life(both, 1)]).toEqual([10, 4]);
+  });
+
+  it('two permanents from the hit player, two creatures from the target', () => {
+    let s = advanceTo(swing(table(['Test Harvester'], ['Test Bear', 'Test Bear']), 'Test Harvester'), 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [] } as Action);
+    for (let i = 0; i < 20 && s.pendingDecision === null; i++) s = drain(passBoth(s), 30);
+    // The hit player chooses two of their three permanents.
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision!.candidates).toHaveLength(3);
+    s = settle(apply(s, { type: 'auto:decide', by: 1, cards: s.pendingDecision!.candidates.slice(0, 2) } as Action));
+    expect(ids(s, 1, 'battlefield')).toHaveLength(1);
+    s = cast(table([], ['Test Bear', 'Test Bear'], ['Test Bite']), 'Test Bite', [{ kind: 'player', seat: 1 }]);
+    expect(namesIn(s, 1, 'battlefield')).toEqual(['Swamp']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

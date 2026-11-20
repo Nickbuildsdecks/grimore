@@ -23563,6 +23563,42 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     "target player" through the referent swap, which is where Norn's Decree and Crypt Cobra come
     from.
   */
+  /*
+    **Half a life total** (D1028): "that player loses half their life, rounded up" (Quietus Spike,
+    Scytheclaw, Radioactive Man, reached as "target player" through the referent swap), "target
+    opponent loses half their life, rounded up", "you lose half your life, rounded up", "each
+    opponent loses half their life, rounded down". Halved from the life total as the clause
+    resolves; a player at 0 or less loses nothing.
+  */
+  const halved = /^(target player|target opponent|each opponent|each player|you) loses? half (?:their|your) life, rounded (up|down)$/i.exec(text);
+  if (halved !== null) {
+    const who = halved[1]!.toLowerCase();
+    const up = halved[2]!.toLowerCase() === 'up';
+    // At 0 or less the half is not positive, and `loseLife` refuses it.
+    const half = (state: GameState, seat: SeatIndex): GameState => {
+      const life = state.seats[seat]?.life ?? 0;
+      return loseLife(state, seat, up ? Math.ceil(life / 2) : Math.floor(life / 2));
+    };
+    if (who.startsWith('target')) {
+      const spec = targetSpecFrom(halved[1]!, false);
+      if (spec !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const seat = firstPlayerTarget(c);
+            return seat === null ? c.state : half(c.state, seat);
+          },
+        };
+      }
+    } else {
+      return {
+        effect: (c) => (who === 'you' ? [c.controller]
+          : who === 'each opponent' ? opponentsOf(c.state, c.controller)
+            : c.state.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index))
+          .reduce((state, seat) => half(state, seat), c.state),
+      };
+    }
+  }
   const poisoned = /^(target player|target opponent|each opponent|each player|you) gets? (a|an|one|two|three|four|five|\d+) poison counters?$/i.exec(text);
   if (poisoned !== null) {
     const amount = countFrom(poisoned[2]!)!;
@@ -24007,6 +24043,27 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   // And of any described permanent (D744): "that player sacrifices a permanent", "… a nonland
   // permanent", "… an artifact", "… a land", read by `permanentDescribed` like the own sacrifice.
+  /*
+    And with a count (D1028): "that player sacrifices two permanents" (Greater Harvester, through the
+    referent swap), "target opponent sacrifices two creatures". The singular noun is what
+    `permanentDescribed` reads.
+  */
+  const aimedMany = /^(target player|target opponent) sacrifices (two|three|four|five|\d+) (.+?)s$/i.exec(text);
+  if (aimedMany !== null) {
+    const spec = targetSpecFrom(aimedMany[1]!, false);
+    const n = countFrom(aimedMany[2]!);
+    const describes = permanentDescribed(aimedMany[3]!);
+    if (spec !== null && n !== null && describes !== null) {
+      return {
+        targets: [spec],
+        decisions: [{
+          who: 'target-player', from: 'battlefield', prompt: `Sacrifice ${aimedMany[2]!.toLowerCase()} ${aimedMany[3]!}s`,
+          min: n, max: n, filter: (state: GameState, id: string) => describes(state, id),
+        }],
+        effect: (c) => sacrifice(c.state, chosenCards(c)),
+      };
+    }
+  }
   const aimedEdict = /^(target player|target opponent) sacrifices (an? (.+))$/i.exec(text);
   if (aimedEdict !== null) {
     const spec = targetSpecFrom(aimedEdict[1]!, false);
@@ -25402,6 +25459,10 @@ function readEffect(
         effect: (c) => opponentsOf(c.state, c.controller).filter((seat) => seat !== hit(c)).reduce(
           (state, seat) => dealDamage(state, { kind: 'player', seat }, n(c), { controller: c.controller, source: c.source }), c.state),
       };
+    }
+    // "That player loses that much life" (D1028): the player the damage hit.
+    if (/^that player loses \u000e much life$/i.test(text)) {
+      return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : loseLife(c.state, seat, n(c)); } };
     }
     if (/^that player mills \u000e many cards$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };
