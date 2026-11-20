@@ -17106,6 +17106,27 @@ function soulbondShapeFor(def: CardDef, lines: readonly string[]): WholeCardRead
  * for an instant or a sorcery before this function is reached, so the `etb` trigger it builds
  * cannot land on a card that never enters the battlefield.
  */
+/**
+ * Bestow (D775, CR 702.103): "Bestow {5}{U}" and the bonus the card gives as an Aura, "Enchanted
+ * creature gets +3/+3" (with or without a keyword), read as one `bestow` — the same field Boon
+ * Satyr's hand-written script sets. 42 legal cards print it.
+ *
+ * Both lines or neither: a bestow cost with no bonus line this reads would cast an Aura that gives
+ * nothing, so the card keeps both badges. A bonus that grants an ability or trigger is refused
+ * for the same reason, since `bestow.effect` carries a `PumpOptions` and not the grant tables.
+ */
+function bestowShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const declared = lines.find((line) => /^bestow\s+((?:\{[^}]*\})+)$/i.test(plain(line).trim()));
+  if (declared === undefined) return null;
+  if (!hasType(parseTypeLine(def.typeLine), 'creature')) return null;
+  const cost = /^bestow\s+((?:\{[^}]*\})+)$/i.exec(plain(declared).trim())![1]!;
+  const bonusLine = lines.find((line) => /^enchanted creature gets /i.test(plain(line).trim()));
+  if (bonusLine === undefined) return null;
+  const read = attachmentBonus(bonusLine, def.name);
+  if (read === null || read.harmful || read.grantedTriggers !== undefined || read.grantedAbilities !== undefined) return null;
+  return { fragment: { bestow: { cost, effect: read.bonus } }, claimed: [declared, bonusLine] };
+}
+
 function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
   for (const line of lines) {
     const evoked = /^evoke\s+((?:\{[^}]*\})+)$/i.exec(plain(line).trim());
@@ -17253,6 +17274,7 @@ export function wholeCardShapeFor(
     ?? exileUntilLeavesShapeFor(def, lines)
     ?? handExileUntilLeavesShapeFor(def, lines)
     ?? soulbondShapeFor(def, lines)
+    ?? bestowShapeFor(def, lines)
     ?? evokeShapeFor(lines)
     ?? kickerPermanentShapeFor(def, lines)
     ?? escapeShapeFor(def, lines);
@@ -17772,6 +17794,15 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever (?:equipped|enchanted) creature deals combat damage to a player, (.+)$/i,
     on: [{ kind: 'combat-damage', who: 'attached' }],
+  },
+  /*
+    "Whenever ~ **or** equipped / enchanted creature deals combat damage to a player" (D774): an
+    Equipment or Aura creature that is also attached (reconfigure, bestow), or a creature that
+    hands its trigger to its host (Thassa's Emissary). Either event; each fires once.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} or (?:equipped|enchanted) creature deals combat damage to a player, (.+)$`, 'i'),
+    on: [{ kind: 'combat-damage' }, { kind: 'combat-damage', who: 'attached' }],
   },
   /*
     "When this creature transforms into <this face>" (D592) — `transformed`, Awoken Horror's event.

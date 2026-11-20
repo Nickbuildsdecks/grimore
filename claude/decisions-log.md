@@ -54510,3 +54510,31 @@ gating faults needed the pins above before they were caught.
 
 Coverage: 14,320 of 31,900 cards (+33), 35,669 of 59,888 lines (+51). The net includes Bane of the
 Living and Warbreak Trumpeter, removed from the read count because their morph X was misread.
+## D774 — Bestow from the printed text, and "~ or enchanted / equipped creature" hits
+
+Two readers that one card needed: Thassa's Emissary.
+
+**Bestow.** The engine has played bestow since Boon Satyr's hand-written script (`CardScript.bestow`:
+an Aura for its bestow cost, a creature again when its host leaves). The compiler never produced
+it, so every other bestow card was a creature with an unread keyword and an unread "Enchanted
+creature gets …" line. `bestowShapeFor` reads the pair as one: the "Bestow {cost}" line and the
+bonus line, through `attachmentBonus`, into `bestow: { cost, effect }`. **31 of the 42 legal bestow
+cards** now read both lines. The 11 left are refused, not guessed:
+- a bonus with a drawback ("can't block", "attacks each combat if able"), which `attachmentBonus`
+  marks harmful;
+- a bonus that grants an ability or a trigger, which `bestow.effect` cannot carry;
+- X costs and counted bonuses (Nyxborn Hydra).
+
+**"Whenever ~ or enchanted creature deals combat damage to a player"** (Thassa's Emissary), and the
+equipped form (Acquisition Octopus): one row with both events, the card's own hit and its host's.
+Each fires once. Acquisition Octopus is still partly read for its Reconfigure line.
+
+**Tests.** 3 engine tests: the card reads whole; as a creature it draws when it connects and an Ox
+beside it does not; bestowed, the creature it enchants is +3/+3 and draws once when it connects.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,650, all passing (on bdad2c5)
+
+Coverage: 14,288 to 14,310 of 31,900 cards with every line read, and 35,620 to 35,685 of 59,888
+lines, against bdad2c5.
