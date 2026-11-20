@@ -28754,6 +28754,52 @@ describe('a creature land with a sentence after the animation (D1050)', () => {
   });
 });
 
+describe('a count of counters (D1051)', () => {
+  const S = (name: string, cost: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: cost, cmc: 0, colors: ['G'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    S('Test Grow', '{X}', 'Put X +1/+1 counters on target creature.'),
+    S('Test Rooted', '{0}', 'Put X +1/+1 counters on target creature you control, where X is the number of lands you control.'),
+    S('Test Grave Feast', '{0}', 'Put a +1/+1 counter on target creature for each creature card in your graveyard.'),
+    S('Test Two', '{0}', 'Put two +1/+1 counters on target creature.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1051', name: 'Counts', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 44 }], data: ROWS as never[] });
+  const cast = (spell: string, opts: { x?: number; forests?: number; graveyard?: string[] } = {}) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1051', 1: 'd1051' }, deckSpecs: { d1051: deck.deck },
+      battlefield: { 0: [...Array(opts.forests ?? 0).fill('Forest'), 'Test Bear'], 1: [] }, hands: { 0: [spell] },
+      graveyard: { 0: opts.graveyard ?? [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: bear }], ...(opts.x === undefined ? {} : { x: opts.x }),
+    } as Action)), 30);
+    return s.instances[bear]!.counters['+1/+1'] ?? 0;
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('X is the X paid, and a printed number is that number', () => {
+    expect(cast('Test Grow', { x: 3, forests: 3 })).toBe(3);
+    expect(cast('Test Two')).toBe(2);
+    // A printed number with an X to define is not a sentence: it stays unread.
+    const odd = compileCard({ ...ROWS[0], oracle_text: 'Put two +1/+1 counters on target creature, where X is the number of lands you control.' } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('"where X is" counts the board as it resolves', () => {
+    expect(cast('Test Rooted', { forests: 2 })).toBe(2);
+    expect(cast('Test Rooted', { forests: 0 })).toBe(0);
+  });
+
+  it('"for each" counts the creature cards, not the land', () => {
+    expect(cast('Test Grave Feast', { graveyard: ['Test Bear', 'Test Bear', 'Forest'] })).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

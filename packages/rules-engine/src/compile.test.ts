@@ -10242,7 +10242,7 @@ describe('the counter clause, read off the printed phrase', () => {
       The counts and kinds the parse refuses, each because the number or the word comes from
       somewhere this clause cannot see (D362).
     */
-    ['Put X +1/+1 counters on target creature.', 'X names a number from the cost'],
+    // 'Put X +1/+1 counters on target creature.' reads since D1051: X is the X paid.
     ['Put that many +1/+1 counters on target creature.', '"that many" names an earlier count'],
     // 'Put four +1/+1 counters on target creature.' reads since D901, which takes counts up to ten.
     ['Put a loyalty counter on target creature.', 'a counter kind with its own rules'],

@@ -25227,6 +25227,35 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    A count of counters (D1051): "Put X +1/+1 counters on target creature" with the spell's or the
+    ability's X; "…, where X is the number of lands you control" and the other counts `countTailOf`
+    reads; and "Put a +1/+1 counter on target creature for each creature card in your graveyard",
+    the printed number per thing counted. The body is read as the fixed-count sentence would be and
+    the number is computed as it resolves.
+  */
+  const tail = countTailOf(text, name);
+  const xBody = tail === null ? text.trim().replace(/\.$/, '') : tail.body;
+  const counting = new RegExp(`^put (x|a|an|one|two|three|\\d+) (\\+1\\/\\+1|-1\\/-1|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(xBody);
+  const isX = counting !== null && counting[1]!.toLowerCase() === 'x';
+  if (counting !== null && (tail !== null || isX)
+    && (tail === null || (tail.grammar === 'announced') === isX)) {
+    const word = counting[1]!.toLowerCase();
+    const rate = isX ? 1 : /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word === 'an' ? 'a' : word];
+    const printedKind = counting[2]!.toLowerCase();
+    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
+    const spec = rate === undefined ? null : targetSpecFrom(counting[3]!, kind === '+1/+1' || isKeyword(kind));
+    if (spec !== null && rate !== undefined) {
+      const many = (c: EffectContext): number => rate * (tail === null ? c.x : tail.counted(c));
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const n = many(c);
+          return n <= 0 ? c.state : cardTargets(c).reduce((state, id) => addCounters(state, id, kind, n), c.state);
+        },
+      };
+    }
+  }
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
   const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
