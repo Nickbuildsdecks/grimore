@@ -53936,4 +53936,7 @@ thousand permanents at a usable speed, but a game that keeps doubling will event
 play. Players with a Tribbles deck will need to finish the game or concede, as they would at a real
 table.
 
-    engine tests: 5,587, all passing (a harness change; the engine is unchanged)
+Sweep 60301 rerun with the cap: 99 of 100 games finished, and seed 60315 is reported as
+`runaway-board` (1,010 Troubling Tribbles). 60.3 turns and 344 moves on average.
+
+    engine tests: 5,589, all passing (merged with the other session's D1037; the engine is unchanged here)
