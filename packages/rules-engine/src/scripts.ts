@@ -13452,6 +13452,56 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     player chooses, as above. "Defending player" is `hit-player`, the attack's defender, which a
     trigger off an attack carries; anywhere else it asks nobody.
   */
+  /*
+    **The edict that takes the biggest** (D1025): "Each opponent sacrifices a creature with the greatest
+    power among creatures that player controls" (Crackling Doom, Myrkul's Edict, Shadowgrange
+    Archfiend), "… a creature or planeswalker with the greatest mana value among creatures and
+    planeswalkers they control" (Soul Shatter, Flare of Malice), "Szat's Will: … a creature they
+    control with the greatest power", and the same aimed at "target opponent" (Consumed by Greed,
+    Break Under Pressure, Riveteers Charm).
+
+    Each sacrificing player chooses among their own that are tied for the most, as of the
+    resolution: the filter compares against the chooser's own board, so a tie is that player's
+    choice and nothing smaller can be given up. A creature's power is its live power; mana value is
+    printed, and a token's is zero.
+  */
+  const greatest = /^(each opponent|target opponent|target player) sacrifices? an? (creature|creature or planeswalker)(?: they control)? with the (?:greatest|highest) (power|mana value)(?: among (?:creatures|creatures and planeswalkers) (?:they control|that player controls))?$/i.exec(text);
+  if (greatest !== null) {
+    const subject = greatest[1]!.toLowerCase();
+    const walkers = greatest[2]!.toLowerCase() !== 'creature';
+    const byPower = greatest[3]!.toLowerCase() === 'power';
+    const qualifies = (state: GameState, id: string): boolean => {
+      const inst = state.instances[id];
+      if (inst === undefined) return false;
+      const live = characteristicsOf(state, inst);
+      return live.isCreature || (walkers && hasType(live.typeLine, 'planeswalker'));
+    };
+    const measure = (state: GameState, id: string): number => {
+      const inst = state.instances[id]!;
+      return byPower ? characteristicsOf(state, inst).power : state.cardDefs[inst.defKey]?.cmc ?? 0;
+    };
+    const filter = (state: GameState, id: string, chooser: SeatIndex): boolean => {
+      if (!qualifies(state, id)) return false;
+      const theirs = listAt(state, zoneKey(chooser, 'battlefield')).filter((other) => qualifies(state, other));
+      return measure(state, id) === Math.max(...theirs.map((other) => measure(state, other)));
+    };
+    const prompt = `Sacrifice a ${greatest[2]!.toLowerCase()} with the greatest ${greatest[3]!.toLowerCase()}`;
+    if (subject === 'each opponent') {
+      return {
+        decisions: [{ who: 'each-opponent', from: 'battlefield', prompt, min: 1, max: 1, filter }],
+        effect: (c) => c.decisions.reduce((state, answer) => sacrifice(state, answer.ids), c.state),
+      };
+    }
+    const spec = targetSpecFrom(greatest[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        decisions: [{ who: 'target-player', from: 'battlefield', prompt, min: 1, max: 1, filter }],
+        effect: (c) => sacrifice(c.state, chosenCards(c)),
+      };
+    }
+  }
+
   const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent)s?$/i.exec(text);
   if (edictMany !== null) {
     const subject = edictMany[1]!.toLowerCase();
