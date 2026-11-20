@@ -53389,3 +53389,36 @@ with no throw and no stall.
 
 Coverage: 13,923 of 31,900 cards (+14), 35,051 of 59,888 lines (+26), against fe4462f. The cards
 that become castable are not in the line count: their lines were already read.
+
+## D1026 — a trailing "if"
+
+"At the beginning of your upkeep, draw a card if you control an artifact", "You gain 3 life if you
+attacked this turn", "Draw two cards if you control an artifact, then discard a card". The leading
+form ("If you control an artifact, draw a card") has been read on spells since D742. The trailing
+one was unread everywhere, on spells and triggers alike.
+
+- `readEffect` splits on the last " if " and reads the condition with the leading form's vocabulary
+  (`interveningConditionFor`). The clause happens only if the condition holds as it resolves.
+- A trailing "if" is never intervening: CR 603.4 is the "if" straight after a trigger condition.
+  So on a trigger it is asked once, on resolution, unlike D742's leading form, which triggers read
+  as intervening.
+- Conditions about the clause's own action ("if able", "if you do", "if they don't") are left to
+  their readers. A clause that asks a question is refused, as the leading form refuses it, because
+  the question would be asked whatever the condition.
+- **`guardedBy`, and a fix to the leading form.** A guarded reading now wraps `immediate` as well as
+  `effect`. `immediate` is the form `composeEffects` uses for a clause that something follows. D742
+  spread the unguarded `immediate`, so "If you control an artifact, draw two cards, then discard a
+  card" would have drawn whatever the condition.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and a clause that would ask its question regardless does not;
+- the upkeep draw comes only with an artifact out;
+- the spell gains only with one;
+- the first clause of "draw two cards if …, then discard a card" draws only when the condition
+  holds.
+
+Faults injected by script: 4 of 4 caught. The question refusal was missed at first and is now pinned
+by the unread row.
+
+Coverage: 13,958 of 31,900 cards (+14), 35,109 of 59,888 lines (+18), measured against the merged
+tree with the other session's D766 (13,944 / 35,091).
