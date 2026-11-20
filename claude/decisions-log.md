@@ -53768,7 +53768,7 @@ Faults injected by script: 7 of 8 caught. The fault no test catches removes the 
 sets of snow sources. The preference order gets every case tried right, so the retry is a safety
 net that no test reaches.
 
-    engine tests: 5,569, all passing (on the other session's D1033)
+    engine tests: 5,572, all passing (merged with the other session's D1034)
 
 Coverage: 14,066 to 14,096 of 31,900 cards with every line read, and 35,280 to 35,316 of 59,888
 lines, against 8852c43.
