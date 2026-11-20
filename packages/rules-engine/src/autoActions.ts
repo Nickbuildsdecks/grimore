@@ -3209,6 +3209,21 @@ function keepHand(state: GameState, action: { by: SeatIndex; bottom?: readonly s
  */
 function beginFirstTurn(state: GameState): GameState {
   const first = state.activeSeat;
+  /*
+    The Leylines (D778, CR 103.6): after every player has kept, each player in turn order, starting
+    with the first, puts the ones in their opening hand onto the battlefield.
+  */
+  let placed = state;
+  const order = state.seats.map((_, i) => ((first + i) % state.seats.length) as SeatIndex);
+  for (const seat of order) {
+    if (placed.seats[seat]?.eliminated === true) continue;
+    for (const id of listAt(placed, zoneKey(seat, 'hand'))) {
+      const inst = placed.instances[id];
+      if (inst === undefined || scriptForCard(placed.cardDefs[inst.defKey])?.beginsInPlay !== true) continue;
+      placed = relocate(placed, inst, 'battlefield', seat, 'bottom');
+    }
+  }
+  state = placed;
   let next = advanceStep({
     ...state, openingHands: false, step: 'cleanup', turn: state.turn - 1,
     activeSeat: prevAlive(state, first),

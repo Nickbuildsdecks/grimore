@@ -13,11 +13,12 @@ they say, creatures die when they should, and the mana for a spell is tapped for
 anywhere, exactly as it can with cardboard, and the players apply the rules themselves. Start it
 with **Play as a tabletop**.
 
-Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — three hundred and forty-eight, today, across thirteen starter decks. A
-tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
-one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
-normally, and the log says it was not automated rather than pretending.
+Neither replaces the other. The rules engine reads each card's printed rules text and plays what it
+can read: on 20 November, **14,367 of the 31,900 legal cards are fully automated** and 18,620 are at
+least partly (`node scripts/measure/compilable.mjs`). A card with a line the engine cannot read is
+still cast and played for what it can do, and carries a badge naming the line it skips; **Move by
+hand** is one tap away inside Arena mode for that line. A tabletop works with every card ever
+printed on day one.
 
 You can also start a tabletop game and hand it to the engine later, with the **Rules engine**
 button in the control bar.
@@ -432,6 +433,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | **Bestow creatures from any deck (Thassa's Emissary, Nyxborn Shieldmate, Hopeful Eidolon)** | A card with Bestow offers two ways to cast it: as a creature for its mana cost, or as an Aura for its bestow cost on a creature. As an Aura it gives the bonus printed on it, and when that creature leaves, it stays as a creature of its own. 31 of the 42 bestow cards work this way now. The rest, with a drawback or a granted ability in their bonus, are still partly manual. |
 | **Reconfigure creatures (Lizard Blades, Acquisition Octopus and the other Kamigawa Equipment creatures)** | Reconfigure works like Equip: pay its cost at sorcery speed to attach it to another creature you control. While attached it gives its bonus and is not a creature. Pay the same cost again to unattach it and it is a creature again; it also comes off by itself if the creature it is on leaves. The computer opponent attaches them but never unattaches. |
 | **Mounts with Saddle (Alacrian Jaguar, Bridled Bighorn, Gilded Ghoda and the other Outlaws Mounts)** | Saddle N is an ability on the Mount: in your main phase, tap other untapped creatures you control with total power N or more, and the Mount is saddled until end of turn. When it then attacks, its "attacks while saddled" ability triggers. Once a turn; the creatures you tap can be ones that just came in. The computer opponent saddles only with creatures that could not have attacked anyway. |
+| **Leylines in your opening hand** | Leyline of the Void, of Sanctity, of the Meek and the rest go onto the battlefield on their own after everyone keeps, before the first turn. There is no option to keep one in hand yet. Some Leylines have a second line that is still manual (Leyline of Sanctity's "You have hexproof"); the card shows a badge for it. |
 | **Snow costs: {S}** | A {S} symbol is one mana that must come from a snow permanent: a Snow-Covered Forest, a snow artifact, a snow creature that taps for mana. The table taps a snow source for it and saves your only land of a needed colour for that colour. Mana already floating in your pool never pays {S}, so tap snow lands yourself only for other costs. Cards that count how much snow mana was spent (Graven Lore) are not automatic yet. |
 | **Thorn Elemental, Lone Wolf and other "as though it weren't blocked" creatures** | When one of these is blocked, the damage prompt shows an **As though unblocked** button beside it. Press it and all of its combat damage goes to the player or planeswalker it attacked, and none to the blockers. It is still blocked, so the blockers still deal their damage to it. Leave it off and the damage goes to the blockers as usual. The prompt appears even with a single blocker. Predatory Focus, Gurzigost's ability and Indomitable Might hand out the same button. Siege Behemoth, Proud Wildbonder and Garruk's ultimate are not automatic yet. |
 | **Power Sink and counted soft counters** | "Counter target spell unless its controller pays {X}" asks for the X you cast it for. With X = 0 nothing is asked. "… pays {1} for each card in your graveyard" asks for the count at the moment it resolves. |
@@ -1774,62 +1776,20 @@ decks they pasted in).
 
 ## What is not done
 
-- **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
-  the table deals it (see *Play with your own list*). Every name the engine's pool has — the three
-  hundred and forty-eight cards in the thirteen starter decks, commanders included — becomes the real
-  card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
-  nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
-  prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
-  anything with. Closing that gap needs card data for arbitrary names — type lines, mana costs,
-  oracle text — which means a populated `scryfall_cards` table. Loading a saved Grimore deck rather
-  than pasting text is the same gap: the deck source exists, the card data does not.
-
-  **The schema and the importer for that data are now in place** (D329). Migration 0015 adds the
-  six columns a rules engine needs and had none — `power`, `toughness`, `loyalty` (all TEXT,
-  because `*`, `1+*` and `X` are printed values), `layout`, `oracle_id` and `produced_mana` — and
-  the bulk importer writes 26 columns where it used to write 13, having never once written
-  `color_identity`, `legalities`, `keywords`, `card_faces` or `edhrec_rank`.
-
-  **And the engine can now build a playable card out of such a row** (D331-D333), for the cards
-  whose rules their data already is: a basic land, a land or rock whose printed mana ability reads
-  cleanly, a vanilla creature, a creature whose whole text is keywords, and one whose text is
-  keywords plus a morph or echo cost. `customDeck` resolves a pasted name three ways now — the
-  pool, then the data, then cardboard — and a hand-written script always wins. Measured over the
-  engine's own 348 cards, that is **61% of lands and 15% of creatures**, which on a real Commander
-  list is roughly a third of it and almost all of the mana base
-  (`node scripts/measure/derivable.mjs`).
-
-  So two things are left, and the first is not enough on its own:
-
-  1. **Run the import.** One command on a machine that has the file:
+- **A pasted list is read out of the card table** (D459). Every name is looked up in
+  `scryfall_cards` and compiled from its printed text; only a name the table does not have becomes
+  **cardboard** (a name and nothing else, played by hand). On the VM this needs the production
+  Scryfall import to have filled that table: until it has, a pasted list outside the starter decks
+  is mostly cardboard. The import is one command, below, and running it is Nick's decision.
 
   ```bash
-  # Download Scryfall's `oracle_cards` bulk file anywhere (one row per unique card,
-  # about a tenth the bytes of `default_cards`), copy the JSON across, then:
+  # Download Scryfall's `oracle_cards` bulk file, copy the JSON to the machine, then:
   SCRYFALL_BULK_FILE=/path/to/oracle-cards.json FORCE_RESEED=1 node -e \
     "require('./scryfallService.js').downloadAndImportScryfallBulk(true).then(()=>process.exit(0))"
   ```
-
-  `SCRYFALL_BULK_FILE` exists because `api.scryfall.com` is not reachable from the machine this was
-  built on, and may not be from the VM either; with it set, nothing is downloaded. The import
-  prints what it wrote, what it filtered out (tokens, emblems, art series, silver and gold borders,
-  digital-only printings, anything legal in no format), what it could not parse and what the
-  database refused, and it throws rather than reporting success if it wrote no rows.
-
-  2. **Get the rows to the table, which needs a decision.** `apps/realtime` has **no database
-     access at all** — only Redis — and all three `customDeck` calls sit inside a synchronous
-     compare-and-set write where no query can happen. So a populated `scryfall_cards` does nothing
-     for a pasted list until one of these is chosen: give realtime a Postgres pool; have it ask
-     `apps/api` for the rows over HTTP; or have `apps/api` resolve the list and park the rows in
-     Redis. The options and their costs are in D332. The fourth option — the client sending the
-     rows along with its paste — is the one that needs no new plumbing and is also a **cheating
-     vector**, since a player could hand over a row claiming a 100/100 vanilla creature, so it is
-     named here only to be ruled out.
-- **The engine knows three hundred and forty-eight cards.** Everything in the thirteen starter decks,
-  commanders included, plus the extra *faces* of the nine cards printed with more than one — three
-  splits, two adventures, two modal double-faced lands and two that transform. (Both counts are
-  printed by `node scripts/measure/mechanic-coverage.mjs`, which reads them off the pool, so they
-  can be rechecked in one command rather than trusted.) It
+- **The engine reads cards from their printed text, and asks you what a card asks.** The thirteen
+  starter decks' 348 cards are hand-written and fully automated; every other card is compiled from
+  its rules text, 14,367 of them completely (see *Two ways to play*). It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), a number chosen *as a spell resolves* rather than as it is cast
