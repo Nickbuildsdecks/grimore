@@ -36331,3 +36331,34 @@ net that no test reaches.
 
 Coverage: 14,066 to 14,096 of 31,900 cards with every line read, and 35,280 to 35,316 of 59,888
 lines, against 8852c43.
+
+## D1036 — the top card, if it is of a kind
+
+"Look at the top card of your library. If it's a land card, you may put it onto the battlefield
+tapped" (Explorer's Scope), "… If it's a creature card, you may reveal it and put it into your hand"
+(Archghoul of Thraben), "Reveal the top card of your library. If it's a creature card, put it onto
+the battlefield" (Call of the Wild), "… If it's a land card, put it into your hand". 57 legal
+sightings of the opening; the forms read here are the 36 that end at the move.
+
+- `clausesOf` joins the two sentences: the second is about the card the first looked at.
+- `readEffect` reads the kind with the search vocabulary (`cardFilterBody`).
+- With "you may" it is a question over the top card (`library-top`, `look: 1`): only a card of
+  that kind can be chosen, and the engine moves a chosen card where `chosenGoTo` says (the hand, the
+  battlefield, the battlefield tapped). When the top card is of another kind the question has no
+  candidates and answers itself, and nothing moves.
+- Without "may" the effect moves it when it qualifies, and leaves it on top otherwise.
+- Not read: the follow-ups some cards add ("If you don't put the card into your hand, you may put it
+  into your graveyard", "… repeat this process", the Deceivers' riders).
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- a land on top is offered, and enters tapped on a yes and stays on top on a no;
+- a creature on top asks nothing and stays;
+- without "may", a creature goes onto the battlefield, a land stays, and a land goes to hand for
+  the "into your hand" row.
+
+Faults injected by script: 6. 5 are caught, the hand destination after its row was added. The 6th
+was an `askOnlyIf` that the empty candidate list already provides, and it was folded away.
+
+Coverage: 14,110 of 31,900 cards (+8), 35,332 of 59,888 lines (+9), measured against the merged tree
+with the other session's D769 (14,102 / 35,323).
