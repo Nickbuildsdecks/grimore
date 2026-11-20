@@ -54213,3 +54213,27 @@ the battlefield this turn" (revolt). About 30 legal lines.
 Faults injected by script: 4. All are caught, the X refusal after the test asserted it.
 
 Coverage: 14,217 of 31,900 cards (+18), 35,527 of 59,888 lines (+19).
+
+## D1047 — enters with a counter for each
+
+"~ enters with a +1/+1 counter on it for each other creature you control", "… for each creature card
+in your graveyard", "… for each creature that died this turn", "… for each other Human you
+control". 41 legal lines print a per-thing count on an "enters with".
+
+- `CardScript.entersWith.per`: the count, from `forEachCount`, asked by the arrival pass in the
+  same context as D1046's condition and multiplied by the printed amount.
+- Only a count the permanent itself cannot be in: "other", a graveyard, a death this turn, an
+  opponent's permanents. The rule counts before the permanent arrives (CR 614.1c), and the arrival
+  pass runs with it already there, so "for each creature you control" would count one too many.
+  It stays unread.
+- Not read: multikicker ("for each time it was kicked", 8 lines), convoke and spent-mana counts,
+  and "exiled this way".
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the self-including count does not;
+- the Captain counts the two other creatures, not itself and not the opponent's;
+- the Scavenger counts the two creature cards in the graveyard, not the land.
+
+Faults injected by script: 4, all caught.
+
+Coverage: 14,223 of 31,900 cards (+6), 35,538 of 59,888 lines (+11).
