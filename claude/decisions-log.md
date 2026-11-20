@@ -53620,3 +53620,35 @@ Faults injected by script: 4 of 4 caught. The two creature-kind guards were caug
 artifact rows were added. A count check was folded away, for D1030's reason.
 
 Coverage: 14,044 of 31,900 cards (+2), 35,230 of 59,888 lines (+4).
+
+## D1032 — keyword counters
+
+"Put a flying counter on target creature", "put a deathtouch counter on target creature you
+control", "When ~ enters, put a lifelink counter on it", "~ enters with a first strike counter on
+it". A permanent with a keyword counter has that keyword (CR 122.1b). Until now these lines were
+refused on purpose, because nothing applied the keyword.
+
+- `characteristicsOf` seeds the keywords of any counters with a positive count beside the printed
+  keywords. The counters are flying, first strike, double strike, deathtouch, hexproof,
+  indestructible, lifelink, menace, reach, trample, vigilance and haste. A count below one (a
+  hand-adjusted counter) gives nothing.
+- **An approximation, recorded:** seeded with the printed keywords, a counter's keyword is cleared
+  by any "loses all abilities" effect. By the rules a counter put on after such an effect keeps its
+  keyword (its timestamp is the placement). Nothing in the pool tests the difference, and the
+  "loses all abilities" spell form is not read yet.
+- The readers:
+  - the counters-on-a-target reader takes the keyword kinds, aimed as a gift as a +1/+1 counter is;
+  - the self-counter reader stops refusing them, and takes "first strike" / "double strike";
+  - the enters-with reader takes a keyword kind.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the flying counter's target is marked friendly; D603's refusal row for a flying counter is now a reads assertion;
+- a flying counter gives flying and a first strike counter gives first strike;
+- both last past end of turn, and a −1 count gives nothing;
+- a creature that enters with a lifelink counter has lifelink.
+
+Faults injected by script: 6. 5 are caught, two of them after the tests were extended (the friendly
+hint, and the positive-count check). The 6th was a two-word guard that the regex already enforces,
+and it was folded away.
+
+Coverage: 14,056 of 31,900 cards (+12), 35,255 of 59,888 lines (+25).
