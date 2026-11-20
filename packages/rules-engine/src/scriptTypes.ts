@@ -3145,7 +3145,15 @@ export interface CardScript {
    * for. A permanent that arrives any other way — reanimated, copied, made as a token — enters
    * with X of zero, which is the rule and not a shortcut.
    */
-  readonly entersWith?: { readonly counter: string; readonly amount: number | 'x' };
+  readonly entersWith?: {
+    readonly counter: string;
+    readonly amount: number | 'x';
+    /**
+     * "~ enters with a +1/+1 counter on it if you attacked this turn" (D1046): asked as it arrives,
+     * of the table, with no event behind it. Only a printed number takes one.
+     */
+    readonly if?: ConditionFn;
+  };
   /**
    * Bloodthirst N (CR 702.54a): this creature enters with N +1/+1 counters **if an opponent was
    * dealt damage this turn**.

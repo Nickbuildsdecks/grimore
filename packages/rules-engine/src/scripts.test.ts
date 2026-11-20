@@ -28539,6 +28539,47 @@ describe('negations in a series (D1045)', () => {
   });
 });
 
+describe('enters with counters if something happened this turn (D1046)', () => {
+  const ROWS = [
+    { name: 'Test Raider', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Raid — Test Raider enters with two +1/+1 counters on it if you attacked this turn.' },
+    { name: 'Test Ghoul', type_line: 'Creature — Zombie', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Test Ghoul enters with a +1/+1 counter on it if a creature died this turn.' },
+    { name: 'Test Kill', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1046', name: 'This turn', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1046', 1: 'd1046' }, deckSpecs: { d1046: deck.deck },
+    battlefield: { 0: ['Swamp', 'Test Bear'], 1: ['Swamp', 'Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+  const counters = (s: GameState, card: string) => s.instances[find(s, 0, 'battlefield', card)]!.counters['+1/+1'] ?? 0;
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // X is the cast's, applied where the cast is known; no condition rides on it, so it stays unread.
+    const x = compileCard({ ...ROWS[0], oracle_text: 'Test Raider enters with X +1/+1 counters on it if you attacked this turn.' } as never);
+    expect(x.ok && x.unread.length).toBe(1);
+  });
+
+  it('raid: none before combat, two after an attack', () => {
+    expect(counters(cast(table(['Test Raider']), 'Test Raider'), 'Test Raider')).toBe(0);
+    let s = advanceTo(table(['Test Raider']), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Bear'), defender: 1 }] } as Action);
+    s = advanceTo(drain(apply(drain(passBoth(s)), { type: 'auto:block', by: 1, blocks: [] })), 'postcombat-main', 120);
+    expect(counters(cast(s, 'Test Raider'), 'Test Raider')).toBe(2);
+  });
+
+  it('morbid: none on a quiet turn, one after a creature died', () => {
+    expect(counters(cast(table(['Test Ghoul']), 'Test Ghoul'), 'Test Ghoul')).toBe(0);
+    let s = table(['Test Ghoul', 'Test Kill']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }] } as Action)), 30);
+    expect(counters(cast(s, 'Test Ghoul'), 'Test Ghoul')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

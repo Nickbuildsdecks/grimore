@@ -30535,6 +30535,22 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     const n = countFrom(perColour[1]!.toLowerCase() === 'an' ? 'a' : perColour[1]!);
     return n === null ? null : { sunburst: { counter: '+1/+1', n } };
   }
+  /*
+    With a condition about the turn (D1046): "~ enters with a +1/+1 counter on it if you attacked
+    this turn" (raid), "… if a creature died this turn" (morbid), "… if an opponent lost life this
+    turn", "… if a permanent you controlled left the battlefield this turn" (revolt). The enters
+    trigger's condition reader, asked as it arrives. Only conditions about the turn: they are facts
+    of the table, where a condition about "it" would be asking about an event a replacement has not
+    got.
+  */
+  const conditioned = /^(.+) if (.+ this turn)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
+  if (conditioned !== null) {
+    const holds = interveningConditionFor(conditioned[2]!, name);
+    const plainRead = holds === null ? null : entersWithFromLine(conditioned[1]!, name);
+    const fixed = plainRead?.entersWith;
+    if (holds === null || plainRead === null || fixed === undefined || fixed.amount === 'x' || Object.keys(plainRead).length !== 1) return null;
+    return { entersWith: { ...fixed, if: holds } };
+  }
   const matched = new RegExp(
     `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ((?:first |double )?[\\w+/]+) counters? on it$`,
     'i',
