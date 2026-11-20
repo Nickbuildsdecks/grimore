@@ -757,6 +757,12 @@ export interface AutomationState {
    * step clears it. Spending takes the ordinary mana first, which is the player's best order.
    */
   readonly keptMana?: Readonly<Record<string, ManaPool>>;
+  /**
+   * The cards a resolving ability just milled, by the source milling them (D1038): "Mill three cards.
+   * You may put a land card from among them into your hand." Written as the mill happens, read by the
+   * question that follows, and cleared when the effect finishes.
+   */
+  readonly milledThisWay?: Readonly<Record<string, readonly string[]>>;
   readonly combat: CombatState;
   readonly effects: readonly ContinuousEffect[];
   /** Lands played this turn per seat, for the one-per-turn rule. */

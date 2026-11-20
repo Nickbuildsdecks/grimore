@@ -53909,6 +53909,36 @@ was moved to the plural count, because the single-counter form is the older read
 
 Coverage: 14,142 of 31,900 cards (+23), 35,376 of 59,888 lines (+35), measured against the merged
 tree with the other session's D770 (14,119 / 35,341).
+
+## D1038 — a pick from what was just milled
+
+"Mill three cards. You may put a land card from among them into your hand" (Ainok Wayfarer), "… a
+permanent card from among the cards milled this way" (Cache Grab), "… an artifact, creature, or land
+card from among the milled cards" (Dredger's Insight). 37 legal cards print the shape.
+
+- `clausesOf` joins the two sentences.
+- The cards really are milled first, so everything watching a graveyard sees all of them and the
+  pick comes back from there. A look-at-the-top with the rest going to the graveyard would have been
+  a different card.
+  - The mill runs before the question (`beforeDecisions`) and records what it milled in a new
+    `GameState.milledThisWay`, keyed by source.
+  - The question, built from its source (the thunk form of a decision), offers only those cards
+    in the graveyard, of the kind the search vocabulary reads (`libraryFilter`). Without "may" it
+    asks for exactly one.
+  - The effect moves the pick to hand and clears the record.
+- Gain is small (+2 cards): most of the 37 have another unread line.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- all three are milled, and only the milled land is offered, not the Forest already there;
+- on a yes it goes to hand and the record is cleared, and on a no it stays;
+- without "may" the question asks for exactly one, and a Bear is taken.
+
+Faults injected by script: 6. 5 are caught, the minimum after the test asserted it. The 6th was a
+graveyard check on the milled cards that the question's own zone already makes, and it was folded
+away.
+
+Coverage: 14,144 of 31,900 cards (+2), 35,382 of 59,888 lines (+6).
 ## D771 — Sweeps end a runaway board instead of hanging
 
 Sweep 60301 (100 pods) never finished. Seed 60315 was the game: one player cast Troubling Tribbles
