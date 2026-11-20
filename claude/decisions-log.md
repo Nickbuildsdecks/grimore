@@ -53685,3 +53685,37 @@ checks were folded away: the battlefield check inside `spendShieldCounter` (both
 it), and the lethal-damage hook described above.
 
 Coverage: 14,065 of 31,900 cards (+9), 35,278 of 59,888 lines (+23).
+
+## D1034 — mana kept until end of turn
+
+"Whenever Savage Ventmaw attacks, add {R}{R}{R}{G}{G}{G}. Until end of turn, you don't lose this mana
+as steps and phases end." (Savage Ventmaw, Grand Warlord Radha, Klauth and the rest). The 16 legal
+lines whose "Until end of turn, …" sentence was unread are the biggest single group of that kind.
+
+- **Engine.** `GameState.keptMana` is how much of each type a seat keeps this turn.
+  - `emptyPools` leaves the smaller of that and what is in the pool, and shrinks the record to
+    what stayed: what was spent is gone, and mana added since is not kept.
+  - The cleanup step clears the record with the other until-end-of-turn facts.
+  - Spending takes the ordinary mana first, which is the player's best order.
+- **A fix found here.** `advanceStep` can walk from the end step into the next turn's upkeep in one
+  call, and it emptied the pools only once, at its start. With mana kept, that left a seat's kept
+  mana in its opponent's upkeep. The pools are now emptied again as the turn ends inside that loop.
+- **Compiler.**
+  - `clausesOf` joins "Add …. Until end of turn, you don't lose this mana …" into one clause.
+  - `readEffect` reads it: the add as it is, and whatever it added (the pool's difference)
+    recorded as kept on top of anything already kept. Mana already in the pool is not the
+    trigger's to keep.
+
+**Tests.** 3 engine tests:
+- the row reads whole;
+- the three red survive into the second main phase;
+- with two spent, one survives;
+- two more added later are not kept;
+- the turn ends them, and nothing is left by the next upkeep;
+- two triggers keep six, and a red already in the pool empties.
+
+Faults injected by script: 9. 7 are caught, three of them after the tests were extended (the record
+shrinking, the sum of two triggers, the difference against the pool). The other 2 were empty-case
+shortcuts, folded away.
+
+Coverage: 14,070 of 31,900 cards (+5), 35,285 of 59,888 lines (+7).
