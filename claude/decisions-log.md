@@ -54642,3 +54642,24 @@ and 354 moves on average.
 
 Coverage: 14,318 to 14,334 of 31,900 cards with every line read, and 35,711 to 35,758 of 59,888
 lines, against 995976f.
+
+## D1057 — a random discard aimed at a player
+
+"Target player discards two cards at random" (Hymn to Tourach), "Target player discards X cards at
+random" (Mind Twist, Mind Shatter), "Target opponent discards a card at random". The round form
+("each opponent discards a card at random") was read; the targeted one was not.
+
+- A reader for "target player|opponent discards N card(s) at random": `discardAtRandom` on the
+  target's seat, with no question asked. Mind Twist's X is the X paid, through D1055.
+- Hymn to Tourach, Mind Twist and Mind Shatter read whole.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- Hymn takes two from the target's hand into the graveyard, asking nothing;
+- the X version takes the X paid (3).
+
+Faults injected by script: 3. 2 are caught. The 3rd, a player-kind check that the phrase already
+guarantees, was folded away.
+
+Coverage: 14,391 of 31,900 cards (+17), 35,836 of 59,888 lines (+19), over a baseline that includes
+the other session's D776.
