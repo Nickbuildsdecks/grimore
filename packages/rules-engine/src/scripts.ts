@@ -17666,6 +17666,23 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When(?:ever)? ${self} transforms into ${self}, (.+)$`, 'i'),
     on: [{ kind: 'transformed' }],
   },
+  /*
+    Phasing (D1029): "Whenever Teferi's Imp phases out, discard a card", "Whenever Warping Wurm phases
+    in, put a +1/+1 counter on it", "When Ertai's Familiar phases out or leaves the battlefield, mill
+    three cards". The permanent's own events, raised by `settle` from `GameState.phased`.
+  */
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} phases in, (.+)$`, 'i'),
+    on: [{ kind: 'phases-in' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} phases out, (.+)$`, 'i'),
+    on: [{ kind: 'phases-out' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} phases out or leaves the battlefield, (.+)$`, 'i'),
+    on: [{ kind: 'phases-out' }, { kind: 'leaves' }],
+  },
   // Kitchen Finks, Gravedigger, and thirty others.
   {
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or dies, (.+)$`, 'i'),

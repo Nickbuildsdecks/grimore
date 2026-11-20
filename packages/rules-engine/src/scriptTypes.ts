@@ -843,6 +843,12 @@ export type TriggerEvent =
    */
   | { readonly kind: 'transformed' }
   /**
+   * "Whenever ~ phases in" / "phases out" (D1029, CR 702.26). About the permanent itself. A
+   * phases-out trigger looks back in time (CR 603.10a), so it fires from the phased-out zone.
+   */
+  | { readonly kind: 'phases-in' }
+  | { readonly kind: 'phases-out' }
+  /**
    * "Whenever day becomes night or night becomes day" (CR 726, D593).
    *
    * The change itself, not the time of day: raised when one becomes the other as a turn begins,

@@ -1017,6 +1017,13 @@ export interface AutomationState {
    */
   readonly transformed: readonly string[];
   /**
+   * Permanents that phased in or out since the last action (D1029), for "whenever ~ phases in" and
+   * "whenever ~ phases out". Written by `phaseIn` and `phaseOut`, which live below the module that
+   * can `raise`, and drained by `settle` like `transformed`. Indirect phasing is included: a
+   * permanent that phases out with its host phases out all the same (CR 702.26g).
+   */
+  readonly phased?: readonly { readonly id: string; readonly dir: 'in' | 'out' }[];
+  /**
    * Clocks that **ran out** since the last action: a counter counted down to nothing.
    *
    * The family's tenth fact and the only one that is **not raised as an event**, which is the whole

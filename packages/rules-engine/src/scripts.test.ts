@@ -7928,12 +7928,14 @@ describe('deck coverage', () => {
       - `script umbraArmor` (D947): umbra armor. No pool deck has one. Driven at runtime by "umbra armor (D947)".
       - `trigger reflexive` (D948): "When you do". No pool deck has one. Driven at runtime by "reflexive triggers (D948)".
       - `keyword phasing` (D1023): phasing. No pool deck has one. Driven at runtime by "phasing (D1023)".
+      - `trigger phases-in`, `trigger phases-out` (D1029): phase triggers. No pool deck has one. Driven at runtime by "phase triggers (D1029)".
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
       'keyword phasing',
+      'trigger phases-in', 'trigger phases-out',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
       'script bloodthirst',
       'script kickedEntersWith',
@@ -27399,6 +27401,51 @@ describe('half a life total, "that much life", and an aimed edict with a count (
     expect(ids(s, 1, 'battlefield')).toHaveLength(1);
     s = cast(table([], ['Test Bear', 'Test Bear'], ['Test Bite']), 'Test Bite', [{ kind: 'player', seat: 1 }]);
     expect(namesIn(s, 1, 'battlefield')).toEqual(['Swamp']);
+  });
+});
+
+describe('phase triggers (D1029)', () => {
+  const ROWS = [
+    { name: 'Test Imp', type_line: 'Creature — Imp', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Flying\nPhasing\nWhenever Test Imp phases out, you lose 1 life.\nWhenever Test Imp phases in, you gain 3 life.' },
+    { name: 'Test Familiar', type_line: 'Creature — Illusion', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'When Test Familiar phases out or leaves the battlefield, you gain 2 life.' },
+    { name: 'Test Veil', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Target creature phases out.' },
+  ];
+  const deck = customDeck({ id: 'd1029', name: 'Phase triggers', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (mine: readonly string[], hand: readonly string[] = []) => settle(advanceTo(arena({
+    decks: { 0: 'd1029', 1: 'd1029' }, deckSpecs: { d1029: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: ['Island'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'));
+  const ownNext = (s: GameState) => settle(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('out loses one, from the phased-out zone; in gains three; and so on', () => {
+    // The table's own untap step phased it out. The Familiar beside it is not what phased, and
+    // its own "phases out" says nothing.
+    let s = table(['Test Imp', 'Test Familiar']);
+    expect(namesIn(s, 0, 'phased')).toEqual(['Test Imp']);
+    expect(life(s, 0)).toBe(19);
+    // Back in at the untap step, and the gain is already there in the upkeep, before any draw.
+    s = advanceTo(nextTurn(nextTurn(s)), 'upkeep');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Imp');
+    expect(stackNames(s)).toEqual(['you gain 3 life']);
+    s = settle(advanceTo(s, 'precombat-main'));
+    expect(life(s, 0)).toBe(22);
+    s = ownNext(s);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it('"phases out or leaves the battlefield": a phasing spell is enough', () => {
+    let s = table(['Test Familiar'], ['Test Veil']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Veil'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Familiar') }] } as Action));
+    expect(namesIn(s, 0, 'phased')).toEqual(['Test Familiar']);
+    expect(life(s, 0)).toBe(22);
   });
 });
 

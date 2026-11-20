@@ -1713,6 +1713,9 @@ function triggerMatches(
     case 'turned-face-up':
     // And a transform, for exactly the same reason.
     case 'transformed':
+    // And phasing (D1029), narrowed to its own permanent the same way.
+    case 'phases-in':
+    case 'phases-out':
     // And day becoming night or night becoming day, which every permanent sees (D593).
     case 'day-night':
       return true;
@@ -2358,7 +2361,7 @@ function raise(
   // \`targeted\` left this set in D1021, for "whenever a creature you control becomes the target of
   // a spell": it falls through to the whole board below, with its attachments.
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'turned-face-up', 'transformed', 'state',
+    'becomes-tapped', 'leaves', 'turned-face-up', 'phases-in', 'phases-out', 'transformed', 'state',
     'chapter',
     // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
     // permanent itself, and this event is raised for every landing of damage in every combat the
@@ -2462,7 +2465,9 @@ function raise(
       // The Aura a lethal hit detached (D994): it was attached when the damage was dealt.
       || (event.kind === 'damaged' && id !== subject)
       // A sacrificed permanent sees its own sacrifice, like its own death (D570, CR 603.10a).
-      || event.kind === 'sacrifices')
+      || event.kind === 'sacrifices'
+      // And a permanent its own phasing out, from the phased-out zone (D1029, CR 603.10a).
+      || event.kind === 'phases-out')
       && (id === subject || attachedWatchers.includes(id));
     /*
       And the sixth: a permanent that was dealt damage and is gone by now (D566).
@@ -3718,6 +3723,7 @@ function settle(state: GameState, before: GameState): GameState {
         "transforms into" trigger at all.
       */
       || (next.transformed ?? []).length > 0 || (next.copied ?? []).length > 0
+      || (next.phased ?? []).length > 0
       // And the reflexive triggers an effect queued (D948).
       || (next.reflexive ?? []).length > 0);
     pass++
@@ -3806,6 +3812,8 @@ function settle(state: GameState, before: GameState): GameState {
       `GameState.transformed`).
     */
     const turned = next.transformed ?? [];
+    // And the permanents that phased in or out (D1029). See `GameState.phased`.
+    const phasedNow = next.phased ?? [];
     /*
       And what came unattached on the way out, which is the one fact in this family that the board
       no longer holds by the time it is wanted: `relocate` detaches everything pointing at a card as
@@ -3819,7 +3827,7 @@ function settle(state: GameState, before: GameState): GameState {
       ...next,
       reflexive: [],
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [], countersPut: [], leftGraveyard: [],
+      copied: [], transformed: [], phased: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [], countersPut: [], leftGraveyard: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -4181,6 +4189,11 @@ function settle(state: GameState, before: GameState): GameState {
     for (const id of turned) {
       if (next.instances[id]?.zone !== 'battlefield') continue;
       next = raise(next, { kind: 'transformed' }, next.instances[id]?.zoneSeat, id);
+    }
+    // Phasing (D1029): each permanent's own trigger, in the order it happened.
+    for (const { id, dir } of phasedNow) {
+      if (next.instances[id] === undefined) continue;
+      next = raise(next, { kind: dir === 'in' ? 'phases-in' : 'phases-out' }, next.instances[id]?.zoneSeat, id);
     }
     for (const { card, from, controller, wasCreature } of banished) {
       next = raise(

@@ -3016,6 +3016,8 @@ export function phaseOut(state: GameState, ids: readonly string[]): GameState {
     });
     next = withInstance(next, id, { zone: 'phased', ...(indirect ? { phasedIndirectly: true as const } : {}) });
     next = removeFromCombat(next, id);
+    // For "whenever ~ phases out" (D1029), announced by `settle`.
+    next = { ...next, phased: [...(next.phased ?? []), { id, dir: 'out' as const }] };
   }
   return next;
 }
@@ -3051,6 +3053,8 @@ export function phaseIn(state: GameState, seat: SeatIndex): GameState {
       [to]: [...listAt(next, to).filter((other) => other !== id), id],
     });
     next = withInstance(next, id, { zone: 'battlefield', phasedIndirectly: undefined });
+    // For "whenever ~ phases in" (D1029), announced by `settle`.
+    next = { ...next, phased: [...(next.phased ?? []), { id, dir: 'in' as const }] };
   }
   return next;
 }
