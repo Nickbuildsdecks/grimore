@@ -24906,12 +24906,20 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    Any one target creature the target vocabulary reads (D1030), where this was "target creature
+    [you control]" only: "another target attacking creature gains flying" (the attack-trigger
+    family), "another target creature you control gains deathtouch", "target attacking creature
+    gains first strike", "target Elf gains trample", "up to one target creature gains haste".
+  */
   const granted =
-    /^(target creature(?: you control)?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?) until end of turn$/i
+    /^((?:another |up to one (?:other )?)?target [^,]+?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?) until end of turn$/i
       .exec(text);
   if (granted !== null) {
     const words = grantedKeywordList(granted[3]!);
-    const spec = targetSpecFrom(granted[1]!, true);
+    const aimed = targetSpecFrom(granted[1]!, true);
+    // A creature only: "target land gains shroud" is not a creature's keyword. (A plural target prints "gain".)
+    const spec = aimed !== null && aimed.kind === 'creature' ? aimed : null;
     const becomes = granted[2] === undefined
       ? undefined
       : TOKEN_COLOURS[granted[2].toLowerCase()] ?? null;

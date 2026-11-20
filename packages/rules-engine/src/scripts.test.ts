@@ -27449,6 +27449,52 @@ describe('phase triggers (D1029)', () => {
   });
 });
 
+describe('a keyword granted to any one target creature (D1030)', () => {
+  const ROWS = [
+    { name: 'Test Banner', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Whenever Test Banner attacks, another target attacking creature gains flying until end of turn.' },
+    { name: 'Test Strike', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Target attacking creature gains first strike until end of turn.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1030', name: 'Grants', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1030', 1: 'd1030' }, deckSpecs: { d1030: deck.deck },
+    battlefield: { 0: ['Plains', ...mine], 1: ['Plains'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const swing = (s: GameState, names: readonly string[]) => drain(apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: ids(s, 0, 'battlefield').filter((id) => names.includes(nameOf(s, id))).map((attacker) => ({ attacker, defender: 1 })),
+  } as Action));
+  const has = (s: GameState, id: string, word: string) => characteristicsOf(s, s.instances[id]!).keywords.has(word as never);
+
+  it('reads every row whole, and not a grant to a land', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const land = compileCard({ name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+      oracle_text: 'Target land gains shroud until end of turn.' } as never);
+    expect(land.ok && land.unread.length).toBe(1);
+  });
+
+  it('"another target attacking creature": the other attacker flies, and alone it has nothing to aim at', () => {
+    let s = swing(table(['Test Banner', 'Test Bear']), ['Test Banner', 'Test Bear']);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(has(s, find(s, 0, 'battlefield', 'Test Bear'), 'flying')).toBe(true);
+    expect(has(s, find(s, 0, 'battlefield', 'Test Banner'), 'flying')).toBe(false);
+    s = swing(table(['Test Banner']), ['Test Banner']);
+    expect(s.stackOrder).toEqual([]);
+    expect(s.pendingChoice).toBeNull();
+  });
+
+  it('"target attacking creature": an attacker may be chosen, a creature at home may not', () => {
+    let s = table(['Test Bear', 'Test Bear'], ['Test Strike']);
+    const [out, home] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker: out!, defender: 1 }] } as Action));
+    const cast = (target: string) => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strike'), targets: [{ kind: 'card', id: target }] } as Action);
+    expect(refusal(s, cast(home!))).not.toBeNull();
+    s = drain(passBoth(apply(s, cast(out!))), 30);
+    expect(has(s, out!, 'first strike')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
