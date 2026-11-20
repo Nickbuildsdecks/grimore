@@ -28858,6 +28858,58 @@ describe('combat damage by a kind of creature you control (D773)', () => {
     expect(drawsFrom(s, ['Test Ox', 'Test Wolf'])).toBe(1);
   });
 });
+describe('counters on the token just made (D1052)', () => {
+  const FRACTAL = 'Create a 0/0 green and blue Fractal creature token.';
+  const ROWS = [
+    { name: 'Test Evolution', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: `When this enchantment enters, ${FRACTAL.charAt(0).toLowerCase()}${FRACTAL.slice(1)} Put three +1/+1 counters on it.` },
+    { name: 'Test Summon', type_line: 'Sorcery', mana_cost: '{X}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: `${FRACTAL} Put X +1/+1 counters on it.` },
+    { name: 'Test Invocation', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: `${FRACTAL} Put X +1/+1 counters on it, where X is the number of lands you control.` },
+  ];
+  const deck = customDeck({ id: 'd1052', name: 'Fractals', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const cast = (card: string, forests: number, x?: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1052', 1: 'd1052' }, deckSpecs: { d1052: deck.deck },
+      battlefield: { 0: Array(forests).fill('Forest'), 1: [] }, hands: { 0: [card] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(x === undefined ? {} : { x }) } as Action)), 30);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const fractal = ids(s, 0, 'battlefield').find((id) => /Fractal/.test(nameOf(s, id)));
+    return { s, fractal };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the counters go on the Fractal, not on the enchantment that made it', () => {
+    const { s, fractal } = cast('Test Evolution', 0);
+    expect(fractal).toBeDefined();
+    expect(power(s, fractal!)).toBe(3);
+    const evolution = find(s, 0, 'battlefield', 'Test Evolution');
+    expect(s.instances[evolution]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('X paid, and X counted', () => {
+    const paid = cast('Test Summon', 2, 2);
+    expect(power(paid.s, paid.fractal!)).toBe(2);
+    // A second Summon: the counters go on the new Fractal only, not on the one already there.
+    let twice = advanceTo(arena({
+      decks: { 0: 'd1052', 1: 'd1052' }, deckSpecs: { d1052: deck.deck },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest'], 1: [] }, hands: { 0: ['Test Summon', 'Test Summon'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    twice = drain(passBoth(apply(twice, { type: 'auto:cast', by: 0, card: find(twice, 0, 'hand', 'Test Summon'), x: 2 } as Action)), 30);
+    const first = ids(twice, 0, 'battlefield').find((id) => /Fractal/.test(nameOf(twice, id)))!;
+    twice = drain(passBoth(apply(twice, { type: 'auto:cast', by: 0, card: find(twice, 0, 'hand', 'Test Summon'), x: 1 } as Action)), 30);
+    expect(power(twice, first)).toBe(2);
+    expect(ids(twice, 0, 'battlefield').filter((id) => /Fractal/.test(nameOf(twice, id))).map((id) => power(twice, id)).sort()).toEqual([1, 2]);
+    const counted = cast('Test Invocation', 3);
+    expect(power(counted.s, counted.fractal!)).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

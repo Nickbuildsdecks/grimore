@@ -25544,6 +25544,34 @@ function readEffect(
       };
     }
   }
+  /*
+    A token with counters put on it (D1052), held as one clause by `clausesOf`: the token clause as
+    it always reads, then the counters on exactly the tokens it made — the new token instances, since
+    nothing else arrives during one effect (a trigger they cause waits for the stack).
+  */
+  const withCounters = /^(.+?)\u0012(.+?)\u0013(.*)$/.exec(clause);
+  if (withCounters !== null) {
+    const made = readEffect(withCounters[1]!, name, where);
+    const word = withCounters[2]!.toLowerCase();
+    const tail = withCounters[3]!.trim() === '' ? null : countTailOf(`put X counters${withCounters[3]!}`, name);
+    const isX = word === 'x';
+    // A printed number takes no "where X is"; an X takes one, or is the X paid (Fractal Summoning).
+    if (made === null || made.targets !== undefined || made.decisions !== undefined || (!isX && tail !== null)
+      || (tail !== null && tail.grammar !== 'announced')) return null;
+    const fixed = isX ? null : /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word === 'an' ? 'a' : word];
+    if (!isX && fixed === undefined) return null;
+    return {
+      ...made,
+      effect: (c) => {
+        const before = new Set(Object.keys(c.state.instances));
+        const after = made.effect(c);
+        const n = fixed ?? (tail === null ? c.x : tail.counted(c));
+        if (n === null || n <= 0) return after;
+        const tokens = Object.keys(after.instances).filter((id) => !before.has(id));
+        return tokens.reduce((state, id) => addCounters(state, id, '+1/+1', n), after);
+      },
+    };
+  }
   // A land animated by a spell or a trigger (D1048), held as one clause by `clausesOf`.
   if (clause.includes('\u0010')) return animateSelf(clause.replace('\u0010', ". It's still a land"), name);
   if (/\bcreature that['’]s still a land\.?$/i.test(clause.trim())) return animateSelf(clause, name);
@@ -26351,6 +26379,12 @@ function clausesOf(line: string): readonly string[] {
     // An emblem's quoted abilities (D734) are one clause: their own punctuation is hidden from the
     // splitting below and put back by `emblemClause`.
     .replace(/you get an emblem with ("[^"]+"(?: and "[^"]+")?)/gi, (_m, quoted: string) => `you get an emblem with ${hideEmblemText(quoted)}`)
+    /*
+      A token and the counters put on it (D1052): "Create a 0/0 green and blue Fractal creature
+      token. Put three +1/+1 counters on it." Held as one clause, because "it" is the token: read
+      apart, "it" fell back to the source and Additive Evolution put the counters on itself.
+    */
+    .replace(/(create (?:a|an) [^.]*?tokens?)\.\s+Put (x|a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) \+1\/\+1 counters? on (?:it|them)((?:, where X is [^.]+)?)/gi, '$1\u0012$2\u0013$3')
     // A land becoming a creature and "It's still a land." (D1048) are one reading: see `animateSelf`.
     .replace(/(becomes an? \d+\/\d+ [^.]*?creature[^.]*?)\.\s+It['’]s still a land/gi, '$1\u0010')
     // And a token's quoted ability printed inline (D1042), for the same reason: "… Mercenary creature
