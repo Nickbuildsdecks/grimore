@@ -36997,6 +36997,53 @@ reached because both halves end in "card", and it was folded away.
 
 Coverage: 14,287 of 31,900 cards (+14), 35,618 of 59,888 lines (+16).
 
+## D1055 — a bare X, as the X paid
+
+"Target player loses X life", "You gain X life", "Target player mills X cards", "Target player gains
+X life", "… deals X damage to any target. You gain X life." (Death Grasp, Stream of Life, Psychic
+Drain, Damnable Pact, Swallowing Plague). These readers take a number and not the letter, and the X
+is the spell's or the ability's own (`EffectContext.x`, which an enters trigger takes from the cast
+X).
+
+- `xAsPaid`, the last reader `readEffect` tries: the clause read with 2 for X, and read again at
+  resolution with the X paid. It refuses:
+  - "where X is", an X in a target count, a bound or a cost, and "half X";
+  - a reading that asks anything (`decisions`, `beforeDecisions`, `immediate`, `reflexive`), since
+    those are built at compile time and would keep the 2 ("Scry X");
+  - targets that differ between X = 2 and X = 3, since a divided amount lives in the target spec
+    (Fire Covenant).
+  An X of 0 that a reader refuses does nothing.
+- **"Where X is" anywhere in the sentence turns it off** (`xAnnounced`, set by `readEffect` and by
+  `composeEffects` for the whole clause group). Without this, "Tendrils of Corruption deals X damage
+  to target creature and you gain X life, where X is the number of Swamps you control" split on
+  "and": the damage half read as the X paid (nought) while the life half read the count. An audit of
+  every newly read card whose X is not in a cost found ten such sentences. All are unread again,
+  and a test pins the sentence-level and the clause-split forms.
+- **Only an X that something pays** (`xPayable`): the card's mana cost for a spell and for a
+  permanent's triggers (the cast X), and the ability's own cost for an activated ability.
+  `compileCard` sets the flag from the mana cost and `abilityFromLine` from the ability's cost.
+  Without it, "{T}: Prevent the next X damage …" read X as nought. "+X/+X … for each" is a rate and
+  is refused too.
+- **Morph, megamorph, disguise and echo costs with {X} are refused.** Turning a card face up pays
+  no X and keeps none, so Warbreak Trumpeter's "Morph {X}{X}{R}" cost {R} and its "create X Goblins"
+  made none. That was a misread already counted as read.
+
+**Tests.** 5 engine tests:
+- the rows read whole;
+- loses 3, and deals 2 and gains 2, with the X paid;
+- X = 0 mills nothing, and X = 2 mills two;
+- "where X is" in the sentence, whole or split into clauses, leaves it unread;
+- "Scry X", a divided X, a morph X, an X on a card with none in its cost, an ability whose own cost
+  has no X (on an X card), and "+X/+X … for each" stay unread. Twin Spend's "X damage … You gain X
+  life" compile row now reads.
+
+Faults injected by script: 13. All are caught except one check folded away, an X = 1 / X = 12
+read-through that no clause failed. A target check folded alongside it was restored when an audit
+found Fire Covenant reading with a divided amount fixed at 2, and that fault is caught. Three
+gating faults needed the pins above before they were caught.
+
+Coverage: 14,320 of 31,900 cards (+33), 35,669 of 59,888 lines (+51). The net includes Bane of the
+Living and Warbreak Trumpeter, removed from the read count because their morph X was misread.
 ## D774 — Bestow from the printed text, and "~ or enchanted / equipped creature" hits
 
 Two readers that one card needed: Thassa's Emissary.

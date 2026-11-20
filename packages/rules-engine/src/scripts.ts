@@ -25641,9 +25641,36 @@ function anotherPlayersMay(
   };
 }
 
+/**
+ * How many clauses being read announce their own X ("…, where X is …") (D1055). While one is, an X
+ * in any part of it is that count, never the X paid, so `xAsPaid` stands down: "Tendrils of
+ * Corruption deals X damage to target creature and you gain X life, where X is the number of Swamps
+ * you control" is split on "and", and the damage half alone must not read as the spell's X.
+ */
+let xAnnounced = 0;
+
+/**
+ * Whether the line being read has an X that something pays (D1055): the card's mana cost for a spell
+ * and for a permanent's triggers (the cast X, `castX`), the ability's own cost for an activated
+ * ability. Without one, "{T}: Prevent the next X damage …" has no X to read, and `xAsPaid` reads
+ * nothing. `compileCard` sets it from the mana cost; `abilityFromLine` from the ability's cost.
+ */
+let xPayable = false;
+
+/** Runs `read` with `xPayable` set, for `compileCard`. */
+export function withXPayable<T>(payable: boolean, read: () => T): T {
+  const was = xPayable;
+  xPayable = payable;
+  try { return read(); } finally { xPayable = was; }
+}
+
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
+    xAnnounced += 1;
+    try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
+  }
   /*
     "… sacrifices a creature of their choice" (D758): the current Oracle wording of every edict,
     which says in words what an edict always meant, since the player sacrificing chooses (CR
@@ -26440,7 +26467,52 @@ function readEffect(
     // After every other reader (D658): "target player may search …" already reads as one search
     // that may come back empty (D647), which is one question where this would ask two.
     ?? anotherPlayersMay(clause, name, where)
+    ?? xAsPaid(clause, name, where)
     ?? null;
+}
+
+/**
+ * **A bare X, as the X paid** (D1055): "Target player draws X cards", "You lose X life", "Target
+ * player mills X cards", "Target player gains X life". Each of these readers takes a number and not
+ * the letter, and the X is the spell's or the ability's own (`EffectContext.x`).
+ *
+ * So the clause is read with a number in place of X, and read again at resolution with the X that
+ * was paid. Last of all, after every reader that knows the letter itself, and only when X cannot
+ * change the shape of what was read:
+ *
+ * - no "where X is", no X in a target count, a bound or a cost — those X are other numbers or other
+ *   shapes;
+ * - no question (`decisions`, `beforeDecisions`) and no `immediate` part, because those are built
+ *   from the reading at compile time and would keep the number it was read with.
+ *
+ * - the same targets read with X = 2 and X = 3: "X damage divided as you choose among any number of
+ *   target creatures" carries the amount in the target spec, which is built at compile time.
+ *
+ * An X of 0 that does not read (a reader that wants a positive number) does nothing, which is
+ * what a zero of anything is.
+ */
+function xAsPaid(clause: string, name: string, where: SubjectZone | null): ReadEffect | null {
+  if (!xPayable || xAnnounced > 0 || !/\bX\b/.test(clause)) return null;
+  // "for each" too: "+X/+X … for each land" is a rate, not the X paid (D521's refusal).
+  if (/where X is|\bX (?:target|or less|or greater|or more)|up to X|\{X\}|half X|\bfor each\b/i.test(clause)) return null;
+  const at = (n: number): ReadEffect | null => readEffect(clause.replace(/\bX\b/g, String(n)), name, where);
+  const two = at(2);
+  const three = at(3);
+  if (two === null || three === null) return null;
+  const asks = two.decisions !== undefined || two.beforeDecisions !== undefined
+    || two.immediate !== undefined || two.reflexive !== undefined;
+  if (asks) return null;
+  // The targets read with 2 and with 3 must be the same: an amount divided among them is in the spec.
+  const shape = (read: ReadEffect): string => JSON.stringify(read.targets ?? []);
+  if (shape(two) !== shape(three)) return null;
+  return {
+    ...(two.targets === undefined ? {} : { targets: two.targets }),
+    ...(two.spellFlags === undefined ? {} : { spellFlags: two.spellFlags }),
+    effect: (c) => {
+      const read = c.x === 2 ? two : at(c.x);
+      return read === null ? c.state : read.effect(c);
+    },
+  };
 }
 
 /**
@@ -27722,6 +27794,11 @@ function copyTargetSpell(clauses: readonly string[]): ReadEffect | null {
 function composeEffects(
   printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  // A group whose X is announced in any clause (D1055): every X in it is that count. See `xAnnounced`.
+  if (xAnnounced === 0 && printedClauses.some((clause) => /\bwhere X is\b/i.test(clause))) {
+    xAnnounced += 1;
+    try { return composeEffects(printedClauses, name, where); } finally { xAnnounced -= 1; }
+  }
   const clauses = printedClauses.flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would
@@ -28654,6 +28731,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const split = /^([^:]+):\s*(.+)$/.exec(text);
   if (split === null) return null;
+  // An X in an activated ability is the one its own cost pays, or none (D1055). See `xPayable`.
+  const paysX = /\{X\}/i.test(split[1]!);
+  if (xPayable !== paysX) {
+    const was = xPayable;
+    xPayable = paysX;
+    try { return abilityFromLine(line, name); } finally { xPayable = was; }
+  }
   /*
     "Activate only as a sorcery." — a timing restriction, taken off the end before the effect is
     read (D445).

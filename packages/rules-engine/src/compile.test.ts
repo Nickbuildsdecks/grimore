@@ -4064,19 +4064,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(permanent.unread.map((u) => u.why)).toEqual(['no-reader']);
     });
 
-    it('refuses a second sentence that also spends X', () => {
+    it('reads a second sentence that also spends X since D1055, and still refuses Exsanguinate\'s', () => {
       /*
-        Exsanguinate's shape: "Each opponent loses X life. You gain life equal to the life lost this
-        way." The second sentence is not an X clause at all — it reads the life actually lost, which
-        at a pod is X times the number of opponents — so reading the first and stopping would be a
-        drain with the lifegain silently dropped. One clause only, until that second reader exists.
+        "You gain X life" is the X paid (D1055: Death Grasp), so the pair reads. Exsanguinate's
+        second sentence is not an X clause at all — "You gain life equal to the life lost this way"
+        reads the life actually lost, which at a pod is X times the number of opponents — and it
+        stays a separate question.
       */
       const two = compileCard({
         name: 'Twin Spend', type_line: 'Sorcery', mana_cost: '{X}{B}', cmc: 1, colors: ['B'],
         oracle_text: 'Twin Spend deals X damage to any target. You gain X life.',
       });
-      expect(two.ok).toBe(true);
-      if (two.ok) expect(two.script).toBeUndefined();
+      expect(two.ok && two.unread).toEqual([]);
     });
   });
 

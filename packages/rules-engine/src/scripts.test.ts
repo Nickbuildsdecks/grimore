@@ -29002,6 +29002,87 @@ describe('searches for exactly N, or for one of two kinds (D1054)', () => {
   });
 });
 
+describe('a bare X, as the X paid (D1055)', () => {
+  const S = (name: string, cost: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: cost, cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    S('Test Drain', '{X}', 'Target player loses X life.'),
+    S('Test Grasp', '{X}', 'Test Grasp deals X damage to any target. You gain X life.'),
+    S('Test Mill', '{X}', 'Target player mills X cards.'),
+    S('Test Tendrils', '{0}', 'Test Tendrils deals X damage to target creature and you gain X life, where X is the number of Swamps you control.'),
+    { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '9', oracle_text: 'Defender' },
+  ];
+  const deck = customDeck({ id: 'd1055', name: 'X paid', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 40 }], data: ROWS as never[] });
+  const cast = (spell: string, target: (s: GameState) => Target, x?: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1055', 1: 'd1055' }, deckSpecs: { d1055: deck.deck },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Test Wall'] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [target(s)], ...(x === undefined ? {} : { x }) } as Action)), 30);
+    return { before, s };
+  };
+  const opponent = (): Target => ({ kind: 'player', seat: 1 });
+
+  it('reads every row whole', () => {
+    for (const r of ROWS.filter((row) => row.name !== 'Test Tendrils')) {
+      expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    }
+  });
+
+  it('loses, deals and gains the X paid', () => {
+    const drained = cast('Test Drain', opponent, 3);
+    expect(life(drained.s, 1)).toBe(life(drained.before, 1) - 3);
+    const grasped = cast('Test Grasp', opponent, 2);
+    expect(life(grasped.s, 1)).toBe(life(grasped.before, 1) - 2);
+    expect(life(grasped.s, 0)).toBe(life(grasped.before, 0) + 2);
+  });
+
+  it('X = 0 does nothing, and X = 2 mills two', () => {
+    const none = cast('Test Mill', opponent, 0);
+    expect(ids(none.s, 1, 'library').length).toBe(ids(none.before, 1, 'library').length);
+    const two = cast('Test Mill', opponent, 2);
+    expect(ids(two.s, 1, 'library').length).toBe(ids(two.before, 1, 'library').length - 2);
+  });
+
+  /*
+    The misreading this guards against: split on "and", the damage half alone would read as the
+    X paid (nought on a card with no X in its cost) while the life half read the count. No reader
+    takes the counted damage yet, so the honest answer is the line unread.
+  */
+  it('"where X is" anywhere in the sentence: no part of it reads as the X paid', () => {
+    const read = compileCard(ROWS.find((row) => row.name === 'Test Tendrils') as never);
+    expect(read.ok && read.unread.length).toBe(1);
+    // And when the sentence is split into clauses before it is read (Sparksmith's "… and X damage to you").
+    const split = compileCard({ name: 'Test Smith', type_line: 'Creature — Goblin', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: '{T}: Test Smith deals X damage to target creature and X damage to you, where X is the number of Goblins on the battlefield.' } as never);
+    expect(split.ok && split.unread.length).toBe(1);
+  });
+
+  it('an X the reading would ask with ("Scry X") stays unread: the question would keep its number', () => {
+    const read = compileCard({ name: 'Test Scry', type_line: 'Sorcery', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Scry X.' } as never);
+    expect(read.ok && read.unread.length).toBe(1);
+    // Nor a morph cost with X in it, which turning face up neither pays nor keeps (Warbreak Trumpeter).
+    const morphed = compileCard({ name: 'Test Trumpeter', type_line: 'Creature — Goblin', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Morph {X}{X}{R}\nWhen Test Trumpeter is turned face up, create X 1/1 red Goblin creature tokens.' } as never);
+    // Both lines: the morph cost, and the trigger, whose X no mana cost pays.
+    expect(morphed.ok && morphed.unread.map((u) => u.line)).toContain('Morph {X}{X}{R}');
+    // Nor an X nothing pays: a sorcery with no X in its cost, an ability whose own cost has none (even
+    // on a card whose mana cost does), and "+X/+X … for each" on an X spell, which is a rate.
+    for (const [type, cost, text] of [
+      ['Sorcery', '{B}', 'Target player loses X life.'],
+      ['Artifact', '{X}{B}', 'When this artifact enters, target player loses X life.\n{T}: Target player loses X life.'],
+      ['Sorcery', '{X}{G}', 'Target creature gets +X/+X until end of turn for each land you control.'],
+    ]) {
+      const read = compileCard({ name: 'Test Unpaid', type_line: type, mana_cost: cost, cmc: 1, colors: ['B'], layout: 'normal', oracle_text: text } as never);
+      expect(read.ok && read.unread.map((u) => u.line), `${cost} ${text}`).toEqual([text.split('\n').at(-1)]);
+    }
+    // Nor a division whose amount is in the target spec (Fire Covenant's).
+    const divided = compileCard({ name: 'Test Covenant', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Covenant deals X damage divided as you choose among any number of target creatures.' } as never);
+    expect(divided.ok && divided.unread.length).toBe(1);
+  });
+});
+
 describe('"~ or enchanted creature deals combat damage" (D774)', () => {
   const EMISSARY = { name: "Test Emissary", type_line: 'Enchantment Creature — Crab', mana_cost: '{4}{U}', cmc: 5, colors: ['U'], layout: 'normal', power: '3', toughness: '3', oracle_text: "Bestow {5}{U}\nWhenever Test Emissary or enchanted creature deals combat damage to a player, draw a card.\nEnchanted creature gets +3/+3." };
   const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
