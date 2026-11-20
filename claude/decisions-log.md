@@ -54237,3 +54237,31 @@ control". 41 legal lines print a per-thing count on an "enters with".
 Faults injected by script: 4, all caught.
 
 Coverage: 14,223 of 31,900 cards (+6), 35,538 of 59,888 lines (+11).
+
+## D1048 — a land turned into a creature by a target
+
+"Target land you control becomes a 4/4 Elemental creature with haste until end of turn. It's still a
+land." (Clan Guildmage, Elemental Uprising, Skarrg Guildmage, Llanowar Loamspeaker) and "Until end
+of turn, target land becomes a 3/3 creature that's still a land" (Animate Land, Lifespark
+Spellbomb). About 25 legal lines.
+
+- `animateSelf` takes a land target as its subject as well as the card itself: a "target … land"
+  phrase read by `targetSpecFrom`, with the same layers on the land chosen (addTypes, base size,
+  colours, subtypes, keywords). The bot's `animates` hint stays on self-animation only; a land it
+  points at is chosen as any target is.
+- The one-sentence ending "creature that's still a land" reads as the two-sentence one.
+- Spells and triggers: `clausesOf` holds "… becomes … creature …. It's still a land" together as one
+  clause, and `readEffect` hands that clause, or a "creature that's still a land" clause, to
+  `animateSelf`. Activated abilities already went there.
+- Until end of turn only, as before. Mishra's Groundbreaker's permanent animation stays unread.
+
+**Tests.** 3 engine tests:
+- the rows read whole; an unreadable land phrase and a creature target both stay unread, and
+  neither animates the card itself;
+- refused at a creature; on a Forest, a 4/4 Elemental with haste that is still a land, and not a
+  creature on the next turn;
+- "a 3/3 creature that's still a land" on the opponent's land.
+
+Faults injected by script: 5. All are caught, two after the unread-phrase assertions.
+
+Coverage: 14,237 of 31,900 cards (+14), 35,555 of 59,888 lines (+17).
