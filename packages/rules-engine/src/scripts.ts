@@ -1280,8 +1280,24 @@ const BALAN: CardScript = {
  * and the compiled ones ask the same question, so a free or cheap "Regenerate ~" is not pressed again
  * by the bot once it has done its job. See `AbilityDef.buysNothingIf`.
  */
-const ALREADY_SHIELDED = (state: GameState, source: string): boolean =>
-  (state.instances[source]?.counters[REGENERATION] ?? 0) > 0;
+const ALREADY_SHIELDED = (state: GameState, source: string): boolean => shieldBuysNothing(state, source);
+
+/**
+ * Whether a regeneration shield on this creature buys nothing (D639, D768): it already has one, or
+ * nothing could destroy it before the shield wears off at end of turn.
+ */
+function shieldBuysNothing(state: GameState, creature: string): boolean {
+  return (state.instances[creature]?.counters[REGENERATION] ?? 0) > 0
+  /*
+    And a shield with nothing to stop (D768): an empty stack and the creature in no fight. A shield
+    lasts only the turn, so a bot that bought one in every upkeep ("{2}{B}: Regenerate this
+    creature" from Molting Snakeskin, sweep seed 60212) spent three mana a turn on nothing and
+    tapped out of its own main phase. Regenerating in answer to a removal spell, or with the
+    creature attacking or blocking, is still offered as worth it.
+  */
+  || ((state.stackOrder ?? []).length === 0 && !(state.combat?.attacks ?? []).some(
+    (attack) => attack.attacker === creature || attack.blockers.includes(creature)));
+}
 
 const DRUDGE_SKELETONS: CardScript = {
   name: 'Drudge Skeletons',
@@ -15617,7 +15633,8 @@ function selfEffect(
         abilityFlags: {
           buysNothingIf: (state, source) => {
             const host = state.instances[source]?.attachedTo;
-            return host !== undefined && host !== null && (state.instances[host]?.counters[REGENERATION] ?? 0) > 0;
+            // And nothing threatening it (D768): see `shieldBuysNothing`.
+            return host !== undefined && host !== null && shieldBuysNothing(state, host);
           },
         },
       };
