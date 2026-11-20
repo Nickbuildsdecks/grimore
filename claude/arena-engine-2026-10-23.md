@@ -36532,7 +36532,7 @@ creature itself; the Aura gives it to the creature it enchants.
 
 Faults injected by script: 5 of 5 caught.
 
-    engine tests: 5,593, all passing (on 04eda22)
+    engine tests: 5,596, all passing (merged with the other session's D1038)
 
 Coverage: 14,143 to 14,145 of 31,900 cards with every line read, and 35,378 to 35,381 of 59,888
 lines, against 04eda22.
