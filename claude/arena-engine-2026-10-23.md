@@ -37138,3 +37138,41 @@ reverted.
 
 Coverage: 14,358 of 31,900 cards (+8), 35,770 of 59,888 lines (+10), over a baseline that includes
 the other session's D774 and D775.
+## D776 — Saddle
+
+32 legal Mounts print "Saddle N" (CR 702.171): tap any number of other untapped creatures you control
+with total power N or more, as a sorcery, and the Mount becomes saddled until end of turn. Nearly
+every one pays off with "Whenever ~ attacks while saddled, <effect>". The keyword had no builder, so
+none of the 32 could be saddled.
+
+- `keywordScriptFor`: "Saddle N" is an ability with crew's cost (`cost.crew`, so `crewPlan` picks
+  the creatures to tap and never the Mount itself), sorcery speed, offered once a turn
+  (`activateOnlyIf`). It marks `CardInstance.saddledTurn` with the turn; the Mount is saddled while
+  that is the current turn, and `relocate` clears it when the card changes zones.
+- `triggerFromLine`: "Whenever ~ / this creature attacks while saddled, <effect>" is its attack
+  trigger read as usual, with the condition that it is saddled.
+- The bot: `animates` is crew's rule (press it only with an attack to make), and
+  `crewBuysMoreThanItCosts` applies as it does to a Vehicle. In practice the bot saddles with
+  creatures that could not have attacked this turn. Conservative, never wasteful.
+
+All 32 read their Saddle line; **16 read whole**. The rest print payoffs whose bodies are unread
+("put a +1/+1 counter on target creature that saddled it", "becomes saddled for the first time each
+turn", "seek a land card").
+
+**Tests.** 4 engine tests:
+- the card reads;
+- saddled by tapping another creature, it gets +2/+2 when it attacks;
+- unsaddled, the attack does nothing extra;
+- only as a sorcery (not in our own end step with priority and an untapped Ox), once a turn (not
+  again though a second Ox could pay), and not saddled on the next turn, whose attack gets nothing.
+
+Faults injected by script: 6 of 6 caught, three of them after the last test was extended (instant
+speed, a second saddle, saddled into the next turn).
+
+Sweep 60601 (100 pods, on D775 with Bestow and Reconfigure in play): every game finished, 61.8 turns
+and 354 moves on average.
+
+    engine tests: 5,665, all passing (merged with the other session's D1055)
+
+Coverage: 14,318 to 14,334 of 31,900 cards with every line read, and 35,711 to 35,758 of 59,888
+lines, against 995976f.

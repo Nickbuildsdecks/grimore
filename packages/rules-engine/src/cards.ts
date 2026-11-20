@@ -255,6 +255,11 @@ export interface CardInstance {
    */
   readonly enchantedSeat?: SeatIndex;
   /**
+   * The turn this Mount became saddled (D776, CR 702.171): saddled until end of turn, so it is
+   * saddled exactly while this equals the current turn. Cleared when it changes zones.
+   */
+  readonly saddledTurn?: number;
+  /**
    * Phased out **indirectly** (D733, CR 702.26g): an Aura or Equipment that phased out because the
    * permanent it is attached to did. It phases in only with that permanent, still attached.
    */

@@ -11876,6 +11876,27 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     };
   }
 
+  /*
+    Saddle N (D776, CR 702.171): crew's cost — tap other untapped creatures you control with total
+    power N or more — as a sorcery, and the Mount becomes saddled until end of turn
+    (`CardInstance.saddledTurn`). It is a creature already; what saddling buys is the "attacks while
+    saddled" trigger. `animates` is crew's bot rule, which presses it only with an attack to make.
+  */
+  const saddled = /^saddle\s+(\d+)$/i.exec(text);
+  if (saddled !== null) {
+    return {
+      abilities: [{
+        cost: { crew: Number(saddled[1]) },
+        sorcerySpeed: true,
+        description: text,
+        animates: true,
+        // Saddled already this turn: a second saddle buys nothing.
+        activateOnlyIf: (state, source) => state.instances[source]?.saddledTurn !== state.turn,
+        effect: (c) => withInstance(c.state, c.source, { saddledTurn: c.state.turn }),
+      }],
+    };
+  }
+
   // `Suspend 1—{R}`, whose number is the time counters it waits out.
   const suspended = /^suspend\s+(\d+)\s*[—-]\s*((?:\{[^}]*\})+)$/i.exec(text);
   if (suspended !== null) {
@@ -21163,6 +21184,24 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       triggers: [{
         ...trigger,
         condition: (c) => c.state.activeSeat === enchantedSeatOf(c.state, c.source) && (own === undefined || own(c)),
+      }],
+    };
+  }
+  /*
+    "Whenever ~ attacks while saddled, <effect>" (D776): its attack trigger, only while it is
+    saddled — this turn's `saddledTurn`.
+  */
+  const whileSaddled = new RegExp(`^Whenever (?:${selfRef(name)}|this creature) attacks while saddled, (.+)$`, 'i').exec(cursed);
+  if (whileSaddled !== null) {
+    const read = triggerFromLine(`Whenever ${name} attacks, ${whileSaddled[1]!}`, name);
+    const trigger = read?.triggers?.length === 1 && Object.keys(read).length === 1 ? read.triggers[0]! : null;
+    if (trigger === null) return null;
+    const own = trigger.condition;
+    return {
+      triggers: [{
+        ...trigger,
+        description: `whenever this attacks while saddled, ${whileSaddled[1]!}`,
+        condition: (c) => c.state.instances[c.source]?.saddledTurn === c.state.turn && (own === undefined || own(c)),
       }],
     };
   }
