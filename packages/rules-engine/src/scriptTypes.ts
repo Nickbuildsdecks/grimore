@@ -916,7 +916,16 @@ export type TriggerEvent =
        * **with deathtouch**". Asked of what the event carries, read off the creature as it hit.
        */
       readonly ofSubtypes?: readonly string[];
-      readonly what?: 'artifact';
+      readonly what?: 'artifact' | 'land';
+      /**
+       * More of the subject (D773): "a creature **token**", "a **legendary** creature", "an
+       * **enchanted** creature" (an Aura on it), "a **modified** creature" (CR 700.9: a counter on
+       * it, equipped, or enchanted by an Aura its controller controls).
+       */
+      readonly token?: true;
+      readonly legendary?: true;
+      readonly enchanted?: true;
+      readonly modified?: true;
       readonly withKeyword?: Keyword;
       readonly withCounter?: string;
       readonly powerAtLeast?: number;
@@ -924,6 +933,10 @@ export type TriggerEvent =
       readonly toughnessAtLeast?: number;
       readonly toughnessAtMost?: number;
       /** Set by the engine when it raises the event: the creature's live facts, for the filters. */
+      readonly subjectIsToken?: boolean;
+      readonly subjectLegendary?: boolean;
+      readonly subjectEnchanted?: boolean;
+      readonly subjectModified?: boolean;
       readonly subjectSubtypes?: readonly string[];
       readonly subjectTypes?: readonly string[];
       readonly subjectKeywords?: readonly string[];

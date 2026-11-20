@@ -1639,8 +1639,16 @@ function triggerMatches(
         `?? -Infinity` reading would be wrong in the lenient direction; `undefined` is refused.
       */
       // "An artifact creature you control deals combat damage" (D602), off the creature's live types.
-      if (want.kind === 'combat-damage' && want.what === 'artifact'
-        && !(e.subjectTypes ?? []).includes('artifact')) return false;
+      if (want.kind === 'combat-damage' && (want.what === 'artifact' || want.what === 'land')
+        && !(e.subjectTypes ?? []).includes(want.what)) return false;
+      // The subject words D773 reads: token, legendary, enchanted, modified.
+      if (want.kind === 'combat-damage') {
+        const hit = event as { subjectIsToken?: boolean; subjectLegendary?: boolean; subjectEnchanted?: boolean; subjectModified?: boolean };
+        if (want.token === true && hit.subjectIsToken !== true) return false;
+        if (want.legendary === true && hit.subjectLegendary !== true) return false;
+        if (want.enchanted === true && hit.subjectEnchanted !== true) return false;
+        if (want.modified === true && hit.subjectModified !== true) return false;
+      }
       // The same characteristic filters on the creature that hit (D602) as on the board events.
       // And on the attacker (D996, D1008): "a creature you control with a +1/+1 counter on it attacks".
       if (want.kind === 'etb' || want.kind === 'dies' || want.kind === 'combat-damage' || want.kind === 'attacks') {
@@ -2274,6 +2282,11 @@ function raise(
     const inst = next.instances[subject];
     if (inst !== undefined) {
       const live = characteristicsOf(next, inst);
+      // What is attached to it (D773), for "an enchanted creature" and "a modified creature".
+      const attached = Object.values(next.instances).filter((other) => (
+        other.zone === 'battlefield' && other.attachedTo === subject));
+      const kindOf = (other: CardInstance, sub: string): boolean => hasSubtype(characteristicsOf(next, other).typeLine, sub);
+      const auras = attached.filter((other) => kindOf(other, 'aura'));
       event = {
         ...event,
         subjectTypes: live.typeLine.types.map((t) => t.toLowerCase()),
@@ -2282,6 +2295,13 @@ function raise(
         subjectPower: live.power,
         subjectToughness: live.toughness,
         ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
+        subjectIsToken: inst.isToken,
+        subjectLegendary: live.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'),
+        subjectEnchanted: auras.length > 0,
+        // CR 700.9: a counter on it, an Equipment attached, or an Aura its controller controls.
+        subjectModified: Object.values(inst.counters).some((n) => n > 0)
+          || attached.some((other) => kindOf(other, 'equipment'))
+          || auras.some((other) => other.zoneSeat === inst.zoneSeat),
       };
     }
   }

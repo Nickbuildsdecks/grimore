@@ -36877,3 +36877,38 @@ your graveyard". Even the bare X form was unread: the counter reader took printe
 Faults injected by script: 4. All are caught, two after the fixed-count and refusal assertions.
 
 Coverage: 14,248 of 31,900 cards (+8), 35,567 of 59,888 lines (+9).
+## D773 — Combat damage by a kind of creature you control
+
+"Whenever a <kind> you control deals combat damage to a player, …" read a tribe, an artifact
+creature and a plain creature (D602). A survey of unread combat-damage lines found twelve that end
+in a plain "draw a card" and were unread only because of their subject. Read now:
+
+- "a **legendary** creature" (Vraska Joins Up);
+- "a **modified** creature" (SP//dr, Piloted by Peni): CR 700.9, a counter on it, an Equipment
+  attached, or an Aura its controller controls;
+- "an **enchanted** creature" (Ellivere of the Wild Court): any Aura on it;
+- "a creature **token**" (Curiosity Crafter);
+- "a **land** creature" (Jolrael, Voice of Zhalfir);
+- "a **Wolf or Werewolf**" (Tovolar, Dire Overlord): either tribe.
+
+The `combat-damage` event now carries `subjectIsToken`, `subjectLegendary`, `subjectEnchanted` and
+`subjectModified`, read off the creature as it hits, and the trigger asks for them with `token`,
+`legendary`, `enchanted`, `modified` and `what: 'land'`. The prologue's subject group admits
+"creature token" and "<Tribe> or <Tribe>".
+
+Still unread in this family: "~ or equipped / enchanted creature" (Acquisition Octopus, Thassa's
+Emissary), "with a legendary Equipment attached" (Kassandra), "that was turned face up this turn"
+(Kaust), and the batched "each with power greater than its base power" (Kutzil).
+
+**Tests.** 5 engine tests: all six subjects read; a legendary creature (only the legend draws); a
+modified creature (the one with a counter draws, the plain one does not); a Wolf or Werewolf (each
+tribe draws, an Ox does not); an enchanted creature (only the one wearing an Aura draws).
+
+Faults injected by script: 6 of 6 caught.
+
+D602's row that held "a modified creature" as refused now holds "a face-down creature".
+
+    engine tests: 5,638, all passing (on 760997f)
+
+Coverage: 14,241 to 14,248 of 31,900 cards with every line read, and 35,560 to 35,571 of 59,888
+lines, against 760997f.

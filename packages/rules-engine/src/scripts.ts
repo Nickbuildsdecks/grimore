@@ -17375,7 +17375,18 @@ function combatSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on
   const base = { kind: 'combat-damage' as const, who: 'any' as const, of };
   const tribe = /^([A-Z][A-Za-z'-]*)(?: creature)?$/.exec(what);
   if (tribe !== null) return [{ ...base, ofSubtypes: [tribe[1]!], ...filter } as TriggerDef['on']];
+  // "A Wolf or Werewolf you control" (D773): either tribe.
+  const tribes = /^([A-Z][A-Za-z'-]*) or ([A-Z][A-Za-z'-]*)$/.exec(what);
+  if (tribes !== null && isCreatureType(tribes[1]!) && isCreatureType(tribes[2]!)) {
+    return [{ ...base, ofSubtypes: [tribes[1]!, tribes[2]!], ...filter } as TriggerDef['on']];
+  }
   if (/^artifact creature$/i.test(what)) return [{ ...base, what: 'artifact', ...filter } as TriggerDef['on']];
+  // The kind words (D773): "a land creature", "a creature token", "a legendary / an enchanted /
+  // a modified creature". See `combat-damage`'s `token` and the rest.
+  if (/^land creature$/i.test(what)) return [{ ...base, what: 'land', ...filter } as TriggerDef['on']];
+  if (/^creature token$/i.test(what)) return [{ ...base, token: true, ...filter } as TriggerDef['on']];
+  const word = /^(legendary|enchanted|modified) creature$/i.exec(what)?.[1]?.toLowerCase();
+  if (word !== undefined) return [{ ...base, [word]: true, ...filter } as TriggerDef['on']];
   /*
     "A creature" with a filter, or with none: "you control" and no filter is the row above's and never
     reaches here, and "whenever **a creature** deals combat damage to a player" with nobody's control
@@ -18846,7 +18857,7 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: () => new RegExp(
-      `^Whenever (?:a|an) (?<what>[A-Za-z'-]+(?: creature)?)(?<of> you control)?(?<filter> with [^,]+?)?`
+      `^Whenever (?:a|an) (?<what>[A-Za-z'-]+(?: creature| token| or [A-Z][A-Za-z'-]*)?)(?<of> you control)?(?<filter> with [^,]+?)?`
       + ` deals combat damage to a player, (?<clause>.+)$`,
     ),
     from: combatSubjectTrigger,
