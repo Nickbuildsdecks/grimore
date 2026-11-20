@@ -54574,3 +54574,33 @@ anyway, so the card behaves the same.
 
 Coverage: 14,310 to 14,318 of 31,900 cards with every line read, and 35,685 to 35,711 of 59,888
 lines, against c3fc7cc.
+
+## D1056 — drawing X, now and owed
+
+"Target player draws X cards" (Braingeyser, Stroke of Genius, Blue Sun's Zenith), "You gain X life
+and draw X cards" (Sphinx's Revelation), "Each player draws X cards" (Prosperity). D1055's bare-X
+reader refused them, because a draw's reading carries an `immediate` part: the same draw done now,
+which `composeEffects` uses when something comes after it (a draw is otherwise owed, for dredge).
+
+- `xAsPaid` keeps refusing a question (`decisions`, `beforeDecisions`, `reflexive`), which would keep
+  the number it was read with. `immediate` is a function of the resolution like `effect`, so it is
+  re-read with the X paid in the same way and passed through.
+- Braingeyser, Stroke of Genius, Blue Sun's Zenith, Sphinx's Revelation and Prosperity read whole.
+  "Target player discards X cards at random" (Mind Twist) is still unread, because its reader takes
+  no number at all.
+
+**Tests.** 4 engine tests. The compile test "will not read the same sentence on a permanent" turns
+round: its premise, a trigger with no X, has not held since D985 gave enters triggers the cast X
+(`castX`), so Hopeful Drake's "draw X cards" reads now.
+- the rows read whole;
+- a creature cast for X = 2 draws two when it enters;
+- the target draws 3;
+- Revelation gains 2 and draws 2. "Draw X cards. Discard a card." with X = 3, not the 2 the reading
+  was made with, has all three in hand when the discard asks.
+
+Faults injected by script: 3. 2 are caught. The 3rd, re-reading through `composeEffects` instead of
+`readEffect`, was a change made while finding the cause and turned out unneeded, so it was
+reverted.
+
+Coverage: 14,358 of 31,900 cards (+8), 35,770 of 59,888 lines (+10), over a baseline that includes
+the other session's D774 and D775.
