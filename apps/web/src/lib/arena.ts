@@ -116,7 +116,14 @@ export type ArenaMode =
    * Tapping a blocker appends it to its own attacker's list, so there is no wizard to step through
    * and no way to put a blocker in the wrong attacker's order.
    */
-  | { kind: "ordering"; owed: readonly OrderAsk[]; chosen: Record<string, string[]> }
+  | {
+      kind: "ordering"; owed: readonly OrderAsk[]; chosen: Record<string, string[]>
+      /**
+       * Attackers the player chose to have assign their damage as though they weren't blocked
+       * (D770), from the asks marked `mayGoUnblocked`. Such an attacker needs no order.
+       */
+      unblocked?: Record<string, true>
+    }
 
 export interface Block {
   blocker: string
@@ -256,6 +263,8 @@ export type ArenaEvent =
   | { kind: "startOrdering"; owed: readonly OrderAsk[] }
   /** Puts one blocker next in its own attacker's order; tapping a chosen one starts that list over. */
   | { kind: "pickOrder"; card: string }
+  /** Switches an attacker between ordering its blockers and going as though unblocked (D770). */
+  | { kind: "toggleUnblocked"; attacker: string }
 
 /** The reducer's answer: the new mode, and an action to send if the step is complete. */
 export interface ArenaResult {
@@ -268,8 +277,10 @@ export const IDLE: ArenaMode = { kind: "idle" }
 /** Whether every attacker that owes an order has all of its blockers placed. */
 export function orderingDone(
   owed: readonly OrderAsk[], chosen: Record<string, readonly string[]>,
+  unblocked: Readonly<Record<string, true>> = {},
 ): boolean {
-  return owed.every((ask) => (chosen[ask.attacker] ?? []).length === ask.blockers.length)
+  return owed.every((ask) => unblocked[ask.attacker] === true
+    || (chosen[ask.attacker] ?? []).length === ask.blockers.length)
 }
 
 /**
@@ -773,15 +784,15 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.kind === "ordering") {
         // Every owed order, complete. A short list is not an answer the engine takes, so the
         // button does nothing rather than sending one that bounces back.
-        if (!orderingDone(mode.owed, mode.chosen)) return { mode, action: null }
+        if (!orderingDone(mode.owed, mode.chosen, mode.unblocked)) return { mode, action: null }
         return {
           mode: IDLE,
           action: {
             type: "auto:order",
-            orders: mode.owed.map((ask) => ({
-              attacker: ask.attacker,
-              blockers: [...(mode.chosen[ask.attacker] ?? [])],
-            })),
+            orders: mode.owed.map((ask) => (mode.unblocked?.[ask.attacker] === true
+              // As though unblocked (D770): the blockers as the engine listed them, since none is hit.
+              ? { attacker: ask.attacker, blockers: [...ask.blockers], unblocked: true }
+              : { attacker: ask.attacker, blockers: [...(mode.chosen[ask.attacker] ?? [])] })),
           },
         }
       }
@@ -915,6 +926,16 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       // only correction a player means by tapping a card they have already placed.
       const next = taken.includes(event.card) ? [] : [...taken, event.card]
       return { mode: { ...mode, chosen: { ...mode.chosen, [ask.attacker]: next } }, action: null }
+    }
+
+    case "toggleUnblocked": {
+      if (mode.kind !== "ordering") return { mode, action: null }
+      // Only where the engine offered it.
+      if (mode.owed.find((ask) => ask.attacker === event.attacker)?.mayGoUnblocked !== true) return { mode, action: null }
+      const unblocked = { ...(mode.unblocked ?? {}) }
+      if (unblocked[event.attacker] === true) delete unblocked[event.attacker]
+      else unblocked[event.attacker] = true
+      return { mode: { ...mode, unblocked }, action: null }
     }
 
     case "startBottoming":

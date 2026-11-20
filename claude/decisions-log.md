@@ -53772,3 +53772,48 @@ net that no test reaches.
 
 Coverage: 14,066 to 14,096 of 31,900 cards with every line read, and 35,280 to 35,316 of 59,888
 lines, against 8852c43.
+
+## D770 — Combat damage assigned as though it weren't blocked
+
+"You may have ~ assign its combat damage as though it weren't blocked": Thorn Elemental, Lone Wolf,
+Rhox, Pride of Lions, Deathcoil Wurm, Tornado Elemental, Wolf Pack, Spinebiter and Imaryll, nine
+legal cards that print it of themselves. It was unread, so these creatures played as vanilla bodies.
+
+- The line is a printed combat static (`assignsAsUnblocked`), read by `printedCombatLine` the way
+  "can't be blocked" is, and cleared by "loses all abilities" like the others.
+- The choice is made by the attacking player when combat damage is assigned (CR 510.1c), which is
+  the moment the damage order is asked (CR 509.2). So it is asked with the order:
+  `damageOrdersOwed` also lists every blocked attacker with the ability, marked `mayGoUnblocked`,
+  even behind a single blocker.
+- `auto:order` entries take `unblocked: true`, refused where it was not offered. The attack is
+  marked `asUnblocked`, and `dealCombatDamage` sends all of its damage to the player or
+  planeswalker it attacked. It is still blocked: the blockers deal their damage to it, and nothing
+  that cares about being unblocked fires.
+- The bot adds one more plan to its order search, with every such attacker going as though
+  unblocked, and the playout chooses.
+- The table: the order prompt shows an "As though unblocked" toggle beside each attacker the engine
+  offered it for. A toggled attacker needs no order, and the button sends the blockers as listed.
+
+Not yet: the same choice granted by other cards (Garruk, Savage Herald; Predatory Focus; Indomitable
+Might; Proud Wildbonder; Siege Behemoth; Ruxa) and Gurzigost's activated version. Each needs a grant
+of the flag, which `ContinuousEffect` does not carry yet.
+
+**Tests.** 7 engine tests:
+- the line reads, and a blocked one is asked even behind a single blocker;
+- as though unblocked: all five damage to the player, none to the wall, and the wall still deals
+  its damage;
+- declined: the wall dies and the player takes nothing;
+- a creature without the ability is not asked;
+- two blockers: the order is still asked, with the choice beside it;
+- the bot sends it through when that is lethal;
+- "unblocked" is refused for an attacker that was not offered it.
+
+2 web tests: the toggle sends `unblocked: true` with no order needed and the other attacker still
+owes its order; the toggle does nothing for an attacker the engine did not offer it for.
+
+Faults injected by script: 7 of 7 caught.
+
+    engine tests: 5,579, all passing (on 5d43a1a)
+
+Coverage: 14,101 to 14,110 of 31,900 cards with every line read, and 35,323 to 35,332 of 59,888
+lines, against 5d43a1a.

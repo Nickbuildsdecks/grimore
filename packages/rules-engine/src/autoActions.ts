@@ -3060,6 +3060,13 @@ function orderDamage(state: GameState, action: AutoOrderAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `${cardName(state, attacker)} does not need a damage order`);
     }
   }
+  // "As though it weren't blocked" only where it was offered (D770).
+  const unblocked = new Set(action.orders.filter((entry) => entry.unblocked === true).map((entry) => entry.attacker));
+  for (const attacker of unblocked) {
+    if (owed.find((entry) => entry.attacker === attacker)?.mayGoUnblocked !== true) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${cardName(state, attacker)} cannot assign its damage as though it weren't blocked`);
+    }
+  }
 
   const attacks = state.combat.attacks.map((attack) => {
     const order = given.get(attack.attacker);
@@ -3067,7 +3074,7 @@ function orderDamage(state: GameState, action: AutoOrderAction): Outcome {
     // Anything that has left combat keeps its place in the list: `dealCombatDamage` filters the
     // dead out itself, and dropping them here would lose the order if one came back.
     const rest = attack.blockers.filter((id) => !order.includes(id));
-    return { ...attack, blockers: [...order, ...rest] };
+    return { ...attack, blockers: [...order, ...rest], ...(unblocked.has(attack.attacker) ? { asUnblocked: true as const } : {}) };
   });
   const next = resetPriority(settle({
     ...state,
@@ -3078,6 +3085,7 @@ function orderDamage(state: GameState, action: AutoOrderAction): Outcome {
     message: `${seatName(state, action.by)} assigns damage: ${owed
       .map((entry) => {
         const order = given.get(entry.attacker) ?? entry.blockers;
+        if (unblocked.has(entry.attacker)) return `${cardName(state, entry.attacker)} as though it weren't blocked`;
         return `${cardName(state, entry.attacker)} to ${order.map((id) => cardName(state, id)).join(', then ')}`;
       })
       .join('; ')}`,

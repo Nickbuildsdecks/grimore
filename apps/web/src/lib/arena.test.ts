@@ -1224,6 +1224,34 @@ describe("assigning combat damage", () => {
     expect(arenaReducer(IDLE, { kind: "pickOrder", card: "bear" })).toEqual({ mode: IDLE, action: null })
   })
 
+  it("sends an attacker as though unblocked where the engine offers it, with no order needed (D770)", () => {
+    const free = [
+      { attacker: "thorn", blockers: ["wall"], mayGoUnblocked: true as const },
+      { attacker: "giant", blockers: ["bear", "spider"] },
+    ]
+    let mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed: free }).mode
+    mode = arenaReducer(mode, { kind: "toggleUnblocked", attacker: "thorn" }).mode
+    // The giant still owes its order.
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "spider" }).mode
+    mode = arenaReducer(mode, { kind: "pickOrder", card: "bear" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:order",
+      orders: [
+        { attacker: "thorn", blockers: ["wall"], unblocked: true },
+        { attacker: "giant", blockers: ["spider", "bear"] },
+      ],
+    })
+    // Toggled back, the thorn needs its one blocker placed like any other order.
+    mode = arenaReducer(mode, { kind: "toggleUnblocked", attacker: "thorn" }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+  })
+
+  it("will not send as unblocked an attacker the engine did not offer it for (D770)", () => {
+    const mode: ArenaMode = arenaReducer(IDLE, { kind: "startOrdering", owed }).mode
+    expect(arenaReducer(mode, { kind: "toggleUnblocked", attacker: "giant" }).mode).toEqual(mode)
+  })
+
   it("offers the order as the one thing to do when the engine asks for it", () => {
     const auto = automation({
       awaiting: { kind: "order", seats: [0] },
