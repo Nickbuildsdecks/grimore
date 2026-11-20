@@ -28369,6 +28369,35 @@ describe('"you may choose not to untap ~" (D1041)', () => {
   });
 });
 
+describe('a token\'s quoted ability of two sentences (D1042)', () => {
+  const ROWS = [
+    { name: 'Test Posse', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+      oracle_text: 'Create a 1/1 red Mercenary creature token with "{T}: Target creature you control gets +1/+0 until end of turn. Activate only as a sorcery."' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1042', name: 'Posse', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 52 }], data: ROWS as never[] });
+
+  it('reads whole, and the token carries both sentences', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1042', 1: 'd1042' }, deckSpecs: { d1042: deck.deck },
+      battlefield: { 0: ['Mountain', 'Test Bear'], 1: ['Mountain'] }, hands: { 0: ['Test Posse'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Posse') } as Action)), 30);
+    const merc = ids(s, 0, 'battlefield').find((id) => /Mercenary/.test(nameOf(s, id)))!;
+    expect(merc).toBeDefined();
+    expect(s.cardDefs[s.instances[merc]!.defKey]!.oracleText).toBe('{T}: Target creature you control gets +1/+0 until end of turn. Activate only as a sorcery.');
+    // A turn later it can tap: at sorcery speed, and not once combat has begun.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const combat = advanceTo(s, 'begin-combat');
+    expect(refusal(combat, { type: 'auto:activate', by: 0, card: merc, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)).toBeTruthy();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: merc, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(power(s, bear)).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

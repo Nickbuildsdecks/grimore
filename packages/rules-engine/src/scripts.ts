@@ -19771,7 +19771,7 @@ function tokenEffect(
     : null;
   if (inline !== null) {
     const body = inline[2] === undefined ? inline[1]! : `${inline[1]!} with ${inline[2]!}`;
-    return tokenEffect(body, name, inline[3]!.trim(), recipients);
+    return tokenEffect(body, name, showEmblemText(inline[3]!).trim(), recipients);
   }
   const flat = clause.trim().replace(/\.$/, '');
   const announced = /^(.*?),\s*where X is (.+)$/i.exec(flat);
@@ -26268,6 +26268,10 @@ function clausesOf(line: string): readonly string[] {
     // An emblem's quoted abilities (D734) are one clause: their own punctuation is hidden from the
     // splitting below and put back by `emblemClause`.
     .replace(/you get an emblem with ("[^"]+"(?: and "[^"]+")?)/gi, (_m, quoted: string) => `you get an emblem with ${hideEmblemText(quoted)}`)
+    // And a token's quoted ability printed inline (D1042), for the same reason: "… Mercenary creature
+    // token with "{T}: Target creature you control gets +1/+0 until end of turn. Activate only as a
+    // sorcery."" is one sentence with two inside it. Put back by the inline reader in `tokenEffect`.
+    .replace(/(tokens? with (?:[^".]*? and )?)("[^"]+")/gi, (_m, lead: string, quoted: string) => `${lead}${hideEmblemText(quoted)}`)
     // "The card" is Worldly Tutor's wording of the same step (D655).
     .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')
