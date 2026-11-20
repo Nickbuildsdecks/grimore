@@ -14730,6 +14730,27 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    "Target player discards two cards at random" (D1057): the random discard aimed at a player, as
+    the round form above is for each one. Mind Twist's "discards X cards at random" is the same
+    sentence with the X paid (D1055).
+  */
+  const aimedRandom = /^(target (?:player|opponent)) discards (\w+) cards? at random$/i.exec(text);
+  if (aimedRandom !== null) {
+    const n = countFrom(aimedRandom[2]!);
+    const spec = targetSpecFrom(aimedRandom[1]!, false);
+    // The phrase is a player or an opponent, so the spec is a player's.
+    if (n !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const aimed = c.targets[0];
+          return aimed === undefined || aimed.kind !== 'player' ? c.state : discardAtRandom(c.state, aimed.seat, n);
+        },
+      };
+    }
+  }
+
   // "Discard your hand": no question, because there is nothing to choose between.
   if (/^(?:you )?discard your hand$/i.test(text)) {
     return {

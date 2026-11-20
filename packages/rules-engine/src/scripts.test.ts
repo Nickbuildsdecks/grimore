@@ -29295,6 +29295,40 @@ describe('saddle (D776)', () => {
     expect(characteristicsOf(s, s.instances[steed]!).power).toBe(2);
   });
 });
+describe('a random discard aimed at a player (D1057)', () => {
+  const ROWS = [
+    { name: 'Test Hymn', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target player discards two cards at random.' },
+    { name: 'Test Twist', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target player discards X cards at random.' },
+  ];
+  const deck = customDeck({ id: 'd1057', name: 'Random', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[] });
+  const cast = (spell: string, x?: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1057', 1: 'd1057' }, deckSpecs: { d1057: deck.deck },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: [] }, hands: { 0: [spell], 1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'player', seat: 1 }], ...(x === undefined ? {} : { x }) } as Action)), 30);
+    return { before, s };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two at random from the target, with no question asked', () => {
+    const { before, s } = cast('Test Hymn');
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length - 2);
+    expect(ids(s, 1, 'graveyard').length).toBe(ids(before, 1, 'graveyard').length + 2);
+  });
+
+  it('X at random, with the X paid', () => {
+    const { before, s } = cast('Test Twist', 3);
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length - 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
