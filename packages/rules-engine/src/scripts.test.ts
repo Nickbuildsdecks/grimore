@@ -28967,6 +28967,41 @@ describe('combat damage prevented both ways (D1053)', () => {
   });
 });
 
+describe('searches for exactly N, or for one of two kinds (D1054)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    S('Test Micro', 'Search your library for a creature card with mana value 2, reveal it, put it into your hand, then shuffle.'),
+    S('Test Guide', 'Search your library for a basic land card or Gate card, reveal it, put it into your hand, then shuffle.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' },
+    { name: 'Test Imp', type_line: 'Creature — Imp', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' },
+    { name: 'Test Gate', type_line: 'Land — Gate', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' },
+    { name: 'Test Wastes', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' },
+  ];
+  const deck = customDeck({ id: 'd1054', name: 'Search', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 32 }], data: ROWS as never[] });
+  const offered = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1054', 1: 'd1054' }, deckSpecs: { d1054: deck.deck },
+      battlefield: { 0: [], 1: [] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 30);
+    return [...new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)))].sort();
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('mana value 2: the Bear, not the one-drop or the three-drop', () => {
+    expect(offered('Test Micro')).toEqual(['Test Bear']);
+  });
+
+  it('a basic land or a Gate: Islands and the Gate, not the nonbasic land or a creature', () => {
+    expect(offered('Test Guide')).toEqual(['Island', 'Test Gate']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -9161,9 +9161,8 @@ describe('a library search, generalised (D449)', () => {
       shapes are now read and asserted in its own block below; 416 legal cards were one unread line
       from finished and that line was a library search.
     */
-    ['two filters at once',
-      'Search your library for a basic land card or Gate card, put it onto the battlefield tapped,'
-        + ' then shuffle.'],
+    // 'Search your library for a basic land card or Gate card, …' was the "two filters at once" row
+    // here until D1054, which reads two card phrases joined by "or" as either one.
     ['a condition on a characteristic',
       'Search your library for an artifact card with mana value 4 or 5, reveal that card, put it'
         + ' into your hand, then shuffle.'],
@@ -9760,8 +9759,7 @@ describe('the library search as a product, widened (D455)', () => {
     // The top of the library was a row here until D602: see the note in the D449 block.
     // Cultivate's split destination was a row here until D647, which reads it in choice order (the
     // first found enters tapped, the second goes to hand); see "a search split two ways (D647)".
-    // Shefet Monitor: two filters rather than two words of one.
-    ['two filters', 'Search your library for a basic land card or a Desert card, put it onto the battlefield tapped.'],
+    // Shefet Monitor's "a basic land card or a Desert card" was the "two filters" row here until D1054.
   ])('refuses %s', (_label, text) => {
     expect(unreadLines(spell(text as string))).toEqual([text]);
   });
@@ -10740,8 +10738,8 @@ describe('a mana-value clause, and the word permanent, in a search filter (D491)
       "Sisay, Weatherlight Captain: a bound that is a fact about the board"],
     ['Search your library for a creature card with mana value equal to the number of lands you control, put it into your hand, then shuffle',
       'a computed bound, and not even a comparison this reads'],
-    ['Search your library for a creature card with mana value 3, put it into your hand, then shuffle',
-      'Magic prints "or less" and "or greater" in this position and this reads neither alone'],
+    // "… a creature card with mana value 3 …" was a row here until D1054, which reads a bare number
+    // as exactly that number (Micromancer prints "with mana value 1").
     /*
       And the vocabulary still missing, each a real printing, each left unread rather than read
       loosely. These are the next increment in this family, not oversights.

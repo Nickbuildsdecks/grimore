@@ -2408,7 +2408,7 @@ const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
  * Mana value printed (`CardDef.cmc`); power and toughness through `characteristicsOf`, so a star
  * answers with what its characteristic-defining ability makes it there (CR 208.2a).
  */
-function cardMeasureTest(measure: string, bound: number, atMost: boolean): (state: GameState, id: string) => boolean {
+function cardMeasureTest(measure: string, bound: number, atMost: boolean | 'exactly'): (state: GameState, id: string) => boolean {
   const which = measure.toLowerCase();
   return (state, id) => {
     const inst = state.instances[id];
@@ -2416,7 +2416,7 @@ function cardMeasureTest(measure: string, bound: number, atMost: boolean): (stat
     if (inst === undefined || def === undefined) return false;
     const value = which === 'mana value' ? def.cmc
       : which === 'power' ? characteristicsOf(state, inst).power : characteristicsOf(state, inst).toughness;
-    return atMost ? value <= bound : value >= bound;
+    return atMost === 'exactly' ? value === bound : atMost ? value <= bound : value >= bound;
   };
 }
 
@@ -2470,11 +2470,33 @@ function libraryFilter(
     searches. Power and toughness through `characteristicsOf`, so a card whose printed value is a
     star answers with what its characteristic-defining ability makes it there (CR 208.2a).
   */
-  const clause = /^(.*?) with (mana value|power|toughness) (\d+) or (less|greater)$/i.exec(whole);
+  /*
+    Two card phrases joined by "or" (D1054): "a basic land card or Gate card", "… or a Gate card"
+    (District Guide, Gatecreeper Vine). Either one; each is read on its own, so "an artifact or
+    creature card" — one phrase whose type words take the "or" — is not split here.
+  */
+  const either = /^(an? .+? card) or (?:(an?) )?(.+? card)$/i.exec(whole);
+  if (either !== null) {
+    const first = libraryFilter(either[1]!, name);
+    const second = libraryFilter(`${either[2] ?? (/^[aeiou]/i.test(either[3]!) ? 'an' : 'a')} ${either[3]!}`, name);
+    // Both halves end in "card", so neither can carry a "with mana value X" bound to lose here.
+    if (first !== null && second !== null) {
+      const a = first.filter;
+      const b = second.filter;
+      return {
+        phrase: whole,
+        filter: a === null || a === undefined || b === null || b === undefined ? null
+          : (state, id, seat) => a(state, id, seat) || b(state, id, seat),
+      };
+    }
+  }
+  // And exactly N (D1054): "an instant or sorcery card with mana value 1" (Micromancer).
+  const clause = /^(.*?) with (mana value|power|toughness) (\d+)(?: or (less|greater))?$/i.exec(whole);
   const body = cardFilterBody(clause === null ? whole : clause[1]!.trim(), name);
   if (body === null) return null;
   if (clause === null) return body;
-  const inRange: NonNullable<CardsDecisionSpec['filter']> = cardMeasureTest(clause[2]!, Number(clause[3]!), clause[4]!.toLowerCase() === 'less');
+  const inRange: NonNullable<CardsDecisionSpec['filter']> = cardMeasureTest(clause[2]!, Number(clause[3]!),
+    clause[4] === undefined ? 'exactly' : clause[4].toLowerCase() === 'less');
   /*
     `null` *and* `undefined`: the field is optional as well as nullable, and "any card" arrives as
     either depending on which arm of the body answered. One guard covers both, and it is the guard
