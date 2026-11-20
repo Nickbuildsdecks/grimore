@@ -24574,7 +24574,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   const countedTarget = countTailOf(text, name);
   if (countedTarget !== null) {
     const sizedBy = new RegExp(
-      "^(target creature(?: you control| an opponent controls| you don't control)?)"
+      // Any one target creature (D1031), where this was four spellings of "target creature".
+      "^((?:another |up to one (?:other )?)?target [^,]+?)"
         + " gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z', ]*?))? until end of turn$",
       'i',
     ).exec(countedTarget.body);
@@ -24583,7 +24584,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       const bonus = shrinks && sizedBy[4] !== undefined ? null : countedPumpOptions(
         sizedBy[2]!, sizedBy[3]!, countedTarget.grammar, countedTarget.counted, sizedBy[4],
       );
-      const spec = targetSpecFrom(sizedBy[1]!, !shrinks);
+      const aimed = targetSpecFrom(sizedBy[1]!, !shrinks);
+      // A creature only; a plural target prints "get" and does not reach here.
+      const spec = aimed !== null && aimed.kind === 'creature' ? aimed : null;
       if (bonus !== null && spec !== null) {
         return {
           targets: [spec],
@@ -24893,11 +24896,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     "loses all abilities" riders; this is the same field on an until-end-of-turn effect. Aimed at
     the other side of the table by default, which is the only reason to print it.
   */
-  const stripped = /^(target creature(?: an opponent controls| you don't control)?) loses ([a-z][a-z', ]*?) until end of turn$/i
+  // Any one target creature (D1031).
+  const stripped = /^((?:another |up to one (?:other )?)?target [^,]+?) loses ([a-z][a-z', ]*?) until end of turn$/i
     .exec(text);
   if (stripped !== null) {
     const words = grantedKeywordList(stripped[2]!);
-    const spec = targetSpecFrom(stripped[1]!, false);
+    const aimed = targetSpecFrom(stripped[1]!, false);
+    const spec = aimed !== null && aimed.kind === 'creature' ? aimed : null;
     if (words !== null && spec !== null) {
       return {
         targets: [spec],

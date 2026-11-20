@@ -27495,6 +27495,49 @@ describe('a keyword granted to any one target creature (D1030)', () => {
   });
 });
 
+describe('a counted pump and a keyword loss on any one target creature (D1031)', () => {
+  const ROWS = [
+    { name: 'Test Rally', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Another target creature gets +1/+0 until end of turn for each artifact you control.' },
+    { name: 'Test Ground', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target creature with flying loses flying until end of turn.' },
+    { name: 'Test Bird', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Cog', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1031', name: 'Counted', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 40 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: string) => advanceTo(arena({
+    decks: { 0: 'd1031', 1: 'd1031' }, deckSpecs: { d1031: deck.deck },
+    battlefield: { 0: ['Plains', ...mine], 1: ['Plains'] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, target: string) => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'card', id: target }] } as Action);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('neither reads at something that is not a creature', () => {
+    for (const text of ['Target artifact gets +1/+0 until end of turn for each artifact you control.', 'Target artifact loses indestructible until end of turn.']) {
+      const read = compileCard({ name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('+1/+0 for each artifact, on another target creature', () => {
+    let s = table(['Test Bear', 'Test Cog', 'Test Cog'], 'Test Rally');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, cast(s, 'Test Rally', bear))), 30);
+    expect(power(s, bear)).toBe(4);
+  });
+
+  it('loses flying, and only a creature with flying may be chosen', () => {
+    let s = table(['Test Bird', 'Test Bear'], 'Test Ground');
+    expect(refusal(s, cast(s, 'Test Ground', find(s, 0, 'battlefield', 'Test Bear')))).not.toBeNull();
+    const bird = find(s, 0, 'battlefield', 'Test Bird');
+    s = drain(passBoth(apply(s, cast(s, 'Test Ground', bird))), 30);
+    expect(characteristicsOf(s, s.instances[bird]!).keywords.has('flying')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
