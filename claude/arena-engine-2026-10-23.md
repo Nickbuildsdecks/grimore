@@ -36108,3 +36108,28 @@ settle loop's condition (a phase event would otherwise wait for an unrelated eve
 and the self-only watcher list (the matcher trusts it for these kinds).
 
 Coverage: 13,978 of 31,900 cards (+2), 35,138 of 59,888 lines (+5).
+
+## D1030 — a keyword granted to any one target creature
+
+"Whenever ~ attacks, another target attacking creature gains flying until end of turn", "another
+target creature you control gains deathtouch until end of turn", "target attacking creature gains
+first strike", "target creature with a +1/+1 counter on it gains …", "target legendary creature
+gains …", "up to one target creature gains haste". Until now the single-target keyword grant read
+only "target creature [you control]". The size pump with the same target phrases already read.
+
+- The grant's target is any single target phrase `targetSpecFrom` reads ("another", "up to one",
+  attacking, blocking, with counters, with a power, a tribe), as long as it is a creature: "target
+  land gains shroud" stays unread.
+- The bot hints are the reader's own: hexproof or shroud protects, haste or infect helps the
+  attack, and the rest waits for blockers.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the land grant does not;
+- the attack trigger gives the other attacker flying, not itself, and when it attacks alone it has
+  nothing to aim at and is not put on the stack;
+- "target attacking creature" accepts the attacker and refuses the creature at home.
+
+Faults injected by script: 3 of 3 caught. A count check was folded away: a plural target prints
+"gain", not "gains", and never reaches this reader.
+
+Coverage: 14,042 of 31,900 cards (+64), 35,226 of 59,888 lines (+88).
