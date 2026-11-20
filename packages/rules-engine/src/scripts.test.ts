@@ -28910,6 +28910,63 @@ describe('counters on the token just made (D1052)', () => {
   });
 });
 
+describe('combat damage prevented both ways (D1053)', () => {
+  const ROWS = [
+    { name: 'Test Maze', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: '{T}: Untap target attacking creature. Prevent all combat damage that would be dealt to and dealt by that creature this turn.' },
+    { name: 'Test Phantom', type_line: 'Creature — Spirit', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: '{0}: Prevent all combat damage that would be dealt to and dealt by Test Phantom this turn.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1053', name: 'Maze', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  /** Seat 1 attacks seat 0 with its Bear; seat 0 answers with `respond` before blocks. */
+  const attack = (mine: string[], respond: (s: GameState) => GameState, blocks: (s: GameState) => readonly { blocker: string; attacker: string }[] = () => []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1053', 1: 'd1053' }, deckSpecs: { d1053: deck.deck },
+      battlefield: { 0: mine, 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const [bear, other] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear!, defender: 0 }, { attacker: other!, defender: 0 }] } as Action), 30);
+    // The attacker's controller passes, and the defender has priority in the declare-attackers step.
+    if (s.priority === 1) s = apply(s, { type: 'auto:pass', by: 1 });
+    s = respond(s);
+    s = drain(passBoth(s));
+    // With nothing able to block, the table declares no blocks for the defender itself.
+    const block = { type: 'auto:block', by: 0, blocks: blocks(s) } as Action;
+    if (refusal(s, block) === null) s = drain(apply(s, block), 30);
+    s = advanceTo(s, 'postcombat-main', 120);
+    return { s, bear: bear! };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A player is not a creature to prevent combat damage to and by: unread.
+    const odd = compileCard({ ...ROWS[0], oracle_text: '{T}: Prevent all combat damage that would be dealt to and dealt by target player this turn.' } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('Maze: the attacker is untapped and deals nothing; the other one still hits', () => {
+    const { s, bear } = attack(['Test Maze'], (t) => drain(passBoth(apply(t, {
+      type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Test Maze'), abilityIndex: 0,
+      targets: [{ kind: 'card', id: find(t, 1, 'battlefield', 'Test Bear') }],
+    } as Action)), 30));
+    expect(life(s, 0)).toBe(18);
+    expect(s.instances[bear]!.tapped).toBe(false);
+    const unanswered = attack([], (t) => t);
+    expect(life(unanswered.s, 0)).toBe(16);
+  });
+
+  it('the Phantom blocks, and neither it nor the Bear is hurt', () => {
+    const { s, bear } = attack(['Test Phantom'], (t) => drain(passBoth(apply(t, {
+      type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Test Phantom'), abilityIndex: 0,
+    } as Action)), 30), (t) => [{ blocker: find(t, 0, 'battlefield', 'Test Phantom'), attacker: find(t, 1, 'battlefield', 'Test Bear') }]);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Phantom');
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.damage).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

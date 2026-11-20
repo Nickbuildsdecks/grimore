@@ -13885,6 +13885,30 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     };
   }
   /*
+    Both ways at once (D1053): "Prevent all combat damage that would be dealt to and dealt by target
+    creature you control this turn" (Soratami Cloud Chariot), "… by ~ this turn" (Deftblade Elite),
+    and, after "Untap target attacking creature.", "… by that creature this turn" (Maze of Ith, which
+    the pronoun borrowing reads as the earlier target). `preventCombatDamage` on those cards is the
+    hand-written Maze of Ith's own primitive.
+  */
+  const bothWays = new RegExp(`^prevent all combat damage that would be dealt to and dealt by (${selfRef(name)}|target .+?) this turn$`, 'i').exec(text);
+  if (bothWays !== null) {
+    if (!/^target /i.test(bothWays[1]!)) {
+      return { effect: (c) => preventCombatDamage(c.state, c.source, c.controller, [c.source]), spellFlags: { preventsDamage: true } };
+    }
+    const spec = targetSpecFrom(bothWays[1]!, false);
+    if (spec !== null && spec.kind === 'creature') {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const ids = cardTargets(c);
+          return ids.length === 0 ? c.state : preventCombatDamage(c.state, c.source, c.controller, ids);
+        },
+        spellFlags: { preventsDamage: true },
+      };
+    }
+  }
+  /*
     The rest of the "this turn" prevention family (D738): "Prevent all damage that would be dealt to
     target creature this turn", "… combat damage that would be dealt by target attacking creature
     this turn", "… dealt by creatures this turn", "… dealt this turn to creatures you control",
@@ -23845,7 +23869,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
 
   const untapped = new RegExp(`^untap (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (untapped !== null) {
-    const spec = targetSpecFrom(untapped[1]!, true);
+    /*
+      Not a gift when it is "target attacking creature" with no "you control" (D1053): that is Maze
+      of Ith answering an attack, aimed at the enemy, and `friendly` would turn the bot's aim round
+      onto its own attackers. The hand-written Maze carries no `friendly` either.
+    */
+    const answersAnAttack = /\battacking creature\b/i.test(untapped[1]!) && !/\byou control\b/i.test(untapped[1]!);
+    const spec = targetSpecFrom(untapped[1]!, !answersAnAttack);
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
