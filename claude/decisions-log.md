@@ -53939,3 +53939,34 @@ graveyard check on the milled cards that the question's own zone already makes, 
 away.
 
 Coverage: 14,144 of 31,900 cards (+2), 35,382 of 59,888 lines (+6).
+## D771 — Sweeps end a runaway board instead of hanging
+
+Sweep 60301 (100 pods) never finished. Seed 60315 was the game: one player cast Troubling Tribbles
+("At the beginning of your upkeep, create a token that's a copy of this creature"), and each copy
+copies itself too. That player had 128 at turn 45, 512 at turn 53, 2,048 at turn 58 and 2,900 at
+turn 60. The engine played the card correctly and kept pace, about 50 moves a minute at 1,000
+permanents. But nothing threatened a 0/1 that cannot block or deal damage. Nobody attacked that
+player (still at 37 life), and the board doubles for as long as the game lasts.
+
+Two things were tried and one was kept:
+
+- **Not kept: attack plans aimed at every opponent.** The bot's search gets one plan aimed at the
+  lowest life total. Adding a plan for each other opponent did not change the replay: the bots
+  still went for the low-life player, which is defensible, since 0/1s that cannot block are no
+  danger to anyone. Each extra plan is a playout on every attack in a pod, so the change cost
+  speed and bought nothing. Reverted.
+- **Kept: a board cap in `corpus-decks.mjs`.** `BOARD=<n>` (default 1,000) ends a game as
+  `runaway-board` once any battlefield holds more than n permanents. The report names the
+  commonest card on that board: "seat 2 has more than 1000 permanents, 1010 of them Troubling
+  Tribbles". The move cap could not catch this, because the doubling happens in a handful of moves.
+  TRACE lines now also show the biggest board's commonest names, which is how this was found.
+
+For the beta: a human table meets the same board and decides for itself. The engine handled several
+thousand permanents at a usable speed, but a game that keeps doubling will eventually be too slow to
+play. Players with a Tribbles deck will need to finish the game or concede, as they would at a real
+table.
+
+Sweep 60301 rerun with the cap: 99 of 100 games finished, and seed 60315 is reported as
+`runaway-board` (1,010 Troubling Tribbles). 60.3 turns and 344 moves on average.
+
+    engine tests: 5,589, all passing (merged with the other session's D1037; the engine is unchanged here)

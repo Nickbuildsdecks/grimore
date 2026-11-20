@@ -160,6 +160,17 @@ const TRACE = Number(process.env.TRACE ?? 0);
   mana taps and activations inside one step. `LOOP=0` turns it off.
 */
 const LOOP = Number(process.env.LOOP ?? 2000);
+/*
+  BOARD=<n> ends a game, as `runaway-board`, once any battlefield holds more than n permanents.
+
+  Sweep 60301 never finished: Troubling Tribbles copies itself every upkeep and every copy does the
+  same, so one player had 512 of them at turn 53, 2,900 at turn 60, and was heading for millions. The
+  engine played the card correctly and kept pace at a few thousand. Nothing at the table threatened
+  the 0/1s, so the game had no end a sweep could wait for. The move cap does not catch it, because
+  the doubling happens inside a handful of moves. Reported with the commonest name on that board,
+  so a new runaway names its card.
+*/
+const BOARD = Number(process.env.BOARD ?? 1000);
 const SEAT_IDS = Array.from({ length: SEATS }, (_, i) => `corpus:${i}`);
 
 const allRows = (() => {
@@ -327,8 +338,20 @@ const traceLine = (s, moves, counts, whats) => {
     .map(([type, n]) => `${type}×${n}`).join(' ');
   const cards = [...whats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
     .map(([what, n]) => `${what}×${n}`).join(', ');
+  // The biggest battlefield's commonest names: a board that grows without bound shows what is
+  // growing (sweep 60315, a board of 500 permanents).
+  const biggest = [...s.seats].sort((a, b) => (s.zones[`${b.index}:battlefield`] ?? []).length
+    - (s.zones[`${a.index}:battlefield`] ?? []).length)[0];
+  const names = new Map();
+  for (const id of s.zones[`${biggest.index}:battlefield`] ?? []) {
+    const name = s.cardDefs[s.instances[id]?.defKey ?? '']?.name ?? '?';
+    names.set(name, (names.get(name) ?? 0) + 1);
+  }
+  const board = [...names.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([name, n]) => `${name}×${n}`).join(', ');
   return `    move ${moves} turn ${s.turn} ${s.step} :: ${seats} :: ${top}`
-    + `${cards === '' ? '' : `\n      cards: ${cards}`}`;
+    + `${cards === '' ? '' : `\n      cards: ${cards}`}`
+    + `\n      p${biggest.index} board: ${board}`;
 };
 
 /** One game to a finish, or to the first thing that stops it. */
@@ -451,6 +474,19 @@ function play(seed) {
       engine throwing for weeks (D244). The caller catches, once, and attributes it.
     */
     s = applyAction(s, action);
+    const crowded = s.seats.find((one) => (s.zones[`${one.index}:battlefield`] ?? []).length > BOARD);
+    if (crowded !== undefined) {
+      const names = new Map();
+      for (const id of s.zones[`${crowded.index}:battlefield`] ?? []) {
+        const name = nameOf(s, id);
+        names.set(name, (names.get(name) ?? 0) + 1);
+      }
+      const [name, n] = [...names.entries()].sort((a, b) => b[1] - a[1])[0];
+      return done({
+        verdict: 'runaway-board', seed, moves, turn: s.turn, decks: built,
+        detail: `seat ${crowded.index} has more than ${BOARD} permanents, ${n} of them ${name}`,
+      });
+    }
     if (s.stateVersion === before) {
       return done({
         verdict: 'stalled', seed, moves, turn: s.turn, decks: built,
