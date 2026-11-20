@@ -3241,6 +3241,8 @@ export function stateBasedActions(state: GameState): GameState {
         // zero or less is not destruction and cannot be regenerated away (CR 704.5a).
         if (ch.toughness > 0) {
           // And umbra armor (D947), which replaces the same destruction when there is no shield.
+          // Not a shield counter (D1033): spending one here leaves the damage marked, and the next
+          // pass destroys the creature anyway, so the counter would only be lost (CR 704.3).
           const saved = spendRegeneration(next, inst.id) ?? spendUmbraArmor(next, inst.id);
           if (saved !== null) {
             next = saved;

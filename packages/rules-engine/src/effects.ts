@@ -472,6 +472,11 @@ export function dealDamage(
   if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
   // And "prevent all damage that would be dealt to / by …" this turn (D738).
   if (damagePrevented(next, target, opts.source, opts.combatFrom !== undefined)) return next;
+  // A shield counter (D1033, CR 122.1c): the damage is replaced by removing one.
+  if (target.kind === 'card') {
+    const shielded = spendShieldCounter(next, target.id);
+    if (shielded !== null) return shielded;
+  }
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
 
@@ -1112,6 +1117,18 @@ export function enterAttacking(
   };
 }
 
+/**
+ * A shield counter (D1033, CR 122.1c): "If a permanent with a shield counter on it would be dealt
+ * damage or destroyed, instead remove a shield counter from it." The replacement, for `dealDamage`,
+ * `destroy` and the lethal-damage check: `null` when there is no shield counter to spend.
+ */
+export function spendShieldCounter(state: GameState, id: string): GameState | null {
+  const inst = state.instances[id];
+  // Both callers ask only about a permanent on the battlefield.
+  if (inst === undefined || (inst.counters['shield'] ?? 0) <= 0) return null;
+  return addCounters(state, id, 'shield', -1);
+}
+
 export function destroy(
   state: GameState, id: string,
   opts: { readonly regenerates?: boolean } = {},
@@ -1119,6 +1136,9 @@ export function destroy(
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'battlefield') return state;
   if (characteristicsOf(state, inst).keywords.has('indestructible')) return state;
+  // A shield counter first (D1033), which "can't be regenerated" does not stop either.
+  const shielded = spendShieldCounter(state, id);
+  if (shielded !== null) return shielded;
   /*
     Regeneration replaces the destruction rather than following it, so it is checked here — the one
     place a card is destroyed on purpose — and again where lethal damage is noticed.

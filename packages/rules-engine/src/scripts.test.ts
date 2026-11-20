@@ -27588,6 +27588,54 @@ describe('keyword counters (D1032)', () => {
   });
 });
 
+describe('shield counters (D1033)', () => {
+  const ROWS = [
+    { name: 'Test Boon', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Put a shield counter on target creature.' },
+    { name: 'Test Shieldmate', type_line: 'Creature — Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Test Shieldmate enters with a shield counter on it.' },
+    { name: 'Test Bolt', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Bolt deals 3 damage to target creature.' },
+    { name: 'Test Murder', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1033', name: 'Shields', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 40 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1033', 1: 'd1033' }, deckSpecs: { d1033: deck.deck },
+    battlefield: { 0: ['Plains', ...mine], 1: ['Plains'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, target?: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action)), 30);
+
+  it('reads every row whole, and a shield counter is aimed as a gift', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const boon = compileCard(ROWS[0] as never);
+    expect(boon.ok && boon.script?.targets?.[0]?.friendly).toBe(true);
+  });
+
+  it('enters with one; the first burn takes the counter and not the creature, the second kills it', () => {
+    let s = cast(table([], ['Test Shieldmate', 'Test Bolt', 'Test Bolt']), 'Test Shieldmate');
+    const mate = find(s, 0, 'battlefield', 'Test Shieldmate');
+    expect(s.instances[mate]!.counters['shield']).toBe(1);
+    s = cast(s, 'Test Bolt', mate);
+    expect(s.instances[mate]!.zone).toBe('battlefield');
+    expect(s.instances[mate]!.counters['shield'] ?? 0).toBe(0);
+    expect(s.instances[mate]!.damage ?? 0).toBe(0);
+    s = cast(s, 'Test Bolt', mate);
+    expect(s.instances[mate]!.zone).toBe('graveyard');
+  });
+
+  it('a destroy is replaced the same way, once per counter', () => {
+    let s = table(['Test Bear'], ['Test Boon', 'Test Murder', 'Test Murder']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Boon', bear);
+    s = cast(s, 'Test Murder', bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    s = cast(s, 'Test Murder', bear);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

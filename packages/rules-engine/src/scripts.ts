@@ -15806,8 +15806,9 @@ function selfEffect(
 /** The keyword counters (D1032, CR 122.1b), as a regex alternation, two-word ones first. */
 const KEYWORD_COUNTER_WORDS = 'first strike|double strike|flying|deathtouch|hexproof|indestructible|lifelink|menace|reach|trample|vigilance|haste';
 
+// Shield left this list in D1033: `spendShieldCounter` is its replacement (CR 122.1c).
 const RULES_COUNTERS: readonly string[] = [
-  'loyalty', 'defense', 'lore', 'time', 'fade', 'shield', 'finality', 'poison', 'energy',
+  'loyalty', 'defense', 'lore', 'time', 'fade', 'finality', 'poison', 'energy',
   'experience', 'rad', 'ticket', 'age', 'level',
 ];
 
@@ -25064,14 +25065,14 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   // And stun (D723, CR 122.1d), which harms as a -1/-1 counter does: it keeps a creature tapped.
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
-  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
+  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
     const printedKind = countered[2]!.toLowerCase();
     const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind === '-1/-1' ? '-1/-1' : printedKind;
     // A keyword is a gift, as a +1/+1 counter is; a stun or -1/-1 counter is for somebody else's.
-    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || isKeyword(kind));
+    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || kind === 'shield' || isKeyword(kind));
     if (spec !== null && many !== undefined) {
       return {
         targets: [spec],
@@ -30190,7 +30191,8 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
  * battlefield and stays. Every pool card that has them declares the keyword, and the keyword reader
  * builds both halves together (D364).
  */
-const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice'];
+// And shield (D1033, CR 122.1c).
+const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice', 'shield'];
 
 function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
   /*
