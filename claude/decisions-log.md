@@ -54296,3 +54296,24 @@ Fumarole, Den of the Bugbear, Hall of Storm Giants, and more) were all unread on
 Faults injected by script: 5. All are caught, two after the unread assertions.
 
 Coverage: 14,239 of 31,900 cards (+2), 35,557 of 59,888 lines (+2).
+
+## D1050 — a creature land with a sentence after the animation
+
+Creeping Tar Pit: "Until end of turn, this land becomes a 3/2 blue and black Elemental creature.
+It's still a land. It can't be blocked this turn."
+
+- `animateThen`, on the activated-ability path after `animateSelf`: the animation as `animateSelf`
+  reads it, then the rest of the line with "it" as the land itself, applied to the animated land.
+- The rest may not aim at anything or ask anything. Such a line falls through to the ordinary
+  reading, which already joins the animation to a targeted sentence (D1048's clause) and keeps the
+  target.
+- Creeping Tar Pit reads whole.
+
+**Tests.** 3 engine tests:
+- the row reads whole;
+- a 3/2 that is still a land and cannot be blocked this turn, and can be blocked again on the next;
+- the same animation followed by "Tap target creature." taps the Bear it is aimed at.
+
+Faults injected by script: 4, all caught.
+
+Coverage: 14,240 of 31,900 cards (+1), 35,558 of 59,888 lines (+1).
