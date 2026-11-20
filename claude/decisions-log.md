@@ -54027,3 +54027,42 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 14,143 to 14,145 of 31,900 cards with every line read, and 35,378 to 35,381 of 59,888
 lines, against 04eda22.
+
+## D1040 — control for as long as the terms hold
+
+"Gain control of target creature for as long as Sower of Temptation remains on the battlefield",
+"… for as long as you control Dragonlord Silumgar", "… for as long as ~ remains tapped", "… for as
+long as you control ~ and ~ remains tapped". 42 legal lines print a "for as long as" control
+change; this reads the four sets of terms that are about the source itself.
+
+- `ContinuousEffect.controlWhile` holds the terms: the source on the battlefield, and as printed
+  still controlled by the effect's controller (`controlled`) and still tapped (`tapped`).
+- `stealWhile` (effects.ts) moves the permanent and leaves a `permanent` effect with
+  `controlRevertTo` and the terms. If the terms are already false as it resolves (the Sower
+  bounced in response) nothing changes hands (CR 611.2b). A take-and-give-back would also have
+  marked the permanent for echo.
+- `auraControl` already keeps control Auras true of the board as a timestamp chain (D938). Its
+  `holds` now answers a `controlWhile` effect by its terms (`controlTermsHold`), so the newest
+  change on a permanent holds it, and the permanent goes back when the terms fail. A phased-out
+  source is not on the battlefield, so its steal ends too.
+- Other terms ("as long as that creature is enchanted", "as long as they're the monarch", a power
+  that "remains" less) stay unread.
+- Sower of Temptation, Dragonlord Silumgar, Master Thief, Roil Elemental and Mind Flayer read whole.
+  Helm of Possession, Willow Satyr and their kin still need "You may choose not to untap ~", which
+  is next.
+
+**Tests.** 6 engine tests:
+- the rows read whole;
+- the Sower holds the Bear while it stays and gives it back when it dies;
+- the Lord killed with its trigger on the stack takes nothing, and does not hand it back either
+  (no echo mark);
+- the Lord taken by the opponent's Sower gives the Bear back, and the Sower's own steal stays;
+- a stolen Bear that dies takes the effect with it;
+- "remains tapped", alone and with "you control", holds through the turn and ends at its
+  controller's next untap step.
+
+Faults injected by script: 8. 7 are caught, the 611.2b check after the echo assertion pinned it. The
+8th was a host-on-the-battlefield check that the leave-the-battlefield cleanup already makes, and it
+was folded away.
+
+Coverage: 14,159 of 31,900 cards (+7), 35,405 of 59,888 lines (+14).
