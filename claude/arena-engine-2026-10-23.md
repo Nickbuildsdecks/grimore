@@ -36133,3 +36133,24 @@ Faults injected by script: 3 of 3 caught. A count check was folded away: a plura
 "gain", not "gains", and never reaches this reader.
 
 Coverage: 14,042 of 31,900 cards (+64), 35,226 of 59,888 lines (+88).
+
+## D1031 — a counted pump and a keyword loss on any one target creature
+
+D1030's widening, applied to the two other single-target readers that spelt their own target phrase:
+- the counted pump ("target attacking creature gets +1/+1 until end of turn for each creature you
+  control", "another target creature gets +X/+X …, where X is …");
+- the keyword loss ("target creature with flying loses flying until end of turn").
+
+Both now take any one target phrase `targetSpecFrom` reads, provided it is a creature.
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- neither form reads at an artifact;
+- two artifacts give another target creature +2/+0;
+- the loss of flying refuses a creature without flying as its target and removes the keyword from
+  the Bird.
+
+Faults injected by script: 4 of 4 caught. The two creature-kind guards were caught only after the
+artifact rows were added. A count check was folded away, for D1030's reason.
+
+Coverage: 14,044 of 31,900 cards (+2), 35,230 of 59,888 lines (+4).
