@@ -90,15 +90,14 @@ describe('parseManaCost', () => {
     expect(parseManaCost('{2}{R}{R}').hybrids).toBeUndefined();
   });
 
-  it('still refuses snow and monocoloured hybrid rather than guessing', () => {
+  it('still refuses snow and hybrid Phyrexian rather than guessing', () => {
     /*
-      Each is a *different* shape from colour hybrid, and approximating either into it would be wrong
-      in a way a player would feel: `{2/W}` is two generic **or** one white. Phyrexian was on this
-      list until D766, which reads it (below).
+      Each is a different shape from the symbols read here. Phyrexian was on this list until D766 and
+      monocoloured hybrid (`{2/W}`, two generic or one white) until D767; both are read now.
     */
     expect(parseManaCost('{2}{S}').unsupported).toBe('S');
-    expect(parseManaCost('{2/W}').unsupported).toBe('2/W');
     expect(parseManaCost('{G/U/P}').unsupported).toBe('G/U/P');
+    expect(parseManaCost('{2/W}').unsupported).toBeUndefined();
   });
 
   it('reads phyrexian as its colour, noted, so only a life budget can pay it otherwise (D766)', () => {
@@ -114,7 +113,7 @@ describe('parseManaCost', () => {
   });
 
   it('reports the first unsupported symbol it meets, not the last', () => {
-    expect(parseManaCost('{S}{2/W}').unsupported).toBe('S');
+    expect(parseManaCost('{S}{G/U/P}').unsupported).toBe('S');
   });
 
   it('solves two hybrid symbols that compete for the same mana', () => {
