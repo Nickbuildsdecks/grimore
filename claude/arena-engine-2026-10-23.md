@@ -36941,3 +36941,33 @@ Faults injected by script: 4. 3 are caught, one after the second-Summon assertio
 token-and-battlefield filter on the new instances that nothing else can be, and it was folded away.
 
 Coverage: 14,262 of 31,900 cards (+7), 35,590 of 59,888 lines (+12).
+
+## D1053 — combat damage prevented both ways
+
+"{T}: Untap target attacking creature. Prevent all combat damage that would be dealt to and dealt by
+that creature this turn." (Maze of Ith, Ith, Maze of Shadows, Ebony Horse), "{U}: Prevent all combat
+damage that would be dealt to and dealt by ~ this turn." (Urborg Phantom, Deftblade Elite, Moonlight
+Geist), "… by target creature you control this turn" (Soratami Cloud Chariot, Cephalid
+Illusionist).
+
+- A reader for "prevent all combat damage that would be dealt to and dealt by <~ | target
+  creature …> this turn": `preventCombatDamage` on those cards, the hand-written Maze of Ith's own
+  primitive.
+- "That creature" after the untap is the earlier target, through the pronoun borrowing every
+  follow-up sentence already uses.
+- A target that is not a creature stays unread.
+- "Untap target attacking creature" with no "you control" is no longer a `friendly` target. It is a
+  Maze answering an attack, aimed at the enemy, and `friendly` would have turned the bot's aim onto
+  its own attackers. The compiled Maze of Ith then agrees with the hand-written one, which
+  `compiled-vs-written.test.ts` checks now that the card compiles.
+- The nine cards above read whole.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and a player target stays unread;
+- with two Bears attacking, the Maze untaps one and it deals nothing, while the other still deals
+  2 (4 with no Maze);
+- the Phantom blocks a Bear after activating, and neither is hurt.
+
+Faults injected by script: 4. All are caught, two after the second attacker and the player row; the friendliness one by `compiled-vs-written.test.ts`.
+
+Coverage: 14,273 of 31,900 cards (+11), 35,602 of 59,888 lines (+12).
