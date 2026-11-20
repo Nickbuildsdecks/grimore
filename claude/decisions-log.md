@@ -54169,3 +54169,23 @@ Faults injected by script: 5. All are caught, the power-for-toughness swap after
 joined the deck.
 
 Coverage: 14,191 of 31,900 cards (+8), 35,493 of 59,888 lines (+8).
+
+## D1045 — negations in a series
+
+"Destroy target nonartifact, nonblack creature" (Terror), "target noncreature, nonland permanent"
+(Vindicate's cousins), "target nonland, nontoken permanent". The comma in a series of negated
+qualifiers means "and", and the same words without the comma already read. 33 such target phrases
+are printed on legal cards.
+
+- `targetSpecFrom` reads a phrase with "nonX, nonY" again as "nonX nonY". Card filters already took
+  the comma form (searches, graveyard returns, hand picks).
+- Terror, Vindicate, Dismember and Ravenous Chupacabra read whole.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- Terror is refused at a black creature and an artifact creature, and destroys a green one;
+- "noncreature, nonland permanent" is refused at a land and a creature, and exiles an artifact.
+
+Faults injected by script: 2, both caught (refusing the phrase, and dropping the second negation).
+
+Coverage: 14,199 of 31,900 cards (+8), 35,508 of 59,888 lines (+15).
