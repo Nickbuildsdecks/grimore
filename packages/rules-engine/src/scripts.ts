@@ -15040,6 +15040,18 @@ const MASS_PUMP_SUBJECTS: string = [
  * sweep you cast the moment it kills something in another, and which of those the bot should believe
  * is unmeasured. A hint that points the wrong way plays worse than none.
  */
+/** The kind words a mass-pump subject may name instead of a creature type (D769). */
+const PUMP_KINDS: Readonly<Record<string, (ch: ReturnType<typeof characteristicsOf>) => boolean>> = {
+  snow: (ch) => ch.typeLine.supertypes.some((t) => t.toLowerCase() === 'snow'),
+  legendary: (ch) => ch.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'),
+  artifact: (ch) => hasType(ch.typeLine, 'artifact'),
+  white: (ch) => ch.colors.includes('W'),
+  blue: (ch) => ch.colors.includes('U'),
+  black: (ch) => ch.colors.includes('B'),
+  red: (ch) => ch.colors.includes('R'),
+  green: (ch) => ch.colors.includes('G'),
+};
+
 function massPumpSubject(phrase: string): {
   readonly ids: (c: EffectContext) => readonly string[];
   readonly targets?: readonly TargetSpec[];
@@ -15099,9 +15111,25 @@ function massPumpSubject(phrase: string): {
       const typed = /^(other )?(non-)?([a-z][a-z'-]*) creatures you control$/i.exec(phrase.trim());
       if (typed === null) return null;
       const word = typed[3]!.charAt(0).toUpperCase() + typed[3]!.slice(1).toLowerCase();
-      if (!isCreatureType(word)) return null;
       const other = typed[1] !== undefined;
       const negated = typed[2] !== undefined;
+      /*
+        Or a kind rather than a type (D769): "Snow creatures you control get +1/+1 until end of turn"
+        (Diamond Faerie), "artifact creatures …", "legendary creatures …", "white creatures …". Read
+        live, the snapshot taken at resolution like every scope here.
+      */
+      const kind = PUMP_KINDS[word.toLowerCase()];
+      if (kind !== undefined) {
+        return {
+          ids: (c) => creaturesControlledBy(c.state, c.controller).filter((id) => {
+            if (other && id === c.source) return false;
+            const inst = c.state.instances[id];
+            return inst !== undefined && kind(characteristicsOf(c.state, inst)) !== negated;
+          }),
+          holdForCombat: true,
+        };
+      }
+      if (!isCreatureType(word)) return null;
       return {
         ids: (c) => creaturesControlledBy(c.state, c.controller).filter((id) => {
           if (other && id === c.source) return false;
@@ -21928,6 +21956,26 @@ function targetSpecFrom(
       return inner.filter === undefined || inner.filter(state, candidate, controller, source);
     };
     return { ...inner, description: printed, filter: ofType };
+  }
+
+  /*
+    **Snow, peeled the same way (D769):** "target snow creature" (Ohran Yeti), "target nonsnow
+    creature", "target snow permanent". The supertype is read live.
+  */
+  const snowy = /^((?:another )?target) (snow|nonsnow) (.+)$/i.exec(printed);
+  if (snowy !== null && parsed) {
+    const inner = targetSpecFrom(`${snowy[1]!} ${snowy[3]!}`, friendly, parsed);
+    if (inner === null || !pointsAtAPermanent(inner)) return null;
+    const wants = snowy[2]!.toLowerCase() === 'snow';
+    const bySnow: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      const isSnow = characteristicsOf(state, inst).typeLine.supertypes.some((t) => t.toLowerCase() === 'snow');
+      if (isSnow !== wants) return false;
+      return inner.filter === undefined || inner.filter(state, candidate, controller, source);
+    };
+    return { ...inner, description: printed, filter: bySnow };
   }
 
   switch (printed.toLowerCase()) {

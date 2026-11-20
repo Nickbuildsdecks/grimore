@@ -22,6 +22,7 @@ import {
   poolTotal,
   printedKeywords,
   shortColors,
+  snowAsColours,
   solveTap,
   withAdditionalGeneric,
   type ManaPool,
@@ -90,12 +91,12 @@ describe('parseManaCost', () => {
     expect(parseManaCost('{2}{R}{R}').hybrids).toBeUndefined();
   });
 
-  it('still refuses snow and hybrid Phyrexian rather than guessing', () => {
+  it('still refuses hybrid Phyrexian rather than guessing', () => {
     /*
-      Each is a different shape from the symbols read here. Phyrexian was on this list until D766 and
-      monocoloured hybrid (`{2/W}`, two generic or one white) until D767; both are read now.
+      A different shape from the symbols read here. Phyrexian was on this list until D766,
+      monocoloured hybrid (`{2/W}`, two generic or one white) until D767, and snow until D769.
     */
-    expect(parseManaCost('{2}{S}').unsupported).toBe('S');
+    expect(parseManaCost('{2}{S}').unsupported).toBeUndefined();
     expect(parseManaCost('{G/U/P}').unsupported).toBe('G/U/P');
     expect(parseManaCost('{2/W}').unsupported).toBeUndefined();
   });
@@ -113,7 +114,7 @@ describe('parseManaCost', () => {
   });
 
   it('reports the first unsupported symbol it meets, not the last', () => {
-    expect(parseManaCost('{S}{G/U/P}').unsupported).toBe('S');
+    expect(parseManaCost('{G/U/P}{B/R/P}').unsupported).toBe('G/U/P');
   });
 
   it('solves two hybrid symbols that compete for the same mana', () => {
@@ -308,7 +309,34 @@ describe('solveTap', () => {
   });
 
   it('refuses a cost it cannot read rather than tapping hopefully', () => {
-    expect(solveTap(EMPTY_POOL, parseManaCost('{S}'), [land('m1', 'R')])).toBeNull();
+    expect(solveTap(EMPTY_POOL, parseManaCost('{G/U/P}'), [land('m1', 'G')])).toBeNull();
+  });
+
+  it('pays {S} only from snow sources, set aside for it (D769)', () => {
+    const cost = parseManaCost('{1}{S}');
+    expect(cost.snow).toBe(1);
+    expect(costValue(cost)).toBe(2);
+    // A pool cannot tell snow mana, so floating mana alone never pays it.
+    expect(canPay(pool({ R: 5 }), cost)).toBe(false);
+    expect(solveTap(EMPTY_POOL, cost, [land('m1', 'R'), land('m2', 'R')])).toBeNull();
+    const snowy = { ...land('s1', 'R'), snow: true as const };
+    const plan = solveTap(EMPTY_POOL, cost, [land('m1', 'R'), snowy]);
+    expect(plan?.map((pick) => pick.key).sort()).toEqual(['m1', 's1']);
+    expect(plan?.find((pick) => pick.key === 's1')?.snowPaid).toEqual(['R']);
+    // The symbol becomes the mana set aside for it, so the payment is the plan's.
+    expect(snowAsColours(cost, plan ?? []).colors.R).toBe(1);
+    expect(snowAsColours(cost, plan ?? []).snow).toBeUndefined();
+  });
+
+  it('keeps a snow land for the colour only it makes when another snow source can pay {S} (D769)', () => {
+    // {G}{S}: the snow Forest is the only green, so the snow Mountain pays the {S}.
+    const cost = parseManaCost('{G}{S}');
+    const forest = { ...land('sf', 'G'), snow: true as const };
+    const mountain = { ...land('sm', 'R'), snow: true as const };
+    const plan = solveTap(EMPTY_POOL, cost, [forest, mountain]);
+    expect(plan?.find((pick) => pick.key === 'sm')?.snowPaid).toEqual(['R']);
+    // And with the snow Forest the only snow source and the only green, it cannot be paid.
+    expect(solveTap(EMPTY_POOL, cost, [forest, land('m', 'R')])).toBeNull();
   });
 
   it('pays for X out of the sources available', () => {

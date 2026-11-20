@@ -36219,3 +36219,56 @@ checks were folded away: the battlefield check inside `spendShieldCounter` (both
 it), and the lethal-damage hook described above.
 
 Coverage: 14,065 of 31,900 cards (+9), 35,278 of 59,888 lines (+23).
+
+## D769 — Snow mana: {S}
+
+The last cost symbol in a printed mana cost or ability cost that the engine refused, apart from
+hybrid Phyrexian. **46 legal cards print `{S}`**: Arcum's Astrolabe, Faceless Haven, Icehide
+Golem, Boreal Griffin, Frost Raptor and the rest. A `{S}` is one mana that must come from a
+**snow** source (CR 107.4h).
+
+- `parseManaCost` counts the symbols in `ManaCost.snow`, and `costValue` adds one for each.
+- A pool cannot tell snow mana from other mana, so `payCost` refuses a cost that still has `{S}`
+  in it, and **floating mana never pays `{S}`**. The offer can be smaller than the rules allow,
+  never larger.
+- `manaSources` marks a permanent whose live type line says snow (`ManaSource.snow`).
+- `solveTap` sets aside snow sources for the `{S}` symbols, then solves the rest of the cost as
+  before with the other sources. It prefers snow sources whose colours the rest of the cost does
+  not ask for, least flexible first, so a snow Mountain pays the `{S}` of a `{G}{S}` spell and the
+  only green land is left for the `{G}`. If the rest cannot be paid, it tries other sets of snow
+  sources, up to 200 tries. The picks record which mana went to `{S}` (`ManaPick.snowPaid`).
+- `payFrom` turns the `{S}` symbols into exactly that mana (`snowAsColours`) before paying, so the
+  payment is the one the plan made.
+- Two readers that came with the cards. `targetSpecFrom` peels "snow" and "nonsnow" ("target snow
+  creature", Ohran Yeti) the way D754 peels a creature type. The mass pump reads a kind word in place
+  of a creature type: snow, artifact, legendary or a colour ("Snow creatures you control get +1/+1
+  until end of turn", Diamond Faerie).
+
+Still unread: "the amount of {S} spent to cast this spell" (Graven Lore, Rime Transfusion's
+family) and "if {S} of any of that spell's colors was spent" (Boreal Outrider). Both need the
+snow mana spent to be recorded, and nothing records it yet.
+
+**Tests.** 2 mana.test.ts rows:
+- `{1}{S}` is paid only by a snow source, and `snowAsColours` names the mana;
+- `{G}{S}` with a snow Forest and a snow Mountain sets the Mountain aside; with the snow Forest the
+  only snow source and the only green, it cannot be paid.
+
+6 engine tests:
+- the cost parses as one snow, mana value two, and both test cards read;
+- a Forest and a snow Mountain cast it;
+- three plain lands do not, and it is not offered;
+- the only green is kept for `{G}`;
+- a snow Forest alone cannot be both the green and the snow;
+- an activated `{1}{S}` is paid and pumps only the snow creatures.
+
+The D766/D767 mana.test.ts rows that held `{S}` as refused now assert that it reads, and the
+"refuses rather than guessing" rows use hybrid Phyrexian.
+
+Faults injected by script: 7 of 8 caught. The fault no test catches removes the retry over other
+sets of snow sources. The preference order gets every case tried right, so the retry is a safety
+net that no test reaches.
+
+    engine tests: 5,569, all passing (on the other session's D1033)
+
+Coverage: 14,066 to 14,096 of 31,900 cards with every line read, and 35,280 to 35,316 of 59,888
+lines, against 8852c43.
