@@ -16072,6 +16072,11 @@ function attachmentBonus(
   grantedTriggers?: readonly TriggerDef[];
   grantedAbilities?: readonly AbilityDef[];
 } | null {
+  // "Enchanted creature's controller may have it assign its combat damage as though it weren't
+  // blocked" (Indomitable Might, D772): D770's choice, on the host.
+  if (/^(?:enchanted|equipped) creature's controller may have it assign its combat damage as though it weren't blocked\.?$/i.test(plain(line).trim())) {
+    return { bonus: { assignsAsUnblocked: true }, harmful: false };
+  }
   // Lure (D914): "All creatures able to block enchanted creature do so." See `ContinuousEffect.lure`.
   if (/^all creatures able to block (?:enchanted|equipped) creature do so\.?$/i.test(plain(line).trim())) {
     return { bonus: { lure: true }, harmful: false };
@@ -16368,6 +16373,13 @@ export function attachmentScriptFor(
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
   const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
   /*
+    A second bonus line, "Enchanted creature's controller may have it assign its combat damage as
+    though it weren't blocked" (Indomitable Might, D772), beside "gets +3/+3": only the first bonus
+    line is read above, so this one is merged into it on the plain Aura path.
+  */
+  const freeLine = staticLine === undefined ? undefined : lines.find((line) => line !== staticLine
+    && /^enchanted creature's controller may have it assign its combat damage as though it weren't blocked\.?$/i.test(plain(line).trim()));
+  /*
     **A bonus line this module cannot read no longer refuses the attachment (D456).**
 
     It used to: `if (staticLine !== undefined && read === null) return null`. The docblock two
@@ -16572,6 +16584,7 @@ export function attachmentScriptFor(
           */
           effect: {
             ...(read?.bonus ?? {}),
+            ...(freeLine === undefined ? {} : { assignsAsUnblocked: true }),
             ...(read?.grantedTriggers === undefined
               ? {}
               : { grants: read.grantedTriggers.map((_, i) => i) }),
@@ -16591,7 +16604,8 @@ export function attachmentScriptFor(
         ...(read?.harmful === true || controlLine !== undefined ? { removesACreature: true as const } : {}),
       },
       // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
-      claimed: [declared, ...(read === null ? [] : [staticLine!]), ...(controlLine === undefined ? [] : [controlLine])],
+      claimed: [declared, ...(read === null ? [] : [staticLine!]), ...(controlLine === undefined ? [] : [controlLine]),
+        ...(freeLine === undefined ? [] : [freeLine])],
     };
   }
 
@@ -25404,6 +25418,19 @@ function readEffect(
   */
   const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
   if (theirChoice !== null) return readEffect(`${theirChoice[1]!}${theirChoice[2]!}`, name, where);
+  /*
+    "You may have creatures you control assign their combat damage this turn as though they weren't
+    blocked" (Predatory Focus) and "You may have ~ assign its combat damage this turn as though it
+    weren't blocked" (Gurzigost): D770's choice granted until end of turn (D772). The choice itself
+    is still asked with the damage order.
+  */
+  const freeTeam = /^you may have creatures you control assign their combat damage this turn as though they weren't blocked$/i.test(clause.trim());
+  const freeSelf = new RegExp(`^you may have (?:${selfRef(name)}|it) assign its combat damage this turn as though it weren't blocked$`, 'i').test(clause.trim());
+  if (freeTeam || freeSelf) {
+    return {
+      effect: (c) => pump(c.state, freeTeam ? creaturesControlledBy(c.state, c.controller) : [c.source], c.source, c.controller, { assignsAsUnblocked: true }),
+    };
+  }
   /*
     "Gain control of target <permanent>." (D760), for good: Agent of Treachery, Treachery's sorcery
     cousins. `gainControl` moves it to the new controller's battlefield (control is which battlefield

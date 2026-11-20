@@ -28024,6 +28024,68 @@ describe('counters on each of a set, and on the host (D1037)', () => {
   });
 });
 
+describe('"as though it weren\'t blocked", granted (D772)', () => {
+  const FOCUS = { name: 'Test Focus', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: "You may have creatures you control assign their combat damage this turn as though they weren't blocked." };
+  const GURZ = { name: 'Test Gurzi', type_line: 'Creature — Beast', mana_cost: '{3}{G}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '6', toughness: '8', oracle_text: "{G}{G}, Discard a card: You may have Test Gurzi assign its combat damage this turn as though it weren't blocked." };
+  const MIGHT = { name: 'Test Might', type_line: 'Enchantment — Aura', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: "Enchant creature\nEnchanted creature gets +3/+3.\nEnchanted creature's controller may have it assign its combat damage as though it weren't blocked." };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' };
+  const WALL = { name: 'Test Pikewall', type_line: 'Creature — Wall', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '4', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd772', name: 'Granted',
+    entries: [{ name: 'Test Focus', count: 2 }, { name: 'Test Gurzi', count: 2 }, { name: 'Test Might', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Test Pikewall', count: 4 }, { name: 'Forest', count: 23 }, { name: 'Plains', count: 23 }],
+    data: [FOCUS, GURZ, MIGHT, OX, WALL] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd772', 1: 'd772' }, deckSpecs: { d772: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: ['Test Pikewall'] }, turn: 2, firstSeat: 0,
+  }), 'precombat-main');
+  const swingAndBlock = (s0: GameState, attacker: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    const id = find(s, 0, 'battlefield', attacker);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] });
+    s = passBoth(s);
+    return apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Pikewall'), attacker: id }] });
+  };
+  const goFree = (s: GameState) => {
+    const owed = legalActions(s, 0).mustOrder;
+    let next = apply(s, { type: 'auto:order', by: 0, orders: owed.map((o) => ({ attacker: o.attacker, blockers: o.blockers, unblocked: true })) });
+    for (let i = 0; i < 8 && next.step !== 'postcombat-main'; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('all three read', () => {
+    for (const card of [FOCUS, GURZ, MIGHT]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the instant gives the choice to your creatures this turn', () => {
+    let s = table(['Forest', 'Test Ox'], ['Test Focus']);
+    expect(swingAndBlock(s, 'Test Ox').step).toBe('declare-blockers');
+    expect(legalActions(swingAndBlock(s, 'Test Ox'), 0).mustOrder).toEqual([]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Focus') })));
+    const blocked = swingAndBlock(s, 'Test Ox');
+    expect(legalActions(blocked, 0).mustOrder[0]?.mayGoUnblocked).toBe(true);
+    expect(life(goFree(blocked), 1)).toBe(17);
+  });
+
+  it('the activated ability gives it to the creature itself', () => {
+    let s = table(['Forest', 'Forest', 'Test Gurzi'], ['Test Ox']);
+    const gurzi = find(s, 0, 'battlefield', 'Test Gurzi');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: gurzi, abilityIndex: 0, discarded: find(s, 0, 'hand', 'Test Ox') })));
+    expect(characteristicsOf(s, s.instances[gurzi]!).assignsAsUnblocked).toBe(true);
+    expect(life(goFree(swingAndBlock(s, 'Test Gurzi')), 1)).toBe(14);
+  });
+
+  it('the Aura gives it to the creature it enchants', () => {
+    let s = table(['Forest', 'Forest', 'Test Ox'], ['Test Might']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Might'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Ox') }],
+    })));
+    const ox = find(s, 0, 'battlefield', 'Test Ox');
+    expect(characteristicsOf(s, s.instances[ox]!).assignsAsUnblocked).toBe(true);
+    expect(life(goFree(swingAndBlock(s, 'Test Ox')), 1)).toBe(14);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
