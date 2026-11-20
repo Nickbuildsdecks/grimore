@@ -2417,6 +2417,11 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
       const card = next.instances[offer.card];
       if (card !== undefined) next = relocate(next, card, 'graveyard', card.owner, 'bottom');
       next = bottomPile(next, offer.bottom ?? []);
+    } else if (offer.toHand === true) {
+      // Discover (D1043): a hit not cast goes to its owner's hand.
+      const card = next.instances[offer.card];
+      if (card !== undefined) next = relocate(next, card, 'hand', card.owner, 'bottom');
+      next = bottomPile(next, offer.bottom ?? []);
     } else {
       next = bottomPile(next, [offer.card, ...(offer.bottom ?? [])]);
     }
@@ -2429,6 +2434,8 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
           ? { kept: true }
           : offer.toGraveyard === true
           ? { toGraveyard: true }
+          : offer.toHand === true
+          ? { toHand: true }
           : { bottomed: (offer.bottom ?? []).length + 1 }),
       },
     };

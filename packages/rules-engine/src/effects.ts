@@ -3526,12 +3526,17 @@ export function madnessOffer(state: GameState, card: string, cost: string): Game
  * cascade is not simply a free spell. Running out of library is a legal outcome — the whole pile
  * goes back to the bottom and the cascade did nothing.
  */
-export function cascadeFrom(ctx: EffectContext): GameState {
+export function cascadeFrom(ctx: EffectContext, discover?: number): GameState {
   const { controller } = ctx;
   const inst = ctx.state.instances[ctx.source];
   if (inst === undefined) return ctx.state;
   const def = ctx.state.cardDefs[inst.defKey];
-  const limit = costValue(parseManaCost(def?.manaCost));
+  /*
+    Discover N (D1043, CR 701.57a) is the same walk with two differences: the limit is N and a card
+    of **exactly** N is a hit ("N or less" where cascade says "less than"), and a hit not cast goes
+    to its owner's hand rather than to the bottom. `limit` is then N + 1, so one comparison serves.
+  */
+  const limit = discover === undefined ? costValue(parseManaCost(def?.manaCost)) : discover + 1;
   const name = def?.name ?? 'it';
   let next = ctx.state;
   const exiled: string[] = [];
@@ -3565,9 +3570,12 @@ export function cascadeFrom(ctx: EffectContext): GameState {
     pendingOfferedCast: {
       seat: controller,
       card: hit,
-      prompt: `${name} cascades into ${hitName}: you may cast it without paying its mana cost`,
+      prompt: discover === undefined
+        ? `${name} cascades into ${hitName}: you may cast it without paying its mana cost`
+        : `${name} discovers ${hitName}: you may cast it without paying its mana cost, or put it into your hand`,
       bottom: rest,
       source: ctx.source,
+      ...(discover === undefined ? {} : { toHand: true as const }),
     },
   };
 }

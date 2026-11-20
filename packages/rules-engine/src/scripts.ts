@@ -25473,6 +25473,15 @@ function readEffect(
       };
     }
   }
+  /*
+    Discover N (D1043, CR 701.57a): cascade's walk to N or less, and the hit to hand if it is not
+    cast. `cascadeFrom` with the number. "Discover X, where X is …" is not read.
+  */
+  const discovers = /^discover (\d+)$/i.exec(clause.trim());
+  if (discovers !== null) {
+    const n = Number(discovers[1]);
+    return { effect: (c) => cascadeFrom(c, n) };
+  }
   const takes = /^gain control of (target .+)$/i.exec(clause.trim());
   if (takes !== null && !/\b(?:until end of turn|for as long as)\b/i.test(takes[1]!)) {
     const spec = targetSpecFrom(takes[1]!, false);

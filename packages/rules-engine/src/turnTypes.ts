@@ -1557,6 +1557,12 @@ export interface AutomationState {
      */
     readonly stays?: true;
     /**
+     * Declining puts the card into its owner's **hand** (D1043): discover's disposition (CR 701.57a),
+     * "if you don't cast it, put that card into your hand". The rest of the pile still goes to the
+     * bottom.
+     */
+    readonly toHand?: true;
+    /**
      * Whether the cast **must** be taken if it can be (CR 702.62c): suspend's, and nothing else's.
      *
      * Three of the four offers are permissions — "you may cast this" — and declining is a real

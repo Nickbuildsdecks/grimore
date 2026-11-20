@@ -28398,6 +28398,56 @@ describe('a token\'s quoted ability of two sentences (D1042)', () => {
   });
 });
 
+describe('discover (D1043)', () => {
+  const ROWS = [
+    { name: 'Test Dig', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Discover 2.' },
+    { name: 'Test Shock', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', oracle_text: 'Test Shock deals 2 damage to any target.' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1043', name: 'Discover', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  /** Seat 0 casts Test Dig with its library topped Mountain, Giant, Shock. */
+  const dig = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1043', 1: 'd1043' }, deckSpecs: { d1043: deck.deck },
+      battlefield: { 0: [], 1: [] }, hands: { 0: ['Test Dig'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const top = [
+      library.find((id) => nameOf(s, id) === 'Mountain')!,
+      library.find((id) => nameOf(s, id) === 'Test Giant')!,
+      library.find((id) => nameOf(s, id) === 'Test Shock')!,
+    ];
+    s = { ...s, zones: { ...s.zones, '0:library': [...top, ...library.filter((id) => !top.includes(id))] } } as GameState;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dig') } as Action)), 30);
+    return { s, top };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('walks past the land and the dearer card to one of exactly N, and casts it for nothing', () => {
+    let { s, top } = dig();
+    expect(s.pendingOfferedCast).toMatchObject({ card: top[2], bottom: [top[0], top[1]], toHand: true });
+    const before = life(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 0, card: top[2]!, offered: true, targets: [{ kind: 'player', seat: 1 }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    expect(life(s, 1)).toBe(before - 2);
+    expect(s.instances[top[2]!]!.zone).toBe('graveyard');
+    const library = ids(s, 0, 'library');
+    expect(library.slice(-2).sort()).toEqual([top[0]!, top[1]!].sort());
+  });
+
+  it('declined, the card goes to hand and the rest to the bottom', () => {
+    let { s, top } = dig();
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 20);
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(s.instances[top[2]!]!.zone).toBe('hand');
+    expect(ids(s, 0, 'library').slice(-2).sort()).toEqual([top[0]!, top[1]!].sort());
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
