@@ -27538,6 +27538,56 @@ describe('a counted pump and a keyword loss on any one target creature (D1031)',
   });
 });
 
+describe('keyword counters (D1032)', () => {
+  const ROWS = [
+    { name: 'Test Wings', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Put a flying counter on target creature.' },
+    { name: 'Test Edge', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Put a first strike counter on target creature you control.' },
+    { name: 'Test Healer', type_line: 'Creature — Cleric', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Test Healer enters with a lifelink counter on it.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1032', name: 'Keyword counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 40 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1032', 1: 'd1032' }, deckSpecs: { d1032: deck.deck },
+    battlefield: { 0: ['Plains', ...mine], 1: ['Plains'] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: readonly Target[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+  const has = (s: GameState, id: string, word: string) => characteristicsOf(s, s.instances[id]!).keywords.has(word as never);
+
+  it('reads every row whole, and a keyword counter is aimed as a gift', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const wings = compileCard(ROWS[0] as never);
+    expect(wings.ok && wings.script?.targets?.[0]?.friendly).toBe(true);
+  });
+
+  it('a flying counter is flying, for good; a first strike counter is first strike', () => {
+    let s = table(['Test Bear'], ['Test Wings', 'Test Edge']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Wings', [{ kind: 'card', id: bear }]);
+    expect(s.instances[bear]!.counters['flying']).toBe(1);
+    expect(has(s, bear, 'flying')).toBe(true);
+    s = cast(s, 'Test Edge', [{ kind: 'card', id: bear }]);
+    expect(has(s, bear, 'first strike')).toBe(true);
+    // A counter does not wear off at end of turn.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(has(s, bear, 'flying')).toBe(true);
+    // A count below one (a hand-adjusted counter) is no counter at all.
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, counters: { flying: -1 } } } };
+    expect(has(s, bear, 'flying')).toBe(false);
+  });
+
+  it('enters with a lifelink counter', () => {
+    let s = table([], ['Test Healer']);
+    s = cast(s, 'Test Healer');
+    const healer = find(s, 0, 'battlefield', 'Test Healer');
+    expect(s.instances[healer]!.counters['lifelink']).toBe(1);
+    expect(has(s, healer, 'lifelink')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -62218,12 +62268,15 @@ describe('a counter whose meaning is another line of the card (D603)', () => {
     expect(s.instances[find(s, 0, 'battlefield', 'Thallid')]!.counters['charge'] ?? 0).toBe(0);
   });
 
-  it('refuses a kind with a meaning of its own, and a keyword counter', () => {
+  it('refuses a kind with a meaning of its own; a keyword counter reads since D1032', () => {
     // Stun was here until D723 gave it its replacement (`untapPermanent`, CR 122.1d); it reads now.
-    for (const kind of ['lore', 'time', 'flying']) {
+    for (const kind of ['lore', 'time']) {
       const read = compileCard({ ...THALLID, oracle_text: `At the beginning of your upkeep, put a ${kind} counter on Thallid.` } as never);
       expect(read.ok && read.unread.length).toBe(1);
     }
+    // Flying was here until D1032 made a keyword counter grant its keyword (CR 122.1b).
+    const flying = compileCard({ ...THALLID, oracle_text: 'At the beginning of your upkeep, put a flying counter on Thallid.' } as never);
+    expect(flying).toMatchObject({ ok: true, unread: [] });
   });
 });
 

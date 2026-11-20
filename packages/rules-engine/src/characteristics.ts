@@ -3068,6 +3068,13 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const keywords = new Set<Keyword>([
     ...printedKeywords(def?.oracleText),
     ...(band?.keywords ?? []).filter(isKeyword),
+    /*
+      Keyword counters (D1032, CR 122.1b): "a flying counter", "a lifelink counter". A permanent with
+      one has that keyword. Seeded here with the printed ones, so "loses all abilities" clears them
+      too. That is earlier than the rules' own timestamp (the counter's placement), which only
+      differs for a counter placed after such an effect: accepted, and recorded in D1032.
+    */
+    ...Object.entries(instance.counters).filter(([kind, n]) => n > 0 && isKeyword(kind)).map(([kind]) => kind.toLowerCase() as Keyword),
   ]);
   let cantAttack = false;
   /*

@@ -15781,10 +15781,10 @@ function selfEffect(
     chapter, a time counter is a suspend or vanishing countdown. A stun counter has its machinery
     since D723 (`untapPermanent`, CR 122.1d), so it is placed like any other.
   */
-  const kinded = new RegExp(`^put (an?|[\\w]+) ([a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
-  // A keyword counter ("a flying counter", CR 122.1b) grants its keyword, which nothing here applies
-  // from a counter — so it is refused rather than placed as a name that does nothing.
-  if (kinded !== null && !RULES_COUNTERS.includes(kinded[2]!.toLowerCase()) && !isKeyword(kinded[2]!.toLowerCase())) {
+  // A keyword counter ("a flying counter", CR 122.1b) grants its keyword since D1032
+  // (`characteristicsOf`), so it is placed like any other; "first strike" and "double strike" are two words.
+  const kinded = new RegExp(`^put (an?|[\\w]+) ((?:first |double )?[a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
+  if (kinded !== null && !RULES_COUNTERS.includes(kinded[2]!.toLowerCase())) {
     const n = /^an?$/i.test(kinded[1]!) ? 1 : countFrom(kinded[1]!);
     if (n !== null && n > 0) {
       const kind = kinded[2]!.toLowerCase();
@@ -15803,6 +15803,9 @@ function selfEffect(
  * player counters. Everything else is a name another line of the card reads, or, for stun
  * (D723, CR 122.1d), a counter `untapPermanent` already knows.
  */
+/** The keyword counters (D1032, CR 122.1b), as a regex alternation, two-word ones first. */
+const KEYWORD_COUNTER_WORDS = 'first strike|double strike|flying|deathtouch|hexproof|indestructible|lifelink|menace|reach|trample|vigilance|haste';
+
 const RULES_COUNTERS: readonly string[] = [
   'loyalty', 'defense', 'lore', 'time', 'fade', 'shield', 'finality', 'poison', 'energy',
   'experience', 'rad', 'ticket', 'age', 'level',
@@ -25060,12 +25063,15 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     guessed one would be wrong rather than silent (D362).
   */
   // And stun (D723, CR 122.1d), which harms as a -1/-1 counter does: it keeps a creature tapped.
-  const countered = /^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+) (\+1\/\+1|-1\/-1|stun) counters? on (.+)$/i.exec(text);
+  // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
+  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
-    const kind = countered[2]!.startsWith('+') ? '+1/+1' : countered[2]!.toLowerCase() === 'stun' ? 'stun' : '-1/-1';
-    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1');
+    const printedKind = countered[2]!.toLowerCase();
+    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind === '-1/-1' ? '-1/-1' : printedKind;
+    // A keyword is a gift, as a +1/+1 counter is; a stun or -1/-1 counter is for somebody else's.
+    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || isKeyword(kind));
     if (spec !== null && many !== undefined) {
       return {
         targets: [spec],
@@ -30201,13 +30207,14 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     return n === null ? null : { sunburst: { counter: '+1/+1', n } };
   }
   const matched = new RegExp(
-    `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ([\\w+/]+) counters? on it$`,
+    `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ((?:first |double )?[\\w+/]+) counters? on it$`,
     'i',
   ).exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (matched === null) return null;
 
   const kind = matched[2]!.toLowerCase();
-  if (!SENTENCE_COUNTERS.includes(kind)) return null;
+  // And a keyword counter (D1032): "enters with a lifelink counter on it".
+  if (!SENTENCE_COUNTERS.includes(kind) && !isKeyword(kind)) return null;
 
   const printed = matched[1]!;
   const amount = printed.toLowerCase() === 'x' ? 'x' as const : countFrom(printed);
