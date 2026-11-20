@@ -1169,6 +1169,12 @@ export function keywordWithCost(
   const word = match[1]!.toLowerCase();
   const mana = match[2]!;
   /*
+    An X in the cost (D1055): Warbreak Trumpeter's "Morph {X}{X}{R}". Turning a card face up pays no
+    X here and keeps none for its triggers, so the cost would be {R} and its "create X Goblins" would
+    make none. Refused, so the line is left for a human.
+  */
+  if (/\{X\}/i.test(mana)) return null;
+  /*
     `Morph — Pay 3 life.` is in this pool and is deliberately not matched: the field takes an
     `AbilityCost` precisely because a morph cost is not always mana, but a cost this reader cannot
     parse is a cost it must not guess at. The regex requires mana symbols and nothing else.

@@ -47,7 +47,7 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor,
+  classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
   manaSpentScryTrigger, modalTriggerFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
@@ -581,7 +581,8 @@ export function compileCard(row: CardDataRow): Compilation {
     const hit = COMPILED.get(key);
     if (hit !== undefined) return hit;
   }
-  const built = compileUncached(row);
+  // A bare X is the one the mana cost pays, for a spell and for a permanent's triggers (D1055).
+  const built = withXPayable(/\{X\}/i.test(row.mana_cost ?? ''), () => compileUncached(row));
   if (key !== null) {
     if (COMPILED.size >= COMPILED_CAP) COMPILED.clear();
     COMPILED.set(key, built);
