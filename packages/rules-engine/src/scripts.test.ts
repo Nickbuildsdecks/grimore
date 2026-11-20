@@ -28615,6 +28615,60 @@ describe('enters with a counter for each (D1047)', () => {
   });
 });
 
+describe('a land a spell turns into a creature (D1048)', () => {
+  const ROWS = [
+    { name: 'Test Uprising', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: "Target land you control becomes a 4/4 Elemental creature with haste until end of turn. It's still a land." },
+    { name: 'Test Animate', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: "Until end of turn, target land becomes a 3/3 creature that's still a land." },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1048', name: 'Animate', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1048', 1: 'd1048' }, deckSpecs: { d1048: deck.deck },
+    battlefield: { 0: ['Forest', 'Test Bear'], 1: ['Forest'] }, hands: { 0: ['Test Uprising', 'Test Animate'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, target: string) => ({
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: target }],
+  } as Action);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // Neither a land phrase it cannot read nor a target that is not a land: both stay unread, and
+    // neither falls back to animating the card itself.
+    for (const text of [
+      "Target shiny land becomes a 4/4 Elemental creature until end of turn. It's still a land.",
+      "Target creature becomes a 4/4 Elemental creature until end of turn. It's still a land.",
+    ]) {
+      const read = compileCard({ ...ROWS[0], oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('a 4/4 Elemental with haste that is still a land, until end of turn', () => {
+    let s = table();
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    expect(refusal(s, cast(s, 'Test Uprising', find(s, 0, 'battlefield', 'Test Bear')))).toBeTruthy();
+    s = drain(passBoth(apply(s, cast(s, 'Test Uprising', forest))), 30);
+    const ch = characteristicsOf(s, s.instances[forest]!);
+    expect([ch.power, ch.toughness]).toEqual([4, 4]);
+    expect(hasType(ch.typeLine, 'creature') && hasType(ch.typeLine, 'land')).toBe(true);
+    expect(ch.typeLine.subtypes).toContain('Elemental');
+    expect(ch.keywords.has('haste')).toBe(true);
+    s = nextTurn(s);
+    expect(hasType(characteristicsOf(s, s.instances[forest]!).typeLine, 'creature')).toBe(false);
+  });
+
+  it('"a 3/3 creature that\'s still a land", on anybody\'s land', () => {
+    let s = table();
+    const theirs = find(s, 1, 'battlefield', 'Forest');
+    s = drain(passBoth(apply(s, cast(s, 'Test Animate', theirs))), 30);
+    const ch = characteristicsOf(s, s.instances[theirs]!);
+    expect([ch.power, ch.toughness, hasType(ch.typeLine, 'land')]).toEqual([3, 3, true]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

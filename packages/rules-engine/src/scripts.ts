@@ -25496,6 +25496,9 @@ function readEffect(
       };
     }
   }
+  // A land animated by a spell or a trigger (D1048), held as one clause by `clausesOf`.
+  if (clause.includes('\u0010')) return animateSelf(clause.replace('\u0010', ". It's still a land"), name);
+  if (/\bcreature that['’]s still a land\.?$/i.test(clause.trim())) return animateSelf(clause, name);
   /*
     Discover N (D1043, CR 701.57a): cascade's walk to N or less, and the hit to hand if it is not
     cast. `cascadeFrom` with the number. "Discover X, where X is …" is not read.
@@ -26300,6 +26303,8 @@ function clausesOf(line: string): readonly string[] {
     // An emblem's quoted abilities (D734) are one clause: their own punctuation is hidden from the
     // splitting below and put back by `emblemClause`.
     .replace(/you get an emblem with ("[^"]+"(?: and "[^"]+")?)/gi, (_m, quoted: string) => `you get an emblem with ${hideEmblemText(quoted)}`)
+    // A land becoming a creature and "It's still a land." (D1048) are one reading: see `animateSelf`.
+    .replace(/(becomes an? \d+\/\d+ [^.]*?creature[^.]*?)\.\s+It['’]s still a land/gi, '$1\u0010')
     // And a token's quoted ability printed inline (D1042), for the same reason: "… Mercenary creature
     // token with "{T}: Target creature you control gets +1/+0 until end of turn. Activate only as a
     // sorcery."" is one sentence with two inside it. Put back by the inline reader in `tokenEffect`.
@@ -28106,14 +28111,26 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
     comes before or after, once. A quoted ability granted with it ("with \"{B}: Regenerate this
     creature\"") and an X size are refused.
   */
+  /*
+    And a land it points at (D1048): "Target land you control becomes a 4/4 Elemental creature with
+    haste until end of turn. It's still a land." (Clan Guildmage, Elemental Uprising, Hydroform), and
+    "… a 3/3 creature that's still a land" in one sentence (Animate Land). The target has to be a
+    land phrase; the same layers, on the land chosen.
+  */
   const becomes = new RegExp(
-    `^(until end of turn, )?(?:${self}|it) becomes an? (\\d+)/(\\d+) `
+    `^(until end of turn, )?(?:${self}|it|((?:up to one )?target [^,.]*?land(?: you control)?)) becomes an? (\\d+)/(\\d+) `
     + '((?:(?:white|blue|black|red|green)(?:,? and |, | ))*)'
     + "((?:(?!artifact )[A-Z][A-Za-z'-]* )*)(artifact )?creature(?: with ([^\"]+?))?( until end of turn)?"
-    + "\\.\\s*it['’]s still a land$",
+    + "(?:\\.\\s*it['’]s still a land| that['’]s still a land)$",
     'i',
   ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
-  if (becomes === null || (becomes[1] === undefined) === (becomes[8] === undefined)) return null;
+  if (becomes === null) return null;
+  // Shifted by one from here on: [2] is the land aimed at, when there is one.
+  const aimed = becomes[2];
+  becomes.splice(2, 1);
+  if ((becomes[1] === undefined) === (becomes[8] === undefined)) return null;
+  const spec = aimed === undefined ? null : targetSpecFrom(aimed, false);
+  if (aimed !== undefined && (spec === null || !pointsAtAPermanent(spec))) return null;
   const power = Number(becomes[2]);
   const toughness = Number(becomes[3]);
   const setColors = (becomes[4] ?? '').toLowerCase().split(/,? and |, | /).filter((w) => w !== '')
@@ -28127,8 +28144,9 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
   const keywords = granted === undefined || granted === '' ? [] : grantedKeywordList(granted);
   if (keywords === null) return null;
   return {
-    abilityFlags: { animates: true },
-    effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
+    // The bot's hint is about animating itself; a land it points at is chosen as any target is.
+    ...(spec === null ? { abilityFlags: { animates: true } } : { targets: [spec] }),
+    effect: (c) => pump(c.state, spec === null ? [c.source] : [firstCardTarget(c) ?? ''].filter((id) => id !== ''), c.source, c.controller, {
       addTypes: becomes[6] === undefined ? ['Creature'] : ['Artifact', 'Creature'],
       ...(everyType ? { allCreatureTypes: true } : {}),
       ...(subtypes.length === 0 ? {} : { addSubtypes: subtypes }),
