@@ -26443,8 +26443,9 @@ function readEffect(
  *
  * - no "where X is", no X in a target count, a bound or a cost — those X are other numbers or other
  *   shapes;
- * - no question (`decisions`, `beforeDecisions`) and no `immediate` part, because those are built
- *   from the reading at compile time and would keep the number it was read with.
+ * - no question (`decisions`, `beforeDecisions`, `reflexive`), because those are built from the
+ *   reading at compile time and would keep the number it was read with. An `immediate` part (a
+ *   draw done now) is a function of the resolution like the effect, and is re-read the same way.
  *
  * - the same targets read with X = 2 and X = 3: "X damage divided as you choose among any number of
  *   target creatures" carries the amount in the target spec, which is built at compile time.
@@ -26460,8 +26461,7 @@ function xAsPaid(clause: string, name: string, where: SubjectZone | null): ReadE
   const two = at(2);
   const three = at(3);
   if (two === null || three === null) return null;
-  const asks = two.decisions !== undefined || two.beforeDecisions !== undefined
-    || two.immediate !== undefined || two.reflexive !== undefined;
+  const asks = two.decisions !== undefined || two.beforeDecisions !== undefined || two.reflexive !== undefined;
   if (asks) return null;
   // The targets read with 2 and with 3 must be the same: an amount divided among them is in the spec.
   const shape = (read: ReadEffect): string => JSON.stringify(read.targets ?? []);
@@ -26473,6 +26473,13 @@ function xAsPaid(clause: string, name: string, where: SubjectZone | null): ReadE
       const read = c.x === 2 ? two : at(c.x);
       return read === null ? c.state : read.effect(c);
     },
+    // The draw's "now" reading (`ReadEffect.immediate`), re-read with the X paid like the rest.
+    ...(two.immediate === undefined ? {} : {
+      immediate: (c: EffectContext) => {
+        const read = c.x === 2 ? two : at(c.x);
+        return read === null ? c.state : (read.immediate ?? read.effect)(c);
+      },
+    }),
   };
 }
 

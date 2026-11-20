@@ -29188,6 +29188,52 @@ describe('reconfigure (D775)', () => {
     expect(ch(s, 'Test Lizard').power).toBe(2);
   });
 });
+describe('drawing X, now and owed (D1056)', () => {
+  const ROWS = [
+    { name: 'Test Stroke', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Target player draws X cards.' },
+    { name: 'Test Revelation', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'You gain X life and draw X cards.' },
+    { name: 'Test Study', type_line: 'Sorcery', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Draw X cards. Discard a card.' },
+    { name: 'Test Drake', type_line: 'Creature — Drake', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'When Test Drake enters, draw X cards.' },
+  ];
+  const deck = customDeck({ id: 'd1056', name: 'Draw X', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string, x: number, target?: Target) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1056', 1: 'd1056' }, deckSpecs: { d1056: deck.deck },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island'], 1: [] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), x, ...(target === undefined ? {} : { targets: [target] }) } as Action)), 30);
+    return { before, s };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an enters trigger draws the X its permanent was cast for', () => {
+    let { before, s } = cast('Test Drake', 2);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(ids(before, 0, 'hand').length - 1 + 2);
+  });
+
+  it('the target draws X', () => {
+    const { before, s } = cast('Test Stroke', 3, { kind: 'player', seat: 1 });
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length + 3);
+  });
+
+  it('gain X and draw X, and a draw of X before a discard is in hand when the discard asks', () => {
+    const rev = cast('Test Revelation', 2);
+    expect(life(rev.s, 0)).toBe(life(rev.before, 0) + 2);
+    expect(ids(rev.s, 0, 'hand').length).toBe(ids(rev.before, 0, 'hand').length - 1 + 2);
+    // Three, not the two the reading was made with: the "now" draw is re-read with the X paid.
+    const study = cast('Test Study', 3);
+    // The three cards are drawn now, so the discard can choose among them.
+    expect(study.s.pendingDecision?.candidates?.length).toBe(ids(study.before, 0, 'hand').length - 1 + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

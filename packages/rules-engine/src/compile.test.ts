@@ -4042,26 +4042,19 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         .toHaveLength(2);
     });
 
-    it('will not read the same sentence on a permanent, where there is no X to spend', () => {
+    it('reads the same sentence on a permanent since D1056, where the X is the one it was cast for', () => {
       /*
-        The safety property, and the reason the X reading lives on the spell path rather than in the
-        clause vocabulary. A triggered ability's stack object carries no X — `automation.ts` fills
-        the context with `object.x ?? 0` — so a clause reader that understood bare X would give this
-        creature a trigger that draws **nothing**, for ever, with nothing left unread for a human to
-        notice (D362).
-
-        So the line is refused and the card is dealt as a hybrid instead, which is the honest
-        outcome.
+        This was the safety property while a triggered ability carried no X: a bare-X draw on an
+        enters trigger would have drawn nothing, for ever. D985 gave the trigger the X its permanent
+        was cast for (`castX`), and D1055/D1056 read the clause with it, so the line reads, and the
+        engine test "drawing X, now and owed (D1056)" plays it.
       */
       const permanent = compileCard({
         name: 'Hopeful Drake', type_line: 'Creature — Drake', mana_cost: '{X}{U}', cmc: 1,
         colors: ['U'], power: '2', toughness: '2',
         oracle_text: 'When Hopeful Drake enters the battlefield, draw X cards.',
       });
-      expect(permanent.ok).toBe(true);
-      if (!permanent.ok) return;
-      expect(permanent.script).toBeUndefined();
-      expect(permanent.unread.map((u) => u.why)).toEqual(['no-reader']);
+      expect(permanent.ok && permanent.unread).toEqual([]);
     });
 
     it('reads a second sentence that also spends X since D1055, and still refuses Exsanguinate\'s', () => {
