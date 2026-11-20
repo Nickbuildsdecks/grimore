@@ -65057,12 +65057,15 @@ describe('a free regeneration is not a thing to keep pressing (D639)', () => {
     expect(read.ok && read.unread).toEqual([]);
     return (read.ok ? read.script?.abilities ?? [] : []).find((a) => a.description.includes('Regenerate'))!;
   };
-  const board = (shielded: boolean) => ({
+  // Something on the stack, so an unshielded creature has a reason to regenerate (D768).
+  const board = (shielded: boolean, threatened = true) => ({
     instances: {
       aura: { attachedTo: 'host', counters: {} },
       host: { counters: shielded ? { [REGENERATION]: 1 } : {} },
       self: { counters: shielded ? { [REGENERATION]: 1 } : {} },
     },
+    stackOrder: threatened ? ['a spell'] : [],
+    combat: { attacks: [] },
   }) as never;
 
   it('on an Aura: buys nothing once the enchanted creature has a shield', () => {
@@ -65075,5 +65078,15 @@ describe('a free regeneration is not a thing to keep pressing (D639)', () => {
     const regen = ability('{0}: Regenerate Test Leeches.', 'Creature — Leech');
     expect(regen.buysNothingIf!(board(false), 'self', 0 as SeatIndex)).toBe(false);
     expect(regen.buysNothingIf!(board(true), 'self', 0 as SeatIndex)).toBe(true);
+  });
+
+  it('and with nothing threatening it, no shield is worth buying (D768)', () => {
+    const own = ability('{2}{B}: Regenerate Test Leeches.', 'Creature — Leech');
+    expect(own.buysNothingIf!(board(false, false), 'self', 0 as SeatIndex)).toBe(true);
+    const aura = ability('Enchant creature\n{2}{B}: Regenerate enchanted creature.', 'Enchantment — Aura');
+    expect(aura.buysNothingIf!(board(false, false), 'aura', 0 as SeatIndex)).toBe(true);
+    // In a fight it is worth it again.
+    const fighting = { ...(board(false, false) as object), combat: { attacks: [{ attacker: 'self', blockers: [] }] } } as never;
+    expect(own.buysNothingIf!(fighting, 'self', 0 as SeatIndex)).toBe(false);
   });
 });

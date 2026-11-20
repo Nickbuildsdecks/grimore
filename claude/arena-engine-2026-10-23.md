@@ -35989,3 +35989,31 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: unchanged at 13,941 of 31,900 cards and 35,085 of 59,888 lines against 6db1f99. These
 cards' lines were already read; what changed is that they can be cast.
+
+## D768 — The bot stops buying regeneration shields it has no use for
+
+Found while re-measuring the beta number. One pod (seed 60212) ran more than 25 minutes: two
+seats at 34 and 47 life, turn 104 and still going, and one creature activated 85 times. Jace's
+Mindseeker had no ability of its own; Molting Snakeskin gave it "{2}{B}: Regenerate this creature",
+and the bot bought a shield in every upkeep, its own and the opponent's. A shield lasts the turn,
+so each one was three mana spent on nothing, and in its own upkeep the bot tapped out of its main
+phase. Two bots doing that cannot finish a game, and a tester playing beside one would see a
+seat that never casts anything.
+
+D639's `buysNothingIf` hint stopped a **second** shield. It now also stops the first one when
+nothing could destroy the creature before the shield wears off: an empty stack and the creature
+in no fight. `shieldBuysNothing` answers both, for the creature's own regenerate (hand-written
+and compiled) and for an Aura's "Regenerate enchanted creature". A player may still press it any
+time; the hint only steers the bot. Regenerating in answer to a removal spell on the stack, or
+with the creature attacking or blocking, is still worth it to the bot.
+
+**Tests.** D639's two tests now give the board a spell on the stack, so an unshielded creature
+still has a reason to regenerate. A new one: with nothing threatening, neither the creature's
+own regenerate nor an Aura's is worth a shield, and in a fight it is again.
+
+Faults injected by script: 3 of 3 caught.
+
+Game 60212 replayed on this build: finished at turn 88 in 1,175 moves, against the 20,000-move cap
+it was heading for.
+
+    engine tests: 5,538, all passing (with the other session's latest merged)
