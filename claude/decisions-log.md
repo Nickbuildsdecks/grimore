@@ -54265,3 +54265,34 @@ Spellbomb). About 25 legal lines.
 Faults injected by script: 5. All are caught, two after the unread-phrase assertions.
 
 Coverage: 14,237 of 31,900 cards (+14), 35,555 of 59,888 lines (+17).
+
+## D1049 — a creature land with a quoted ability
+
+Raging Ravine: "Until end of turn, this land becomes a 3/3 red and green Elemental creature with
+"Whenever this creature attacks, put a +1/+1 counter on it." It's still a land." The creature lands
+that grant an ability while animated (Raging Ravine, Lavaclaw Reaches, Restless Spire, Wandering
+Fumarole, Den of the Bugbear, Hall of Storm Giants, and more) were all unread on the quote.
+
+- `animateSelf` reads the quoted text as the card's own line would be read (`lineScriptFor`), and
+  takes exactly one trigger or one activated ability. The grant is held on the card
+  (`grantedTriggers` / `grantedAbilities`) and handed over by index (`grants: [0]`) on the
+  animation's own continuous effect. It lasts as long as the animation and is erased with it, the
+  way an Aura's grant is (`grantedTriggersOn`).
+- `ReadEffect.cardFields`: card fields an activated ability brings with it, merged by the ability
+  path only. `merge` in compile.ts refuses a second line that sets the same field, so a card with
+  two such lines leaves the second unread and an index cannot point at the wrong grant.
+- A grant on a land the card points at (D1048's target form) is refused, because spells and
+  triggers do not carry `cardFields`.
+- Raging Ravine reads whole. The other cards' quoted abilities do not read yet: an X pump on "this
+  creature", a tapped-and-attacking token, and switching power and toughness. Den of the Bugbear and
+  Hall of Storm Giants also need "If you control two or more other lands, ~ enters tapped".
+
+**Tests.** 2 engine tests, and the D754 refusal row of a quoted "{T}: Draw a card." swapped for one that does not read:
+- the row reads whole with one granted trigger; a second quoted grant on another line, a quoted
+  ability that does not read, and a grant on a target land all stay unread;
+- animated, it attacks and the trigger puts a counter on it (a 4/4), and a turn later the grant is
+  gone.
+
+Faults injected by script: 5. All are caught, two after the unread assertions.
+
+Coverage: 14,239 of 31,900 cards (+2), 35,557 of 59,888 lines (+2).
