@@ -28754,6 +28754,64 @@ describe('a creature land with a sentence after the animation (D1050)', () => {
   });
 });
 
+describe('combat damage by a kind of creature you control (D773)', () => {
+  const watcher = (name: string, subject: string) => ({ name, type_line: 'Enchantment', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', oracle_text: `Whenever ${subject} you control deals combat damage to a player, draw a card.` });
+  const LEG_W = watcher('Test Legend Watch', 'a legendary creature');
+  const MOD_W = watcher('Test Mod Watch', 'a modified creature');
+  const WOLF_W = watcher('Test Pack Watch', 'a Wolf or Werewolf');
+  const ENCH_W = watcher('Test Aura Watch', 'an enchanted creature');
+  const TOKEN_W = watcher('Test Token Watch', 'a creature token');
+  const LAND_W = watcher('Test Land Watch', 'a land creature');
+  const LEGEND = { name: 'Test Legend', type_line: 'Legendary Creature — Human', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const WOLF = { name: 'Test Wolf', type_line: 'Creature — Wolf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const WERE = { name: 'Test Were', type_line: 'Creature — Human Werewolf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const AURA = { name: 'Test Charm', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.' };
+  const data = [LEG_W, MOD_W, WOLF_W, ENCH_W, TOKEN_W, LAND_W, LEGEND, OX, WOLF, WERE, AURA];
+  const deck = customDeck({
+    id: 'd773', name: 'Kinds that hit',
+    entries: [...data.map((d) => ({ name: d.name, count: 1 })), { name: 'Forest', count: 49 }],
+    data: data as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd773', 1: 'd773' }, deckSpecs: { d773: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 2, firstSeat: 0,
+  }), 'precombat-main');
+  const drawsFrom = (s0: GameState, attackers: string[]) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    const before = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: attackers.map((name) => ({ attacker: find(s, 0, 'battlefield', name), defender: 1 })) });
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s));
+    return ids(s, 0, 'hand').length - before;
+  };
+
+  it('all six subjects read', () => {
+    for (const card of [LEG_W, MOD_W, WOLF_W, ENCH_W, TOKEN_W, LAND_W]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a legendary creature: only the legend draws', () => {
+    expect(drawsFrom(table(['Test Legend Watch', 'Test Legend', 'Test Ox']), ['Test Legend', 'Test Ox'])).toBe(1);
+  });
+
+  it('a modified creature: the one with a counter draws, the plain one does not', () => {
+    let s = table(['Test Mod Watch', 'Test Ox', 'Test Wolf']);
+    s = addCounters(s, find(s, 0, 'battlefield', 'Test Ox'), '+1/+1', 1);
+    expect(drawsFrom(s, ['Test Ox', 'Test Wolf'])).toBe(1);
+  });
+
+  it('a Wolf or Werewolf: each tribe draws, an Ox does not', () => {
+    expect(drawsFrom(table(['Test Pack Watch', 'Test Wolf', 'Test Were', 'Test Ox']), ['Test Wolf', 'Test Were', 'Test Ox'])).toBe(2);
+  });
+
+  it('an enchanted creature: only the one wearing an Aura draws', () => {
+    let s = table(['Test Aura Watch', 'Forest', 'Test Ox', 'Test Wolf'], ['Test Charm']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Charm'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Ox') }],
+    })));
+    expect(drawsFrom(s, ['Test Ox', 'Test Wolf'])).toBe(1);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -63360,7 +63418,8 @@ describe('combat-damage triggers with a subject filter (D602)', () => {
   });
 
   it('refuses a subject word it cannot filter on', () => {
-    const read = compileCard({ ...WIDOW, oracle_text: 'Whenever a modified creature you control deals combat damage to a player, draw a card.' } as never);
+    // "Modified" was the word here until D773 read it; "face-down" is still refused.
+    const read = compileCard({ ...WIDOW, oracle_text: 'Whenever a face-down creature you control deals combat damage to a player, draw a card.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
   });
 });
