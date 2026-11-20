@@ -27957,6 +27957,73 @@ describe('damage assigned as though it weren\'t blocked (D770)', () => {
     expect(life(finish(apply(s, { type: 'auto:order', by: 0, orders: [{ attacker: thorn, blockers: owed[0]!.blockers, unblocked: true }] })), 1)).toBe(15);
   });
 });
+describe('counters on each of a set, and on the host (D1037)', () => {
+  const S = (name: string, text: string, type = 'Sorcery') => ({ name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    S('Test Growth', 'Put a +1/+1 counter on each creature you control with a +1/+1 counter on it.'),
+    S('Test Swarm', 'Put two +1/+1 counters on each other creature you control.', 'Instant'),
+    S('Test Blight', 'Put a -1/-1 counter on each creature target player controls.'),
+    S('Test Collar', 'Enchant creature\nAt the beginning of your upkeep, put a +1/+1 counter on enchanted creature.', 'Enchantment — Aura'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Mentor', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'When Test Mentor enters, put two +1/+1 counters on each other Elf you control.' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1037', name: 'Counters on each', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], theirs: readonly string[], hand: string) => advanceTo(arena({
+    decks: { 0: 'd1037', 1: 'd1037' }, deckSpecs: { d1037: deck.deck },
+    battlefield: { 0: ['Forest', ...mine], 1: ['Forest', ...theirs] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: readonly Target[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+  const plus = (s: GameState, id: string) => s.instances[id]!.counters['+1/+1'] ?? 0;
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"with a +1/+1 counter on it": only those of yours that have one', () => {
+    let s = table(['Test Bear', 'Test Bear'], ['Test Bear'], 'Test Growth');
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [a!]: { ...s.instances[a!]!, counters: { '+1/+1': 1 } }, [theirs]: { ...s.instances[theirs]!, counters: { '+1/+1': 1 } } } };
+    s = cast(s, 'Test Growth');
+    expect([plus(s, a!), plus(s, b!), plus(s, theirs)]).toEqual([2, 0, 1]);
+  });
+
+  it('two on each other creature of yours; a -1/-1 on each of the target player\'s', () => {
+    let s = table(['Test Bear'], ['Test Bear'], 'Test Swarm');
+    s = cast(s, 'Test Swarm');
+    expect(plus(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(2);
+    expect(plus(s, find(s, 1, 'battlefield', 'Test Bear'))).toBe(0);
+    s = table(['Test Bear'], ['Test Bear'], 'Test Blight');
+    s = cast(s, 'Test Blight', [{ kind: 'player', seat: 1 }]);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Bear')]!.counters['-1/-1'] ?? 0).toBe(0);
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Bear')]!.counters['-1/-1']).toBe(1);
+  });
+
+  it('"each other": the creature itself is left out', () => {
+    let s = table(['Test Elf', 'Test Bear'], [], 'Test Mentor');
+    s = cast(s, 'Test Mentor');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(plus(s, find(s, 0, 'battlefield', 'Test Elf'))).toBe(2);
+    expect(plus(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(0);
+    expect(plus(s, find(s, 0, 'battlefield', 'Test Mentor'))).toBe(0);
+  });
+
+  it('on the enchanted creature, at the upkeep', () => {
+    let s = table(['Test Bear'], [], 'Test Collar');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Collar', [{ kind: 'card', id: bear }]);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Collar')]!.attachedTo).toBe(bear);
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(plus(s, bear)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

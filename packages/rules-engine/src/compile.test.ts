@@ -9391,8 +9391,8 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
       counters on a set of creatures the card does not name — a board a player cannot argue with,
       which D362 says is worse than the badge an unread line gets.
     */
-    // Patron of the Valiant: a condition after the noun.
-    ['a condition on the permanents', 'put a +1/+1 counter on each creature you control with a +1/+1 counter on it.'],
+    // Patron of the Valiant's "each creature you control with a +1/+1 counter on it" reads since
+    // D1037 (a counter condition on the set); see the D1037 tests in scripts.test.ts.
     // Arcbound Overseer: a condition before it, which is the same problem from the other side.
     ['a keyword condition', 'put a +1/+1 counter on each creature with modular you control.'],
     // Blech, Loafing Pest: five subtypes in a list.
@@ -9423,7 +9423,7 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
       saying what these rows say, and nothing could tell the two apart, so the rows are what is
       left. If a word-shape change ever lets one of these through, this is what fails.
     */
-    ['a controller said as a target', 'put a +1/+1 counter on each creature target player controls.'],
+    // "each creature target player controls" reads since D1037: the target player is a real target.
     ['a union of two types', 'put a +1/+1 counter on each artifact creature and/or Vehicle you control.'],
     ['a keyword the creature has', 'put a +1/+1 counter on each creature you control with lifelink.'],
     ['a back-reference to earlier creatures', 'put a +1/+1 counter on each of those creatures.'],
@@ -10249,7 +10249,7 @@ describe('the counter clause, read off the printed phrase', () => {
     ['Put a +1/+1 counter on target Sagas you control.',
       'a plural subtype, which no rule separates from the singulars ending in s (D486)'],
     // 'Put a +1/+1 counter on target non-Human creature.' reads since D1011 (a negated subtype).
-    ['Put a +1/+1 counter on enchanted creature.', 'the Aura host, which is a different question'],
+    // 'Put a +1/+1 counter on enchanted creature.' reads since D1037 (the permanent the source is attached to).
   ])('leaves "%s" unread: %s', (text) => {
     const read = sorcery(text as string);
     expect(read.ok).toBe(true);
