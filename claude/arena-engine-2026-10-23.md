@@ -36649,3 +36649,31 @@ turn later the Mercenary is refused once combat has begun and pumps the Bear in 
 Faults injected by script: 2, both caught.
 
 Coverage: 14,167 of 31,900 cards (+6), 35,464 of 59,888 lines (+13).
+
+## D1043 — discover
+
+"Discover N" (CR 701.57a): exile cards from the top of your library until you exile a nonland card
+with mana value N or less, then cast it without paying its mana cost or put it into your hand; the
+rest go to the bottom in a random order. 31 legal cards print it, most as the last clause of a
+trigger or an activated ability (Trumpeting Carnosaur, the Hidden lands, Chimil, Etali's Favor).
+
+- `cascadeFrom` takes the number. Cascade's walk with two differences: a card of exactly N is a
+  hit, so the limit is N + 1 with cascade's "less than" comparison; and the offer carries a new
+  disposition.
+- `pendingOfferedCast.toHand`: the decline path (`auto:pass` on the offer) moves the hit to its
+  owner's hand and bottoms the pile. Cascade sends it to the bottom, madness to the graveyard, and
+  miracle leaves it where it is.
+- Read for a number only. "Discover X, where X is …" (Monstrous Vortex, Hurl into History, Dinosaur
+  Egg) and Hit the Mother Lode's follow-up about "the discovered card" stay unread.
+- Like cascade, the cast is offered when the effect finishes. Every discover in the pool ends its
+  ability except Hit the Mother Lode's, which is unread.
+
+**Tests.** 3 engine tests:
+- the row reads whole;
+- the walk passes a Mountain and a three-drop to a two-drop for "discover 2", which casts for
+  nothing and deals its damage, with the other two at the bottom;
+- declined, the hit goes to hand and the other two to the bottom.
+
+Faults injected by script: 4, all caught.
+
+Coverage: 14,183 of 31,900 cards (+16), 35,485 of 59,888 lines (+21).
