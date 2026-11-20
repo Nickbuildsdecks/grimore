@@ -18986,6 +18986,15 @@ const TRIGGER_SHAPES: readonly ({
       return Number.isInteger(n) && n > 0 ? [{ kind: 'expend' as const, n }] : null;
     },
   },
+  // "Whenever an opponent / a player gains life" (D1039): Punishing Fire.
+  {
+    prologue: () => /^Whenever (?<by>an opponent gains|a player gains) life, (?<clause>.+)$/i,
+    from: (matched) => {
+      const by = ({ 'an opponent gains': 'opponent', 'a player gains': 'any' } as const)[
+        (matched.groups?.by ?? '').toLowerCase() as 'an opponent gains' | 'a player gains'];
+      return by === undefined ? null : [{ kind: 'life-gained' as const, by }];
+    },
+  },
   // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
   {
     prologue: () => /^Whenever (?<by>you lose|an opponent loses|a player loses) life, (?<clause>.+)$/i,
@@ -31875,6 +31884,23 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       sentence about casting handed to the clause readers refuses the card at best and runs the
       sacrifice on resolution at worst.
     */
+    /*
+      A triggered ability that brings the spell card back from the graveyard (D1039): "Whenever a
+      Dragon you control enters, you may pay {R}. If you do, return Spit Flame from your graveyard to
+      your hand" (Spit Flame, Unconventional Tactics, Asgardian Inspiration). An instant or sorcery
+      is in a graveyard after it resolves, and this is the one place its trigger can work from. So
+      the line is read by `triggerFromLine`, and kept only when every trigger it makes works from the
+      graveyard (D632's `inGraveyard`); anything else in a spell's text stays the resolution's.
+    */
+    const yardTrigger = /^(?:When|Whenever|At)\b/i.test(line.trim())
+      && new RegExp(`\\b(?:return|put) (?:${selfRef(name)}|this card) from your graveyard\\b`, 'i').test(line)
+      ? triggerFromLine(line, name) : null;
+    if (yardTrigger !== null && Object.keys(yardTrigger).length === 1 && (yardTrigger.triggers ?? []).length > 0
+      && yardTrigger.triggers!.every((trigger) => trigger.inGraveyard === true)) {
+      built['triggers'] = [...((built['triggers'] ?? []) as readonly unknown[]), ...yardTrigger.triggers!];
+      compiled.push(line);
+      continue;
+    }
     const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line) ?? pitchFromLine(line)
       ?? spellStaticFromLine(line) ?? selfCostChangeFromLine(line, name);
     if (keyword === null) {

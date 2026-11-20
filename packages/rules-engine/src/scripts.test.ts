@@ -28075,6 +28075,69 @@ describe('a pick from what was just milled (D1038)', () => {
   });
 });
 
+describe("a spell's own trigger from the graveyard (D1039)", () => {
+  const ROWS = [
+    { name: 'Test Spit', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Spit deals 2 damage to target creature.\nWhenever a Dragon you control enters, you may pay {R}. If you do, return Test Spit from your graveyard to your hand.' },
+    { name: 'Test Fire', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal',
+      oracle_text: 'Test Fire deals 2 damage to any target.\nWhenever an opponent gains life, you may pay {R}. If you do, return Test Fire from your graveyard to your hand.' },
+    { name: 'Test Whelp', type_line: 'Creature — Dragon', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' },
+    { name: 'Test Salve', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'You gain 3 life.' },
+  ];
+  const deck = customDeck({ id: 'd1039', name: 'Back from the yard', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 44 }], data: ROWS as never[] });
+  /** `active` casts `spell`, with `yard` in seat 0's graveyard and an untapped Mountain each; answers `answer` for seat 0. */
+  const play = (active: 0 | 1, spell: string, yard: string, answer: 'Yes' | 'No') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1039', 1: 'd1039' }, deckSpecs: { d1039: deck.deck },
+      battlefield: { 0: ['Mountain'], 1: ['Mountain'] }, hands: { [active]: [spell] }, graveyard: { 0: [yard] }, turn: 3, firstSeat: active,
+    }), 'precombat-main');
+    const card = find(s, 0, 'graveyard', yard);
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: active, card: find(s, active, 'hand', spell) } as Action)), 30);
+    let asked = false;
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      if (s.pendingDecision !== null) {
+        asked = true;
+        const option = (s.pendingDecision.options ?? []).find((o) => (answer === 'Yes') === !/^decline/i.test(o));
+        s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 30);
+        continue;
+      }
+      s = drain(passBoth(s), 30);
+    }
+    return { before, s, card, asked };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const fire = compileCard(ROWS[1] as never);
+    const any = compileCard({ ...ROWS[1], type_line: 'Enchantment', oracle_text: 'Whenever a player gains life, draw a card.' } as never);
+    if (!fire.ok || !any.ok) throw new Error('both compile');
+    expect(fire.script?.triggers?.[0]).toMatchObject({ on: { kind: 'life-gained', by: 'opponent' }, inGraveyard: true });
+    expect(any.script?.triggers?.[0]?.on).toEqual({ kind: 'life-gained', by: 'any' });
+  });
+
+  it('a Dragon entering offers the return; paying brings the instant back to hand', () => {
+    const paid = play(0, 'Test Whelp', 'Test Spit', 'Yes');
+    expect(paid.asked).toBe(true);
+    expect(paid.s.instances[paid.card]!.zone).toBe('hand');
+    const declined = play(0, 'Test Whelp', 'Test Spit', 'No');
+    expect(declined.asked).toBe(true);
+    expect(declined.s.instances[declined.card]!.zone).toBe('graveyard');
+  });
+
+  it("an opponent's life gain triggers it; your own does not", () => {
+    const theirs = play(1, 'Test Salve', 'Test Fire', 'Yes');
+    expect(theirs.s.seats[1]!.life).toBe(theirs.before.seats[1]!.life + 3);
+    expect(theirs.asked).toBe(true);
+    expect(theirs.s.instances[theirs.card]!.zone).toBe('hand');
+    const mine = play(0, 'Test Salve', 'Test Fire', 'Yes');
+    expect(mine.s.seats[0]!.life).toBe(mine.before.seats[0]!.life + 3);
+    expect(mine.asked).toBe(false);
+    expect(mine.s.instances[mine.card]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -46162,18 +46225,21 @@ describe("a spell whose other line is not its resolution, at the table (D487)", 
     expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 
-  it('and the recursion is reported unread, so the card is flagged rather than half claimed', () => {
+  /*
+    Until D1039 the recursion was reported unread here (with why 'no-reader', not a keyword), so the
+    card was flagged rather than half claimed. D1039 reads it: "an opponent gains life" became a
+    `life-gained` watcher, and a spell's trigger that returns it from the graveyard is now kept.
+  */
+  it('and since D1039 the recursion reads too, as a trigger that works from the graveyard', () => {
     const read = compileCard(PUNISHING_FIRE as never);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.compiled).toEqual(['Punishing Fire deals 2 damage to any target.']);
-    expect(read.unread).toHaveLength(1);
-    expect(read.unread[0]!.line).toMatch(/^Whenever an opponent gains life/);
-    /*
-      And it is NOT reported as a keyword declaration: `compile.ts` tags the two apart because a
-      keyword is one way to cast a card and this is an ability the card has. See `UnreadLine.why`.
-    */
-    expect(read.unread[0]!.why).toBe('no-reader');
+    expect(read.unread).toEqual([]);
+    expect(read.compiled).toEqual([
+      'Whenever an opponent gains life, you may pay {R}. If you do, return Punishing Fire from your graveyard to your hand.',
+      'Punishing Fire deals 2 damage to any target.',
+    ]);
+    expect(read.script?.triggers?.[0]).toMatchObject({ on: { kind: 'life-gained', by: 'opponent' }, inGraveyard: true });
   });
 });
 

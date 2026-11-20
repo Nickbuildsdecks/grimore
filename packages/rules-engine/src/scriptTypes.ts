@@ -1293,7 +1293,7 @@ export type TriggerEvent =
         readonly other?: true;
       };
     }
-  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
+  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'opponent' | 'any' }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
    * Conqueror. Raised once per seat per settle, with `amount` the life it lost there — read off

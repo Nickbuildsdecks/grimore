@@ -1297,8 +1297,13 @@ function triggerMatches(
     // "Whenever you expend N" (D1002): this seat's Nth mana on spells this turn.
     case 'expend':
       return actorSeat === sourceSeat && (event as { n?: number }).n === want.n;
-    case 'life-gained':
-      return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
+    // "Whenever you / an opponent / a player gains life" (D1039 for the opponent).
+    case 'life-gained': {
+      const by = want.by ?? 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     // "Whenever you / an opponent / a player loses life" (D999): whose loss.
     case 'life-lost': {
       const by = want.by ?? 'you';

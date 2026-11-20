@@ -10366,9 +10366,11 @@ describe("a spell's non-resolution lines (D487)", () => {
     // ("… that was dealt damage this turn" reads since D759; "combat damage" does not.)
     'This spell costs {3} less to cast if it targets a creature that was dealt combat damage this turn.',
     'This spell costs {2} less to cast if it was bargained.',
-    // A triggered ability, which on a spell functions somewhere other than resolution (36).
-    'Whenever an opponent gains life, you may pay {R}. If you do, return Flinging Thing from your'
-      + ' graveyard to your hand.',
+    // A triggered ability, which on a spell functions somewhere other than resolution (36). Since
+    // D1039 one that returns the card from the graveyard reads when its trigger does ("Whenever an
+    // opponent gains life" was the example here); one whose trigger does not read stays unread.
+    'Whenever a Vehicle you control attacks, you may pay {R}. If you do, return Flinging Thing from'
+      + ' your graveyard to your hand.',
     'When you cycle Flinging Thing, you may gain 2 life.',
     'When a spell or ability an opponent controls causes you to discard Flinging Thing, you gain'
       + ' 2 life.',
