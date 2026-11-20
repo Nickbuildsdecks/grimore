@@ -54066,3 +54066,32 @@ Faults injected by script: 8. 7 are caught, the 611.2b check after the echo asse
 was folded away.
 
 Coverage: 14,159 of 31,900 cards (+7), 35,405 of 59,888 lines (+14).
+
+## D1041 — "You may choose not to untap ~"
+
+"You may choose not to untap Helm of Possession during your untap step." 46 legal lines print it,
+mostly on cards whose other line lasts "for as long as ~ remains tapped".
+
+- `CardScript.mayStayTapped`, read by `keywordScriptFor`.
+- In its controller's own untap step (CR 502.3), the table keeps the permanent tapped while it holds
+  a control change that lasts "as long as ~ remains tapped" (D1040), and untaps it otherwise.
+  `untapAll` takes the set to `keep`. That is the one reason to keep such a permanent down that the
+  engine models, so the table answers the choice the way its controller wants it answered. Seedborn
+  Muse's untap in another player's step offers no choice and untaps it.
+- What this does not do: ask. A player who wants to end a Helm's steal early cannot. Storage lands
+  (Bottomless Vault and the rest) keep themselves tapped for counters, a choice the table cannot
+  make. A tripwire test pins Bottomless Vault as not fully read, so whoever reads its storage mana
+  ability has to turn this into a real question first.
+- Helm of Possession and Willow Satyr read whole. Rubinia Soulsinger and Hivis of the Scale print a
+  short name the compiler cannot derive, Seasinger and Vedalken Shackles a target condition.
+
+**Tests.** 4 engine tests (and `script mayStayTapped` added to the deck-coverage `compilerOnly` list):
+- the row reads whole, with the flag;
+- the Satyr holding the Bear stays tapped through its own untap step, and keeps the Bear;
+- with the Bear dead it untaps as usual;
+- Bottomless Vault is not claimed.
+
+Faults injected by script: 5, all caught (the script-flag check by D1040's Shackles test, which has
+no such line and so untaps).
+
+Coverage: 14,161 of 31,900 cards (+2), 35,451 of 59,888 lines (+46).
