@@ -53720,6 +53720,31 @@ shortcuts, folded away.
 
 Coverage: 14,070 of 31,900 cards (+5), 35,285 of 59,888 lines (+7).
 
+## D1035 — "that artifact" and "that artifact's controller"
+
+"Destroy target artifact. ~ deals 2 damage to that artifact's controller", "… that enchantment's
+controller", "Exile target artifact. Return that artifact to the battlefield under its owner's
+control", "Tap target land. That land doesn't untap …". D537's referent table had "that creature's",
+"that permanent's", "that land's" and "that spell's controller", and the object forms "that
+creature" and "that card". This adds the other permanent nouns:
+- the possessives "that artifact's", "that enchantment's" and "that planeswalker's controller";
+- the plain "that artifact", "that enchantment", "that land" and "that permanent".
+
+As for every row, the earlier clause decides which one can be reached.
+
+Found by a new tally (scratch `clause-gap2.mjs`) that reads every sentence of an unread line on its
+own. Most of its "deals N damage to that … 's controller" rows already read in context; this was the
+gap in the table.
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- each of the other nouns reads after a target of its kind;
+- the artifact's controller takes the damage, not the caster;
+- "that artifact" is the one exiled, and it comes back under its owner.
+
+Faults injected by script: 8 of 8 caught, one per new row.
+
+Coverage: 14,072 of 31,900 cards (+2), 35,287 of 59,888 lines (+2).
 ## D769 — Snow mana: {S}
 
 The last cost symbol in a printed mana cost or ability cost that the engine refused, apart from

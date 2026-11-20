@@ -19834,6 +19834,9 @@ type ReferentPronoun =
    */
   | 'its controller' | "that creature's controller" | "that permanent's controller"
   | "that land's controller" | "that spell's controller"
+  // And the other permanent nouns (D1035), possessive and plain.
+  | "that artifact's controller" | "that enchantment's controller" | "that planeswalker's controller"
+  | 'that artifact' | 'that enchantment' | 'that land' | 'that permanent'
   /** The player an attack is aimed at, on an attack or combat-damage trigger (D963). */
   | 'defending player';
 type ReferentKind = 'creature' | 'player' | 'permanent';
@@ -19894,6 +19897,19 @@ readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
   ["that permanent's controller", 'player', 'controller'],
   ["that land's controller", 'player', 'controller'],
   ["that spell's controller", 'player', 'controller'],
+  /*
+    The other permanent nouns (D1035): "Destroy target artifact. ~ deals 2 damage to that artifact's
+    controller", "… that enchantment's controller", and the plain "that artifact" / "that land" /
+    "that enchantment" / "that permanent" for the object itself. The earlier clause still decides
+    which can be reached, as for every row here.
+  */
+  ["that artifact's controller", 'player', 'controller'],
+  ["that enchantment's controller", 'player', 'controller'],
+  ["that planeswalker's controller", 'player', 'controller'],
+  ['that artifact', 'permanent', 'object'],
+  ['that enchantment', 'permanent', 'object'],
+  ['that land', 'permanent', 'object'],
+  ['that permanent', 'permanent', 'object'],
 ];
 
 /** The kinds a `'controller'` supply can read a controller off: an object on the battlefield. */
