@@ -27688,6 +27688,58 @@ describe('mana kept until end of turn (D1034)', () => {
   });
 });
 
+describe('"that artifact" and "that artifact\'s controller" (D1035)', () => {
+  const ROWS = [
+    { name: 'Test Shatter', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+      oracle_text: "Destroy target artifact. Test Shatter deals 2 damage to that artifact's controller." },
+    { name: 'Test Flicker', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: "Exile target artifact. Return that artifact to the battlefield under its owner's control." },
+    { name: 'Test Cog', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1035', name: 'That artifact', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 40 }], data: ROWS as never[] });
+  const table = (hand: string) => advanceTo(arena({
+    decks: { 0: 'd1035', 1: 'd1035' }, deckSpecs: { d1035: deck.deck },
+    battlefield: { 0: ['Mountain'], 1: ['Mountain', 'Test Cog'] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'card', id: target }],
+  } as Action)), 30);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each other noun reads after a target of that kind', () => {
+    for (const text of [
+      "Destroy target enchantment. Test Card deals 2 damage to that enchantment's controller.",
+      "Destroy target planeswalker. Test Card deals 2 damage to that planeswalker's controller.",
+      'Exile target enchantment. Return that enchantment to the battlefield under its owner\'s control.',
+      'Tap target land. That land doesn\'t untap during its controller\'s next untap step.',
+      'Exile target permanent. Return that permanent to the battlefield under its owner\'s control.',
+    ]) {
+      expect(compileCard({ name: 'Test Card', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: text } as never), text)
+        .toMatchObject({ ok: true, unread: [] });
+    }
+  });
+
+  it('the artifact\'s controller is hit, not the caster', () => {
+    let s = table('Test Shatter');
+    const cog = find(s, 1, 'battlefield', 'Test Cog');
+    s = cast(s, 'Test Shatter', cog);
+    expect(s.instances[cog]!.zone).toBe('graveyard');
+    expect([life(s, 0), life(s, 1)]).toEqual([20, 18]);
+  });
+
+  it('"that artifact" is the one exiled, back under its owner', () => {
+    let s = table('Test Flicker');
+    const cog = find(s, 1, 'battlefield', 'Test Cog');
+    s = cast(s, 'Test Flicker', cog);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Cog');
+    expect(namesIn(s, 1, 'exile')).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
