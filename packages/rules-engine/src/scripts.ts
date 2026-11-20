@@ -25681,6 +25681,50 @@ function readEffect(
     }
   }
   /*
+    **The top card, if it is of a kind** (D1036): "Look at the top card of your library. If it's a land
+    card, you may put it onto the battlefield tapped" (Explorer's Scope), "… If it's a creature card,
+    you may reveal it and put it into your hand" (Archghoul of Thraben), "Reveal the top card of your
+    library. If it's a creature card, put it onto the battlefield" (Call of the Wild). Joined into one
+    clause by `clausesOf`. The kind is read by the search vocabulary (`cardFilterBody`). With "you
+    may" the question is asked only when the top card is of that kind, and the move happens only on
+    a yes; otherwise the card stays where it is.
+  */
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?$/i.exec(clause.trim());
+  if (topIf !== null) {
+    const body = cardFilterBody(topIf[2]!, name);
+    if (body !== null) {
+      const topOf = (state: GameState, seat: SeatIndex): string | undefined => listAt(state, zoneKey(seat, 'library'))[0];
+      const matches = (state: GameState, seat: SeatIndex): boolean => {
+        const top = topOf(state, seat);
+        return top !== undefined && (body.filter === null || body.filter === undefined || body.filter(state, top, seat));
+      };
+      const may = topIf[3] !== undefined;
+      const toHand = topIf[4]!.toLowerCase() === 'into your hand';
+      const tapped = topIf[5] !== undefined;
+      const move = (state: GameState, seat: SeatIndex): GameState => {
+        const top = topOf(state, seat)!;
+        return toHand ? moveToHand(state, [top]) : putOntoBattlefield(state, top, seat, { tapped });
+      };
+      /*
+        The "may" is a look at one card, choosing it or not, and the engine moves a chosen card where
+        `chosenGoTo` says (D973), as surveil's question does. Without "may" the effect moves it.
+      */
+      if (may) {
+        return {
+          decisions: [{
+            who: 'controller', from: 'library-top', look: 1, min: 0, max: 1,
+            chosenGoTo: toHand ? 'hand' : tapped ? 'battlefield-tapped' : 'battlefield',
+            prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
+            // A top card of another kind is no candidate, and a question with none answers itself.
+            filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser),
+          }],
+          effect: (c) => c.state,
+        };
+      }
+      return { effect: (c) => (matches(c.state, c.controller) ? move(c.state, c.controller) : c.state) };
+    }
+  }
+  /*
     "Add {R}{R}{R}{G}{G}{G}. Until end of turn, you don't lose this mana as steps and phases end"
     (D1034): Savage Ventmaw, Grand Warlord Radha, Klauth. Joined into one clause by `clausesOf`. The
     mana is added as the first sentence says, and whatever it added is recorded as kept
@@ -26086,6 +26130,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(each player exiles all creature cards from their graveyard),\s+then (sacrifices all creatures they control),\s+then (puts all cards they exiled this way onto the battlefield)/gi, '$1\u0006$2\u0006$3')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
+    // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
+    .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
     .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.

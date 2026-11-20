@@ -27799,6 +27799,65 @@ describe('snow mana: {S} is paid only from snow sources (D769)', () => {
   });
 });
 
+describe('the top card, if it is of a kind (D1036)', () => {
+  const ROWS = [
+    { name: 'Test Peek', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Look at the top card of your library. If it\'s a land card, you may put it onto the battlefield tapped.' },
+    { name: 'Test Call', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Reveal the top card of your library. If it\'s a creature card, put it onto the battlefield.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Dig', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Reveal the top card of your library. If it\'s a land card, put it into your hand.' },
+  ];
+  const deck = customDeck({ id: 'd1036', name: 'Top card', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }], data: ROWS as never[] });
+  /** Seat 0 with `spell` in hand and a card named `top` put on top of its library. */
+  const table = (spell: string, top: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1036', 1: 'd1036' }, deckSpecs: { d1036: deck.deck },
+      battlefield: { 0: ['Forest'], 1: ['Forest'] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const card = library.find((id) => nameOf(s, id) === top)!;
+    return { s: { ...s, zones: { ...s.zones, '0:library': [card, ...library.filter((id) => id !== card)] } } as GameState, card };
+  };
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land on top: asked, and onto the battlefield tapped on a yes; left on top on a no', () => {
+    let { s, card } = table('Test Peek', 'Forest');
+    s = cast(s, 'Test Peek');
+    expect(s.pendingDecision?.candidates).toEqual([card]);
+    const yes = drain(apply(s, { type: 'auto:decide', by: 0, cards: [card] } as Action), 30);
+    expect(yes.instances[card]!.zone).toBe('battlefield');
+    expect(yes.instances[card]!.tapped).toBe(true);
+    const no = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 30);
+    expect(ids(no, 0, 'library')[0]).toBe(card);
+  });
+
+  it('anything else on top: nothing asked, nothing moved', () => {
+    let { s, card } = table('Test Peek', 'Test Bear');
+    s = cast(s, 'Test Peek');
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0, 'library')[0]).toBe(card);
+  });
+
+  it('without "may": a creature goes onto the battlefield, a land stays', () => {
+    let { s, card } = table('Test Call', 'Test Bear');
+    s = cast(s, 'Test Call');
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    ({ s, card } = table('Test Call', 'Forest'));
+    s = cast(s, 'Test Call');
+    expect(ids(s, 0, 'library')[0]).toBe(card);
+    ({ s, card } = table('Test Dig', 'Forest'));
+    s = cast(s, 'Test Dig');
+    expect(s.instances[card]!.zone).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
