@@ -54688,7 +54688,7 @@ only tapped; on a spell, "it" is still the target.
 Faults injected by script: 2 of 2 caught (one after the test was extended with the bare-spell
 refusal).
 
-    engine tests: 5,669, all passing (on 8c346b0)
+    engine tests: 5,676, all passing (merged with the other session's D1057)
 
 Coverage: 14,367 to 14,376 of 31,900 cards with every line read, and 35,809 to 35,820 of 59,888
 lines, against 8c346b0.
