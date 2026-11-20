@@ -25128,6 +25128,49 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     guessed one would be wrong rather than silent (D362).
   */
   // And stun (D723, CR 122.1d), which harms as a -1/-1 counter does: it keeps a creature tapped.
+  /*
+    **Counters on each of a set** (D1037): "Put a +1/+1 counter on each creature you control with a
+    +1/+1 counter on it", "… on each creature target player controls", "Put two +1/+1 counters on each
+    other creature you control", "Put a +1/+1 counter on each Elf you control". The singular "each
+    <creature>" phrase is the plural set the team pump already reads (`massPumpSubject`), so the
+    sets are the same ones, taken as the clause resolves; "with a <kind> counter on it" narrows them.
+  */
+  const onEach = new RegExp(`^put (a|an|one|two|three|four|five|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on each (other )?(creature|[A-Z][a-z'-]+)( you control| target player controls| your opponents control)?( with an? ([+-]1\\/[+-]1|[a-z]+) counter on it)?$`, 'i').exec(text);
+  if (onEach !== null) {
+    const many = countFrom(onEach[1]!.toLowerCase() === 'an' ? 'a' : onEach[1]!);
+    const printedKind = onEach[2]!.toLowerCase();
+    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
+    const noun = onEach[4]!;
+    const whose = (onEach[5] ?? '').trim();
+    const plural = noun === 'creature' ? 'creatures' : `${noun.toLowerCase()} creatures`;
+    const phrase = whose === '' ? (noun === 'creature' && onEach[3] === undefined ? 'all creatures' : null)
+      : `${onEach[3] ?? ''}${plural} ${whose}`;
+    const subject = phrase === null || (noun !== 'creature' && whose !== 'you control') ? null : massPumpSubject(phrase);
+    const withCounter = onEach[7];
+    if (many !== null && many > 0 && subject !== null) {
+      return {
+        ...(subject.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => subject.ids(c)
+          .filter((id) => withCounter === undefined || (c.state.instances[id]?.counters[withCounter] ?? 0) > 0)
+          .reduce((state, id) => addCounters(state, id, kind, many), c.state),
+      };
+    }
+  }
+  // "Put a +1/+1 counter on enchanted / equipped creature" (D1037): the permanent the source is attached to.
+  const onHost = new RegExp(`^put (a|an|one|two|three|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (?:enchanted|equipped) creature$`, 'i').exec(text);
+  if (onHost !== null) {
+    const many = countFrom(onHost[1]!.toLowerCase() === 'an' ? 'a' : onHost[1]!);
+    const printedKind = onHost[2]!.toLowerCase();
+    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
+    if (many !== null && many > 0) {
+      return {
+        effect: (c) => {
+          const host = c.state.instances[c.source]?.attachedTo;
+          return host === null || host === undefined ? c.state : addCounters(c.state, host, kind, many);
+        },
+      };
+    }
+  }
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
   const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
