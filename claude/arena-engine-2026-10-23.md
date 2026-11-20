@@ -36186,3 +36186,36 @@ hint, and the positive-count check). The 6th was a two-word guard that the regex
 and it was folded away.
 
 Coverage: 14,056 of 31,900 cards (+12), 35,255 of 59,888 lines (+25).
+
+## D1033 — shield counters
+
+"Put a shield counter on target creature" (Boon of Safety), "~ enters with a shield counter on it"
+(Dapper Shieldmate, Disciplined Duelist), "When ~ dies, put a shield counter on target creature you
+control" (Brokers Veteran). The rule (CR 122.1c): "If a permanent with a shield counter on it would
+be dealt damage or destroyed, instead remove a shield counter from it." 28 legal cards print one.
+Until now the counter was refused, as a kind with a meaning of its own.
+
+- `spendShieldCounter` in effects.ts is the replacement.
+  - `dealDamage` asks it after the "prevent all" checks: damage that was prevented never touches the
+    counter. The damage is then never dealt: nothing is marked and no deathtouch applies.
+  - `destroy` asks it after indestructible and before regeneration and umbra armor. The order of
+    replacements is the controller's choice; this one keeps a regeneration shield for later.
+- The lethal-damage check does not ask it. Spending a counter there would leave the damage marked,
+  and the next pass of the same check destroys the creature anyway (CR 704.3), so the counter would
+  only be lost.
+- **Compiler.**
+  - Shield leaves `RULES_COUNTERS`.
+  - It joins the target-counter reader's kinds (aimed as a gift) and the enters-with reader's.
+  - The self-counter reader takes it now that it is no longer refused.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the target is marked friendly;
+- the Shieldmate enters with one: the first burn removes the counter and marks no damage, and the
+  second kills it;
+- a destroy spell is replaced once per counter.
+
+Faults injected by script: 8 of 8 caught, the friendly hint after the read test asserted it. Two
+checks were folded away: the battlefield check inside `spendShieldCounter` (both callers already ask
+it), and the lethal-damage hook described above.
+
+Coverage: 14,065 of 31,900 cards (+9), 35,278 of 59,888 lines (+23).
