@@ -27189,6 +27189,63 @@ describe('Phyrexian mana: one coloured mana or 2 life (D766)', () => {
   });
 });
 
+describe('a trailing "if" (D1026)', () => {
+  const ROWS = [
+    { name: 'Test Seeker', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'At the beginning of your upkeep, draw a card if you control an artifact.' },
+    { name: 'Test Tonic', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'You gain 3 life if you control an artifact.' },
+    { name: 'Test Loot', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Draw two cards if you control an artifact, then discard a card.' },
+    { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1026', name: 'Trailing if', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (mine: readonly string[], hand: readonly string[] = [], turn = 3) => advanceTo(arena({
+    decks: { 0: 'd1026', 1: 'd1026' }, deckSpecs: { d1026: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: ['Island'] }, hands: { 0: [...hand] }, turn, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => {
+    let t = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action));
+    // The discard, answered with the first card.
+    for (let i = 0; i < 3 && t.pendingDecision !== null; i++) {
+      t = settle(apply(t, { type: 'auto:decide', by: 0, cards: t.pendingDecision.candidates.slice(0, t.pendingDecision.min) } as Action));
+    }
+    return t;
+  };
+
+  it('reads every row whole, and not a clause that would ask its question whatever the condition', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const asks = compileCard({ name: 'Nonesuch', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal',
+      oracle_text: 'Target player discards a card if you control an artifact.' } as never);
+    expect(asks.ok && asks.unread.length).toBe(1);
+  });
+
+  it('on an upkeep trigger: the card comes only with an artifact out', () => {
+    const hand = (mine: readonly string[]) => {
+      const s = table(mine);
+      const before = ids(s, 0, 'hand').length;
+      return ids(settle(advanceTo(nextTurn(nextTurn(s)), 'precombat-main')), 0, 'hand').length - before;
+    };
+    // The draw step's card, and one more for the trigger.
+    expect(hand(['Test Seeker', 'Test Trinket'])).toBe(2);
+    expect(hand(['Test Seeker'])).toBe(1);
+  });
+
+  it('on a spell, and on a first clause something follows', () => {
+    expect(life(cast(table(['Test Trinket'], ['Test Tonic']), 'Test Tonic'), 0)).toBe(23);
+    expect(life(cast(table([], ['Test Tonic']), 'Test Tonic'), 0)).toBe(20);
+    // Two drawn and one discarded with the artifact; with none, nothing drawn and the discard
+    // still asked of whatever is in hand.
+    let s = table(['Test Trinket'], ['Test Loot', 'Island']);
+    const held = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Loot');
+    expect(ids(s, 0, 'hand').length).toBe(held - 1 + 2 - 1);
+    s = table([], ['Test Loot', 'Island']);
+    s = cast(s, 'Test Loot');
+    expect(ids(s, 0, 'hand').length).toBe(held - 1 - 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

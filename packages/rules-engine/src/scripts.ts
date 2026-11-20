@@ -25475,7 +25475,29 @@ function readEffect(
     const condition = interveningConditionFor(guarded[1]!.trim(), name);
     const then = condition === null ? null : readEffect(guarded[2]!, name, where);
     if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
-      return { ...then, effect: (c) => (condition(c) ? then.effect(c) : c.state) };
+      return guardedBy(then, condition);
+    }
+  }
+  /*
+    **A trailing "if"** (D1026): "draw a card if you control an artifact", "At the beginning of your
+    upkeep, you lose 2 life if you don't control an Ogre", "… draw a card if you control the
+    creature with the greatest power". The same condition as a leading "if", read by the same
+    vocabulary (`interveningConditionFor`), and asked once, as the clause resolves. Unlike the
+    leading form on a trigger, a trailing "if" is never intervening (CR 603.4 is the "if" right
+    after the trigger condition), so it is read on triggers and spells alike.
+
+    The last " if " in the clause is the one split on, and the conditions that are about the
+    clause's own action ("if able", "if you do") are left to their readers. A clause that asks a
+    question is refused, as the leading form refuses it: the question would be asked whether or not
+    the condition held.
+  */
+  const trailing = /^(.+) if ([^,]+)$/i.exec(clause.trim());
+  if (trailing !== null && !/^if\b/i.test(clause.trim())
+    && !/^(?:able|possible|you do|you don't|they do|they don't|it does|it doesn't|that player does|that player doesn't)\b/i.test(trailing[2]!.trim())) {
+    const condition = interveningConditionFor(trailing[2]!.trim(), name);
+    const then = condition === null ? null : readEffect(trailing[1]!.trim(), name, where);
+    if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
+      return guardedBy(then, condition);
     }
   }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
@@ -30539,6 +30561,20 @@ function untappedCondition(
  * for ("a creature with flying"). D564 added the rows below the count family: the turn's facts,
  * three about a player, a creature of a given power, and lieutenant.
  */
+/**
+ * A reading that happens only while a condition holds as it resolves (D742, D1026). Both forms are
+ * guarded: the deferred `effect` and the `immediate` one a composition uses for a clause that has
+ * something after it, so neither can run past a condition that is false.
+ */
+function guardedBy(then: ReadEffect, condition: (c: EffectContext) => boolean): ReadEffect {
+  const immediate = then.immediate;
+  return {
+    ...then,
+    effect: (c) => (condition(c) ? then.effect(c) : c.state),
+    ...(immediate === undefined ? {} : { immediate: (c: EffectContext) => (condition(c) ? immediate(c) : c.state) }),
+  };
+}
+
 function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
