@@ -27740,6 +27740,65 @@ describe('"that artifact" and "that artifact\'s controller" (D1035)', () => {
   });
 });
 
+describe('snow mana: {S} is paid only from snow sources (D769)', () => {
+  const SNOW_MOUNTAIN = { name: 'Snow-Covered Mountain', type_line: 'Basic Snow Land — Mountain', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '({T}: Add {R}.)' };
+  const SNOW_FOREST = { name: 'Snow-Covered Forest', type_line: 'Basic Snow Land — Forest', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '({T}: Add {G}.)' };
+  const BLAST = { name: 'Test Snowblast', type_line: 'Snow Sorcery', mana_cost: '{G}{S}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: 'Create a 1/1 green Saproling creature token.' };
+  const BEAR = { name: 'Test Plain Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const FAERIE = { name: 'Test Snow Faerie', type_line: 'Snow Creature — Faerie', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: '{1}{S}: Snow creatures you control get +1/+1 until end of turn.' };
+  const deck = customDeck({
+    id: 'd769', name: 'Snow',
+    entries: [{ name: 'Test Snowblast', count: 2 }, { name: 'Test Snow Faerie', count: 2 }, { name: 'Test Plain Bear', count: 2 }, { name: 'Snow-Covered Mountain', count: 14 }, { name: 'Snow-Covered Forest', count: 14 }, { name: 'Mountain', count: 14 }, { name: 'Forest', count: 14 }],
+    data: [SNOW_MOUNTAIN, SNOW_FOREST, BLAST, FAERIE, BEAR] as never[],
+  });
+  const table = (mine: string[], hand: string[] = ['Test Snowblast']) => advanceTo(arena({
+    decks: { 0: 'd769', 1: 'd769' }, deckSpecs: { d769: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Snowblast'));
+  const cast = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Snowblast') })));
+  const saprolings = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n.includes('Saproling')).length;
+  const untapped = (s: GameState, name: string) => ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === name && !s.instances[id]!.tapped).length;
+
+  it('reads {S} as one snow mana towards mana value two', () => {
+    const cost = parseManaCost('{G}{S}');
+    expect(cost.unsupported).toBeUndefined();
+    expect(cost.snow).toBe(1);
+    expect(costValue(cost)).toBe(2);
+    expect(compileCard(BLAST as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(FAERIE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Forest and a snow Mountain pay it, the snow land for the {S}', () => {
+    const s = table(['Forest', 'Snow-Covered Mountain']);
+    expect(offered(s)).toBe(true);
+    expect(saprolings(cast(s))).toBe(1);
+  });
+
+  it('two plain lands do not, and it is not offered', () => {
+    expect(offered(table(['Forest', 'Mountain', 'Mountain']))).toBe(false);
+  });
+
+  it('keeps the only green for {G} when a snow Mountain can pay {S}', () => {
+    const s = cast(table(['Snow-Covered Forest', 'Snow-Covered Mountain', 'Mountain']));
+    expect(saprolings(s)).toBe(1);
+    expect(untapped(s, 'Mountain')).toBe(1);
+  });
+
+  it('a snow Forest alone cannot be both the green and the snow', () => {
+    expect(offered(table(['Snow-Covered Forest', 'Mountain']))).toBe(false);
+  });
+
+  it('pays an activated {S} and pumps only the snow creatures', () => {
+    let s = table(['Snow-Covered Mountain', 'Mountain', 'Test Snow Faerie', 'Test Plain Bear'], []);
+    const faerie = find(s, 0, 'battlefield', 'Test Snow Faerie');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === faerie)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: faerie, abilityIndex: 0 })));
+    expect(characteristicsOf(s, s.instances[faerie]!).power).toBe(2);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Plain Bear')]!).power).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

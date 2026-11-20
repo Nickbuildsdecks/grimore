@@ -58,7 +58,7 @@ import { EngineError, type GameState, type Outcome, type SeatIndex } from './typ
 import { reducedCostText,
   EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
-  phyrexianPayment,
+  phyrexianPayment, snowAsColours,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, RIOT, scriptFor, soleTargetSpecOf } from './scripts.js';
@@ -4669,6 +4669,8 @@ function payFrom(
     if (plan !== null) {
       next = tapSources(next, seat, plan);
       tapped = plan.map((pick) => pick.key);
+      // `{S}` paid by exactly the snow mana the plan set aside for it (D769).
+      cost = snowAsColours(cost, plan);
       for (const pick of plan) {
         if (sources.find((source) => source.key === pick.key)?.restricted !== true) continue;
         for (const type of pick.types) boundMade[type] = (boundMade[type] ?? 0) + 1;

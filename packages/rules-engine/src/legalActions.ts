@@ -1268,6 +1268,9 @@ export function manaSources(
     const cost = usable[0]!.life;
     const eats = usable[0]!.sacrifices;
     const bucket = eats ? spent : cost > 0 ? painful : free;
+    // A snow permanent's mana may pay `{S}` (D769).
+    const snowy = characteristicsOf(state, inst).typeLine.supertypes.some((t) => t.toLowerCase() === 'snow')
+      ? { snow: true as const } : {};
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
@@ -1278,6 +1281,7 @@ export function manaSources(
         ...(usable[0]!.restricted === true ? { restricted: true as const } : {}),
         ...(cost > 0 ? { life: cost } : {}),
         ...(eats ? { sacrifices: true } : {}),
+        ...snowy,
       });
       continue;
     }
@@ -1297,6 +1301,7 @@ export function manaSources(
       choose: true,
       ...(cost > 0 ? { life: cost } : {}),
       ...(eats ? { sacrifices: true } : {}),
+      ...snowy,
     });
   }
   return [...free, ...spent, ...painful];

@@ -10,9 +10,9 @@
  * Generic (`{2}`), coloured (`{R}`), colourless (`{C}`), `{X}`, and **colour hybrid** (`{R/G}`:
  * one mana, either of two colours).
  *
- * Phyrexian (`{R/P}`), snow (`{S}`) and *monocoloured* hybrid (`{2/W}`, which is two generic or one
- * white) are still **not** parsed, and a cost containing them is reported as unpayable rather than
- * silently mis-parsed — see `parseManaCost`. Quietly treating a symbol as generic would let a
+ * Phyrexian (`{R/P}`, D766), *monocoloured* hybrid (`{2/W}`, D767) and snow (`{S}`, D769) are read
+ * too. Hybrid Phyrexian is still **not** parsed, and a cost containing it is reported as unpayable
+ * rather than silently mis-parsed — see `parseManaCost`. Quietly treating a symbol as generic would let a
  * player cast a spell they cannot afford, which is worse than refusing it.
  */
 
@@ -85,6 +85,15 @@ export interface ManaCost {
    * is 2 towards mana value (CR 202.3f), which `costValue` adds.
    */
   readonly monoHybrid?: readonly Color[];
+  /**
+   * How many `{S}` symbols (D769, CR 107.4h): each is one mana that must come from a **snow** source.
+   * Not counted in `generic`, so `payCost` refuses a cost with any, since a pool cannot tell snow
+   * mana from other mana. `solveTap` pays them by tapping snow sources it sets aside for them and
+   * says which mana did (`ManaPick.snowPaid`); `snowAsColours` then turns the symbols into those
+   * exact types so the payment is the one the plan made. Floating mana never pays `{S}`: it can
+   * under-offer but never over-offer. Absent means none.
+   */
+  readonly snow?: number;
   readonly unsupported?: string;
 }
 
@@ -122,6 +131,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
   const hybrids: ManaType[][] = [];
   const phyrexian: Color[] = [];
   const monoHybrid: Color[] = [];
+  let snow = 0;
   const colors: Record<ManaType, number> = { ...EMPTY_POOL };
   for (const match of text.matchAll(SYMBOL)) {
     const symbol = (match[1] ?? '').trim().toUpperCase();
@@ -165,7 +175,12 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
       monoHybrid.push(mono[1] as Color);
       continue;
     }
-    // Hybrid Phyrexian and snow: refused rather than guessed at.
+    // Snow (D769): one mana from a snow source. See `ManaCost.snow`.
+    if (symbol === 'S') {
+      snow += 1;
+      continue;
+    }
+    // Hybrid Phyrexian: refused rather than guessed at.
 
     unsupported ??= symbol;
   }
@@ -179,6 +194,7 @@ export function parseManaCost(text: string | null | undefined): ManaCost {
     ...(hybrids.length > 0 ? { hybrids } : {}),
     ...(phyrexian.length > 0 ? { phyrexian } : {}),
     ...(monoHybrid.length > 0 ? { monoHybrid } : {}),
+    ...(snow > 0 ? { snow } : {}),
   };
   return unsupported === undefined
     ? { generic, colors, x, ...extra, ...mixed }
@@ -191,7 +207,9 @@ export function costValue(cost: ManaCost): number {
   return cost.generic + MANA_TYPES.reduce((n, t) => n + cost.colors[t], 0)
     + (cost.hybrids?.length ?? 0)
     // A `{2/W}` is counted once in `colors` and is worth 2 (D767, CR 202.3f).
-    + (cost.monoHybrid?.length ?? 0);
+    + (cost.monoHybrid?.length ?? 0)
+    // A `{S}` is one generic-like mana (D769, CR 202.3).
+    + (cost.snow ?? 0);
 }
 
 /** The cost with `extra` generic added — commander tax, kicker-style surcharges. */
@@ -255,6 +273,10 @@ function assignHybrids(
 export function payCost(pool: ManaPool, cost: ManaCost, xAmount = 0): PaymentResult {
   if (cost.unsupported !== undefined) {
     return { paid: false, pool, shortfall: `this cost uses {${cost.unsupported}}, which is not automated yet` };
+  }
+  // A pool cannot tell snow mana from other mana (D769): `{S}` is paid by `solveTap`'s snow picks.
+  if ((cost.snow ?? 0) > 0) {
+    return { paid: false, pool, shortfall: `needs ${'{S}'.repeat(cost.snow ?? 0)} from snow sources` };
   }
   const remaining: Record<ManaType, number> = { ...pool };
 
@@ -367,6 +389,8 @@ export interface ManaSource {
    * whatever of it the payment did not use. Carried rather than weighed, like `life`.
    */
   readonly restricted?: true;
+  /** A snow permanent (D769), whose mana may pay `{S}`. */
+  readonly snow?: true;
 }
 
 /** What tapping one source actually added, which a choice source only settles when it is tapped. */
@@ -378,6 +402,23 @@ export interface ManaPick {
   /** This source is **spent**, not tapped: sacrificed as its own cost. Carried through for the
    *  caller, exactly like `life`, because paying it is a different act from tapping. */
   readonly sacrifices?: boolean;
+  /** Which of `types` this tap set aside for the cost's `{S}` symbols (D769). */
+  readonly snowPaid?: readonly ManaType[];
+}
+
+/**
+ * A cost's `{S}` symbols as the exact mana a plan set aside for them (D769), so `payCost` takes that
+ * mana and nothing else for them. Unchanged when the cost has none or the plan paid none.
+ */
+export function snowAsColours(cost: ManaCost, plan: readonly ManaPick[]): ManaCost {
+  const need = cost.snow ?? 0;
+  if (need === 0) return cost;
+  const paid = plan.flatMap((pick) => pick.snowPaid ?? []);
+  if (paid.length < need) return cost;
+  const colors: Record<ManaType, number> = { ...cost.colors };
+  for (const type of paid.slice(0, need)) colors[type] += 1;
+  const { snow: _snow, ...rest } = cost;
+  return { ...rest, colors };
 }
 
 /**
@@ -474,6 +515,76 @@ export function solveTap(
   pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount = 0,
 ): readonly ManaPick[] | null {
   if (cost.unsupported !== undefined) return null;
+  if ((cost.snow ?? 0) > 0) return solveSnow(pool, cost, sources, xAmount);
+  return solvePlain(pool, cost, sources, xAmount);
+}
+
+/** The mana one tap of a source would set aside, at most `room` of it: a choice source's run. */
+function snowMade(source: ManaSource, wanted: readonly ManaType[]): ManaType[] {
+  if (source.choose !== true) return [...source.produces];
+  // A choice source makes a colour the rest of the cost does not ask for, when it can.
+  const type = source.produces.find((t) => !wanted.includes(t)) ?? source.produces[0]!;
+  return Array.from({ length: source.chooseRun ?? 1 }, () => type);
+}
+
+/**
+ * `{S}` (D769): snow sources set aside for the snow symbols, then the rest solved as usual. The
+ * least flexible snow sources that make what the rest of the cost wants least are tried first;
+ * when that set leaves the rest unpayable, every other set of that many snow sources is tried, up
+ * to a bound, since a snow land may be the only source of a colour the cost also needs.
+ */
+function solveSnow(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount: number,
+): readonly ManaPick[] | null {
+  const need = cost.snow ?? 0;
+  const { snow: _snow, ...rest } = cost;
+  const wanted = MANA_TYPES.filter((t) => cost.colors[t] > 0 || (cost.hybrids ?? []).some((h) => h.includes(t)));
+  const snowy = sources
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => source.snow === true)
+    .sort((a, b) => (
+      a.source.produces.filter((t) => wanted.includes(t)).length - b.source.produces.filter((t) => wanted.includes(t)).length
+      || a.source.produces.length - b.source.produces.length
+      || a.index - b.index));
+  let tries = 0;
+  const attempt = (chosen: readonly number[]): readonly ManaPick[] | null => {
+    tries += 1;
+    let working = pool;
+    let left = need;
+    const picks: ManaPick[] = [];
+    for (const at of chosen) {
+      const source = snowy[at]!.source;
+      const types = snowMade(source, wanted);
+      const snowPaid = types.slice(0, left);
+      left -= snowPaid.length;
+      for (const type of types.slice(snowPaid.length)) working = addMana(working, type, 1);
+      picks.push({
+        key: source.key, types, snowPaid,
+        ...(source.life === undefined ? {} : { life: source.life }),
+        ...(source.sacrifices === true ? { sacrifices: true } : {}),
+      });
+    }
+    if (left > 0) return null;
+    const keys = new Set(picks.map((pick) => pick.key));
+    const restPlan = solvePlain(working, rest, sources.filter((source) => !keys.has(source.key)), xAmount);
+    return restPlan === null ? null : [...picks, ...restPlan];
+  };
+  // The fewest snow sources that cover the symbols, in preference order, then other sets of them.
+  const search = (from: number, chosen: number[], covered: number): readonly ManaPick[] | null => {
+    if (covered >= need) return attempt(chosen);
+    for (let i = from; i < snowy.length && tries < 200; i++) {
+      const size = snowMade(snowy[i]!.source, wanted).length;
+      const found = search(i + 1, [...chosen, i], covered + size);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return search(0, [], 0);
+}
+
+function solvePlain(
+  pool: ManaPool, cost: ManaCost, sources: readonly ManaSource[], xAmount: number,
+): readonly ManaPick[] | null {
   let working = pool;
   const chosen: ManaPick[] = [];
   const left = [...sources];
