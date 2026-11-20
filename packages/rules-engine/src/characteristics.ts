@@ -316,6 +316,20 @@ export function parseTypeLine(line: string | null | undefined): TypeLine {
  * from somewhere else — or a bestow card whose printed line is something this pool has not seen —
  * still reads correctly.
  */
+/**
+ * Reconfigure (D775, CR 702.151b): an Equipment creature attached to a creature is not a creature,
+ * and has no creature types, until it becomes unattached. Read off the printed keyword line.
+ */
+function reconfiguredTypeLine(printed: TypeLine, instance: CardInstance, def: CardDef | undefined): TypeLine {
+  if (instance.attachedTo === null || instance.zone !== 'battlefield') return printed;
+  if (!/^reconfigure\s*\{/im.test(def?.oracleText ?? '')) return printed;
+  return {
+    supertypes: printed.supertypes,
+    types: printed.types.filter((t) => t.toLowerCase() !== 'creature'),
+    subtypes: printed.subtypes.filter((t) => !isCreatureType(t)),
+  };
+}
+
 function bestowTypeLine(printed: TypeLine, instance: CardInstance): TypeLine {
   if (instance.bestowed !== true) return printed;
   return {
@@ -3045,7 +3059,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     been done to it".
   */
   const bandNow = levelBandOf(def, instance);
-  const bestowed = bestowTypeLine(parseTypeLine(def?.typeLine), instance);
+  const bestowed = reconfiguredTypeLine(bestowTypeLine(parseTypeLine(def?.typeLine), instance), instance, def);
   // A Spacecraft at its threshold is an artifact creature (D637, CR 721): its own static ability,
   // so part of the base type line, before any effect's layer 4.
   const printed = bandNow?.creature === true && !hasType(bestowed, 'creature')
