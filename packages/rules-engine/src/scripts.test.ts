@@ -28495,6 +28495,50 @@ describe('a card filter by power or toughness (D1044)', () => {
   });
 });
 
+describe('negations in a series (D1045)', () => {
+  const ROWS = [
+    { name: 'Test Terror', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: "Destroy target nonartifact, nonblack creature. It can't be regenerated." },
+    { name: 'Test Banish', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Exile target noncreature, nonland permanent.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Ghoul', type_line: 'Creature — Zombie', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1045', name: 'Series', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 36 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1045', 1: 'd1045' }, deckSpecs: { d1045: deck.deck },
+    battlefield: { 0: [], 1: ['Swamp', 'Test Bear', 'Test Ghoul', 'Test Golem', 'Test Relic'] }, hands: { 0: ['Test Terror', 'Test Banish'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, at: string) => ({
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', at) }],
+  } as Action);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Terror: not the black creature, not the artifact one, and the green one dies', () => {
+    const s = table();
+    expect(refusal(s, cast(s, 'Test Terror', 'Test Ghoul'))).toBeTruthy();
+    expect(refusal(s, cast(s, 'Test Terror', 'Test Golem'))).toBeTruthy();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const done = drain(passBoth(apply(s, cast(s, 'Test Terror', 'Test Bear'))), 30);
+    expect(done.instances[bear]!.zone).toBe('graveyard');
+  });
+
+  it('"noncreature, nonland permanent": the Relic, and neither the land nor a creature', () => {
+    const s = table();
+    expect(refusal(s, cast(s, 'Test Banish', 'Swamp'))).toBeTruthy();
+    expect(refusal(s, cast(s, 'Test Banish', 'Test Golem'))).toBeTruthy();
+    const relic = find(s, 1, 'battlefield', 'Test Relic');
+    const done = drain(passBoth(apply(s, cast(s, 'Test Banish', 'Test Relic'))), 30);
+    expect(done.instances[relic]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

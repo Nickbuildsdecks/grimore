@@ -21783,6 +21783,14 @@ function targetSpecFrom(
   */
   const printed = trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
   const helped = friendly ? { friendly: true as const } : {};
+  /*
+    Negations in a series (D1045): "target nonartifact, nonblack creature" (Terror), "target
+    noncreature, nonland permanent", "target nonland, nontoken permanent". The comma is "and", which
+    is what the same words read without it already mean, so the phrase is read again without it.
+  */
+  if (/\bnon[a-z]+,\s+non[a-z]/i.test(trimmed)) {
+    return targetSpecFrom(trimmed.replace(/\b(non[a-z]+),\s+(?=non[a-z])/gi, '$1 '), friendly, parsed);
+  }
   if (parsed) {
     /*
       "Other than ~" (D1010): "target creature other than Faceless Butcher", "target permanent other
