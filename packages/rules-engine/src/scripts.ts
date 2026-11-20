@@ -20045,7 +20045,9 @@ type ReferentPronoun =
   | "that artifact's controller" | "that enchantment's controller" | "that planeswalker's controller"
   | 'that artifact' | 'that enchantment' | 'that land' | 'that permanent'
   /** The player an attack is aimed at, on an attack or combat-damage trigger (D963). */
-  | 'defending player';
+  | 'defending player'
+  /** Blightning's (D1058): the player aimed at, or the controller of the planeswalker aimed at. */
+  | "that player or that planeswalker's controller";
 type ReferentKind = 'creature' | 'player' | 'permanent';
 /**
  * How the borrowed object becomes the thing the clause is about.
@@ -20055,7 +20057,13 @@ type ReferentKind = 'creature' | 'player' | 'permanent';
  * permanent, which is what the possessive forms name and the first referent in this file that is
  * not the borrowed object.
  */
-type ReferentSupply = 'object' | 'controller';
+type ReferentSupply = 'object' | 'controller'
+  /**
+   * The target itself if it is a player, else its controller (D1058): "Blightning deals 3 damage to
+   * target player or planeswalker. That player or that planeswalker's controller discards two cards."
+   * Offered only after a "player or planeswalker" target.
+   */
+  | 'player-or-controller';
 
 /**
  * The swaps tried on a clause whose own reading failed (D530, D533).
@@ -20069,6 +20077,8 @@ type ReferentSupply = 'object' | 'controller';
  */
 const REFERENT_PRONOUNS:
 readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
+  // First, so the longer phrase is swapped before any of its parts (D1058).
+  ["that player or that planeswalker's controller", 'player', 'player-or-controller'],
   ['that creature', 'creature', 'object'],
   ['that player', 'player', 'object'],
   ['it', 'creature', 'object'],
@@ -20201,7 +20211,7 @@ function referentEffect(
   kind: ReferentKind,
   supply: (c: EffectContext) => Target | null,
   reader: (text: string) => ReadEffect | null,
-  asks: 'target-player' | 'hit-player' | 'acting-player' | 'referent-player' = 'target-player',
+  asks: 'target-player' | 'hit-player' | 'acting-player' | 'referent-player' | 'target-or-its-controller' = 'target-player',
 ): ReadEffect | null {
   const text = clause.trim();
   /*
@@ -28021,7 +28031,9 @@ function composeEffects(
     const offered = aimed === null ? [] : REFERENT_PRONOUNS.filter(
       ([, kind, supply]) => (supply === 'controller'
         ? CONTROLLABLE_KINDS.has(aimed.kind)
-        : kind === aimed.kind),
+        : supply === 'player-or-controller'
+          ? aimed.kind === 'player-or-planeswalker'
+          : kind === aimed.kind),
     );
     for (const [pronoun, kind, supply] of offered) {
       const one = referentEffect(
@@ -28046,7 +28058,9 @@ function composeEffects(
           "Its controller discards a card" is the second-biggest row in this family, and a discard
           is a question.
         */
-        ...(supply === 'controller' ? ['referent-player' as const] : []),
+        // The player aimed at, or the planeswalker's controller, is asked (D1058).
+        ...(supply === 'controller' ? ['referent-player' as const]
+          : supply === 'player-or-controller' ? ['target-or-its-controller' as const] : []),
       );
       if (one === null) continue;
       borrowed = one;
@@ -28314,6 +28328,8 @@ function composeEffects(
   const withReferent = (c: EffectContext): EffectContext => {
     if (!possessive || c.referentSeat !== undefined) return c;
     const object = c.targets[0];
+    // A player aimed at is its own referent (D1058: "that player or that planeswalker's controller").
+    if (object !== undefined && object.kind === 'player') return { ...c, referentSeat: object.seat };
     if (object === undefined || object.kind !== 'card') return c;
     const inst = c.state.instances[object.id];
     return inst === undefined ? c : { ...c, referentSeat: inst.zoneSeat };
