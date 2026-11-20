@@ -15387,7 +15387,9 @@ function selfEffect(
     no body enters a combat, and the one ability the untap hands back is its own **mana** ability,
     which `pointlessToHandBack` excludes precisely so a cycle cannot be its own justification.
   */
-  if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
+  // And "untap it" on a permanent's own trigger (D777): "Whenever ~ attacks, untap it". An "it" that
+  // names a target is read before this, by the referent readers ("… target creature. Untap it.").
+  if (new RegExp(`^untap ${self}$`, 'i').test(text) || (where === 'battlefield' && /^untap it$/i.test(text))) {
     return { abilityFlags: { untapsOnly: true }, effect: (c) => tap(c.state, c.source, false) };
   }
 

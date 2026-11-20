@@ -29249,6 +29249,66 @@ describe('saddle (D776)', () => {
     expect(characteristicsOf(s, s.instances[steed]!).power).toBe(2);
   });
 });
+describe('"untap it" on its own trigger (D777)', () => {
+  const RUNNER = { name: 'Test Runner', type_line: 'Creature — Horse', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever Test Runner attacks, untap it and put a +1/+1 counter on it.' };
+  const BOOST = { name: 'Test Boost', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Put a +1/+1 counter on target creature. Untap it.' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd777', name: 'Untap it',
+    entries: [{ name: 'Test Runner', count: 2 }, { name: 'Test Boost', count: 2 }, { name: 'Test Ox', count: 2 }, { name: 'Forest', count: 54 }],
+    data: [RUNNER, BOOST, OX] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd777', 1: 'd777' }, deckSpecs: { d777: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads', () => {
+    expect(compileCard(RUNNER as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(BOOST as never)).toMatchObject({ ok: true, unread: [] });
+    // A bare "Untap it." on a spell names nothing it could untap, and stays refused.
+    const bare = compileCard({ ...BOOST, name: 'Test Bare', oracle_text: 'Untap it.' } as never);
+    expect(bare.ok && bare.unread.length).toBe(1);
+  });
+
+  it('the attacker untaps itself and grows', () => {
+    let s = advanceTo(table(['Test Runner']), 'declare-attackers');
+    const runner = find(s, 0, 'battlefield', 'Test Runner');
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: runner, defender: 1 }] })));
+    expect(s.instances[runner]!.tapped).toBe(false);
+    expect(s.instances[runner]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('before a target, "untap it" is the attacker, and the target is only tapped', () => {
+    const SKIRM = { ...RUNNER, name: 'Test Skirmisher', oracle_text: 'Whenever Test Skirmisher attacks, untap it. Tap target creature.' };
+    const d = customDeck({
+      id: 'd777b', name: 'Untap it, tap target',
+      entries: [{ name: 'Test Skirmisher', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Forest', count: 54 }],
+      data: [SKIRM, OX] as never[],
+    });
+    expect(compileCard(SKIRM as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd777b', 1: 'd777b' }, deckSpecs: { d777b: d.deck },
+      battlefield: { 0: ['Test Skirmisher'], 1: ['Test Ox'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const me = find(s, 0, 'battlefield', 'Test Skirmisher');
+    const ox = find(s, 1, 'battlefield', 'Test Ox');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: me, defender: 1 }] });
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: ox }] });
+    s = drain(passBoth(s));
+    expect(s.instances[me]!.tapped).toBe(false);
+    expect(s.instances[ox]!.tapped).toBe(true);
+  });
+
+  it('on a spell, "it" is still the target, not anything else', () => {
+    let s = table(['Forest', 'Test Ox', 'Test Runner'], ['Test Boost']);
+    const ox = find(s, 0, 'battlefield', 'Test Ox');
+    s = { ...s, instances: { ...s.instances, [ox]: { ...s.instances[ox]!, tapped: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Boost'), targets: [{ kind: 'card', id: ox }] })));
+    expect(s.instances[ox]!.tapped).toBe(false);
+    expect(s.instances[ox]!.counters['+1/+1']).toBe(1);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -15175,7 +15175,9 @@ describe('the pronoun "it", and a referent anywhere in its clause (D533)', () =>
     const read = compileCard({
       name: 'Probe Card', type_line: 'Creature — Human', mana_cost: '{1}{R}', cmc: 2,
       colors: ['R'], layout: 'normal', power: '2', toughness: '2',
-      oracle_text: 'Whenever Probe Card attacks, untap it. Tap target creature.',
+      // "Untap it" read here until D777 gave it a self-reading (the attacker, which is the card's
+      // meaning); "tap it" still has none, so the borrow is still the only way this could compile.
+      oracle_text: 'Whenever Probe Card attacks, tap it. Tap target creature.',
     });
     expect(read.ok).toBe(true);
     if (read.ok) expect(read.unread.length).toBe(1);

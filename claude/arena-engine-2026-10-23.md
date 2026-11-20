@@ -37147,3 +37147,37 @@ and 354 moves on average.
 
 Coverage: 14,318 to 14,334 of 31,900 cards with every line read, and 35,711 to 35,758 of 59,888
 lines, against 995976f.
+
+## D777 — "Untap it" on a permanent's own trigger
+
+"Whenever ~ attacks, untap it and put a +1/+1 counter on it" (Brightfield Mustang), "Whenever ~
+attacks, untap it": a permanent's own trigger untapping itself. `selfEffect` read "untap ~" and
+not "untap it", so the line was unread wherever the card did not print its name.
+
+`selfEffect` now reads "untap it" as the card itself, **only on a permanent** (`where ===
+'battlefield'`). An "it" that names a target is read before this by the referent readers ("Put a
++1/+1 counter on target creature. Untap it."), and a bare "Untap it." on a spell names nothing and
+stays refused.
+
+**D533's refusal row moved.** It held "Whenever Probe Card attacks, untap it. Tap target creature."
+as refused, because "untap it" had no self-reading and so could only compile by binding forward to
+the later target, which is the wrong card. It now has its own reading, the attacker, which is what
+the card means, so the line reads correctly. The row now uses "tap it", which still has no
+self-reading, and D777's tests check the "untap it" line plays: the attacker untaps and only the
+target is tapped.
+
+**Tests.** 4 engine tests: both cards read and a bare "Untap it." on a spell is refused; the attacker
+untaps itself and gets its counter; before a target, "untap it" is the attacker and the target is
+only tapped; on a spell, "it" is still the target.
+
+Faults injected by script: 2 of 2 caught (one after the test was extended with the bare-spell
+refusal).
+
+    engine tests: 5,669, all passing (on 8c346b0)
+
+Coverage: 14,367 to 14,376 of 31,900 cards with every line read, and 35,809 to 35,820 of 59,888
+lines, against 8c346b0.
+
+Also in this commit: `claude/play-realm-setup.md` no longer says the engine knows 348 cards (its
+introduction and *What is not done* predated the compiler and D459), and
+`claude/beta-readiness-2026-11-20.md` is the checkpoint for moving to human testing.
