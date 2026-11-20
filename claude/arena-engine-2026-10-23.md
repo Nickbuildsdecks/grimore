@@ -36504,3 +36504,29 @@ Sweep 60301 rerun with the cap: 99 of 100 games finished, and seed 60315 is repo
 `runaway-board` (1,010 Troubling Tribbles). 60.3 turns and 344 moves on average.
 
     engine tests: 5,589, all passing (merged with the other session's D1037; the engine is unchanged here)
+
+## D1039 — a spell's own trigger from the graveyard
+
+"Whenever a Dragon you control enters, you may pay {R}. If you do, return Spit Flame from your
+graveyard to your hand." An instant or sorcery whose second line is a triggered ability that works
+from the graveyard (Spit Flame, Unconventional Tactics, Killian's Confidence, Punishing Fire).
+
+- `spellScriptFor` hands a line that opens "When/Whenever/At" and returns or puts the card itself
+  "from your graveyard" to the trigger reader. The line is kept only when every trigger it reads
+  works from the graveyard (`inGraveyard`) and nothing else came with it; otherwise it stays
+  unread as before. The card's resolution is read from its other lines as it always was.
+- "Whenever an opponent gains life" and "Whenever a player gains life" are new `life-gained`
+  prologue rows. `life-gained` gains `by: 'opponent'`, and its matcher answers it the way
+  `life-lost` does (D999). This is what Punishing Fire needed.
+- The D487 test that pinned Punishing Fire's recursion as unread now pins it as read: both lines
+  compiled, the trigger a graveyard `life-gained` watcher for an opponent.
+
+**Tests.** 3 engine tests, plus the D487 engine test converted and its compile row swapped to a trigger that still does not read ("Whenever a Vehicle you control attacks"):
+- the rows read whole, and the opponent and any-player rows read to the right `by`;
+- a Dragon entering asks; paying {R} brings the instant back to hand, declining leaves it;
+- an opponent's life gain asks and returns it; your own life gain does not ask.
+
+Faults injected by script: 5, all caught (the dropped bookkeeping of the read line by the
+converted D487 test).
+
+Coverage: 14,150 of 31,900 cards (+6), 35,388 of 59,888 lines (+6).
