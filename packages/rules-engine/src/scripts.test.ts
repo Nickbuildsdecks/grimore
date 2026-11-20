@@ -28448,6 +28448,53 @@ describe('discover (D1043)', () => {
   });
 });
 
+describe('a card filter by power or toughness (D1044)', () => {
+  const ROWS = [
+    { name: 'Test Seek', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Search your library for a creature card with power 2 or less, reveal it, put it into your hand, then shuffle.' },
+    { name: 'Test Wall Seek', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Search your library for a creature card with toughness 3 or greater, reveal it, put it into your hand, then shuffle.' },
+    { name: 'Test Dig', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Look at the top four cards of your library. You may reveal a creature card with power 2 or less from among them and put it into your hand. Put the rest on the bottom of your library in a random order.' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    // Power and toughness apart, so one cannot stand in for the other.
+    { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '0', toughness: '4', oracle_text: 'Defender' },
+  ];
+  const deck = customDeck({ id: 'd1044', name: 'Measures', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }], data: ROWS as never[] });
+  const table = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1044', 1: 'd1044' }, deckSpecs: { d1044: deck.deck },
+      battlefield: { 0: [], 1: [] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const top = [
+      library.find((id) => nameOf(s, id) === 'Test Giant')!,
+      library.find((id) => nameOf(s, id) === 'Forest')!,
+      library.find((id) => nameOf(s, id) === 'Test Bear')!,
+    ];
+    s = { ...s, zones: { ...s.zones, '0:library': [...top, ...library.filter((id) => !top.includes(id))] } } as GameState;
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 30);
+  };
+  const offered = (s: GameState) => [...new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)))].sort();
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a search offers only the creatures under the bound, or over it', () => {
+    expect(offered(table('Test Seek'))).toEqual(['Test Bear', 'Test Wall']);
+    expect(offered(table('Test Wall Seek'))).toEqual(['Test Giant', 'Test Wall']);
+  });
+
+  it('a dig offers the Bear and not the Giant beside it', () => {
+    const s = table('Test Dig');
+    expect(offered(s)).toEqual(['Test Bear']);
+    expect(s.pendingDecision?.prompt).toMatch(/with power 2 or less/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

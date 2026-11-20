@@ -2403,6 +2403,23 @@ const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
  * position. A bare "with mana value 3" would fall through to the body, fail there, and leave the
  * line unread, which is the honest default.
  */
+/**
+ * "With mana value / power / toughness N or less|greater" of a card outside the battlefield (D1044).
+ * Mana value printed (`CardDef.cmc`); power and toughness through `characteristicsOf`, so a star
+ * answers with what its characteristic-defining ability makes it there (CR 208.2a).
+ */
+function cardMeasureTest(measure: string, bound: number, atMost: boolean): (state: GameState, id: string) => boolean {
+  const which = measure.toLowerCase();
+  return (state, id) => {
+    const inst = state.instances[id];
+    const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+    if (inst === undefined || def === undefined) return false;
+    const value = which === 'mana value' ? def.cmc
+      : which === 'power' ? characteristicsOf(state, inst).power : characteristicsOf(state, inst).toughness;
+    return atMost ? value <= bound : value >= bound;
+  };
+}
+
 /** A search filter narrowed to cards of one printed colour (D686). */
 function withColour(
   filter: CardsDecisionSpec['filter'] | null | undefined, colour: Color,
@@ -2448,18 +2465,16 @@ function libraryFilter(
     const body = cardFilterBody(xClause[1]!.trim(), name);
     return body === null ? null : { phrase: whole, filter: body.filter, xBound: true };
   }
-  const clause = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(whole);
+  /*
+    And "with power 2 or less" / "with toughness 4 or greater" (D1044): Kinship-style digs and
+    searches. Power and toughness through `characteristicsOf`, so a card whose printed value is a
+    star answers with what its characteristic-defining ability makes it there (CR 208.2a).
+  */
+  const clause = /^(.*?) with (mana value|power|toughness) (\d+) or (less|greater)$/i.exec(whole);
   const body = cardFilterBody(clause === null ? whole : clause[1]!.trim(), name);
   if (body === null) return null;
   if (clause === null) return body;
-  const bound = Number(clause[2]!);
-  const atMost = clause[3]!.toLowerCase() === 'less';
-  const inRange: NonNullable<CardsDecisionSpec['filter']> = (state, id) => {
-    const inst = state.instances[id];
-    const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
-    if (def === undefined) return false;
-    return atMost ? def.cmc <= bound : def.cmc >= bound;
-  };
+  const inRange: NonNullable<CardsDecisionSpec['filter']> = cardMeasureTest(clause[2]!, Number(clause[3]!), clause[4]!.toLowerCase() === 'less');
   /*
     `null` *and* `undefined`: the field is optional as well as nullable, and "any card" arrives as
     either depending on which arm of the body answered. One guard covers both, and it is the guard
@@ -27131,7 +27146,8 @@ function digGroup(
     }, 3);
   }
 
-  const reveals = /^you may reveal an? (.+?) card from among them and put (?:it|that card) into your hand$/i
+  // With a measure after "card" (D1044): "a creature card with power 2 or less from among them".
+  const reveals = /^you may reveal an? (.+?) card(?: with (mana value|power|toughness) (\d+) or (less|greater))? from among them and put (?:it|that card) into your hand$/i
     .exec(second);
   // "Then put the rest…" on a few printings; the same sentence with a word in front of it.
   const third = clauses[at + 2]?.trim().replace(/^then\s+/i, '');
@@ -27148,12 +27164,15 @@ function digGroup(
   const test = graveyardTypeTest(printed.replace(/,\s*(?:or\s+)?/g, ' or '));
   const restGoTo = digRest(puts[1]!);
   if (test === null || restGoTo === null) return null;
+  const measured = reveals[2] === undefined ? null : cardMeasureTest(reveals[2], Number(reveals[3]), reveals[4]!.toLowerCase() === 'less');
+  const quality = reveals[2] === undefined ? '' : ` with ${reveals[2]} ${reveals[3]} or ${reveals[4]}`;
   return asks({
-    prompt: `${name}: you may reveal ${/^[aeiou]/i.test(printed) ? 'an' : 'a'} ${printed} card and put it into your hand`,
+    prompt: `${name}: you may reveal ${/^[aeiou]/i.test(printed) ? 'an' : 'a'} ${printed} card${quality} and put it into your hand`,
     min: 0, max: 1, restGoTo, revealPicked: true,
     filter: (state, id) => {
       const inst = state.instances[id];
-      return inst !== undefined && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey]);
+      return inst !== undefined && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), state.cardDefs[inst.defKey])
+        && (measured === null || measured(state, id));
     },
   }, 3);
 }
