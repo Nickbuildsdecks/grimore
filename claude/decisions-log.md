@@ -54317,3 +54317,29 @@ It's still a land. It can't be blocked this turn."
 Faults injected by script: 4, all caught.
 
 Coverage: 14,240 of 31,900 cards (+1), 35,558 of 59,888 lines (+1).
+
+## D1051 — a count of counters
+
+"Put X +1/+1 counters on target creature" (the spell's or the ability's X), "…, where X is the
+number of lands you control", and "Put a +1/+1 counter on target creature for each creature card in
+your graveyard". Even the bare X form was unread: the counter reader took printed numbers only.
+
+- The counter reader takes the tail `countTailOf` reads ("where X is …" counts and "for each …"),
+  and reads the body as the fixed-count sentence would be. The number is computed as it resolves:
+  the paid X for a bare X, the count for "where X is", and the printed rate times the count for
+  "for each".
+- A printed number with an X to define ("two counters …, where X is …") and an X with "for each"
+  are not sentences and stay unread. A fixed count with no tail is read as before.
+- Infuse with the Elements and Nova Flame read whole. Counts `countTailOf` does not have (your
+  life total, domain, "noncreature, nonland cards") stay unread, and so do the Fractal token forms
+  ("Create a 0/0 Fractal … Put X +1/+1 counters on it").
+
+**Tests.** 4 engine tests, and the compile refusal row "Put X +1/+1 counters on target creature." turned into a note:
+- the rows read whole;
+- X is the X paid, a printed two is two, and a two with "where X is" stays unread;
+- "where X is the number of lands you control" counts 2, and 0 with none;
+- "for each creature card in your graveyard" counts the two creatures and not the land.
+
+Faults injected by script: 4. All are caught, two after the fixed-count and refusal assertions.
+
+Coverage: 14,248 of 31,900 cards (+8), 35,567 of 59,888 lines (+9).
