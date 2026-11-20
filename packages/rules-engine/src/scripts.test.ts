@@ -24720,10 +24720,11 @@ describe('creature lands and typed creature targets (D754)', () => {
     // Blinkmoth is a creature type no type line prints (CR 205.3m).
     expect(compileCard(land('Test Nexus', '{1}: Test Nexus becomes a 1/1 Blinkmoth artifact creature with flying until end of turn. It\'s still a land.') as never))
       .toMatchObject({ ok: true, unread: [] });
-    // Refused: no duration, a quoted ability, a word that is not a creature type, in the land or the target.
+    // Refused: no duration, a quoted ability that does not read, a word that is not a creature type,
+    // in the land or the target. (A quoted "{T}: Draw a card." was the row here until D1049 read it.)
     for (const text of [
       '{1}: Test Odd becomes a 2/2 Bear creature. It\'s still a land.',
-      '{1}: Test Odd becomes a 2/2 Bear creature with "{T}: Draw a card." until end of turn. It\'s still a land.',
+      '{1}: Test Odd becomes a 2/2 Bear creature with "{T}: Do a shiny thing." until end of turn. It\'s still a land.',
       '{1}: Test Odd becomes a 2/2 Zzyzx creature until end of turn. It\'s still a land.',
       '{T}: Target Zzyzx creature gets +1/+1 until end of turn.',
     ]) {
@@ -28666,6 +28667,51 @@ describe('a land a spell turns into a creature (D1048)', () => {
     s = drain(passBoth(apply(s, cast(s, 'Test Animate', theirs))), 30);
     const ch = characteristicsOf(s, s.instances[theirs]!);
     expect([ch.power, ch.toughness, hasType(ch.typeLine, 'land')]).toEqual([3, 3, true]);
+  });
+});
+
+describe('a creature land with a quoted ability (D1049)', () => {
+  const ROWS = [
+    { name: 'Test Ravine', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: '{T}: Add {R}.\n{0}: Until end of turn, Test Ravine becomes a 3/3 red and green Elemental creature with "Whenever this creature attacks, put a +1/+1 counter on it." It\'s still a land.' },
+  ];
+  const deck = customDeck({ id: 'd1049', name: 'Ravine', entries: [{ name: 'Test Ravine', count: 4 }, { name: 'Mountain', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole, with the trigger held on the card and granted by index', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.grantedTriggers?.length).toBe(1);
+    // A second quoted grant on another line would have to index past it, so it is refused there.
+    const both = compileCard({ ...ROWS[0], oracle_text: `${ROWS[0]!.oracle_text}\n{1}: Until end of turn, Test Ravine becomes a 2/2 Elemental creature with "Whenever this creature attacks, you gain 1 life." It's still a land.` } as never);
+    expect(both.ok && both.unread.length).toBe(1);
+    // A quoted ability that does not read, and a grant on a land it points at, both stay unread
+    // rather than animating without the ability.
+    for (const line of [
+      '{0}: Until end of turn, Test Ravine becomes a 3/3 Elemental creature with "Whenever this creature attacks, do a shiny thing." It\'s still a land.',
+      '{0}: Until end of turn, target land you control becomes a 3/3 Elemental creature with "Whenever this creature attacks, put a +1/+1 counter on it." It\'s still a land.',
+    ]) {
+      const read = compileCard({ ...ROWS[0], oracle_text: line } as never);
+      expect(read.ok && read.unread.length, line).toBe(1);
+    }
+  });
+
+  it('animated, it attacks and the trigger adds a counter; a turn later the grant is gone', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1049', 1: 'd1049' }, deckSpecs: { d1049: deck.deck },
+      battlefield: { 0: ['Test Ravine'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ravine = find(s, 0, 'battlefield', 'Test Ravine');
+    expect(grantedTriggersOn(s, s.instances[ravine]!).length).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ravine, abilityIndex: 1 } as Action)), 30);
+    expect(grantedTriggersOn(s, s.instances[ravine]!).length).toBe(1);
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: ravine, defender: 1 }] } as Action), 30);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(s.instances[ravine]!.counters['+1/+1']).toBe(1);
+    expect(power(s, ravine)).toBe(4);
+    s = nextTurn(s);
+    expect(grantedTriggersOn(s, s.instances[ravine]!).length).toBe(0);
   });
 });
 

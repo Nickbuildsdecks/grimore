@@ -12549,6 +12549,14 @@ interface ReadEffect {
    */
   readonly abilityFlags?: Partial<AbilityDef>;
   /**
+   * Fields of the **card** an activated ability of this family brings with it (D1049): a quoted
+   * trigger or ability the ability grants, held in the card's `grantedTriggers` / `grantedAbilities`
+   * and handed over by index (`grants`, `grantsAbilities`). Only the ability path merges them, and
+   * `merge` in compile.ts refuses a second line that sets either, so an index cannot point at
+   * another line's grant.
+   */
+  readonly cardFields?: Pick<CardScript, 'grantedTriggers' | 'grantedAbilities'>;
+  /**
    * The same clause done **now** rather than owed, for a clause something comes after.
    *
    * One family needs this and the reason is `drawLater`, which owes a card instead of putting it in
@@ -28120,11 +28128,27 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
   const becomes = new RegExp(
     `^(until end of turn, )?(?:${self}|it|((?:up to one )?target [^,.]*?land(?: you control)?)) becomes an? (\\d+)/(\\d+) `
     + '((?:(?:white|blue|black|red|green)(?:,? and |, | ))*)'
-    + "((?:(?!artifact )[A-Z][A-Za-z'-]* )*)(artifact )?creature(?: with ([^\"]+?))?( until end of turn)?"
-    + "(?:\\.\\s*it['’]s still a land| that['’]s still a land)$",
+    + "((?:(?!artifact )[A-Z][A-Za-z'-]* )*)(artifact )?creature(?: with ([^\"]+?))?(?:,? (?:with|and) \"([^\"]+)\")?( until end of turn)?"
+    + "(?:\\.?\\s*it['’]s still a land| that['’]s still a land)$",
     'i',
   ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
   if (becomes === null) return null;
+  /*
+    A quoted ability with it (D1049): Raging Ravine's "Whenever this creature attacks, put a +1/+1
+    counter on it.", Lavaclaw Reaches' "{X}: This creature gets +X/+0 until end of turn." Read as
+    the card's own line would be, and granted by index through the animation's layers. One trigger
+    or one activated ability; anything else refuses the line. Taken out here so the indices below
+    are the ones the size and the rest have always had.
+  */
+  const quoted = becomes[9];
+  becomes.splice(9, 1);
+  const grant = quoted === undefined ? null : lineScriptFor(quoted.trim(), name);
+  if (quoted !== undefined) {
+    const keys = grant === null ? [] : Object.keys(grant);
+    const one = keys.length === 1
+      && ((grant!.triggers?.length ?? 0) === 1 || (grant!.abilities?.length ?? 0) === 1);
+    if (!one) return null;
+  }
   // Shifted by one from here on: [2] is the land aimed at, when there is one.
   const aimed = becomes[2];
   becomes.splice(2, 1);
@@ -28143,7 +28167,12 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
   if (everyType) granted = granted!.replace(/(?:^|,? and )all creature types$/i, '').trim();
   const keywords = granted === undefined || granted === '' ? [] : grantedKeywordList(granted);
   if (keywords === null) return null;
+  // Only an activated ability carries `cardFields` onto the card, so a granted ability is refused
+  // on a land the card points at, where a spell or a trigger would drop the grant (D1049).
+  if (grant !== null && spec !== null) return null;
   return {
+    ...(grant?.triggers === undefined ? {} : { cardFields: { grantedTriggers: grant.triggers } }),
+    ...(grant?.abilities === undefined ? {} : { cardFields: { grantedAbilities: grant.abilities } }),
     // The bot's hint is about animating itself; a land it points at is chosen as any target is.
     ...(spec === null ? { abilityFlags: { animates: true } } : { targets: [spec] }),
     effect: (c) => pump(c.state, spec === null ? [c.source] : [firstCardTarget(c) ?? ''].filter((id) => id !== ''), c.source, c.controller, {
@@ -28152,6 +28181,8 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
       ...(subtypes.length === 0 ? {} : { addSubtypes: subtypes }),
       ...(setColors.length === 0 ? {} : { setColors }),
       ...(keywords.length === 0 ? {} : { keywords }),
+      ...(grant?.triggers === undefined ? {} : { grants: [0] }),
+      ...(grant?.abilities === undefined ? {} : { grantsAbilities: [0] }),
       setPower: power, setToughness: toughness,
     }),
   };
@@ -29007,6 +29038,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       // only a question carries none rather than an identity.
       ...(read.appliesNothing === true ? {} : { effect: read.effect }),
     } as AbilityDef],
+    // See `ReadEffect.cardFields`: a quoted ability the ability grants (D1049).
+    ...(read.cardFields ?? {}),
   };
 }
 
