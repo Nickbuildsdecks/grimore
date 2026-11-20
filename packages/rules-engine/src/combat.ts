@@ -175,14 +175,27 @@ export function damageOrderChoice(state: GameState, attack: CombatAttack): strin
   return blockers;
 }
 
-/** Every attack of this seat's that still owes a damage assignment order. */
+/**
+ * Every attack of this seat's that still owes a damage assignment order.
+ *
+ * And every blocked attacker that may assign its damage as though it weren't blocked (D770, CR
+ * 510.1c), marked `mayGoUnblocked`: the choice is made with the order, by the same player at the
+ * same moment, so it is asked in the same question. Such an entry lists its living blockers even
+ * when there is only one, or when the order would not matter.
+ */
 export function damageOrdersOwed(
   state: GameState, seat: SeatIndex,
-): { attacker: string; blockers: string[] }[] {
-  const owed: { attacker: string; blockers: string[] }[] = [];
+): { attacker: string; blockers: string[]; mayGoUnblocked?: true }[] {
+  const owed: { attacker: string; blockers: string[]; mayGoUnblocked?: true }[] = [];
   for (const attack of state.combat.attacks) {
     if (state.instances[attack.attacker]?.zoneSeat !== seat) continue;
     const blockers = damageOrderChoice(state, attack);
+    const attacker = creatureOf(state, attack.attacker);
+    const living = attack.blockers.filter((id) => creatureOf(state, id) !== null);
+    if (attacker !== null && attacker.ch.assignsAsUnblocked && attacker.ch.power > 0 && living.length > 0) {
+      owed.push({ attacker: attack.attacker, blockers: blockers ?? living, mayGoUnblocked: true });
+      continue;
+    }
     if (blockers !== null) owed.push({ attacker: attack.attacker, blockers });
   }
   return owed;
@@ -852,7 +865,8 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
       const deathtouch = attacker.ch.keywords.has('deathtouch');
       const controller = attacker.inst.zoneSeat;
 
-      if (attack.blockers.length === 0) {
+      // Assigned as though it weren't blocked (D770): all of it to what it attacked, none to blockers.
+      if (attack.blockers.length === 0 || attack.asUnblocked === true) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
         next = hit(next, defenderTarget(next, attack), attacker.ch.power, {
           controller, combatFrom: attack.attacker, source: attack.attacker,

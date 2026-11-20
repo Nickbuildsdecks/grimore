@@ -27858,6 +27858,105 @@ describe('the top card, if it is of a kind (D1036)', () => {
   });
 });
 
+describe('damage assigned as though it weren\'t blocked (D770)', () => {
+  const THORN = { name: 'Test Thornback', type_line: 'Creature — Elemental', mana_cost: '{5}{G}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: "You may have Test Thornback assign its combat damage as though it weren't blocked." };
+  const BRUTE = { name: 'Test Brute', type_line: 'Creature — Giant', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
+  const WALL = { name: 'Test Pikewall', type_line: 'Creature — Wall', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '4', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd770', name: 'As though unblocked',
+    entries: [{ name: 'Test Thornback', count: 2 }, { name: 'Test Pikewall', count: 4 }, { name: 'Test Brute', count: 2 }, { name: 'Forest', count: 27 }, { name: 'Plains', count: 27 }],
+    data: [THORN, WALL, BRUTE] as never[],
+  });
+  const blocked = (walls = 1) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd770', 1: 'd770' }, deckSpecs: { d770: deck.deck },
+      battlefield: { 0: ['Test Thornback'], 1: Array.from({ length: walls }, () => 'Test Pikewall') }, turn: 2, firstSeat: 0,
+    }), 'declare-attackers');
+    const thorn = find(s, 0, 'battlefield', 'Test Thornback');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: thorn, defender: 1 }] });
+    s = passBoth(s);
+    return apply(s, { type: 'auto:block', by: 1, blocks: ids(s, 1, 'battlefield').map((blocker) => ({ blocker, attacker: thorn })) });
+  };
+  const finish = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 8 && next.step !== 'postcombat-main'; i++) next = passBoth(next);
+    return next;
+  };
+
+  it('reads the line, and a blocked one is asked, even behind a single blocker', () => {
+    expect(compileCard(THORN as never)).toMatchObject({ ok: true, unread: [] });
+    const s = blocked();
+    expect(pendingDeclaration(s)).toEqual({ kind: 'order', seats: [0] });
+    const thorn = find(s, 0, 'battlefield', 'Test Thornback');
+    expect(legalActions(s, 0).mustOrder).toEqual([{ attacker: thorn, blockers: [find(s, 1, 'battlefield', 'Test Pikewall')], mayGoUnblocked: true }]);
+  });
+
+  it('as though unblocked: all five to the player, none to the wall, which still hits back', () => {
+    let s = blocked();
+    const thorn = find(s, 0, 'battlefield', 'Test Thornback');
+    const wall = find(s, 1, 'battlefield', 'Test Pikewall');
+    s = finish(apply(s, { type: 'auto:order', by: 0, orders: [{ attacker: thorn, blockers: [wall], unblocked: true }] }));
+    expect(life(s, 1)).toBe(15);
+    expect(damageOn(s, wall)).toBe(0);
+    expect(damageOn(s, thorn)).toBe(1);
+  });
+
+  it('declined: the wall dies and the player takes nothing', () => {
+    let s = blocked();
+    const thorn = find(s, 0, 'battlefield', 'Test Thornback');
+    const wall = find(s, 1, 'battlefield', 'Test Pikewall');
+    s = finish(apply(s, { type: 'auto:order', by: 0, orders: [{ attacker: thorn, blockers: [wall] }] }));
+    expect(life(s, 1)).toBe(20);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Pikewall');
+  });
+
+  it('is refused for a creature without the ability', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd770', 1: 'd770' }, deckSpecs: { d770: deck.deck },
+      battlefield: { 0: ['Test Pikewall'], 1: ['Test Pikewall'] }, turn: 2, firstSeat: 0,
+    }), 'declare-attackers');
+    const mine = find(s, 0, 'battlefield', 'Test Pikewall');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: mine, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Pikewall'), attacker: mine }] });
+    // Nothing is owed, so no order — and an unblocked claim has nowhere to go.
+    expect(pendingDeclaration(s)).toBeNull();
+  });
+
+  it('the bot sends it through when that is lethal', () => {
+    let s = blocked();
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 5 } : seat)) };
+    const action = botAction(s, 0);
+    expect(action).toMatchObject({ type: 'auto:order', orders: [{ unblocked: true }] });
+    expect(finish(apply(s, action!)).seats[1]!.eliminated).toBe(true);
+  });
+
+  it('refuses "unblocked" for an attacker that was not offered it', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd770', 1: 'd770' }, deckSpecs: { d770: deck.deck },
+      battlefield: { 0: ['Test Brute'], 1: ['Test Pikewall', 'Test Pikewall'] }, turn: 2, firstSeat: 0,
+    }), 'declare-attackers');
+    const brute = find(s, 0, 'battlefield', 'Test Brute');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: brute, defender: 1 }] });
+    s = passBoth(s);
+    s = apply(s, { type: 'auto:block', by: 1, blocks: ids(s, 1, 'battlefield').map((blocker) => ({ blocker, attacker: brute })) });
+    // A 5/5 into two 1/4s: an order is owed, but not the choice.
+    const owed = legalActions(s, 0).mustOrder;
+    expect(owed).toEqual([{ attacker: brute, blockers: owed[0]!.blockers }]);
+    expect(refusal(s, { type: 'auto:order', by: 0, orders: [{ attacker: brute, blockers: owed[0]!.blockers, unblocked: true }] }))
+      .toContain("as though it weren't blocked");
+  });
+
+  it('two blockers: the order is still asked, with the choice beside it', () => {
+    const s = blocked(2);
+    const owed = legalActions(s, 0).mustOrder;
+    expect(owed).toHaveLength(1);
+    expect(owed[0]!.blockers).toHaveLength(2);
+    expect(owed[0]!.mayGoUnblocked).toBe(true);
+    const thorn = find(s, 0, 'battlefield', 'Test Thornback');
+    expect(life(finish(apply(s, { type: 'auto:order', by: 0, orders: [{ attacker: thorn, blockers: owed[0]!.blockers, unblocked: true }] })), 1)).toBe(15);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

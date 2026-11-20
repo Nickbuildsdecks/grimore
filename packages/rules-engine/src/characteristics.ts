@@ -423,7 +423,7 @@ export function shortName(name: string): string | null {
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
 type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure'
-  | 'blockedByOne' | 'weakerCantBlock';
+  | 'blockedByOne' | 'weakerCantBlock' | 'assignsAsUnblocked';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -602,6 +602,11 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   const weaker = /^creatures with power less than (.+)'s power can't block it$/.exec(low);
   if (weaker !== null) {
     return selfSubjects(name).includes(weaker[1]!) ? { kind: 'combat-static', statics: ['weakerCantBlock'] } : null;
+  }
+  // "You may have ~ assign its combat damage as though it weren't blocked" (D770, CR 510.1c).
+  const unblocked = /^you may have (.+) assign its combat damage as though it weren't blocked$/.exec(low);
+  if (unblocked !== null) {
+    return selfSubjects(name).includes(unblocked[1]!) ? { kind: 'combat-static', statics: ['assignsAsUnblocked'] } : null;
   }
   const subject = selfSubjects(name).find((candidate) => low.startsWith(`${candidate} `));
   if (subject === undefined) return null;
@@ -949,6 +954,7 @@ function printedCombatFlags(oracleText: string | null | undefined, name?: string
   const found: Record<CombatStatic, boolean> = {
     cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false,
     mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false, weakerCantBlock: false,
+    assignsAsUnblocked: false,
   };
   for (const part of printedParts(oracleText, name)) {
     if (part.kind !== 'combat-static') continue;
@@ -2239,6 +2245,12 @@ export interface Characteristics {
   /** "Creatures with power less than ~'s power can't block it" (D943), compared in `canBlock`. */
   readonly weakerCantBlock: boolean;
   /**
+   * "You may have ~ assign its combat damage as though it weren't blocked" (D770, CR 510.1c): when
+   * it is blocked, its controller chooses, with the damage order, to send all of it to the player
+   * or planeswalker it attacked. See `damageOrdersOwed`.
+   */
+  readonly assignsAsUnblocked: boolean;
+  /**
    * "Its activated abilities can't be activated" (D943, Arrest's rider): none of them, mana
    * abilities included, is offered or accepted, and the permanent pays for nothing.
    */
@@ -3093,6 +3105,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let lure = printedCombat.lure;
   let blockedByOne = printedCombat.blockedByOne;
   let weakerCantBlock = printedCombat.weakerCantBlock;
+  let assignsAsUnblocked = printedCombat.assignsAsUnblocked;
   let cantActivate = false;
   let cantActivateNonMana = false;
   let attacksOnlyIfDefenderHas: string | null = null;
@@ -3177,6 +3190,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       lure = false;
       blockedByOne = false;
       weakerCantBlock = false;
+      assignsAsUnblocked = false;
       attacksOnlyIfDefenderHas = null;
       extraBlocks = 0;
       mustBlockAttackers.length = 0;
@@ -3290,6 +3304,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     lure,
     blockedByOne,
     weakerCantBlock,
+    assignsAsUnblocked,
     cantActivate,
     cantActivateNonMana,
     attacksOnlyIfDefenderHas,

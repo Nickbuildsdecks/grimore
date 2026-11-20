@@ -538,7 +538,12 @@ export interface LegalActions {
    * Carried here rather than worked out by the table for the usual reason — the question is only
    * asked when the order can change which blockers die, and that is a rules judgement.
    */
-  readonly mustOrder: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
+  readonly mustOrder: readonly {
+    readonly attacker: string;
+    readonly blockers: readonly string[];
+    /** It may assign its damage as though it weren't blocked instead (D770). */
+    readonly mayGoUnblocked?: true;
+  }[];
   /**
    * Why each card this seat holds is *not* playable, for the ones that are not.
    *

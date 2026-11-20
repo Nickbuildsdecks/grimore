@@ -3643,7 +3643,7 @@ function blockPlans(state: GameState, seat: SeatIndex): { blocker: string; attac
   return plans;
 }
 
-type DamageOrder = { attacker: string; blockers: string[] };
+type DamageOrder = { attacker: string; blockers: string[]; mayGoUnblocked?: true; unblocked?: boolean };
 
 /**
  * The damage assignment orders worth considering (CR 509.2).
@@ -3683,7 +3683,11 @@ function orderPlans(state: GameState, seat: SeatIndex): DamageOrder[][] {
       (a, b) => creatureValue(state, b) - creatureValue(state, a),
     ),
   });
-  return [owed, owed.map(byCost), owed.map(byValue)];
+  // And every attacker that may go as though unblocked, going (D770): the search weighs it.
+  const free = owed.map((entry) => (entry.mayGoUnblocked === true ? { ...entry, unblocked: true } : entry));
+  return owed.some((entry) => entry.mayGoUnblocked === true)
+    ? [owed, owed.map(byCost), owed.map(byValue), free]
+    : [owed, owed.map(byCost), owed.map(byValue)];
 }
 
 /** Whether this bot's search stops where its action happened. On: see `noAutoPass`. */

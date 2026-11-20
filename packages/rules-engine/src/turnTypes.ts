@@ -653,6 +653,11 @@ export interface CombatAttack {
   /** In damage-assignment order, which is the order the attacker's controller chose. */
   readonly blockers: readonly string[];
   /**
+   * Its controller chose to have it assign its combat damage as though it weren't blocked (D770,
+   * CR 510.1c): all of it goes to the player or planeswalker it attacked. It is still blocked.
+   */
+  readonly asUnblocked?: true;
+  /**
    * Which object the attacker was when it was declared, and which objects the blockers were.
    *
    * A permanent that leaves the battlefield is removed from combat (CR 506.4), and a card that
@@ -1716,7 +1721,12 @@ export interface AutoStartAction {
 export interface AutoOrderAction {
   readonly type: 'auto:order';
   readonly by: SeatIndex;
-  readonly orders: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
+  readonly orders: readonly {
+    readonly attacker: string;
+    readonly blockers: readonly string[];
+    /** Assign its damage as though it weren't blocked, where `mayGoUnblocked` offered it (D770). */
+    readonly unblocked?: boolean;
+  }[];
 }
 
 /** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */

@@ -549,13 +549,29 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
           </span>
           {mode.owed.map((ask) => {
             const picked = mode.chosen[ask.attacker] ?? []
+            const free = mode.unblocked?.[ask.attacker] === true
             return (
               <span key={`order-${ask.attacker}`} data-testid={`order-${ask.attacker}`} className="text-[var(--g-text-muted)]">
                 {view.cards[ask.attacker]?.card?.name ?? "a creature"}
                 {": "}
-                {picked.length === 0
-                  ? `${ask.blockers.length} to order`
-                  : picked.map((id) => view.cards[id]?.card?.name ?? "a creature").join(", then ")}
+                {free
+                  ? "all damage to what it attacked"
+                  : picked.length === 0
+                    ? `${ask.blockers.length} to order`
+                    : picked.map((id) => view.cards[id]?.card?.name ?? "a creature").join(", then ")}
+                {/* "As though it weren't blocked" (D770): offered only where the engine says so. */}
+                {ask.mayGoUnblocked === true ? (
+                  <Button
+                    size="sm"
+                    variant={free ? "default" : "outline"}
+                    className="ml-1.5 h-6 px-2 text-[11px]"
+                    data-testid={`unblocked-${ask.attacker}`}
+                    aria-pressed={free}
+                    onClick={() => dispatch({ kind: "toggleUnblocked", attacker: ask.attacker })}
+                  >
+                    As though unblocked
+                  </Button>
+                ) : null}
               </span>
             )
           })}
@@ -563,7 +579,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             <Button
               size="sm"
               data-testid="confirm-order"
-              disabled={!orderingDone(mode.owed, mode.chosen)}
+              disabled={!orderingDone(mode.owed, mode.chosen, mode.unblocked)}
               onClick={() => dispatch({ kind: "confirm" })}
             >
               <Check className="size-3.5" /> Assign damage
