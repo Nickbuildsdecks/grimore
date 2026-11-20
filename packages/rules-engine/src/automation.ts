@@ -662,8 +662,23 @@ function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): Game
   return { ...state, priority: to, passed: [] };
 }
 
-/** Mana pools empty whenever a step or phase ends (CR 500.4). */
-const emptyPools = (state: GameState): GameState => ({ ...state, pools: {} });
+/**
+ * Mana pools empty whenever a step or phase ends (CR 500.4), except the mana an effect said is not
+ * lost this turn (D1034, `GameState.keptMana`): what remains of it stays, and the record shrinks to
+ * what stayed, since what was spent is gone.
+ */
+const emptyPools = (state: GameState): GameState => {
+  const kept = state.keptMana ?? {};
+  const pools: Record<string, ManaPool> = {};
+  for (const [seat, keep] of Object.entries(kept)) {
+    const pool = state.pools[seat] ?? ({} as ManaPool);
+    const stays = Object.fromEntries(Object.entries(keep)
+      .map(([type, n]) => [type, Math.min(n, (pool as Record<string, number>)[type] ?? 0)] as const)
+      .filter(([, n]) => n > 0)) as ManaPool;
+    if (Object.keys(stays).length > 0) pools[seat] = stays;
+  }
+  return { ...state, pools, keptMana: pools };
+};
 
 /**
  * Moves to the next step, doing whatever that step does on the way in.
@@ -683,7 +698,10 @@ function advanceStep(state: GameState): GameState {
       // Cleanup has finished: the turn ends and the next player's begins.
       const previous = next.activeSeat;
       next = {
-        ...next,
+        // Empty again here (D1034): this loop can walk from the end step into the next turn's
+        // upkeep in one call, and mana kept "until end of turn" was still kept when it began.
+        // The cleanup step has cleared that record, so this empties everything.
+        ...emptyPools(next),
         turn: next.turn + 1,
         activeSeat: nextAlive(next, next.activeSeat),
         combat: EMPTY_COMBAT,
@@ -1166,6 +1184,8 @@ export function endTurnCleanup(state: GameState): GameState {
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
     manaSpentOnSpellsThisTurn: {},
+    // And mana kept "until end of turn" (D1034), which ends here with the other until-end-of-turn effects.
+    keptMana: {},
     descendedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
