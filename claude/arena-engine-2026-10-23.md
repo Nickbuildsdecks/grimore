@@ -37143,7 +37143,7 @@ speed, a second saddle, saddled into the next turn).
 Sweep 60601 (100 pods, on D775 with Bestow and Reconfigure in play): every game finished, 61.8 turns
 and 354 moves on average.
 
-    engine tests: 5,660, all passing (on 995976f)
+    engine tests: 5,665, all passing (merged with the other session's D1055)
 
 Coverage: 14,318 to 14,334 of 31,900 cards with every line read, and 35,711 to 35,758 of 59,888
 lines, against 995976f.
