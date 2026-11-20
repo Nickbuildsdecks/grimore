@@ -745,6 +745,13 @@ export interface AutomationState {
   readonly stackOrder: readonly string[];
   /** Mana pools, keyed by seat index as a string so the state stays JSON-safe. */
   readonly pools: Readonly<Record<string, ManaPool>>;
+  /**
+   * Mana that does not empty as steps and phases end, until end of turn (D1034): "Add {R}{R}{R}.
+   * Until end of turn, you don't lose this mana as steps and phases end." How much of each type a
+   * seat keeps; `emptyPools` leaves the smaller of that and what is in the pool, and the cleanup
+   * step clears it. Spending takes the ordinary mana first, which is the player's best order.
+   */
+  readonly keptMana?: Readonly<Record<string, ManaPool>>;
   readonly combat: CombatState;
   readonly effects: readonly ContinuousEffect[];
   /** Lands played this turn per seat, for the one-per-turn rule. */

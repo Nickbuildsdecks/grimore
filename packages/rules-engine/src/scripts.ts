@@ -72,7 +72,7 @@ import type { EffectFn, TokenCopyProfile } from './effects.js';
 */
 import { isManaAbilityLine, keywordWithCost, tapOthersCost } from './fromCardData.js';
 import { costValue, parseManaCost, timesCost } from './mana.js';
-import type { Color, ManaType } from './mana.js';
+import type { Color, ManaPool, ManaType } from './mana.js';
 import type { CreatureKindWord, Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { isLegalTarget, legalTargets, retarget } from './targeting.js';
@@ -25616,6 +25616,33 @@ function readEffect(
       return guardedBy(then, condition);
     }
   }
+  /*
+    "Add {R}{R}{R}{G}{G}{G}. Until end of turn, you don't lose this mana as steps and phases end"
+    (D1034): Savage Ventmaw, Grand Warlord Radha, Klauth. Joined into one clause by `clausesOf`. The
+    mana is added as the first sentence says, and whatever it added is recorded as kept
+    (`GameState.keptMana`). A question in the add (a colour to choose) is asked as it is.
+  */
+  const keeping = /^(add .+) and keep it until end of turn$/i.exec(clause.trim());
+  if (keeping !== null) {
+    const added = readEffect(keeping[1]!, name, where);
+    if (added !== null && added.beforeDecisions === undefined) {
+      return {
+        ...added,
+        effect: (c) => {
+          const key = String(c.controller);
+          const before = (c.state.pools[key] ?? {}) as Record<string, number>;
+          const after = added.effect(c);
+          const now = (after.pools[key] ?? {}) as Record<string, number>;
+          const gained = Object.fromEntries(Object.keys(now)
+            .map((type) => [type, (now[type] ?? 0) - (before[type] ?? 0)] as const).filter(([, n]) => n > 0));
+          const kept = (after.keptMana?.[key] ?? {}) as Record<string, number>;
+          const merged = { ...kept };
+          for (const [type, n] of Object.entries(gained)) merged[type] = (merged[type] ?? 0) + n;
+          return { ...after, keptMana: { ...(after.keptMana ?? {}), [key]: merged as ManaPool } };
+        },
+      };
+    }
+  }
   // The One Ring, Teferi's Protection (D718): see `ContinuousEffect.playerProtection`.
   if (/^you gain protection from everything until your next turn$/i.test(clause.trim())) {
     return { effect: (c) => protectPlayer(c.state, c.controller, c.source) };
@@ -25995,6 +26022,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(each player exiles all creature cards from their graveyard),\s+then (sacrifices all creatures they control),\s+then (puts all cards they exiled this way onto the battlefield)/gi, '$1\u0006$2\u0006$3')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
+    // And mana kept until end of turn (D1034): the second sentence is about what the first added.
+    .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.

@@ -27636,6 +27636,58 @@ describe('shield counters (D1033)', () => {
   });
 });
 
+describe('mana kept until end of turn (D1034)', () => {
+  const ROWS = [
+    { name: 'Test Ventmaw', type_line: 'Creature — Dragon', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '4', toughness: '4',
+      oracle_text: 'Whenever Test Ventmaw attacks, add {R}{R}{R}. Until end of turn, you don\'t lose this mana as steps and phases end.' },
+  ];
+  const deck = customDeck({ id: 'd1034', name: 'Kept mana', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 44 }], data: ROWS as never[] });
+  const red = (s: GameState) => ((s.pools['0'] ?? {}) as Record<string, number>)['R'] ?? 0;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  const attack = (count: number, already: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1034', 1: 'd1034' }, deckSpecs: { d1034: deck.deck },
+      battlefield: { 0: ['Mountain', ...Array.from({ length: count }, () => 'Test Ventmaw')], 1: ['Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = advanceTo(s, 'declare-attackers');
+    // Mana already in the pool before the triggers resolve, by hand: not theirs to keep.
+    if (already > 0) s = { ...s, pools: { ...s.pools, '0': { R: already } as never } };
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0, attackers: ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Ventmaw').map((attacker) => ({ attacker, defender: 1 })),
+    } as Action));
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return s;
+  };
+
+  it('the three survive the steps; what is spent is gone; mana added later is not kept; the turn ends them', () => {
+    let s = attack(1, 0);
+    expect(red(s)).toBe(3);
+    // Two spent (by hand): one is left, and the next step keeps that one.
+    s = { ...s, pools: { ...s.pools, '0': { R: 1 } as never } };
+    s = advanceTo(s, 'postcombat-main');
+    expect(red(s)).toBe(1);
+    // Two more added that are not kept: only the one survives the next step.
+    s = { ...s, pools: { ...s.pools, '0': { R: 3 } as never } };
+    s = advanceTo(s, 'end');
+    expect(red(s)).toBe(1);
+    s = nextTurn(s);
+    expect(s.keptMana?.['0'] ?? {}).toEqual({});
+    expect(red(s)).toBe(0);
+  });
+
+  it('two triggers keep six, and a red already in the pool is not one of them', () => {
+    let s = attack(2, 1);
+    expect(red(s)).toBe(7);
+    s = advanceTo(s, 'postcombat-main');
+    expect(red(s)).toBe(6);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
