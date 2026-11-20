@@ -36677,3 +36677,29 @@ trigger or an activated ability (Trumpeting Carnosaur, the Hidden lands, Chimil,
 Faults injected by script: 4, all caught.
 
 Coverage: 14,183 of 31,900 cards (+16), 35,485 of 59,888 lines (+21).
+
+## D1044 — a card filter by power or toughness
+
+"Search your library for a creature card with power 2 or less" and "You may reveal a creature card
+with power 2 or less from among them" (Kinship digs, Recruiter-style searches). 12 legal cards print
+a power or toughness bound in a card filter.
+
+- `cardMeasureTest`: "with mana value / power / toughness N or less|greater" of a card outside the
+  battlefield. Mana value is the printed `cmc`, as before. Power and toughness go through
+  `characteristicsOf`, so a star answers with its characteristic-defining value (CR 208.2a).
+- `libraryFilter`'s mana-value clause becomes this one clause with three measures.
+- The dig reveal ("you may reveal a(n) … card from among them and put it into your hand") takes the
+  same measure after "card", and its prompt says it.
+- Not read: "a noncreature, nonland card" (a list of negations), and the measure on the
+  several-card and onto-the-battlefield digs.
+
+**Tests.** 3 engine tests, and the D584 compile row "a filter with a number in it" moved from unread to read:
+- the rows read whole;
+- a search for power 2 or less offers the Bear and a 0/4 Wall, and one for toughness 3 or greater
+  offers the Giant and the Wall;
+- a dig offers the Bear and not the Giant beside it, and the prompt says the bound.
+
+Faults injected by script: 5. All are caught, the power-for-toughness swap after a 0/4 Wall
+joined the deck.
+
+Coverage: 14,191 of 31,900 cards (+8), 35,493 of 59,888 lines (+8).
