@@ -25724,6 +25724,46 @@ function readEffect(
     }
   }
   /*
+    **A pick from what was just milled** (D1038): "Mill three cards. You may put a land card from among
+    them into your hand" (Ainok Wayfarer), "… a permanent card from among the cards milled this way"
+    (Cache Grab), "… an artifact, creature, or land card from among the milled cards" (Dredger's
+    Insight). Joined into one clause by `clausesOf`.
+
+    The cards really are milled first, so whatever watches a graveyard sees them all, and the one
+    picked comes back from there. The mill happens before the question (`beforeDecisions`) and
+    records what it milled (`GameState.milledThisWay`); the question offers only those cards, of the
+    kind the search vocabulary reads (`libraryFilter`); the effect moves the pick to hand and clears
+    the record. Without "may" one is taken if there is one.
+  */
+  const milledPick = /^mill (a card|(\w+) cards) and (you may )?put (an? .+?) from among them into your hand$/i.exec(clause.trim());
+  if (milledPick !== null) {
+    const n = milledPick[2] === undefined ? 1 : countFrom(milledPick[2]);
+    const kind = libraryFilter(milledPick[4]!, name);
+    if (n !== null && n > 0 && kind !== null && kind.xBound !== true) {
+      const may = milledPick[3] !== undefined;
+      const test = kind.filter;
+      return {
+        beforeDecisions: (c) => {
+          const top = listAt(c.state, zoneKey(c.controller, 'library')).slice(0, n);
+          const next = mill(c.state, c.controller, n);
+          // The question lists graveyard cards only, so a mill replaced elsewhere is never offered.
+          return { ...next, milledThisWay: { ...(next.milledThisWay ?? {}), [c.source]: top } };
+        },
+        decisions: [(_state: GameState, source: string): CardsDecisionSpec => ({
+          who: 'controller', from: 'graveyard', min: may ? 0 : 1, max: 1,
+          prompt: `Put ${milledPick[4]!.toLowerCase()} from among the milled cards into your hand`,
+          filter: (state: GameState, id: string, chooser: SeatIndex) => (state.milledThisWay?.[source] ?? []).includes(id)
+            && (test === null || test === undefined || test(state, id, chooser)),
+        })],
+        effect: (c) => {
+          const rest = { ...(c.state.milledThisWay ?? {}) };
+          delete rest[c.source];
+          return { ...moveToHand(c.state, chosenCards(c)), milledThisWay: rest };
+        },
+      };
+    }
+  }
+  /*
     **The top card, if it is of a kind** (D1036): "Look at the top card of your library. If it's a land
     card, you may put it onto the battlefield tapped" (Explorer's Scope), "… If it's a creature card,
     you may reveal it and put it into your hand" (Archghoul of Thraben), "Reveal the top card of your
@@ -26173,6 +26213,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(each player exiles all creature cards from their graveyard),\s+then (sacrifices all creatures they control),\s+then (puts all cards they exiled this way onto the battlefield)/gi, '$1\u0006$2\u0006$3')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
+    // And a pick from what was just milled (D1038): "Mill three cards. You may put a land card from among them …".
+    .replace(/(mill (?:a card|\w+ cards))\.\s+(you may )?put (an? [^.]+?) from among (?:them|the milled cards|the cards milled this way) into your hand/gi, '$1 and $2put $3 from among them into your hand')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.

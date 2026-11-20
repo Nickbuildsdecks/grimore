@@ -28024,6 +28024,57 @@ describe('counters on each of a set, and on the host (D1037)', () => {
   });
 });
 
+describe('a pick from what was just milled (D1038)', () => {
+  const ROWS = [
+    { name: 'Test Dig', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Mill three cards. You may put a land card from among them into your hand.' },
+    { name: 'Test Grab', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Mill three cards. Put a creature card from among the cards milled this way into your hand.' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1038', name: 'Milled pick', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }], data: ROWS as never[] });
+  /** Seat 0 with `spell` in hand, a Forest already in its graveyard, and its library topped Bear, Forest, Bear. */
+  const table = (spell: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1038', 1: 'd1038' }, deckSpecs: { d1038: deck.deck },
+      battlefield: { 0: ['Forest'], 1: ['Forest'] }, hands: { 0: [spell] }, graveyard: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const bears = library.filter((id) => nameOf(s, id) === 'Test Bear').slice(0, 2);
+    const forest = library.find((id) => nameOf(s, id) === 'Forest')!;
+    const top = [bears[0]!, forest, bears[1]!];
+    return { s: { ...s, zones: { ...s.zones, '0:library': [...top, ...library.filter((id) => !top.includes(id))] } } as GameState, top };
+  };
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('all three are milled; only the milled land is offered, not the one already there', () => {
+    let { s, top } = table('Test Dig');
+    s = cast(s, 'Test Dig');
+    expect(top.map((id) => s.instances[id]!.zone)).toEqual(['graveyard', 'graveyard', 'graveyard']);
+    expect(s.pendingDecision?.candidates).toEqual([top[1]]);
+    const yes = drain(apply(s, { type: 'auto:decide', by: 0, cards: [top[1]!] } as Action), 30);
+    expect(yes.instances[top[1]!]!.zone).toBe('hand');
+    expect(yes.milledThisWay ?? {}).toEqual({});
+    const no = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 30);
+    expect(no.instances[top[1]!]!.zone).toBe('graveyard');
+  });
+
+  it('without "may", one of the kind is taken', () => {
+    let { s, top } = table('Test Grab');
+    s = cast(s, 'Test Grab');
+    // Two Bears milled: one must be taken, so the question asks for exactly one.
+    expect(s.pendingDecision?.min).toBe(1);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [top[0]!] } as Action), 30);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bear');
+    expect(s.instances[top[1]!]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
