@@ -36076,3 +36076,35 @@ Game 60212 replayed on this build: finished at turn 88 in 1,175 moves, against t
 it was heading for.
 
     engine tests: 5,541, all passing (merged with the other session's D1027)
+
+## D1029 — phase triggers
+
+"Whenever Teferi's Imp phases out, discard a card. Whenever Teferi's Imp phases in, draw a card",
+"Whenever Shimmering Efreet phases in, target creature phases out", "When Ertai's Familiar phases
+out or leaves the battlefield, mill three cards", "Whenever Warping Wurm phases in, put a +1/+1
+counter on it". These complete D1023's phasing.
+
+- `phaseOut` and `phaseIn` record what phased in `GameState.phased` (id and direction), indirect
+  phasing included (CR 702.26g). `settle` drains it and raises `phases-in` / `phases-out` to the
+  permanent itself, in the order it happened. They live below the module that can `raise`, as
+  `transformed` does.
+- A "phases out" trigger looks back in time (CR 603.10a), so the permanent hears it from the
+  phased-out zone, as a creature hears its own death from a graveyard.
+- Prologue rows read "Whenever ~ phases in", "Whenever ~ phases out" and "When ~ phases out or
+  leaves the battlefield".
+- Still unread on these cards: Warping Wurm's "phases out unless you pay {2}{G}{U}", Ertai's
+  Familiar's "can't phase out", and King of the Oathbreakers' "or another Spirit … phases in".
+
+**Tests.** 3 engine tests, plus the two kinds added to the deck-coverage test's compiler-only list:
+- the rows read whole;
+- the Imp phasing out at its untap step loses 1 from the phased-out zone, and a Familiar beside it
+  does not hear it;
+- phasing back in, the gain is on the stack in the upkeep, before any draw, then 3 is gained;
+- out again loses 1;
+- "phases out or leaves the battlefield" fires for a phasing spell.
+
+Faults injected by script: 9 of 9 caught. Two were caught only after the test above was extended: the
+settle loop's condition (a phase event would otherwise wait for an unrelated event to be announced)
+and the self-only watcher list (the matcher trusts it for these kinds).
+
+Coverage: 13,978 of 31,900 cards (+2), 35,138 of 59,888 lines (+5).
