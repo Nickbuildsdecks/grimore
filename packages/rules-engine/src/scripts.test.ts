@@ -29188,6 +29188,52 @@ describe('reconfigure (D775)', () => {
     expect(ch(s, 'Test Lizard').power).toBe(2);
   });
 });
+describe('drawing X, now and owed (D1056)', () => {
+  const ROWS = [
+    { name: 'Test Stroke', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Target player draws X cards.' },
+    { name: 'Test Revelation', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'You gain X life and draw X cards.' },
+    { name: 'Test Study', type_line: 'Sorcery', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Draw X cards. Discard a card.' },
+    { name: 'Test Drake', type_line: 'Creature — Drake', mana_cost: '{X}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'When Test Drake enters, draw X cards.' },
+  ];
+  const deck = customDeck({ id: 'd1056', name: 'Draw X', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string, x: number, target?: Target) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1056', 1: 'd1056' }, deckSpecs: { d1056: deck.deck },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island'], 1: [] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), x, ...(target === undefined ? {} : { targets: [target] }) } as Action)), 30);
+    return { before, s };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an enters trigger draws the X its permanent was cast for', () => {
+    let { before, s } = cast('Test Drake', 2);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    expect(ids(s, 0, 'hand').length).toBe(ids(before, 0, 'hand').length - 1 + 2);
+  });
+
+  it('the target draws X', () => {
+    const { before, s } = cast('Test Stroke', 3, { kind: 'player', seat: 1 });
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length + 3);
+  });
+
+  it('gain X and draw X, and a draw of X before a discard is in hand when the discard asks', () => {
+    const rev = cast('Test Revelation', 2);
+    expect(life(rev.s, 0)).toBe(life(rev.before, 0) + 2);
+    expect(ids(rev.s, 0, 'hand').length).toBe(ids(rev.before, 0, 'hand').length - 1 + 2);
+    // Three, not the two the reading was made with: the "now" draw is re-read with the X paid.
+    const study = cast('Test Study', 3);
+    // The three cards are drawn now, so the discard can choose among them.
+    expect(study.s.pendingDecision?.candidates?.length).toBe(ids(study.before, 0, 'hand').length - 1 + 3);
+  });
+});
+
 describe('saddle (D776)', () => {
   const STEED = { name: 'Test Steed', type_line: 'Creature — Horse Mount', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever this creature attacks while saddled, it gets +2/+2 until end of turn.\nSaddle 1' };
   const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
@@ -29249,6 +29295,40 @@ describe('saddle (D776)', () => {
     expect(characteristicsOf(s, s.instances[steed]!).power).toBe(2);
   });
 });
+describe('a random discard aimed at a player (D1057)', () => {
+  const ROWS = [
+    { name: 'Test Hymn', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target player discards two cards at random.' },
+    { name: 'Test Twist', type_line: 'Instant', mana_cost: '{X}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target player discards X cards at random.' },
+  ];
+  const deck = customDeck({ id: 'd1057', name: 'Random', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[] });
+  const cast = (spell: string, x?: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1057', 1: 'd1057' }, deckSpecs: { d1057: deck.deck },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: [] }, hands: { 0: [spell], 1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'player', seat: 1 }], ...(x === undefined ? {} : { x }) } as Action)), 30);
+    return { before, s };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two at random from the target, with no question asked', () => {
+    const { before, s } = cast('Test Hymn');
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length - 2);
+    expect(ids(s, 1, 'graveyard').length).toBe(ids(before, 1, 'graveyard').length + 2);
+  });
+
+  it('X at random, with the X paid', () => {
+    const { before, s } = cast('Test Twist', 3);
+    expect(ids(s, 1, 'hand').length).toBe(ids(before, 1, 'hand').length - 3);
+  });
+});
+
 describe('"untap it" on its own trigger (D777)', () => {
   const RUNNER = { name: 'Test Runner', type_line: 'Creature — Horse', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever Test Runner attacks, untap it and put a +1/+1 counter on it.' };
   const BOOST = { name: 'Test Boost', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Put a +1/+1 counter on target creature. Untap it.' };
