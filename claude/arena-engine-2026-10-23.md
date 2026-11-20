@@ -35990,6 +35990,34 @@ Faults injected by script: 5 of 5 caught.
 Coverage: unchanged at 13,941 of 31,900 cards and 35,085 of 59,888 lines against 6db1f99. These
 cards' lines were already read; what changed is that they can be cast.
 
+## D1027 — "if you don't control an Ogre" and "the creature with the greatest power"
+
+"At the beginning of your upkeep, you lose 2 life if you don't control an Ogre" (Scourge of Numai,
+and the Oni's "… a Demon"), "draw a card if you control the creature with the greatest power or tied
+for the greatest power" (Triumph of Ferocity), "… toughness" (Abzan Beastmaster), and "… a creature
+with the greatest power among creatures on the battlefield" (High Score). These are conditions that
+D1026's trailing "if" found unread.
+
+- `interveningConditionFor` reads "you don't control a(n) X" as the negation of "you control a(n)
+  X". It reads exactly what that form reads, and nothing else.
+- A new row, "you control the / a creature with the greatest power | toughness [or tied for the
+  greatest … | among creatures on the battlefield]", measures every creature on the battlefield
+  live. One of yours at the most is enough, ties included. With no creatures at all it is false.
+- **A fix to the exclusion that kept "if you do" out.** D742's leading reader refused any condition
+  starting with "you don't", and so did D1026's trailing one. That refused "if you don't control an
+  Ogre" along with the bare "if you don't" it was written for. Both now refuse only the whole phrase.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- the Ogre-less upkeep loses 2 and the upkeep with an Ogre loses nothing;
+- the leading spell form gains only without an Ogre;
+- the greatest-power draw comes on a tie, not when their 6/6 is bigger, and not with no creatures.
+
+Faults injected by script: 6. 5 are caught; the 6th was an empty-board check that `some` already
+answers, and it was folded away.
+
+Coverage: 13,966 of 31,900 cards (+8), 35,118 of 59,888 lines (+9).
+
 ## D768 — The bot stops buying regeneration shields it has no use for
 
 Found while re-measuring the beta number. One pod (seed 60212) ran more than 25 minutes: two
@@ -36016,4 +36044,4 @@ Faults injected by script: 3 of 3 caught.
 Game 60212 replayed on this build: finished at turn 88 in 1,175 moves, against the 20,000-move cap
 it was heading for.
 
-    engine tests: 5,538, all passing (with the other session's latest merged)
+    engine tests: 5,541, all passing (merged with the other session's D1027)
