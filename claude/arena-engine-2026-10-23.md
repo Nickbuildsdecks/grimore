@@ -36406,3 +36406,40 @@ Faults injected by script: 7 of 7 caught.
 
 Coverage: 14,101 to 14,110 of 31,900 cards with every line read, and 35,323 to 35,332 of 59,888
 lines, against 5d43a1a.
+
+## D1037 — counters on each of a set, and on the host
+
+New shapes read:
+- "Put a +1/+1 counter on each creature you control with a +1/+1 counter on it";
+- "… on each creature target player controls";
+- "Put two +1/+1 counters on each other creature you control";
+- "Put a -1/-1 counter on each creature";
+- "When ~ enters, put two +1/+1 counters on each other Elf you control";
+- "At the beginning of your upkeep, put a +1/+1 counter on enchanted creature" and the same on
+  equipped creature.
+
+- **Counters on each.** "each <creature or Tribe> [you control | target player controls | your
+  opponents control]" is the plural set the team pump already reads (`massPumpSubject`, D769's
+  kinds included), so the sets are the same ones, taken as the clause resolves. "with a <kind>
+  counter on it" narrows them. Any count, and the kinds the target reader knows: +1/+1, -1/-1, stun,
+  shield and the keyword counters. The single +1/+1 or -1/-1 counter over a board scope is read
+  earlier, by the older `eachCounter` reader; this one adds counts above one, the other kinds, the
+  counter filter and "target player controls".
+- **On the host.** "Put <count> <kind> counter(s) on enchanted / equipped creature": the permanent
+  the source is attached to, or nothing if it is attached to nothing.
+
+**Tests.** 5 engine tests:
+- the rows read whole;
+- "with a +1/+1 counter on it" reaches only your creatures that have one;
+- two counters on each other creature of yours and none of theirs;
+- a -1/-1 counter on each of the target player's creatures;
+- "each other Elf" leaves out the creature itself and the non-Elf;
+- the Aura's upkeep trigger puts the counter on the enchanted creature.
+
+Three refusal rows in compile.test.ts (D453's "a condition on the permanents" and "a controller said as a target", and the Aura-host row) are now notes pointing at these tests.
+
+Faults injected by script: 6 of 6 caught. The "other" fault was caught only after the creature row
+was moved to the plural count, because the single-counter form is the older reader's.
+
+Coverage: 14,142 of 31,900 cards (+23), 35,376 of 59,888 lines (+35), measured against the merged
+tree with the other session's D770 (14,119 / 35,341).
