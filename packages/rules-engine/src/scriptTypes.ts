@@ -2896,6 +2896,13 @@ export interface CardScript {
    * nothing has no use the engine models.
    */
   readonly mayStayTapped?: true;
+  /**
+   * "If ~ is in your opening hand, you may begin the game with it on the battlefield" (D778, CR
+   * 103.6): the Leylines. Put onto the battlefield after mulligans and before the first turn, in
+   * turn order. Always taken: a player who did not want it there would not have kept it in a deck
+   * built around it, and there is no decline yet.
+   */
+  readonly beginsInPlay?: true;
   /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
   /** "Choose one —". See `ModalDef`. */

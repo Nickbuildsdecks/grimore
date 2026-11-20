@@ -12,9 +12,9 @@ Standard, Pioneer, Modern, Legacy, Vintage, Pauper or Commander, un-cards exclud
 | | Cards | |
 |---|---|---|
 | Legal single-faced cards measured | 31,900 | |
-| **Fully automated**: every printed line read | **14,376** | 45.1% |
+| **Fully automated**: every printed line read | **14,405** | 45.2% |
 | At least partly automated | about 18,600 | 58% |
-| Rules lines read | 35,820 of 59,888 | 59.8% |
+| Rules lines read | 35,866 of 59,888 | 59.9% |
 | Commander staples fully automated | 243 of 244 | Castle Garenbrig is the one left |
 
 "Partly automated" means the card is cast and played for the lines the engine reads, and carries a
@@ -58,6 +58,8 @@ for a while and then slows. The sweep harness now ends such a game as `runaway-b
 - **D775 Reconfigure**: 18 of the 21 cards.
 - **D776 Saddle**: all 32 Mounts.
 - **D777**: "untap it" on a permanent's own trigger.
+- **D778 Leylines**: one in an opening hand begins the game on the battlefield (always; there is
+  no decline yet).
 
 ## Before testers sit down: Nick's decisions
 

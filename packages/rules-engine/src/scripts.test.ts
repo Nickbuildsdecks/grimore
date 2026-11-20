@@ -7990,6 +7990,8 @@ describe('deck coverage', () => {
       'script ascend',
       // D1041: "you may choose not to untap ~" (Helm of Possession); no pool deck plays one.
       'script mayStayTapped',
+      // D778: the Leylines' opening-hand rule; no pool deck plays one.
+      'script beginsInPlay',
     ]);
 
     const declared = [
@@ -29387,6 +29389,44 @@ describe('"untap it" on its own trigger (D777)', () => {
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Boost'), targets: [{ kind: 'card', id: ox }] })));
     expect(s.instances[ox]!.tapped).toBe(false);
     expect(s.instances[ox]!.counters['+1/+1']).toBe(1);
+  });
+});
+describe('a Leyline begins the game on the battlefield (D778)', () => {
+  const LEYLINE = { name: 'Test Leyline', type_line: 'Enchantment', mana_cost: '{2}{W}{W}', cmc: 4, colors: ['W'], layout: 'normal', oracle_text: 'If Test Leyline is in your opening hand, you may begin the game with it on the battlefield.\nCreatures you control get +0/+1.' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd778', name: 'Leyline',
+    entries: [{ name: 'Test Leyline', count: 4 }, { name: 'Test Ox', count: 4 }, { name: 'Plains', count: 52 }],
+    data: [LEYLINE, OX] as never[],
+  });
+  const start = (hands: Record<number, string[]>, battlefield: Record<number, string[]> = {}) => arena({
+    decks: { 0: 'd778', 1: 'd778' }, deckSpecs: { d778: deck.deck }, hands, battlefield, firstSeat: 0,
+  });
+
+  it('reads', () => {
+    expect(compileCard(LEYLINE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('in an opening hand, it is on the battlefield before the first turn, and its static applies', () => {
+    const s = start({ 0: ['Test Leyline', 'Test Ox'] }, { 0: ['Test Ox'] });
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Leyline');
+    expect(namesIn(s, 0, 'hand')).toEqual(['Test Ox']);
+    expect(characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Ox')]!).toughness).toBe(3);
+  });
+
+  it('each player puts their own, two at once included', () => {
+    const s = start({ 0: ['Test Leyline', 'Test Leyline'], 1: ['Test Leyline'] });
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Leyline')).toHaveLength(2);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Leyline');
+  });
+
+  it('drawn later, it is an ordinary card in hand', () => {
+    let s = start({});
+    s = { ...s };
+    const id = find(s, 0, 'library', 'Test Leyline');
+    s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'hand' });
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[id]!.zone).toBe('hand');
   });
 });
 describe('the tenth deck: the life total that goes up', () => {

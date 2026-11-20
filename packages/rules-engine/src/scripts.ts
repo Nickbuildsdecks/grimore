@@ -31945,6 +31945,10 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
 }
 
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  // The Leylines (D778): see `CardScript.beginsInPlay`.
+  if (new RegExp(`^if (?:${selfRef(name)}|this card) is in your opening hand, you may begin the game with it on the battlefield\\.?$`, 'i').test(plain(line).trim())) {
+    return { beginsInPlay: true };
+  }
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)
     /*

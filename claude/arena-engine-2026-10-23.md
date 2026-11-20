@@ -37230,3 +37230,33 @@ lines, against 8c346b0.
 Also in this commit: `claude/play-realm-setup.md` no longer says the engine knows 348 cards (its
 introduction and *What is not done* predated the compiler and D459), and
 `claude/beta-readiness-2026-11-20.md` is the checkpoint for moving to human testing.
+
+## D778 — Leylines begin the game on the battlefield
+
+"If ~ is in your opening hand, you may begin the game with it on the battlefield" (CR 103.6): Leyline
+of the Void, of Sanctity, of the Meek and the rest, 17 legal cards and Modern and Commander staples.
+The line was unread, so a Leyline in an opening hand stayed there.
+
+- `lineScriptFor` reads the line as `CardScript.beginsInPlay`.
+- `beginFirstTurn` (`autoActions.ts`), after every player has kept and before the first turn: each
+  player in turn order, starting with the first, puts the ones in their opening hand onto the
+  battlefield. Their statics apply from there.
+- **Always taken.** The rule says "may", and there is no decline yet. A deck holding a Leyline wants
+  it in play; the case for keeping one in hand is narrow.
+
+Several Leylines print a second line the engine does not read yet (Leyline of Sanctity's "You have
+hexproof", Leyline of Punishment's "Players can't gain life"), so they begin on the battlefield and
+carry a badge for that line.
+
+**Tests.** 4 engine tests: the card reads; in an opening hand it is on the battlefield before the
+first turn and its +0/+1 applies; each player puts their own, two at once included; drawn later it is
+an ordinary card in hand.
+
+Faults injected by script: 3 of 3 caught.
+
+The deck-coverage test lists `script beginsInPlay` with the other compiler-only fields.
+
+    engine tests: 5,680, all passing (on 4be3ebc)
+
+Coverage: 14,401 to 14,405 of 31,900 cards with every line read, and 35,849 to 35,866 of 59,888
+lines, against 4be3ebc.
