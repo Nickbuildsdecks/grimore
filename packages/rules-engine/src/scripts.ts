@@ -28189,6 +28189,26 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
 }
 
 /**
+ * A creature land's animation with a sentence after it (D1050): Creeping Tar Pit's "Until end of turn,
+ * this land becomes a 3/2 blue and black Elemental creature. It's still a land. It can't be blocked
+ * this turn." The animation as `animateSelf` reads it, then the rest with "it" as the land itself,
+ * applied to the animated land. The rest may not ask anything or aim at anything: a target or a
+ * question would belong to the whole ability, which this does not build.
+ */
+function animateThen(clause: string, name: string): ReadEffect | null {
+  const split = /^(.*?it['’]s still a land)\.\s+(.+)$/i.exec(plain(clause).trim());
+  if (split === null) return null;
+  const animation = animateSelf(split[1]!, name);
+  if (animation === null || animation.targets !== undefined || animation.cardFields !== undefined) return null;
+  const rest = composeEffects(clausesOf(split[2]!.replace(/^it\b/i, name)), name, 'battlefield');
+  if (rest === null || rest.targets !== undefined || rest.decisions !== undefined || rest.beforeDecisions !== undefined) return null;
+  return {
+    ...(animation.abilityFlags === undefined ? {} : { abilityFlags: animation.abilityFlags }),
+    effect: (c) => rest.effect({ ...c, state: animation.effect(c) }),
+  };
+}
+
+/**
  * The trailing "Activate only …" sentence of an activated-ability line, split off from the effect.
  *
  * Returns the rest of the line and the flags the restriction sets, or `null` when the sentence is
@@ -28974,6 +28994,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   // A sacrifice in the cost is what makes "the sacrificed creature's power" a number (D586).
   const read = withSacrificeInCost(sacrifices !== null, () => outOfTheGraveyard
     ?? animateSelf(clause, name)
+    ?? animateThen(clause, name)
     ?? composeEffects(clausesOf(clause), name, 'battlefield')
     /*
       **A "you may" an activated ability offers** (D525) — "{T}: You may put a creature card from

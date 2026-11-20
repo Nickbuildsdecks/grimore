@@ -28715,6 +28715,45 @@ describe('a creature land with a quoted ability (D1049)', () => {
   });
 });
 
+describe('a creature land with a sentence after the animation (D1050)', () => {
+  const ROWS = [
+    { name: 'Test Pit', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: "{T}: Add {U}.\n{0}: Until end of turn, Test Pit becomes a 3/2 blue and black Elemental creature. It's still a land. It can't be blocked this turn." },
+  ];
+  const deck = customDeck({ id: 'd1050', name: 'Pit', entries: [{ name: 'Test Pit', count: 4 }, { name: 'Island', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a sentence that aims at something is left to the ordinary reading, which keeps the target', () => {
+    const AIMED = [{ ...ROWS[0]!, oracle_text: "{T}: Add {U}.\n{0}: Until end of turn, Test Pit becomes a 3/2 Elemental creature. It's still a land. Tap target creature." },
+      { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' }];
+    const aimedDeck = customDeck({ id: 'd1050b', name: 'Pit aimed', entries: [{ name: 'Test Pit', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Island', count: 52 }], data: AIMED as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1050b', 1: 'd1050b' }, deckSpecs: { d1050b: aimedDeck.deck },
+      battlefield: { 0: ['Test Pit'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pit'), abilityIndex: 1, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bear]!.tapped).toBe(true);
+  });
+
+  it('a 3/2 that is still a land and cannot be blocked, for the turn', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1050', 1: 'd1050' }, deckSpecs: { d1050: deck.deck },
+      battlefield: { 0: ['Test Pit'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const pit = find(s, 0, 'battlefield', 'Test Pit');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: pit, abilityIndex: 1 } as Action)), 30);
+    const ch = characteristicsOf(s, s.instances[pit]!);
+    expect([ch.power, ch.toughness, hasType(ch.typeLine, 'land'), ch.cantBeBlocked]).toEqual([3, 2, true, true]);
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[pit]!).cantBeBlocked).toBeFalsy();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
