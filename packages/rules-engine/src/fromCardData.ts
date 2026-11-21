@@ -192,6 +192,8 @@ export function intrinsicManaAbilities(subtypes: readonly string[]): readonly Ab
 
 /** The abilities that read "a land an opponent controls could produce" (D681). */
 const READS_OPPONENT_LANDS = new WeakSet<AbilityDef>();
+/** The abilities that read "a land you control could produce" (D1085). */
+const READS_OWN_LANDS = new WeakSet<AbilityDef>();
 /**
  * The printed colours of the cards in exile imprinted on this permanent (D717,
  * `CardInstance.imprintedOn`): Chrome Mox's "any of the exiled card's colors". Only an imprint
@@ -205,6 +207,28 @@ export function imprintedColours(state: GameState, source: string): ReadonlySet<
     const inst = state.instances[id]!;
     if (inst.zone !== 'exile' || inst.imprintedOn?.id !== source || inst.imprintedOn.seq !== seq) continue;
     for (const colour of state.cardDefs[inst.defKey]?.colors ?? []) out.add(colour as ManaType);
+  }
+  return out;
+}
+
+/**
+ * The colours among the legendary permanents this seat controls (D1086): Mox Amber's "legendary
+ * creatures and planeswalkers", Plaza of Heroes' "legendary permanents". Live characteristics, so a
+ * permanent an effect has made legendary, or recoloured, counts as it is now. Colourless is not a
+ * colour, so a legendary artifact alone (Mox Amber itself) gives nothing.
+ */
+export function legendaryColours(
+  state: GameState, seat: SeatIndex, among: 'creatures-planeswalkers' | 'permanents',
+): ReadonlySet<ManaType> {
+  const out = new Set<ManaType>();
+  for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary')) continue;
+    if (among === 'creatures-planeswalkers' && !ch.isCreature
+      && !ch.typeLine.types.some((t) => t.toLowerCase() === 'planeswalker')) continue;
+    for (const colour of ch.colors) out.add(colour);
   }
   return out;
 }
@@ -226,23 +250,52 @@ export function opponentLandColours(state: GameState, seat: SeatIndex): Readonly
   if (known !== undefined) return known;
   const out = new Set<ManaType>();
   bySeat.set(seat, out);
-  for (const other of opponentsOf(state, seat)) {
-    for (const id of state.zones[zoneKey(other, 'battlefield')] ?? []) {
-      const inst = state.instances[id];
-      if (inst === undefined) continue;
-      const ch = characteristicsOf(state, inst);
-      if (!ch.isLand) continue;
-      const abilities = [
-        ...(scriptForCard(state.cardDefs[inst.defKey])?.abilities ?? []),
-        ...intrinsicManaAbilities(ch.typeLine.subtypes),
-      ];
-      for (const ability of abilities) {
-        if (ability.produces === undefined || READS_OPPONENT_LANDS.has(ability)) continue;
-        if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, other)) continue;
-        for (const t of ability.produces) if (t !== 'C') out.add(t);
-      }
+  for (const other of opponentsOf(state, seat)) landManaInto(state, other, READS_OPPONENT_LANDS, out);
+  out.delete('C');
+  return out;
+}
+
+/**
+ * Every type of mana the lands `seat` controls could produce, added to `out`: the question both
+ * `opponentLandColours` and `ownLandTypes` ask, of different seats. An ability in `sameKind` is
+ * skipped (CR 106.7), which is also what keeps two such lands from asking each other forever.
+ */
+function landManaInto(state: GameState, seat: SeatIndex, sameKind: WeakSet<AbilityDef>, out: Set<ManaType>): void {
+  for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isLand) continue;
+    const abilities = [
+      ...(scriptForCard(state.cardDefs[inst.defKey])?.abilities ?? []),
+      ...intrinsicManaAbilities(ch.typeLine.subtypes),
+    ];
+    for (const ability of abilities) {
+      if (ability.produces === undefined || sameKind.has(ability)) continue;
+      if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
+      for (const t of ability.produces) out.add(t);
     }
   }
+}
+
+const OWN_LAND_TYPES = new WeakMap<GameState, Map<SeatIndex, Set<ManaType>>>();
+
+/**
+ * The types of mana the lands this seat controls could produce (D1085): Reflecting Pool, Naga
+ * Vitalist, Incubation Druid, Horizon of Progress, and Harvester Druid's colour-only version. The
+ * same question `opponentLandColours` asks, of your own side, and colourless is a type, so a Wastes
+ * gives a Reflecting Pool {C}. Its own ability and any other of its kind are ignored, so a
+ * Reflecting Pool beside nothing but another Reflecting Pool makes nothing (CR 106.7). An Exotic
+ * Orchard of yours counts for what it could make, which is the opponents' colours.
+ */
+export function ownLandTypes(state: GameState, seat: SeatIndex): ReadonlySet<ManaType> {
+  let bySeat = OWN_LAND_TYPES.get(state);
+  if (bySeat === undefined) OWN_LAND_TYPES.set(state, bySeat = new Map());
+  const known = bySeat.get(seat);
+  if (known !== undefined) return known;
+  const out = new Set<ManaType>();
+  bySeat.set(seat, out);
+  landManaInto(state, seat, READS_OWN_LANDS, out);
   return out;
 }
 
@@ -393,6 +446,17 @@ interface ManaLine {
    * that could make that colour. See `opponentLandColours`.
    */
   readonly opponentLands?: true;
+  /**
+   * "…one mana of any type (or color) that a land you control could produce" (D1085): Reflecting
+   * Pool and its kin. Each type's ability is offered only while a land you control could make it.
+   * See `ownLandTypes`.
+   */
+  readonly ownLands?: true;
+  /**
+   * "…one mana of any color among legendary creatures and planeswalkers / legendary permanents you
+   * control" (D1086): Mox Amber, Plaza of Heroes. See `legendaryColours`.
+   */
+  readonly legendaryAmong?: 'creatures-planeswalkers' | 'permanents';
   /**
    * "…one mana of the chosen color" (D642): each colour's ability is offered only while that is the
    * colour the permanent chose as it entered (`CardInstance.chosen`). `fixed` is the colour printed
@@ -802,6 +866,18 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
+  // Reflecting Pool (D1085): "type" counts colourless, "color" does not.
+  const ownLandsLine = /^one\s+mana\s+of\s+any\s+(type|colou?r)\s+that\s+a\s+land\s+you\s+control\s+could\s+produce$/i.exec(body);
+  if (ownLandsLine !== null) {
+    const produces: readonly ManaType[] = ownLandsLine[1]!.toLowerCase() === 'type' ? [...COLOURS, 'C'] : COLOURS;
+    return { mode: 'choice', produces, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ownLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
+  // Mox Amber and Plaza of Heroes (D1086).
+  const legendaryLine = /^one\s+mana\s+of\s+any\s+colou?r\s+among\s+legendary\s+(creatures\s+and\s+planeswalkers|permanents)\s+you\s+control$/i.exec(body);
+  if (legendaryLine !== null) {
+    const legendaryAmong = legendaryLine[1]!.toLowerCase() === 'permanents' ? 'permanents' as const : 'creatures-planeswalkers' as const;
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), legendaryAmong, ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
     return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
@@ -873,6 +949,17 @@ function tapAbilities(
       READS_OPPONENT_LANDS.add(ability);
       return ability;
     }
+    if (line?.ownLands === true) {
+      const ability: AbilityDef = {
+        cost,
+        description: `${printed}: Add {${type}}.${spentOn(line.spendOnly)}`,
+        produces: [type],
+        ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
+        activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => ownLandTypes(state, controller).has(type),
+      };
+      READS_OWN_LANDS.add(ability);
+      return ability;
+    }
     return {
       cost,
       description: `${printed}: Add {${type}}.${hurtsYou(damage)}${staysDown(line?.freezes)}${gainsLife(line?.gains)}${spentOn(line?.spendOnly)}${line?.onlyIfWords === undefined ? '' : ` ${line.onlyIfWords}.`}`,
@@ -888,6 +975,10 @@ function tapAbilities(
       ...(line?.imprinted === true
         ? { activateOnlyIf: (state: GameState, source: string) => imprintedColours(state, source).has(type) }
         : {}),
+      ...(line?.legendaryAmong === undefined ? {} : (() => {
+        const among = line.legendaryAmong;
+        return { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => legendaryColours(state, controller, among).has(type) };
+      })()),
       // A printed condition (D921). No line prints it beside the three above, so it stands alone.
       ...(line?.onlyIf === undefined ? {} : { activateOnlyIf: line.onlyIf }),
     };

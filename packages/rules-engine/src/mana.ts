@@ -363,6 +363,11 @@ export interface ManaSource {
    */
   readonly chooseRun?: number;
   /**
+   * With `choose`: mana every tap adds beside the colour chosen (D1088) — a dual land under a Wild
+   * Growth makes one of its colours **and** {G}. A source that is not a choice has it in `produces`.
+   */
+  readonly extra?: readonly ManaType[];
+  /**
    * Life the tap costs, for a land that charges you for the colour.
    *
    * The solver does not weigh it — it only carries it through to the pick, so whoever taps the
@@ -524,7 +529,7 @@ function snowMade(source: ManaSource, wanted: readonly ManaType[]): ManaType[] {
   if (source.choose !== true) return [...source.produces];
   // A choice source makes a colour the rest of the cost does not ask for, when it can.
   const type = source.produces.find((t) => !wanted.includes(t)) ?? source.produces[0]!;
-  return Array.from({ length: source.chooseRun ?? 1 }, () => type);
+  return [...Array.from({ length: source.chooseRun ?? 1 }, () => type), ...(source.extra ?? [])];
 }
 
 /**
@@ -601,7 +606,7 @@ function solvePlain(
       let best = Number.POSITIVE_INFINITY;
       for (let i = 0; i < left.length; i++) {
         const source = left[i]!;
-        const useful = source.produces.find((t) => short.includes(t));
+        const useful = source.produces.find((t) => short.includes(t)) ?? source.extra?.find((t) => short.includes(t));
         if (useful === undefined) continue;
         if (source.produces.length < best) {
           best = source.produces.length;
@@ -628,7 +633,8 @@ function solvePlain(
       let best = -1;
       let bestSize = 0;
       for (let i = 0; i < left.length; i++) {
-        const size = left[i]!.choose === true ? left[i]!.chooseRun ?? 1 : left[i]!.produces.length;
+        const size = left[i]!.choose === true
+          ? (left[i]!.chooseRun ?? 1) + (left[i]!.extra?.length ?? 0) : left[i]!.produces.length;
         const fits = size <= short;
         const better = best < 0
           || (fits && (bestSize > short || size > bestSize))
@@ -643,8 +649,10 @@ function solvePlain(
     }
     const source = left.splice(index, 1)[0]!;
     // A choice source adds the one colour it was tapped for; anything else adds all of its mana.
+    // A colour wanted from the extra mana (D1088) leaves the choice free: its first colour.
+    const picked = wanted !== null && source.produces.includes(wanted) ? wanted : source.produces[0]!;
     const types = source.choose === true
-      ? Array.from({ length: source.chooseRun ?? 1 }, () => wanted ?? source.produces[0]!)
+      ? [...Array.from({ length: source.chooseRun ?? 1 }, () => picked), ...(source.extra ?? [])]
       : source.produces;
     for (const type of types) working = addMana(working, type, 1);
     chosen.push({

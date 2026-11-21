@@ -615,6 +615,8 @@ interface ManaSourceEntry {
    */
   readonly grantedBy?: GrantedTriggerRef;
   readonly choose?: boolean;
+  /** With `choose`: mana every tap adds beside the choice (D1088). See `ManaSource.extra`. */
+  readonly extra?: readonly ManaType[];
   /** Life the tap costs, for a land that charges you for the colour. */
   readonly life?: number;
   /** Using it sacrifices it: a Treasure, which makes one mana once. See `ManaSource.sacrifices`. */
@@ -1167,6 +1169,62 @@ export function attackTaxFor(
   return attacks.reduce((total, a) => total + (a.planeswalker === undefined ? taxOf(a.defender) : 0), 0);
 }
 
+/** The permanents on the battlefield with a `tapManaExtra` (D1088), found once per state. */
+const TAP_WATCHERS = new WeakMap<GameState, readonly CardInstance[]>();
+
+function tapWatchers(state: GameState): readonly CardInstance[] {
+  const known = TAP_WATCHERS.get(state);
+  if (known !== undefined) return known;
+  const out: CardInstance[] = [];
+  for (let seat = 0; seat < state.seats.length; seat++) {
+    for (const id of listAt(state, zoneKey(seat as SeatIndex, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst)) continue;
+      if (scriptForCard(state.cardDefs[inst.defKey])?.tapManaExtra === undefined) continue;
+      out.push(inst);
+    }
+  }
+  TAP_WATCHERS.set(state, out);
+  return out;
+}
+
+/**
+ * The extra mana tapping `tapped` for mana adds (D1088, CR 605.1b): each Wild Growth on it, each
+ * Crypt Ghast of its controller's when it is a Swamp. Empty when nothing watches it. A watcher whose
+ * abilities are gone adds nothing, and one that chose no colour adds nothing for "the chosen color".
+ */
+export function tapManaExtras(state: GameState, tapped: string): readonly ManaType[] {
+  const watchers = tapWatchers(state);
+  if (watchers.length === 0) return [];
+  const target = state.instances[tapped];
+  if (target === undefined || target.zone !== 'battlefield') return [];
+  const out: ManaType[] = [];
+  let ch: ReturnType<typeof characteristicsOf> | undefined;
+  for (const watcher of watchers) {
+    const extra = scriptForCard(state.cardDefs[watcher.defKey])!.tapManaExtra!;
+    if (extra.watches === 'enchanted') {
+      if (watcher.attachedTo !== tapped) continue;
+    } else {
+      if (watcher.zoneSeat !== target.zoneSeat) continue;
+      ch ??= characteristicsOf(state, target);
+      const kind = extra.watches.yours;
+      const fits = kind === 'land' ? ch.isLand
+        : kind === 'creature' ? ch.isCreature
+          : kind === 'land creature' ? ch.isLand && ch.isCreature
+            : ch.typeLine.subtypes.some((s) => s.toLowerCase() === kind.subtype.toLowerCase());
+      if (!fits) continue;
+    }
+    if (allAbilitiesLost(state, watcher)) continue;
+    if (extra.adds === 'chosen') {
+      const colour = watcher.chosen?.color;
+      if (colour !== undefined) out.push(colour as ManaType);
+    } else {
+      out.push(...extra.adds);
+    }
+  }
+  return out;
+}
+
 export function manaSources(
   state: GameState, seat: SeatIndex,
   /**
@@ -1230,7 +1288,7 @@ export function manaSources(
     ];
     let usable: {
       index: number; produces: readonly ManaType[]; life: number; energy: number; sacrifices: boolean;
-      grantedBy?: GrantedTriggerRef; restricted?: true;
+      grantedBy?: GrantedTriggerRef; restricted?: true; taps: boolean;
     }[] = [];
     for (const { ability, index: i, grantedBy } of abilities) {
       if (ability.produces === undefined || ability.produces.length === 0) continue;
@@ -1308,6 +1366,7 @@ export function manaSources(
         life: cost,
         energy: energyCost,
         sacrifices: ability.cost.sacrificeSelf === true,
+        taps: ability.cost.tap === true,
         // Which card defines it, so `index` is never an ambiguous number: a granted ability's
         // index is a position in the grantor's table. See `ManaSourceEntry.grantedBy`.
         ...(grantedBy === undefined ? {} : { grantedBy }),
@@ -1362,12 +1421,14 @@ export function manaSources(
     // A snow permanent's mana may pay `{S}` (D769).
     const snowy = characteristicsOf(state, inst).typeLine.supertypes.some((t) => t.toLowerCase() === 'snow')
       ? { snow: true as const } : {};
+    // What a Wild Growth on it adds to every tap (D1088): part of the sum, or beside the choice.
+    const extra = usable.every((u) => u.taps) ? tapManaExtras(state, id) : [];
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
     if (usable.length === 1) {
       bucket.push({
-        key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index,
+        key: id, produces: [...usable[0]!.produces, ...extra], abilityIndex: usable[0]!.index,
         ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
         ...(usable[0]!.restricted === true ? { restricted: true as const } : {}),
         ...(cost > 0 ? { life: cost } : {}),
@@ -1390,6 +1451,7 @@ export function manaSources(
       abilityIndex: usable[0]!.index,
       ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
       choose: true,
+      ...(extra.length > 0 ? { extra } : {}),
       ...(cost > 0 ? { life: cost } : {}),
       ...(eats ? { sacrifices: true } : {}),
       ...snowy,
@@ -1414,6 +1476,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
+    let tapsForMana = false;
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
     // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
     if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
@@ -1451,7 +1514,10 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       const life = ability.cost.life ?? 0;
       if (!canPayLife(state, seat, life)) continue;
       for (const type of producedBy(state, ability, id, seat)) pool = addMana(pool, type as ManaType, 1);
+      if (ability.cost.tap) tapsForMana = true;
     }
+    // A Wild Growth's mana, once for the one tap (D1088).
+    if (tapsForMana) for (const type of tapManaExtras(state, id)) pool = addMana(pool, type, 1);
   }
   return pool;
 }

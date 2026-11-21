@@ -40,10 +40,10 @@ import {
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
-import { costChangeFor } from './legalActions.js';
-import { reducedCostText } from './mana.js';
+import { costChangeFor, tapManaExtras } from './legalActions.js';
+import { canAfford, reducedCostText, solveTap } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
-import { opponentLandColours } from './fromCardData.js';
+import { opponentLandColours, ownLandTypes, legendaryColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { StackObject, Step, Target } from './turnTypes.js';
@@ -7994,6 +7994,8 @@ describe('deck coverage', () => {
       'script beginsInPlay',
       // D780: the attack tax (Propaganda, Ghostly Prison); no pool deck plays one.
       'script attackTax',
+      // D1088: mana added on a tap for mana (Wild Growth, Crypt Ghast); no pool deck plays one.
+      'script tapManaExtra',
     ]);
 
     const declared = [
@@ -31517,6 +31519,239 @@ describe('casting limits: Rule of Law, Deafening Silence, Teferi, Grand Abolishe
     const s = table([], { 0: ['Test Ponder'], 1: ['Test Ponder'] }, ['Test Dosan']);
     expect(tryCast(theirPriority(s), 1, 'Test Ponder')).toMatch(/only during your own turn/);
     expect(tryCast(s, 0, 'Test Ponder')).toBe('');
+  });
+});
+
+describe('mana of any type a land you control could produce (D1085)', () => {
+  /*
+    Reflecting Pool and its kin: one ability per type, each offered only while a land you control
+    could make it. "Type" includes colourless, "color" does not; tapped lands count; a creature
+    that makes mana does not; two Pools ignore each other (CR 106.7).
+  */
+  const POOL = { name: 'Test Pool', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add one mana of any type that a land you control could produce.' };
+  const DRUID = { name: 'Test Harvester', type_line: 'Creature — Elf Druid', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{T}: Add one mana of any color that a land you control could produce.' };
+  const WASTE = { name: 'Test Waste', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add {C}.' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf Druid', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{T}: Add {B}.' };
+  const ROWS = [POOL, DRUID, WASTE, ELF];
+  const deck = customDeck({
+    id: 'pools', name: 'Pools',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 46 }, { name: 'Forest', count: 4 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = ['Forest']): GameState => advanceTo(arena({
+    decks: { 0: 'pools', 1: 'pools' }, deckSpecs: { pools: deck.deck },
+    battlefield: { 0: ['Test Pool', 'Test Harvester', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const types = (s: GameState, name: string): string[] => manaSources(s, 0)
+    .filter((source) => source.key === find(s, 0, 'battlefield', name))
+    .flatMap((source) => [...source.produces]).sort();
+
+  it('reads the line whole, both wordings', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [POOL, DRUID]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('makes what your lands could make, tapped or not; colourless only for "type"', () => {
+    const base = table(['Island', 'Test Waste', 'Forest']);
+    const forest = find(base, 0, 'battlefield', 'Forest');
+    const s = { ...base, instances: { ...base.instances, [forest]: { ...base.instances[forest]!, tapped: true } } };
+    expect(ownLandTypes(s, 0)).toEqual(new Set(['C', 'G', 'U']));
+    expect(types(s, 'Test Pool')).toEqual(['C', 'G', 'U']);
+    expect(types(s, 'Test Harvester')).toEqual(['G', 'U']);
+  });
+
+  it('nothing from an opponent\'s lands, a creature that makes mana, or another Pool', () => {
+    expect(types(table([], ['Island', 'Forest']), 'Test Pool')).toEqual([]);
+    expect(types(table(['Test Elf']), 'Test Pool')).toEqual([]);
+    expect(types(table(['Test Pool']), 'Test Pool')).toEqual([]);
+    const lonely = table([]);
+    const pool = find(lonely, 0, 'battlefield', 'Test Pool');
+    expect(legalActions(lonely, 0).plays.some((p) => p.card === pool)).toBe(false);
+  });
+});
+
+describe('mana of any color among legendary permanents you control (D1086)', () => {
+  /*
+    Mox Amber and Plaza of Heroes: one ability per colour, each offered only while you control a
+    legendary permanent of that colour (a creature or planeswalker, for the Mox). A colourless one
+    gives nothing; an opponent's gives nothing.
+  */
+  const MOX = { name: 'Test Mox', type_line: 'Legendary Artifact', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add one mana of any color among legendary creatures and planeswalkers you control.' };
+  const PLAZA = { name: 'Test Plaza', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add one mana of any color among legendary permanents you control.' };
+  const HERO = { name: 'Test Hero', type_line: 'Legendary Creature — Human', mana_cost: '{W}{U}', cmc: 2, colors: ['W', 'U'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const SHRINE = { name: 'Test Shrine', type_line: 'Legendary Enchantment — Shrine', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: '' };
+  const ROWS = [MOX, PLAZA, HERO, SHRINE];
+  const deck = customDeck({
+    id: 'moxen', name: 'Moxen',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'moxen', 1: 'moxen' }, deckSpecs: { moxen: deck.deck },
+    battlefield: { 0: ['Test Mox', 'Test Plaza', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const colours = (s: GameState, name: string): string[] => manaSources(s, 0)
+    .filter((source) => source.key === find(s, 0, 'battlefield', name))
+    .flatMap((source) => [...source.produces]).sort();
+
+  it('reads both wordings whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [MOX, PLAZA]) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+    }
+  });
+
+  it('a legendary creature\'s colours for both; a legendary enchantment\'s for the Plaza only', () => {
+    const s = table(['Test Hero', 'Test Shrine']);
+    expect(colours(s, 'Test Mox')).toEqual(['U', 'W']);
+    expect(colours(s, 'Test Plaza')).toEqual(['R', 'U', 'W']);
+    expect(legendaryColours(s, 0, 'permanents')).toEqual(new Set(['R', 'U', 'W']));
+  });
+
+  it('nothing from itself, an opponent\'s legend, or a legend that is gone', () => {
+    const alone = table([], ['Test Hero']);
+    expect(colours(alone, 'Test Mox')).toEqual([]);
+    expect(colours(alone, 'Test Plaza')).toEqual([]);
+    const mox = find(alone, 0, 'battlefield', 'Test Mox');
+    expect(legalActions(alone, 0).plays.some((p) => p.card === mox)).toBe(false);
+  });
+});
+
+describe('an Equipment that attaches to a legendary creature as it enters (D1087)', () => {
+  // Mithril Coat and Mjolnir: the D972 attach, offered only legendary creatures you control.
+  const ROWS = [
+    { name: 'Test Coat', type_line: 'Artifact — Equipment', oracle_text: 'When Test Coat enters, attach it to target legendary creature you control.\nEquipped creature gets +0/+3.\nEquip {3}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Hero', type_line: 'Legendary Creature — Human', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1087', name: 'Arrives on a legend',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const enter = (mine: string[], aimAt: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1087', 1: 'd1087' }, deckSpecs: { d1087: deck.deck }, hands: { 0: ['Test Coat'] },
+      battlefield: { 0: ['Plains', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const aim = find(s, 0, 'battlefield', aimAt);
+    const coat = find(s, 0, 'hand', 'Test Coat');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: coat } as Action), 30);
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      s = s.pendingChoice !== null
+        ? drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: aim }] }), 30)
+        : drain(passBoth(s), 30);
+    }
+    return { s, aim, coat };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('attaches to the legendary creature, with its bonus', () => {
+    const { s, aim, coat } = enter(['Test Bear', 'Test Hero'], 'Test Hero');
+    expect(s.instances[coat]!.attachedTo).toBe(aim);
+    expect(characteristicsOf(s, s.instances[aim]!).toughness).toBe(5);
+  });
+
+  it('a creature that is not legendary is no target, so it stays unattached', () => {
+    const { s, coat } = enter(['Test Bear'], 'Test Bear');
+    expect(s.instances[coat]!.zone).toBe('battlefield');
+    expect(s.instances[coat]!.attachedTo ?? null).toBeNull();
+  });
+});
+
+describe('mana a land adds when it is tapped for mana: Wild Growth, Crypt Ghast (D1088)', () => {
+  /*
+    A triggered mana ability resolves with the tap (CR 605.3b), so the extra mana is part of what the
+    tap makes: in the auto-tapper's sources, for an ability pressed by hand, and in the pips. Beside
+    a dual land's choice it is extra, not another option.
+  */
+  const aura = (name: string, text: string) => ({ name, type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: null, toughness: null, oracle_text: `Enchant land\n${text}` });
+  const WILD = aura('Test Wild', 'Whenever enchanted land is tapped for mana, its controller adds an additional {G}.');
+  const OVER = aura('Test Over', 'Whenever enchanted land is tapped for mana, its controller adds an additional {G}{G}.');
+  const GHAST = { name: 'Test Ghast', type_line: 'Creature — Spirit', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever you tap a Swamp for mana, add an additional {B}.' };
+  const LEYLINE = { name: 'Test Leyline', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: null, toughness: null, oracle_text: 'Whenever you tap a creature for mana, add an additional {G}.' };
+  const DUAL = { name: 'Test Dual', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add {U} or {B}.' };
+  const ROWS = [WILD, OVER, GHAST, LEYLINE, DUAL];
+  const deck = customDeck({
+    id: 'growth', name: 'Growth',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 22 }, { name: 'Swamp', count: 20 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = [], on?: [string, string, SeatIndex?]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'growth', 1: 'growth' }, deckSpecs: { growth: deck.deck },
+      battlefield: { 0: mine.filter((n) => n !== on?.[0]), 1: theirs }, hands: { 0: on === undefined ? [] : [on[0]] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (on === undefined) return s;
+    // Put from hand onto the battlefield already attached, as an Aura that resolved would be.
+    const auraId = find(s, 0, 'hand', on[0]);
+    const host = ids(s, on[2] ?? 0, 'battlefield').find((id) => nameOf(s, id) === on[1])!;
+    return {
+      ...s,
+      zones: { ...s.zones, ['0:hand']: ids(s, 0, 'hand').filter((id) => id !== auraId), ['0:battlefield']: [...ids(s, 0, 'battlefield'), auraId] },
+      instances: { ...s.instances, [auraId]: { ...s.instances[auraId]!, zone: 'battlefield', zoneSeat: 0, attachedTo: host } },
+    };
+  };
+  const sourceOf = (s: GameState, name: string) => manaSources(s, 0).find((source) => source.key === find(s, 0, 'battlefield', name));
+
+  it('reads each wording whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const sprawl = compileCard(aura('Test Sprawl', 'As Test Sprawl enters, choose a color.\nWhenever enchanted Forest is tapped for mana, its controller adds an additional one mana of the chosen color.') as never);
+    expect(sprawl.ok && sprawl.unread).toEqual([]);
+    // "One mana of any color" is a second choice on the tap, which the solver does not make.
+    const fertile = compileCard(aura('Test Fertile', 'Whenever enchanted land is tapped for mana, its controller adds an additional one mana of any color.') as never);
+    expect(fertile.ok && fertile.unread.length).toBe(1);
+  });
+
+  it('a Forest under it taps for {G}{G}, in the sources, the pips, and by hand', () => {
+    const s = table(['Forest', 'Test Wild'], [], ['Test Wild', 'Forest']);
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    expect(tapManaExtras(s, forest)).toEqual(['G']);
+    expect(sourceOf(s, 'Forest')!.produces).toEqual(['G', 'G']);
+    expect(potentialMana(s, 0).G).toBe(2);
+    const tapped = apply(s, { type: 'auto:activate', by: 0, card: forest, abilityIndex: 0 });
+    expect(poolOf(tapped, 0).G).toBe(2);
+    expect(sourceOf(table(['Forest', 'Test Over'], [], ['Test Over', 'Forest']), 'Forest')!.produces).toEqual(['G', 'G', 'G']);
+  });
+
+  it('beside a dual\'s choice it is extra: one land pays {U}{G}', () => {
+    const s = table(['Test Dual', 'Test Wild'], [], ['Test Wild', 'Test Dual']);
+    const dual = sourceOf(s, 'Test Dual')!;
+    expect(dual.choose).toBe(true);
+    expect(dual.extra).toEqual(['G']);
+    const sources = manaSources(s, 0);
+    expect(canAfford(poolOf(s, 0), parseManaCost('{U}{G}'), sources)).toBe(true);
+    expect(canAfford(poolOf(s, 0), parseManaCost('{2}'), sources)).toBe(true);
+    expect(canAfford(poolOf(s, 0), parseManaCost('{U}{B}'), sources)).toBe(false);
+    expect(solveTap(poolOf(s, 0), parseManaCost('{G}{B}'), sources)![0]!.types).toEqual(['B', 'G']);
+  });
+
+  it('Crypt Ghast: your Swamps make {B}{B}; a Forest, or an opponent\'s Swamp, does not', () => {
+    const s = table(['Swamp', 'Forest', 'Test Ghast'], ['Swamp']);
+    expect(sourceOf(s, 'Swamp')!.produces).toEqual(['B', 'B']);
+    expect(sourceOf(s, 'Forest')!.produces).toEqual(['G']);
+    expect(tapManaExtras(s, find(s, 1, 'battlefield', 'Swamp'))).toEqual([]);
+  });
+
+  it('a creature tapped for mana under a Leyline, and nothing from an Aura on someone else\'s land', () => {
+    expect(sourceOf(table(['Forest', 'Test Leyline']), 'Forest')!.produces).toEqual(['G']);
+    // Seat 0's Aura on seat 1's Forest: the mana is that land's controller's, not the Aura's.
+    const moved = table(['Forest', 'Test Wild'], ['Forest'], ['Test Wild', 'Forest', 1]);
+    const mine = find(moved, 0, 'battlefield', 'Forest');
+    const their = find(moved, 1, 'battlefield', 'Forest');
+    expect(sourceOf(moved, 'Forest')!.produces).toEqual(['G']);
+    expect(tapManaExtras(moved, mine)).toEqual([]);
+    expect(tapManaExtras(moved, their)).toEqual(['G']);
   });
 });
 

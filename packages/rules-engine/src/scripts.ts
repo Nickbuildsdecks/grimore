@@ -16917,7 +16917,7 @@ export function attachmentScriptFor(
     */
     const attachTarget = new RegExp(
       `^When (?:${selfName}|this Equipment) ${ENTERS}, attach (?:it|this|${selfName})`
-      + ' to target creature you control(?:\\. (.+))?$',
+      + ' to target (legendary )?creature you control(?:\\. (.+))?$',
       'i',
     );
     const followUp = (rest: string | undefined): ReadEffect | null | undefined => {
@@ -16951,7 +16951,12 @@ export function attachmentScriptFor(
         };
       }
       const attached = attachTarget.exec(flat);
-      const after = attached === null ? null : followUp(attached[1]);
+      const after = attached === null ? null : followUp(attached[2]);
+      /*
+        "…to target legendary creature you control" (D1087): Mithril Coat, Mjolnir. The same attach,
+        offered only legendary creatures you control, read as they are now.
+      */
+      const legendary = attached?.[1] !== undefined;
       if (attached !== null && after !== null) {
         return {
           line,
@@ -16959,8 +16964,12 @@ export function attachmentScriptFor(
             on: { kind: 'etb' as const },
             targets: [{
               kind: 'creature' as const,
-              description: 'target creature you control',
-              filter: creatureYouControl,
+              description: legendary ? 'target legendary creature you control' : 'target creature you control',
+              filter: legendary
+                ? (state: GameState, candidate: Target, controller: SeatIndex) => creatureYouControl(state, candidate, controller)
+                  && candidate.kind === 'card' && state.instances[candidate.id] !== undefined
+                  && characteristicsOf(state, state.instances[candidate.id]!).typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary')
+                : creatureYouControl,
               /*
                 `friendly`, because an Equipment that attaches itself to one of your creatures is
                 help and the bot's default aim is the enemy's board (D252). Beside a filter that
@@ -16968,7 +16977,7 @@ export function attachmentScriptFor(
               */
               friendly: true as const,
             }],
-            description: after === undefined ? 'attach it to target creature you control' : flat.replace(/^When [^,]+, /i, ''),
+            description: after === undefined ? `attach it to target ${legendary ? 'legendary ' : ''}creature you control` : flat.replace(/^When [^,]+, /i, ''),
             effect: (c: EffectContext) => {
               const host = firstCardTarget(c);
               if (host === null) return c.state;
@@ -32996,6 +33005,22 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     if (granted !== null) {
       return { statics: [{ scope: 'controller-lands', effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
     }
+  }
+  /*
+    "Whenever enchanted land is tapped for mana, its controller adds an additional {G}" and "Whenever
+    you tap a Swamp for mana, add an additional {B}" (D1088): see `CardScript.tapManaExtra`. Fixed
+    mana, or "one mana of the chosen color"; "one mana of any color" is a second choice on the tap,
+    which the solver does not make, so it stays unread.
+  */
+  const tapExtra = /^whenever (enchanted (?:land|forest|island|swamp|mountain|plains) is tapped for mana, its controller adds|you tap an? (land creature|creature|land|forest|island|swamp|mountain|plains) for mana, add) an additional ((?:\{[WUBRGC]\})+|one mana of the chosen colou?r)\.?$/i.exec(plain(line).trim());
+  if (tapExtra !== null) {
+    const kind = tapExtra[2]?.toLowerCase();
+    const watches = kind === undefined ? 'enchanted' as const
+      : kind === 'land' || kind === 'creature' || kind === 'land creature' ? { yours: kind as 'land' | 'creature' | 'land creature' }
+        : { yours: { subtype: kind[0]!.toUpperCase() + kind.slice(1) } };
+    const adds = /^one mana/i.test(tapExtra[3]!) ? 'chosen' as const
+      : [...tapExtra[3]!.matchAll(/\{([WUBRGC])\}/gi)].map((m) => m[1]!.toUpperCase() as ManaType);
+    return { tapManaExtra: { watches, adds } };
   }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());

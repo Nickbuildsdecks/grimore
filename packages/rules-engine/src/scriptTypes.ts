@@ -2931,6 +2931,20 @@ export interface CardScript {
    */
   readonly attackTax?: number;
   /**
+   * Mana added whenever a permanent this one watches is tapped for mana (D1088, CR 605.1b): Wild
+   * Growth's "Whenever enchanted land is tapped for mana, its controller adds an additional {G}",
+   * Crypt Ghast's "Whenever you tap a Swamp for mana, add an additional {B}". A triggered mana
+   * ability resolves at once and never uses the stack (CR 605.3b), so the engine folds its mana into
+   * the tap. `tapManaExtras` is the one reader, and every path that taps for mana asks it: the
+   * auto-tapper's sources, an ability the player presses, and the dimmed pips.
+   */
+  readonly tapManaExtra?: {
+    /** The permanent this is attached to, or a permanent of its controller's of the kind named. */
+    readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | { readonly subtype: string } };
+    /** The mana added, or one of the colour this permanent chose as it entered (Utopia Sprawl). */
+    readonly adds: readonly ManaType[] | 'chosen';
+  };
+  /**
    * "If ~ is in your opening hand, you may begin the game with it on the battlefield" (D778, CR
    * 103.6): the Leylines. Put onto the battlefield after mulligans and before the first turn, in
    * turn order. Always taken: a player who did not want it there would not have kept it in a deck
