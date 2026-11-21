@@ -7947,7 +7947,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script additionalLandsEach', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
@@ -31269,6 +31269,136 @@ describe('that much life, the additional card, everyone\'s extra land (D785)', (
     let t = table(['Plains', 'Plains'], []);
     t = apply(t, { type: 'auto:playLand', by: 0, card: find(t, 0, 'hand', 'Plains') });
     expect(landRows(t, 0)).toHaveLength(0);
+  });
+});
+
+describe('the reveal lands: untapped if a card of the kind is in hand (D786)', () => {
+  const ESTUARY = { name: 'Test Estuary', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Estuary enters, you may reveal an Island or Swamp card from your hand. If you don't, Test Estuary enters tapped.\n{T}: Add {U} or {B}." };
+  const HOVEL = { name: 'Test Hovel', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Hovel enters, you may reveal a Goblin card from your hand. If you don't, Test Hovel enters tapped.\n{T}: Add {B} or {R}." };
+  const GOBLIN = { name: 'Test Goblin', type_line: 'Creature — Goblin', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd786', name: 'Reveal',
+    entries: [{ name: 'Test Estuary', count: 2 }, { name: 'Test Hovel', count: 2 }, { name: 'Test Goblin', count: 4 }, { name: 'Island', count: 26 }, { name: 'Mountain', count: 26 }],
+    data: [ESTUARY, HOVEL, GOBLIN] as never[],
+  });
+  const table = (hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd786', 1: 'd786' }, deckSpecs: { d786: deck.deck },
+      hands: { 0: hand }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The draw step's card goes back, so the hand is exactly the one named.
+    const wanted = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = wanted.indexOf(s.cardDefs[s.instances[id]!.defKey]!.name);
+      if (at >= 0) wanted.splice(at, 1);
+      else s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library' });
+    }
+    return s;
+  };
+  const played = (hand: string[], land: string) => {
+    const s = table(hand);
+    const card = find(s, 0, 'hand', land);
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'land' && p.card === card)!;
+    const t = apply(s, { type: 'auto:playLand', by: 0, card });
+    return { tapped: t.instances[card]!.tapped === true, description: row.description };
+  };
+
+  it('reads', () => {
+    for (const card of [ESTUARY, HOVEL]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('enters untapped with an Island in hand, tapped with only a Mountain, and says why on the row', () => {
+    expect(played(['Test Estuary', 'Island'], 'Test Estuary')).toEqual({ tapped: false, description: 'Play Test Estuary' });
+    const without = played(['Test Estuary', 'Mountain'], 'Test Estuary');
+    expect(without.tapped).toBe(true);
+    expect(without.description).toBe('Play Test Estuary (enters tapped: no Island or Swamp card in your hand to reveal)');
+    // A second copy of itself is not an Island.
+    expect(played(['Test Estuary', 'Test Estuary'], 'Test Estuary').tapped).toBe(true);
+  });
+
+  it('the creature-type kind: a Goblin in hand, and not a land of another type', () => {
+    expect(played(['Test Hovel', 'Test Goblin'], 'Test Hovel').tapped).toBe(false);
+    expect(played(['Test Hovel', 'Mountain'], 'Test Hovel').tapped).toBe(true);
+  });
+
+  it('put onto the battlefield by an effect, it asks the hand all the same', () => {
+    // Settled the way an effect putting it onto the battlefield is: a bare table move is not one.
+    const s0 = table(['Island']);
+    const land = find(s0, 0, 'library', 'Test Estuary');
+    const s = engineSettle(apply(s0, { type: 'card:move', by: 0, card: land, toZone: 'battlefield' }), s0);
+    expect(s.instances[land]!.tapped).toBe(false);
+    const t0 = table(['Mountain']);
+    const other = find(t0, 0, 'library', 'Test Estuary');
+    const t = engineSettle(apply(t0, { type: 'card:move', by: 0, card: other, toZone: 'battlefield' }), t0);
+    expect(t.instances[other]!.tapped).toBe(true);
+  });
+});
+
+describe("an opponent's permanents enter tapped (D787)", () => {
+  const AUTHORITY = { name: 'Test Authority', type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Creatures your opponents control enter tapped.' };
+  const THALIA = { name: 'Test Cathar', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', power: '3', toughness: '2', oracle_text: 'First strike\nCreatures and nonbasic lands your opponents control enter tapped.' };
+  const OBEDIENCE = { name: 'Test Obedience', type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Artifacts and creatures your opponents control enter tapped.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const GROVE = { name: 'Test Grove', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {G}.' };
+  const deck = customDeck({
+    id: 'd787', name: 'Tapped',
+    entries: [{ name: 'Test Authority', count: 1 }, { name: 'Test Cathar', count: 1 }, { name: 'Test Obedience', count: 1 }, { name: 'Test Bear', count: 4 }, { name: 'Test Rock', count: 4 }, { name: 'Test Grove', count: 4 }, { name: 'Forest', count: 45 }],
+    data: [AUTHORITY, THALIA, OBEDIENCE, BEAR, ROCK, GROVE] as never[],
+  });
+  const table = (theirs: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd787', 1: 'd787' }, deckSpecs: { d787: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Forest', 'Forest'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const arrives = (s0: GameState, seat: SeatIndex, name: string) => {
+    const card = find(s0, seat, 'library', name);
+    // Settled the way an effect putting it onto the battlefield is: a bare table move is not one.
+    const s = engineSettle(apply(s0, { type: 'card:move', by: seat, card, toZone: 'battlefield' }), s0);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    return s.instances[card]!.tapped === true;
+  };
+
+  it('reads', () => {
+    for (const card of [AUTHORITY, THALIA, OBEDIENCE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the opponent's creatures enter tapped, the controller's own do not, and an artifact is not a creature", () => {
+    const s = table(['Test Authority']);
+    expect(arrives(s, 0, 'Test Bear')).toBe(true);
+    expect(arrives(s, 1, 'Test Bear')).toBe(false);
+    expect(arrives(s, 0, 'Test Rock')).toBe(false);
+    expect(arrives(table([]), 0, 'Test Bear')).toBe(false);
+    // An Authority that has lost its abilities taps nothing.
+    const t = table(['Test Authority']);
+    const authority = find(t, 1, 'battlefield', 'Test Authority');
+    expect(arrives(pump(t, [authority], authority, 1, { losesAllAbilities: true }), 0, 'Test Bear')).toBe(false);
+  });
+
+  it('a cast creature resolves tapped', () => {
+    let s = table(['Test Authority'], ['Test Bear']);
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear })));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.tapped).toBe(true);
+  });
+
+  it('Thalia: a nonbasic land played enters tapped, a basic does not', () => {
+    let s = table(['Test Cathar'], ['Test Grove', 'Forest']);
+    const grove = find(s, 0, 'hand', 'Test Grove');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: grove });
+    expect(s.instances[grove]!.tapped).toBe(true);
+    let t = table(['Test Cathar'], ['Forest']);
+    const forest = find(t, 0, 'hand', 'Forest');
+    t = apply(t, { type: 'auto:playLand', by: 0, card: forest });
+    expect(t.instances[forest]!.tapped).toBe(false);
+  });
+
+  it('artifacts and creatures: both kinds, and nothing once it has left', () => {
+    const s = table(['Test Obedience']);
+    expect(arrives(s, 0, 'Test Rock')).toBe(true);
+    expect(arrives(s, 0, 'Test Bear')).toBe(true);
+    const gone = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Test Obedience'), toZone: 'graveyard' });
+    expect(arrives(gone, 0, 'Test Rock')).toBe(false);
   });
 });
 

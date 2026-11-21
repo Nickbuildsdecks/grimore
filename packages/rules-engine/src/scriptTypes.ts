@@ -3008,6 +3008,14 @@ export interface CardScript {
    */
   readonly additionalLandsEach?: number;
   /**
+   * "Creatures your opponents control enter tapped" (D787): Authority of the Consuls, Thalia, Heretic
+   * Cathar ("creatures and nonbasic lands"), Blind Obedience ("artifacts and creatures"), Archon of
+   * Emeria ("nonbasic lands"). The kinds of permanent that arrive tapped on every other seat's
+   * battlefield while this one is on its controller's with its abilities — the same replacement as
+   * `entersTapped` (CR 614.1c), asked of the board as each permanent arrives.
+   */
+  readonly opponentsEnterTapped?: readonly ('artifact' | 'creature' | 'land' | 'nonbasic-land')[];
+  /**
    * "You may play lands from your graveyard" (D648) — Crucible of Worlds, Ramunap Excavator. Read
    * live by `landZonesFor`: the land plays offered, and `playLand`, include the controller's
    * graveyard while one is on their battlefield with its abilities.

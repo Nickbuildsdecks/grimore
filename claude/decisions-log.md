@@ -55691,3 +55691,50 @@ Faults injected by script: 6 of 6 caught.
 
 Coverage: 14,725 to 14,739 of 31,900 cards with every line read, and 36,332 to 36,354 of 59,888
 lines, against 6b74ed6.
+
+## D786 — The reveal lands
+
+Most-played order: Choked Estuary (rank 293), Foreboding Ruins (317), Frostboil Snarl (332), Port
+Town (333), Game Trail (400), Shineshadow Snarl (420) and the rest of their cycles, with Lorwyn's
+tribal lands ("you may reveal a Goblin card") after them: 18 legal printings.
+
+"As ~ enters, you may reveal an Island or Swamp card from your hand. If you don't, ~ enters tapped."
+is read as `entersUntappedIf` (D587), asking whether a card of either kind is in its controller's
+hand as the land arrives. The reveal is taken whenever it can be: it costs nothing and shows a card
+that was going to be seen anyway. The land row says why when it would enter tapped ("enters tapped:
+no Island or Swamp card in your hand to reveal"), and the bot's land choice, which already asks the
+same question of check lands, prefers the land that will arrive untapped.
+
+**Tests.** 4 engine tests: the cards read; with an Island in hand the land enters untapped and its
+row says nothing extra, with only a Mountain it enters tapped and the row says why, and a second copy
+of itself is not an Island; a Goblin in hand untaps the Goblin land and a Mountain does not; put onto
+the battlefield by an effect, it asks the hand all the same.
+
+Faults injected by script: 2 of 3 caught. The miss removes the guard that skips the land itself; it
+is an equivalent fault, since none of these lands has a land type of its own to reveal.
+
+## D787 — An opponent's permanents enter tapped
+
+Most-played order: Authority of the Consuls (rank 299), Blind Obedience (511), Thalia, Heretic
+Cathar (1485), Urabrask the Hidden (1815), Archon of Emeria's second line (2153), Manglehorn (2405),
+Kinjalli's Sunwing (3400) and the rest: "Creatures your opponents control enter tapped", "Artifacts
+and creatures …", "Creatures and nonbasic lands …", "Artifacts, creatures, and lands …".
+
+`CardScript.opponentsEnterTapped` lists the kinds. As any permanent arrives, every other seat's
+battlefield is asked for a permanent that still has its abilities and names one of its kinds; if one
+does, it arrives tapped, by the same replacement and at the same moment as "enters tapped" (CR
+614.1c). Its controller's own permanents are untouched, and a basic land is not a nonbasic land.
+
+**Tests.** 5 engine tests: the cards read; the opponent's creature enters tapped, the controller's
+own does not, an artifact does not under "creatures", and with no Authority nothing does, nor with
+an Authority that has lost its abilities; a creature cast and resolved arrives tapped; under Thalia a
+nonbasic land played enters tapped and a basic does not; "artifacts and creatures" taps both, and
+nothing once it has left.
+
+Faults injected by script: 4 of 4 caught (the lost-abilities test was added after the first run
+missed that fault).
+
+    engine tests: 5,812, all passing (on e906c2b)
+
+Coverage for the two together: 14,739 to 14,768 of 31,900 cards with every line read, and 36,354 to
+36,386 of 59,888 lines, against e906c2b.

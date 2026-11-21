@@ -96,6 +96,27 @@ function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
   });
 }
 
+/**
+ * Whether a permanent arriving now is one an opponent's "<kinds> your opponents control enter
+ * tapped" covers (D787). Asked of the arriving permanent as it is, so a face-down one is a 2/2
+ * creature with no name and no types but creature.
+ */
+function entersTappedByOpponents(state: GameState, arrival: NonNullable<GameState['instances'][string]>): boolean {
+  const ch = characteristicsOf(state, arrival);
+  const isKind = (kind: 'artifact' | 'creature' | 'land' | 'nonbasic-land') => {
+    if (kind === 'nonbasic-land') return ch.isLand && !ch.typeLine.supertypes.some((t) => /^basic$/i.test(t));
+    if (kind === 'land') return ch.isLand;
+    if (kind === 'creature') return ch.isCreature;
+    return hasType(ch.typeLine, 'artifact');
+  };
+  return state.seats.some((other) => other.index !== arrival.zoneSeat
+    && listAt(state, zoneKey(other.index, 'battlefield')).some((id) => {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
+      return (scriptForCard(state.cardDefs[inst.defKey])?.opponentsEnterTapped ?? []).some(isKind);
+    }));
+}
+
 export function maxHandSize(state: GameState, seat: SeatIndex): number {
   // And an emblem that says so (D734), from the command zone.
   for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
@@ -4303,6 +4324,10 @@ function settle(state: GameState, before: GameState): GameState {
         The conditional form (D587): "enters tapped unless you control a Mountain or a Plains".
         Asked here, of the board it is arriving on, by the same replacement and at the same moment.
       */
+      // An opponent's "creatures your opponents control enter tapped" (D787), by the same replacement.
+      if (next.instances[id]?.tapped !== true && entersTappedByOpponents(next, next.instances[id]!)) {
+        next = withInstance(next, id, { tapped: true });
+      }
       const unless = arrivalScript?.entersUntappedIf;
       if (unless !== undefined && next.instances[id]?.tapped !== true
         && !unless.test(next, arrival.zoneSeat, id)) {

@@ -31667,6 +31667,16 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const n = /^(an|one)$/i.test(everyone[1]!) ? 1 : countFrom(everyone[1]!);
     return n === null || n < 1 ? null : { additionalLandsEach: n };
   }
+  // "Creatures your opponents control enter tapped." (D787): see `CardScript.opponentsEnterTapped`.
+  const theirs = /^(.+?) your opponents control enter(?: the battlefield)? tapped\.?$/i.exec(plain(line).trim());
+  if (theirs !== null) {
+    const KINDS: Readonly<Record<string, 'artifact' | 'creature' | 'land' | 'nonbasic-land'>> = {
+      artifacts: 'artifact', creatures: 'creature', lands: 'land', 'nonbasic lands': 'nonbasic-land',
+    };
+    const words = theirs[1]!.split(/,\s*(?:and\s+)?|\s+and\s+/i).map((w) => w.trim().toLowerCase());
+    const kinds = words.map((w) => KINDS[w]);
+    if (words.length > 0 && kinds.every((k) => k !== undefined)) return { opponentsEnterTapped: kinds as ('artifact' | 'creature' | 'land' | 'nonbasic-land')[] };
+  }
   // "You may play lands from your graveyard." (D648): Crucible of Worlds, Ramunap Excavator.
   if (/^you may play lands from your graveyard\.?$/i.test(plain(line).trim())) return { landsFromGraveyard: true };
   // The top of the library (D649): Courser of Kruphix, Oracle of Mul Daya.
@@ -32270,6 +32280,29 @@ function entersTappedFromLine(line: string, name: string): Partial<CardScript> |
   if (shock !== null) {
     const n = /^\d+$/.test(shock[1]!) ? Number(shock[1]) : WORD_NUMBERS[shock[1]!.toLowerCase()];
     return n === undefined || n < 1 ? null : { payLifeToEnterUntapped: n };
+  }
+  /*
+    The reveal lands (D786): "As ~ enters, you may reveal an Island or Swamp card from your hand. If
+    you don't, ~ enters tapped." The Snarls, the shadow lands (Choked Estuary), Port Town's cycle and
+    Lorwyn's tribal lands ("a Goblin card"), 18 legal printings. Revealing costs nothing and only
+    shows a card the opponents would see anyway the moment it is played, so the choice is taken
+    whenever it can be: the land enters untapped if a card of either kind is in the hand it left.
+  */
+  const reveal = new RegExp(
+    `^As ${selfRef(name)} ${ENTERS}, you may reveal an? (\\w+)(?: or (\\w+))? card from your hand\\. If you don't, ${selfRef(name)} ${ENTERS} tapped$`, 'i',
+  ).exec(text);
+  if (reveal !== null) {
+    const kinds = [reveal[1]!, reveal[2]].filter((w): w is string => w !== undefined);
+    // Said on the land row only when it would enter tapped, so it says why.
+    const words = `no ${kinds.join(' or ')} card in your hand to reveal`;
+    const test = (state: GameState, controller: SeatIndex, self: string) => (state.zones[zoneKey(controller, 'hand')] ?? [])
+      .some((id) => {
+        const inst = state.instances[id];
+        if (id === self || inst === undefined) return false;
+        const ch = characteristicsOf(state, inst);
+        return kinds.some((kind) => hasSubtype(ch.typeLine, kind));
+      });
+    return { entersUntappedIf: { test, words } };
   }
   return null;
 }
