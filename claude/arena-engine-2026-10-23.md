@@ -37197,6 +37197,33 @@ guarantees, was folded away.
 
 Coverage: 14,391 of 31,900 cards (+17), 35,836 of 59,888 lines (+19), over a baseline that includes
 the other session's D776.
+
+## D1058 — "that player or that planeswalker's controller"
+
+Blightning: "~ deals 3 damage to target player or planeswalker. That player or that planeswalker's
+controller discards two cards." The subject is the player aimed at, or the controller of the
+planeswalker aimed at.
+
+- A referent pronoun with a new supply, `'player-or-controller'`. It is offered only after a
+  "player or planeswalker" target, and swapped before any of its parts.
+- Without a question, the referent seat is the target player, or the planeswalker's controller read
+  before the damage (`withReferent`, which now answers a player target as its own referent).
+- A question in the clause (a discard) asks `target-or-its-controller`, the engine's existing
+  answer to the same question.
+- Blightning reads whole. Rakdos's Return ("discards X cards") stays unread, because the discard's
+  question would keep the number it was read with (D1055). The "each creature that player or that
+  planeswalker's controller controls" form (Flame Wave, Bonfire of the Damned) is a different
+  sentence and stays unread.
+
+**Tests.** 4 engine tests:
+- the row reads whole, and the sentence after a creature target stays unread;
+- aimed at a player: 3 damage, and that player is asked to discard two;
+- with no question ("loses 2 life"), the player aimed at loses 2 more;
+- aimed at a planeswalker: its controller is asked.
+
+Faults injected by script: 4, all caught.
+
+Coverage: 14,392 of 31,900 cards (+1), 35,837 of 59,888 lines (+1).
 ## D777 — "Untap it" on a permanent's own trigger
 
 "Whenever ~ attacks, untap it and put a +1/+1 counter on it" (Brightfield Mustang), "Whenever ~

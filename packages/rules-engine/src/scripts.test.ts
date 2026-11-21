@@ -29331,6 +29331,54 @@ describe('a random discard aimed at a player (D1057)', () => {
   });
 });
 
+describe('"that player or that planeswalker\'s controller" (D1058)', () => {
+  const ROWS = [
+    { name: 'Test Blight', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+      oracle_text: "Test Blight deals 3 damage to target player or planeswalker. That player or that planeswalker's controller discards two cards." },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: Draw a card.', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: null, toughness: null, loyalty: '5' },
+  ];
+  const deck = customDeck({ id: 'd1058', name: 'Blight', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 56 }], data: ROWS as never[] });
+  const cast = (aim: (s: GameState) => Target) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1058', 1: 'd1058' }, deckSpecs: { d1058: deck.deck },
+      battlefield: { 0: [], 1: ['Test Walker'] }, hands: { 0: ['Test Blight'], 1: ['Mountain', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blight'), targets: [aim(s)] } as Action)), 30);
+    return { before, s };
+  };
+
+  it('reads whole; after a creature target the sentence has no player to mean, and stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard({ ...ROWS[0], oracle_text: "Test Blight deals 3 damage to target creature. That player or that planeswalker's controller discards two cards." } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('aimed at a player: 3 damage, and that player is asked to discard two', () => {
+    const { before, s } = cast(() => ({ kind: 'player', seat: 1 }));
+    expect(life(s, 1)).toBe(life(before, 1) - 3);
+    expect(s.pendingDecision).toMatchObject({ seat: 1, min: 2, max: 2 });
+  });
+
+  it('with no question in it, the player aimed at is the one it happens to', () => {
+    const FIRE = { name: 'Test Fire', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+      oracle_text: "Test Fire deals 2 damage to target player or planeswalker. That player or that planeswalker's controller loses 2 life." };
+    const fireDeck = customDeck({ id: 'd1058b', name: 'Fire', entries: [{ name: 'Test Fire', count: 4 }, { name: 'Mountain', count: 56 }], data: [FIRE] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1058b', 1: 'd1058b' }, deckSpecs: { d1058b: fireDeck.deck }, hands: { 0: ['Test Fire'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fire'), targets: [{ kind: 'player', seat: 1 }] } as Action)), 30);
+    expect(life(s, 1)).toBe(before - 4);
+  });
+
+  it('aimed at a planeswalker: its controller is the one asked', () => {
+    const { s } = cast((t) => ({ kind: 'card', id: find(t, 1, 'battlefield', 'Test Walker') }));
+    expect(s.pendingDecision).toMatchObject({ seat: 1, min: 2, max: 2 });
+  });
+});
+
 describe('"untap it" on its own trigger (D777)', () => {
   const RUNNER = { name: 'Test Runner', type_line: 'Creature — Horse', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever Test Runner attacks, untap it and put a +1/+1 counter on it.' };
   const BOOST = { name: 'Test Boost', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Put a +1/+1 counter on target creature. Untap it.' };
