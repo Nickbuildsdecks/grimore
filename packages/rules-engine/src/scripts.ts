@@ -20967,6 +20967,43 @@ function optionalEffect(
     const xText = doneThen[1]!.trim();
     const yText = doneThen[2]!.trim();
     const x = reader(xText);
+    /*
+      **X points at something** (D1063): "you may exile target creature. If you do, return that
+      card to the battlefield under its owner's control at the beginning of the next end step"
+      (Astral Slide), "you may exile target creature card from a graveyard. If you do, you gain 2
+      life" (Carrion Imp), "you may destroy target artifact defending player controls. If you do,
+      ~ assigns no combat damage this turn" (Floral Spuzzem).
+
+      Y very often names X's object ("that card", "it", "its controller"), and only a composition
+      can answer that: the referent swap and the blink rule are `composeEffects`' (D533, D543). So
+      the two sentences are read again as one composition, which also decides the targets — X's
+      first, then any Y adds — and "if you do" is found out the way a question-less X always is:
+      X is run alone, and a board it left untouched means it did nothing (CR 608.2c), so nothing
+      happens. Otherwise the composition runs from the same board. Every effect is a function of the
+      board, so the X inside it does what the X run alone did.
+
+      Only with no question on either side: the order of a question and the yes could not be stated.
+      Y is not read alone first, because alone "return that card …" has nothing to name.
+    */
+    if (x !== null && (x.targets ?? []).length > 0) {
+      /*
+        A question in Y splits the composition at it, so X lands in `beforeDecisions` and the
+        reading is refused. No targeted X asks a question of its own today; if one ever does, its
+        questions are carried rather than dropped, and they come first, as X does.
+      */
+      const both = reader(`${xText}. ${yText.charAt(0).toUpperCase()}${yText.slice(1)}`);
+      // X is the composition's first part, so its targets are the composition's first targets.
+      if (both === null || both.beforeDecisions !== undefined) return null;
+      const xAlone = x.immediate ?? x.effect;
+      return {
+        prompt: `${xText} — ${yText}`,
+        read: {
+          ...(both.targets === undefined ? {} : { targets: both.targets }),
+          ...(both.decisions === undefined ? {} : { decisions: both.decisions }),
+          effect: (c) => (xAlone(c) === c.state ? c.state : both.effect(c)),
+        },
+      };
+    }
     const y = reader(yText);
     if (x === null || y === null) return null;
     const xAsks = (x.decisions ?? []).length;
@@ -20977,7 +21014,7 @@ function optionalEffect(
       exactly when a trigger chooses them here. With X asking a question the order of the two could
       not be stated, so that stays refused.
     */
-    if ((x.targets ?? []).length > 0 || ((y.targets ?? []).length > 0 && xAsks > 0)) return null;
+    if ((y.targets ?? []).length > 0 && xAsks > 0) return null;
     if (xAsks > 1) return null;
     if (xAsks === 1 && yAsks > 0) return null;
     const xEffect = x.immediate ?? x.effect;

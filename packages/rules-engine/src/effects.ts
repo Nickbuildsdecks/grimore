@@ -1975,6 +1975,12 @@ export function tap(state: GameState, id: string, tapped = true): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
   if (!tapped) return untapPermanent(state, id);
+  /*
+    Already tapped: nothing happens, and the board says so by being the same board (D1063). A
+    tapped permanent cannot become tapped (CR 701.26a), so "you may tap target creature. If you do,
+    …" did not happen, and `optionalEffect` reads "if you do" off exactly this identity.
+  */
+  if (inst.tapped === true) return state;
   return withInstance(state, id, { tapped });
 }
 

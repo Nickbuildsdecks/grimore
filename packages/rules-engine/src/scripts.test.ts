@@ -29777,6 +29777,105 @@ describe('a quoted ability granted to a target until end of turn (D1062)', () =>
   });
 });
 
+describe('"you may <a targeted action>. If you do, …" (D1063)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Spirit', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Wisp', "When Test Wisp enters, you may exile target creature. If you do, return that card to the battlefield under its owner's control at the beginning of the next end step."),
+    C('Test Imp', 'When Test Imp enters, you may exile target creature card from a graveyard. If you do, you gain 2 life.'),
+    C('Test Tapper', 'When Test Tapper enters, you may tap target creature. If you do, you gain 2 life.'),
+    C('Test Teller', 'When Test Teller enters, you may put target enchantment card from your graveyard on top of your library. If you do, you gain life equal to its mana value.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{3}', cmc: 3, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1063', name: 'If you do',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1063', 1: 'd1063' }, deckSpecs: { d1063: deck.deck },
+    battlefield: { 0: ['Plains'], 1: ['Test Bear'] }, hands: { 0: [card] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** `card` cast and its arrival trigger aimed at `aim`, up to the yes-or-no. */
+  const enter = (s0: GameState, card: string, aim: (s: GameState) => string) => {
+    let s = passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', card) } as Action));
+    if (s.pendingChoice !== null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: aim(s) }] } as Action);
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return s;
+  };
+  const say = (s: GameState, yes: boolean) => {
+    expect(s.pendingDecision).not.toBeNull();
+    const no = (s.pendingDecision?.options ?? []).find((o) => o !== 'Yes')!;
+    let next = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: yes ? 'Yes' : no } as Action), 30);
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+  const theirBear = (s: GameState) => find(s, 1, 'battlefield', 'Test Bear');
+
+  it('reads every row whole; a second half that does not read keeps the line unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      "When Test Odd enters, you may exile target creature. If you do, return that card to the battlefield tapped under its owner's control at the beginning of the next end step.",
+      // A question after the yes: the order of the two could not be stated.
+      'When Test Odd enters, you may tap target creature. If you do, discard a card.',
+    ]) {
+      const odd = compileCard(C('Test Odd', text) as never);
+      expect(odd.ok && odd.unread.length, text).toBe(1);
+    }
+    // The targets are the composition's, which knows the pair is a blink (D543).
+    const wisp = compileCard(ROWS[0] as never);
+    expect(wisp.ok && wisp.script?.triggers?.[0]?.targets?.[0]?.blinks).toBe(true);
+  });
+
+  it('yes: exiled now, back under its owner at the end step; no: nothing happens', () => {
+    const s = enter(table('Test Wisp'), 'Test Wisp', theirBear);
+    const bear = theirBear(s);
+    let yes = say(s, true);
+    expect(yes.instances[bear]!.zone).toBe('exile');
+    expect(yes.delayed.length).toBe(1);
+    yes = drain(advanceTo(yes, 'end'), 30);
+    expect(yes.instances[bear]!.zone).toBe('battlefield');
+    expect(yes.instances[bear]!.zoneSeat).toBe(1);
+    const no = say(s, false);
+    expect(no.instances[bear]!.zone).toBe('battlefield');
+    expect(no.delayed.length).toBe(0);
+  });
+
+  it('a card out of a graveyard, and the life after it', () => {
+    let s = table('Test Imp');
+    const bear = theirBear(s);
+    s = apply(s, { type: 'card:move', by: 1, card: bear, toZone: 'graveyard' } as Action);
+    s = enter(s, 'Test Imp', () => bear);
+    const before = life(s, 0);
+    const yes = say(s, true);
+    expect(yes.instances[bear]!.zone).toBe('exile');
+    expect(life(yes, 0)).toBe(before + 2);
+  });
+
+  it('"if you do" is whether it happened: tapping a creature already tapped gains nothing', () => {
+    let s = table('Test Tapper');
+    s = apply(s, { type: 'card:tap', by: 1, card: theirBear(s) } as Action);
+    expect(s.instances[theirBear(s)]!.tapped).toBe(true);
+    s = enter(s, 'Test Tapper', theirBear);
+    const before = life(s, 0);
+    expect(life(say(s, true), 0)).toBe(before);
+  });
+
+  it('"its mana value" is the card the first half moved', () => {
+    let s = table('Test Teller');
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Charm'), toZone: 'graveyard' } as Action);
+    const charm = find(s, 0, 'graveyard', 'Test Charm');
+    s = enter(s, 'Test Teller', () => charm);
+    const before = life(s, 0);
+    const yes = say(s, true);
+    expect(yes.instances[charm]!.zone).toBe('library');
+    expect(life(yes, 0)).toBe(before + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
