@@ -30947,6 +30947,25 @@ describe('an attack tax: Propaganda and Ghostly Prison (D780)', () => {
     expect(() => apply(s, action!)).not.toThrow();
   });
 });
+describe('mana and life from one ability (D1083)', () => {
+  const ROWS = [{ name: 'Test Henge', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: '{T}: Add {G}{G}. You gain 2 life.' }];
+  const deck = customDeck({ id: 'd1083', name: 'Henge', entries: [{ name: 'Test Henge', count: 2 }, { name: 'Forest', count: 58 }], data: ROWS as never[] });
+
+  it('reads whole; tapping it adds {G}{G} and gains 2 life at once, with nothing on the stack', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1083', 1: 'd1083' }, deckSpecs: { d1083: deck.deck },
+      battlefield: { 0: ['Test Henge'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 0);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Henge'), abilityIndex: 0 } as Action);
+    expect(s.stackOrder.length).toBe(0);
+    expect(poolOf(s, 0).G).toBe(2);
+    expect(life(s, 0)).toBe(before + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

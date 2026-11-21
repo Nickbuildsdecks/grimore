@@ -88,7 +88,7 @@ import {
 } from './characteristics.js';
 import { zoneKey } from './cards.js';
 import type { GameState, SeatIndex } from './types.js';
-import { dealDamage, drawLater, freezeNextUntap, opponentsOf } from './effects.js';
+import { dealDamage, drawLater, freezeNextUntap, gainLife, opponentsOf } from './effects.js';
 import { scriptForCard } from './derive.js';
 import type { AbilityDef, CardScript, SpendRestriction } from './scriptTypes.js';
 import { spendBan, spendRestriction } from './spending.js';
@@ -362,6 +362,11 @@ interface ManaLine {
    * the mana is made and nobody can respond in between. `CardInstance.frozen`.
    */
   readonly freezes?: true;
+  /**
+   * "You gain N life" after the mana (D1083): The Great Henge's "{T}: Add {G}{G}. You gain 2 life."
+   * Part of the mana ability's effect, as a pain land's damage is (CR 605.3a): no stack, no window.
+   */
+  readonly gains?: number;
   /**
    * "Activate only if …" after the mana (D921): the Verges ("you control a Swamp or a Mountain"), the
    * Tainted lands ("you control a Swamp"), and the Dominaria lands ("this land entered this turn or
@@ -707,8 +712,11 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   if (spendOnly?.chosenType === true && !chosenOk) return null;
   const damage = rest === '' || restriction !== null ? undefined : selfDamageSentence(rest, name);
   const freezes = rest !== '' && restriction === null && damage === undefined && selfFreezeSentence(rest, name);
-  const onlyIf = rest !== '' && restriction === null && damage === undefined && !freezes ? manaCondition(rest, name) : null;
-  if (rest !== '' && damage === undefined && spendOnly === undefined && !freezes && onlyIf === null) return null;
+  const gainsMatch = rest !== '' && restriction === null && damage === undefined && !freezes
+    ? /^you gain (\d+) life\.?$/i.exec(rest) : null;
+  const gains = gainsMatch === null ? undefined : Number(gainsMatch[1]);
+  const onlyIf = rest !== '' && restriction === null && damage === undefined && !freezes && gains === undefined ? manaCondition(rest, name) : null;
+  if (rest !== '' && damage === undefined && spendOnly === undefined && !freezes && gains === undefined && onlyIf === null) return null;
 
   let cost: ManaAbilityCost = { tap: true };
   if (!/^\{T\}/i.test(printed)) {
@@ -736,13 +744,13 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const one = parseSymbolRun(worded[2]!);
     if (one === null) return null;
     const n = WORDS[worded[1]!.toLowerCase()]!;
-    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'sum', produces: Array.from({ length: n }, () => one[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   const anyOne = /^(two|three|four|five) mana of any one colou?r$/i.exec(body);
   if (anyOne !== null) {
     const n = WORDS[anyOne[1]!.toLowerCase()]!;
     const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
-    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // "An amount of {G} equal to your devotion to green" (D713): Karametra's Acolyte's count.
   const devoted = /^an amount of (\{[WUBRG]\}) equal to your devotion to (white|blue|black|red|green)$/i.exec(body);
@@ -752,7 +760,7 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const colour = LETTERS[devoted[2]!.toLowerCase()]!;
     if (symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       per: {
         count: (state, _source, controller) => devotionTo(state, controller, new Set([colour])),
         phrase: `point of your devotion to ${devoted[2]!.toLowerCase()}`,
@@ -767,20 +775,20 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const symbol = parseSymbolRun(counted[1]!);
     if (count === null || symbol === null || symbol.length !== 1) return null;
     return {
-      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+      mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       per: { count, phrase: counted[2]!.trim() },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   // "One mana of the chosen color" (D642), alone or after one printed colour (the Thriving lands).
   const chosenColour = /^(?:\{([WUBRG])\}\s+or\s+)?one\s+mana\s+of\s+the\s+chosen\s+colou?r$/i.exec(body);
   if (chosenColour !== null) {
     if (!chosenOk) return null;
     const fixed = chosenColour[1] as ManaType | undefined;
     return {
-      mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+      mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
       chosen: fixed === undefined ? {} : { fixed },
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
@@ -788,15 +796,15 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   // Chrome Mox (D717): only beside the imprint line that gives it a card, for `chosenOk`'s reason.
   if (/^one\s+mana\s+of\s+any\s+of\s+the\s+exiled\s+card['’]s\s+colou?rs$/i.test(body)) {
     if (!chosenOk) return null;
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), imprinted: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Fellwar Stone and Exotic Orchard (D681).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+that\s+a\s+land\s+an\s+opponent\s+controls\s+could\s+produce$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), opponentLands: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   // Command Tower and Arcane Signet (D617).
   if (/^one\s+mana\s+of\s+any\s+colou?r\s+in\s+your\s+commander['’]s\s+colou?r\s+identity$/i.test(body)) {
-    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'choice', produces: COLOURS, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), identity: true, ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
 
   /*
@@ -820,14 +828,14 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
   if (runs.some((r) => r.length !== 1)) {
     // The filter lands (D665): every answer the same size, at least two of them.
     if (!runs.every((r) => r.length === runs[0]!.length)) return null;
-    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+    return { mode: 'runs', produces: [...new Set(runs.flat())], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
-  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -867,9 +875,9 @@ function tapAbilities(
     }
     return {
       cost,
-      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${staysDown(line?.freezes)}${spentOn(line?.spendOnly)}${line?.onlyIfWords === undefined ? '' : ` ${line.onlyIfWords}.`}`,
+      description: `${printed}: Add {${type}}.${hurtsYou(damage)}${staysDown(line?.freezes)}${gainsLife(line?.gains)}${spentOn(line?.spendOnly)}${line?.onlyIfWords === undefined ? '' : ` ${line.onlyIfWords}.`}`,
       produces: [type],
-      ...painEffect(damage, line?.freezes),
+      ...painEffect(damage, line?.freezes, line?.gains),
       ...(line?.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
       ...(line?.identity === true
         ? { activateOnlyIf: (state: GameState, _source: string, controller: SeatIndex) => commanderIdentity(state, controller).includes(type) }
@@ -903,18 +911,23 @@ const hurtsYou = (damage?: number): string =>
  * actions are checked, which is the rule: one ability, resolving immediately, whose effect is both
  * halves (CR 605.3a). See `ManaLine.damage` for why it is neither a cost nor a trigger.
  */
-const painEffect = (damage?: number, freezes?: boolean): Pick<AbilityDef, 'effect'> => (
-  damage === undefined && freezes !== true
+const painEffect = (damage?: number, freezes?: boolean, gains?: number): Pick<AbilityDef, 'effect'> => (
+  damage === undefined && freezes !== true && gains === undefined
     ? {}
     : {
       effect: (c) => {
         const hurt = damage === undefined ? c.state
           : dealDamage(c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source });
         // And the depletion-free duals' rider (D920): the land stays down through the next untap.
-        return freezes === true ? freezeNextUntap(hurt, c.source) : hurt;
+        const down = freezes === true ? freezeNextUntap(hurt, c.source) : hurt;
+        // And The Great Henge's life (D1083).
+        return gains === undefined ? down : gainLife(down, c.controller, gains);
       },
     }
 );
+
+/** The life sentence, for the ability's own `description` (D1083). */
+const gainsLife = (gains?: number): string => (gains === undefined ? '' : ` You gain ${gains} life.`);
 
 /** The frozen rider's sentence, for the ability's own `description` (D920). */
 const staysDown = (freezes?: boolean): string =>
@@ -962,11 +975,11 @@ function sumAbility(line: ManaLine): AbilityDef {
   return {
     cost: line.cost,
     description: line.per !== undefined
-      ? `${line.printed}: Add {${line.produces[0]}} for each ${line.per.phrase}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`
-      : `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}${spentOn(line.spendOnly)}`,
+      ? `${line.printed}: Add {${line.produces[0]}} for each ${line.per.phrase}.${hurtsYou(line.damage)}${gainsLife(line.gains)}${spentOn(line.spendOnly)}`
+      : `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}${gainsLife(line.gains)}${spentOn(line.spendOnly)}`,
     produces: [...line.produces],
     ...(line.per === undefined ? {} : { producesTimes: line.per.count }),
-    ...painEffect(line.damage),
+    ...painEffect(line.damage, undefined, line.gains),
     ...(line.spendOnly === undefined ? {} : { spendOnly: line.spendOnly }),
     // A printed condition (D921) binds a sum as it binds a single mana.
     ...(line.onlyIf === undefined ? {} : { activateOnlyIf: line.onlyIf }),
