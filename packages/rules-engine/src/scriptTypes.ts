@@ -2588,6 +2588,11 @@ export interface SpendRestriction {
    * type the mana's source chose as it entered. Checked by `manaSources`, which knows the source.
    */
   readonly chosenType?: true;
+  /**
+   * "… , and that spell can't be countered" (D783): Cavern of Souls, Delighted Halfling. A spell this
+   * mana is spent on can't be countered. Settled as the spell is cast, from what paid for it.
+   */
+  readonly uncounterable?: true;
 }
 
 /**

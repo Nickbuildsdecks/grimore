@@ -55602,3 +55602,36 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 14,707 to 14,719 of 31,900 cards with every line read, and 36,308 to 36,325 of 59,888
 lines, against bfffabb.
+
+## D783 — Mana that makes a spell uncounterable: Cavern of Souls, Delighted Halfling
+
+Most-played order: Cavern of Souls (rank 113), Delighted Halfling (146). "Spend this mana only to cast
+<…>, and that spell can't be countered."
+
+- `spendRestriction` reads the rider: the restriction before it as it always was, marked
+  `uncounterable`.
+- `payFrom` now returns its `picks`, what each source tapped for the payment made.
+- `castSpell`: the spell can't be countered when a source tapped for it made a type its
+  uncounterable row makes, and that row's restriction allows this spell (Cavern's chosen creature
+  type included). A source whose unrestricted row made the mana does not count: Cavern's {C}, or a
+  free {G} paying for a nonlegendary spell. The stack object carries `cantBeCountered`, the flag
+  "This spell can't be countered" already sets. Mana tapped by hand earlier and left floating is not
+  traced back to its source.
+
+**A bug found on the way.** `foldManaLines` (`fromCardData.ts`) merges a card's mana lines into one
+set of rows for a card it reads whole, and kept only the first line's details. A restricted line
+after a free one (Delighted Halfling's "{T}: Add {C}" then its restricted "any color") came out with
+no restriction: mana that pays for anything. A line with a spending restriction now sends the card
+to the line-by-line reader, which keeps it, as it already did for the pain lands' damage (D497).
+
+**Tests.** 5 engine tests: both cards read; a legendary spell paid with the Halfling's any-color mana
+can't be countered; its {C} paying for an artifact does nothing of the kind; a free {G} paying for a
+nonlegendary spell does not make it uncounterable, while the same source paying for a legendary one
+does; Cavern with Elf chosen makes an Elf uncounterable and its {C} paying for an artifact does not.
+
+Faults injected by script: 4 of 4 caught, one after the free-{G} test was added.
+
+    engine tests: 5,795, all passing (on 48cefc1)
+
+Coverage: 14,721 to 14,723 of 31,900 cards with every line read, and 36,327 to 36,329 of 59,888
+lines, against 48cefc1. Few in count; the fold fix also stops a restricted line paying for anything.

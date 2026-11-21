@@ -1017,6 +1017,24 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
     { spell: characteristics.typeLine, commander: inst.isCommander === true }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
+  /*
+    Cavern of Souls and Delighted Halfling (D783): "Spend this mana only to cast …, and that spell
+    can't be countered". The spell can't be countered when a source tapped for it made mana its
+    uncounterable row makes, and that row's restriction allows this spell (the chosen creature type
+    included). A source whose unrestricted row made the mana — Cavern's {C} — does not count. Mana
+    tapped by hand earlier and floating is not traced back to its source.
+  */
+  const uncounterablePaid = paid.picks.some((pick) => {
+    const source = state.instances[pick.key];
+    if (source === undefined) return false;
+    return (scriptForCard(state.cardDefs[source.defKey])?.abilities ?? []).some((row) => {
+      const only = row.spendOnly;
+      if (only?.uncounterable !== true || row.produces === undefined) return false;
+      if (!only.allows({ spell: characteristics.typeLine, commander: inst.isCommander === true })) return false;
+      if (only.chosenType === true && (source.chosen?.type === undefined || !hasSubtype(characteristics.typeLine, source.chosen.type))) return false;
+      return pick.types.some((type) => row.produces!.includes(type));
+    });
+  });
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
   if (lifeForCost > 0) next = loseLife(next, action.by, lifeForCost);
@@ -1223,7 +1241,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       script in hand. The face-down cast below deliberately does not copy it — a face-down spell has
       no text at all (CR 707.2).
     */
-    ...(scriptForCard(state.cardDefs[faceKey ?? inst.defKey])?.cantBeCountered === true
+    ...(scriptForCard(state.cardDefs[faceKey ?? inst.defKey])?.cantBeCountered === true || uncounterablePaid
       ? { cantBeCountered: true as const } : {}),
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),

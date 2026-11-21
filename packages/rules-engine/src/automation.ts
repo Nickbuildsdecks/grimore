@@ -4666,7 +4666,11 @@ function payFrom(
    * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
    */
   exclude?: ReadonlySet<string>,
-): { state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number } {
+): {
+  state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number;
+  /** What each source tapped here made (D783): which row of a land paid, read off the mana it made. */
+  picks: readonly ManaPick[];
+} {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
   const printed = typeof costText === 'object' && costText !== null
@@ -4692,6 +4696,7 @@ function payFrom(
     }
   }
   let tapped: readonly string[] = [];
+  let picks: readonly ManaPick[] = [];
   const floating = poolOf(state, seat);
   /** What the restricted sources tapped here made, by type — see the end of this function. */
   const boundMade: Partial<Record<ManaType, number>> = {};
@@ -4713,6 +4718,7 @@ function payFrom(
     if (plan !== null) {
       next = tapSources(next, seat, plan);
       tapped = plan.map((pick) => pick.key);
+      picks = plan;
       // `{S}` paid by exactly the snow mana the plan set aside for it (D769).
       cost = snowAsColours(cost, plan);
       for (const pick of plan) {
@@ -4758,7 +4764,7 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent };
+  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent, picks };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */

@@ -31084,6 +31084,59 @@ describe('return a card from your graveyard, chosen; and Command Beacon (D782)',
     expect(namesIn(s, 0, 'graveyard')).toContain('Test Beacon');
   });
 });
+describe('mana that makes a spell uncounterable: Cavern of Souls, Delighted Halfling (D783)', () => {
+  const HALFLING = { name: 'Test Halfling', type_line: 'Creature — Halfling Citizen', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '2', oracle_text: "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered." };
+  const CAVERN = { name: 'Test Cavern', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Cavern enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered." };
+  const LEGEND = { name: 'Test Legend', type_line: 'Legendary Creature — Elf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  // A free coloured row beside the restricted one: its {G} on a nonlegendary spell is just {G}.
+  const GROVE = { name: 'Test Grove', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "{T}: Add {G}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered." };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const TRINKET = { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const data = [HALFLING, CAVERN, LEGEND, TRINKET, ELF, GROVE, BEAR];
+  const deck = customDeck({
+    id: 'd783', name: 'Uncounterable',
+    entries: [...data.map((d) => ({ name: d.name, count: 2 })), { name: 'Wastes', count: 50 }],
+    data: data as never[],
+  });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd783', 1: 'd783' }, deckSpecs: { d783: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+  const topOfStack = (s: GameState) => s.stackObjects[s.stackOrder[s.stackOrder.length - 1]!]!;
+
+  it('both read whole', () => {
+    expect(compileCard(HALFLING as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(CAVERN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Halfling: a legendary spell paid with its any-color mana can't be countered", () => {
+    const s = cast(table(['Test Halfling'], ['Test Legend']), 'Test Legend');
+    expect(topOfStack(s).cantBeCountered).toBe(true);
+  });
+
+  it('Halfling: its {C} paying for anything else does nothing of the kind', () => {
+    const s = cast(table(['Test Halfling'], ['Test Trinket']), 'Test Trinket');
+    expect(topOfStack(s).cantBeCountered).toBeUndefined();
+  });
+
+  it('a free {G} paying for a nonlegendary spell does not make it uncounterable', () => {
+    const s = cast(table(['Test Grove'], ['Test Bear']), 'Test Bear');
+    expect(topOfStack(s).cantBeCountered).toBeUndefined();
+    expect(topOfStack(cast(table(['Test Grove'], ['Test Legend']), 'Test Legend')).cantBeCountered).toBe(true);
+  });
+
+  it('Cavern: a creature spell of the chosen type is uncounterable; another spell paid with {C} is not', () => {
+    let s = table(['Test Cavern'], ['Test Elf']);
+    const cavern = find(s, 0, 'battlefield', 'Test Cavern');
+    s = { ...s, instances: { ...s.instances, [cavern]: { ...s.instances[cavern]!, chosen: { type: 'Elf' } } } };
+    expect(topOfStack(cast(s, 'Test Elf')).cantBeCountered).toBe(true);
+    let t = table(['Test Cavern'], ['Test Trinket']);
+    t = { ...t, instances: { ...t.instances, [cavern]: { ...t.instances[cavern]!, chosen: { type: 'Elf' } } } };
+    expect(topOfStack(cast(t, 'Test Trinket')).cantBeCountered).toBeUndefined();
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
