@@ -30791,6 +30791,50 @@ describe('"that creature\'s toughness" after an edict (D1081)', () => {
   });
 });
 
+describe('an additional land this turn, and a permanent that tucks itself (D1082)', () => {
+  const ROWS = [
+    { name: 'Test Spiral', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Draw a card. You may play an additional land this turn.' },
+    { name: 'Test Top', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "{T}: Draw a card, then put Test Top on top of its owner's library." },
+  ];
+  const deck = customDeck({ id: 'd1082', name: 'Spiral', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 56 }], data: ROWS as never[] });
+  const table = (battlefield: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1082', 1: 'd1082' }, deckSpecs: { d1082: deck.deck },
+    battlefield: { 0: battlefield, 1: [] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a second land may be played this turn, and not a third', () => {
+    let s = table([], ['Test Spiral', 'Forest', 'Forest', 'Forest']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spiral') } as Action)), 30);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action)).toBeNull();
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action)).not.toBeNull();
+  });
+
+  it('draws, then goes on top of its owner\'s library', () => {
+    let s = table(['Test Top'], []);
+    const top = find(s, 0, 'battlefield', 'Test Top');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: top, abilityIndex: 0 } as Action)), 30);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    expect(ids(s, 0, 'library')[0]).toBe(top);
+  });
+
+  it('gone in response: it stays where it went', () => {
+    let s = table(['Test Top'], []);
+    const top = find(s, 0, 'battlefield', 'Test Top');
+    s = apply(s, { type: 'auto:activate', by: 0, card: top, abilityIndex: 0 } as Action);
+    s = apply(s, { type: 'card:move', by: 0, card: top, toZone: 'hand' } as Action);
+    s = drain(passBoth(s), 30);
+    expect(s.instances[top]!.zone).toBe('hand');
+  });
+});
+
 describe('lands you control have a mana ability (D779)', () => {
   const LANTERN = { name: 'Test Lantern', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: 'Lands you control have "{T}: Add one mana of any color."' };
   const BLUE = { name: 'Test Blue Draw', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.' };

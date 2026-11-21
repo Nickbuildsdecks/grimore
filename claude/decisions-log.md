@@ -55425,6 +55425,27 @@ to Hunger), Consuming Vapors, and Doomgape's own upkeep sacrifice.
 Faults injected by script: 4. All are caught.
 
 Coverage: 14,654 of 31,900 cards (+4), 36,243 of 59,888 lines (+4).
+
+## D1082 — an additional land this turn, and a permanent that tucks itself
+
+Two lines from the top of the EDHREC-ordered queue the D7xx session relayed.
+
+- "You may play an additional land this turn" (Explore, Growth Spiral, Urban Evolution, Broken Bond)
+  is a clause reader using `allowExtraLand`, the permission Explore's hand-written script has used
+  since D648. It takes one, two or three lands.
+- "Put ~ on top of its owner's library" (Sensei's Divining Top's "{T}: Draw a card, then put ~ on
+  top of its owner's library") is a `selfEffect` reader. It works only from the battlefield and only
+  while the permanent is still there (CR 400.7).
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- after the spell, a second land may be played this turn and a third may not;
+- the Top draws a card and is then the top card of its owner's library;
+- a Top moved to hand in response stays in hand.
+
+Faults injected by script: 4. All are caught.
+
+Coverage: 14,660 of 31,900 cards (+6, Explore among them), 36,255 of 59,888 lines.
 ## D779 — Most-played first: Chromatic Lantern, Frantic Search, and two questions in one spell
 
 **A new priority order, from Nick: automate cards from the most played down.** Ranked by EDHREC

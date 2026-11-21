@@ -15561,6 +15561,22 @@ function selfEffect(
     business) and `return enchanted creature to its owner's hand` (2 — the Aura's host, which is
     `who: 'attached'` rather than the subject).
   */
+  /*
+    "Put ~ on top of its owner's library" (D1082): Sensei's Divining Top's "{T}: Draw a card, then put
+    ~ on top of its owner's library", and the permanents that tuck themselves. Only from the
+    battlefield, and only while it is still there (CR 400.7): one that left in response stays where
+    it went.
+  */
+  const tucksItself = new RegExp(`^put (?:(${self})|it) on top of its owner's library$`, 'i').exec(text);
+  if (tucksItself !== null && where === 'battlefield') {
+    const named = tucksItself[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        return c.state.instances[id]?.zone === 'battlefield' ? putOnTopOfLibrary(c.state, id) : c.state;
+      },
+    };
+  }
   const picksItselfUp = new RegExp(
     `^return (?:(${self})|it) to its owner's hand$`, 'i',
   ).exec(text);
@@ -26801,6 +26817,17 @@ function readEffect(
     mana is added as the first sentence says, and whatever it added is recorded as kept
     (`GameState.keptMana`). A question in the add (a colour to choose) is asked as it is.
   */
+  /*
+    "You may play an additional land this turn" (D1082): Explore's first sentence, Growth Spiral's,
+    Urban Evolution's, and a permanent's trigger or ability (Azusa's cousins print it per turn). The
+    permission `allowExtraLand` gives, which Explore's hand-written script has used since D648; one,
+    two or three of them.
+  */
+  const additional = /^you may play (an|one|two|three) additional lands? this turn$/i.exec(clause.trim());
+  if (additional !== null) {
+    const n = countFrom(additional[1]!.toLowerCase() === 'an' ? 'a' : additional[1]!);
+    if (n !== null && n > 0) return { effect: (c) => allowExtraLand(c.state, c.controller, n) };
+  }
   const keeping = /^(add .+) and keep it until end of turn$/i.exec(clause.trim());
   if (keeping !== null) {
     const added = readEffect(keeping[1]!, name, where);
