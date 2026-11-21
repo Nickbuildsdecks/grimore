@@ -37570,3 +37570,31 @@ Faults injected by script: 10. All are caught. Three were caught only after Dimi
 hexproof row and a trample grant were asserted.
 
 Coverage: 14,518 of 31,900 cards (+31), 36,017 of 59,888 lines (+45).
+
+## D1067 — a new body for itself
+
+"{4}{G/U}: ~ has base power and toughness 5/5 until end of turn" (Brokers Initiate), "{8}: ~ has base
+power and toughness 10/10 until end of turn. Activate only if you control an Oko planeswalker"
+(Bramblefort Fink), "{W}{U}{B}{R}{G}: Until end of turn, ~ becomes a Dragon, gets +5/+3, and gains
+flying and trample" (Dragonsoul Knight).
+
+- D1066's predicates are now one helper, `newBodyFrom`, shared by the target's reader and a new
+  `selfEffect` reader for "[until end of turn,] ~ <predicates> [until end of turn]".
+- The self reader takes the permanent's own name only, because "it" on a trigger is the event's
+  subject. It reads only on a battlefield ability or trigger (`where`): a dies trigger that gives
+  the dead card a body stays unread.
+- It has to set something, as D1066 does, so lines that only add stay with the pump readers.
+- No zone check at resolution. A permanent that left in response and came back is a new object, and
+  the engine already keeps the effect off it (CR 400.7). A fault that removed such a check went
+  uncaught, so it was folded away and the case is a test.
+
+**Tests.** 4 engine tests:
+- the rows read whole; no duration and a dies trigger's body stay unread;
+- a 1/1 is 5/5 until the turn ends, then 1/1;
+- bounced in response and played again, it is a 1/1;
+- the Knight is a 3/3 Dragon (its only subtype) with flying.
+
+Faults injected by script: 5. All are caught, including D1066's `sets` guard against compile.test's
+shrink row.
+
+Coverage: 14,524 of 31,900 cards (+6), 36,025 of 59,888 lines (+8).
