@@ -37527,3 +37527,46 @@ Faults injected by script: 5. All are caught. The duration guard was caught only
 no-duration row was added.
 
 Coverage: 14,487 of 31,900 cards (+7), 35,972 of 59,888 lines (+7).
+
+## D1066 — a new body for the turn: base size, lost abilities, a new type
+
+"Until end of turn, target creature loses all abilities and has base power and toughness 0/1"
+(Humble, Ovinize), "Target creature has base power and toughness 1/1 until end of turn" (Diminish,
+Multiply by Zero, Gigantomancer's 7/7, Creeperhulk's 5/5 and trample), "… becomes a Dragon with
+base power and toughness 4/4 and gains flying" (Mordenkainen's Polymorph, Dance of the Skywise,
+Gift of Tusks), Turn to Frog's own words, and Merfolk Trickster's "It loses all abilities until end
+of turn" through the referent.
+
+- A targeted clause reader: one target, "until end of turn" exactly once, and predicates joined by
+  "," or "and". Each predicate is one of:
+  - "loses all abilities" (layer 6);
+  - "has base power and toughness N/N" (layer 7b, so a pump on top still counts);
+  - "becomes a [colours] [creature types] [with base power and toughness N/N] [in addition to its
+    other types]". The colour is replaced, and the types are replaced unless the card says "in
+    addition" (CR 205.1b). Every word must be a real creature type.
+  - "gets +N/+N" (layer 7c);
+  - "gains <keywords>".
+- All of it is one end-of-turn effect, so the abilities are cleared before the keywords it grants
+  (CR 613.1f), which is how Turn to Frog's hand-written script has always worked.
+- A body made small (1 or less in either number) or with no abilities is removal for the turn:
+  `removesACreature` and a hostile aim. A bigger one is a gift and the target is friendly. Either
+  way it wears off (`expiresAtEndOfTurn`).
+- It must set something (a base size, a type, or the abilities), or the line belongs to the pump
+  readers, including what they refuse on purpose: "gets -2/-2 and gains menace" is a shrink with a
+  grant that no card prints (D454). The guard was folded away once, when a fault run over this
+  increment's tests alone missed it. The pregate's full suite failed on that compile.test row, so
+  the guard is back and the fault script runs that row too.
+
+**Tests.** 5 engine tests:
+- the rows read whole; no duration and a word that is not a creature type stay unread; Humble and
+  Diminish are hostile removal, Grower is a friendly gift, and "gains hexproof" keeps the pump
+  reader's `protectsACreature`;
+- Humble: the flying 2/2 is a 0/1 without flying, and a 2/2 flier again next turn;
+- a +3/+3 cast before Humble still counts: 3/4;
+- Polymorph: a 4/4 whose only subtype is Dragon, with trample;
+- base 5/5.
+
+Faults injected by script: 10. All are caught. Three were caught only after Diminish's flag, the
+hexproof row and a trample grant were asserted.
+
+Coverage: 14,518 of 31,900 cards (+31), 36,017 of 59,888 lines (+45).
