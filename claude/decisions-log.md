@@ -55284,3 +55284,30 @@ Rumble.
 Faults injected by script: 2. Both are caught.
 
 Coverage: 14,598 of 31,900 cards (+6), 36,111 of 59,888 lines (+7).
+
+## D1076 — the total power of creatures you control
+
+"This spell costs {X} less to cast, where X is the total power of creatures you control" (Ghalta,
+Primal Hunger), and the same measure wherever a count is read: "draw cards equal to …", "you gain
+life equal to …", "… where X is …", "with flying", "other creatures".
+
+- `totalAmong`, beside D660's `greatestAmong`, reads "the total power|toughness of [other] [<Type>]
+  creatures you control|your opponents control|on the battlefield [with <keyword>]". It sums the
+  live values as the effect reads them, so a creature with negative power takes from the sum. The
+  result is never below 0 (CR 107.1b).
+- `boardCount` asks it, and the five readers that pre-filter their measure ("where X is", "draw
+  cards equal to", "gain or lose life equal to" and two more) now let it through.
+- Ghalta and Stonehoof Chieftain's cost line read. The corpus has few other cards with this measure
+  outside lines unread for other reasons, so the gain is mostly the vocabulary.
+
+**Tests.** 4 engine tests:
+- the rows read whole;
+- 4 power on the battlefield makes a six-drop cost {2}, and 3 power leaves it uncastable with two
+  lands;
+- "with flying": two 1/2 fliers beside a 3/1 give 2 life;
+- "other creatures": a 5/5 whose ability it is counts only the 3/1, for 3 life.
+
+Faults injected by script: 4. All are caught. Two were caught only after power and toughness were
+made to differ and the "other" row was added.
+
+Coverage: 14,600 of 31,900 cards (+2), 36,115 of 59,888 lines (+4).
