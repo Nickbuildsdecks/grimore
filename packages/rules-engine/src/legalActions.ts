@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { commanderTaxFor, listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef, type TypeLine,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -31,7 +31,7 @@ import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import { AWAKEN_LAND,
   FORETELL_COST, MORPH_COST, isChoiceDecision, morphCostText, producedBy,
-  type AbilityCost, type AbilityDef, type CardScript, type PaymentFor, type TargetSpec,
+  type AbilityCost, type AbilityDef, type CardScript, type CastLimit, type PaymentFor, type TargetSpec,
 } from './scriptTypes.js';
 import { BESTOW_TARGET, legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
@@ -772,6 +772,54 @@ export function usesLeftThisTurn(
 
 export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
   return listAt(state, zoneKey(seat, 'battlefield')).some((id) => state.instances[id]?.isCommander === true);
+}
+
+/** Every live casting limit on the table (D788), with the permanent and seat it comes from. */
+function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readonly from: SeatIndex; readonly name: string }[] {
+  const out: { limit: CastLimit; from: SeatIndex; name: string }[] = [];
+  for (const other of state.seats) {
+    for (const script of staticsOf(state, other.index)) {
+      for (const limit of script.castLimits ?? []) out.push({ limit, from: other.index, name: script.name });
+    }
+  }
+  return out;
+}
+
+/**
+ * Why this seat may not cast this spell now because of a permanent's casting limit (D788), or null.
+ * `offered` is a cast an effect makes mid-resolution (cascade), which no timing limit reaches.
+ */
+export function castProhibition(state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean): string | null {
+  const cast = state.spellsCastThisTurnBy[String(seat)] ?? 0;
+  const noncreature = state.spellsCastThisTurnByKind?.[`${seat}:noncreature`] ?? 0;
+  for (const { limit, from, name } of castLimitsInPlay(state)) {
+    const theirs = from !== seat;
+    if (limit === 'each-one-spell' && cast >= 1) return `${name}: no more than one spell each turn`;
+    if (limit === 'you-one-spell' && !theirs && cast >= 1) return `${name}: no more than one spell each turn`;
+    if (limit === 'each-one-noncreature' && !isCreature && noncreature >= 1) return `${name}: no more than one noncreature spell each turn`;
+    if (limit === 'own-turn-only' && state.activeSeat !== seat) return `${name}: spells only during your own turn`;
+    if (limit === 'opponents-sorcery-speed' && theirs && !offered && !atSorcerySpeed(state, seat)) {
+      return `${name}: you can cast spells only when you could cast a sorcery`;
+    }
+    if (limit === 'opponents-no-spells-your-turn' && theirs && state.activeSeat === from) return `${name}: no spells during its controller's turn`;
+  }
+  return null;
+}
+
+/**
+ * Why this seat may not activate an ability of this permanent now (D788), or null: Grand
+ * Abolisher's "During your turn, your opponents can't … activate abilities of artifacts, creatures,
+ * or enchantments" — mana abilities included, since the rule says abilities.
+ */
+export function abilityProhibition(state: GameState, seat: SeatIndex, ch: { readonly typeLine: TypeLine }): string | null {
+  const kinds = ['artifact', 'creature', 'enchantment'];
+  if (!ch.typeLine.types.some((t) => kinds.includes(t.toLowerCase()))) return null;
+  for (const { limit, from, name } of castLimitsInPlay(state)) {
+    if (limit === 'opponents-no-abilities-your-turn' && from !== seat && state.activeSeat === from) {
+      return `${name}: no abilities of artifacts, creatures or enchantments during its controller's turn`;
+    }
+  }
+  return null;
 }
 
 /** The permanents whose static abilities this seat may lean on now: its own, face up, abilities intact. */
@@ -1764,6 +1812,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       why(id, 'sorcery speed: your own main phase, with nothing on the stack');
       continue;
     }
+    // A permanent's casting limit (D788): Rule of Law, Teferi, Grand Abolisher.
+    const prohibited = castProhibition(state, seat, ch.isCreature, offered);
+    if (prohibited !== null) {
+      why(id, prohibited);
+      continue;
+    }
     // A plotted card is cast "as a sorcery", an instant included (D922).
     const plottedCast = impulse && inst.playFromExile?.through === 'plotted';
     if (plottedCast && !sorcerySpeed) {
@@ -2663,6 +2717,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       if (splitSecond && ability.produces === undefined) continue;
       // Faith's Fetters (D944): everything but a mana ability is switched off.
       if (zone === 'battlefield' && ability.produces === undefined && characteristicsOf(state, inst).cantActivateNonMana) continue;
+      // Grand Abolisher (D788): an opponent's artifacts, creatures and enchantments, on its controller's turn.
+      if (zone === 'battlefield' && abilityProhibition(state, seat, characteristicsOf(state, inst)) !== null) continue;
       if (ability.sorcerySpeed && !sorcerySpeed) continue;
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.

@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, attackTaxFor, bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, attackTaxFor, bouncePlan, castProhibition, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -420,6 +420,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (!instantSpeed && !offered && !atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} can only be cast in your main phase with an empty stack`);
   }
+  // A permanent's casting limit (D788), asked where the cast is offered as well.
+  const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered);
+  if (prohibited !== null) throw new EngineError('RULE_NOT_APPLICABLE', prohibited);
 
   const cost = parseManaCost(def?.manaCost);
   /*
@@ -1919,6 +1922,9 @@ function activate(
   if (ability.sorcerySpeed && !atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability can only be activated in your main phase');
   }
+  // Grand Abolisher (D788), asked where the ability is offered as well.
+  const abolished = inst.zone === 'battlefield' ? abilityProhibition(state, action.by, ch) : null;
+  if (abolished !== null) throw new EngineError('RULE_NOT_APPLICABLE', abolished);
   // "Activate only if …", checked here as well as where the ability is offered, because an action
   // can arrive from anywhere. See `AbilityDef.activateOnlyIf`.
   if (ability.activateOnlyIf !== undefined
