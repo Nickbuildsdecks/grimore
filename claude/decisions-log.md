@@ -55900,3 +55900,27 @@ Faults injected by hand: 2 (the owner test changed to a controller test; the com
 dropped). Both are caught.
 
 Coverage: 14,796 of 31,900 cards and 36,429 of 59,888 lines, measured after merging D782–D788 (that merge's own baseline was not measured separately; the four Backgrounds above are the cards this reads whole).
+
+## D1090 — "attacks a player", and "if no opponent has more life than that player"
+
+Two pieces that five Backgrounds share inside their quoted grants: "Whenever this creature attacks
+a player, if no [other] opponent has more life than that player, …".
+
+- **Trigger:** a new prologue row, "Whenever ~ attacks a player,". It sets `atPlayer` on the
+  `attacks` event, and `triggerMatches` refuses an attack declared against a planeswalker.
+- **Condition:** the intervening if "no (other) opponent has more life than that player". It is
+  read off `c.attacked`, which both asks of an intervening if already carry (CR 603.4). The
+  attacked player must have at least as much life as every opponent still in the game, and an
+  attack on a planeswalker answers no.
+
+Guild Artisan and Sword Coast Sailor now read whole. Veteran Soldier, Hardy Outlander and Agent of
+the Shadow Thieves still have effect clauses that do not read.
+
+**Tests.** 2 engine tests:
+- The line reads whole on a creature and inside a Background's grant.
+- In a three-player pod, attacking the richer opponent makes two Treasures, and attacking the
+  poorer one makes none.
+
+Faults injected by hand: 1 (the life comparison always true). It is caught.
+
+Coverage: 14,798 of 31,900 cards (+2 over D1089's 14,796), 36,431 of 59,888 lines (+2).
