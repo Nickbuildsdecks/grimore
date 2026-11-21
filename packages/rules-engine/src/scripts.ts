@@ -26616,7 +26616,7 @@ function readEffect(
     may" the question is asked only when the top card is of that kind, and the move happens only on
     a yes; otherwise the card stays where it is.
   */
-  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(into your hand|on the bottom of your library))?$/i.exec(clause.trim());
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
   if (topIf !== null) {
     const body = cardFilterBody(topIf[2]!, name);
     if (body !== null) {
@@ -26643,7 +26643,8 @@ function readEffect(
         card on top, where the effect finds it and moves it. A card of another kind is never a
         candidate, so it goes the same way.
       */
-      const otherwise = topIf[6]?.toLowerCase();
+      const otherwise = topIf[7]?.toLowerCase();
+      const otherwiseMay = topIf[6] !== undefined;
       if (otherwise !== undefined && !may) return null;
       if (may) {
         return {
@@ -26653,12 +26654,24 @@ function readEffect(
             prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
             // A top card of another kind is no candidate, and a question with none answers itself.
             filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser),
-          }],
+          },
+          /*
+            "… you may put it into your graveyard / on the bottom" (D1074): a second look at the same
+            card, asked only when the first answer left it, and moved by the engine on a yes.
+          */
+          ...(otherwise !== undefined && otherwiseMay ? [{
+            who: 'controller' as const, from: 'library-top' as const, look: 1, min: 0, max: 1,
+            askOnlyIfNonePicked: true as const,
+            chosenGoTo: otherwise === 'into your graveyard' ? 'graveyard' as const
+              : otherwise === 'into your hand' ? 'hand' as const : 'bottom' as const,
+            prompt: `Put it ${otherwise}?`,
+          }] : [])],
           effect: (c) => {
-            if (otherwise === undefined || chosenCards(c).length > 0) return c.state;
+            if (otherwise === undefined || otherwiseMay || chosenCards(c).length > 0) return c.state;
             const top = topOf(c.state, c.controller);
             if (top === undefined) return c.state;
-            return otherwise === 'into your hand' ? moveToHand(c.state, [top]) : putOnBottomOfLibrary(c.state, top);
+            return otherwise === 'into your hand' ? moveToHand(c.state, [top])
+              : otherwise === 'into your graveyard' ? moveToGraveyard(c.state, [top]) : putOnBottomOfLibrary(c.state, top);
           },
         };
       }
@@ -27142,7 +27155,7 @@ function clausesOf(line: string): readonly string[] {
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
-    .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), put it (into your hand|on the bottom of your library)/gi, '$1\u0015$2')
+    .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), ((?:you may )?put it (?:into your hand|on the bottom of your library|into your graveyard))/gi, '$1\u0015$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
     .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.

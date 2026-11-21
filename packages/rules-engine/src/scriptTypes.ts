@@ -1662,6 +1662,13 @@ export interface CardsDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   /**
+   * Ask this question **only if the one before it picked nothing** (D1074): "If you don't put the
+   * card into your hand, you may put it into your graveyard" (Territory Culler, Sarinth Steelseeker).
+   * The second question is about the card the first one left behind, so a first answer that took it
+   * leaves nothing to ask about. Skipped as `askOnlyIfChosen` skips: an empty answer in its place.
+   */
+  readonly askOnlyIfNonePicked?: true;
+  /**
    * Ask this question **only if** the board says so, as the question comes up (D590).
    *
    * `askOnlyIfChosen`'s sibling, for a condition that is a fact rather than an earlier answer:

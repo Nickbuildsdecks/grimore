@@ -5143,6 +5143,12 @@ function askOrFinish(
         continue;
       }
     }
+    // And one asked only if the question before it took nothing (D1074): see `askOnlyIfNonePicked`.
+    if ('askOnlyIfNonePicked' in spec && spec.askOnlyIfNonePicked === true
+      && (answers[answers.length - 1]?.ids.length ?? 0) > 0) {
+      answers = [...answers, { seat: entry.seat, ids: [] }];
+      continue;
+    }
     // And one asked only if the board says so (D590): explore's question about a nonland card.
     const askOnlyIf = 'askOnlyIf' in spec ? spec.askOnlyIf : undefined;
     if (askOnlyIf !== undefined && !askOnlyIf(state, object.controller, object.source)) {

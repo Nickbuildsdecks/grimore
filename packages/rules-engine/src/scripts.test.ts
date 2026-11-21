@@ -27914,6 +27914,52 @@ describe('the top card, and where it goes when it is not taken (D1073)', () => {
   });
 });
 
+describe('a second question only if the first took nothing (D1074)', () => {
+  const ROWS = [
+    { name: 'Test Culler', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: "Look at the top card of your library. If it's a creature card, you may reveal it and put it into your hand. If you don't put the card into your hand, you may put it into your graveyard." },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1074', name: 'Second look', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (top: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1074', 1: 'd1074' }, deckSpecs: { d1074: deck.deck },
+      battlefield: { 0: ['Forest'], 1: ['Forest'] }, hands: { 0: ['Test Culler'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const card = library.find((id) => nameOf(s, id) === top)!;
+    const t = { ...s, zones: { ...s.zones, '0:library': [card, ...library.filter((id) => id !== card)] } } as GameState;
+    return { s: drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Culler') } as Action)), 30), card };
+  };
+  const decide = (s: GameState, cards: string[]) => drain(apply(s, { type: 'auto:decide', by: 0, cards } as Action), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('taken into hand: the graveyard question is never asked', () => {
+    const { s, card } = table('Test Bear');
+    const after = decide(s, [card]);
+    expect(after.instances[card]!.zone).toBe('hand');
+    expect(after.pendingDecision).toBeNull();
+  });
+
+  it('declined: asked about the graveyard, and it goes there or stays on top', () => {
+    const { s, card } = table('Test Bear');
+    const second = decide(s, []);
+    expect(second.pendingDecision?.candidates).toEqual([card]);
+    expect(decide(second, [card]).instances[card]!.zone).toBe('graveyard');
+    expect(ids(decide(second, []), 0, 'library')[0]).toBe(card);
+  });
+
+  it('a land on top: no hand question, straight to the graveyard one', () => {
+    const { s, card } = table('Forest');
+    expect(s.pendingDecision?.prompt).toBe('Put it into your graveyard?');
+    expect(decide(s, [card]).instances[card]!.zone).toBe('graveyard');
+  });
+});
+
 describe('damage assigned as though it weren\'t blocked (D770)', () => {
   const THORN = { name: 'Test Thornback', type_line: 'Creature — Elemental', mana_cost: '{5}{G}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: "You may have Test Thornback assign its combat damage as though it weren't blocked." };
   const BRUTE = { name: 'Test Brute', type_line: 'Creature — Giant', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
