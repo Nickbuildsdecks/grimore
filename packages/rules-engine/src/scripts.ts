@@ -12364,7 +12364,9 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
       targets: (state, caster, target, card) => isLegalTarget(state, spec, target, caster, card),
     } };
   }
-  if (/\b(?:it|this spell|this creature)\b/i.test(rest) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
+  // "It" here is the spell, except in "a creature with a counter on it" (D1077), which is the creature.
+  const aboutTheSpell = rest.replace(/\bwith an? (?:\+1\/\+1 )?counter on it\b/gi, '');
+  if (/\b(?:it|this spell|this creature)\b/i.test(aboutTheSpell) || new RegExp(`\\b${self}\\b`, 'i').test(rest)) return null;
   if (how.toLowerCase() === 'if') {
     if (amount === 'X') return null;
     const condition = interveningConditionFor(rest, name);
@@ -32439,6 +32441,29 @@ function interveningConditionRows(
       const inst = c.state.instances[id];
       return inst !== undefined && characteristicsOf(c.state, inst).power >= atLeast;
     });
+  }
+  /*
+    And the other qualities a count does not read (D1077): "you control a creature with flying"
+    (Gust of Wind, Celestial Enforcer, Lofty Denial), "… with a +1/+1 counter on it" (Prehistoric
+    Turtlesaurus, Chronicler of Heroes), "… with a counter on it" (Formation Breaker, Delta
+    Bloodflies), "… with toughness 2 or less" (Endangered Armodon). Live, as `sized` is.
+  */
+  const withQuality = /^you control a creature with (?:(a \+1\/\+1 counter on it|a counter on it)|(power|toughness) (\d+) or less|([a-z]+(?: [a-z]+)?))$/i.exec(text);
+  if (withQuality !== null && (withQuality[4] === undefined || isKeyword(withQuality[4].toLowerCase()))) {
+    const test = (state: GameState, id: string): boolean => {
+      const inst = state.instances[id];
+      if (inst === undefined) return false;
+      if (withQuality[1] !== undefined) {
+        const counters = Object.entries(inst.counters ?? {}).filter(([, n]) => (n ?? 0) > 0);
+        return /\+1/.test(withQuality[1]) ? (inst.counters?.['+1/+1'] ?? 0) > 0 : counters.length > 0;
+      }
+      const chars = characteristicsOf(state, inst);
+      if (withQuality[2] !== undefined) {
+        return (withQuality[2].toLowerCase() === 'power' ? chars.power : chars.toughness) <= Number(withQuality[3]);
+      }
+      return chars.keywords.has(withQuality[4]!.toLowerCase() as Keyword);
+    };
+    return (c) => creaturesControlledBy(c.state, c.controller).some((id) => test(c.state, id));
   }
   // Lieutenant: your commander, on the battlefield, under your control.
   if (/^you control your commander$/i.test(text)) {

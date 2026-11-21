@@ -17942,10 +17942,10 @@ describe('an intervening-if in a trigger (D563)', () => {
   });
 
   it.each([
-    // Retargeted by D564, which reads "a creature with power 4 or greater": a keyword filter is
-    // the nearest condition still out of reach.
+    // Retargeted by D564, which reads "a creature with power 4 or greater", and again by D1077, which
+    // reads one keyword ("a creature with flying"): a quality of three words is still out of reach.
     ['a condition that needs a filter',
-      'When this creature enters, if you control a creature with flying, draw a card.'],
+      'When this creature enters, if you control a creature with protection from red, draw a card.'],
     // "If you control another Wizard" reads since D737: the condition is asked with the trigger's source.
     ['a choice of two things',
       'When this creature enters, if you control an artifact or enchantment, draw a card.'],

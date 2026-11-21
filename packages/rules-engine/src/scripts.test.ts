@@ -30603,6 +30603,48 @@ describe('the total power of creatures you control (D1076)', () => {
   });
 });
 
+describe('"if you control a creature with flying / with a counter on it" (D1077)', () => {
+  const R = (name: string, type: string, cost: string, cmc: number, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: cost, cmc, colors: ['U'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Gust', 'Instant', '{2}{U}', 3, 'This spell costs {2} less to cast if you control a creature with flying.\nDraw a card.'),
+    R('Test Turtle', 'Creature — Turtle', '{2}{U}', 3, 'This spell costs {2} less to cast if you control a creature with a +1/+1 counter on it.', ['3', '3']),
+    R('Test Bird', 'Creature — Bird', '{0}', 0, 'Flying', ['1', '1']),
+    R('Test Bear', 'Creature — Bear', '{0}', 0, '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1077', name: 'With', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 52 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string) => advanceTo(arena({
+    decks: { 0: 'd1077', 1: 'd1077' }, deckSpecs: { d1077: deck.deck },
+    battlefield: { 0: ['Island', ...mine], 1: [] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castOf = (s: GameState, card: string) => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A word that is not a keyword is not a quality the reader may guess at.
+    const odd = compileCard(R('Test Odd', 'Instant', '{2}{U}', 3, 'This spell costs {2} less to cast if you control a creature with wings.\nDraw a card.') as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('a flier makes it cost one; a Bear does not', () => {
+    const flier = table(['Test Bird'], 'Test Gust');
+    expect(refusal(flier, castOf(flier, 'Test Gust'))).toBeNull();
+    const ground = table(['Test Bear'], 'Test Gust');
+    expect(refusal(ground, castOf(ground, 'Test Gust'))).not.toBeNull();
+  });
+
+  it('a creature with a +1/+1 counter on it, and not one without', () => {
+    const plain = table(['Test Bear'], 'Test Turtle');
+    expect(refusal(plain, castOf(plain, 'Test Turtle'))).not.toBeNull();
+    const bear = find(plain, 0, 'battlefield', 'Test Bear');
+    const countered = { ...plain, instances: { ...plain.instances, [bear]: { ...plain.instances[bear]!, counters: { '+1/+1': 1 } } } } as GameState;
+    expect(refusal(countered, castOf(countered, 'Test Turtle'))).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
