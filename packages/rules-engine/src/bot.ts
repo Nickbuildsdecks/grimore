@@ -16,7 +16,7 @@
 import { pactProtects } from './pacts.js';
 // For a clock's scale: a duel starts at 20 and a pod at 40, so the term cannot carry a literal (#258).
 import { getFormat } from './formats.js';
-import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay } from './legalActions.js';
+import { attackTaxFor, crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
@@ -3472,7 +3472,33 @@ function legalDeclaration(state: GameState, seat: SeatIndex, plan: AttackPlan): 
     const defender = weakestLegal(attacker);
     if (defender !== null) fixed.push({ attacker, defender });
   }
-  return fixed;
+  return affordableAttack(state, seat, fixed);
+}
+
+/**
+ * The plan cut down to an attack whose tax it can pay (D780): Propaganda's {2} per creature. The
+ * weakest attacker aimed at a taxed player goes first, until what is left is affordable, with the
+ * attackers' own mana not counted, as `declareAttackers` does not spend it.
+ */
+function affordableAttack(state: GameState, seat: SeatIndex, plan: AttackPlan): AttackPlan {
+  let kept = [...plan];
+  for (let guard = 0; guard <= plan.length; guard++) {
+    const tax = attackTaxFor(state, kept);
+    if (tax === 0) return kept;
+    const attackers = new Set(kept.map((entry) => entry.attacker));
+    const sources = manaSources(state, seat).filter((source) => !attackers.has(source.key));
+    if (canAfford(poolOf(state, seat), parseManaCost(`{${tax}}`), sources)) return kept;
+    const taxedAt = (entry: AttackPlan[number]) => attackTaxFor(state, [entry]) > 0;
+    const candidates = kept.filter(taxedAt);
+    if (candidates.length === 0) return kept;
+    const powerOf = (id: string) => {
+      const inst = state.instances[id];
+      return inst === undefined ? 0 : characteristicsOf(state, inst).power;
+    };
+    const weakest = candidates.reduce((a, b) => (powerOf(b.attacker) < powerOf(a.attacker) ? b : a));
+    kept = kept.filter((entry) => entry !== weakest);
+  }
+  return kept;
 }
 
 /**

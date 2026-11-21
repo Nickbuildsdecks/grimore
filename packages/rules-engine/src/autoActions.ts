@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  attackTaxFor, bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -2649,7 +2649,12 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     attacked — tapped, summoning-sick, Pacified — is not in `forcedAttackers` at all, and in a pod
     with nobody left to attack neither is anything else.
   */
-  const owed = forcedAttackers(state, action.by).filter((id) => !seen.has(id));
+  /*
+    A creature that must attack need not when attacking costs something (CR 508.1d): one whose every
+    legal defender charges an attack tax (D780) is not owed.
+  */
+  const owed = forcedAttackers(state, action.by).filter((id) => !seen.has(id)
+    && legalDefenders(state, id, action.by).some((defender) => attackTaxFor(state, [{ defender }]) === 0));
   if (owed.length > 0 && state.seats.some((s) => s.index !== action.by && !s.eliminated)) {
     throw new EngineError(
       'RULE_NOT_APPLICABLE',
@@ -2690,8 +2695,23 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     }
   }
 
+  /*
+    Propaganda and Ghostly Prison (D780, CR 508.1h): the declaration's cost, paid by the attacking
+    player before anything is tapped for the attack, and never with the attackers' own mana.
+    Unpayable, the declaration is refused and nothing is spent.
+  */
+  let paidFor = state;
+  const tax = attackTaxFor(state, attacks);
+  if (tax > 0) {
+    try {
+      paidFor = payFrom(state, action.by, `{${tax}}`, 0, 0, undefined, undefined, new Set(attacks.map((a) => a.attacker))).state;
+    } catch {
+      throw new EngineError('RULE_NOT_APPLICABLE', `attacking there costs {${tax}}, and you cannot pay it`);
+    }
+  }
+
   let next: GameState = {
-    ...state,
+    ...paidFor,
     pacts: markPactsBroken(state.pacts, broken),
     // Raid's fact (D564): how many creatures this seat has declared as attackers this turn. A
     // declaration of nothing is not an attack, so an empty list leaves the record alone.
@@ -2706,7 +2726,7 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
         ...attacks.map((a) => `${a.attacker}#${state.instances[a.attacker]?.objectSeq ?? 0}`),
       ],
     }),
-    seats: state.seats.map((seat) => {
+    seats: paidFor.seats.map((seat) => {
       const spared = sparedBy[String(seat.index)];
       if (spared === undefined) return seat;
       return {

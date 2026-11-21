@@ -37994,3 +37994,40 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 14,641 to 14,655 of 31,900 cards with every line read, and 36,230 to 36,246 of 59,888
 lines, against 9143dbc.
+
+## D780 — An attack tax: Propaganda, Ghostly Prison, Windborn Muse
+
+Most-played order: Propaganda (rank 110) and Ghostly Prison (160), Windborn Muse after them. "Creatures
+can't attack you unless their controller pays {2} for each creature they control that's attacking
+you." Unread, so these cards did nothing, and in Commander they are among the most played defences.
+
+- `lineScriptFor` reads the line as `CardScript.attackTax` (the number).
+- `attackTaxFor` (`legalActions.ts`): what a declaration costs its player. For each creature
+  attacking a player (not a planeswalker), the sum of that player's taxing permanents. Face-down and
+  ability-less permanents tax nothing.
+- `declareAttackers` pays it before anything is tapped for the attack (CR 508.1h), from the attacking
+  player's mana and never with the attackers' own mana abilities. Unpayable, the declaration is
+  refused ("attacking there costs {4}, and you cannot pay it") and nothing is spent.
+- A creature that must attack is not owed when every player it could attack charges a tax
+  (CR 508.1d).
+- The bot: `legalDeclaration` ends with `affordableAttack`, which drops the weakest attacker aimed at
+  a taxed player until the rest can be paid for. Without it the bot's search threw the whole plan
+  away as illegal and attacked with nothing; with it, it attacks with what it can afford.
+
+Not yet: the table does not show the cost before you declare; an attack you cannot pay for is
+refused with the amount, and you declare again. "Or planeswalkers you control" variants are not read.
+
+**Tests.** 5 engine tests: the card reads; one attacker is paid for from the lands and attacks; two
+need {4}, and with two lands the declaration is refused with the amount; no tax without the
+enchantment or for declaring nothing; the bot at a 4-life player with three 2/2s and two lands
+attacks with exactly one. The deck-coverage test lists `script attackTax`.
+
+Faults injected by script: 4 of 5 caught, one after the bot test was sharpened (one attacker, not at
+most one). The fifth rebuilt the seats from the state before the payment; mana is held in
+`state.pools`, not on the seats, so a mana-only tax changes nothing it could lose.
+
+    engine tests: 5,776, all passing (on 7e3780f)
+
+Coverage: 14,669 to 14,672 of 31,900 cards with every line read, and 36,261 to 36,265 of 59,888
+lines, against 7e3780f. Small in count and large in play: these are two of the most-played defences
+in Commander.

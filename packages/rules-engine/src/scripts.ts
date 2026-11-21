@@ -32776,6 +32776,9 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
       return { statics: [{ scope: 'controller-lands', effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
     }
   }
+  // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
+  const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());
+  if (taxed !== null) return { attackTax: Number(taxed[1]) };
   // The Leylines (D778): see `CardScript.beginsInPlay`.
   if (new RegExp(`^if (?:${selfRef(name)}|this card) is in your opening hand, you may begin the game with it on the battlefield\\.?$`, 'i').test(plain(line).trim())) {
     return { beginsInPlay: true };

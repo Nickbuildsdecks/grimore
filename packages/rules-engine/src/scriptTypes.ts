@@ -2904,6 +2904,13 @@ export interface CardScript {
    */
   readonly mayStayTapped?: true;
   /**
+   * "Creatures can't attack you unless their controller pays {N} for each creature they control
+   * that's attacking you" (D780): Propaganda, Ghostly Prison, Windborn Muse. N per creature attacking
+   * this permanent's controller (not a planeswalker of theirs), paid by the attacking player as
+   * attackers are declared (CR 508.1h). See `attackTaxFor`.
+   */
+  readonly attackTax?: number;
+  /**
    * "If ~ is in your opening hand, you may begin the game with it on the battlefield" (D778, CR
    * 103.6): the Leylines. Put onto the battlefield after mulligans and before the first turn, in
    * turn order. Always taken: a player who did not want it there would not have kept it in a deck

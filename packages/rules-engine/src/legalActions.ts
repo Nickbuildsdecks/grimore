@@ -1081,6 +1081,29 @@ export function delvePlan(
  * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
  * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
  */
+/**
+ * What a declaration of attacks costs its player (D780, CR 508.1h): for every creature attacking a
+ * player (not a planeswalker), the `attackTax` of each permanent that player controls. Generic mana.
+ */
+export function attackTaxFor(
+  state: GameState, attacks: readonly { readonly defender: SeatIndex; readonly planeswalker?: string }[],
+): number {
+  const perDefender = new Map<SeatIndex, number>();
+  const taxOf = (seat: SeatIndex): number => {
+    const known = perDefender.get(seat);
+    if (known !== undefined) return known;
+    let sum = 0;
+    for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      sum += scriptForCard(state.cardDefs[inst.defKey])?.attackTax ?? 0;
+    }
+    perDefender.set(seat, sum);
+    return sum;
+  };
+  return attacks.reduce((total, a) => total + (a.planeswalker === undefined ? taxOf(a.defender) : 0), 0);
+}
+
 export function manaSources(
   state: GameState, seat: SeatIndex,
   /**

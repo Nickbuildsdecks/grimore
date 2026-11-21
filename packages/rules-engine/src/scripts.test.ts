@@ -7992,6 +7992,8 @@ describe('deck coverage', () => {
       'script mayStayTapped',
       // D778: the Leylines' opening-hand rule; no pool deck plays one.
       'script beginsInPlay',
+      // D780: the attack tax (Propaganda, Ghostly Prison); no pool deck plays one.
+      'script attackTax',
     ]);
 
     const declared = [
@@ -30847,6 +30849,58 @@ describe('lands you control have a mana ability (D779)', () => {
     // The two discarded and the spell itself.
     expect(namesIn(s, 0, 'graveyard')).toHaveLength(3);
     expect(lands.every((id) => !s.instances[id]!.tapped)).toBe(true);
+  });
+});
+describe('an attack tax: Propaganda and Ghostly Prison (D780)', () => {
+  const PROP = { name: 'Test Propaganda', type_line: 'Enchantment', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you." };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd780', name: 'Propaganda',
+    entries: [{ name: 'Test Propaganda', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Forest', count: 54 }],
+    data: [PROP, OX] as never[],
+  });
+  const table = (mine: string[], theirs: string[] = ['Test Propaganda']) => advanceTo(arena({
+    decks: { 0: 'd780', 1: 'd780' }, deckSpecs: { d780: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'declare-attackers');
+  const oxen = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Ox');
+  const forests = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Forest');
+
+  it('reads', () => {
+    expect(compileCard(PROP as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one attacker: {2} is paid from the lands, and it attacks', () => {
+    let s = table(['Forest', 'Forest', 'Test Ox', 'Test Ox']);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: oxen(s)[0]!, defender: 1 }] });
+    expect(s.combat.attacks).toHaveLength(1);
+    expect(forests(s).every((id) => s.instances[id]!.tapped)).toBe(true);
+  });
+
+  it('two attackers need {4}: with two lands it is refused, and nothing is spent', () => {
+    const s = table(['Forest', 'Forest', 'Test Ox', 'Test Ox']);
+    const both = oxen(s).map((attacker) => ({ attacker, defender: 1 as SeatIndex }));
+    expect(refusal(s, { type: 'auto:attack', by: 0, attackers: both })).toContain('{4}');
+  });
+
+  it('no tax without the enchantment, and none for attacking with nothing', () => {
+    let s = table(['Test Ox', 'Test Ox'], []);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: oxen(s).map((attacker) => ({ attacker, defender: 1 as SeatIndex })) });
+    expect(s.combat.attacks).toHaveLength(2);
+    const t = apply(table(['Test Ox']), { type: 'auto:attack', by: 0, attackers: [] });
+    expect(t.combat.attackersDeclared).toBe(true);
+  });
+
+  it('the bot attacks with what it can pay for', () => {
+    // At 4 life, three 2/2s look lethal; only one can be paid for.
+    let s = table(['Forest', 'Forest', 'Test Ox', 'Test Ox', 'Test Ox']);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 4 } : seat)) };
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:attack');
+    const attackers = (action as { attackers: readonly unknown[] }).attackers;
+    // One, not none: the plan is trimmed to what it can pay, not thrown away.
+    expect(attackers).toHaveLength(1);
+    expect(() => apply(s, action!)).not.toThrow();
   });
 });
 describe('the tenth deck: the life total that goes up', () => {
