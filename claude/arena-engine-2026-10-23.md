@@ -37745,3 +37745,29 @@ Faults injected by script: 5. All are caught. The payoff guard was caught only a
 rows were added.
 
 Coverage: 14,580 of 31,900 cards (+9), 36,091 of 59,888 lines (+9).
+
+## D1073 — the top card, and where it goes when it is not taken
+
+"Whenever ~ or another Elemental you control enters, look at the top card of your library. If it's
+a land card, you may put it onto the battlefield tapped. If you don't put the card onto the
+battlefield, put it into your hand" (Risen Reef), N'Yami-Class Mother Ship, Skyclave Aerialist,
+Wickerfolk Thresher.
+
+- D1036's top-card reader takes a third sentence: "If you don't put the card into your hand / onto
+  the battlefield, put it into your hand / on the bottom of your library". `clausesOf` joins it to
+  the clause.
+- It reads only after "you may". An answer that picks nothing leaves the card on top, and the effect
+  then moves it. A card of another kind is never offered, so it goes the same way.
+- The optional form, "you may put it into your graveyard" (six cards), needs a second question asked
+  only when the first picked nothing, and stays unread.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the third sentence without a "may" stays unread;
+- a land taken goes onto the battlefield and nothing else moves; declined, it goes to your hand;
+- a creature on top for a land question goes straight to your hand, and a land on top for a creature
+  question goes to the bottom of your library.
+
+Faults injected by script: 4. All are caught. The taken check was caught only after the hand-size
+assertion was added.
+
+Coverage: 14,585 of 31,900 cards (+5), 36,097 of 59,888 lines (+6).
