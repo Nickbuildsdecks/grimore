@@ -28685,6 +28685,35 @@ function composeEffects(
  */
 function quotedGrantUntilEndOfTurn(clause: string, name: string): ReadEffect | null {
   const text = plain(clause).trim().replace(/\.\s*$/, '');
+  /*
+    **The team** (D1065): "Until end of turn, creatures you control gain \"{T}: This creature deals 1
+    damage to any target.\"" (Lightning Volley), "… gain \"{1}: Regenerate this creature.\""
+    (Resuscitate), "… get +2/+2 and gain menace and \"Whenever this creature attacks, you gain 1
+    life.\"" (Root Manipulation), and "all creatures" (Brawl). The same grant through `pumpTeam` and
+    `pumpAll`, which lock to the creatures on the battlefield as the spell resolves (CR 611.2c): one
+    cast afterwards does not get it. Not friendly or hostile, because nothing is aimed.
+  */
+  const team = /^(until end of turn, )?(creatures you control|all creatures) (?:get ([+-]\d+)\/([+-]\d+),? and )?gain (?:([a-z][a-z, ]*?),? and )?"([^"]+)"( until end of turn)?$/i.exec(text);
+  if (team !== null) {
+    if ((team[1] === undefined) === (team[7] === undefined)) return null;
+    const keywords = team[5] === undefined ? [] : grantedKeywordList(team[5]);
+    if (keywords === null) return null;
+    const triggers = grantedTriggerFrom(team[6]!, name);
+    const abilities = triggers !== null ? null : grantedAbilityFrom(team[6]!, name);
+    if (triggers === null && abilities === null) return null;
+    const everyone = team[2]!.toLowerCase() === 'all creatures';
+    const power = team[3] === undefined ? undefined : Number(team[3]);
+    const toughness = team[4] === undefined ? undefined : Number(team[4]);
+    return {
+      cardFields: triggers !== null ? { grantedTriggers: triggers } : { grantedAbilities: abilities! },
+      effect: (c) => (everyone ? pumpAll : pumpTeam)(c.state, c.source, c.controller, {
+        ...(power === undefined ? {} : { power, toughness: toughness! }),
+        ...(keywords.length === 0 ? {} : { keywords }),
+        ...(triggers === null ? {} : { grants: triggers.map((_t, i) => i) }),
+        ...(abilities === null ? {} : { grantsAbilities: abilities.map((_a, i) => i) }),
+      }),
+    };
+  }
   const read = /^(until end of turn, )?((?:another |up to one )?target creature[^"]*?) (?:gets ([+-]\d+)\/([+-]\d+),? and )?gains (?:([a-z][a-z, ]*?),? and )?"([^"]+)"( until end of turn)?$/i.exec(text);
   if (read === null || (read[1] === undefined) === (read[7] === undefined)) return null;
   const spec = targetSpecFrom(read[2]!, false);

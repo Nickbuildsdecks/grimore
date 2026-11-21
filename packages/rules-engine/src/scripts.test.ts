@@ -29928,6 +29928,61 @@ describe('"target … you own" (D1064)', () => {
   });
 });
 
+describe('a quoted ability granted to the team until end of turn (D1065)', () => {
+  const R = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Volley', 'Instant', 'Until end of turn, creatures you control get +1/+0 and gain "{T}: You gain 1 life."'),
+    R('Test Brawl', 'Instant', 'Until end of turn, all creatures gain "{T}: You gain 1 life."'),
+    R('Test Bear', 'Creature — Bear', '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1065', name: 'Team gifts', entries: [...ROWS.map((r) => ({ name: r.name, count: r.name === 'Test Bear' ? 4 : 2 })), { name: 'Mountain', count: 52 }], data: ROWS as never[] });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1065', 1: 'd1065' }, deckSpecs: { d1065: deck.deck },
+    battlefield: { 0: ['Mountain', 'Test Bear', 'Test Bear'], 1: ['Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 30);
+  // What the creature has, whoever holds priority: an opponent without it is offered nothing.
+  const granted = (s: GameState, _seat: SeatIndex, card: string) => grantedAbilitiesOn(s, s.instances[card]!);
+
+  it('reads every row whole; a team narrowed by a type stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      'Until end of turn, Goblin creatures you control gain "{T}: You gain 1 life."',
+      // No duration: not a grant for the turn, and not this reader's.
+      'Creatures you control gain "{T}: You gain 1 life."',
+    ]) {
+      const odd = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: text } as never);
+      expect(odd.ok && odd.unread.length, text).toBe(1);
+    }
+  });
+
+  it('your creatures on the battlefield as it resolves, and not the opponent\'s, nor one that arrives later', () => {
+    let s = table(['Test Volley']);
+    const [a, b] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Volley');
+    expect(granted(s, 0, a!)).toHaveLength(1);
+    expect(granted(s, 0, b!)).toHaveLength(1);
+    expect(power(s, a!)).toBe(3);
+    expect(granted(s, 1, theirs)).toEqual([]);
+    const late = find(s, 0, 'library', 'Test Bear');
+    s = apply(s, { type: 'card:move', by: 0, card: late, toZone: 'battlefield' } as Action);
+    expect(granted(s, 0, late)).toEqual([]);
+  });
+
+  it('"all creatures": the opponent\'s too', () => {
+    let s = table(['Test Brawl']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Brawl');
+    expect(granted(s, 1, theirs)).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
