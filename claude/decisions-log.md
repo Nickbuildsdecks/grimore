@@ -55376,3 +55376,28 @@ counter on the chosen artifact.
 Faults injected by script: 2. Both are caught.
 
 Coverage: 14,640 of 31,900 cards (+9), 36,228 of 59,888 lines (+15).
+
+## D1080 — "its power" after the clause that aimed at it
+
+"Destroy target attacking creature. You gain life equal to its power" (Chastise), "Destroy target
+nonblack creature. It can't be regenerated. You gain life equal to its toughness" (Sever Soul),
+Exile, Heal the Scars, Sheltering Word, Brightmare.
+
+- A `boardCount` measure: "its|that creature's power|toughness", only after a clause that aimed at a
+  card (`earlierCardTarget`). Live while the creature is on the battlefield.
+- Once the clause before has destroyed or exiled it, it is read as it last was (CR 608.2h). That
+  value comes from a new `EffectContext.targetStats`, which `composeEffects` fills with each card
+  target's power and toughness as the composed resolution begins. The `boardCount` docblock had left
+  this unread "for want of last known information"; this is that information.
+- The five readers that pre-filter their measure now let the phrase through.
+
+**Tests.** 4 engine tests:
+- the rows read whole, and "its power" with nothing aimed at before it stays unread;
+- a Bear pumped +3/+3 and then destroyed gives the power it last had, 5;
+- "+2/+2, then its toughness" on a creature still there gives the value now, 6, not the snapshot;
+- a regenerated creature that is still there gives its toughness.
+
+Faults injected by script: 4. All are caught. The live-value fault was caught only after the
+pump-then-measure row was added.
+
+Coverage: 14,650 of 31,900 cards (+10), 36,239 of 59,888 lines (+11).
