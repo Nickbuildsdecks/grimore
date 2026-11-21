@@ -12836,7 +12836,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -12946,7 +12946,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     the plural, which is what this grammar prints.
   */
   const drawEqual = new RegExp(
-    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (drawEqual !== null) {
     const counted = boardCount(drawEqual[1]!, name);
@@ -12969,7 +12969,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     };
   }
   const lifeEqual = new RegExp(
-    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (lifeEqual !== null) {
     const counted = boardCount(lifeEqual[2]!, name);
@@ -19476,6 +19476,26 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
     every zone (CR 202.3), so the creature having been destroyed first changes nothing — unlike its
     power, which would need last known information and is left unread.
   */
+  /*
+    "Its power" / "that creature's toughness" after a clause that aimed at it (D1080): Chastise's
+    "Destroy target attacking creature. You gain life equal to its power", Sever Soul's toughness,
+    Heal the Scars, Sheltering Word, Brightmare. Live while the creature is on the battlefield; once
+    the clause before has destroyed or exiled it, as it last was (CR 608.2h), from the snapshot the
+    composition takes as it begins. Never below 0 as a count.
+  */
+  const sized = earlierCardTarget
+    ? /^(?:its|that creature's) (power|toughness)$/i.exec(plain(phrase).trim().replace(/\.$/, ''))
+    : null;
+  if (sized !== null) {
+    const which = sized[1]!.toLowerCase() as 'power' | 'toughness';
+    return (c) => {
+      const id = firstCardTarget(c);
+      if (id === null) return 0;
+      const inst = c.state.instances[id];
+      const live = inst !== undefined && inst.zone === 'battlefield' ? characteristicsOf(c.state, inst) : undefined;
+      return Math.max(0, live !== undefined ? live[which] : c.targetStats?.[id]?.[which] ?? 0);
+    };
+  }
   if (earlierCardTarget && /^(?:its|that (?:creature|permanent|card)'s) mana value$/i.test(plain(phrase).trim().replace(/\.$/, ''))) {
     return (c) => {
       const id = firstCardTarget(c);
@@ -23580,7 +23600,7 @@ function countedDamageFrom(
   const flat = clause.trim().replace(/\.\s*$/, '');
 
   const announced = new RegExp(
-    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (announced !== null) {
     const amount = boardCount(announced[2]!, name);
@@ -23588,7 +23608,7 @@ function countedDamageFrom(
   }
 
   const equalTo = new RegExp(
-    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|(?:its|that creature's) (?:power|toughness)|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (equalTo !== null) {
     const amount = boardCount(equalTo[2]!, name);
@@ -28939,7 +28959,16 @@ function composeEffects(
 
   const run = (slice: readonly ReadEffect[], asFinal: boolean) =>
     (c0: EffectContext): GameState => {
-      const c = withReferent(c0);
+      // The targets as they are before any part acts (D1080): see `EffectContext.targetStats`.
+      const stats: Record<string, { power: number; toughness: number }> = { ...(c0.targetStats ?? {}) };
+      for (const target of c0.targets) {
+        if (target.kind !== 'card' || stats[target.id] !== undefined) continue;
+        const inst = c0.state.instances[target.id];
+        if (inst === undefined || inst.zone !== 'battlefield') continue;
+        const chars = characteristicsOf(c0.state, inst);
+        stats[target.id] = { power: chars.power, toughness: chars.toughness };
+      }
+      const c = withReferent({ ...c0, targetStats: stats });
       return slice.reduce(
         (state, part, i) => {
           const final = asFinal && i === slice.length - 1;
