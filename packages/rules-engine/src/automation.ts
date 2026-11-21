@@ -1620,6 +1620,11 @@ function triggerMatches(
       // Dethrone's (D911): the attack was declared against the player with the most life.
       if (want.kind === 'attacks' && want.mostLife === true
         && (event as { mostLife?: boolean }).mostLife !== true) return false;
+      // "Attacks a player" (D1090): the attack was declared against the player, not a planeswalker.
+      if (want.kind === 'attacks' && want.atPlayer === true) {
+        const at = (event as { attacked?: AttackedTarget }).attacked;
+        if (at === undefined || at.planeswalker !== undefined) return false;
+      }
       // Training's (D912): another attacker in the declaration had greater power.
       if (want.kind === 'attacks' && want.stronger === true
         && (event as { stronger?: boolean }).stronger !== true) return false;

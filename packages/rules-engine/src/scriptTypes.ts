@@ -547,6 +547,8 @@ export type TriggerEvent =
        * changes before the trigger resolves does not take the counter away.
        */
       readonly mostLife?: boolean;
+      /** "Whenever ~ attacks **a player**" (D1090): asked of `attacked`, which names no planeswalker. */
+      readonly atPlayer?: true;
       /**
        * Training's clause (D912, CR 702.149a): "whenever this creature attacks **with another
        * creature with greater power**". Asked as `true` by the trigger, written by the engine at

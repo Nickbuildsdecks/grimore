@@ -19025,6 +19025,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} attacks alone, (.+)$`, 'i'),
     on: [{ kind: 'attacks', alone: true }],
   },
+  /*
+    "Whenever ~ attacks **a player**" (D1090): the attack was declared against a player, not a
+    planeswalker. The Backgrounds print it inside their quoted grants, Elder Brain and Master of
+    Cruelties on the card.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} attacks a player, (.+)$`, 'i'),
+    on: [{ kind: 'attacks', atPlayer: true }],
+  },
   {
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
@@ -32745,6 +32754,20 @@ function interveningConditionRows(
       }).length;
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated
       && count(c.state, seat.index) >= count(c.state, c.controller) + by);
+  }
+  /*
+    "If no opponent has more life than that player" (D1090), and "no other opponent": the player
+    this attack was declared against has at least as much life as every opponent still in the
+    game. Read off `c.attacked`, which both asks of an intervening if carry (CR 603.4). A
+    planeswalker attacked is no player, so the answer is no.
+  */
+  if (/^no (?:other )?opponent has more life than that player$/i.test(text)) {
+    return (c) => {
+      const at = c.attacked;
+      if (at === undefined || at.planeswalker !== undefined) return false;
+      const theirs = c.state.seats[at.defender]?.life ?? -Infinity;
+      return c.state.seats.every((seat) => seat.index === c.controller || seat.eliminated || seat.life <= theirs);
+    };
   }
   if (/^an opponent has more life than you$/i.test(text)) {
     return (c) => c.state.seats.some((seat) => seat.index !== c.controller && !seat.eliminated

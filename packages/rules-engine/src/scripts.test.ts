@@ -31808,6 +31808,43 @@ describe('the Backgrounds: "Commander creatures you own have …" (D1089)', () =
   });
 });
 
+describe('"attacks a player", "if no opponent has more life than that player" (D1090)', () => {
+  /*
+    The attack trigger asks that a player was attacked, and the intervening if compares that
+    player's life with every other opponent's, read off the attack (CR 603.4).
+  */
+  const RAIDER = { name: 'Test Raider', type_line: 'Creature — Human Rogue', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever Test Raider attacks a player, if no opponent has more life than that player, create two Treasure tokens.' };
+  const deck = customDeck({
+    id: 'd1090', name: 'Raiders',
+    entries: [{ name: 'Test Raider', count: 4 }, { name: 'Mountain', count: 56 }],
+    data: [RAIDER] as never[],
+  });
+  const attackAt = (defender: SeatIndex): GameState => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd1090', 1: 'd1090', 2: 'd1090' }, deckSpecs: { d1090: deck.deck },
+      battlefield: { 0: ['Test Raider'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    // Seat 2 is the richer opponent.
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 2 ? { ...seat, life: seat.life + 10 } : seat)) };
+    const attacker = find(s, 0, 'battlefield', 'Test Raider');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender }] }), 20);
+    return drain(passBoth(s), 20);
+  };
+  const treasures = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Treasure').length;
+
+  it('reads whole, and so do two Backgrounds that grant it', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(RAIDER as never)).toMatchObject({ ok: true, unread: [] });
+    const artisan = compileCard({ name: 'Test Artisan', type_line: 'Legendary Enchantment — Background', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: null, toughness: null, oracle_text: 'Commander creatures you own have "Whenever this creature attacks a player, if no other opponent has more life than that player, create two Treasure tokens."' } as never);
+    expect(artisan.ok && artisan.unread).toEqual([]);
+  });
+
+  it('attacking the opponent with the most life makes the Treasures; the poorer one, none', () => {
+    expect(treasures(attackAt(2 as SeatIndex))).toBe(2);
+    expect(treasures(attackAt(1 as SeatIndex))).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
