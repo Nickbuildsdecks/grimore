@@ -37716,3 +37716,32 @@ Faults injected by script: 9. All are caught. Two were caught only after the que
 rows were added.
 
 Coverage: 14,571 of 31,900 cards (+11), 36,082 of 59,888 lines (+12).
+
+## D1072 — kinship
+
+"Kinship — At the beginning of your upkeep, you may look at the top card of your library. If it
+shares a creature type with ~, you may reveal it. If you do, each opponent loses 2 life" (Nightshade
+Schemers). Also Ink Dissolver, Kithkin Zephyrnaut, Mudbutton Clanger, Pyroclast Consul, Sensation
+Gorger, Wandering Graybeard, Winnower Patrol and Wolf-Skull Shaman.
+
+- `clausesOf` marks the three sentences as one clause. A `readEffect` reader asks the reveal as a
+  yes-or-no for the controller.
+- The reveal is offered only when the top card shares a creature type with the permanent.
+  Changeling counts, because `characteristicsOf` gives it every type. When the card does not share
+  a type, the question has one option and answers itself, so nothing is asked.
+- The look is private and costs nothing, so it is not asked.
+- The payoff is any clause the reader reads with no question or target of its own, because the
+  reveal is answered as the ability resolves, after targets would have been chosen.
+- Leaf-Crowned Elder, Squeaking Pie Grubfellows and Waterspout Weavers stay unread: their payoffs
+  play the card, ask a question, or grant flying to the team.
+
+**Tests.** 3 engine tests:
+- the card reads whole, while a payoff that aims and one that asks stay unread;
+- with a Faerie on top: asked, and "Reveal it" costs the opponent 2 life while "Keep it hidden" does
+  nothing;
+- a changeling on top is asked about; with a Bear on top nothing is asked and nothing happens.
+
+Faults injected by script: 5. All are caught. The payoff guard was caught only after the aim and ask
+rows were added.
+
+Coverage: 14,580 of 31,900 cards (+9), 36,091 of 59,888 lines (+9).
