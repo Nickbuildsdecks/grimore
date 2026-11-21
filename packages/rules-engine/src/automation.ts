@@ -6230,7 +6230,7 @@ function completeResolution(
  * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
  * has no subject and nothing happens.
  */
-const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy', Resolvable>> = {
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you', Resolvable>> = {
   // The basilisks' "destroy that creature at end of combat" (D969). Only from the battlefield.
   destroy: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
@@ -6248,6 +6248,28 @@ const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'dest
   exile: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
       ? c.state : exileCard(c.state, c.subject)),
+  },
+  /*
+    The delayed blink's return (D1060): "Exile target creature. Return it to the battlefield under
+    its owner's control at the beginning of the next end step." Scheduled only about a card already
+    in exile, and the subject pin (CR 400.7) is what keeps it there: a card that left exile in
+    between is a new object, so the ability has no subject and does nothing. No zone check besides,
+    because none can fail — every zone change goes through `relocate`, which makes the new object,
+    and a token is deleted as it leaves the battlefield. The owner is read off the card when the
+    ability resolves. Flickerwisp's hand-written card uses it too.
+  */
+  'return-to-owner': {
+    effect: (c) => {
+      const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+      return inst === undefined ? c.state : putOntoBattlefield(c.state, inst.id, inst.owner);
+    },
+  },
+  // "… under your control": the delayed ability's controller, who is the one that scheduled it.
+  'return-to-you': {
+    effect: (c) => {
+      const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+      return inst === undefined ? c.state : putOntoBattlefield(c.state, inst.id, c.controller);
+    },
   },
 };
 

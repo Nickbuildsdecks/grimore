@@ -29539,6 +29539,89 @@ describe('damage to a player and each creature they control (D1059)', () => {
   });
 });
 
+describe('the delayed blink: back at the beginning of the next end step (D1060)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: text });
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Sphinx', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '3', toughness: '3', oracle_text: text });
+  const ROWS = [
+    I('Test Void', "Exile target creature. Return it to the battlefield under its owner's control at the beginning of the next end step."),
+    I('Test Borrow', 'Exile target creature. Return that card to the battlefield under your control at the beginning of the next end step.'),
+    C('Test Sphinx', "{0}: Exile Test Sphinx. Return it to the battlefield under its owner's control at the beginning of the next end step."),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1060', name: 'Blink', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 52 }], data: ROWS as never[] });
+  // The Sphinx only where it is the subject: an untapped creature of seat 0 owes an attack declaration.
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1060', 1: 'd1060' }, deckSpecs: { d1060: deck.deck },
+    battlefield: { 0: ['Island', ...(hand.length === 0 ? ['Test Sphinx'] : [])], 1: ['Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action)), 30);
+
+  it('reads every row whole, and the tapped return stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      "Exile target creature. Return it to the battlefield tapped under its owner's control at the beginning of the next end step.",
+      "{0}: Exile Test Odd. Return it to the battlefield tapped under its owner's control at the beginning of the next end step.",
+      // From the graveyard: a dies trigger's "it" is not a card in exile, and is not this reader's.
+      "When Test Odd dies, return it to the battlefield under its owner's control at the beginning of the next end step.",
+    ]) {
+      const read = compileCard({ ...ROWS[2], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it("gone until the end step, then back under its owner's control", () => {
+    let s = table(['Test Void']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Void', bear);
+    expect(s.instances[bear]!.zone).toBe('exile');
+    expect(s.delayed.length).toBe(1);
+    s = drain(advanceTo(s, 'end'), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
+  });
+
+  it('"under your control": the caster keeps it', () => {
+    let s = table(['Test Borrow']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(advanceTo(cast(s, 'Test Borrow', bear), 'end'), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+  });
+
+  it('a card that left exile in between is not fetched back (CR 400.7)', () => {
+    let s = table(['Test Void']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Void', bear);
+    s = apply(s, { type: 'card:move', by: 1, card: bear, toZone: 'hand' } as Action);
+    s = drain(advanceTo(s, 'end'), 30);
+    expect(s.instances[bear]!.zone).toBe('hand');
+  });
+
+  it('the self blink: the permanent exiles itself and comes back at the end step', () => {
+    let s = table([]);
+    const sphinx = find(s, 0, 'battlefield', 'Test Sphinx');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: sphinx, abilityIndex: 0 } as Action)), 30);
+    expect(s.instances[sphinx]!.zone).toBe('exile');
+    expect(s.delayed.length).toBe(1);
+    s = drain(advanceTo(s, 'end'), 30);
+    expect(s.instances[sphinx]!.zone).toBe('battlefield');
+    expect(s.instances[sphinx]!.zoneSeat).toBe(0);
+  });
+
+  it('a Sphinx gone before its ability resolves schedules nothing, and stays gone', () => {
+    let s = table([]);
+    const sphinx = find(s, 0, 'battlefield', 'Test Sphinx');
+    s = apply(s, { type: 'auto:activate', by: 0, card: sphinx, abilityIndex: 0 } as Action);
+    s = apply(s, { type: 'card:move', by: 0, card: sphinx, toZone: 'graveyard' } as Action);
+    s = drain(passBoth(s), 30);
+    expect(s.delayed.length).toBe(0);
+    s = drain(advanceTo(s, 'end'), 30);
+    expect(s.instances[sphinx]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

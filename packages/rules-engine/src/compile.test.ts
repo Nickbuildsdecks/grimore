@@ -16534,10 +16534,19 @@ describe("the blink's second half, read as a clause (D543)", () => {
     if (exileOnly.ok) expect(exileOnly.script?.removesACreature).toBe(true);
   });
 
+  it('reads the delayed return, which this row used to refuse (D1060)', () => {
+    /*
+      **Retargeted, not deleted** (D516). Flickerwisp's wording was the first row of the refusals
+      below, for want of a delayed trigger: the return is the engine's own delayed ability now
+      (`return-to-owner`), scheduled about the card in exile, and the scripts suite plays it.
+    */
+    const read = row('Probe Wisp', 'Creature — Elemental', 'When this creature enters, exile another target permanent. '
+      + "Return that card to the battlefield under its owner's control at the beginning of the next end step.", { power: '3', toughness: '1' });
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread).toEqual([]);
+  });
+
   it.each([
-    ['the delayed return (Flickerwisp, 8 printings)',
-      'When this creature enters, exile another target permanent. Return that card to the '
-      + "battlefield under its owner's control at the beginning of the next end step."],
     ['a counter on the way back (Long Road Home)',
       'Exile target creature. At the beginning of the next end step, return that card to the '
       + "battlefield under its owner's control with a +1/+1 counter on it."],

@@ -10217,28 +10217,24 @@ const FLICKERWISP: CardScript = {
           delayed ability resolves, off whatever is in exile then.
         */
         const exiled = exileCard(c.state, id);
+        /*
+          The return is the engine's own delayed ability (D1060, `return-to-owner`) rather than a
+          second trigger on this card, which is what the compiler builds from the same words: the
+          two readings are compared by `compiled-vs-written.test.ts`, and they now agree. Under its
+          **owner's** control, which is the clause that makes this a political card in a pod: a
+          permanent stolen by somebody else goes home, not to whoever blinked it. The owner is read
+          off whatever is in exile when the ability resolves.
+        */
         return scheduleDelayed(exiled, {
           source: c.source,
           controller: c.controller,
-          abilityIndex: delayedIndexOf(FLICKERWISP),
+          abilityIndex: -1,
           step: 'end',
           of: 'any',
           subject: id,
+          builtin: 'return-to-owner',
           description: `return ${name} to the battlefield`,
         });
-      },
-    },
-    {
-      on: { kind: 'step', step: 'end', of: 'any' },
-      delayed: true,
-      description: 'return the exiled card to the battlefield',
-      effect: (c) => {
-        const id = c.subject;
-        const inst = id === undefined ? undefined : c.state.instances[id];
-        // Under its **owner's** control, which is the clause that makes this a political card in a
-        // pod: a permanent stolen by somebody else goes home, not to whoever blinked it.
-        if (inst === undefined || inst.zone !== 'exile') return c.state;
-        return putOntoBattlefield(c.state, id!, inst.owner);
       },
     },
   ],
@@ -15589,6 +15585,39 @@ function selfEffect(
       effect: (c) => {
         const id = itMeans(named, c);
         return c.state.instances[id]?.zone === where ? exileCard(c.state, id) : c.state;
+      },
+    };
+  }
+
+  /*
+    "Exile ~. Return it to the battlefield under its owner's control at the beginning of the next
+    end step." (D1060): the self blink — Argent Sphinx, Stenn, Norin the Wary, Ghost Council of
+    Orzhova, Fleeting Spirit, Saltskitter. The exile is `exilesItself` above; this is the second
+    sentence, which schedules the engine's own return (`return-to-owner` / `return-to-you`) about the
+    card **in exile**, pinned there (CR 400.7). Only from the battlefield's abilities, and only when
+    the card did reach exile: one that was already gone when the exile resolved has nothing to come
+    back, and a dies trigger's "return it" (from the graveyard) is a different clause this refuses.
+  */
+  const comesBackLater = new RegExp(
+    `^return (?:(${self})|it) to the battlefield under (its owner's|your) control at the beginning of the next end step$`, 'i',
+  ).exec(text);
+  if (comesBackLater !== null && where === 'battlefield') {
+    const named = comesBackLater[1];
+    const toOwner = comesBackLater[2]!.toLowerCase().startsWith('its');
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        if (c.state.instances[id]?.zone !== 'exile') return c.state;
+        return scheduleDelayed(c.state, {
+          source: c.source,
+          controller: c.controller,
+          abilityIndex: -1,
+          step: 'end',
+          of: 'any',
+          subject: id,
+          builtin: toOwner ? 'return-to-owner' : 'return-to-you',
+          description: `return ${nameOfCard(c.state, id)} to the battlefield`,
+        });
       },
     };
   }
@@ -24655,12 +24684,42 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     un-transformed would be the wrong card entirely. The plural ("return **those cards**", Displace)
     waits on the plural referent, which `referentEffect` cannot supply — see D538's deferral.
   */
-  const restored = /^return target (creature|permanent) to the battlefield under (its owner's|your) control$/i
+  const restored = /^return target (creature|permanent) to the battlefield under (its owner's|your) control( at the beginning of the next end step)?$/i
     .exec(text);
   if (restored !== null) {
     const spec = targetSpecFrom(`target ${restored[1]!.toLowerCase()}`, true);
     if (spec !== null && pointsAtAPermanent(spec)) {
       const toOwner = restored[2]!.toLowerCase().startsWith('its');
+      /*
+        **Later** (D1060): "… at the beginning of the next end step" — Flickerwisp's return, and
+        Glimmerpoint Stag's, Argent Sphinx's, Mistmeadow Witch's. The same object the exile clause
+        just moved, but handed to the engine's own delayed ability instead of put back now: the
+        subject is pinned to the card **in exile** (scheduled after the move, the order D696's
+        Flickerwisp comment explains), so a card that leaves exile in between is not fetched back
+        from wherever it went. Whoever's turn it is: "the next end step" is anybody's.
+      */
+      if (restored[3] !== undefined) {
+        return {
+          targets: [{ ...spec, blinks: true }],
+          returnsTheObject: true,
+          effect: (c) => {
+            // Undefined for "up to one" with none chosen, and for a token, deleted as it left.
+            const id = firstCardTarget(c);
+            const inst = id === null ? undefined : c.state.instances[id];
+            if (inst === undefined) return c.state;
+            return scheduleDelayed(c.state, {
+              source: c.source,
+              controller: c.controller,
+              abilityIndex: -1,
+              step: 'end',
+              of: 'any',
+              subject: inst.id,
+              builtin: toOwner ? 'return-to-owner' : 'return-to-you',
+              description: `return ${nameOfCard(c.state, inst.id)} to the battlefield`,
+            });
+          },
+        };
+      }
       return {
         targets: [{ ...spec, blinks: true }],
         returnsTheObject: true,
