@@ -55096,3 +55096,32 @@ Ensouled Scimitar, Chimeric Idol, Firdoch Core, and the trigger form, Eye of Mal
 Faults injected by script: 3. All are caught after the three redundant checks were folded.
 
 Coverage: 14,552 of 31,900 cards (+28), 36,060 of 59,888 lines (+35).
+
+## D1069 — damage to "that land's controller"
+
+"Whenever a land enters, ~ deals 2 damage to that land's controller" (Ankh of Mishra, Zo-Zu the
+Punisher), "Whenever enchanted creature becomes tapped, ~ deals 3 damage to that creature's
+controller" (Insolence, Lust for War), and Psychic Venom's land.
+
+- An `eventRelativeEffect` reader for "~ deals N damage to that creature's / land's / artifact's /
+  enchantment's / permanent's controller". The player is whoever controls the event's own object
+  as the ability resolves.
+- It reads only on an entry, a tap or a block, never on the watcher's own event (`who: 'self'`,
+  where "that creature" would be the card itself).
+- A death or a move to the graveyard is not this reader's. "Whenever a creature dies, ~ deals 2
+  damage to that creature's controller" already reads through the actor path (D654), whose seat is
+  the controller as the creature last existed (CR 608.2h).
+- "Enchanted creature becomes tapped" carries no subject on the event, so the creature is the Aura's
+  host.
+- Battle Strain, Heat of Battle and Tetsuko Umezawa wait on their opening, "Whenever a creature
+  blocks", which does not read yet.
+
+**Tests.** 3 engine tests:
+- the rows read whole, and the card's own entry stays unread;
+- Ankh: your land costs you 2, and on the opponent's turn their land costs them 2;
+- an Aura on the opponent's Bear: it attacks, becomes tapped, and its controller takes 2, not the
+  Aura's.
+
+Faults injected by script: 3. All are caught.
+
+Coverage: 14,557 of 31,900 cards (+5), 36,067 of 59,888 lines (+7).
