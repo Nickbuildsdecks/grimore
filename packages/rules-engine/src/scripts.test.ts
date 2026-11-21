@@ -30947,6 +30947,61 @@ describe('an attack tax: Propaganda and Ghostly Prison (D780)', () => {
     expect(() => apply(s, action!)).not.toThrow();
   });
 });
+describe('channel lands: Boseiju and Otawara (D781)', () => {
+  const OTAWARA = { name: 'Test Otawara', type_line: 'Legendary Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "{T}: Add {U}.\nChannel — {3}{U}, Discard Test Otawara: Return target artifact, creature, enchantment, or planeswalker to its owner's hand. This ability costs {1} less to activate for each legendary creature you control." };
+  const BOSEIJU = { name: 'Test Boseiju', type_line: 'Legendary Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {G}.\nChannel — {1}{G}, Discard Test Boseiju: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That player may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.' };
+  const LEGEND = { name: 'Test Legend', type_line: 'Legendary Creature — Human', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  // A second name, or the legend rule would keep only one (CR 704.5j).
+  const LEGEND2 = { ...LEGEND, name: 'Test Other Legend' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const DUAL = { name: 'Test Dual', type_line: 'Land — Forest Island', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '({T}: Add {G} or {U}.)' };
+  const data = [OTAWARA, BOSEIJU, LEGEND, LEGEND2, OX, DUAL];
+  const deck = customDeck({
+    id: 'd781', name: 'Channel',
+    entries: [...data.map((d) => ({ name: d.name, count: 2 })), { name: 'Island', count: 25 }, { name: 'Forest', count: 25 }],
+    data: data as never[],
+  });
+  const table = (mine: string[], hand: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd781', 1: 'd781' }, deckSpecs: { d781: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const channelOf = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'hand', name));
+
+  it('both read whole', () => {
+    expect(compileCard(OTAWARA as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(BOSEIJU as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Otawara costs {1} less for each legendary creature you control', () => {
+    expect(channelOf(table(['Island', 'Island'], ['Test Otawara'], ['Test Ox']), 'Test Otawara')).toBeUndefined();
+    const play = channelOf(table(['Island', 'Island', 'Test Legend', 'Test Other Legend'], ['Test Otawara'], ['Test Ox']), 'Test Otawara');
+    expect(play?.manaCost).toBe('{1}{U}');
+  });
+
+  it('Otawara at the reduced cost returns the creature', () => {
+    let s = table(['Island', 'Island', 'Test Legend', 'Test Other Legend'], ['Test Otawara'], ['Test Ox']);
+    const play = channelOf(s, 'Test Otawara')!;
+    const ox = find(s, 1, 'battlefield', 'Test Ox');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: play.card, abilityIndex: play.abilityIndex!, targets: [{ kind: 'card', id: ox }] })));
+    expect(namesIn(s, 1, 'hand')).toContain('Test Ox');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Otawara');
+  });
+
+  it('Boseiju destroys a nonbasic land, and its controller may fetch a land with a basic land type', () => {
+    let s = table(['Forest', 'Forest'], ['Test Boseiju'], ['Test Dual', 'Forest']);
+    const play = channelOf(s, 'Test Boseiju')!;
+    const dual = find(s, 1, 'battlefield', 'Test Dual');
+    // A basic Forest is not a legal target.
+    expect(play.candidates?.[0]).not.toContain(find(s, 1, 'battlefield', 'Forest'));
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: play.card, abilityIndex: play.abilityIndex!, targets: [{ kind: 'card', id: dual }] }));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Dual');
+    expect(s.pendingDecision?.seat).toBe(1);
+    const lands = s.pendingDecision!.candidates;
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [lands[0]!] }));
+    // The Forest it kept and the land it fetched.
+    expect(namesIn(s, 1, 'battlefield')).toHaveLength(2);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

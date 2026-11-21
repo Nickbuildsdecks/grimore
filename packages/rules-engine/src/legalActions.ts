@@ -24,7 +24,7 @@ import {
 } from './combat.js';
 import { canPayLife, energyOf, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
 import {
-  addMana, canAfford, maxAffordableX, parseManaCost,
+  addMana, canAfford, maxAffordableX, parseManaCost, reducedCostText,
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
@@ -1085,6 +1085,19 @@ export function delvePlan(
  * What a declaration of attacks costs its player (D780, CR 508.1h): for every creature attacking a
  * player (not a planeswalker), the `attackTax` of each permanent that player controls. Generic mana.
  */
+/**
+ * An ability's mana cost as it is paid now (D781): the printed cost, less `costLess` for each thing
+ * it counts, off the generic part only. Undefined when the ability costs no mana.
+ */
+export function abilityManaText(
+  state: GameState, seat: SeatIndex, ability: AbilityDef, source: string,
+): string | undefined {
+  const printed = ability.cost.mana;
+  if (printed === undefined || ability.costLess === undefined) return printed;
+  const by = ability.costLess.per * Math.max(0, ability.costLess.count(state, source, seat));
+  return by <= 0 ? printed : reducedCostText(printed, by) ?? printed;
+}
+
 export function attackTaxFor(
   state: GameState, attacks: readonly { readonly defender: SeatIndex; readonly planeswalker?: string }[],
 ): number {
@@ -2690,8 +2703,10 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // than on the permanent (CR 122.1), so a Longtusk Cub with one energy in the pool shows no
       // growth ability at all instead of one that would be refused.
       if (ability.cost.energy !== undefined && energyOf(state, seat) < ability.cost.energy) continue;
-      if (ability.cost.mana
-        && !canAfford(poolOf(state, seat), parseManaCost(ability.cost.mana), restrictedMana
+      // What it costs now (D781): a channel land's "costs {1} less for each legendary creature".
+      const manaNow = abilityManaText(state, seat, ability, id);
+      if (manaNow
+        && !canAfford(poolOf(state, seat), parseManaCost(manaNow), restrictedMana
           ? manaSources(state, seat, { abilityOf: ch.typeLine })
           : sources, 0, phyrexianLife(state, seat))) continue;
       // Life is a cost like any other: an ability you cannot pay for is not offered, which is why
@@ -2757,8 +2772,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         whose loss would leave the mana short is not offered, and an ability with none left is not.
       */
       let fodder = victims;
-      if (ability.cost.mana) {
-        const cost = parseManaCost(ability.cost.mana);
+      if (manaNow) {
+        const cost = parseManaCost(manaNow);
         const all = restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources;
         const spent = new Set<string>([...(ability.cost.tap ? [id] : []), ...(crew ?? []), ...(tapped ?? [])]);
         const affords = (also?: string) => canAfford(poolOf(state, seat), cost,
@@ -2782,7 +2797,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         description: crew === null || crew.length === 0
           ? ability.description
           : `${ability.description} (tapping ${crew.length})`,
-        manaCost: ability.cost.mana ?? '', abilityIndex: i,
+        manaCost: manaNow ?? '', abilityIndex: i,
         // Which card defines it, when this permanent did not print it. See `LegalPlay.grantedBy`.
         ...(grantedBy === undefined ? {} : { grantedBy }),
         ...(zone === 'hand' ? { fromHand: true } : {}),

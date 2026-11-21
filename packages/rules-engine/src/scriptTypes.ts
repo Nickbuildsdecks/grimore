@@ -2697,6 +2697,15 @@ export interface AbilityDef {
    */
   readonly activateOnlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
   /**
+   * "This ability costs {N} less to activate for each <thing>" (D781): Boseiju, Otawara and the
+   * other Kamigawa channel lands. `per` generic less for each one `count` finds, off the generic part
+   * only and never below zero. Read wherever the ability's mana is asked: `abilityManaText`.
+   */
+  readonly costLess?: {
+    readonly per: number;
+    readonly count: (state: GameState, source: string, controller: SeatIndex) => number;
+  };
+  /**
    * "The rules let you, and it would do nothing" — read by the **bot** and by nothing else.
    *
    * The twin of `activateOnlyIf` and the opposite half of it. Monstrosity's restriction is printed
