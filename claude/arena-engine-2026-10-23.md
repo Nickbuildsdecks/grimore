@@ -38047,7 +38047,7 @@ Faults injected by script: 4 of 5 caught, one after the bot test was sharpened (
 most one). The fifth rebuilt the seats from the state before the payment; mana is held in
 `state.pools`, not on the seats, so a mana-only tax changes nothing it could lose.
 
-    engine tests: 5,776, all passing (on 7e3780f)
+    engine tests: 5,780, all passing (merged with the other session's D1082)
 
 Coverage: 14,669 to 14,672 of 31,900 cards with every line read, and 36,261 to 36,265 of 59,888
 lines, against 7e3780f. Small in count and large in play: these are two of the most-played defences
