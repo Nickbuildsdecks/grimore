@@ -21540,6 +21540,48 @@ describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life 
   });
 });
 
+describe('revealing the top cards and putting one into your hand (D1075)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    S('Test Salvage', 'Reveal the top five cards of your library. You may put a creature or land card from among them into your hand. Put the rest into your graveyard.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1075', name: 'Salvage',
+    entries: [{ name: 'Test Salvage', count: 1 }, { name: 'Test Bear', count: 20 }, { name: 'Test Relic', count: 20 }, { name: 'Forest', count: 19 }],
+    data: ROWS as never[],
+  });
+  const dig = () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1075', 1: 'd1075' }, deckSpecs: { d1075: deck.deck }, hands: { 0: ['Test Salvage'] },
+      battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salvage') } as Action), 30);
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    const looked = ids(t, 0, 'library').slice(0, 5);
+    return { t, looked, answer: (cards: string[]) => drain(apply(t, { type: 'auto:decide', by: 0, cards } as Action), 30) };
+  };
+
+  it('reads whole; "and/or" of two kinds stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard(S('Test Odd', 'Reveal the top four cards of your library. You may put a creature card and/or a land card from among them into your hand. Put the rest into your graveyard.') as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('a creature or land offered, at most one taken, the rest to the graveyard', () => {
+    const { t, looked, answer } = dig();
+    const offered = t.pendingDecision?.candidates ?? [];
+    expect(offered.every((id) => nameOf(t, id) !== 'Test Relic')).toBe(true);
+    expect(t.pendingDecision?.max).toBe(1);
+    const pick = offered[0]!;
+    const done = answer([pick]);
+    expect(done.instances[pick]!.zone).toBe('hand');
+    for (const id of looked.filter((id) => id !== pick)) expect(done.instances[id]!.zone).toBe('graveyard');
+  });
+});
+
 describe('digging onto the battlefield, and revealing up to two (D973)', () => {
   const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
   const ROWS = [

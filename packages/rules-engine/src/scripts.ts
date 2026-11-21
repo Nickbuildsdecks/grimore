@@ -27925,7 +27925,9 @@ const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mou
 function digGroup(
   clauses: readonly string[], at: number, name: string,
 ): { readonly read: ReadEffect; readonly consumed: number } | null {
-  const looks = /^look at the top ([a-z]+) cards of your library$/i.exec(clauses[at]!.trim());
+  // "Reveal" as well as "look at" (D1075): Grisly Salvage, Commune with the Gods. The cards are seen
+  // by everyone instead of one player; what is chosen from them, and where the rest go, is the same.
+  const looks = /^(?:look at|reveal) the top ([a-z]+) cards of your library$/i.exec(clauses[at]!.trim());
   const second = clauses[at + 1]?.trim();
   if (looks === null || second === undefined) return null;
   const look = WORD_NUMBERS[looks[1]!.toLowerCase()];
@@ -27994,6 +27996,23 @@ function digGroup(
     return asks({
       prompt: `${name}: you may reveal up to ${severalShown[1]!} ${severalShown[2]!} cards and put them into your hand`,
       min: 0, max: most, restGoTo, revealPicked: true, filter: fits,
+    }, 3);
+  }
+
+  /*
+    "You may put a creature or land card from among them into your hand" (D1075): the pick without
+    the word "reveal" (Grisly Salvage, Commune with the Gods, Malevolent Rumble), one card at most.
+    "A creature card and/or a land card" is one of each, which a single question with one filter
+    cannot hold; it stays unread because `kindTest` does not read "card and/or a land" as a kind.
+  */
+  const putsOne = /^you may put an? (.+?) card from among them into your hand$/i.exec(second);
+  if (putsOne !== null && theRest !== null) {
+    const fits = kindTest(putsOne[1]!, undefined);
+    const restGoTo = digRest(theRest[1]!);
+    if (fits === null || restGoTo === null) return null;
+    return asks({
+      prompt: `${name}: you may put ${/^[aeiou]/i.test(putsOne[1]!) ? 'an' : 'a'} ${putsOne[1]!} card into your hand`,
+      min: 0, max: 1, restGoTo, revealPicked: true, filter: fits,
     }, 3);
   }
 
