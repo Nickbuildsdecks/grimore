@@ -30274,6 +30274,92 @@ describe('"whenever a creature blocks" (D1070)', () => {
   });
 });
 
+describe('clash with an opponent (D1071)', () => {
+  const R = (name: string, type: string, cost: string, cmc: number, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: cost, cmc, colors: ['R'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Clasher', 'Creature — Goblin', '{0}', 0, 'When Test Clasher enters, clash with an opponent. If you win, put a +1/+1 counter on Test Clasher.', ['2', '2']),
+    R('Test Lash', 'Instant', '{0}', 0, "Test Lash deals 3 damage to target creature. Clash with an opponent. If you win, Test Lash deals 3 damage to that creature's controller."),
+    R('Test Wager', 'Sorcery', '{0}', 0, 'Clash with an opponent. If you win, draw two cards. Otherwise, you lose 2 life.'),
+    R('Test Giant', 'Creature — Giant', '{6}', 6, '', ['6', '6']),
+    R('Test Pebble', 'Artifact', '{0}', 0, ''),
+    R('Test Bear', 'Creature — Bear', '{0}', 0, '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1071', name: 'Clash', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  /** Seat 0's top card is `mine`, seat 1's is `theirs`. */
+  const table = (hand: string, mine: string, theirs: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1071', 1: 'd1071' }, deckSpecs: { d1071: deck.deck },
+      battlefield: { 0: ['Mountain'], 1: ['Test Bear'] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = putOnTopOfLibrary(s, find(s, 0, 'library', mine));
+    s = putOnTopOfLibrary(s, find(s, 1, 'library', theirs));
+    return s;
+  };
+  const top = (s: GameState, seat: SeatIndex) => nameOf(s, ids(s, seat, 'library')[0]!);
+  /** Both keep-or-bottom questions answered, mine then theirs, then the stack emptied. */
+  const answer = (s0: GameState, mine: boolean, theirs: boolean) => {
+    let s = s0;
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    for (const [seat, bottom] of [[0, mine], [1, theirs]] as const) {
+      expect(s.pendingDecision?.seat).toBe(seat);
+      s = drain(apply(s, { type: 'auto:decide', by: seat, cards: [], option: bottom ? 'Put it on the bottom' : 'Keep it on top' } as Action), 30);
+    }
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return s;
+  };
+  const cast = (s: GameState, card: string, targets: Target[] = []) =>
+    passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets } as Action));
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // An outcome that asks a question of its own: refused, not read without it.
+    // And two outcomes that each aim at something: one target list cannot hold both choices.
+    for (const text of [
+      'Clash with an opponent. If you win, discard a card.',
+      'Clash with an opponent. If you win, destroy target artifact. Otherwise, destroy target creature.',
+    ]) {
+      const odd = compileCard(R('Test Odd', 'Sorcery', '{0}', 0, text) as never);
+      expect(odd.ok && odd.unread.length, text).toBe(1);
+    }
+  });
+
+  it('the greater mana value wins: a counter, and each card stays or goes to the bottom as chosen', () => {
+    const s = answer(cast(table('Test Clasher', 'Test Giant', 'Test Pebble'), 'Test Clasher'), true, false);
+    const clasher = find(s, 0, 'battlefield', 'Test Clasher');
+    expect(s.instances[clasher]!.counters['+1/+1']).toBe(1);
+    expect(top(s, 0)).not.toBe('Test Giant');
+    expect(nameOf(s, ids(s, 0, 'library').at(-1)!)).toBe('Test Giant');
+    expect(top(s, 1)).toBe('Test Pebble');
+  });
+
+  it('the lesser, and a tie, lose', () => {
+    let s = answer(cast(table('Test Clasher', 'Test Pebble', 'Test Giant'), 'Test Clasher'), false, false);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Clasher')]!.counters['+1/+1'] ?? 0).toBe(0);
+    s = answer(cast(table('Test Clasher', 'Test Giant', 'Test Giant'), 'Test Clasher'), false, false);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Clasher')]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('"otherwise": the losing outcome', () => {
+    let s = table('Test Wager', 'Test Pebble', 'Test Giant');
+    const before = life(s, 0);
+    s = answer(cast(s, 'Test Wager'), false, false);
+    expect(life(s, 0)).toBe(before - 2);
+  });
+
+  it("a target before the clash, and \"that creature's controller\" after a win", () => {
+    let s = table('Test Lash', 'Test Giant', 'Test Pebble');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const theirs = life(s, 1);
+    s = answer(cast(s, 'Test Lash', [{ kind: 'card', id: bear }]), false, false);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(life(s, 1)).toBe(theirs - 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

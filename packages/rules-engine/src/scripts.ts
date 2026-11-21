@@ -26136,6 +26136,68 @@ function readEffect(
       },
     };
   }
+  /*
+    **Clash** (D1071, CR 701.23): "Clash with an opponent. If you win, put a +1/+1 counter on ~"
+    (Lorwyn's clash creatures), "… If you win, ~ deals 4 damage to each creature blocking it", "…
+    If you win, target player discards two cards. Otherwise, that player discards a card".
+
+    You and one opponent each reveal the top card of your library, and each of you may put it on the
+    bottom; you win if yours has the greater mana value than theirs (CR 701.23b), so a tie loses and
+    an empty library cannot win. The two keep-or-bottom answers are questions (`controller`, then
+    `an-opponent` — the next opponent in turn order, exact at two players and the known pod
+    limitation D728 records), and like every answer they are applied as the ability resolves: the
+    cards are compared where they are, then moved, then the outcome happens.
+
+    The outcome is any clause the reader reads, with no question of its own. A target in it is the
+    whole ability's, chosen as it is put on the stack (CR 601.2c) whatever the clash turns out to be.
+  */
+  const clash = /^clash with an opponent\.\s+if you win, ([^.]+?)(?:\.\s+otherwise, ([^.]+))?$/i.exec(clause.trim());
+  if (clash !== null) {
+    const cap = (t: string) => `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+    const won = readEffect(cap(clash[1]!), name, where);
+    const lost = clash[2] === undefined ? null : readEffect(cap(clash[2]), name, where);
+    if (won === null || (clash[2] !== undefined && lost === null)) return null;
+    const parts = [won, ...(lost === null ? [] : [lost])];
+    if (parts.some((part) => (part.decisions ?? []).length > 0 || part.beforeDecisions !== undefined)) return null;
+    if (parts.filter((part) => (part.targets ?? []).length > 0).length > 1) return null;
+    const topOf = (state: GameState, seat: SeatIndex): string | undefined => listAt(state, zoneKey(seat, 'library'))[0];
+    const valueOf = (state: GameState, id: string): number => state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0;
+    const KEEP = 'Keep it on top';
+    const BOTTOM = 'Put it on the bottom';
+    const ask = (who: 'controller' | 'an-opponent'): ChoiceDecisionSpec => ({
+      who,
+      prompt: 'Clash: keep the card revealed from the top of your library, or put it on the bottom?',
+      options: [KEEP, BOTTOM],
+      // A land the chooser no longer needs goes to the bottom; anything else stays.
+      best: (state, chooser) => {
+        const top = topOf(state, chooser);
+        if (top === undefined) return KEEP;
+        const line = parseTypeLine(state.cardDefs[state.instances[top]?.defKey ?? '']?.typeLine);
+        const lands = listAt(state, zoneKey(chooser, 'battlefield')).filter((id) => characteristicsOf(state, state.instances[id]!).isLand).length;
+        return hasType(line, 'land') && lands >= 5 ? BOTTOM : KEEP;
+      },
+    });
+    const opponentOf = (state: GameState, seat: SeatIndex): SeatIndex | undefined => {
+      const seats = state.seats.filter((one) => one.eliminated !== true).map((one) => one.index).sort((a, b) => a - b);
+      return [...seats.filter((one) => one > seat), ...seats.filter((one) => one < seat)][0];
+    };
+    const target = parts.find((part) => (part.targets ?? []).length > 0)?.targets;
+    return {
+      ...(target === undefined ? {} : { targets: target }),
+      decisions: [ask('controller'), ask('an-opponent')],
+      effect: (c) => {
+        const opponent = opponentOf(c.state, c.controller);
+        const mine = topOf(c.state, c.controller);
+        const theirs = opponent === undefined ? undefined : topOf(c.state, opponent);
+        const victory = mine !== undefined && (theirs === undefined || valueOf(c.state, mine) > valueOf(c.state, theirs));
+        let state = c.state;
+        if (mine !== undefined && c.decisions[0]?.option === BOTTOM) state = putOnBottomOfLibrary(state, mine);
+        if (theirs !== undefined && c.decisions[1]?.option === BOTTOM) state = putOnBottomOfLibrary(state, theirs);
+        const outcome = victory ? won : lost;
+        return outcome === null ? state : outcome.effect({ ...c, state, decisions: [] });
+      },
+    };
+  }
   // A land animated by a spell or a trigger (D1048), held as one clause by `clausesOf`.
   if (clause.includes('\u0010')) return animateSelf(clause.replace('\u0010', ". It's still a land"), name);
   if (/\bcreature that['’]s still a land\.?$/i.test(clause.trim())) return animateSelf(clause, name);
@@ -27078,6 +27140,9 @@ function clausesOf(line: string): readonly string[] {
       `optionalEffect` from `composeEffects`; cut apart, "If you do" has nothing to refer to.
     */
     .replace(/(^|\.\s+)(you may [^.;]+)\.\s+(If you do, [^.]+)/gi, (_m, lead: string, may: string, then: string) => `${lead}${may}\u0009${then}`)
+    // "Clash with an opponent. If you win, Y. [Otherwise, Z.]" (D1071): one clash and its outcome.
+    .replace(/(^|\.\s+)(clash with an opponent)\.\s+(If you win, [^.]+)(?:\.\s+(Otherwise, [^.]+))?/gi,
+      (_m, lead: string, clash: string, won: string, lost: string | undefined) => `${lead}${clash}\u0009${won}${lost === undefined ? '' : `\u0009${lost}`}`)
     .split(/\.\s+/)
     .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
     .map((clause) => clause.replace(/\u0001/g, ON_TOP).replace(/\u0002/g, BACK).replace(/\u0003/g, ', then draws')
