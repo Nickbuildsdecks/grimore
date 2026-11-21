@@ -1195,6 +1195,7 @@ export function endTurnCleanup(state: GameState): GameState {
     creaturesDiedThisTurnBy: {},
     leftBattlefieldThisTurn: {},
     lifeGainedThisTurn: {},
+    tokensCreatedThisTurn: {},
     manaSpentOnSpellsThisTurn: {},
     // And mana kept "until end of turn" (D1034), which ends here with the other until-end-of-turn effects.
     keptMana: {},

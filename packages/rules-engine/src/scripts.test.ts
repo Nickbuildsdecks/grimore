@@ -31021,6 +31021,29 @@ describe('channel lands: Boseiju and Otawara (D781)', () => {
     expect(namesIn(s, 1, 'battlefield')).toHaveLength(2);
   });
 });
+describe('"if you created a token this turn" (D1084)', () => {
+  const ROWS = [
+    { name: 'Test Idol', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Draw a card. Activate only if you created a token this turn.' },
+    { name: 'Test Muster', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Create a 1/1 white Soldier creature token.' },
+  ];
+  const deck = customDeck({ id: 'd1084', name: 'Idol', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 56 }], data: ROWS as never[] });
+  const useIdol = (s: GameState): Action => ({ type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Idol'), abilityIndex: 0 } as Action);
+
+  it('reads whole; refused before a token, offered after, refused again next turn', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1084', 1: 'd1084' }, deckSpecs: { d1084: deck.deck },
+      battlefield: { 0: ['Test Idol'], 1: [] }, hands: { 0: ['Test Muster'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    expect(refusal(s, useIdol(s))).not.toBeNull();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Muster') } as Action)), 30);
+    expect(refusal(s, useIdol(s))).toBeNull();
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(refusal(s, useIdol(s))).not.toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

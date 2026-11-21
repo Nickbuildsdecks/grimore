@@ -1439,6 +1439,11 @@ export interface AutomationState {
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;
   readonly lifeGainedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * Tokens each seat created this turn (D1084): "Activate only if you created a token this turn"
+   * (Idol of Oblivion). Optional and cleared with the rest of the turn's facts.
+   */
+  readonly tokensCreatedThisTurn?: Readonly<Record<string, number>>;
+  /**
    * How much mana each seat has spent **to cast spells** this turn (D1002), for expend: "you expend
    * 4 as you spend your fourth total mana to cast spells during a turn". Activated abilities do not
    * count.

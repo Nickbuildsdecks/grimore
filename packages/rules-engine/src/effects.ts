@@ -786,6 +786,9 @@ export const turnFacts = {
   /** Permanent cards put into this seat's graveyard this turn (D612). */
   descended: (state: GameState, seat: SeatIndex): number =>
     state.descendedThisTurn?.[String(seat)] ?? 0,
+  /** Tokens this seat created this turn (D1084). */
+  tokensCreated: (state: GameState, seat: SeatIndex): number =>
+    state.tokensCreatedThisTurn?.[String(seat)] ?? 0,
 } as const;
 
 /**
@@ -2631,8 +2634,12 @@ export function addTokens(
   // Impact Tremors watching for it. `createToken` writes the zone directly rather than going
   // through `relocate`, which is why it has to say so here.
   const entered = state.automated ? [...state.entered, ...created] : state.entered;
+  // "If you created a token this turn" (D1084): counted for the seat that created them.
+  const tokenTally = state.tokensCreatedThisTurn ?? {};
+  const tokensCreatedThisTurn = created.length === 0 ? state.tokensCreatedThisTurn
+    : { ...tokenTally, [String(seat)]: (tokenTally[String(seat)] ?? 0) + created.length };
   return {
-    state: withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered }, {
+    state: withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered, ...(tokensCreatedThisTurn === undefined ? {} : { tokensCreatedThisTurn }) }, {
       [bf]: [...listAt(state, bf), ...created],
     }),
     created,

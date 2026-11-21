@@ -32613,6 +32613,8 @@ function interveningConditionRows(
   if (/^you descended this turn$/i.test(text)) {
     return (c) => turnFacts.descended(c.state, c.controller) > 0;
   }
+  // "If you created a token this turn" (D1084): Idol of Oblivion's activation, read off the turn.
+  if (/^you(?:'ve)? created a token this turn$/i.test(text)) return (c) => turnFacts.tokensCreated(c.state, c.controller) > 0;
   const gained = /^you gained (\w+) or more life this turn$/i.exec(text);
   if (gained !== null) {
     const atLeast = number(gained[1]!);
