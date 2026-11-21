@@ -6950,8 +6950,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         oracle_text: 'Until end of turn, target creature gets +2/+0 and gains "When this creature'
           + ' dies, return it to the battlefield tapped under its owner\'s control."',
       });
+      /*
+        **Retargeted, not deleted** (D516, D1062). This used to assert the line reads to nothing. It
+        reads now, as a grant: the quoted trigger is the card's `grantedTriggers`, handed to the
+        creature aimed at, and the spell has no trigger of its own. That is the row's claim kept and
+        made stronger: the inside of the quotes is still not the spell's.
+      */
       expect(granted.ok).toBe(true);
-      if (granted.ok) expect(granted.script).toBeUndefined();
+      if (granted.ok) {
+        expect(granted.unread).toEqual([]);
+        expect(granted.script?.triggers).toBeUndefined();
+        expect(granted.script?.grantedTriggers).toHaveLength(1);
+      }
     });
 
     it('refuses a type the self-reference list does not name, rather than any "this X"', () => {

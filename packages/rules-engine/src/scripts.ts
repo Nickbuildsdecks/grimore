@@ -28597,6 +28597,59 @@ function composeEffects(
  * a mana source the auto-tapper will spend. A compiled animation without the flag is #322's failure
  * again: a card that plays and plays badly.
  */
+/**
+ * **A quoted ability handed to a target until end of turn** (D1062): "Until end of turn, target
+ * creature gets +2/+0 and gains \"When this creature dies, return it to the battlefield tapped under
+ * its owner's control.\"" (Supernatural Stamina, Return to Action, Pain 101, Demonic Gifts),
+ * "Target creature gains \"{T}: Draw a card\" until end of turn", Herd Heirloom's activated
+ * "{T}: Until end of turn, target creature you control with power 4 or greater gains trample and
+ * \"Whenever this creature deals combat damage to a player, draw a card.\""
+ *
+ * The quotation is read as the card's own line would be (`grantedTriggerFrom`, then
+ * `grantedAbilityFrom`), held in the card's `grantedTriggers` / `grantedAbilities`, and handed to
+ * the creature by index through an end-of-turn effect, which is how an Aura's grant has worked since
+ * D511. The ability's source is the creature that has it, so "this creature" and "it" are the
+ * creature, and its controller controls the trigger.
+ *
+ * **Not a clause reader, and that is the safety of it.** The table lives on the card and the index
+ * lives in a closure, so every place that assembles a script out of this reading has to carry the
+ * table with it, or the creature is handed index 0 of nothing and the card reads and does nothing.
+ * Of the many places a clause is consumed, two do: a spell whose resolution is this one sentence,
+ * and an activated ability whose effect is. Those are the only two callers. A trigger, a mode or a
+ * composition with other sentences stays unread rather than silently dropping the grant.
+ *
+ * "Until end of turn" exactly once, before or after. The target is the bot's own side by default
+ * (`friendly`): an ability is its holder's to use, so a grant is a gift.
+ */
+function quotedGrantUntilEndOfTurn(clause: string, name: string): ReadEffect | null {
+  const text = plain(clause).trim().replace(/\.\s*$/, '');
+  const read = /^(until end of turn, )?((?:another |up to one )?target creature[^"]*?) (?:gets ([+-]\d+)\/([+-]\d+),? and )?gains (?:([a-z][a-z, ]*?),? and )?"([^"]+)"( until end of turn)?$/i.exec(text);
+  if (read === null || (read[1] === undefined) === (read[7] === undefined)) return null;
+  const spec = targetSpecFrom(read[2]!, false);
+  if (spec === null || !pointsAtAPermanent(spec)) return null;
+  const keywords = read[5] === undefined ? [] : grantedKeywordList(read[5]);
+  if (keywords === null) return null;
+  const triggers = grantedTriggerFrom(read[6]!, name);
+  const abilities = triggers !== null ? null : grantedAbilityFrom(read[6]!, name);
+  if (triggers === null && abilities === null) return null;
+  const power = read[3] === undefined ? undefined : Number(read[3]);
+  const toughness = read[4] === undefined ? undefined : Number(read[4]);
+  return {
+    targets: [{ ...spec, friendly: true }],
+    cardFields: triggers !== null ? { grantedTriggers: triggers } : { grantedAbilities: abilities! },
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      if (id === null) return c.state;
+      return pump(c.state, [id], c.source, c.controller, {
+        ...(power === undefined ? {} : { power, toughness: toughness! }),
+        ...(keywords.length === 0 ? {} : { keywords }),
+        ...(triggers === null ? {} : { grants: triggers.map((_t, i) => i) }),
+        ...(abilities === null ? {} : { grantsAbilities: abilities.map((_a, i) => i) }),
+      });
+    },
+  };
+}
+
 function animateSelf(clause: string, name: string): ReadEffect | null {
   const self = selfRef(name);
   /*
@@ -29489,6 +29542,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   // An activated ability on a permanent is activated from the battlefield (see `SubjectZone`).
   // A sacrifice in the cost is what makes "the sacrificed creature's power" a number (D586).
   const read = withSacrificeInCost(sacrifices !== null, () => outOfTheGraveyard
+    // A quoted ability granted until end of turn (D1062): one of its two callers, see its docblock.
+    ?? quotedGrantUntilEndOfTurn(clause, name)
     ?? animateSelf(clause, name)
     ?? animateThen(clause, name)
     ?? composeEffects(clausesOf(clause), name, 'battlefield')
@@ -32804,7 +32859,15 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   }
   const additional = (built as Partial<CardScript>).additionalCost;
   const paidBySacrifice = additional !== undefined && 'sacrifice' in additional;
-  const readMain = upgradedRead !== null ? upgradedRead : readNow.length === 0 && laterTrigger !== null
+  /*
+    A quoted ability granted until end of turn (D1062), when it is the whole resolution: the other of
+    its two callers, and the only spell-side one, because this is where its table is merged below.
+  */
+  const granting = upgradedRead === null && laters.length === 0 && readNow.length === 1
+    && built['grantedTriggers'] === undefined && built['grantedAbilities'] === undefined
+    ? quotedGrantUntilEndOfTurn(readNow[0]!, name)
+    : null;
+  const readMain = granting !== null ? granting : upgradedRead !== null ? upgradedRead : readNow.length === 0 && laterTrigger !== null
     ? { effect: (c: EffectContext) => c.state } as ReadEffect
     : withSacrificeInCost(paidBySacrifice, () => readResolution(readNow, name));
   const read = readMain === null || laters.length === 0
@@ -32821,6 +32884,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   }
 
   Object.assign(built, read.spellFlags ?? {});
+  // The grant's table (D1062), which only `quotedGrantUntilEndOfTurn` sets on this path.
+  if (read === granting) Object.assign(built, read.cardFields ?? {});
   if (read.targets !== undefined) built['targets'] = read.targets;
   if (read.decisions !== undefined) built['decisions'] = read.decisions;
   // See `ReadEffect.beforeDecisions`: only a shape reader that sees the whole resolution sets this,

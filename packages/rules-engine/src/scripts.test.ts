@@ -29698,6 +29698,85 @@ describe('back from the graveyard: a death trigger returns the card (D1061)', ()
   });
 });
 
+describe('a quoted ability granted to a target until end of turn (D1062)', () => {
+  const R = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Stamina', 'Instant', 'Until end of turn, target creature gets +2/+0 and gains "When this creature dies, return it to the battlefield tapped under its owner\'s control."'),
+    R('Test Knack', 'Instant', 'Target creature gains "{T}: You gain 3 life." until end of turn.'),
+    R('Test Heirloom', 'Artifact', '{T}: Until end of turn, target creature you control gains trample and "Whenever this creature attacks, you gain 2 life."'),
+    R('Test Kill', 'Instant', 'Destroy target creature.'),
+    R('Test Bear', 'Creature — Bear', '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1062', name: 'Gifts', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1062', 1: 'd1062' }, deckSpecs: { d1062: deck.deck },
+    battlefield: { 0: ['Swamp', ...mine], 1: [] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action)), 30);
+  const granted = (s: GameState, card: string) => legalActions(s, 0 as SeatIndex)
+    .plays.filter((play) => play.kind === 'activate' && play.card === card && play.grantedBy !== undefined);
+
+  it('reads every row whole; a quotation with no "until end of turn", or two, stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A gift: the bot aims it at its own side.
+    const knack = compileCard(ROWS[1] as never);
+    expect(knack.ok && knack.script?.targets?.[0]?.friendly).toBe(true);
+    for (const text of [
+      'Target creature gains "{T}: You gain 3 life."',
+      'Until end of turn, target creature gains "{T}: You gain 3 life." until end of turn.',
+      // A sentence after it: the grant's table would have to ride a composition, which drops it.
+      'Target creature gains "{T}: You gain 3 life." until end of turn. Draw a card.',
+    ]) {
+      const read = compileCard({ ...ROWS[1], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('the pump and the dies trigger: it comes back tapped, and the pump does not', () => {
+    let s = table(['Test Bear'], ['Test Stamina', 'Test Kill']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Stamina', bear);
+    expect(power(s, bear)).toBe(4);
+    s = cast(s, 'Test Kill', bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.tapped).toBe(true);
+    // A new object (CR 400.7): the end-of-turn effect was about the one that died.
+    expect(power(s, bear)).toBe(2);
+  });
+
+  it('an activated ability on the creature, gone at end of turn', () => {
+    let s = table(['Test Bear'], ['Test Knack']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(granted(s, bear)).toEqual([]);
+    s = cast(s, 'Test Knack', bear);
+    const play = granted(s, bear)[0]!;
+    expect(play).toBeDefined();
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: bear, abilityIndex: play.abilityIndex ?? 0, grantedBy: play.grantedBy,
+    } as Action)), 30);
+    expect(life(s, 0)).toBe(before + 3);
+    expect(s.instances[bear]!.tapped).toBe(true);
+    s = nextTurn(s);
+    expect(granted(s, bear)).toEqual([]);
+  });
+
+  it("an artifact's activated grant: trample and an attack trigger", () => {
+    let s = table(['Test Bear', 'Test Heirloom'], []);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Heirloom'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }],
+    } as Action)), 30);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords).toContain('trample');
+    expect(grantedTriggersOn(s, s.instances[bear]!)).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
