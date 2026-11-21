@@ -12834,7 +12834,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -12944,7 +12944,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     the plural, which is what this grammar prints.
   */
   const drawEqual = new RegExp(
-    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:you )?draw cards equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (drawEqual !== null) {
     const counted = boardCount(drawEqual[1]!, name);
@@ -12967,7 +12967,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     };
   }
   const lifeEqual = new RegExp(
-    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^you (gain|lose) life equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (lifeEqual !== null) {
     const counted = boardCount(lifeEqual[2]!, name);
@@ -19466,6 +19466,8 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
   if (devoted !== null) return devoted;
   const greatest = greatestAmong(plain(phrase).trim().replace(/\.$/, ''));
   if (greatest !== null) return greatest;
+  const total = totalAmong(plain(phrase).trim().replace(/\.$/, ''));
+  if (total !== null) return total;
   /*
     "Its mana value" / "that permanent's mana value" (D660): Feed the Swarm's "You lose life equal to
     that permanent's mana value". The first card target's printed mana value, which is the same in
@@ -19585,6 +19587,42 @@ function greatestAmong(phrase: string): ((c: EffectContext) => number) | null {
       }
     }
     return Math.max(0, best ?? 0);
+  };
+}
+
+/**
+ * **"The total power of creatures you control"** (D1076): Ghalta's "This spell costs {X} less to
+ * cast, where X is the total power of creatures you control", Stonehoof Chieftain's "… with
+ * flying", Return of the Wildspeaker's cousins with "draw cards equal to …". The sum of the live
+ * power (or toughness) of each creature in the group as it is read, `greatestAmong`'s groups plus a
+ * keyword the creatures have. A creature with negative power takes from the sum, as a sum of powers
+ * does, and the result is never below 0 (CR 107.1b: this is a count of cards, life or mana).
+ */
+function totalAmong(phrase: string): ((c: EffectContext) => number) | null {
+  const matched = /^the total (power|toughness) of (other )?(?:([A-Z][A-Za-z'-]*) )?creatures (you control|your opponents control|on the battlefield)(?: with ([a-z]+))?$/.exec(phrase);
+  if (matched === null) return null;
+  const measure = matched[1]!;
+  const other = matched[2] !== undefined;
+  const typed = matched[3];
+  if (typed !== undefined && !isCreatureType(typed)) return null;
+  const keyword = matched[5];
+  if (keyword !== undefined && !isKeyword(keyword)) return null;
+  const whose = matched[4]!;
+  return (c) => {
+    const seats = whose === 'you control' ? [c.controller]
+      : whose === 'your opponents control' ? opponentsOf(c.state, c.controller)
+        : c.state.seats.map((seat) => seat.index);
+    let sum = 0;
+    for (const seat of seats) {
+      for (const id of creaturesControlledBy(c.state, seat)) {
+        if (other && id === c.source) continue;
+        const chars = characteristicsOf(c.state, c.state.instances[id]!);
+        if (typed !== undefined && !hasSubtype(chars.typeLine, typed)) continue;
+        if (keyword !== undefined && !chars.keywords.has(keyword as Keyword)) continue;
+        sum += measure === 'power' ? chars.power : chars.toughness;
+      }
+    }
+    return Math.max(0, sum);
   };
 }
 
@@ -23540,7 +23578,7 @@ function countedDamageFrom(
   const flat = clause.trim().replace(/\.\s*$/, '');
 
   const announced = new RegExp(
-    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (announced !== null) {
     const amount = boardCount(announced[2]!, name);
@@ -23548,7 +23586,7 @@ function countedDamageFrom(
   }
 
   const equalTo = new RegExp(
-    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|your devotion to .+|the greatest (?:power|toughness|mana value) among .+|the total (?:power|toughness) of .+|(?:its|that (?:creature|permanent|card)'s) mana value|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (equalTo !== null) {
     const amount = boardCount(equalTo[2]!, name);

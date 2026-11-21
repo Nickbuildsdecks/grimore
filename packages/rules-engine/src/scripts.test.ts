@@ -30557,6 +30557,52 @@ describe('kinship (D1072)', () => {
   });
 });
 
+describe('the total power of creatures you control (D1076)', () => {
+  const R = (name: string, type: string, cost: string, cmc: number, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: cost, cmc, colors: ['G'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Ghalta', 'Creature — Dinosaur', '{4}{G}{G}', 6, 'This spell costs {X} less to cast, where X is the total power of creatures you control.', ['6', '6']),
+    R('Test Feast', 'Sorcery', '{0}', 0, 'You gain life equal to the total power of creatures you control with flying.'),
+    R('Test Bird', 'Creature — Bird', '{0}', 0, 'Flying', ['1', '2']),
+    R('Test Bear', 'Creature — Bear', '{0}', 0, '', ['3', '1']),
+    R('Test Chief', 'Creature — Human', '{0}', 0, '{0}: You gain life equal to the total power of other creatures you control.', ['5', '5']),
+  ];
+  const deck = customDeck({ id: 'd1076', name: 'Total', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string) => advanceTo(arena({
+    decks: { 0: 'd1076', 1: 'd1076' }, deckSpecs: { d1076: deck.deck },
+    battlefield: { 0: ['Forest', 'Forest', ...mine], 1: [] }, hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castOf = (s: GameState, card: string) => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action);
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [...ROWS.slice(0, 2), ROWS[4]!]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('four power on board makes a six-drop cost two; three does not', () => {
+    const four = table(['Test Bear', 'Test Bird'], 'Test Ghalta');
+    expect(refusal(four, castOf(four, 'Test Ghalta'))).toBeNull();
+    const three = table(['Test Bear'], 'Test Ghalta');
+    expect(refusal(three, castOf(three, 'Test Ghalta'))).not.toBeNull();
+  });
+
+  it('"with flying": only the fliers count', () => {
+    let s = table(['Test Bear', 'Test Bird', 'Test Bird'], 'Test Feast');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, castOf(s, 'Test Feast'))), 30);
+    expect(life(s, 0)).toBe(before + 2);
+  });
+
+  it('"other creatures": not the one whose ability it is', () => {
+    let s = table(['Test Bear', 'Test Chief'], 'Test Feast');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Chief'), abilityIndex: 0 } as Action)), 30);
+    expect(life(s, 0)).toBe(before + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
