@@ -26822,14 +26822,20 @@ function readEffect(
     may" the question is asked only when the top card is of that kind, and the move happens only on
     a yes; otherwise the card stays where it is.
   */
-  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card(?: of the chosen type)?), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
   if (topIf !== null) {
-    const body = cardFilterBody(topIf[2]!, name);
+    // "… a creature card of the chosen type" (D784): Herald's Horn. The type the source chose.
+    const ofChosen = / of the chosen type$/i.test(topIf[2]!);
+    const body = cardFilterBody(topIf[2]!.replace(/ of the chosen type$/i, ''), name);
     if (body !== null) {
       const topOf = (state: GameState, seat: SeatIndex): string | undefined => listAt(state, zoneKey(seat, 'library'))[0];
-      const matches = (state: GameState, seat: SeatIndex): boolean => {
+      const matches = (state: GameState, seat: SeatIndex, source?: string): boolean => {
         const top = topOf(state, seat);
-        return top !== undefined && (body.filter === null || body.filter === undefined || body.filter(state, top, seat));
+        if (top === undefined || !(body.filter === null || body.filter === undefined || body.filter(state, top, seat))) return false;
+        if (!ofChosen) return true;
+        const type = source === undefined ? undefined : state.instances[source]?.chosen?.type;
+        const card = state.instances[top];
+        return type !== undefined && card !== undefined && hasSubtype(parseTypeLine(state.cardDefs[card.defKey]?.typeLine), type);
       };
       const may = topIf[3] !== undefined;
       const toHand = topIf[4]!.toLowerCase() === 'into your hand';
@@ -26853,14 +26859,16 @@ function readEffect(
       const otherwiseMay = topIf[6] !== undefined;
       if (otherwise !== undefined && !may) return null;
       if (may) {
+        const look = (source?: string): CardsDecisionSpec => ({
+          who: 'controller', from: 'library-top', look: 1, min: 0, max: 1,
+          chosenGoTo: toHand ? 'hand' : tapped ? 'battlefield-tapped' : 'battlefield',
+          prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
+          // A top card of another kind is no candidate, and a question with none answers itself.
+          filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser, source),
+        });
         return {
-          decisions: [{
-            who: 'controller', from: 'library-top', look: 1, min: 0, max: 1,
-            chosenGoTo: toHand ? 'hand' : tapped ? 'battlefield-tapped' : 'battlefield',
-            prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
-            // A top card of another kind is no candidate, and a question with none answers itself.
-            filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser),
-          },
+          // With a chosen type the question is built knowing its source (D784).
+          decisions: [ofChosen ? (_state: GameState, source: string) => look(source) : look(),
           /*
             "… you may put it into your graveyard / on the bottom" (D1074): a second look at the same
             card, asked only when the first answer left it, and moved by the engine on a yes.
@@ -26881,7 +26889,7 @@ function readEffect(
           },
         };
       }
-      return { effect: (c) => (matches(c.state, c.controller) ? move(c.state, c.controller) : c.state) };
+      return { effect: (c) => (matches(c.state, c.controller, c.source) ? move(c.state, c.controller) : c.state) };
     }
   }
   /*
@@ -27370,7 +27378,7 @@ function clausesOf(line: string): readonly string[] {
     // Kinship (D1072): the look, the reveal and its payoff are one ability's three sentences.
     .replace(/(?:you may )?look at the top card of your library\.\s+If it shares a creature type with [^,.]+, you may reveal it\.\s+If you do, ([^.]+)/gi, '\u0014$1')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
-    .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
+    .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
     .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), ((?:you may )?put it (?:into your hand|on the bottom of your library|into your graveyard))/gi, '$1\u0015$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
@@ -31404,6 +31412,27 @@ function spellKindTest(words: string): ((card: CardDef) => boolean) | null {
 function costModifierFromLine(line: string, name: string): Partial<CardScript> | null {
   // An ability word in front ("Locus of Slaanesh — …") is only a name (CR 207.2c).
   const printed = withoutAbilityWord(plain(line).trim()).replace(/\.$/, '');
+  /*
+    "Creature spells you cast of the chosen type cost {1} less to cast" (D784): Herald's Horn, Urza's
+    Incubator's kin. The type is the one this permanent chose as it entered.
+  */
+  // And Urza's Incubator's, which says nothing of who casts them: everyone's.
+  const chosen = /^creature spells( you cast)? of the chosen type cost \{(\d+)\} less to cast$/i.exec(printed);
+  if (chosen !== null) {
+    const amount = Number(chosen[2]);
+    return {
+      costModifiers: [{
+        whose: chosen[1] === undefined ? 'everyone' : 'controller',
+        applies: (state, _caster, card, source) => {
+          const type = source === undefined ? undefined : state.instances[source]?.chosen?.type;
+          const line = parseTypeLine(card.typeLine);
+          return type !== undefined && hasType(line, 'creature') && hasSubtype(line, type);
+        },
+        generic: -amount,
+        description: `${name} — ${printed.charAt(0).toLowerCase()}${printed.slice(1)}`,
+      }],
+    };
+  }
   const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
   if (m === null) return null;
   const first = spellKindTest(m[1]!);

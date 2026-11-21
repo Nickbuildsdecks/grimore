@@ -31137,6 +31137,62 @@ describe('mana that makes a spell uncounterable: Cavern of Souls, Delighted Half
     expect(topOfStack(cast(t, 'Test Trinket')).cantBeCountered).toBeUndefined();
   });
 });
+describe("Herald's Horn: of the chosen type (D784)", () => {
+  const HORN = { name: 'Test Horn', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: "As Test Horn enters, choose a creature type.\nCreature spells you cast of the chosen type cost {1} less to cast.\nAt the beginning of your upkeep, look at the top card of your library. If it's a creature card of the chosen type, you may reveal it and put it into your hand." };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd784', name: 'Horn',
+    entries: [{ name: 'Test Horn', count: 2 }, { name: 'Test Elf', count: 4 }, { name: 'Test Ox', count: 4 }, { name: 'Forest', count: 50 }],
+    data: [HORN, ELF, OX] as never[],
+  });
+  const withChosen = (s: GameState, type: string) => {
+    const horn = find(s, 0, 'battlefield', 'Test Horn');
+    return { ...s, instances: { ...s.instances, [horn]: { ...s.instances[horn]!, chosen: { type } } } };
+  };
+  const table = (hand: string[], step: 'precombat-main' | 'upkeep' = 'precombat-main') => withChosen(arena({
+    decks: { 0: 'd784', 1: 'd784' }, deckSpecs: { d784: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Test Horn', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'Elf');
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+
+  it('reads', () => {
+    expect(compileCard(HORN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Elf costs {1} less with Elf chosen; an Ox does not', () => {
+    const s = advanceTo(table(['Test Elf', 'Test Ox']), 'precombat-main');
+    expect(offered(s, 'Test Elf')).toBe(true);
+    expect(offered(s, 'Test Ox')).toBe(false);
+  });
+
+  it('in the upkeep, an Elf on top may go to the hand; an Ox on top is not offered', () => {
+    // To our next upkeep: through the opponent's turn, stopping before our draw.
+    const toOurUpkeep = (s0: GameState) => {
+      let s = advanceTo(s0, 'end');
+      s = advanceTo(s, 'upkeep');
+      s = advanceTo(s, 'end');
+      return advanceTo(s, 'upkeep');
+    };
+    const run = (name: string) => {
+      let s = table([]);
+      const card = find(s, 0, 'library', name);
+      s = toOurUpkeep(s);
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+      return { s, card };
+    };
+    let { s, card: elf } = run('Test Elf');
+    expect(s.activeSeat).toBe(0);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.step === 'upkeep'; i++) s = passBoth(s);
+    expect(s.pendingDecision?.candidates).toContain(elf);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [elf] });
+    expect(s.instances[elf]!.zone).toBe('hand');
+
+    let { s: t, card: ox } = run('Test Ox');
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.step === 'upkeep'; i++) t = passBoth(t);
+    expect(t.pendingDecision?.candidates ?? []).not.toContain(ox);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

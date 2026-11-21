@@ -38169,3 +38169,29 @@ Faults injected by script: 4 of 4 caught, one after the free-{G} test was added.
 
 Coverage: 14,721 to 14,723 of 31,900 cards with every line read, and 36,327 to 36,329 of 59,888
 lines, against 48cefc1. Few in count; the fold fix also stops a restricted line paying for anything.
+
+## D784 — Herald's Horn: "of the chosen type"
+
+Most-played order: Herald's Horn (rank 154), with Urza's Incubator after it. The creature type the
+permanent chose as it entered (D644) now reaches two more readers.
+
+- **The cost line**: "Creature spells you cast of the chosen type cost {1} less to cast" (Herald's
+  Horn), and "Creature spells of the chosen type cost {2} less to cast" (Urza's Incubator, everyone's
+  spells). `costModifiers.applies` is now told the permanent printing it (`source`), which
+  `costChangeFor` passes, so the modifier can read that permanent's choice.
+- **The top-card look**: "Look at the top card of your library. If it's a creature card of the chosen
+  type, you may reveal it and put it into your hand." The sentence joiner and the D1036 reader take
+  "of the chosen type" after the card kind, and the question is built knowing its source (the
+  decision-function form), so only a card of that type is a candidate.
+
+**Tests.** 3 engine tests: the card reads; with Elf chosen an Elf costs {1} less and is castable off
+one land, while an Ox is not; at our upkeep an Elf on top is offered and goes to the hand, and an Ox
+on top is not offered. The first draft of the upkeep test ran into the draw step, where the card was
+drawn anyway; it now stops at our upkeep.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,798, all passing (on d9b7cf2)
+
+Coverage: 14,723 to 14,725 of 31,900 cards with every line read, and 36,329 to 36,332 of 59,888
+lines, against d9b7cf2.

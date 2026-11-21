@@ -4105,7 +4105,8 @@ export interface CardScript {
      * the whole of what makes a Thalia a cost rather than an advantage.
      */
     readonly whose: 'controller' | 'opponents' | 'everyone';
-    readonly applies: (state: GameState, caster: SeatIndex, card: CardDef) => boolean;
+    /** `source` is the permanent printing it (D784), for "of the chosen type". */
+    readonly applies: (state: GameState, caster: SeatIndex, card: CardDef, source?: string) => boolean;
     /** Generic mana added, or taken off when negative. */
     readonly generic: number;
     /** Shown on the play when the cost changed: "costs {1} less". */

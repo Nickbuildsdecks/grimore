@@ -2912,7 +2912,7 @@ export function costChangeFor(
         const mine = other.index === seat;
         if (mod.whose === 'controller' && !mine) continue;
         if (mod.whose === 'opponents' && mine) continue;
-        if (!mod.applies(state, seat, def)) continue;
+        if (!mod.applies(state, seat, def, id)) continue;
         if (mod.generic >= 0) up += mod.generic;
         else down -= mod.generic;
         notes.push(mod.description);
