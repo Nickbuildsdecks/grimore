@@ -30758,6 +30758,37 @@ describe('"its power" after the clause that aimed at it (D1080)', () => {
   });
 });
 
+describe('"that creature\'s toughness" after an edict (D1081)', () => {
+  const ROWS = [
+    { name: 'Test Tribute', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: "Target opponent sacrifices a creature. You gain life equal to that creature's toughness." },
+    { name: 'Test Growth', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +3/+3 until end of turn.' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: '', power: '0', toughness: '5' },
+  ];
+  const deck = customDeck({ id: 'd1081', name: 'Tribute', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 54 }], data: ROWS as never[] });
+
+  it('reads whole; "that creature\'s toughness" with no question before it stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: "You gain life equal to that creature's toughness." } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('the sacrificed creature\'s toughness as it last was, pump included', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1081', 1: 'd1081' }, deckSpecs: { d1081: deck.deck },
+      battlefield: { 0: ['Swamp'], 1: ['Test Wall'] }, hands: { 0: ['Test Growth', 'Test Tribute'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: wall }] } as Action)), 30);
+    const before = life(s, 0);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tribute'), targets: [{ kind: 'player', seat: 1 }] } as Action));
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 1, cards: [wall] } as Action);
+    s = drain(s, 30);
+    expect(s.instances[wall]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 8);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
