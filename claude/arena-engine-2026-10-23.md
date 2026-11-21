@@ -37501,3 +37501,29 @@ Faults injected by script: 4. All are caught. The permanent guard was caught onl
 row was added.
 
 Coverage: 14,480 of 31,900 cards (+6), 35,965 of 59,888 lines (+12).
+
+## D1065 — a quoted ability granted to the team until end of turn
+
+"Until end of turn, creatures you control gain "{T}: This creature deals 1 damage to any target.""
+(Lightning Volley), "… gain "{1}: Regenerate this creature."" (Resuscitate), "… get +2/+2 and gain
+menace and "Whenever this creature attacks, you gain 1 life."" (Root Manipulation), Showstopper,
+Storm the Citadel, and "all creatures" (Brawl).
+
+- `quotedGrantUntilEndOfTurn` (D1062) reads "creatures you control" and "all creatures" as well as a
+  target, with the plural verbs and "until end of turn" exactly once. It has the same two callers,
+  so the grant's table is carried the same way.
+- The grant goes through `pumpTeam` and `pumpAll`. They lock to the creatures on the battlefield as
+  the spell resolves (CR 611.2c), so a creature that arrives later does not get it.
+- A team narrowed by a type ("Goblin creatures you control", "colorless creatures you control") and
+  a grant with no duration stay unread.
+
+**Tests.** 3 engine tests:
+- the rows read whole; the typed team and the grant with no duration stay unread;
+- your two Bears get the ability and +1/+0, while the opponent's Bear and a Bear put onto the
+  battlefield afterwards do not;
+- "all creatures" gives the opponent's Bear the ability too.
+
+Faults injected by script: 5. All are caught. The duration guard was caught only after the
+no-duration row was added.
+
+Coverage: 14,487 of 31,900 cards (+7), 35,972 of 59,888 lines (+7).
