@@ -55064,3 +55064,35 @@ Faults injected by script: 5. All are caught, including D1066's `sets` guard aga
 shrink row.
 
 Coverage: 14,524 of 31,900 cards (+6), 36,025 of 59,888 lines (+8).
+
+## D1068 — an artifact that animates itself
+
+"{W}{U}: ~ becomes a 2/2 white and blue Bird artifact creature with flying until end of turn" (the
+ten Keyrunes), "{4}{R}{G}: ~ becomes a 4/4 red and green Dragon artifact creature with flying until
+end of turn" (the Monuments), Darksteel Brute, Guardian Idol, Fountain of Ichor, Gruul War Plow,
+Ensouled Scimitar, Chimeric Idol, Firdoch Core, and the trigger form, Eye of Malcator's.
+
+- `animateArtifactSelf` gives D754's land animation the sentence these cards do not print. "It's
+  still a land" is what tells that reader the card keeps its types. An artifact that becomes an
+  *artifact* creature keeps being an artifact by the words themselves, so the animation is the
+  same: Artifact and Creature added, the size set, and the colours, creature types and keywords as
+  printed.
+- Only for a phrase ending "artifact creature [with …] [until end of turn]" with no land sentence of
+  its own. Only the card itself, because the land reader aims only at land phrases: Alloy Animist's
+  "target noncreature artifact you control" stays unread.
+- One hook, in `readEffect`, so an activated ability and a trigger read it alike. A second hook on
+  the ability path, a pre-check on the readEffect hook and a target refusal each went uncaught by
+  faults, because each repeated something already enforced, and all three were removed.
+- Process note: this increment was first written while D1067's gate was running, against the
+  standing rule. That ship was stopped before it committed, the D1068 hunks were set aside, D1067
+  was gated and pushed alone, and only then were they restored.
+
+**Tests.** 3 engine tests:
+- the rows read whole; a target, and a "Bird creature" that is not an artifact creature, stay unread;
+- the Keyrune is a 2/2 white and blue Bird artifact creature with flying, and not a creature next
+  turn;
+- the "until end of turn" first spelling: a 3/3 whose only subtype is Golem.
+
+Faults injected by script: 3. All are caught after the three redundant checks were folded.
+
+Coverage: 14,552 of 31,900 cards (+28), 36,060 of 59,888 lines (+35).
