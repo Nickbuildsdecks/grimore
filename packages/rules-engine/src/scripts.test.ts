@@ -30833,6 +30833,66 @@ describe('an additional land this turn, and a permanent that tucks itself (D1082
   });
 });
 
+describe('lands you control have a mana ability (D779)', () => {
+  const LANTERN = { name: 'Test Lantern', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: 'Lands you control have "{T}: Add one mana of any color."' };
+  const BLUE = { name: 'Test Blue Draw', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.' };
+  const deck = customDeck({
+    id: 'd779', name: 'Lantern',
+    entries: [{ name: 'Test Lantern', count: 2 }, { name: 'Test Blue Draw', count: 4 }, { name: 'Forest', count: 54 }],
+    data: [LANTERN, BLUE] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd779', 1: 'd779' }, deckSpecs: { d779: deck.deck },
+    hands: { 0: ['Test Blue Draw'] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Blue Draw'));
+
+  it('reads', () => {
+    expect(compileCard(LANTERN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Forest makes blue with the Lantern out, and the spell resolves', () => {
+    let s = table(['Forest', 'Test Lantern']);
+    expect(offered(s)).toBe(true);
+    const before = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blue Draw') })));
+    expect(ids(s, 0, 'hand').length).toBe(before);
+    expect(s.instances[find(s, 0, 'battlefield', 'Forest')]!.tapped).toBe(true);
+  });
+
+  it('without the Lantern, a Forest cannot', () => {
+    expect(offered(table(['Forest']))).toBe(false);
+  });
+
+  it('Frantic Search: draw two, discard two, and untap up to three lands', () => {
+    const SEARCH = { name: 'Test Search', type_line: 'Instant', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', oracle_text: 'Draw two cards, then discard two cards. Untap up to three lands.' };
+    expect(compileCard(SEARCH as never)).toMatchObject({ ok: true, unread: [] });
+    const d = customDeck({
+      id: 'd779b', name: 'Search',
+      entries: [{ name: 'Test Search', count: 4 }, { name: 'Island', count: 56 }],
+      data: [SEARCH] as never[],
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'd779b', 1: 'd779b' }, deckSpecs: { d779b: d.deck },
+      hands: { 0: ['Test Search', 'Test Search'] }, battlefield: { 0: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const spell = find(s, 0, 'hand', 'Test Search');
+    const held = ids(s, 0, 'hand').length - 1;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: spell }));
+    // Drawn first: the two new cards are in hand when the discard is asked.
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(ids(s, 0, 'hand')).toHaveLength(held + 2);
+    const hand = ids(s, 0, 'hand');
+    s = apply(s, { type: 'auto:decide', by: 0, cards: hand.slice(0, 2) });
+    const lands = ids(s, 0, 'battlefield');
+    expect(lands.every((id) => s.instances[id]!.tapped)).toBe(true);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: lands }));
+    expect(ids(s, 0, 'hand')).toHaveLength(held);
+    // The two discarded and the spell itself.
+    expect(namesIn(s, 0, 'graveyard')).toHaveLength(3);
+    expect(lands.every((id) => !s.instances[id]!.tapped)).toBe(true);
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
