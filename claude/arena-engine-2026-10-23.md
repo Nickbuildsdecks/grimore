@@ -38403,3 +38403,34 @@ nothing until the Aura has chosen a colour.
 Faults injected by hand: 2. The first drops the extra mana from a choice source's pick in the solver; the second drops it from an ability pressed by hand. Both are caught.
 
 Coverage: 14,722 of 31,900 cards (+6 over D1085–D1087's 14,716), 36,330 of 59,888 lines (+11).
+
+## D1089 — the Backgrounds: "Commander creatures you own have …"
+
+The Background enchantments (Commander Legends: Battle for Baldur's Gate) all print one static:
+"Commander creatures you own have "<ability>"" or "… get +N/+N and have …". 28 legal cards are a
+single line short on it.
+
+- **Engine:**
+  - A new static scope, `commander-creatures`. It reaches a creature that is a commander and that
+    the Background's controller **owns**, whoever controls it now. A commander an opponent has
+    stolen keeps the gift, and your other creatures get nothing.
+  - `effectApplies` reads it live, like every other group scope.
+- **Reader:** the line joins the group-static reader beside "Creature tokens you control …". Its
+  predicate goes through the existing grammar: a pump, keywords, a quoted trigger or a quoted
+  activated ability.
+
+Four Backgrounds now read whole: Flaming Fist, Candlekeep Sage, Far Traveler and Clan Crafter. The
+other 24 are short only because their quoted ability does not read on its own yet. Examples are
+"Whenever this creature attacks a player, if no opponent has more life than that player …" (five
+of them) and a quoted static such as "Creature tokens you control get +2/+2".
+
+**Tests.** 3 engine tests:
+- Both shapes read whole.
+- The quoted trigger reaches your commander, but not your other creature or an opponent's
+  commander.
+- The pump reaches your commander only, and still does once an opponent controls it.
+
+Faults injected by hand: 2 (the owner test changed to a controller test; the commander test
+dropped). Both are caught.
+
+Coverage: 14,796 of 31,900 cards and 36,429 of 59,888 lines, measured after merging D782–D788 (that merge's own baseline was not measured separately; the four Backgrounds above are the cards this reads whole).
