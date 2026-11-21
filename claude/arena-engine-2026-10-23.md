@@ -37357,3 +37357,41 @@ Faults injected by script: 8. All are caught. Two earlier faults went uncaught, 
 a zone guard that cannot fail; both guards were removed.
 
 Coverage: 14,440 of 31,900 cards (+29), 35,915 of 59,888 lines (+43).
+
+## D1061 — back from the graveyard: a death trigger returns the card
+
+"When enchanted creature dies, return that card to the battlefield under your control" (False
+Demise, Fool's Demise, Shade's Form, Minion's Return, Unhallowed Pact, Abduction's owner's-control
+form), "… tapped …" (Ferocity of the Hunt), "Whenever a creature dealt damage by ~ this turn dies,
+return that card …" (Soul Collector), and the delayed form "… at the beginning of the next end step"
+(Avacyn, Angel of Horror; Resurrection Orb).
+
+- A `selfEffect` reader for "return ~|it|that card to the battlefield [tapped] under its owner's|your
+  control [at the beginning of the next end step]". It reads only where the trigger's event leaves
+  the card in a graveyard (`where === 'graveyard'`: `dies` and `to-graveyard`).
+- "It" and "that card" are the card the event put there (`itMeans`). On an Aura, that is the
+  creature that died, not the Aura, which went to the graveyard by the same death. A test checks
+  this.
+- It acts only while the card is still in the graveyard (CR 400.7): a card exiled in response stays
+  exiled, and a token is gone. "Your control" is the trigger's controller: a False Demise on an
+  opponent's creature takes it.
+- The delayed form schedules D1060's `return-to-owner` / `return-to-you` about the card in the
+  graveyard. The subject pin holds it there, and the tapped delayed return stays unread because that
+  return does not tap.
+- D1060's unread row for a dies trigger now reads, which is correct. It becomes a "leaves the
+  battlefield" row, which neither reader can place.
+
+**Tests.** 5 engine tests:
+- the rows read whole, while a tapped delayed return and a return off an enters trigger stay unread;
+- an Aura on the opponent's Bear: the Bear is killed and returns under the Aura's controller, and the
+  Aura stays in the graveyard;
+- its own death: it returns tapped under its owner;
+- a card exiled from the graveyard before the trigger resolves stays exiled;
+- the delayed form on an opponent's creature: it waits in the graveyard and returns under its owner
+  at the end step.
+
+Faults injected by script: 9. All are caught. Two were caught only after the delayed test was moved
+to an opponent's creature, the only place "its owner's" can differ from "your", and reworded with
+"it".
+
+Coverage: 14,454 of 31,900 cards (+14), 35,932 of 59,888 lines (+17).
