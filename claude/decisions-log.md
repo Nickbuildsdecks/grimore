@@ -54901,3 +54901,39 @@ Faults injected by script: 9. All are caught. The `friendly` hint was caught onl
 asserted it.
 
 Coverage: 14,467 of 31,900 cards (+13), 35,946 of 59,888 lines (+14).
+
+## D1063 — "you may <a targeted action>. If you do, …"
+
+"Whenever a player cycles a card, you may exile target creature. If you do, return that card to the
+battlefield under its owner's control at the beginning of the next end step" (Astral Slide), "you
+may exile target creature card from a graveyard. If you do, you gain 2 life" (Carrion Imp, Mardu
+Woe-Reaper, Boneclad Necromancer), Lagonna-Band Storyteller, Niambi, Esteemed Speaker, Soldevi
+Golem.
+
+- `optionalEffect`'s "you may X. If you do, Y" refused any X with a target. It now reads that X
+  when the two sentences read as one composition.
+- Y very often names X's object ("that card", "its mana value", "that creature's mana value"), and
+  only `composeEffects` can answer that: the referent swap (D533) and the blink rule (D543). So the
+  targets are the composition's, and Wisp's exile-and-return target carries `blinks`.
+- "If you do" is learnt as for a question-less X (D951): X is run alone, and a board it left
+  untouched means it did not happen (CR 608.2c), so nothing does. Otherwise the composition runs from
+  the same board.
+- A question in Y splits the composition and the line is refused. No targeted X asks one of its own,
+  so the composition's questions are carried, not guarded; that guard and a target-count guard went
+  uncaught by faults and were folded away.
+- **Tapping a creature that is already tapped no longer rebuilds the board** (`tap` in effects.ts,
+  CR 701.26a). It used to, so "you may tap target creature. If you do, you gain 2 life" gained life
+  off a tapped creature. Nothing else depended on it, and the whole suite stays green.
+
+**Tests.** 5 engine tests:
+- the rows read whole; a tapped delayed return and a question after the yes stay unread; the
+  target blinks;
+- yes: the opponent's Bear is exiled and back under its owner at the end step; no: nothing;
+- a card exiled out of a graveyard, then 2 life;
+- tapping a creature already tapped gains no life;
+- the enchantment put on top of the library is the "its mana value" of the life gained.
+
+Faults injected by script: 6. All are caught after two guards were folded and the blink flag was
+asserted.
+
+Coverage: 14,474 of 31,900 cards (+7), 35,953 of 59,888 lines (+7).
