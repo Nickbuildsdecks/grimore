@@ -38132,7 +38132,7 @@ still resolves; Command Beacon puts the commander from the command zone into the
 
 Faults injected by script: 4 of 4 caught.
 
-    engine tests: 5,789, all passing (on bfffabb)
+    engine tests: 5,790, all passing (merged with the other session's D1083)
 
 Coverage: 14,707 to 14,719 of 31,900 cards with every line read, and 36,308 to 36,325 of 59,888
 lines, against bfffabb.
