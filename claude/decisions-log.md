@@ -55537,3 +55537,44 @@ Faults injected by script: 3. All are caught.
 
 Coverage: 14,684 of 31,900 cards (+2 over the baseline measured after merging D780), 36,283 of
 59,888 lines.
+## D781 — Channel lands: Boseiju and Otawara (and an ability that costs less)
+
+Most-played order: Boseiju, Who Endures (rank 78) and Otawara, Soaring City (89), with Eiganjo after
+them. Channel itself has read since D582; four smaller readers stood between these cards and a full
+reading.
+
+- **"Nonbasic" in a target list.** "Target artifact, enchantment, or nonbasic land an opponent
+  controls": each part of a listed target was one word. A part may now be several words that must
+  all hold, each read by `permanentWordMatch`, which now also reads "non" plus a supertype
+  (nonbasic, nonlegendary, nonsnow). A qualifier outside that vocabulary still refuses the list
+  ("target tapped Goblin or Elf"). And only supertype words may stand before a part's noun:
+  "target Cleric or Wizard creature" shares its trailing noun (a creature that is a Cleric or a
+  Wizard), and the first draft, which let any words combine, read it as "a Cleric, or a Wizard
+  creature". The gate caught it on D488's refusal row.
+- **"That player" after a permanent aimed "… an opponent controls"** is that permanent's controller,
+  a new row in the referent table beside "its controller". After a player target the old row is the
+  one used.
+- **"A land card with a basic land type"**: a land with Plains, Island, Swamp, Mountain or Forest
+  among its subtypes, typed duals included.
+- **"This ability costs {N} less to activate for each <thing>."** 74 legal cards print an ability
+  cost reduction; 6 of them with "for each legendary creature you control". `abilityFromLine` takes
+  the sentence off the end, reads the rest, and carries the count on the ability
+  (`AbilityDef.costLess`), counted by `forEachCount` as the spells' "costs less for each" is.
+  `abilityManaText` is the cost as paid now: the generic part reduced, never below zero. It is what
+  `legalActions` offers and shows, and what `activate` pays.
+
+Takenuma and Sokenzan still need their effects ("mill three, then return a creature or planeswalker
+card", "two 1/1 Spirits that gain haste").
+
+**Tests.** 4 engine tests: both cards read whole; Otawara is not offered off two Islands with no
+legend, and with two legendary creatures it is offered at {1}{U}; at that cost it returns the
+creature and goes to the graveyard; Boseiju cannot target a basic Forest, destroys a nonbasic dual,
+and its controller is asked for a land with a basic land type and gets it. (Two different legends:
+two of one name would lose one to the legend rule, which the first draft of the test found.)
+
+Faults injected by script: 7 of 7 caught (the trailing-noun guard's after the gate found it).
+
+    engine tests: 5,784, all passing (on 6c20ae0)
+
+Coverage: 14,683 to 14,709 of 31,900 cards with every line read, and 36,283 to 36,313 of 59,888
+lines, against 6c20ae0.

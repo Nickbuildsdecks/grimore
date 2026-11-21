@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  attackTaxFor, bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, attackTaxFor, bouncePlan, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -2166,7 +2166,8 @@ function activate(
     ...(ability.cost.tap ? [inst.id] : []), ...crewed, ...(sacrificed === null ? [] : [sacrificed]),
     ...sacrificedMany,
   ]);
-  const paid = payFrom(state, action.by, ability.cost.mana, 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
+  // What it costs now (D781): see `abilityManaText`.
+  const paid = payFrom(state, action.by, abilityManaText(state, action.by, ability, action.card), 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.

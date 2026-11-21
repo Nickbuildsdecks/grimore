@@ -2538,6 +2538,16 @@ function cardFilterBody(
   };
   if (lower === 'a card') return { phrase: 'a card', filter: null };
   if (lower === 'a basic land card') return { phrase, filter: isBasicLand };
+  // "a land card with a basic land type" (D781): Boseiju's, the typed duals included.
+  if (lower === 'a land card with a basic land type') {
+    return {
+      phrase,
+      filter: (state: GameState, id: string) => {
+        const line = lineOf(state, id);
+        return hasType(line, 'land') && ['plains', 'island', 'swamp', 'mountain', 'forest'].some((t) => hasSubtype(line, t));
+      },
+    };
+  }
   // "a card named <this card's own name>", which is the only name a printed line can give this
   // reader without a card database to look the name up in.
   const named = /^an? card named (.+)$/i.exec(phrase);
@@ -14878,6 +14888,12 @@ function permanentWordMatch(word: string): ((line: TypeLine) => boolean) | null 
   if (SUPERTYPES.includes(lower)) {
     return (line) => line.supertypes.some((type) => type.toLowerCase() === lower);
   }
+  // "Nonbasic", "nonlegendary", "nonsnow" (D781): a supertype it must not have. Boseiju's "target
+  // artifact, enchantment, or nonbasic land an opponent controls".
+  if (lower.startsWith('non') && SUPERTYPES.includes(lower.slice(3))) {
+    const without = lower.slice(3);
+    return (line) => !line.supertypes.some((type) => type.toLowerCase() === without);
+  }
   return null;
 }
 
@@ -20327,6 +20343,13 @@ readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
     exist and which one has no supply.
   */
   ['its controller', 'player', 'controller'],
+  /*
+    And "that player" after a permanent aimed "… an opponent controls" (D781): Boseiju's "Destroy
+    target artifact, enchantment, or nonbasic land an opponent controls. That player may search …".
+    The player the sentence names is that permanent's controller. Reached only when the earlier
+    clause points at a permanent; after a player target the entry above it is the one used.
+  */
+  ['that player', 'player', 'controller'],
   ["that creature's controller", 'player', 'controller'],
   ["that permanent's controller", 'player', 'controller'],
   ["that land's controller", 'player', 'controller'],
@@ -23073,7 +23096,23 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
   const parts = body.split(/,\s*or\s+|\s+or\s+|,\s*/).map((part) => part.trim())
     .filter((part) => part !== '');
   if (parts.length > 1) {
-    const matches = parts.map((part) => permanentWordMatch(part));
+    /*
+      A part may be several words, all of which hold (D781): "nonbasic land", "legendary creature".
+      Only **supertype words in front of the noun**, though. "Target Cleric or Wizard creature" is a
+      disjunction sharing its trailing noun (a creature that is a Cleric or a Wizard), and reading
+      "Wizard creature" as its own part would make it "a Cleric, or a Wizard creature": a wrong card.
+    */
+    const supertypeWord = (word: string): boolean => {
+      const lower = word.toLowerCase();
+      return word === lower && (SUPERTYPES.includes(lower) || (lower.startsWith('non') && SUPERTYPES.includes(lower.slice(3))));
+    };
+    const matches = parts.map((part) => {
+      const words = part.split(/\s+/);
+      if (!words.slice(0, -1).every(supertypeWord)) return null;
+      const tests = words.map((word) => permanentWordMatch(word));
+      if (tests.some((test) => test === null)) return null;
+      return (line: TypeLine) => tests.every((test) => test!(line));
+    });
     const named = matches.filter((match): match is (line: TypeLine) => boolean => match !== null);
     if (named.length !== matches.length) return null;
     return {
@@ -29515,6 +29554,32 @@ function affinityCount(phrase: string): ((state: GameState, id: string) => boole
 
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
+  /*
+    "… This ability costs {1} less to activate for each legendary creature you control." (D781):
+    the last sentence comes off, the rest is read as it would be, and the count is carried on the
+    ability (`AbilityDef.costLess`), counted with the reader the spells' "costs less for each" uses.
+  */
+  const cheaper = /^(.+?\.)\s*This ability costs \{(\d+)\} less to activate for each (.+?)\.?$/i.exec(text);
+  if (cheaper !== null) {
+    const count = forEachCount(cheaper[3]!, name);
+    const inner = count === null ? null : abilityFromLine(cheaper[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (inner === null || count === null || abilities.length !== 1) return null;
+    const per = Number(cheaper[2]);
+    return {
+      ...inner,
+      abilities: [{
+        ...abilities[0]!,
+        description: text,
+        costLess: {
+          per,
+          count: (state, source, controller) => count({
+            state, controller, source, targets: [], x: 0, decisions: [], kicked: false,
+          } as EffectContext),
+        },
+      }],
+    };
+  }
   /*
     **Channel** (D582): a label on an activated ability whose cost discards the card itself,
     which is what makes it usable from the hand. "Channel — {4}{G}, Discard Bamboo Grove Archer:
