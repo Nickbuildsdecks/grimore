@@ -55578,3 +55578,22 @@ Faults injected by script: 7 of 7 caught (the trailing-noun guard's after the ga
 
 Coverage: 14,683 to 14,709 of 31,900 cards with every line read, and 36,283 to 36,313 of 59,888
 lines, against 6c20ae0.
+
+## D1084 — "if you created a token this turn"
+
+"{T}: Draw a card. Activate only if you created a token this turn." (Idol of Oblivion), one of the
+EDHREC-queue cards this session claimed.
+
+- **Engine:** `GameState.tokensCreatedThisTurn`, per seat. `addTokens` counts every token it makes
+  for the seat that created them, and the record is cleared with the rest of the turn's facts.
+  `turnFacts.tokensCreated` reads it.
+- The intervening-condition vocabulary reads "you created a token this turn" and "you've created a
+  token this turn", so activation limits, trigger conditions and cost conditions all have it.
+
+**Tests.** 1 engine test: the Idol reads whole; activating it is refused before a token, allowed
+after a Soldier token is made, and refused again on the next turn.
+
+Faults injected by script: 3. All are caught.
+
+Coverage: 14,710 of 31,900 cards (+2 over 14,708, the baseline measured after merging D781), 36,310
+of 59,888 lines.
