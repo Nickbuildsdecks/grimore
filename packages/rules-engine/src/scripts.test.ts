@@ -7947,7 +7947,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
@@ -31041,6 +31041,387 @@ describe('"if you created a token this turn" (D1084)', () => {
     expect(refusal(s, useIdol(s))).toBeNull();
     s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
     expect(refusal(s, useIdol(s))).not.toBeNull();
+  });
+});
+
+describe('return a card from your graveyard, chosen; and Command Beacon (D782)', () => {
+  const CHURN = { name: 'Test Churn', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', oracle_text: 'Mill three cards, then return a creature or planeswalker card from your graveyard to your hand.' };
+  const BEACON = { name: 'Test Beacon', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}, Sacrifice Test Beacon: Put your commander into your hand from the command zone.' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd782', name: 'Churn',
+    entries: [{ name: 'Test Churn', count: 2 }, { name: 'Test Beacon', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Swamp', count: 52 }],
+    data: [CHURN, BEACON, OX] as never[],
+  });
+  const table = (opts: { graveyard?: string[]; battlefield?: string[] } = {}) => advanceTo(arena({
+    decks: { 0: 'd782', 1: 'd782' }, deckSpecs: { d782: deck.deck },
+    hands: { 0: ['Test Churn'] }, battlefield: { 0: opts.battlefield ?? ['Swamp', 'Swamp', 'Swamp'] },
+    graveyard: { 0: opts.graveyard ?? [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads', () => {
+    expect(compileCard(CHURN as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(BEACON as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('mills first, then asks which creature to return, and returns it', () => {
+    let s = table({ graveyard: ['Test Ox'] });
+    const library = ids(s, 0, 'library').length;
+    const ox = find(s, 0, 'graveyard', 'Test Ox');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') }));
+    // With one creature to return and no "may", the engine takes it without asking; with more it asks.
+    if (s.pendingDecision !== null) {
+      expect(s.pendingDecision.candidates).toContain(ox);
+      s = apply(s, { type: 'auto:decide', by: 0, cards: [ox] });
+    }
+    s = drain(s);
+    expect(ids(s, 0, 'library')).toHaveLength(library - 3);
+    expect(s.instances[ox]!.zone).toBe('hand');
+  });
+
+  it('a creature milled by the same spell can be the one returned', () => {
+    let s = table();
+    const ox = find(s, 0, 'library', 'Test Ox');
+    s = apply(s, { type: 'card:move', by: 0, card: ox, toZone: 'library', position: 'top' });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') }));
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [ox] });
+    s = drain(s);
+    expect(s.instances[ox]!.zone).toBe('hand');
+  });
+
+  it('with nothing of the kind in the graveyard, it still resolves', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') })));
+    if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Churn');
+    expect(s.stackOrder).toHaveLength(0);
+  });
+
+  it('Command Beacon puts your commander from the command zone into your hand', () => {
+    let s = table({ battlefield: ['Test Beacon', 'Test Ox'] });
+    const ox = find(s, 0, 'battlefield', 'Test Ox');
+    s = apply(s, { type: 'card:move', by: 0, card: ox, toZone: 'command' });
+    s = { ...s, instances: { ...s.instances, [ox]: { ...s.instances[ox]!, isCommander: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Beacon'), abilityIndex: 0 })));
+    expect(s.instances[ox]!.zone).toBe('hand');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Beacon');
+  });
+});
+describe('mana that makes a spell uncounterable: Cavern of Souls, Delighted Halfling (D783)', () => {
+  const HALFLING = { name: 'Test Halfling', type_line: 'Creature — Halfling Citizen', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '2', oracle_text: "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered." };
+  const CAVERN = { name: 'Test Cavern', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Cavern enters, choose a creature type.\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a creature spell of the chosen type, and that spell can't be countered." };
+  const LEGEND = { name: 'Test Legend', type_line: 'Legendary Creature — Elf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  // A free coloured row beside the restricted one: its {G} on a nonlegendary spell is just {G}.
+  const GROVE = { name: 'Test Grove', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "{T}: Add {G}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered." };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const TRINKET = { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const data = [HALFLING, CAVERN, LEGEND, TRINKET, ELF, GROVE, BEAR];
+  const deck = customDeck({
+    id: 'd783', name: 'Uncounterable',
+    entries: [...data.map((d) => ({ name: d.name, count: 2 })), { name: 'Wastes', count: 50 }],
+    data: data as never[],
+  });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd783', 1: 'd783' }, deckSpecs: { d783: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+  const topOfStack = (s: GameState) => s.stackObjects[s.stackOrder[s.stackOrder.length - 1]!]!;
+
+  it('both read whole', () => {
+    expect(compileCard(HALFLING as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(CAVERN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Halfling: a legendary spell paid with its any-color mana can't be countered", () => {
+    const s = cast(table(['Test Halfling'], ['Test Legend']), 'Test Legend');
+    expect(topOfStack(s).cantBeCountered).toBe(true);
+  });
+
+  it('Halfling: its {C} paying for anything else does nothing of the kind', () => {
+    const s = cast(table(['Test Halfling'], ['Test Trinket']), 'Test Trinket');
+    expect(topOfStack(s).cantBeCountered).toBeUndefined();
+  });
+
+  it('a free {G} paying for a nonlegendary spell does not make it uncounterable', () => {
+    const s = cast(table(['Test Grove'], ['Test Bear']), 'Test Bear');
+    expect(topOfStack(s).cantBeCountered).toBeUndefined();
+    expect(topOfStack(cast(table(['Test Grove'], ['Test Legend']), 'Test Legend')).cantBeCountered).toBe(true);
+  });
+
+  it('Cavern: a creature spell of the chosen type is uncounterable; another spell paid with {C} is not', () => {
+    let s = table(['Test Cavern'], ['Test Elf']);
+    const cavern = find(s, 0, 'battlefield', 'Test Cavern');
+    s = { ...s, instances: { ...s.instances, [cavern]: { ...s.instances[cavern]!, chosen: { type: 'Elf' } } } };
+    expect(topOfStack(cast(s, 'Test Elf')).cantBeCountered).toBe(true);
+    let t = table(['Test Cavern'], ['Test Trinket']);
+    t = { ...t, instances: { ...t.instances, [cavern]: { ...t.instances[cavern]!, chosen: { type: 'Elf' } } } };
+    expect(topOfStack(cast(t, 'Test Trinket')).cantBeCountered).toBeUndefined();
+  });
+});
+describe("Herald's Horn: of the chosen type (D784)", () => {
+  const HORN = { name: 'Test Horn', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: "As Test Horn enters, choose a creature type.\nCreature spells you cast of the chosen type cost {1} less to cast.\nAt the beginning of your upkeep, look at the top card of your library. If it's a creature card of the chosen type, you may reveal it and put it into your hand." };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd784', name: 'Horn',
+    entries: [{ name: 'Test Horn', count: 2 }, { name: 'Test Elf', count: 4 }, { name: 'Test Ox', count: 4 }, { name: 'Forest', count: 50 }],
+    data: [HORN, ELF, OX] as never[],
+  });
+  const withChosen = (s: GameState, type: string) => {
+    const horn = find(s, 0, 'battlefield', 'Test Horn');
+    return { ...s, instances: { ...s.instances, [horn]: { ...s.instances[horn]!, chosen: { type } } } };
+  };
+  const table = (hand: string[], step: 'precombat-main' | 'upkeep' = 'precombat-main') => withChosen(arena({
+    decks: { 0: 'd784', 1: 'd784' }, deckSpecs: { d784: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Test Horn', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'Elf');
+  const offered = (s: GameState, name: string) => legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+
+  it('reads', () => {
+    expect(compileCard(HORN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Elf costs {1} less with Elf chosen; an Ox does not', () => {
+    const s = advanceTo(table(['Test Elf', 'Test Ox']), 'precombat-main');
+    expect(offered(s, 'Test Elf')).toBe(true);
+    expect(offered(s, 'Test Ox')).toBe(false);
+  });
+
+  it('in the upkeep, an Elf on top may go to the hand; an Ox on top is not offered', () => {
+    // To our next upkeep: through the opponent's turn, stopping before our draw.
+    const toOurUpkeep = (s0: GameState) => {
+      let s = advanceTo(s0, 'end');
+      s = advanceTo(s, 'upkeep');
+      s = advanceTo(s, 'end');
+      return advanceTo(s, 'upkeep');
+    };
+    const run = (name: string) => {
+      let s = table([]);
+      const card = find(s, 0, 'library', name);
+      s = toOurUpkeep(s);
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+      return { s, card };
+    };
+    let { s, card: elf } = run('Test Elf');
+    expect(s.activeSeat).toBe(0);
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.step === 'upkeep'; i++) s = passBoth(s);
+    expect(s.pendingDecision?.candidates).toContain(elf);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [elf] });
+    expect(s.instances[elf]!.zone).toBe('hand');
+
+    let { s: t, card: ox } = run('Test Ox');
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.step === 'upkeep'; i++) t = passBoth(t);
+    expect(t.pendingDecision?.candidates ?? []).not.toContain(ox);
+  });
+});
+describe('that much life, the additional card, everyone\'s extra land (D785)', () => {
+  const BLOOD = { name: 'Test Blood', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', oracle_text: 'Whenever you gain life, each opponent loses that much life.' };
+  const BOND = { name: 'Test Bond', type_line: 'Enchantment', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal', oracle_text: 'Whenever you gain life, target opponent loses that much life.' };
+  const SALVE = { name: 'Test Salve', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const MINE = { name: 'Test Mine', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: "At the beginning of each player's draw step, that player draws an additional card." };
+  const FONT = { name: 'Test Font', type_line: 'Artifact', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', oracle_text: "At the beginning of each player's draw step, that player draws two additional cards." };
+  const RITES = { name: 'Test Rites', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', oracle_text: 'Each player may play an additional land on each of their turns.' };
+  const deck = customDeck({
+    id: 'd785', name: 'Much',
+    entries: [{ name: 'Test Blood', count: 1 }, { name: 'Test Bond', count: 1 }, { name: 'Test Salve', count: 4 }, { name: 'Test Mine', count: 1 }, { name: 'Test Font', count: 1 }, { name: 'Test Rites', count: 1 }, { name: 'Plains', count: 51 }],
+    data: [BLOOD, BOND, SALVE, MINE, FONT, RITES] as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd785', 1: 'd785' }, deckSpecs: { d785: deck.deck },
+    hands: { 0: hand, 1: ['Plains', 'Plains'] }, battlefield: { 0: ['Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const landRows = (s: GameState, seat: SeatIndex) => legalActions(s, seat).plays.filter((p) => p.kind === 'land');
+
+  it('reads', () => {
+    for (const card of [BLOOD, BOND, MINE, FONT, RITES]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each opponent loses as much as was gained, and nothing without a gain', () => {
+    let s = table(['Test Salve'], ['Test Blood']);
+    const [mine, theirs] = [life(s, 0), life(s, 1)];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') })));
+    expect(life(s, 0)).toBe(mine + 3);
+    expect(life(s, 1)).toBe(theirs - 3);
+    // The opponent gaining life is not "you gain life".
+    let t = table(['Test Salve'], ['Test Blood']);
+    t = apply(t, { type: 'card:move', by: 0, card: find(t, 0, 'battlefield', 'Test Blood'), toZone: 'graveyard' });
+    t = drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Salve') })));
+    expect(life(t, 1)).toBe(theirs);
+  });
+
+  it('the targeted opponent loses that much', () => {
+    let s = table(['Test Salve'], ['Test Bond']);
+    const theirs = life(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') }));
+    for (let i = 0; i < 6 && s.pendingChoice == null && life(s, 1) === theirs; i++) s = passBoth(s);
+    if (s.pendingChoice != null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
+    s = drain(s);
+    expect(life(s, 1)).toBe(theirs - 3);
+  });
+
+  it('every player draws an additional card in their draw step; two with the Font', () => {
+    const drawn = (extra: string) => {
+      let s = table([], [extra]);
+      s = advanceTo(s, 'end');
+      const before = ids(s, 1, 'hand').length;
+      s = advanceTo(s, 'draw');
+      s = drain(s);
+      expect(s.activeSeat).toBe(1);
+      for (let i = 0; i < 6 && s.step === 'draw'; i++) s = passBoth(s);
+      return ids(s, 1, 'hand').length - before;
+    };
+    expect(drawn('Test Mine')).toBe(2);
+    expect(drawn('Test Font')).toBe(3);
+    expect(drawn('Plains')).toBe(1);
+  });
+
+  it("everyone's extra land drop, from whoever controls it", () => {
+    let s = table(['Plains', 'Plains', 'Plains'], ['Test Rites']);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') });
+    expect(landRows(s, 0).length).toBeGreaterThan(0);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') });
+    expect(landRows(s, 0)).toHaveLength(0);
+    // The opponent, on their own turn, has two as well.
+    s = advanceTo(advanceTo(s, 'end'), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:playLand', by: 1, card: find(s, 1, 'hand', 'Plains') });
+    expect(landRows(s, 1).length).toBeGreaterThan(0);
+    // Without it, one.
+    let t = table(['Plains', 'Plains'], []);
+    t = apply(t, { type: 'auto:playLand', by: 0, card: find(t, 0, 'hand', 'Plains') });
+    expect(landRows(t, 0)).toHaveLength(0);
+  });
+});
+
+describe('the reveal lands: untapped if a card of the kind is in hand (D786)', () => {
+  const ESTUARY = { name: 'Test Estuary', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Estuary enters, you may reveal an Island or Swamp card from your hand. If you don't, Test Estuary enters tapped.\n{T}: Add {U} or {B}." };
+  const HOVEL = { name: 'Test Hovel', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: "As Test Hovel enters, you may reveal a Goblin card from your hand. If you don't, Test Hovel enters tapped.\n{T}: Add {B} or {R}." };
+  const GOBLIN = { name: 'Test Goblin', type_line: 'Creature — Goblin', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd786', name: 'Reveal',
+    entries: [{ name: 'Test Estuary', count: 2 }, { name: 'Test Hovel', count: 2 }, { name: 'Test Goblin', count: 4 }, { name: 'Island', count: 26 }, { name: 'Mountain', count: 26 }],
+    data: [ESTUARY, HOVEL, GOBLIN] as never[],
+  });
+  const table = (hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd786', 1: 'd786' }, deckSpecs: { d786: deck.deck },
+      hands: { 0: hand }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The draw step's card goes back, so the hand is exactly the one named.
+    const wanted = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = wanted.indexOf(s.cardDefs[s.instances[id]!.defKey]!.name);
+      if (at >= 0) wanted.splice(at, 1);
+      else s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library' });
+    }
+    return s;
+  };
+  const played = (hand: string[], land: string) => {
+    const s = table(hand);
+    const card = find(s, 0, 'hand', land);
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'land' && p.card === card)!;
+    const t = apply(s, { type: 'auto:playLand', by: 0, card });
+    return { tapped: t.instances[card]!.tapped === true, description: row.description };
+  };
+
+  it('reads', () => {
+    for (const card of [ESTUARY, HOVEL]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('enters untapped with an Island in hand, tapped with only a Mountain, and says why on the row', () => {
+    expect(played(['Test Estuary', 'Island'], 'Test Estuary')).toEqual({ tapped: false, description: 'Play Test Estuary' });
+    const without = played(['Test Estuary', 'Mountain'], 'Test Estuary');
+    expect(without.tapped).toBe(true);
+    expect(without.description).toBe('Play Test Estuary (enters tapped: no Island or Swamp card in your hand to reveal)');
+    // A second copy of itself is not an Island.
+    expect(played(['Test Estuary', 'Test Estuary'], 'Test Estuary').tapped).toBe(true);
+  });
+
+  it('the creature-type kind: a Goblin in hand, and not a land of another type', () => {
+    expect(played(['Test Hovel', 'Test Goblin'], 'Test Hovel').tapped).toBe(false);
+    expect(played(['Test Hovel', 'Mountain'], 'Test Hovel').tapped).toBe(true);
+  });
+
+  it('put onto the battlefield by an effect, it asks the hand all the same', () => {
+    // Settled the way an effect putting it onto the battlefield is: a bare table move is not one.
+    const s0 = table(['Island']);
+    const land = find(s0, 0, 'library', 'Test Estuary');
+    const s = engineSettle(apply(s0, { type: 'card:move', by: 0, card: land, toZone: 'battlefield' }), s0);
+    expect(s.instances[land]!.tapped).toBe(false);
+    const t0 = table(['Mountain']);
+    const other = find(t0, 0, 'library', 'Test Estuary');
+    const t = engineSettle(apply(t0, { type: 'card:move', by: 0, card: other, toZone: 'battlefield' }), t0);
+    expect(t.instances[other]!.tapped).toBe(true);
+  });
+});
+
+describe("an opponent's permanents enter tapped (D787)", () => {
+  const AUTHORITY = { name: 'Test Authority', type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Creatures your opponents control enter tapped.' };
+  const THALIA = { name: 'Test Cathar', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', power: '3', toughness: '2', oracle_text: 'First strike\nCreatures and nonbasic lands your opponents control enter tapped.' };
+  const OBEDIENCE = { name: 'Test Obedience', type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Artifacts and creatures your opponents control enter tapped.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const GROVE = { name: 'Test Grove', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {G}.' };
+  const deck = customDeck({
+    id: 'd787', name: 'Tapped',
+    entries: [{ name: 'Test Authority', count: 1 }, { name: 'Test Cathar', count: 1 }, { name: 'Test Obedience', count: 1 }, { name: 'Test Bear', count: 4 }, { name: 'Test Rock', count: 4 }, { name: 'Test Grove', count: 4 }, { name: 'Forest', count: 45 }],
+    data: [AUTHORITY, THALIA, OBEDIENCE, BEAR, ROCK, GROVE] as never[],
+  });
+  const table = (theirs: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd787', 1: 'd787' }, deckSpecs: { d787: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Forest', 'Forest'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const arrives = (s0: GameState, seat: SeatIndex, name: string) => {
+    const card = find(s0, seat, 'library', name);
+    // Settled the way an effect putting it onto the battlefield is: a bare table move is not one.
+    const s = engineSettle(apply(s0, { type: 'card:move', by: seat, card, toZone: 'battlefield' }), s0);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    return s.instances[card]!.tapped === true;
+  };
+
+  it('reads', () => {
+    for (const card of [AUTHORITY, THALIA, OBEDIENCE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the opponent's creatures enter tapped, the controller's own do not, and an artifact is not a creature", () => {
+    const s = table(['Test Authority']);
+    expect(arrives(s, 0, 'Test Bear')).toBe(true);
+    expect(arrives(s, 1, 'Test Bear')).toBe(false);
+    expect(arrives(s, 0, 'Test Rock')).toBe(false);
+    expect(arrives(table([]), 0, 'Test Bear')).toBe(false);
+    // An Authority that has lost its abilities taps nothing.
+    const t = table(['Test Authority']);
+    const authority = find(t, 1, 'battlefield', 'Test Authority');
+    expect(arrives(pump(t, [authority], authority, 1, { losesAllAbilities: true }), 0, 'Test Bear')).toBe(false);
+  });
+
+  it('a cast creature resolves tapped', () => {
+    let s = table(['Test Authority'], ['Test Bear']);
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear })));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.tapped).toBe(true);
+  });
+
+  it('Thalia: a nonbasic land played enters tapped, a basic does not', () => {
+    let s = table(['Test Cathar'], ['Test Grove', 'Forest']);
+    const grove = find(s, 0, 'hand', 'Test Grove');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: grove });
+    expect(s.instances[grove]!.tapped).toBe(true);
+    let t = table(['Test Cathar'], ['Forest']);
+    const forest = find(t, 0, 'hand', 'Forest');
+    t = apply(t, { type: 'auto:playLand', by: 0, card: forest });
+    expect(t.instances[forest]!.tapped).toBe(false);
+  });
+
+  it('artifacts and creatures: both kinds, and nothing once it has left', () => {
+    const s = table(['Test Obedience']);
+    expect(arrives(s, 0, 'Test Rock')).toBe(true);
+    expect(arrives(s, 0, 'Test Bear')).toBe(true);
+    const gone = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Test Obedience'), toZone: 'graveyard' });
+    expect(arrives(gone, 0, 'Test Rock')).toBe(false);
   });
 });
 

@@ -24,6 +24,12 @@ import type { SpendRestriction } from './scriptTypes.js';
  * type" (no chosen type is kept yet), and every rider ("and that spell can't be countered").
  */
 export function spendRestriction(phrase: string): SpendRestriction | null {
+  // The rider (D783): "…, and that spell can't be countered". The rest is read as it would be alone.
+  const rider = /^(.+?),? and that spell can't be countered\.?$/i.exec(phrase.trim());
+  if (rider !== null) {
+    const rest = spendRestriction(rider[1]!);
+    return rest === null ? null : { ...rest, words: phrase.trim().replace(/\.$/, ''), uncounterable: true };
+  }
   const printed = phrase.trim().replace(/\.$/, '');
   // "Spend this mana only to cast your commander" (D697): Jeweled Lotus, Command Beacon's kin.
   if (/^to cast (?:your|a) commanders?$/i.test(printed)) {

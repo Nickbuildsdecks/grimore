@@ -1010,6 +1010,14 @@ function foldManaLines(
   if (parsed.some((p) => p.freezes === true || p.onlyIf !== undefined) && (parsed.length > 1 || intrinsic.length > 0)) {
     return { why: `${name}: a line that keeps it tapped is read only line by line` };
   }
+  /*
+    A spending restriction is a fact about one line too (D783): Delighted Halfling's "{T}: Add {C}"
+    beside its restricted "Add one mana of any color", folded, came out as one set of rows carrying
+    the first line's (absent) restriction, which is mana that pays for anything. Read line by line.
+  */
+  if (parsed.some((p) => p.spendOnly !== undefined) && (parsed.length > 1 || intrinsic.length > 0)) {
+    return { why: `${name}: a line with a spending restriction is read only line by line` };
+  }
   const sums = parsed.filter((p) => p.mode === 'sum');
   if (sums.length > 0) {
     if (parsed.length > 1 || intrinsic.length > 0) {

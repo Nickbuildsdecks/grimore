@@ -96,6 +96,27 @@ function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
   });
 }
 
+/**
+ * Whether a permanent arriving now is one an opponent's "<kinds> your opponents control enter
+ * tapped" covers (D787). Asked of the arriving permanent as it is, so a face-down one is a 2/2
+ * creature with no name and no types but creature.
+ */
+function entersTappedByOpponents(state: GameState, arrival: NonNullable<GameState['instances'][string]>): boolean {
+  const ch = characteristicsOf(state, arrival);
+  const isKind = (kind: 'artifact' | 'creature' | 'land' | 'nonbasic-land') => {
+    if (kind === 'nonbasic-land') return ch.isLand && !ch.typeLine.supertypes.some((t) => /^basic$/i.test(t));
+    if (kind === 'land') return ch.isLand;
+    if (kind === 'creature') return ch.isCreature;
+    return hasType(ch.typeLine, 'artifact');
+  };
+  return state.seats.some((other) => other.index !== arrival.zoneSeat
+    && listAt(state, zoneKey(other.index, 'battlefield')).some((id) => {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) return false;
+      return (scriptForCard(state.cardDefs[inst.defKey])?.opponentsEnterTapped ?? []).some(isKind);
+    }));
+}
+
 export function maxHandSize(state: GameState, seat: SeatIndex): number {
   // And an emblem that says so (D734), from the command zone.
   for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
@@ -2092,8 +2113,8 @@ function fireTrigger(
     ...(attacked === undefined ? {} : { attacked }),
     // How much damage the event was, for "that many" (D903).
     ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged'
-      // And the life lost (D999), for Exquisite Blood's "that much".
-      || event.kind === 'life-lost')
+      // And the life lost (D999), for Exquisite Blood's "that much"; and gained (D785), for Vito's.
+      || event.kind === 'life-lost' || event.kind === 'life-gained')
       && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
@@ -4304,6 +4325,10 @@ function settle(state: GameState, before: GameState): GameState {
         The conditional form (D587): "enters tapped unless you control a Mountain or a Plains".
         Asked here, of the board it is arriving on, by the same replacement and at the same moment.
       */
+      // An opponent's "creatures your opponents control enter tapped" (D787), by the same replacement.
+      if (next.instances[id]?.tapped !== true && entersTappedByOpponents(next, next.instances[id]!)) {
+        next = withInstance(next, id, { tapped: true });
+      }
       const unless = arrivalScript?.entersUntappedIf;
       if (unless !== undefined && next.instances[id]?.tapped !== true
         && !unless.test(next, arrival.zoneSeat, id)) {
@@ -4419,7 +4444,12 @@ function settle(state: GameState, before: GameState): GameState {
   for (const seat of next.seats) {
     const was = before.seats[seat.index];
     if (was === undefined || seat.eliminated) continue;
-    if (seat.life > was.life) next = raise(next, { kind: 'life-gained' }, seat.index);
+    // With how much (D785), for "that much": what this pass added to the turn's record of gains.
+    if (seat.life > was.life) {
+      const key = String(seat.index);
+      const recorded = (next.lifeGainedThisTurn?.[key] ?? 0) - (before.lifeGainedThisTurn?.[key] ?? 0);
+      next = raise(next, { kind: 'life-gained', amount: recorded > 0 ? recorded : seat.life - was.life }, seat.index);
+    }
   }
   // And life lost (D999), with how much: what this pass added to the turn's record of it.
   for (const seat of next.seats) {
@@ -4667,7 +4697,11 @@ function payFrom(
    * untapped creature" — which cannot also make its mana (sweep 47815). Never used, unlike `avoid`.
    */
   exclude?: ReadonlySet<string>,
-): { state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number } {
+): {
+  state: GameState; tapped: readonly string[]; coloursSpent: number; colorsSpent: readonly ManaType[]; manaSpent: number;
+  /** What each source tapped here made (D783): which row of a land paid, read off the mana it made. */
+  picks: readonly ManaPick[];
+} {
   // A cost already worked out, rather than one to parse: convoke hands over what is *left* of a
   // cost after the creatures it tapped, and re-deriving it from text would lose that.
   const printed = typeof costText === 'object' && costText !== null
@@ -4693,6 +4727,7 @@ function payFrom(
     }
   }
   let tapped: readonly string[] = [];
+  let picks: readonly ManaPick[] = [];
   const floating = poolOf(state, seat);
   /** What the restricted sources tapped here made, by type — see the end of this function. */
   const boundMade: Partial<Record<ManaType, number>> = {};
@@ -4714,6 +4749,7 @@ function payFrom(
     if (plan !== null) {
       next = tapSources(next, seat, plan);
       tapped = plan.map((pick) => pick.key);
+      picks = plan;
       // `{S}` paid by exactly the snow mana the plan set aside for it (D769).
       cost = snowAsColours(cost, plan);
       for (const pick of plan) {
@@ -4759,7 +4795,7 @@ function payFrom(
     const lost = Math.min(excess, made);
     if (lost > 0) left = { ...left, [type]: (left[type] ?? 0) - lost };
   }
-  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent };
+  return { state: setPool(next, seat, left), tapped, coloursSpent, colorsSpent, manaSpent, picks };
 }
 
 /** The five colours a pool can hold, for `coloursSpent` (D917). Colourless is not a colour. */

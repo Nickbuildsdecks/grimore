@@ -1306,7 +1306,8 @@ export type TriggerEvent =
         readonly other?: true;
       };
     }
-  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'opponent' | 'any' }
+  /** `amount` set by the engine (D785): how much was gained, for "that much". */
+  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'opponent' | 'any'; readonly amount?: number }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
    * Conqueror. Raised once per seat per settle, with `amount` the life it lost there — read off
@@ -2588,6 +2589,11 @@ export interface SpendRestriction {
    * type the mana's source chose as it entered. Checked by `manaSources`, which knows the source.
    */
   readonly chosenType?: true;
+  /**
+   * "… , and that spell can't be countered" (D783): Cavern of Souls, Delighted Halfling. A spell this
+   * mana is spent on can't be countered. Settled as the spell is cast, from what paid for it.
+   */
+  readonly uncounterable?: true;
 }
 
 /**
@@ -2995,6 +3001,20 @@ export interface CardScript {
    * battlefield with its abilities; several stack.
    */
   readonly additionalLands?: number;
+  /**
+   * "Each player may play an additional land on each of their turns" (D785): Rites of Flourishing,
+   * Ghirapur Orrery's first line. The same drop, handed to every seat while the permanent is on any
+   * battlefield with its abilities (`landDropsFor`).
+   */
+  readonly additionalLandsEach?: number;
+  /**
+   * "Creatures your opponents control enter tapped" (D787): Authority of the Consuls, Thalia, Heretic
+   * Cathar ("creatures and nonbasic lands"), Blind Obedience ("artifacts and creatures"), Archon of
+   * Emeria ("nonbasic lands"). The kinds of permanent that arrive tapped on every other seat's
+   * battlefield while this one is on its controller's with its abilities — the same replacement as
+   * `entersTapped` (CR 614.1c), asked of the board as each permanent arrives.
+   */
+  readonly opponentsEnterTapped?: readonly ('artifact' | 'creature' | 'land' | 'nonbasic-land')[];
   /**
    * "You may play lands from your graveyard" (D648) — Crucible of Worlds, Ramunap Excavator. Read
    * live by `landZonesFor`: the land plays offered, and `playLand`, include the controller's
@@ -4100,7 +4120,8 @@ export interface CardScript {
      * the whole of what makes a Thalia a cost rather than an advantage.
      */
     readonly whose: 'controller' | 'opponents' | 'everyone';
-    readonly applies: (state: GameState, caster: SeatIndex, card: CardDef) => boolean;
+    /** `source` is the permanent printing it (D784), for "of the chosen type". */
+    readonly applies: (state: GameState, caster: SeatIndex, card: CardDef, source?: string) => boolean;
     /** Generic mana added, or taken off when negative. */
     readonly generic: number;
     /** Shown on the play when the cost changed: "costs {1} less". */

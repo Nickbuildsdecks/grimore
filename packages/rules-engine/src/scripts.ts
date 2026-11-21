@@ -21730,7 +21730,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
     const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged'
-      || k.kind === 'life-lost')
+      || k.kind === 'life-lost' || k.kind === 'life-gained')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
@@ -26621,6 +26621,10 @@ function readEffect(
         },
       };
     }
+    // "Each opponent loses that much life" (D785): Sanguine Bond's kin.
+    if (/^each opponent loses \u000e much life$/i.test(text)) {
+      return { effect: (c) => opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, n(c)), c.state) };
+    }
     if (/^target opponent loses \u000e much life$/i.test(text)) {
       return {
         targets: [TARGET_OPPONENT],
@@ -26751,6 +26755,49 @@ function readEffect(
     kind the search vocabulary reads (`libraryFilter`); the effect moves the pick to hand and clears
     the record. Without "may" one is taken if there is one.
   */
+  /*
+    **An untargeted return from your graveyard** (D782): "Return a creature or planeswalker card from
+    your graveyard to your hand" (Takenuma, after its mill), "you may return …", "return up to one …".
+    Chosen as it resolves, so a card milled earlier in the same resolution can be the one: the
+    composition runs the mill before the question. Without "may" or "up to" one is taken if any can
+    be. The kind is the search vocabulary's (`libraryFilter`).
+  */
+  /*
+    "That player draws an additional card" (D785): Howling Mine and Rites of Flourishing's kin, on a
+    draw-step trigger. The word says why the card is there; the draw is a card drawn.
+  */
+  const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
+  if (extraDraw !== null) {
+    const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
+    return readEffect(`${extraDraw[1]!} ${/^you$/i.test(extraDraw[1]!) ? 'draw' : 'draws'} ${many}`, name, where);
+  }
+  /*
+    "Put your commander into your hand from the command zone" (D782): Command Beacon. Every commander
+    of yours in your command zone (two with partners) goes to your hand.
+  */
+  if (/^put your commander into your hand from the command zone$/i.test(clause.trim())) {
+    return {
+      effect: (c) => moveToHand(c.state, listAt(c.state, zoneKey(c.controller, 'command'))
+        .filter((id) => c.state.instances[id]?.isCommander === true && c.state.instances[id]?.owner === c.controller)),
+    };
+  }
+  const fromYard = /^(you may )?return (an?|up to one) (.+? card) from your graveyard to your hand$/i.exec(clause.trim());
+  if (fromYard !== null) {
+    const phrase = `${/^up to one$/i.test(fromYard[2]!) ? 'a' : fromYard[2]!.toLowerCase()} ${fromYard[3]!}`;
+    const kind = libraryFilter(phrase, name);
+    if (kind !== null && kind.xBound !== true) {
+      const optional = fromYard[1] !== undefined || /^up to one$/i.test(fromYard[2]!);
+      const test = kind.filter;
+      return {
+        decisions: [{
+          who: 'controller', from: 'graveyard', min: optional ? 0 : 1, max: 1,
+          prompt: `Return ${phrase} from your graveyard to your hand`,
+          filter: (state: GameState, id: string, chooser: SeatIndex) => test === null || test === undefined || test(state, id, chooser),
+        }],
+        effect: (c) => moveToHand(c.state, chosenCards(c)),
+      };
+    }
+  }
   const milledPick = /^mill (a card|(\w+) cards) and (you may )?put (an? .+?) from among them into your hand$/i.exec(clause.trim());
   if (milledPick !== null) {
     const n = milledPick[2] === undefined ? 1 : countFrom(milledPick[2]);
@@ -26788,14 +26835,20 @@ function readEffect(
     may" the question is asked only when the top card is of that kind, and the move happens only on
     a yes; otherwise the card stays where it is.
   */
-  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card(?: of the chosen type)?), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
   if (topIf !== null) {
-    const body = cardFilterBody(topIf[2]!, name);
+    // "… a creature card of the chosen type" (D784): Herald's Horn. The type the source chose.
+    const ofChosen = / of the chosen type$/i.test(topIf[2]!);
+    const body = cardFilterBody(topIf[2]!.replace(/ of the chosen type$/i, ''), name);
     if (body !== null) {
       const topOf = (state: GameState, seat: SeatIndex): string | undefined => listAt(state, zoneKey(seat, 'library'))[0];
-      const matches = (state: GameState, seat: SeatIndex): boolean => {
+      const matches = (state: GameState, seat: SeatIndex, source?: string): boolean => {
         const top = topOf(state, seat);
-        return top !== undefined && (body.filter === null || body.filter === undefined || body.filter(state, top, seat));
+        if (top === undefined || !(body.filter === null || body.filter === undefined || body.filter(state, top, seat))) return false;
+        if (!ofChosen) return true;
+        const type = source === undefined ? undefined : state.instances[source]?.chosen?.type;
+        const card = state.instances[top];
+        return type !== undefined && card !== undefined && hasSubtype(parseTypeLine(state.cardDefs[card.defKey]?.typeLine), type);
       };
       const may = topIf[3] !== undefined;
       const toHand = topIf[4]!.toLowerCase() === 'into your hand';
@@ -26819,14 +26872,16 @@ function readEffect(
       const otherwiseMay = topIf[6] !== undefined;
       if (otherwise !== undefined && !may) return null;
       if (may) {
+        const look = (source?: string): CardsDecisionSpec => ({
+          who: 'controller', from: 'library-top', look: 1, min: 0, max: 1,
+          chosenGoTo: toHand ? 'hand' : tapped ? 'battlefield-tapped' : 'battlefield',
+          prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
+          // A top card of another kind is no candidate, and a question with none answers itself.
+          filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser, source),
+        });
         return {
-          decisions: [{
-            who: 'controller', from: 'library-top', look: 1, min: 0, max: 1,
-            chosenGoTo: toHand ? 'hand' : tapped ? 'battlefield-tapped' : 'battlefield',
-            prompt: `Put it ${toHand ? 'into your hand' : 'onto the battlefield'}?`,
-            // A top card of another kind is no candidate, and a question with none answers itself.
-            filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser),
-          },
+          // With a chosen type the question is built knowing its source (D784).
+          decisions: [ofChosen ? (_state: GameState, source: string) => look(source) : look(),
           /*
             "… you may put it into your graveyard / on the bottom" (D1074): a second look at the same
             card, asked only when the first answer left it, and moved by the engine on a yes.
@@ -26847,7 +26902,7 @@ function readEffect(
           },
         };
       }
-      return { effect: (c) => (matches(c.state, c.controller) ? move(c.state, c.controller) : c.state) };
+      return { effect: (c) => (matches(c.state, c.controller, c.source) ? move(c.state, c.controller) : c.state) };
     }
   }
   /*
@@ -27336,7 +27391,7 @@ function clausesOf(line: string): readonly string[] {
     // Kinship (D1072): the look, the reveal and its payoff are one ability's three sentences.
     .replace(/(?:you may )?look at the top card of your library\.\s+If it shares a creature type with [^,.]+, you may reveal it\.\s+If you do, ([^.]+)/gi, '\u0014$1')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
-    .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
+    .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
     .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), ((?:you may )?put it (?:into your hand|on the bottom of your library|into your graveyard))/gi, '$1\u0015$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
@@ -31370,6 +31425,27 @@ function spellKindTest(words: string): ((card: CardDef) => boolean) | null {
 function costModifierFromLine(line: string, name: string): Partial<CardScript> | null {
   // An ability word in front ("Locus of Slaanesh — …") is only a name (CR 207.2c).
   const printed = withoutAbilityWord(plain(line).trim()).replace(/\.$/, '');
+  /*
+    "Creature spells you cast of the chosen type cost {1} less to cast" (D784): Herald's Horn, Urza's
+    Incubator's kin. The type is the one this permanent chose as it entered.
+  */
+  // And Urza's Incubator's, which says nothing of who casts them: everyone's.
+  const chosen = /^creature spells( you cast)? of the chosen type cost \{(\d+)\} less to cast$/i.exec(printed);
+  if (chosen !== null) {
+    const amount = Number(chosen[2]);
+    return {
+      costModifiers: [{
+        whose: chosen[1] === undefined ? 'everyone' : 'controller',
+        applies: (state, _caster, card, source) => {
+          const type = source === undefined ? undefined : state.instances[source]?.chosen?.type;
+          const line = parseTypeLine(card.typeLine);
+          return type !== undefined && hasType(line, 'creature') && hasSubtype(line, type);
+        },
+        generic: -amount,
+        description: `${name} — ${printed.charAt(0).toLowerCase()}${printed.slice(1)}`,
+      }],
+    };
+  }
   const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
   if (m === null) return null;
   const first = spellKindTest(m[1]!);
@@ -31585,6 +31661,21 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (extra !== null) {
     const n = /^(an|one)$/i.test(extra[1]!) ? 1 : countFrom(extra[1]!);
     return n === null || n < 1 ? null : { additionalLands: n };
+  }
+  const everyone = /^each player may play (an|one|two) additional lands? on each of their turns\.?$/i.exec(plain(line).trim());
+  if (everyone !== null) {
+    const n = /^(an|one)$/i.test(everyone[1]!) ? 1 : countFrom(everyone[1]!);
+    return n === null || n < 1 ? null : { additionalLandsEach: n };
+  }
+  // "Creatures your opponents control enter tapped." (D787): see `CardScript.opponentsEnterTapped`.
+  const theirs = /^(.+?) your opponents control enter(?: the battlefield)? tapped\.?$/i.exec(plain(line).trim());
+  if (theirs !== null) {
+    const KINDS: Readonly<Record<string, 'artifact' | 'creature' | 'land' | 'nonbasic-land'>> = {
+      artifacts: 'artifact', creatures: 'creature', lands: 'land', 'nonbasic lands': 'nonbasic-land',
+    };
+    const words = theirs[1]!.split(/,\s*(?:and\s+)?|\s+and\s+/i).map((w) => w.trim().toLowerCase());
+    const kinds = words.map((w) => KINDS[w]);
+    if (words.length > 0 && kinds.every((k) => k !== undefined)) return { opponentsEnterTapped: kinds as ('artifact' | 'creature' | 'land' | 'nonbasic-land')[] };
   }
   // "You may play lands from your graveyard." (D648): Crucible of Worlds, Ramunap Excavator.
   if (/^you may play lands from your graveyard\.?$/i.test(plain(line).trim())) return { landsFromGraveyard: true };
@@ -32189,6 +32280,29 @@ function entersTappedFromLine(line: string, name: string): Partial<CardScript> |
   if (shock !== null) {
     const n = /^\d+$/.test(shock[1]!) ? Number(shock[1]) : WORD_NUMBERS[shock[1]!.toLowerCase()];
     return n === undefined || n < 1 ? null : { payLifeToEnterUntapped: n };
+  }
+  /*
+    The reveal lands (D786): "As ~ enters, you may reveal an Island or Swamp card from your hand. If
+    you don't, ~ enters tapped." The Snarls, the shadow lands (Choked Estuary), Port Town's cycle and
+    Lorwyn's tribal lands ("a Goblin card"), 18 legal printings. Revealing costs nothing and only
+    shows a card the opponents would see anyway the moment it is played, so the choice is taken
+    whenever it can be: the land enters untapped if a card of either kind is in the hand it left.
+  */
+  const reveal = new RegExp(
+    `^As ${selfRef(name)} ${ENTERS}, you may reveal an? (\\w+)(?: or (\\w+))? card from your hand\\. If you don't, ${selfRef(name)} ${ENTERS} tapped$`, 'i',
+  ).exec(text);
+  if (reveal !== null) {
+    const kinds = [reveal[1]!, reveal[2]].filter((w): w is string => w !== undefined);
+    // Said on the land row only when it would enter tapped, so it says why.
+    const words = `no ${kinds.join(' or ')} card in your hand to reveal`;
+    const test = (state: GameState, controller: SeatIndex, self: string) => (state.zones[zoneKey(controller, 'hand')] ?? [])
+      .some((id) => {
+        const inst = state.instances[id];
+        if (id === self || inst === undefined) return false;
+        const ch = characteristicsOf(state, inst);
+        return kinds.some((kind) => hasSubtype(ch.typeLine, kind));
+      });
+    return { entersUntappedIf: { test, words } };
   }
   return null;
 }

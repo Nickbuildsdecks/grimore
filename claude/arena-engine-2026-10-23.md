@@ -38131,3 +38131,162 @@ Faults injected by script: 3. All are caught.
 
 Coverage: 14,710 of 31,900 cards (+2 over 14,708, the baseline measured after merging D781), 36,310
 of 59,888 lines.
+## D782 — Return a card from your graveyard, chosen; and Command Beacon
+
+Most-played order: Takenuma, Abandoned Mire (rank 246) and Command Beacon (183).
+
+- **An untargeted return from your graveyard**: "(You may) return a / an / up to one <kind> card from
+  your graveyard to your hand". 44 not-yet-automated cards print it. Chosen as it resolves, from the
+  cards of that kind (the search vocabulary, `libraryFilter`). Without "may" or "up to" one is taken
+  if any can be, and with exactly one the engine takes it without asking. In "Mill three cards, then
+  return …" the composition runs the mill first, so a card milled by the same resolution can be the
+  one returned. Takenuma, Grapple with the Past and Corpse Churn read whole.
+- **"Put your commander into your hand from the command zone"**: Command Beacon. Every commander of
+  yours in your command zone (both, with partners).
+
+**Tests.** 5 engine tests: both cards read; the spell mills three and returns the creature from the
+graveyard; a creature milled by the same spell can be the one returned; with nothing of the kind it
+still resolves; Command Beacon puts the commander from the command zone into the hand.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,790, all passing (merged with the other session's D1083)
+
+Coverage: 14,707 to 14,719 of 31,900 cards with every line read, and 36,308 to 36,325 of 59,888
+lines, against bfffabb.
+
+## D783 — Mana that makes a spell uncounterable: Cavern of Souls, Delighted Halfling
+
+Most-played order: Cavern of Souls (rank 113), Delighted Halfling (146). "Spend this mana only to cast
+<…>, and that spell can't be countered."
+
+- `spendRestriction` reads the rider: the restriction before it as it always was, marked
+  `uncounterable`.
+- `payFrom` now returns its `picks`, what each source tapped for the payment made.
+- `castSpell`: the spell can't be countered when a source tapped for it made a type its
+  uncounterable row makes, and that row's restriction allows this spell (Cavern's chosen creature
+  type included). A source whose unrestricted row made the mana does not count: Cavern's {C}, or a
+  free {G} paying for a nonlegendary spell. The stack object carries `cantBeCountered`, the flag
+  "This spell can't be countered" already sets. Mana tapped by hand earlier and left floating is not
+  traced back to its source.
+
+**A bug found on the way.** `foldManaLines` (`fromCardData.ts`) merges a card's mana lines into one
+set of rows for a card it reads whole, and kept only the first line's details. A restricted line
+after a free one (Delighted Halfling's "{T}: Add {C}" then its restricted "any color") came out with
+no restriction: mana that pays for anything. A line with a spending restriction now sends the card
+to the line-by-line reader, which keeps it, as it already did for the pain lands' damage (D497).
+
+**Tests.** 5 engine tests: both cards read; a legendary spell paid with the Halfling's any-color mana
+can't be countered; its {C} paying for an artifact does nothing of the kind; a free {G} paying for a
+nonlegendary spell does not make it uncounterable, while the same source paying for a legendary one
+does; Cavern with Elf chosen makes an Elf uncounterable and its {C} paying for an artifact does not.
+
+Faults injected by script: 4 of 4 caught, one after the free-{G} test was added.
+
+    engine tests: 5,795, all passing (on 48cefc1)
+
+Coverage: 14,721 to 14,723 of 31,900 cards with every line read, and 36,327 to 36,329 of 59,888
+lines, against 48cefc1. Few in count; the fold fix also stops a restricted line paying for anything.
+
+## D784 — Herald's Horn: "of the chosen type"
+
+Most-played order: Herald's Horn (rank 154), with Urza's Incubator after it. The creature type the
+permanent chose as it entered (D644) now reaches two more readers.
+
+- **The cost line**: "Creature spells you cast of the chosen type cost {1} less to cast" (Herald's
+  Horn), and "Creature spells of the chosen type cost {2} less to cast" (Urza's Incubator, everyone's
+  spells). `costModifiers.applies` is now told the permanent printing it (`source`), which
+  `costChangeFor` passes, so the modifier can read that permanent's choice.
+- **The top-card look**: "Look at the top card of your library. If it's a creature card of the chosen
+  type, you may reveal it and put it into your hand." The sentence joiner and the D1036 reader take
+  "of the chosen type" after the card kind, and the question is built knowing its source (the
+  decision-function form), so only a card of that type is a candidate.
+
+**Tests.** 3 engine tests: the card reads; with Elf chosen an Elf costs {1} less and is castable off
+one land, while an Ox is not; at our upkeep an Elf on top is offered and goes to the hand, and an Ox
+on top is not offered. The first draft of the upkeep test ran into the draw step, where the card was
+drawn anyway; it now stops at our upkeep.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,798, all passing (on d9b7cf2)
+
+Coverage: 14,723 to 14,725 of 31,900 cards with every line read, and 36,329 to 36,332 of 59,888
+lines, against d9b7cf2.
+
+## D785 — "That much life", the additional card, everyone's extra land
+
+Most-played order: Vito, Thorn of the Dusk Rose (rank 490), Sanguine Bond (507), Howling Mine (719),
+then Rites of Flourishing (1527), Kami of the Crescent Moon (1808), Dictate of Kruphix (1864), Font of
+Mythos (2181) and Ghirapur Orrery (2613), which share their lines.
+
+- **"Whenever you gain life, target opponent / each opponent loses that much life."** The life-gained
+  event now carries how much (`amount`): what the gain added to the turn's record of gains, or the
+  rise in the life total where nothing was recorded. "That much" reads it the way Exquisite Blood's
+  life-lost trigger does (D999). Exquisite Blood plus either one is the familiar two-card loop; it
+  runs through the stack one trigger at a time, so each lap is visible and the table can stop it.
+- **"That player draws an additional card"** (and "two additional cards"): a draw-step trigger whose
+  draw is ordinary. The referent swap hands the reader "target player draws …", so the reader takes
+  that form too. Howling Mine's "if ~ is untapped" was already read.
+- **"Each player may play an additional land on each of their turns."** `CardScript.additionalLandsEach`,
+  added to every seat's land drops by `landDropsFor` while the permanent is on any battlefield with its
+  abilities.
+
+**Tests.** 5 engine tests: the cards read; gaining 3 makes each opponent lose 3, and with the
+enchantment gone the opponent loses nothing; the targeted version takes 3 from the chosen opponent;
+the opponent draws 2 in their draw step with the Mine out, 3 with the Font, 1 with neither; with
+Rites out both players get a second land drop on their own turns, and without it one.
+
+Faults injected by script: 6 of 6 caught.
+
+    engine tests: 5,803, all passing (on 6b74ed6)
+
+Coverage: 14,725 to 14,739 of 31,900 cards with every line read, and 36,332 to 36,354 of 59,888
+lines, against 6b74ed6.
+
+## D786 — The reveal lands
+
+Most-played order: Choked Estuary (rank 293), Foreboding Ruins (317), Frostboil Snarl (332), Port
+Town (333), Game Trail (400), Shineshadow Snarl (420) and the rest of their cycles, with Lorwyn's
+tribal lands ("you may reveal a Goblin card") after them: 18 legal printings.
+
+"As ~ enters, you may reveal an Island or Swamp card from your hand. If you don't, ~ enters tapped."
+is read as `entersUntappedIf` (D587), asking whether a card of either kind is in its controller's
+hand as the land arrives. The reveal is taken whenever it can be: it costs nothing and shows a card
+that was going to be seen anyway. The land row says why when it would enter tapped ("enters tapped:
+no Island or Swamp card in your hand to reveal"), and the bot's land choice, which already asks the
+same question of check lands, prefers the land that will arrive untapped.
+
+**Tests.** 4 engine tests: the cards read; with an Island in hand the land enters untapped and its
+row says nothing extra, with only a Mountain it enters tapped and the row says why, and a second copy
+of itself is not an Island; a Goblin in hand untaps the Goblin land and a Mountain does not; put onto
+the battlefield by an effect, it asks the hand all the same.
+
+Faults injected by script: 2 of 3 caught. The miss removes the guard that skips the land itself; it
+is an equivalent fault, since none of these lands has a land type of its own to reveal.
+
+## D787 — An opponent's permanents enter tapped
+
+Most-played order: Authority of the Consuls (rank 299), Blind Obedience (511), Thalia, Heretic
+Cathar (1485), Urabrask the Hidden (1815), Archon of Emeria's second line (2153), Manglehorn (2405),
+Kinjalli's Sunwing (3400) and the rest: "Creatures your opponents control enter tapped", "Artifacts
+and creatures …", "Creatures and nonbasic lands …", "Artifacts, creatures, and lands …".
+
+`CardScript.opponentsEnterTapped` lists the kinds. As any permanent arrives, every other seat's
+battlefield is asked for a permanent that still has its abilities and names one of its kinds; if one
+does, it arrives tapped, by the same replacement and at the same moment as "enters tapped" (CR
+614.1c). Its controller's own permanents are untouched, and a basic land is not a nonbasic land.
+
+**Tests.** 5 engine tests: the cards read; the opponent's creature enters tapped, the controller's
+own does not, an artifact does not under "creatures", and with no Authority nothing does, nor with
+an Authority that has lost its abilities; a creature cast and resolved arrives tapped; under Thalia a
+nonbasic land played enters tapped and a basic does not; "artifacts and creatures" taps both, and
+nothing once it has left.
+
+Faults injected by script: 4 of 4 caught (the lost-abilities test was added after the first run
+missed that fault).
+
+    engine tests: 5,812, all passing (on e906c2b)
+
+Coverage for the two together: 14,739 to 14,768 of 31,900 cards with every line read, and 36,354 to
+36,386 of 59,888 lines, against e906c2b.

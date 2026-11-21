@@ -795,7 +795,9 @@ function staticsOf(state: GameState, seat: SeatIndex): readonly CardScript[] {
  */
 export function landDropsFor(state: GameState, seat: SeatIndex): number {
   const statics = staticsOf(state, seat).reduce((n, script) => n + (script.additionalLands ?? 0), 0);
-  return 1 + (state.extraLands[String(seat)] ?? 0) + statics;
+  // Everyone's "each player may play an additional land" (D785), from any seat's battlefield.
+  const shared = state.seats.reduce((n, _seat, other) => n + staticsOf(state, other as SeatIndex).reduce((m, script) => m + (script.additionalLandsEach ?? 0), 0), 0);
+  return 1 + (state.extraLands[String(seat)] ?? 0) + statics + shared;
 }
 
 /** Whether this seat may play lands from its graveyard now (D648): Crucible of Worlds. */
@@ -2912,7 +2914,7 @@ export function costChangeFor(
         const mine = other.index === seat;
         if (mod.whose === 'controller' && !mine) continue;
         if (mod.whose === 'opponents' && mine) continue;
-        if (!mod.applies(state, seat, def)) continue;
+        if (!mod.applies(state, seat, def, id)) continue;
         if (mod.generic >= 0) up += mod.generic;
         else down -= mod.generic;
         notes.push(mod.description);
