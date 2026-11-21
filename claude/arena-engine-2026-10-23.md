@@ -37845,3 +37845,28 @@ Faults injected by script: 4. All are caught. Two were caught only after power a
 made to differ and the "other" row was added.
 
 Coverage: 14,600 of 31,900 cards (+2), 36,115 of 59,888 lines (+4).
+
+## D1077 — "if you control a creature with flying / with a counter on it"
+
+"This spell costs {2} less to cast if you control a creature with flying" (Gust of Wind), "…
+Activate only if you control a creature with flying" (Celestial Enforcer, Goblin Bird-Grabber),
+"… if you control a creature with a +1/+1 counter on it" (Prehistoric Turtlesaurus, Chronicler of
+Heroes, Foundry Hornet), "… with a counter on it" (Delta Bloodflies), "… with toughness 2 or less".
+
+- The intervening-condition vocabulary reads "you control a creature with <one keyword>", "… with a
+  [+1/+1] counter on it" and "… with power|toughness N or less", beside D564's "power N or greater".
+  It is read live, as that one is.
+- The cost reader refused any condition containing "it", because there "it" is the spell. "A creature
+  with a counter on it" is the creature, so that phrase no longer trips the refusal.
+- compile.test's D563 row "a condition that needs a filter" moves to a quality that still does not
+  read ("with protection from red"), as D564 once moved it (D516).
+
+**Tests.** 3 engine tests:
+- the rows read whole, and "with wings", which is not a keyword, stays unread;
+- a flier makes a three-mana spell cost one, and a Bear does not;
+- a creature with a +1/+1 counter on it does the same, and one without does not.
+
+Faults injected by script: 4. All are caught. The keyword guard was caught only after the "wings" row
+was added.
+
+Coverage: 14,609 of 31,900 cards (+9), 36,124 of 59,888 lines (+9).
