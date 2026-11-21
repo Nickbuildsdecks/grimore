@@ -55738,3 +55738,46 @@ missed that fault).
 
 Coverage for the two together: 14,739 to 14,768 of 31,900 cards with every line read, and 36,354 to
 36,386 of 59,888 lines, against e906c2b.
+
+## D788 — Casting limits: Grand Abolisher, Teferi, Rule of Law, Deafening Silence, Dosan
+
+Most-played order: Grand Abolisher (rank 254), Kutzil, Malamet Exemplar's first line (397), Voice of
+Victory (481), Teferi, Time Raveler's static (1129), Myrel (1541), Dragonlord Dromoka (1886),
+Deafening Silence (1959), Rule of Law (3465), Eidolon of Rhetoric (3600), Dosan (6273), High Noon,
+Moderation and the rest: 20 legal printings across seven lines.
+
+`CardScript.castLimits` names the limit; `castProhibition` asks every live one on the table where a
+cast is offered and again where it is made, so the two cannot disagree, and the refusal names the
+permanent ("Test Rule: no more than one spell each turn").
+
+- **One spell each turn** for each player (Rule of Law, Eidolon of Rhetoric, High Noon), for its
+  controller only (Moderation, Yawgmoth's Agenda), and **one noncreature spell** (Deafening
+  Silence), counted from the turn's cast record the storm count already keeps.
+- **Spells only during your own turn** (Dosan), for every player.
+- **Opponents only at sorcery speed** (Teferi, Time Raveler). A cast an effect makes mid-resolution
+  (cascade) is not timed by its caster, so Teferi does not stop it; the one-spell limits still count
+  it.
+- **Opponents cast nothing during your turn** (Dragonlord Dromoka, Voice of Victory, Kutzil), and
+  Grand Abolisher's and Myrel's second half: **no abilities of the opponents' artifacts, creatures
+  or enchantments** during its controller's turn, mana abilities included, refused where offered and
+  where activated (`abilityProhibition`). Lands' abilities are untouched, as printed.
+
+Not done: the payment tapper is not yet told about Grand Abolisher, so paying for a land's ability on the Abolisher's turn could still tap an artifact for mana (the only thing left the opponent can pay for then). Also not done: Ethersworn Canonist's "nonartifact" count (the turn's record counts creature and
+noncreature, not artifact), Fires of Invention's two-spell limit, and Teferi's +1.
+
+**Tests.** 6 engine tests: the cards read; under Rule of Law a second spell of any kind is neither
+offered nor accepted, and without it two are; under Deafening Silence creatures keep coming after
+the one noncreature spell; under Teferi the opponent's instant is refused in our main phase and
+accepted without him, while his controller's is offered, the opponent casts it in their own main
+phase, and his controller casts an instant on the opponent's turn; under Grand Abolisher the opponent can neither cast nor use an artifact's ability on our turn,
+can do both without it, and on their own turn the artifact works again and the spell is accepted; under Dosan the opponent is
+refused on our turn and we are not.
+
+Faults injected by script: 9 of 9 caught. The first run missed two (Teferi reaching his own
+controller, and Abolisher's spell half reaching the opponent's own turn); a test for each was added
+and both were then caught.
+
+    engine tests: 5,818, all passing (on 4f909e1)
+
+Coverage: 14,768 to 14,780 of 31,900 cards with every line read, and 36,386 to 36,406 of 59,888
+lines, against 4f909e1.

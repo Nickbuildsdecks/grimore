@@ -53,7 +53,7 @@ import {
 } from './effects.js';
 import { spendRestriction } from './spending.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ChoiceDecisionSpec,
+  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, CastLimit, ChoiceDecisionSpec,
   CountersDecisionSpec, DecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
   SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
@@ -31667,6 +31667,19 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const n = /^(an|one)$/i.test(everyone[1]!) ? 1 : countFrom(everyone[1]!);
     return n === null || n < 1 ? null : { additionalLandsEach: n };
   }
+  // Casting limits (D788): see `CardScript.castLimits`.
+  const LIMITS: readonly (readonly [RegExp, readonly CastLimit[]])[] = [
+    [/^each player can't cast more than one spell each turn$/i, ['each-one-spell']],
+    [/^each player can't cast more than one noncreature spell each turn$/i, ['each-one-noncreature']],
+    [/^you can't cast more than one spell each turn$/i, ['you-one-spell']],
+    [/^players can cast spells only during their own turns$/i, ['own-turn-only']],
+    [/^each opponent can cast spells only any time they could cast a sorcery$/i, ['opponents-sorcery-speed']],
+    [/^your opponents can't cast spells during your turn$/i, ['opponents-no-spells-your-turn']],
+    [/^during your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments$/i,
+      ['opponents-no-spells-your-turn', 'opponents-no-abilities-your-turn']],
+  ];
+  const limitLine = plain(line).trim().replace(/\.$/, '');
+  for (const [pattern, castLimits] of LIMITS) if (pattern.test(limitLine)) return { castLimits };
   // "Creatures your opponents control enter tapped." (D787): see `CardScript.opponentsEnterTapped`.
   const theirs = /^(.+?) your opponents control enter(?: the battlefield)? tapped\.?$/i.exec(plain(line).trim());
   if (theirs !== null) {

@@ -2877,6 +2877,11 @@ export interface ModalDef {
   readonly entwine?: true;
 }
 
+/** One of `CardScript.castLimits` (D788). */
+export type CastLimit =
+  | 'each-one-spell' | 'each-one-noncreature' | 'you-one-spell' | 'own-turn-only'
+  | 'opponents-sorcery-speed' | 'opponents-no-spells-your-turn' | 'opponents-no-abilities-your-turn';
+
 export interface CardScript {
   /** Matched case-insensitively against the card's printed name. */
   readonly name: string;
@@ -3014,6 +3019,22 @@ export interface CardScript {
    * battlefield while this one is on its controller's with its abilities — the same replacement as
    * `entersTapped` (CR 614.1c), asked of the board as each permanent arrives.
    */
+  /**
+   * Limits on casting spells (D788), live while the permanent is on the battlefield with its
+   * abilities, asked by `castProhibition` where a cast is offered and where it is made:
+   * - `each-one-spell`: "Each player can't cast more than one spell each turn" (Rule of Law,
+   *   Eidolon of Rhetoric, High Noon); `each-one-noncreature`, the same for noncreature spells
+   *   (Deafening Silence); `you-one-spell`, its controller only (Moderation, Yawgmoth's Agenda).
+   * - `own-turn-only`: "Players can cast spells only during their own turns" (Dosan).
+   * - `opponents-sorcery-speed`: "Each opponent can cast spells only any time they could cast a
+   *   sorcery" (Teferi, Time Raveler). A cast an effect offers mid-resolution (cascade) is not one
+   *   timed by its caster and still happens.
+   * - `opponents-no-spells-your-turn`: "Your opponents can't cast spells during your turn"
+   *   (Dragonlord Dromoka, and Grand Abolisher's first half).
+   * - `opponents-no-abilities-your-turn`: Grand Abolisher's and Myrel's second half, "… or
+   *   activate abilities of artifacts, creatures, or enchantments", asked by `abilityProhibition`.
+   */
+  readonly castLimits?: readonly CastLimit[];
   readonly opponentsEnterTapped?: readonly ('artifact' | 'creature' | 'land' | 'nonbasic-land')[];
   /**
    * "You may play lands from your graveyard" (D648) — Crucible of Worlds, Ramunap Excavator. Read

@@ -7947,7 +7947,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script castLimits', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
@@ -31399,6 +31399,101 @@ describe("an opponent's permanents enter tapped (D787)", () => {
     expect(arrives(s, 0, 'Test Bear')).toBe(true);
     const gone = apply(s, { type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Test Obedience'), toZone: 'graveyard' });
     expect(arrives(gone, 0, 'Test Rock')).toBe(false);
+  });
+});
+
+describe('casting limits: Rule of Law, Deafening Silence, Teferi, Grand Abolisher, Dosan (D788)', () => {
+  const RULE = { name: 'Test Rule', type_line: 'Enchantment', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', oracle_text: "Each player can't cast more than one spell each turn." };
+  const SILENCE = { name: 'Test Silence', type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: "Each player can't cast more than one noncreature spell each turn." };
+  const TEFERI = { name: 'Test Raveler', type_line: 'Enchantment', mana_cost: '{1}{W}{U}', cmc: 3, colors: ['W', 'U'], layout: 'normal', oracle_text: 'Each opponent can cast spells only any time they could cast a sorcery.' };
+  const ABOLISHER = { name: 'Test Abolisher', type_line: 'Creature — Human Cleric', mana_cost: '{W}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: "During your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments." };
+  const DOSAN = { name: 'Test Dosan', type_line: 'Legendary Creature — Human Monk', mana_cost: '{1}{G}{W}', cmc: 3, colors: ['G', 'W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Players can cast spells only during their own turns.' };
+  const PONDER = { name: 'Test Ponder', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Draw a card.' };
+  const THOPTER = { name: 'Test Thopter', type_line: 'Artifact Creature — Thopter', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '2', oracle_text: 'Flying' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: You gain 1 life.' };
+  const deck = customDeck({
+    id: 'd788', name: 'Limits',
+    entries: [RULE, SILENCE, TEFERI, ABOLISHER, DOSAN].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Ponder', count: 4 }, { name: 'Test Thopter', count: 4 }, { name: 'Test Rock', count: 2 }, { name: 'Plains', count: 45 }]),
+    data: [RULE, SILENCE, TEFERI, ABOLISHER, DOSAN, PONDER, THOPTER, ROCK] as never[],
+  });
+  const table = (mine: string[], hands: Record<number, string[]>, theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd788', 1: 'd788' }, deckSpecs: { d788: deck.deck },
+    hands, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castOne = (s: GameState, seat: SeatIndex, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name) })));
+  const offered = (s: GameState, seat: SeatIndex, name: string) => legalActions(s, seat).plays.some((p) => p.kind === 'cast' && p.card === find(s, seat, 'hand', name));
+  const tryCast = (s: GameState, seat: SeatIndex, name: string) => refusal(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', name) }) ?? '';
+  // The active player passes in their main phase, so the opponent holds priority there.
+  const theirPriority = (s: GameState) => apply(s, { type: 'auto:pass', by: 0 });
+
+  it('reads', () => {
+    for (const card of [RULE, SILENCE, TEFERI, ABOLISHER, DOSAN]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Rule of Law: one spell each turn, for every player', () => {
+    let s = table(['Test Rule'], { 0: ['Test Ponder', 'Test Ponder', 'Test Thopter'] });
+    expect(offered(s, 0, 'Test Ponder')).toBe(true);
+    s = castOne(s, 0, 'Test Ponder');
+    expect(offered(s, 0, 'Test Ponder')).toBe(false);
+    expect(offered(s, 0, 'Test Thopter')).toBe(false);
+    expect(tryCast(s, 0, 'Test Thopter')).toMatch(/no more than one spell each turn/);
+    // Without it, two.
+    let t = table([], { 0: ['Test Ponder', 'Test Ponder'] });
+    t = castOne(t, 0, 'Test Ponder');
+    expect(offered(t, 0, 'Test Ponder')).toBe(true);
+  });
+
+  it('Deafening Silence: one noncreature spell, and creatures as many as you like', () => {
+    let s = table(['Test Silence'], { 0: ['Test Ponder', 'Test Ponder', 'Test Thopter', 'Test Thopter'] });
+    s = castOne(s, 0, 'Test Thopter');
+    s = castOne(s, 0, 'Test Ponder');
+    expect(offered(s, 0, 'Test Ponder')).toBe(false);
+    expect(tryCast(s, 0, 'Test Ponder')).toMatch(/no more than one noncreature spell/);
+    expect(offered(s, 0, 'Test Thopter')).toBe(true);
+  });
+
+  it("Teferi: an opponent's instant waits for their own main phase; its controller's does not", () => {
+    // Our main phase, the opponent asked: not a time they could cast a sorcery.
+    const s = table(['Test Raveler'], { 0: ['Test Ponder'], 1: ['Test Ponder'] });
+    expect(s.priority).toBe(0);
+    expect(tryCast(theirPriority(s), 1, 'Test Ponder')).toMatch(/only when you could cast a sorcery/);
+    expect(tryCast(theirPriority(table([], { 1: ['Test Ponder'] })), 1, 'Test Ponder')).toBe('');
+    // Its controller is not its opponent.
+    expect(offered(s, 0, 'Test Ponder')).toBe(true);
+    // On their own turn, in their main phase, they may.
+    let t = advanceTo(advanceTo(s, 'end'), 'precombat-main');
+    expect(t.activeSeat).toBe(1);
+    expect(offered(t, 1, 'Test Ponder')).toBe(true);
+    // And its controller, on the opponent's turn, casts an instant whenever they hold priority.
+    expect(tryCast(apply(t, { type: 'auto:pass', by: 1 }), 0, 'Test Ponder')).toBe('');
+    t = castOne(t, 1, 'Test Ponder');
+    expect(t.instances[find(s, 1, 'hand', 'Test Ponder')]!.zone).toBe('graveyard');
+  });
+
+  it("Grand Abolisher: on its controller's turn, no spells and no artifact abilities for the opponent; on theirs, both", () => {
+    const s = table(['Test Abolisher'], { 1: ['Test Ponder'] }, ['Test Rock']);
+    const rock = find(s, 1, 'battlefield', 'Test Rock');
+    const held = theirPriority(s);
+    expect(tryCast(held, 1, 'Test Ponder')).toMatch(/no spells during its controller's turn/);
+    expect(refusal(held, { type: 'auto:activate', by: 1, card: rock, abilityIndex: 0 })).toMatch(/no abilities of artifacts/);
+    expect(legalActions(held, 1).plays.some((p) => p.card === rock)).toBe(false);
+    // Without it, both.
+    const bare = theirPriority(table([], { 1: ['Test Ponder'] }, ['Test Rock']));
+    expect(tryCast(bare, 1, 'Test Ponder')).toBe('');
+    expect(legalActions(bare, 1).plays.some((p) => p.card === find(bare, 1, 'battlefield', 'Test Rock'))).toBe(true);
+    // Its controller's own spells are not stopped.
+    expect(tryCast(table(['Test Abolisher'], { 0: ['Test Ponder'] }), 0, 'Test Ponder')).toBe('');
+    // On the opponent's turn the rock works again.
+    const t = advanceTo(nextTurn(s), 'precombat-main');
+    expect(t.activeSeat).toBe(1);
+    expect(refusal(t, { type: 'auto:activate', by: 1, card: rock, abilityIndex: 0 })).toBeNull();
+    expect(tryCast(t, 1, 'Test Ponder')).toBe('');
+  });
+
+  it('Dosan: spells only during your own turn, whoever controls it', () => {
+    const s = table([], { 0: ['Test Ponder'], 1: ['Test Ponder'] }, ['Test Dosan']);
+    expect(tryCast(theirPriority(s), 1, 'Test Ponder')).toMatch(/only during your own turn/);
+    expect(tryCast(s, 0, 'Test Ponder')).toBe('');
   });
 });
 
