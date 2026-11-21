@@ -37,6 +37,7 @@ legal pool (`LEGAL=1 POD=1 GAMES=100 node scripts/measure/corpus-decks.mjs`).
 | 60501 | D773 | every game finished |
 | 60601 | D775 | every game finished, 61.8 turns and 354 moves on average |
 | 60701 | D776 | every game finished, 58.6 turns and 373 moves on average |
+| 60801 | D778, the handover build (d964dc5) | every game finished, 58.3 turns and 344 moves on average |
 
 No sweep today had an engine throw or a stall.
 
