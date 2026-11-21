@@ -1306,7 +1306,8 @@ export type TriggerEvent =
         readonly other?: true;
       };
     }
-  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'opponent' | 'any' }
+  /** `amount` set by the engine (D785): how much was gained, for "that much". */
+  | { readonly kind: 'life-gained'; readonly by?: 'you' | 'opponent' | 'any'; readonly amount?: number }
   /**
    * "Whenever an opponent / you / a player **loses life**" (D999): Exquisite Blood, Bloodthirsty
    * Conqueror. Raised once per seat per settle, with `amount` the life it lost there — read off
@@ -3000,6 +3001,12 @@ export interface CardScript {
    * battlefield with its abilities; several stack.
    */
   readonly additionalLands?: number;
+  /**
+   * "Each player may play an additional land on each of their turns" (D785): Rites of Flourishing,
+   * Ghirapur Orrery's first line. The same drop, handed to every seat while the permanent is on any
+   * battlefield with its abilities (`landDropsFor`).
+   */
+  readonly additionalLandsEach?: number;
   /**
    * "You may play lands from your graveyard" (D648) — Crucible of Worlds, Ramunap Excavator. Read
    * live by `landZonesFor`: the land plays offered, and `playLand`, include the controller's

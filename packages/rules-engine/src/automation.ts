@@ -2091,8 +2091,8 @@ function fireTrigger(
     ...(attacked === undefined ? {} : { attacked }),
     // How much damage the event was, for "that many" (D903).
     ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged'
-      // And the life lost (D999), for Exquisite Blood's "that much".
-      || event.kind === 'life-lost')
+      // And the life lost (D999), for Exquisite Blood's "that much"; and gained (D785), for Vito's.
+      || event.kind === 'life-lost' || event.kind === 'life-gained')
       && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
@@ -4418,7 +4418,12 @@ function settle(state: GameState, before: GameState): GameState {
   for (const seat of next.seats) {
     const was = before.seats[seat.index];
     if (was === undefined || seat.eliminated) continue;
-    if (seat.life > was.life) next = raise(next, { kind: 'life-gained' }, seat.index);
+    // With how much (D785), for "that much": what this pass added to the turn's record of gains.
+    if (seat.life > was.life) {
+      const key = String(seat.index);
+      const recorded = (next.lifeGainedThisTurn?.[key] ?? 0) - (before.lifeGainedThisTurn?.[key] ?? 0);
+      next = raise(next, { kind: 'life-gained', amount: recorded > 0 ? recorded : seat.life - was.life }, seat.index);
+    }
   }
   // And life lost (D999), with how much: what this pass added to the turn's record of it.
   for (const seat of next.seats) {

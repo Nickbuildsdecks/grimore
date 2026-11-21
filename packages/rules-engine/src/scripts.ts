@@ -21730,7 +21730,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
     const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged'
-      || k.kind === 'life-lost')
+      || k.kind === 'life-lost' || k.kind === 'life-gained')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
@@ -26621,6 +26621,10 @@ function readEffect(
         },
       };
     }
+    // "Each opponent loses that much life" (D785): Sanguine Bond's kin.
+    if (/^each opponent loses \u000e much life$/i.test(text)) {
+      return { effect: (c) => opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, n(c)), c.state) };
+    }
     if (/^target opponent loses \u000e much life$/i.test(text)) {
       return {
         targets: [TARGET_OPPONENT],
@@ -26758,6 +26762,15 @@ function readEffect(
     composition runs the mill before the question. Without "may" or "up to" one is taken if any can
     be. The kind is the search vocabulary's (`libraryFilter`).
   */
+  /*
+    "That player draws an additional card" (D785): Howling Mine and Rites of Flourishing's kin, on a
+    draw-step trigger. The word says why the card is there; the draw is a card drawn.
+  */
+  const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
+  if (extraDraw !== null) {
+    const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
+    return readEffect(`${extraDraw[1]!} ${/^you$/i.test(extraDraw[1]!) ? 'draw' : 'draws'} ${many}`, name, where);
+  }
   /*
     "Put your commander into your hand from the command zone" (D782): Command Beacon. Every commander
     of yours in your command zone (two with partners) goes to your hand.
@@ -31648,6 +31661,11 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (extra !== null) {
     const n = /^(an|one)$/i.test(extra[1]!) ? 1 : countFrom(extra[1]!);
     return n === null || n < 1 ? null : { additionalLands: n };
+  }
+  const everyone = /^each player may play (an|one|two) additional lands? on each of their turns\.?$/i.exec(plain(line).trim());
+  if (everyone !== null) {
+    const n = /^(an|one)$/i.test(everyone[1]!) ? 1 : countFrom(everyone[1]!);
+    return n === null || n < 1 ? null : { additionalLandsEach: n };
   }
   // "You may play lands from your graveyard." (D648): Crucible of Worlds, Ramunap Excavator.
   if (/^you may play lands from your graveyard\.?$/i.test(plain(line).trim())) return { landsFromGraveyard: true };

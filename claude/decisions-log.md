@@ -55661,3 +55661,33 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 14,723 to 14,725 of 31,900 cards with every line read, and 36,329 to 36,332 of 59,888
 lines, against d9b7cf2.
+
+## D785 — "That much life", the additional card, everyone's extra land
+
+Most-played order: Vito, Thorn of the Dusk Rose (rank 490), Sanguine Bond (507), Howling Mine (719),
+then Rites of Flourishing (1527), Kami of the Crescent Moon (1808), Dictate of Kruphix (1864), Font of
+Mythos (2181) and Ghirapur Orrery (2613), which share their lines.
+
+- **"Whenever you gain life, target opponent / each opponent loses that much life."** The life-gained
+  event now carries how much (`amount`): what the gain added to the turn's record of gains, or the
+  rise in the life total where nothing was recorded. "That much" reads it the way Exquisite Blood's
+  life-lost trigger does (D999). Exquisite Blood plus either one is the familiar two-card loop; it
+  runs through the stack one trigger at a time, so each lap is visible and the table can stop it.
+- **"That player draws an additional card"** (and "two additional cards"): a draw-step trigger whose
+  draw is ordinary. The referent swap hands the reader "target player draws …", so the reader takes
+  that form too. Howling Mine's "if ~ is untapped" was already read.
+- **"Each player may play an additional land on each of their turns."** `CardScript.additionalLandsEach`,
+  added to every seat's land drops by `landDropsFor` while the permanent is on any battlefield with its
+  abilities.
+
+**Tests.** 5 engine tests: the cards read; gaining 3 makes each opponent lose 3, and with the
+enchantment gone the opponent loses nothing; the targeted version takes 3 from the chosen opponent;
+the opponent draws 2 in their draw step with the Mine out, 3 with the Font, 1 with neither; with
+Rites out both players get a second land drop on their own turns, and without it one.
+
+Faults injected by script: 6 of 6 caught.
+
+    engine tests: 5,803, all passing (on 6b74ed6)
+
+Coverage: 14,725 to 14,739 of 31,900 cards with every line read, and 36,332 to 36,354 of 59,888
+lines, against 6b74ed6.

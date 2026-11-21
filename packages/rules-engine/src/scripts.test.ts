@@ -7947,7 +7947,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script additionalLands', 'script additionalLandsEach', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
@@ -31193,6 +31193,85 @@ describe("Herald's Horn: of the chosen type (D784)", () => {
     expect(t.pendingDecision?.candidates ?? []).not.toContain(ox);
   });
 });
+describe('that much life, the additional card, everyone\'s extra land (D785)', () => {
+  const BLOOD = { name: 'Test Blood', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', oracle_text: 'Whenever you gain life, each opponent loses that much life.' };
+  const BOND = { name: 'Test Bond', type_line: 'Enchantment', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal', oracle_text: 'Whenever you gain life, target opponent loses that much life.' };
+  const SALVE = { name: 'Test Salve', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const MINE = { name: 'Test Mine', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: "At the beginning of each player's draw step, that player draws an additional card." };
+  const FONT = { name: 'Test Font', type_line: 'Artifact', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', oracle_text: "At the beginning of each player's draw step, that player draws two additional cards." };
+  const RITES = { name: 'Test Rites', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', oracle_text: 'Each player may play an additional land on each of their turns.' };
+  const deck = customDeck({
+    id: 'd785', name: 'Much',
+    entries: [{ name: 'Test Blood', count: 1 }, { name: 'Test Bond', count: 1 }, { name: 'Test Salve', count: 4 }, { name: 'Test Mine', count: 1 }, { name: 'Test Font', count: 1 }, { name: 'Test Rites', count: 1 }, { name: 'Plains', count: 51 }],
+    data: [BLOOD, BOND, SALVE, MINE, FONT, RITES] as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd785', 1: 'd785' }, deckSpecs: { d785: deck.deck },
+    hands: { 0: hand, 1: ['Plains', 'Plains'] }, battlefield: { 0: ['Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const landRows = (s: GameState, seat: SeatIndex) => legalActions(s, seat).plays.filter((p) => p.kind === 'land');
+
+  it('reads', () => {
+    for (const card of [BLOOD, BOND, MINE, FONT, RITES]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each opponent loses as much as was gained, and nothing without a gain', () => {
+    let s = table(['Test Salve'], ['Test Blood']);
+    const [mine, theirs] = [life(s, 0), life(s, 1)];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') })));
+    expect(life(s, 0)).toBe(mine + 3);
+    expect(life(s, 1)).toBe(theirs - 3);
+    // The opponent gaining life is not "you gain life".
+    let t = table(['Test Salve'], ['Test Blood']);
+    t = apply(t, { type: 'card:move', by: 0, card: find(t, 0, 'battlefield', 'Test Blood'), toZone: 'graveyard' });
+    t = drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Salve') })));
+    expect(life(t, 1)).toBe(theirs);
+  });
+
+  it('the targeted opponent loses that much', () => {
+    let s = table(['Test Salve'], ['Test Bond']);
+    const theirs = life(s, 1);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') }));
+    for (let i = 0; i < 6 && s.pendingChoice == null && life(s, 1) === theirs; i++) s = passBoth(s);
+    if (s.pendingChoice != null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
+    s = drain(s);
+    expect(life(s, 1)).toBe(theirs - 3);
+  });
+
+  it('every player draws an additional card in their draw step; two with the Font', () => {
+    const drawn = (extra: string) => {
+      let s = table([], [extra]);
+      s = advanceTo(s, 'end');
+      const before = ids(s, 1, 'hand').length;
+      s = advanceTo(s, 'draw');
+      s = drain(s);
+      expect(s.activeSeat).toBe(1);
+      for (let i = 0; i < 6 && s.step === 'draw'; i++) s = passBoth(s);
+      return ids(s, 1, 'hand').length - before;
+    };
+    expect(drawn('Test Mine')).toBe(2);
+    expect(drawn('Test Font')).toBe(3);
+    expect(drawn('Plains')).toBe(1);
+  });
+
+  it("everyone's extra land drop, from whoever controls it", () => {
+    let s = table(['Plains', 'Plains', 'Plains'], ['Test Rites']);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') });
+    expect(landRows(s, 0).length).toBeGreaterThan(0);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') });
+    expect(landRows(s, 0)).toHaveLength(0);
+    // The opponent, on their own turn, has two as well.
+    s = advanceTo(advanceTo(s, 'end'), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:playLand', by: 1, card: find(s, 1, 'hand', 'Plains') });
+    expect(landRows(s, 1).length).toBeGreaterThan(0);
+    // Without it, one.
+    let t = table(['Plains', 'Plains'], []);
+    t = apply(t, { type: 'auto:playLand', by: 0, card: find(t, 0, 'hand', 'Plains') });
+    expect(landRows(t, 0)).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
