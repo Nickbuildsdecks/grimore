@@ -26616,7 +26616,7 @@ function readEffect(
     may" the question is asked only when the top card is of that kind, and the move happens only on
     a yes; otherwise the card stays where it is.
   */
-  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?$/i.exec(clause.trim());
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(into your hand|on the bottom of your library))?$/i.exec(clause.trim());
   if (topIf !== null) {
     const body = cardFilterBody(topIf[2]!, name);
     if (body !== null) {
@@ -26636,6 +26636,15 @@ function readEffect(
         The "may" is a look at one card, choosing it or not, and the engine moves a chosen card where
         `chosenGoTo` says (D973), as surveil's question does. Without "may" the effect moves it.
       */
+      /*
+        And where it goes when it is not taken (D1073): "If you don't put the card onto the
+        battlefield, put it into your hand" (N'Yami-Class Mother Ship, Skyclave Aerialist), "… put it
+        on the bottom of your library". Only after "you may": an answer that picked nothing leaves the
+        card on top, where the effect finds it and moves it. A card of another kind is never a
+        candidate, so it goes the same way.
+      */
+      const otherwise = topIf[6]?.toLowerCase();
+      if (otherwise !== undefined && !may) return null;
       if (may) {
         return {
           decisions: [{
@@ -26645,7 +26654,12 @@ function readEffect(
             // A top card of another kind is no candidate, and a question with none answers itself.
             filter: (state: GameState, _id: string, chooser: SeatIndex) => matches(state, chooser),
           }],
-          effect: (c) => c.state,
+          effect: (c) => {
+            if (otherwise === undefined || chosenCards(c).length > 0) return c.state;
+            const top = topOf(c.state, c.controller);
+            if (top === undefined) return c.state;
+            return otherwise === 'into your hand' ? moveToHand(c.state, [top]) : putOnBottomOfLibrary(c.state, top);
+          },
         };
       }
       return { effect: (c) => (matches(c.state, c.controller) ? move(c.state, c.controller) : c.state) };
@@ -27127,6 +27141,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(?:you may )?look at the top card of your library\.\s+If it shares a creature type with [^,.]+, you may reveal it\.\s+If you do, ([^.]+)/gi, '\u0014$1')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
+    // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
+    .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), put it (into your hand|on the bottom of your library)/gi, '$1\u0015$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
     .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.

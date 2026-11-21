@@ -27863,6 +27863,57 @@ describe('the top card, if it is of a kind (D1036)', () => {
   });
 });
 
+describe('the top card, and where it goes when it is not taken (D1073)', () => {
+  const ROWS = [
+    { name: 'Test Reef', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: "Look at the top card of your library. If it's a land card, you may put it onto the battlefield tapped. If you don't put the card onto the battlefield, put it into your hand." },
+    { name: 'Test Sift', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: "Look at the top card of your library. If it's a creature card, you may reveal it and put it into your hand. If you don't put the card into your hand, put it on the bottom of your library." },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+  ];
+  const deck = customDeck({ id: 'd1073', name: 'Otherwise', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (spell: string, top: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1073', 1: 'd1073' }, deckSpecs: { d1073: deck.deck },
+      battlefield: { 0: ['Forest'], 1: ['Forest'] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const library = ids(s, 0, 'library');
+    const card = library.find((id) => nameOf(s, id) === top)!;
+    return { s: { ...s, zones: { ...s.zones, '0:library': [card, ...library.filter((id) => id !== card)] } } as GameState, card };
+  };
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads every row whole; "otherwise" without a "may" stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: "Reveal the top card of your library. If it's a land card, put it onto the battlefield. If you don't put the card onto the battlefield, put it into your hand." } as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('a land taken goes onto the battlefield; declined, it goes to hand', () => {
+    let { s, card } = table('Test Reef', 'Forest');
+    s = cast(s, 'Test Reef');
+    const hand = ids(s, 0, 'hand').length;
+    const yes = drain(apply(s, { type: 'auto:decide', by: 0, cards: [card] } as Action), 30);
+    expect(yes.instances[card]!.zone).toBe('battlefield');
+    // Taken, nothing else moves: the next card is not the "otherwise" card.
+    expect(ids(yes, 0, 'hand').length).toBe(hand);
+    const no = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 30);
+    expect(no.instances[card]!.zone).toBe('hand');
+  });
+
+  it('a card of another kind is never offered, and goes the otherwise way', () => {
+    let { s, card } = table('Test Reef', 'Test Bear');
+    s = cast(s, 'Test Reef');
+    expect(s.pendingDecision).toBeNull();
+    expect(s.instances[card]!.zone).toBe('hand');
+    ({ s, card } = table('Test Sift', 'Forest'));
+    s = cast(s, 'Test Sift');
+    expect(s.instances[card]!.zone).toBe('library');
+    expect(ids(s, 0, 'library').at(-1)).toBe(card);
+  });
+});
+
 describe('damage assigned as though it weren\'t blocked (D770)', () => {
   const THORN = { name: 'Test Thornback', type_line: 'Creature — Elemental', mana_cost: '{5}{G}{G}', cmc: 7, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: "You may have Test Thornback assign its combat damage as though it weren't blocked." };
   const BRUTE = { name: 'Test Brute', type_line: 'Creature — Giant', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
