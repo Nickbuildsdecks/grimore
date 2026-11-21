@@ -165,6 +165,13 @@ export interface EffectContext {
    */
   readonly targetStats?: Readonly<Record<string, { readonly power: number; readonly toughness: number }>>;
   /**
+   * Every card a question of the composed resolution chose, in order (D1081): "Target player
+   * sacrifices a creature. You gain life equal to that creature's toughness" asks about the card the
+   * first part's question picked, which the part after it cannot see in its own slice of the
+   * answers. Their power and toughness are in `targetStats` too, as the resolution began.
+   */
+  readonly composedChosen?: readonly string[];
+  /**
    * The permanent sacrificed to pay for this spell or ability, as it last was (D586).
    *
    * Undefined for everything that sacrificed nothing as a cost. `subjectCounters`' neighbour and

@@ -19483,6 +19483,24 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
     the clause before has destroyed or exiled it, as it last was (CR 608.2h), from the snapshot the
     composition takes as it begins. Never below 0 as a count.
   */
+  /*
+    And the creature an earlier question picked (D1081): "Target player sacrifices a creature. You
+    gain life equal to that creature's toughness" (Tribute to Hunger, Consuming Vapors). The last
+    card chosen, as it last was.
+  */
+  const picked = !earlierCardTarget && earlierChosenPermanent
+    ? /^that creature's (power|toughness)$/i.exec(plain(phrase).trim().replace(/\.$/, ''))
+    : null;
+  if (picked !== null) {
+    const which = picked[1]!.toLowerCase() as 'power' | 'toughness';
+    return (c) => {
+      const id = (c.composedChosen ?? []).at(-1);
+      if (id === undefined) return 0;
+      const inst = c.state.instances[id];
+      const live = inst !== undefined && inst.zone === 'battlefield' ? characteristicsOf(c.state, inst) : undefined;
+      return Math.max(0, live !== undefined ? live[which] : c.targetStats?.[id]?.[which] ?? 0);
+    };
+  }
   const sized = earlierCardTarget
     ? /^(?:its|that creature's) (power|toughness)$/i.exec(plain(phrase).trim().replace(/\.$/, ''))
     : null;
@@ -19528,6 +19546,8 @@ let sacrificeInCost = false;
 
 /** On while `composeEffects` reads a clause that follows one aiming at a card (D660). */
 let earlierCardTarget = false;
+/** Whether an earlier part of the composition asked a question that picks a permanent (D1081). */
+let earlierChosenPermanent = false;
 
 /**
  * On while `readEffect` reads the sentence after a "destroy all" (D682), the only place
@@ -19543,6 +19563,16 @@ function withDestroyedThisWay<T>(read: () => T): T {
     return read();
   } finally {
     destroyedThisWay = before;
+  }
+}
+
+function withEarlierChosenPermanent<T>(on: boolean, read: () => T): T {
+  const before = earlierChosenPermanent;
+  earlierChosenPermanent = on;
+  try {
+    return read();
+  } finally {
+    earlierChosenPermanent = before;
   }
 }
 
@@ -28576,7 +28606,11 @@ function composeEffects(
         continue;
       }
     }
-    const read = pronounFirst ? null : withEarlierCardTarget(cardAimed, () => readEffect(clause, name, where));
+    // And whether a part before this one picked a permanent with a question (D1081): an edict.
+    const chosePermanent = !cardAimed && parts.some((part) => (part.decisions ?? []).some((d) => typeof d !== 'function'
+      && 'from' in d && d.from === 'battlefield'));
+    const read = pronounFirst ? null : withEarlierChosenPermanent(chosePermanent,
+      () => withEarlierCardTarget(cardAimed, () => readEffect(clause, name, where)));
     if (read !== null) { parts.push(read); continue; }
     // "You may X. If you do, Y", held together by `clausesOf` (D952), read as `optionalEffect` reads it.
     if (/^you may [^.]+\. If you do, /i.test(clause)) {
@@ -28961,14 +28995,16 @@ function composeEffects(
     (c0: EffectContext): GameState => {
       // The targets as they are before any part acts (D1080): see `EffectContext.targetStats`.
       const stats: Record<string, { power: number; toughness: number }> = { ...(c0.targetStats ?? {}) };
-      for (const target of c0.targets) {
-        if (target.kind !== 'card' || stats[target.id] !== undefined) continue;
-        const inst = c0.state.instances[target.id];
+      // A context made by hand (a test, a hand-written caller) may carry neither list.
+      const chosen = c0.composedChosen ?? (c0.decisions ?? []).flatMap((answer) => answer.ids ?? []);
+      for (const id of [...(c0.targets ?? []).flatMap((t) => (t.kind === 'card' ? [t.id] : [])), ...chosen]) {
+        if (stats[id] !== undefined) continue;
+        const inst = c0.state.instances[id];
         if (inst === undefined || inst.zone !== 'battlefield') continue;
         const chars = characteristicsOf(c0.state, inst);
-        stats[target.id] = { power: chars.power, toughness: chars.toughness };
+        stats[id] = { power: chars.power, toughness: chars.toughness };
       }
-      const c = withReferent({ ...c0, targetStats: stats });
+      const c = withReferent({ ...c0, targetStats: stats, composedChosen: chosen });
       return slice.reduce(
         (state, part, i) => {
           const final = asFinal && i === slice.length - 1;

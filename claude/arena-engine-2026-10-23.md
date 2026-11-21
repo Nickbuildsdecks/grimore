@@ -37935,6 +37935,30 @@ Faults injected by script: 4. All are caught. The live-value fault was caught on
 pump-then-measure row was added.
 
 Coverage: 14,650 of 31,900 cards (+10), 36,239 of 59,888 lines (+11).
+
+## D1081 — "that creature's toughness" after an edict
+
+"Target opponent sacrifices a creature. You gain life equal to that creature's toughness" (Tribute
+to Hunger), Consuming Vapors, and Doomgape's own upkeep sacrifice.
+
+- **`EffectContext.composedChosen`**: every card a question of the composed resolution chose, in
+  order. A part's own slice of the answers does not include an earlier part's, so this is how a
+  later part finds the creature the edict took.
+- D1080's snapshot (`targetStats`) now includes those chosen cards as well as the targets, taken as
+  the resolution begins.
+- A flag beside `earlierCardTarget`, set when an earlier part's question picks from the battlefield,
+  lets "that creature's power|toughness" read the last card chosen: live if it is still there, as it
+  last was otherwise (CR 608.2h).
+- A context built by hand (some compile tests) carries neither targets nor decisions, so both lists
+  are optional in the snapshot. The full suite found that on its first run.
+
+**Tests.** 2 engine tests:
+- the row reads whole, and the phrase with no question before it stays unread;
+- a 0/5 Wall pumped +3/+3 is sacrificed to the edict, and the caster gains its last toughness, 8.
+
+Faults injected by script: 4. All are caught.
+
+Coverage: 14,654 of 31,900 cards (+4), 36,243 of 59,888 lines (+4).
 ## D779 — Most-played first: Chromatic Lantern, Frantic Search, and two questions in one spell
 
 **A new priority order, from Nick: automate cards from the most played down.** Ranked by EDHREC
