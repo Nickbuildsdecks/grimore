@@ -37896,3 +37896,17 @@ for its own lines: wish, net, omen, gem, study, javelin.
 Faults injected by script: 3. All are caught.
 
 Coverage: 14,631 of 31,900 cards (+22), 36,213 of 59,888 lines (+89).
+
+## D1079 — an oil or charge counter on a target
+
+"{T}: Put an oil counter on target artifact or creature you control" (the Phyrexian oil cards) and
+"… a charge counter on target artifact". The targeted counter reader (D1032's list) now includes oil
+and charge: counters other cards read ("for each oil counter on …"), as D1078 lets a card's own lines
+read them on itself. The target is aimed as a gift, as a +1/+1 counter's is.
+
+**Tests.** 1 engine test: the line reads whole with a friendly target, and activating it puts an oil
+counter on the chosen artifact.
+
+Faults injected by script: 2. Both are caught.
+
+Coverage: 14,640 of 31,900 cards (+9), 36,228 of 59,888 lines (+15).
