@@ -30645,6 +30645,48 @@ describe('"if you control a creature with flying / with a counter on it" (D1077)
   });
 });
 
+describe('entering with counters of its own (D1078)', () => {
+  const C = (name: string, text: string, pt: [string, string]) => ({
+    name, type_line: 'Creature — Phyrexian', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text, power: pt[0], toughness: pt[1],
+  });
+  const ROWS = [
+    C('Test Raptor', 'Test Raptor enters with three oil counters on it.\nRemove an oil counter from Test Raptor: Test Raptor gets +1/+1 until end of turn.', ['2', '2']),
+    C('Test Shrunk', 'Test Shrunk enters with two -1/-1 counters on it.', ['4', '4']),
+  ];
+  const deck = customDeck({ id: 'd1078', name: 'Own counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 56 }], data: ROWS as never[] });
+  const enter = (card: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1078', 1: 'd1078' }, deckSpecs: { d1078: deck.deck },
+      battlefield: { 0: ['Swamp'], 1: [] }, hands: { 0: [card] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+    return { s: t, id: find(t, 0, 'battlefield', card) };
+  };
+
+  it('reads every row whole; a rules counter or a size counter it cannot apply stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const counter of ['three time counters', 'a finality counter', 'a +1/+0 counter', 'a lore counter']) {
+      const odd = compileCard(C('Test Odd', `Test Odd enters with ${counter} on it.`, ['1', '1']) as never);
+      expect(odd.ok && odd.unread.length, counter).toBe(1);
+    }
+  });
+
+  it('three oil counters on arrival, spent by its own ability', () => {
+    let { s, id } = enter('Test Raptor');
+    expect(s.instances[id]!.counters['oil']).toBe(3);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 30);
+    expect(s.instances[id]!.counters['oil']).toBe(2);
+    expect(power(s, id)).toBe(3);
+  });
+
+  it('two -1/-1 counters make a 4/4 a 2/2', () => {
+    const { s, id } = enter('Test Shrunk');
+    expect(s.instances[id]!.counters['-1/-1']).toBe(2);
+    expect([power(s, id), characteristicsOf(s, s.instances[id]!).toughness]).toEqual([2, 2]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -31607,6 +31607,7 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
  */
 // And shield (D1033, CR 122.1c).
 const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice', 'shield'];
+// D1078 widened this to any counter of the card's own; see `entersWithFromLine`.
 
 function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
   /*
@@ -31654,14 +31655,22 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     return { entersWith: { ...fixed, if: holds } };
   }
   const matched = new RegExp(
-    `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ((?:first |double )?[\\w+/]+) counters? on it$`,
+    `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ((?:first |double )?[\\w+/-]+) counters? on it$`,
     'i',
   ).exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (matched === null) return null;
 
   const kind = matched[2]!.toLowerCase();
   // And a keyword counter (D1032): "enters with a lifelink counter on it".
-  if (!SENTENCE_COUNTERS.includes(kind) && !isKeyword(kind)) return null;
+  /*
+    And a counter that is the card's own (D1078): oil, wish, net, omen, gem, study — read by
+    another line of the same card ("Remove an oil counter from ~: …"), exactly as charge is, so that
+    line decides whether the card is read. Refused: a counter with a rule of its own the engine
+    applies by name (`RULES_COUNTERS`: time, fade, loyalty, lore, finality …), and any size counter
+    but +1/+1 and -1/-1, which `characteristicsOf` reads.
+  */
+  const ownCounter = /^[a-z]+$/.test(kind) && !RULES_COUNTERS.includes(kind);
+  if (!SENTENCE_COUNTERS.includes(kind) && kind !== '-1/-1' && !isKeyword(kind) && !ownCounter) return null;
 
   const printed = matched[1]!;
   const amount = printed.toLowerCase() === 'x' ? 'x' as const : countFrom(printed);
