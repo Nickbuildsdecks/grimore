@@ -54861,3 +54861,43 @@ to an opponent's creature, the only place "its owner's" can differ from "your", 
 "it".
 
 Coverage: 14,454 of 31,900 cards (+14), 35,932 of 59,888 lines (+17).
+
+## D1062 — a quoted ability granted to a target until end of turn
+
+"Until end of turn, target creature gets +2/+0 and gains "When this creature dies, return it to the
+battlefield tapped under its owner's control."" (Supernatural Stamina, Return to Action, Pain 101,
+Demonic Gifts, Abnormal Endurance), "Until end of turn, target creature gains "{T}: Return target
+nonland permanent to its owner's hand."" (Banishing Knack, Retraction Helix), and the activated
+form: Herd Heirloom, Dragon-Cursed Halls, Greater Stone Spirit. Hunter's Prowess too.
+
+- `quotedGrantUntilEndOfTurn` reads "[until end of turn,] target creature … [gets +N/+N and] gains
+  [keywords and] "<quotation>" [until end of turn]", with "until end of turn" exactly once.
+- The quotation goes through the readers an Aura's grant uses (`grantedTriggerFrom`, then
+  `grantedAbilityFrom`, D511 and D512). It is held in the card's `grantedTriggers` or
+  `grantedAbilities` and handed to the creature by index, through an end-of-turn effect.
+- The ability belongs to the creature, so "this creature" and "it" mean the creature, and its
+  controller controls the trigger. A granted dies trigger fires from the creature's last state, so
+  Supernatural Stamina's creature comes back, as a new object without the pump.
+- **Two callers only.** The table lives on the card and the index lives in a closure, so every place
+  that builds a script from this reading has to carry the table, or the creature is handed index 0
+  of nothing. A spell whose whole resolution is this one sentence merges it (`granting`), and so does
+  an activated ability (`cardFields`, D1049). A trigger, a mode, or a composition with another
+  sentence stays unread rather than dropping the grant.
+- The target is `friendly`: an ability is its holder's to use, so a grant is a gift.
+- compile.test's row "does not read a 'this creature' inside a quoted granted ability as the card's
+  own" asserted that Abnormal Endurance's line reads to nothing. It now asserts that the line reads
+  whole, the spell has no trigger of its own, and the quotation is its one `grantedTriggers` entry
+  (D516).
+
+**Tests.** 4 engine tests:
+- the rows read whole and the target is friendly; a quotation with no "until end of turn", with two,
+  or with another sentence after it stays unread;
+- the pump and the dies trigger: 4 power, then killed, back tapped at 2 power;
+- an activated ability on the creature: offered after the spell, used to gain 3 life with the
+  creature tapped for it, and no longer offered next turn;
+- an artifact's activated grant: trample and one granted trigger on the creature.
+
+Faults injected by script: 9. All are caught. The `friendly` hint was caught only after the test
+asserted it.
+
+Coverage: 14,467 of 31,900 cards (+13), 35,946 of 59,888 lines (+14).
