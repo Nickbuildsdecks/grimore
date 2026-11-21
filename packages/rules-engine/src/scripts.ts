@@ -19313,6 +19313,21 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'attacks', who: 'any', of: 'any' }],
   },
   /*
+    And the block (D1070): "Whenever a creature blocks, ~ deals 1 damage to that creature's
+    controller" (Battle Strain, Heat of Battle), "Whenever a creature you control blocks", "… an
+    opponent controls blocks", "Whenever another creature [you control] blocks". `blocks` takes
+    `who` and `of` as `attacks` does, and the blocker is the subject, once per creature blocking.
+  */
+  {
+    prologue: () => /^Whenever (?<who>a|another) creature(?<of> you control| an opponent controls)? blocks, (?<clause>.+)$/i,
+    from: (matched: RegExpExecArray) => [{
+      kind: 'blocks' as const,
+      who: /^another$/i.test(matched.groups?.who ?? '') ? 'another' as const : 'any' as const,
+      of: matched.groups?.of === undefined ? 'any' as const
+        : /you control/i.test(matched.groups.of) ? 'you' as const : 'opponent' as const,
+    }],
+  },
+  /*
     "Whenever a creature [with flying] attacks **you** [or a planeswalker you control]" (D996): one
     trigger per attacker, asked of the watcher's own seat against what the attack was aimed at.
     The filter is `boardFilter`'s, and only the two the attack event carries are kept: a keyword and

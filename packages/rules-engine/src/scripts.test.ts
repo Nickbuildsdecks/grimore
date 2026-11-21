@@ -30224,6 +30224,56 @@ describe("damage to that land's controller (D1069)", () => {
   });
 });
 
+describe('"whenever a creature blocks" (D1070)', () => {
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    E('Test Strain', "Whenever a creature blocks, Test Strain deals 1 damage to that creature's controller."),
+    E('Test Guard', 'Whenever a creature you control blocks, you gain 2 life.'),
+    E('Test Watch', 'Whenever a creature an opponent controls blocks, you gain 1 life.'),
+    { name: 'Test Sentry', type_line: 'Creature — Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Whenever another creature you control blocks, you gain 3 life.', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1070', name: 'Blocks', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 52 }], data: ROWS as never[] });
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"another": the watcher blocking is not another creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1070', 1: 'd1070' }, deckSpecs: { d1070: deck.deck },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Sentry'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const theirs = life(s, 1);
+    const attacker = find(s, 0, 'battlefield', 'Test Bear');
+    const blocker = find(s, 1, 'battlefield', 'Test Sentry');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] } as Action));
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker, attacker }] } as Action);
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    expect(life(s, 1)).toBe(theirs);
+  });
+
+  it("the blocker's controller takes the damage; whose creature it is decides who gains", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1070', 1: 'd1070' }, deckSpecs: { d1070: deck.deck },
+      battlefield: { 0: ['Test Bear', 'Test Strain', 'Test Watch'], 1: ['Test Bear', 'Test Guard', 'Test Watch'] },
+      turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+    const attacker = find(s, 0, 'battlefield', 'Test Bear');
+    const blocker = find(s, 1, 'battlefield', 'Test Bear');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] } as Action));
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker, attacker }] } as Action);
+    for (let i = 0; i < 10 && s.step !== 'postcombat-main'; i++) s = drain(passBoth(s), 30);
+    // Seat 1's blocker: Strain deals 1 to seat 1, its own Guard gains it 2; seat 0's Watch gains 1.
+    // Seat 1's Watch hears nothing, because the blocker is not an opponent's creature to it.
+    expect(life(s, 1)).toBe(theirs - 1 + 2);
+    expect(life(s, 0)).toBe(mine + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
