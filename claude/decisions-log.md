@@ -55456,7 +55456,7 @@ now holds its reversed order refused and its loot-first order read.
 
 Faults injected by script: 5 of 5 caught.
 
-    engine tests: 5,769, all passing (merged with the other session's D1080)
+    engine tests: 5,771, all passing (merged with the other session's D1081)
 
 Coverage: 14,641 to 14,655 of 31,900 cards with every line read, and 36,230 to 36,246 of 59,888
 lines, against 9143dbc.
