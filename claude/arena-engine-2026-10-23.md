@@ -38094,3 +38094,27 @@ Faults injected by script: 7 of 7 caught (the trailing-noun guard's after the ga
 
 Coverage: 14,683 to 14,709 of 31,900 cards with every line read, and 36,283 to 36,313 of 59,888
 lines, against 6c20ae0.
+
+## D782 — Return a card from your graveyard, chosen; and Command Beacon
+
+Most-played order: Takenuma, Abandoned Mire (rank 246) and Command Beacon (183).
+
+- **An untargeted return from your graveyard**: "(You may) return a / an / up to one <kind> card from
+  your graveyard to your hand". 44 not-yet-automated cards print it. Chosen as it resolves, from the
+  cards of that kind (the search vocabulary, `libraryFilter`). Without "may" or "up to" one is taken
+  if any can be, and with exactly one the engine takes it without asking. In "Mill three cards, then
+  return …" the composition runs the mill first, so a card milled by the same resolution can be the
+  one returned. Takenuma, Grapple with the Past and Corpse Churn read whole.
+- **"Put your commander into your hand from the command zone"**: Command Beacon. Every commander of
+  yours in your command zone (both, with partners).
+
+**Tests.** 5 engine tests: both cards read; the spell mills three and returns the creature from the
+graveyard; a creature milled by the same spell can be the one returned; with nothing of the kind it
+still resolves; Command Beacon puts the commander from the command zone into the hand.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 5,789, all passing (on bfffabb)
+
+Coverage: 14,707 to 14,719 of 31,900 cards with every line read, and 36,308 to 36,325 of 59,888
+lines, against bfffabb.

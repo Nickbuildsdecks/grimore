@@ -26751,6 +26751,40 @@ function readEffect(
     kind the search vocabulary reads (`libraryFilter`); the effect moves the pick to hand and clears
     the record. Without "may" one is taken if there is one.
   */
+  /*
+    **An untargeted return from your graveyard** (D782): "Return a creature or planeswalker card from
+    your graveyard to your hand" (Takenuma, after its mill), "you may return …", "return up to one …".
+    Chosen as it resolves, so a card milled earlier in the same resolution can be the one: the
+    composition runs the mill before the question. Without "may" or "up to" one is taken if any can
+    be. The kind is the search vocabulary's (`libraryFilter`).
+  */
+  /*
+    "Put your commander into your hand from the command zone" (D782): Command Beacon. Every commander
+    of yours in your command zone (two with partners) goes to your hand.
+  */
+  if (/^put your commander into your hand from the command zone$/i.test(clause.trim())) {
+    return {
+      effect: (c) => moveToHand(c.state, listAt(c.state, zoneKey(c.controller, 'command'))
+        .filter((id) => c.state.instances[id]?.isCommander === true && c.state.instances[id]?.owner === c.controller)),
+    };
+  }
+  const fromYard = /^(you may )?return (an?|up to one) (.+? card) from your graveyard to your hand$/i.exec(clause.trim());
+  if (fromYard !== null) {
+    const phrase = `${/^up to one$/i.test(fromYard[2]!) ? 'a' : fromYard[2]!.toLowerCase()} ${fromYard[3]!}`;
+    const kind = libraryFilter(phrase, name);
+    if (kind !== null && kind.xBound !== true) {
+      const optional = fromYard[1] !== undefined || /^up to one$/i.test(fromYard[2]!);
+      const test = kind.filter;
+      return {
+        decisions: [{
+          who: 'controller', from: 'graveyard', min: optional ? 0 : 1, max: 1,
+          prompt: `Return ${phrase} from your graveyard to your hand`,
+          filter: (state: GameState, id: string, chooser: SeatIndex) => test === null || test === undefined || test(state, id, chooser),
+        }],
+        effect: (c) => moveToHand(c.state, chosenCards(c)),
+      };
+    }
+  }
   const milledPick = /^mill (a card|(\w+) cards) and (you may )?put (an? .+?) from among them into your hand$/i.exec(clause.trim());
   if (milledPick !== null) {
     const n = milledPick[2] === undefined ? 1 : countFrom(milledPick[2]);

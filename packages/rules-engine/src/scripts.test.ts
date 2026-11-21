@@ -31002,6 +31002,69 @@ describe('channel lands: Boseiju and Otawara (D781)', () => {
     expect(namesIn(s, 1, 'battlefield')).toHaveLength(2);
   });
 });
+describe('return a card from your graveyard, chosen; and Command Beacon (D782)', () => {
+  const CHURN = { name: 'Test Churn', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', oracle_text: 'Mill three cards, then return a creature or planeswalker card from your graveyard to your hand.' };
+  const BEACON = { name: 'Test Beacon', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}, Sacrifice Test Beacon: Put your commander into your hand from the command zone.' };
+  const OX = { name: 'Test Ox', type_line: 'Creature — Ox', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd782', name: 'Churn',
+    entries: [{ name: 'Test Churn', count: 2 }, { name: 'Test Beacon', count: 2 }, { name: 'Test Ox', count: 4 }, { name: 'Swamp', count: 52 }],
+    data: [CHURN, BEACON, OX] as never[],
+  });
+  const table = (opts: { graveyard?: string[]; battlefield?: string[] } = {}) => advanceTo(arena({
+    decks: { 0: 'd782', 1: 'd782' }, deckSpecs: { d782: deck.deck },
+    hands: { 0: ['Test Churn'] }, battlefield: { 0: opts.battlefield ?? ['Swamp', 'Swamp', 'Swamp'] },
+    graveyard: { 0: opts.graveyard ?? [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads', () => {
+    expect(compileCard(CHURN as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(BEACON as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('mills first, then asks which creature to return, and returns it', () => {
+    let s = table({ graveyard: ['Test Ox'] });
+    const library = ids(s, 0, 'library').length;
+    const ox = find(s, 0, 'graveyard', 'Test Ox');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') }));
+    // With one creature to return and no "may", the engine takes it without asking; with more it asks.
+    if (s.pendingDecision !== null) {
+      expect(s.pendingDecision.candidates).toContain(ox);
+      s = apply(s, { type: 'auto:decide', by: 0, cards: [ox] });
+    }
+    s = drain(s);
+    expect(ids(s, 0, 'library')).toHaveLength(library - 3);
+    expect(s.instances[ox]!.zone).toBe('hand');
+  });
+
+  it('a creature milled by the same spell can be the one returned', () => {
+    let s = table();
+    const ox = find(s, 0, 'library', 'Test Ox');
+    s = apply(s, { type: 'card:move', by: 0, card: ox, toZone: 'library', position: 'top' });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') }));
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [ox] });
+    s = drain(s);
+    expect(s.instances[ox]!.zone).toBe('hand');
+  });
+
+  it('with nothing of the kind in the graveyard, it still resolves', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Churn') })));
+    if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] }));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Churn');
+    expect(s.stackOrder).toHaveLength(0);
+  });
+
+  it('Command Beacon puts your commander from the command zone into your hand', () => {
+    let s = table({ battlefield: ['Test Beacon', 'Test Ox'] });
+    const ox = find(s, 0, 'battlefield', 'Test Ox');
+    s = apply(s, { type: 'card:move', by: 0, card: ox, toZone: 'command' });
+    s = { ...s, instances: { ...s.instances, [ox]: { ...s.instances[ox]!, isCommander: true } } };
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Beacon'), abilityIndex: 0 })));
+    expect(s.instances[ox]!.zone).toBe('hand');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Beacon');
+  });
+});
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
