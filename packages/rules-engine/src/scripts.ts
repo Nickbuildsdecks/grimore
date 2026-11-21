@@ -22168,6 +22168,25 @@ function targetSpecFrom(
           && (own === undefined || own(state, candidate, controller, source)),
       };
     }
+    /*
+      "You own" (D1064): "exile target permanent you own" (Venser, the Sojourner), "target creature
+      you own" (Charming Prince, Slip On the Ring, Saving Grasp), "destroy target permanent you own"
+      (Despotic Scepter). Ownership, not control (CR 108.3): a creature you own and an opponent
+      stole may be chosen, and one you stole may not. A wrapper on a permanent phrase, like the
+      ones above; a card in another zone, and "you own and control", are not read here.
+    */
+    const owned = /^(.+?) you own$/i.exec(trimmed);
+    if (owned !== null) {
+      const inner = targetSpecFrom(owned[1]!, friendly, parsed);
+      if (inner === null || !pointsAtAPermanent(inner)) return null;
+      const own = inner.filter;
+      return {
+        ...inner, description: printed,
+        filter: (state, candidate, controller, source) => candidate.kind === 'card'
+          && state.instances[candidate.id]?.owner === controller
+          && (own === undefined || own(state, candidate, controller, source)),
+      };
+    }
     const otherThan = /^(.+?) other than (?:[A-Z][^,.]*|this (?:creature|permanent|artifact|enchantment|land))$/.exec(trimmed);
     if (otherThan !== null) {
       const inner = targetSpecFrom(otherThan[1]!, friendly, parsed);
@@ -23647,9 +23666,14 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   // And the plural (D751): "Return up to two target creatures to their owners' hands".
+  /*
+    "To your hand" after "target … you own" (D1064, Saving Grasp): your hand is its owner's hand,
+    because the phrase says you are the owner. Only then, so "return target creature to your hand"
+    on anything else stays unread rather than putting an opponent's card in yours.
+  */
   const bounced = new RegExp(
     `^return (${TARGET_QUANTIFIER_PREFIX}target .+?) to (?:its owner's hand|their owners' hands|their owner's hands?)$`, 'i',
-  ).exec(text);
+  ).exec(text.replace(/^(return .+? you own) to your hand$/i, "$1 to its owner's hand"));
   if (bounced !== null) {
     const spec = targetSpecFrom(bounced[1]!, false);
     if (spec !== null && pointsAtAPermanent(spec)) {
@@ -23777,7 +23801,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   // And the bottom (D758): "Put target creature on the bottom of its owner's library" — `putOnBottomOfLibrary`.
   const toLibraryTop = new RegExp(
     `^put (${TARGET_QUANTIFIER_PREFIX}target .+) on (top|the bottom) of its owner's library$`, 'i',
-  ).exec(text);
+  // "Of your library" after "target … you own" (D1064, Tel-Jilad Stylus), as the bounce above.
+  ).exec(text.replace(/^(put .+? you own on (?:top|the bottom)) of your library$/i, "$1 of its owner's library"));
   if (toLibraryTop !== null) {
     const spec = targetSpecFrom(toLibraryTop[1]!, false);
     const bottom = toLibraryTop[2]!.toLowerCase() === 'the bottom';

@@ -29876,6 +29876,58 @@ describe('"you may <a targeted action>. If you do, …" (D1063)', () => {
   });
 });
 
+describe('"target … you own" (D1064)', () => {
+  const R = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Grasp', 'Instant', 'Return target creature you own to your hand.'),
+    R('Test Stylus', 'Artifact', '{T}: Put target permanent you own on the bottom of your library.'),
+    R('Test Bear', 'Creature — Bear', '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1064', name: 'Owned', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 54 }], data: ROWS as never[] });
+  const table = (hand: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1064', 1: 'd1064' }, deckSpecs: { d1064: deck.deck },
+    battlefield: { 0: ['Island', 'Test Bear', ...mine], 1: ['Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castAt = (s: GameState, id: string): Action => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Grasp'), targets: [{ kind: 'card', id }] } as Action);
+
+  it('reads every row whole; "to your hand" on a target anyone may own stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // And "you own" on something that is not a permanent: a spell is owned too, and is not read here.
+    for (const text of ['Return target creature to your hand.', 'Put target creature on the bottom of your library.', 'Counter target spell you own.']) {
+      const read = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('ownership, not control: a creature you own that they took, yes; one you took, no', () => {
+    let s = table(['Test Grasp']);
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    expect(refusal(s, castAt(s, theirs))).not.toBeNull();
+    s = gainControl(gainControl(s, mine, 1), theirs, 0);
+    expect(refusal(s, castAt(s, theirs))).not.toBeNull();
+    expect(refusal(s, castAt(s, mine))).toBeNull();
+    s = drain(passBoth(apply(s, castAt(s, mine))), 30);
+    expect(s.instances[mine]!.zone).toBe('hand');
+    expect(s.instances[mine]!.zoneSeat).toBe(0);
+  });
+
+  it('the bottom of your library, for a permanent you own', () => {
+    let s = table([], ['Test Stylus']);
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Stylus'), abilityIndex: 0, targets: [{ kind: 'card', id: mine }],
+    } as Action)), 30);
+    expect(s.instances[mine]!.zone).toBe('library');
+    const library = ids(s, 0, 'library');
+    expect(library[library.length - 1]).toBe(mine);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
