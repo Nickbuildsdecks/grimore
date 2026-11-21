@@ -55518,3 +55518,22 @@ most one). The fifth rebuilt the seats from the state before the payment; mana i
 Coverage: 14,669 to 14,672 of 31,900 cards with every line read, and 36,261 to 36,265 of 59,888
 lines, against 7e3780f. Small in count and large in play: these are two of the most-played defences
 in Commander.
+
+## D1083 — mana and life from one ability
+
+"{T}: Add {G}{G}. You gain 2 life." (The Great Henge) and the other mana lines with a life sentence
+after the mana.
+
+- A mana line's tail may now be "You gain N life" (`ManaLine.gains`), beside a pain land's damage
+  (D497) and the depletion-free duals' freeze (D920).
+- It is part of the mana ability's effect, so it resolves immediately with no stack and no window
+  (CR 605.3a). `painEffect` applies all three. Every return of the mana-line parser carries it, and
+  the sum path passes it too.
+
+**Tests.** 1 engine test: the line reads whole, and tapping adds {G}{G} and gains 2 life with
+nothing on the stack.
+
+Faults injected by script: 3. All are caught.
+
+Coverage: 14,684 of 31,900 cards (+2 over the baseline measured after merging D780), 36,283 of
+59,888 lines.
