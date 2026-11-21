@@ -30061,6 +30061,65 @@ describe('a new body for the turn: base size, lost abilities, a new type (D1066)
   });
 });
 
+describe('a new body for itself (D1067)', () => {
+  const C = (name: string, text: string, pt: [string, string]) => ({
+    name, type_line: 'Creature — Human Knight', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: text, power: pt[0], toughness: pt[1],
+  });
+  const ROWS = [
+    C('Test Initiate', '{0}: Test Initiate has base power and toughness 5/5 until end of turn.', ['1', '1']),
+    C('Test Drake Knight', '{0}: Until end of turn, Test Drake Knight becomes a Dragon, gets +1/+1, and gains flying.', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1067', name: 'Own bodies', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 56 }], data: ROWS as never[] });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1067', 1: 'd1067' }, deckSpecs: { d1067: deck.deck },
+    battlefield: { 0: ['Forest', card], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const use = (s: GameState, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 30);
+
+  it('reads every row whole; no duration stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      '{0}: Test Odd has base power and toughness 5/5.',
+      // From the graveyard an end-of-turn body means nothing.
+      'When Test Odd dies, Test Odd has base power and toughness 5/5 until end of turn.',
+    ]) {
+      const odd = compileCard(C('Test Odd', text, ['1', '1']) as never);
+      expect(odd.ok && odd.unread.length, text).toBe(1);
+    }
+  });
+
+  it('5/5 until the turn ends, then 1/1 again', () => {
+    let s = table('Test Initiate');
+    const id = find(s, 0, 'battlefield', 'Test Initiate');
+    s = use(s, id);
+    expect([power(s, id), characteristicsOf(s, s.instances[id]!).toughness]).toEqual([5, 5]);
+    s = nextTurn(s);
+    expect(power(s, id)).toBe(1);
+  });
+
+  it('gone before it resolves: the card that comes back is a new object, and a 1/1', () => {
+    let s = table('Test Initiate');
+    const id = find(s, 0, 'battlefield', 'Test Initiate');
+    s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+    s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'hand' } as Action);
+    s = drain(passBoth(s), 30);
+    s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'battlefield' } as Action);
+    expect(power(s, id)).toBe(1);
+  });
+
+  it('a Dragon, one bigger, with flying', () => {
+    let s = table('Test Drake Knight');
+    const id = find(s, 0, 'battlefield', 'Test Drake Knight');
+    s = use(s, id);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(ch.typeLine.subtypes).toEqual(['Dragon']);
+    expect(ch.keywords.has('flying')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -15623,6 +15623,24 @@ function selfEffect(
   }
 
   /*
+    **A new body for itself** (D1067): "{4}{G/U}: ~ has base power and toughness 5/5 until end of
+    turn" (Brokers Initiate, Bramblefort Fink), "{W}{U}{B}{R}{G}: Until end of turn, ~ becomes a
+    Dragon, gets +5/+3, and gains flying and trample" (Dragonsoul Knight). D1066's predicates on
+    the permanent itself, by its own name only ("it" is the event's subject on a trigger), and only
+    on an ability of a permanent on the battlefield (`where`), where an end-of-turn body means
+    something.
+  */
+  const ownBody = new RegExp(`^(until end of turn, )?(?:${self}) ((?:loses|has|becomes|gets|gains) .+?)( until end of turn)?$`, 'i').exec(text);
+  if (ownBody !== null && where === 'battlefield' && (ownBody[1] === undefined) !== (ownBody[3] === undefined)) {
+    const body = newBodyFrom(ownBody[2]!);
+    if (body !== null && body.sets) {
+      // No zone check: an effect on a card that has left does not follow the new object back
+      // (CR 400.7), which the engine already enforces and the test pins.
+      return { effect: (c) => pump(c.state, [c.source], c.source, c.controller, body.opts) };
+    }
+  }
+
+  /*
     **Back from the graveyard** (D1061): "When ~ dies, return it to the battlefield under its owner's
     control", the Aura's "When enchanted creature dies, return that card to the battlefield under
     your control" (False Demise, Shade's Form, Abduction), and Avacyn, Angel of Horror's "… at the
@@ -23596,6 +23614,51 @@ const foldCardTargets = (
 
 
 /**
+ * The predicates of a new body for the turn (D1066), shared by the target's reader and the self
+ * reader (D1067): "loses all abilities", "has base power and toughness N/N", "becomes a [colours]
+ * [creature types] [with base power and toughness N/N] [in addition to its other types]",
+ * "gets +N/+N", "gains <keywords>", joined by "," or "and". `sets` says whether anything is set
+ * rather than only added, which is the line between this family and the pump readers'.
+ */
+function newBodyFrom(predicates: string): { readonly opts: PumpOptions; readonly sets: boolean } | null {
+  const parts = predicates.split(/(?:,? and |, )(?=(?:loses|has|becomes|gets|gains) )/i);
+  let opts: PumpOptions = {};
+  let sets = false;
+  let ok = true;
+  for (const part of parts) {
+    const p = part.trim();
+    const base = /^has base power and toughness (\d+)\/(\d+)$/i.exec(p);
+    const pumped = /^gets ([+-]\d+)\/([+-]\d+)$/i.exec(p);
+    const gains = /^gains ([a-z][a-z, ]*)$/i.exec(p);
+    const becomes = /^becomes an? ((?:(?:white|blue|black|red|green)(?:,? and | ))*)((?:[A-Z][A-Za-z'-]* )*[A-Z][A-Za-z'-]*)(?: with base power and toughness (\d+)\/(\d+))?( in addition to its other types)?$/.exec(p);
+    if (/^loses all abilities$/i.test(p) && opts.losesAllAbilities === undefined) {
+      opts = { ...opts, losesAllAbilities: true }; sets = true;
+    } else if (base !== null && opts.setPower === undefined) {
+      opts = { ...opts, setPower: Number(base[1]), setToughness: Number(base[2]) }; sets = true;
+    } else if (pumped !== null && opts.power === undefined) {
+      opts = { ...opts, power: Number(pumped[1]), toughness: Number(pumped[2]) };
+    } else if (gains !== null && opts.keywords === undefined) {
+      const words = grantedKeywordList(gains[1]!);
+      if (words === null) { ok = false; break; }
+      opts = { ...opts, keywords: words };
+    } else if (becomes !== null && opts.setCreatureTypes === undefined && opts.addSubtypes === undefined) {
+      const types = becomes[2]!.split(' ');
+      if (!types.every((word) => isCreatureType(word))) { ok = false; break; }
+      const colours = (becomes[1] ?? '').toLowerCase().split(/,? and | /).filter((w) => w !== '').map((w) => COLOUR_WORDS[w]!);
+      if (becomes[3] !== undefined && opts.setPower !== undefined) { ok = false; break; }
+      opts = {
+        ...opts,
+        ...(becomes[5] === undefined ? { setCreatureTypes: types } : { addSubtypes: types }),
+        ...(colours.length === 0 ? {} : { setColors: colours }),
+        ...(becomes[3] === undefined ? {} : { setPower: Number(becomes[3]), setToughness: Number(becomes[4]) }),
+      };
+      sets = true;
+    } else { ok = false; break; }
+  }
+  return ok ? { opts, sets } : null;
+}
+
+/**
  * A clause that points at something: its target spec, its effect, and the script-level flags the
  * hand-written cards set for that family.
  *
@@ -25518,41 +25581,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   const reshaped = /^(until end of turn, )?((?:up to one (?:other )?|another )?target .+?) ((?:loses|has|becomes|gets|gains) .+?)( until end of turn)?$/i.exec(text);
   if (reshaped !== null && (reshaped[1] === undefined) !== (reshaped[4] === undefined)) {
-    const parts = reshaped[3]!.split(/(?:,? and |, )(?=(?:loses|has|becomes|gets|gains) )/i);
-    let opts: PumpOptions = {};
-    let sets = false;
-    let ok = true;
-    for (const part of parts) {
-      const p = part.trim();
-      const base = /^has base power and toughness (\d+)\/(\d+)$/i.exec(p);
-      const pumped = /^gets ([+-]\d+)\/([+-]\d+)$/i.exec(p);
-      const gains = /^gains ([a-z][a-z, ]*)$/i.exec(p);
-      const becomes = /^becomes an? ((?:(?:white|blue|black|red|green)(?:,? and | ))*)((?:[A-Z][A-Za-z'-]* )*[A-Z][A-Za-z'-]*)(?: with base power and toughness (\d+)\/(\d+))?( in addition to its other types)?$/.exec(p);
-      if (/^loses all abilities$/i.test(p) && opts.losesAllAbilities === undefined) {
-        opts = { ...opts, losesAllAbilities: true }; sets = true;
-      } else if (base !== null && opts.setPower === undefined) {
-        opts = { ...opts, setPower: Number(base[1]), setToughness: Number(base[2]) }; sets = true;
-      } else if (pumped !== null && opts.power === undefined) {
-        opts = { ...opts, power: Number(pumped[1]), toughness: Number(pumped[2]) };
-      } else if (gains !== null && opts.keywords === undefined) {
-        const words = grantedKeywordList(gains[1]!);
-        if (words === null) { ok = false; break; }
-        opts = { ...opts, keywords: words };
-      } else if (becomes !== null && opts.setCreatureTypes === undefined && opts.addSubtypes === undefined) {
-        const types = becomes[2]!.split(' ');
-        if (!types.every((word) => isCreatureType(word))) { ok = false; break; }
-        const colours = (becomes[1] ?? '').toLowerCase().split(/,? and | /).filter((w) => w !== '').map((w) => COLOUR_WORDS[w]!);
-        if (becomes[3] !== undefined && opts.setPower !== undefined) { ok = false; break; }
-        opts = {
-          ...opts,
-          ...(becomes[5] === undefined ? { setCreatureTypes: types } : { addSubtypes: types }),
-          ...(colours.length === 0 ? {} : { setColors: colours }),
-          ...(becomes[3] === undefined ? {} : { setPower: Number(becomes[3]), setToughness: Number(becomes[4]) }),
-        };
-        sets = true;
-      } else { ok = false; break; }
-    }
-    const spec = ok && sets ? targetSpecFrom(reshaped[2]!, false) : null;
+    const body = newBodyFrom(reshaped[3]!);
+    const opts = body?.opts ?? {};
+    const spec = body !== null && body.sets ? targetSpecFrom(reshaped[2]!, false) : null;
     if (spec !== null && pointsAtAPermanent(spec) && spec.kind === 'creature') {
       const shrinks = opts.losesAllAbilities === true
         || (opts.setPower !== undefined && (opts.setPower <= 1 || opts.setToughness! <= 1));
