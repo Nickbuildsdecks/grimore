@@ -55336,3 +55336,29 @@ Faults injected by script: 4. All are caught. The keyword guard was caught only 
 was added.
 
 Coverage: 14,609 of 31,900 cards (+9), 36,124 of 59,888 lines (+9).
+
+## D1078 — entering with counters of its own
+
+"~ enters with three oil counters on it" (Gitaxian Raptor, Glistener Seer, Furnace Strider and the
+rest of the oil cards), "~ enters with two -1/-1 counters on it", and the other counters a card keeps
+for its own lines: wish, net, omen, gem, study, javelin.
+
+- `entersWithFromLine`'s allow-list (`+1/+1`, charge, ice, shield, and the keyword counters) now
+  admits any one-word counter that is not in `RULES_COUNTERS`, plus -1/-1. A card-local counter is
+  read by another line of the same card ("Remove an oil counter from ~: …"), exactly as charge
+  always was, so that line decides whether the card is read.
+- Still refused: a counter whose rule the engine applies by name (time and fade without their
+  keyword, loyalty, lore, finality, age, level and the rest of `RULES_COUNTERS`), and any size
+  counter but +1/+1 and -1/-1. Finality is on that list because the engine does not apply it yet.
+- -1/-1 needed its "-" admitted to the counter-name pattern. `characteristicsOf` already reads -1/-1
+  counters.
+
+**Tests.** 3 engine tests:
+- the rows read whole; time, finality, +1/+0 and lore counters stay unread;
+- three oil counters on arrival, and the card's own "Remove an oil counter" ability spends one for
+  +1/+1;
+- two -1/-1 counters make a 4/4 a 2/2.
+
+Faults injected by script: 3. All are caught.
+
+Coverage: 14,631 of 31,900 cards (+22), 36,213 of 59,888 lines (+89).
