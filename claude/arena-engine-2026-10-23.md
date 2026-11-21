@@ -37910,3 +37910,39 @@ counter on the chosen artifact.
 Faults injected by script: 2. Both are caught.
 
 Coverage: 14,640 of 31,900 cards (+9), 36,228 of 59,888 lines (+15).
+
+## D779 — Most-played first: Chromatic Lantern, Frantic Search, and two questions in one spell
+
+**A new priority order, from Nick: automate cards from the most played down.** Ranked by EDHREC
+(Scryfall's `oracle_cards` bulk file, `edhrec_rank`), fully automated today: top 100 96%, top 250
+88%, top 500 77%, top 1,000 65%, top 2,500 50%, top 5,000 41%. The work queue is the unread cards
+in rank order. This increment takes two from near its top.
+
+- **Chromatic Lantern** (rank 85): "Lands you control have "{T}: Add one mana of any color."" A
+  granted activated ability on the `controller-lands` scope, through the same grant table the
+  creature lords use. `manaSources` already reads granted mana abilities, so a Forest pays a blue
+  cost with the Lantern out.
+- **Frantic Search** (rank 97): "Untap up to three lands." Asked as it resolves, from your own tapped
+  lands. The rules allow any land; an opponent's is never worth untapping, so only yours are offered.
+  Snap and Cloud of Faeries' kin read too.
+- **Two questions in one resolution.** Frantic Search asks two (what to discard, what to untap), and
+  `composeEffects` refused any composition with more than one answer-reading part (D467), because
+  every part read its answers from index 0. D651 gave each part its own offset into the answers, so
+  that hazard is gone, and this allows more than one, **with one condition**: every part from the
+  first question to the last must itself be a question. Every question is planned before the
+  resolution runs and only the parts before the first question run first, so a draw between two
+  questions would have the second one planned against the hand before that draw.
+  "Target player discards a card. Draw two cards, then discard two cards." is refused for that
+  reason; the loot-first order reads.
+
+**Tests.** 4 engine tests: the Lantern reads; with it a Forest pays for a blue spell, which resolves;
+without it the spell is not offered; Frantic Search draws two, asks for two discards from the new
+hand, asks for up to three lands, and untaps them. The compile test that held Greedy Rummage refused
+now holds its reversed order refused and its loot-first order read.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 5,765, all passing (on 9143dbc)
+
+Coverage: 14,641 to 14,655 of 31,900 cards with every line read, and 36,230 to 36,246 of 59,888
+lines, against 9143dbc.

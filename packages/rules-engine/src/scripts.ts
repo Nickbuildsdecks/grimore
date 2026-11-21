@@ -26104,6 +26104,31 @@ function readEffect(
     which says in words what an edict always meant, since the player sacrificing chooses (CR
     701.21a). Read as the older wording, which the edict readers know.
   */
+  /*
+    "Untap up to three lands" (D779): Frantic Search, Snap, Cloud of Faeries. No target: chosen as
+    it resolves, from the tapped lands of whoever controls the effect. The rules allow any land;
+    an opponent's is never worth untapping, so the prompt offers yours.
+  */
+  const untapLands = /^untap up to (one|two|three|four|five|\d+) lands$/i.exec(clause.trim());
+  if (untapLands !== null) {
+    const n = countFrom(untapLands[1]!);
+    if (n !== null) {
+      const tappedLandOf = (state: GameState, id: string, seat: SeatIndex): boolean => {
+        const inst = state.instances[id];
+        return inst !== undefined && inst.tapped && inst.zoneSeat === seat
+          && hasType(characteristicsOf(state, inst).typeLine, 'land');
+      };
+      return {
+        decisions: [{
+          who: 'controller', from: 'battlefield', min: 0, max: n,
+          prompt: `Untap up to ${untapLands[1]!.toLowerCase()} lands`,
+          filter: (state: GameState, id: string, chooser: SeatIndex) => tappedLandOf(state, id, chooser),
+          pick: (_state: GameState, _chooser: number, candidates: readonly string[]) => candidates.slice(0, n),
+        }],
+        effect: (c) => chosenCards(c).reduce((state, id) => tap(state, id, false), c.state),
+      };
+    }
+  }
   const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
   if (theirChoice !== null) return readEffect(`${theirChoice[1]!}${theirChoice[2]!}`, name, where);
   /*
@@ -28768,7 +28793,26 @@ function composeEffects(
   const answerReaders = parts.filter(
     (part) => (part.decisions ?? []).length > 0 && part.appliesNothing !== true,
   );
-  if (answerReaders.length > 1) return null;
+  /*
+    **And since D651 more than one may** (D779). Each answer-reading part is handed the answers from
+    its own offset below, so a second one reads its own and not the first one's. The hazard above
+    was index 0 for everybody; the offsets end it. Still refused when an offset is not a fact of the
+    text (an each-player question before the part). Frantic Search is the card: "Draw two cards,
+    then discard two cards. Untap up to three lands."
+
+    **But only with nothing between the questions.** Every question is planned before the
+    resolution runs, and only the parts before the *first* question run first (the split below). A
+    part that changes the board between two questions — "Target player discards a card. Draw two
+    cards, then discard two cards." — would have the second question planned against the hand
+    before that draw, which is a wrong card. So with more than one answer reader, every part from the
+    first question to the last must itself be a question.
+  */
+  if (answerReaders.length > 1) {
+    const asking = parts.map((part) => (part.decisions ?? []).length > 0);
+    const first = asking.indexOf(true);
+    const last = asking.lastIndexOf(true);
+    if (asking.slice(first, last + 1).some((asks) => !asks)) return null;
+  }
   /*
     **Where the answer-reading part's own answers start** (D651).
 
@@ -32655,6 +32699,18 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
 }
 
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  /*
+    "Lands you control have "<ability>"" (D779): Chromatic Lantern, a granted ability on the
+    `controller-lands` scope, the same grant table the creature lords use. Only an activated
+    ability (a mana ability, in every printing that matters) is read.
+  */
+  const landGrant = /^lands you control have "([^"]+)"\.?$/i.exec(plain(line).trim());
+  if (landGrant !== null) {
+    const granted = grantedAbilityFrom(landGrant[1]!, name);
+    if (granted !== null) {
+      return { statics: [{ scope: 'controller-lands', effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
+    }
+  }
   // The Leylines (D778): see `CardScript.beginsInPlay`.
   if (new RegExp(`^if (?:${selfRef(name)}|this card) is in your opening hand, you may begin the game with it on the battlefield\\.?$`, 'i').test(plain(line).trim())) {
     return { beginsInPlay: true };

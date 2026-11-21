@@ -5746,12 +5746,22 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         nothing to do with. The reader takes the whole resolution or none of it, and a second
         sentence refuses the card rather than reading half of it (D362).
       */
+      /*
+        D779: the loot-first order now reads. The draw runs before every question, which is the
+        order the card prints, and each discard reads its own answers (D651's offsets). The order
+        that would move a draw in front of a question it has nothing to do with is refused still.
+      */
       const card = compileCard({
         name: 'Greedy Rummage', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'],
-        oracle_text: 'Draw two cards, then discard two cards.\nTarget player discards a card.',
+        oracle_text: 'Target player discards a card.\nDraw two cards, then discard two cards.',
       });
       expect(card.ok).toBe(true);
       if (card.ok) expect(card.script).toBeUndefined();
+      const lootFirst = compileCard({
+        name: 'Greedy Rummage', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'],
+        oracle_text: 'Draw two cards, then discard two cards.\nTarget player discards a card.',
+      });
+      expect(lootFirst.ok && lootFirst.unread).toEqual([]);
     });
   });
 
