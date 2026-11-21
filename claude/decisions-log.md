@@ -55237,3 +55237,27 @@ Faults injected by script: 4. All are caught. The taken check was caught only af
 assertion was added.
 
 Coverage: 14,585 of 31,900 cards (+5), 36,097 of 59,888 lines (+6).
+
+## D1074 — a second question only if the first took nothing
+
+"Landfall — Whenever a land you control enters, look at the top card of your library. If it's a
+creature card, you may reveal it and put it into your hand. If you don't put the card into your
+hand, you may put it into your graveyard" (Territory Culler). Also Sarinth Steelseeker, Traveling
+Botanist, Archghoul of Thraben, Cabaretti Ascendancy, and the "you may put it on the bottom" form.
+
+- **Engine:** `CardsDecisionSpec.askOnlyIfNonePicked`. The question is asked only when the one
+  before it picked nothing; otherwise it is skipped as `askOnlyIfChosen` skips, with an empty answer
+  in its place.
+- D1073's "otherwise" now takes "you may", and the graveyard as a destination. The optional form is
+  a second look at the same card, with `chosenGoTo` the destination, so the engine moves it on a yes.
+  The mandatory form is still moved by the effect.
+
+**Tests.** 4 engine tests:
+- the card reads whole;
+- a creature taken into the hand: the graveyard question is never asked;
+- declined: the graveyard question comes, and the card goes to the graveyard or stays on top;
+- a land on top: no hand question, straight to the graveyard question.
+
+Faults injected by script: 4. All are caught.
+
+Coverage: 14,592 of 31,900 cards (+7), 36,104 of 59,888 lines (+7).
