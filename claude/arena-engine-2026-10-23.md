@@ -37795,3 +37795,26 @@ Botanist, Archghoul of Thraben, Cabaretti Ascendancy, and the "you may put it on
 Faults injected by script: 4. All are caught.
 
 Coverage: 14,592 of 31,900 cards (+7), 36,104 of 59,888 lines (+7).
+
+## D1075 — revealing the top cards and putting one into your hand
+
+"Reveal the top five cards of your library. You may put a creature or land card from among them into
+your hand. Put the rest into your graveyard" (Grisly Salvage), Commune with the Gods, Malevolent
+Rumble.
+
+- `digGroup` takes "reveal the top N cards" as well as "look at". The cards are seen by everyone
+  rather than by one player; what is chosen from them, and where the rest go, is the same question.
+- A new pick sentence: "you may put a <kind> card from among them into your hand", at most one card,
+  using the same kind test as D973's forms.
+- "A creature card and/or a land card" means one of each, which one question with one filter cannot
+  hold. It stays unread because the kind test does not read the phrase. A separate guard went
+  uncaught by faults and was folded away.
+
+**Tests.** 2 engine tests:
+- the card reads whole, and the "and/or" form stays unread;
+- the five cards revealed: creatures and lands are offered (the artifacts are not), at most one is
+  taken, and it goes to the hand while the other four go to the graveyard.
+
+Faults injected by script: 2. Both are caught.
+
+Coverage: 14,598 of 31,900 cards (+6), 36,111 of 59,888 lines (+7).
