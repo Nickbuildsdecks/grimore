@@ -54781,3 +54781,45 @@ Faults injected by script: 6. All are caught, the guard after the unread asserti
 
 Coverage: 14,411 of 31,900 cards (+6), 35,872 of 59,888 lines (+7), over a baseline that includes
 the other session's D777 and D778.
+
+## D1060 — the delayed blink: back at the beginning of the next end step
+
+"Exile target creature. Return it to the battlefield under its owner's control at the beginning of
+the next end step." Turn to Mist, Voidwalk, Mistmeadow Witch, Glimmerpoint Stag, Galepowder Mage,
+Roon of the Hidden Realm, Liberate. The self form is "Exile ~. Return it …", printed on Argent
+Sphinx, Ghost Council of Orzhova, Fleeting Spirit, Saltskitter and Hikari, Twilight Guardian.
+
+- Two new engine-owned delayed abilities, `return-to-owner` and `return-to-you`, next to D696's
+  `sacrifice`, `exile`, `to-hand` and `destroy`. Each puts its subject onto the battlefield, under
+  its owner's control or under the delayed ability's controller's.
+- The D543 clause reader for "return target creature to the battlefield under its owner's|your
+  control" takes "at the beginning of the next end step". Instead of returning the card at once, it
+  schedules the return about the card in exile. That is anybody's next end step (`of: 'any'`).
+- A self reader beside D951's `exilesItself` reads "return ~|it to the battlefield under … control
+  at the beginning of the next end step". It reads only on a battlefield ability, so a dies
+  trigger's "return it" (from the graveyard) stays unread. It schedules only when the card did
+  reach exile, so a Sphinx that died in response leaves no "coming back" row on the table.
+- No zone check on the return itself. The subject pin (CR 400.7) already drops a card that left
+  exile in between: every zone change goes through `relocate`, which makes a new object, and a
+  token is deleted as it leaves the battlefield. A fault that removed such a check went uncaught,
+  and the check was folded away.
+- Flickerwisp's hand-written card uses `return-to-owner` instead of a second delayed trigger. That
+  is what the compiler builds from the same words, and `compiled-vs-written.test.ts` now finds the
+  two readings equal.
+- compile.test's refusal row for Flickerwisp's wording now asserts that the wording reads (D516).
+  The tapped return, the counter rider and the plural are still refused.
+
+**Tests.** 6 engine tests:
+- the rows read whole, while the tapped return (spell and self) and a dies trigger's return stay
+  unread;
+- an opponent's Bear is exiled, one delayed ability is scheduled, and the Bear returns under its
+  owner at the end step;
+- "under your control" gives the caster the Bear;
+- a card moved out of exile in between stays where it went;
+- the self blink exiles the Sphinx, which comes back at the end step;
+- a Sphinx moved to the graveyard before its ability resolves schedules nothing and stays there.
+
+Faults injected by script: 8. All are caught. Two earlier faults went uncaught, and each pointed at
+a zone guard that cannot fail; both guards were removed.
+
+Coverage: 14,440 of 31,900 cards (+29), 35,915 of 59,888 lines (+43).
