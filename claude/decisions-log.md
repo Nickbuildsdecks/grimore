@@ -54753,3 +54753,31 @@ The deck-coverage test lists `script beginsInPlay` with the other compiler-only 
 
 Coverage: 14,401 to 14,405 of 31,900 cards with every line read, and 35,849 to 35,866 of 59,888
 lines, against 4be3ebc.
+
+## D1059 — damage to a player and each creature they control
+
+"Flame Wave deals 4 damage to target player or planeswalker and each creature that player or that
+planeswalker's controller controls", Chandra's Fury's "… and 1 damage to each creature …",
+Lavalanche's and Bonfire of the Damned's X, Chandra, Pyrogenius's -10.
+
+- A `damageEffect` reader for "<~> deals N|X damage to target player|opponent [or planeswalker] and
+  [M damage to] each creature that player [or that planeswalker's controller] controls".
+- The creatures are listed before any damage is dealt: those of the player aimed at, or of the
+  planeswalker's controller. The damage is dealt at once, and the planeswalker may not survive it.
+- The referent must match the target ("that player" after a player, the planeswalker form after a
+  player or planeswalker). X is used only when a cost pays it (`xPayable`, D1055).
+- `splitDamageClauses` no longer cuts "… and 1 damage to each creature that player … controls" into
+  two clauses, since the second piece is about the first piece's player.
+- Flame Wave, Chandra's Fury, Lavalanche, Bonfire of the Damned and Chandra, Pyrogenius read whole.
+
+**Tests.** 5 engine tests:
+- the rows read whole, and a mismatched referent and an unpaid X stay unread;
+- aimed at a player: 4 to the player, the Bear dies, the Wall takes 4, and the caster's Bear lives;
+- "1 damage to each creature" puts one on each;
+- aimed at a planeswalker: it loses 4 loyalty and its controller's creatures are hit;
+- X = 3 hits the player and each creature for 3.
+
+Faults injected by script: 6. All are caught, the guard after the unread assertions.
+
+Coverage: 14,411 of 31,900 cards (+6), 35,872 of 59,888 lines (+7), over a baseline that includes
+the other session's D777 and D778.
