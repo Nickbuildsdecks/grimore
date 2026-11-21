@@ -54937,3 +54937,33 @@ Faults injected by script: 6. All are caught after two guards were folded and th
 asserted.
 
 Coverage: 14,474 of 31,900 cards (+7), 35,953 of 59,888 lines (+7).
+
+## D1064 — "target … you own"
+
+"Exile another target creature you own. Return it to the battlefield under your control at the
+beginning of the next end step" (Charming Prince), "Whenever ~ deals combat damage to a player,
+exile up to one target creature you own, then return it …" (Meneldor, Swift Savior), "{T}: Destroy
+target permanent you own" (Despotic Scepter, Staff of Compleation), "Return target creature you own
+to your hand" (Saving Grasp), "{T}: Put target permanent you own on the bottom of your library"
+(Tel-Jilad Stylus).
+
+- A `targetSpecFrom` wrapper for "<permanent phrase> you own", beside D1010's "other than ~" and
+  D1011's counter wrapper. The candidate's `owner` must be the controller choosing, and ownership is
+  not control (CR 108.3): a creature you own that an opponent took may be chosen, and one you took
+  may not. Only on a phrase that points at a permanent, because "counter target spell you own"
+  would otherwise read as a target nothing can be.
+- "To your hand" and "of your library" after "target … you own" read as the owner's hand and
+  library, which they are, through the bounce reader (D751) and the library reader (D546, D758). On
+  any other target they stay unread, so an opponent's card is never put into your hand.
+
+**Tests.** 3 engine tests:
+- the rows read whole; "to your hand", "of your library" on an ordinary target, and "counter target
+  spell you own" stay unread;
+- an opponent's Bear is refused; after the two Bears trade controllers, the one you took is still
+  refused and the one you own is returned to your hand;
+- the Stylus puts a permanent you own on the bottom of your library.
+
+Faults injected by script: 4. All are caught. The permanent guard was caught only after the spell
+row was added.
+
+Coverage: 14,480 of 31,900 cards (+6), 35,965 of 59,888 lines (+12).
