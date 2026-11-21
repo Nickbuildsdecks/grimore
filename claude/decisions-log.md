@@ -55125,3 +55125,27 @@ controller" (Insolence, Lust for War), and Psychic Venom's land.
 Faults injected by script: 3. All are caught.
 
 Coverage: 14,557 of 31,900 cards (+5), 36,067 of 59,888 lines (+7).
+
+## D1070 — "whenever a creature blocks"
+
+"Whenever a creature blocks, ~ deals 1 damage to that creature's controller" (Battle Strain, Heat of
+Battle, finished by D1069's reader), "Whenever a creature you control blocks", "Whenever a creature
+an opponent controls blocks", and "Whenever another creature [you control] blocks".
+
+- A trigger-opening row beside D990's "Whenever a creature attacks", read into `blocks` with `who`
+  (`any`, or `another` for "another creature") and `of` (`any`, `you`, `opponent`).
+- The engine already matched `who` and `of` on blocks, as on attacks: the blocker is the subject,
+  once per blocking creature.
+
+**Tests.** 3 engine tests:
+- the rows read whole;
+- seat 1 blocks: Battle Strain deals 1 to seat 1, the blocker's controller; seat 1's "a creature you
+  control blocks" gains it 2; seat 0's "a creature an opponent controls blocks" gains it 1; and seat
+  1's copy of that watcher hears nothing;
+- a creature whose trigger is "another creature you control blocks" gains nothing when it blocks
+  itself.
+
+Faults injected by script: 3. All are caught. The `another` fault was caught only after the third
+test was added.
+
+Coverage: 14,560 of 31,900 cards (+3), 36,070 of 59,888 lines (+3).
