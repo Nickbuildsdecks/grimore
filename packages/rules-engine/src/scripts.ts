@@ -20516,6 +20516,39 @@ function eventRelativeEffect(
 
   // Fate Unraveler: "~ deals 1 damage to that player" — damage and not a drain, which is the whole
   // of D407.
+  /*
+    **"That land's controller"** (D1069): "Whenever a land enters, ~ deals 2 damage to that land's
+    controller" (Ankh of Mishra, Zo-Zu the Punisher), "Whenever enchanted creature becomes tapped, ~
+    deals 3 damage to that creature's controller" (Insolence, Lust for War, Psychic Venom's land),
+    "Whenever a creature blocks, ~ deals 1 damage to that creature's controller" (Battle Strain,
+    Heat of Battle, Tetsuko Umezawa). The player is whoever controls the event's own object.
+
+    Only on events that leave that object on the battlefield — an entry, a tap, a block — and never
+    on the watcher's own (`who: 'self'`), where "that creature" would be the card itself. Its
+    controller is read as the ability resolves; one that has left by then is read where it went,
+    its owner, which is its controller in every case but a stolen one. A death or a trip to the
+    graveyard is refused rather than read that way: there the stolen case is the common one for
+    the player who mattered (CR 608.2h asks for the controller as it last existed).
+  */
+  const toItsController = new RegExp(
+    `^(?:${self}|it) deals (\\d+) damage to (?:that|the) (?:creature|land|artifact|enchantment|permanent)'s controller$`, 'i',
+  ).exec(text);
+  if (toItsController !== null && events.length > 0 && events.every((one) => (
+    one.kind === 'etb' || one.kind === 'becomes-tapped' || one.kind === 'blocks')
+    && (one as { readonly who?: string }).who !== undefined && (one as { readonly who?: string }).who !== 'self')) {
+    const amount = Number(toItsController[1]);
+    return {
+      effect: (c) => {
+        // "Enchanted creature becomes tapped" carries no subject: the creature is the Aura's host.
+        const about = c.subject ?? c.state.instances[c.source]?.attachedTo;
+        const seat = about === undefined || about === null ? undefined : c.state.instances[about]?.zoneSeat;
+        return seat === undefined ? c.state : dealDamage(c.state, { kind: 'player', seat }, amount, {
+          controller: c.controller, source: c.source,
+        });
+      },
+    };
+  }
+
   const dealt = new RegExp(`^(?:${self}|it) deals (\\d+) damage to that player$`, 'i').exec(text);
   if (dealt !== null && aboutAPlayer) {
     const amount = Number(dealt[1]);

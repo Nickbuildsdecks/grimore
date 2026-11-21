@@ -30170,6 +30170,60 @@ describe('an artifact that animates itself (D1068)', () => {
   });
 });
 
+describe("damage to that land's controller (D1069)", () => {
+  const ROWS = [
+    { name: 'Test Ankh', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Whenever a land enters, Test Ankh deals 2 damage to that land's controller." },
+    { name: 'Test Insolence', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: "Enchant creature\nWhenever enchanted creature becomes tapped, Test Insolence deals 2 damage to that creature's controller." },
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1069', name: 'Punisher', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 54 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string[], theirHand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1069', 1: 'd1069' }, deckSpecs: { d1069: deck.deck },
+    battlefield: { 0: ['Mountain', ...mine], 1: ['Test Bear'] }, hands: { 0: hand, 1: theirHand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState) => {
+    let next = s;
+    for (let i = 0; i < 6 && next.stackOrder.length > 0; i++) next = drain(passBoth(next), 30);
+    return next;
+  };
+
+  it('reads every row whole; the card\'s own entry stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      "When Test Odd enters, Test Odd deals 2 damage to that creature's controller.",
+    ]) {
+      const read = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it("whoever's land it is takes the damage", () => {
+    let s = table(['Test Ankh'], ['Mountain'], ['Mountain']);
+    const mine = life(s, 0);
+    const theirs = life(s, 1);
+    s = settle(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mountain') } as Action));
+    expect(life(s, 0)).toBe(mine - 2);
+    expect(life(s, 1)).toBe(theirs);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = settle(apply(s, { type: 'auto:playLand', by: 1, card: find(s, 1, 'hand', 'Mountain') } as Action));
+    expect(life(s, 1)).toBe(theirs - 2);
+  });
+
+  it("the enchanted creature's controller, when it becomes tapped", () => {
+    let s = table([], ['Test Insolence']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Insolence'), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    const theirs = life(s, 1);
+    const mine = life(s, 0);
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    s = settle(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] } as Action));
+    expect(s.instances[bear]!.tapped).toBe(true);
+    expect(life(s, 1)).toBe(theirs - 2);
+    expect(life(s, 0)).toBe(mine);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
