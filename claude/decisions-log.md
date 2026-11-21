@@ -55149,3 +55149,36 @@ Faults injected by script: 3. All are caught. The `another` fault was caught onl
 test was added.
 
 Coverage: 14,560 of 31,900 cards (+3), 36,070 of 59,888 lines (+3).
+
+## D1071 — clash with an opponent
+
+"When ~ enters, clash with an opponent. If you win, put a +1/+1 counter on ~" (Adder-Staff Boggart,
+Bog Hoodlums, Nath's Elite, Oaken Brawler, Paperfin Rascal, Springjack Knight), "When ~ dies, clash
+… If you win, return ~ to its owner's hand" (Ringskipper), Lash Out, Spring Cleaning and Broken
+Ambitions. The first support for the mechanic (CR 701.23).
+
+- `clausesOf` keeps "Clash with an opponent. If you win, Y. [Otherwise, Z.]" together as one clause,
+  as D952 does for "you may X. If you do, Y".
+- `readEffect` asks two questions: keep the revealed top card, or put it on the bottom. The first
+  goes to you (`controller`) and the second to the next opponent in turn order (`an-opponent`). That
+  is exact with two players; in a pod the caster would choose the opponent, which is the limitation
+  D728 already records.
+- As the ability resolves, the two top cards are compared where they are. You win only if yours has
+  the greater mana value (CR 701.23b), so a tie loses and an empty library cannot win. Then the cards
+  move as answered, and then Y happens, or Z when you lose.
+- Y and Z are any clauses the reader reads, but with no question of their own and with at most one
+  of the two aiming at something. A target is the whole ability's, chosen as it goes on the stack.
+- The computer puts a revealed land on the bottom once it has five lands, and keeps anything else.
+
+**Tests.** 5 engine tests:
+- the rows read whole; an outcome with its own question, and two outcomes that each aim, stay
+  unread;
+- a 6 against a 0: the counter goes on, your card goes to the bottom as chosen, and theirs stays;
+- a 0 against a 6, and a tie, lose;
+- "otherwise": the loss costs 2 life;
+- Lash Out's shape: 3 to the target Bear, then after the win 3 to its controller.
+
+Faults injected by script: 9. All are caught. Two were caught only after the question and two-target
+rows were added.
+
+Coverage: 14,571 of 31,900 cards (+11), 36,082 of 59,888 lines (+12).
