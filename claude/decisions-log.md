@@ -55799,3 +55799,73 @@ and both were then caught.
 
 Coverage: 14,768 to 14,780 of 31,900 cards with every line read, and 36,386 to 36,406 of 59,888
 lines, against 4f909e1.
+
+## D1085–D1087 — Reflecting Pool, Mox Amber, Mithril Coat
+
+Three EDHREC-queue cards this session claimed, each a small extension of a shape the engine
+already had.
+
+- **D1085, "one mana of any type (or color) that a land you control could produce":** Reflecting
+  Pool, Naga Vitalist, Incubation Druid, Horizon of Progress, Cactus Preserve, Harvester Druid.
+  `ownLandTypes` asks the Fellwar Stone question (D681) of your own lands, colourless included.
+  Each type's ability is offered only while a land you control could make that type; the "color"
+  wording leaves out {C}. The land scan both directions use is now one function, `landManaInto`.
+  Abilities of the same kind are skipped (CR 106.7), so a Reflecting Pool beside nothing but
+  another Reflecting Pool makes nothing.
+- **D1086, "one mana of any color among legendary creatures and planeswalkers / legendary
+  permanents you control":** Mox Amber, Plaza of Heroes. `legendaryColours` reads live
+  characteristics. Colourless legends give nothing, so a Mox Amber alone makes no mana.
+- **D1087, "When ~ enters, attach it to target legendary creature you control":** Mithril Coat,
+  Mjolnir. This is the D972 attach-on-arrival with its target filter narrowed to legendary
+  creatures you control.
+
+**Tests.** 9 engine tests:
+- D1085: Pool and Harvester read whole. Tapped lands count, and {C} counts only for "type".
+  Nothing comes from an opponent's lands, from a mana creature, or from another Pool.
+- D1086: both wordings read whole. A legendary enchantment's colour counts for the Plaza and not
+  the Mox. Nothing comes from an opponent's legend, or with no legend.
+- D1087: the Coat reads whole. It attaches to the legend with its bonus, and with only a
+  non-legendary creature it stays unattached.
+
+Faults injected by hand: 2 (the legendary filter dropped; the Mox's creature/planeswalker
+restriction dropped). Both are caught.
+
+Coverage: 14,716 of 31,900 cards (+6 over D1084's 14,710), 36,319 of 59,888 lines (+9).
+
+## D1088 — mana added when a permanent is tapped for mana: Wild Growth, Crypt Ghast
+
+"Whenever enchanted land is tapped for mana, its controller adds an additional {G}" (Wild Growth,
+Wolfwillow Haven; Overgrowth's {G}{G}; Utopia Sprawl's "one mana of the chosen color"), and
+"Whenever you tap a Swamp / Forest / creature / land for mana, add an additional {B}" (Crypt Ghast,
+Nirkana Revenant, Nissa, Who Shakes the World, Leyline of Abundance, Badgermole Cub, Autumn
+Willow). Wild Growth was the last of this session's EDHREC claims.
+
+- **Engine:**
+  - `CardScript.tapManaExtra` records what is watched (the enchanted permanent, or a kind of
+    permanent its controller controls) and what is added (fixed mana, or the chosen colour).
+  - `tapManaExtras(state, tapped)` is the one reader. Its watchers are found once per state.
+  - A triggered mana ability resolves with the tap (CR 605.3b), so the mana is folded into the tap
+    on every path: the auto-tapper's sources, an ability pressed by hand, and the dimmed pips.
+- **Solver:** `ManaSource.extra` carries mana a choice source adds beside its choice, so a dual
+  land under Wild Growth is one of its colours plus {G}, and one land pays {U}{G}. A colour that
+  only the extra makes still makes the source useful for that colour.
+- **Not taken:**
+  - "An additional one mana of any color" (Fertile Ground and five more). It is a second choice on
+    the tap, which the solver does not make, so the line stays unread rather than guessed.
+  - "One mana of any type that land produced" (Zendikar Resurgent, Mirari's Wake, Vorinclex).
+  - Gauntlet of Power's and Rikala's conditional extras.
+
+**Tests.** 5 engine tests:
+- Each wording reads whole, and "any color" stays unread.
+- A Forest under it is {G}{G} in the sources, the pips, and when pressed by hand. Overgrowth makes
+  {G}{G}{G}.
+- A dual under it is a choice plus {G}: it pays {U}{G} and {2} but not {U}{B}.
+- Crypt Ghast doubles your Swamps, not a Forest and not an opponent's Swamp.
+- An Aura on an opponent's land gives you nothing.
+
+The chosen-colour branch (Utopia Sprawl) is read and covered by the reading test only. It adds
+nothing until the Aura has chosen a colour.
+
+Faults injected by hand: 2. The first drops the extra mana from a choice source's pick in the solver; the second drops it from an ability pressed by hand. Both are caught.
+
+Coverage: 14,722 of 31,900 cards (+6 over D1085–D1087's 14,716), 36,330 of 59,888 lines (+11).
