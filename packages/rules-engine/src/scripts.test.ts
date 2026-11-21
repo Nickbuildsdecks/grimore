@@ -31755,6 +31755,59 @@ describe('mana a land adds when it is tapped for mana: Wild Growth, Crypt Ghast 
   });
 });
 
+describe('the Backgrounds: "Commander creatures you own have …" (D1089)', () => {
+  /*
+    A static on your commanders, whoever controls them: a quoted trigger granted, or a pump. Not
+    your other creatures, and not an opponent's commander.
+  */
+  const bg = (name: string, text: string) => ({ name, type_line: 'Legendary Enchantment — Background', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: text });
+  const FIST = bg('Test Fist', 'Commander creatures you own have "Whenever this creature attacks, it gains double strike until end of turn."');
+  const GIFT = bg('Test Gift', 'Commander creatures you own get +2/+2.');
+  const LEADER = { name: 'Test Leader', type_line: 'Legendary Creature — Human', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [FIST, GIFT, LEADER, BEAR];
+  const deck = customDeck({
+    id: 'backgrounds', name: 'Backgrounds',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  /** `mine` on seat 0, a Leader on each side, and each side's Leader made its commander. */
+  const table = (mine: string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'backgrounds', 1: 'backgrounds' }, deckSpecs: { backgrounds: deck.deck },
+      battlefield: { 0: ['Test Leader', 'Test Bear', ...mine], 1: ['Test Leader'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ours = find(s, 0, 'battlefield', 'Test Leader');
+    const theirs = find(s, 1, 'battlefield', 'Test Leader');
+    return { ...s, instances: {
+      ...s.instances,
+      [ours]: { ...s.instances[ours]!, isCommander: true },
+      [theirs]: { ...s.instances[theirs]!, isCommander: true },
+    } };
+  };
+
+  it('reads both shapes whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [FIST, GIFT]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('your commander gets the trigger; your other creature and their commander do not', () => {
+    const s = table(['Test Fist']);
+    expect(grantedTriggersOn(s, s.instances[find(s, 0, 'battlefield', 'Test Leader')]!)).toHaveLength(1);
+    expect(grantedTriggersOn(s, s.instances[find(s, 0, 'battlefield', 'Test Bear')]!)).toHaveLength(0);
+    expect(grantedTriggersOn(s, s.instances[find(s, 1, 'battlefield', 'Test Leader')]!)).toHaveLength(0);
+  });
+
+  it('the pump reaches your commander only, and still does once an opponent controls it', () => {
+    const s = table(['Test Gift']);
+    const ours = find(s, 0, 'battlefield', 'Test Leader');
+    expect(power(s, ours)).toBe(5);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(2);
+    expect(power(s, find(s, 1, 'battlefield', 'Test Leader'))).toBe(3);
+    expect(power(gainControl(s, ours, 1), ours)).toBe(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

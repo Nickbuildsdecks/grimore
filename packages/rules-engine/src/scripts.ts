@@ -31782,6 +31782,11 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   */
   const tokens = /^creature tokens you control (get|have) (.+)$/i.exec(text);
   /*
+    D1089: the Backgrounds' "Commander creatures you own have "…"" (and "get +3/+3 and have …"):
+    your commanders on the battlefield, whoever controls them. See the `commander-creatures` scope.
+  */
+  const commanders = /^commander creatures you own (get|have) (.+)$/i.exec(text);
+  /*
     D941: the opponents' side ("Creatures your opponents control get -1/-0", Curfew's kin), the
     attacking ones ("Attacking creatures you control get +1/+1"), and the countered ones ("Each
     creature you control with a +1/+1 counter on it has trample", "Creatures you control with
@@ -31827,6 +31832,9 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   }
   if (scope !== null) {
     // Read above: a chosen type.
+  } else if (commanders !== null) {
+    scope = 'commander-creatures';
+    predicate = `${commanders[1]!.toLowerCase()} ${commanders[2]}`;
   } else if (tokens !== null) {
     scope = 'controller-tokens';
     predicate = `${tokens[1]!.toLowerCase()} ${tokens[2]}`;

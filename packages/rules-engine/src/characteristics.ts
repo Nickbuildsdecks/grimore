@@ -1535,6 +1535,12 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-creatures' }
     /** "Creature tokens you control …" (D655): the controller's creatures that are tokens. */
     | { readonly kind: 'controller-tokens' }
+    /**
+     * "Commander creatures you own …" (D1089, the Backgrounds): creatures that are a commander and
+     * that the effect's controller **owns**, whoever controls them now: a commander an opponent has
+     * stolen keeps the Background's gift. "You" is the Background's controller.
+     */
+    | { readonly kind: 'commander-creatures' }
     /** "Lands you control are every basic land type …" (D699, Dryad of the Ilysian Grove). */
     | { readonly kind: 'controller-lands' }
     /** "Each land is a Swamp in addition to its other land types." (D699, Urborg). */
@@ -2595,6 +2601,8 @@ function effectApplies(
       return creature && instance.zoneSeat === effect.controller;
     case 'controller-tokens':
       return creature && instance.zoneSeat === effect.controller && instance.isToken;
+    case 'commander-creatures':
+      return creature && instance.isCommander && instance.owner === effect.controller;
     case 'controller-lands':
       return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat === effect.controller;
     case 'all-lands':
