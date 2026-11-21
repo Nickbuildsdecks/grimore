@@ -29477,6 +29477,68 @@ describe('a Leyline begins the game on the battlefield (D778)', () => {
     expect(s.instances[id]!.zone).toBe('hand');
   });
 });
+describe('damage to a player and each creature they control (D1059)', () => {
+  const S = (name: string, cost: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: cost, cmc: 0, colors: ['R'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    S('Test Wave', '{0}', "Test Wave deals 4 damage to target player or planeswalker and each creature that player or that planeswalker's controller controls."),
+    S('Test Fury', '{0}', "Test Fury deals 4 damage to target player or planeswalker and 1 damage to each creature that player or that planeswalker's controller controls."),
+    S('Test Lava', '{X}', 'Test Lava deals X damage to target player and each creature that player controls.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '6', oracle_text: 'Defender' },
+    { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', oracle_text: '+1: Draw a card.', mana_cost: '{9}', cmc: 9, colors: ['R'], layout: 'normal', power: null, toughness: null, loyalty: '5' },
+  ];
+  const deck = customDeck({ id: 'd1059', name: 'Wave', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string, aim: (s: GameState) => Target, x?: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1059', 1: 'd1059' }, deckSpecs: { d1059: deck.deck },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Test Bear'], 1: ['Test Bear', 'Test Wall', 'Test Walker'] }, hands: { 0: [spell] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [aim(s)], ...(x === undefined ? {} : { x }) } as Action)), 30);
+    return { before, s };
+  };
+  const player = (): Target => ({ kind: 'player', seat: 1 });
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A planeswalker's controller after a target that is only a player, and an X nothing pays: unread.
+    for (const [cost, text] of [
+      ['{0}', "Test Odd deals 4 damage to target player and each creature that player or that planeswalker's controller controls."],
+      ['{0}', 'Test Odd deals X damage to target player and each creature that player controls.'],
+    ]) {
+      const read = compileCard({ ...ROWS[0], name: 'Test Odd', mana_cost: cost, oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('the player and each creature they control, and not the caster\'s', () => {
+    const { before, s } = cast('Test Wave', player);
+    expect(life(s, 1)).toBe(life(before, 1) - 4);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Wall')]!.damage).toBe(4);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('"and 1 damage to each creature": one each', () => {
+    const { s } = cast('Test Fury', player);
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Wall')]!.damage).toBe(1);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('aimed at a planeswalker: its controller\'s creatures', () => {
+    const { s } = cast('Test Fury', (t) => ({ kind: 'card', id: find(t, 1, 'battlefield', 'Test Walker') }));
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Walker')]!.counters['loyalty']).toBe(1);
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Wall')]!.damage).toBe(1);
+  });
+
+  it('X is the X paid', () => {
+    const { before, s } = cast('Test Lava', player, 3);
+    expect(life(s, 1)).toBe(life(before, 1) - 3);
+    expect(s.instances[find(s, 1, 'battlefield', 'Test Wall')]!.damage).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

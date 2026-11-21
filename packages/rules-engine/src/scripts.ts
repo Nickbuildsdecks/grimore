@@ -23164,6 +23164,39 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    A player and their creatures (D1059): "Flame Wave deals 4 damage to target player or planeswalker
+    and each creature that player or that planeswalker's controller controls", "Chandra's Fury deals
+    4 damage to target player or planeswalker and 1 damage to each creature …", Lavalanche's X.
+    The creatures are those the player aimed at controls, or the planeswalker's controller, listed
+    before any damage is dealt: the damage is dealt at once, and the planeswalker may not survive it.
+    X is the X paid, and only when something pays one (`xPayable`).
+  */
+  const playerAndTheirs = new RegExp(
+    `^(?:${self}|it) deals (\\d+|X) damage to (target (?:player|opponent)( or planeswalker)?) and (?:(\\d+) damage to )?each creature (that player|that player or that planeswalker's controller) controls$`, 'i',
+  ).exec(clause.trim().replace(/\.\s*$/, ''));
+  if (playerAndTheirs !== null && (playerAndTheirs[3] !== undefined) === /planeswalker/i.test(playerAndTheirs[5]!)
+    && (playerAndTheirs[1]!.toUpperCase() !== 'X' || xPayable)) {
+    const spec = targetSpecFrom(playerAndTheirs[2]!, false);
+    if (spec !== null) {
+      const first = (c: EffectContext): number => (playerAndTheirs[1]!.toUpperCase() === 'X' ? c.x : Number(playerAndTheirs[1]));
+      const toEach = (c: EffectContext): number => (playerAndTheirs[4] === undefined ? first(c) : Number(playerAndTheirs[4]));
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const aimed = c.targets[0];
+          if (aimed === undefined) return c.state;
+          const seat = aimed.kind === 'player' ? aimed.seat
+            : aimed.kind === 'card' ? c.state.instances[aimed.id]?.zoneSeat : undefined;
+          const theirs = seat === undefined ? [] : creaturesControlledBy(c.state, seat);
+          const hit = dealDamage(c.state, aimed, first(c), { controller: c.controller, source: c.source });
+          return theirs.reduce((state, id) => dealDamage(state, { kind: 'card', id }, toEach(c), {
+            controller: c.controller, source: c.source,
+          }), hit);
+        },
+      };
+    }
+  }
+  /*
     The **other word order**, which is the one most printed cards use (D520).
 
     The reader below has read "deals damage equal to the number of <T> to <dest>" since D444, and no
@@ -27796,6 +27829,8 @@ function splitDamageClauses(clause: string): readonly string[] {
   }
   const opened = /^(.+?) deals (\w+ damage to .+)$/i.exec(text);
   if (opened === null) return [clause];
+  // A later piece about "that player" is the first piece's player (D1059): read whole by `damageEffect`.
+  if (/\beach creature that player(?: or that planeswalker's controller)? controls$/i.test(text)) return [clause];
   const pieces = opened[2]!.split(/(?:,\s*(?:and\s+)?|\s+and\s+)(?=\w+ damage to )/i);
   // Every piece opens "N damage to" by construction: the first by `opened`, the rest by the split.
   if (pieces.length < 2) return [clause];
