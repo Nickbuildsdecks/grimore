@@ -30120,6 +30120,56 @@ describe('a new body for itself (D1067)', () => {
   });
 });
 
+describe('an artifact that animates itself (D1068)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    A('Test Keyrune', '{0}: Test Keyrune becomes a 2/2 white and blue Bird artifact creature with flying until end of turn.'),
+    A('Test Idol', '{0}: Until end of turn, Test Idol becomes a 3/3 Golem artifact creature.'),
+  ];
+  const deck = customDeck({ id: 'd1068', name: 'Keyrunes', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 56 }], data: ROWS as never[] });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1068', 1: 'd1068' }, deckSpecs: { d1068: deck.deck },
+    battlefield: { 0: ['Plains', card], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const use = (s: GameState, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 30);
+
+  it('reads every row whole; a target, or a creature that is not an artifact creature, stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      '{0}: Until end of turn, target noncreature artifact you control becomes a 4/4 artifact creature.',
+      '{0}: Test Odd becomes a 2/2 Bird creature until end of turn.',
+    ]) {
+      const read = compileCard(A('Test Odd', text) as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it('a 2/2 white and blue Bird artifact creature with flying, until the turn ends', () => {
+    let s = table('Test Keyrune');
+    const id = find(s, 0, 'battlefield', 'Test Keyrune');
+    s = use(s, id);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect(ch.isCreature).toBe(true);
+    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    expect(ch.typeLine.types).toEqual(expect.arrayContaining(['Artifact', 'Creature']));
+    expect(ch.typeLine.subtypes).toContain('Bird');
+    expect(ch.colors).toEqual(expect.arrayContaining(['W', 'U']));
+    expect(ch.keywords.has('flying')).toBe(true);
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[id]!).isCreature).toBe(false);
+  });
+
+  it('"until end of turn" first reads the same', () => {
+    let s = table('Test Idol');
+    const id = find(s, 0, 'battlefield', 'Test Idol');
+    s = use(s, id);
+    expect(power(s, id)).toBe(3);
+    expect(characteristicsOf(s, s.instances[id]!).typeLine.subtypes).toEqual(['Golem']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

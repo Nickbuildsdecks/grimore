@@ -26091,6 +26091,9 @@ function readEffect(
   // A land animated by a spell or a trigger (D1048), held as one clause by `clausesOf`.
   if (clause.includes('\u0010')) return animateSelf(clause.replace('\u0010', ". It's still a land"), name);
   if (/\bcreature that['’]s still a land\.?$/i.test(clause.trim())) return animateSelf(clause, name);
+  // And an artifact's own (D1068): the Keyrunes' abilities, Eye of Malcator's trigger.
+  const artifact = animateArtifactSelf(clause, name);
+  if (artifact !== null) return artifact;
   /*
     Discover N (D1043, CR 701.57a): cascade's walk to N or less, and the hit to hand if it is not
     cast. `cascadeFrom` with the number. "Discover X, where X is …" is not read.
@@ -28923,6 +28926,28 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
       setPower: power, setToughness: toughness,
     }),
   };
+}
+
+/**
+ * **An artifact that animates itself** (D1068): "{W}{U}: ~ becomes a 2/2 white and blue Bird
+ * artifact creature with flying until end of turn" (the Keyrunes), "{4}{R}{G}: ~ becomes a 4/4 red
+ * and green Dragon artifact creature with flying until end of turn" (the Monuments), Darksteel
+ * Brute, Guardian Idol, Fountain of Ichor, Gruul War Plow, Ensouled Scimitar; and the trigger form,
+ * Eye of Malcator's.
+ *
+ * `animateSelf`'s reading with the land sentence it does not print. That sentence is what tells the
+ * land reader the card keeps its types, and an artifact that becomes an *artifact* creature keeps
+ * being an artifact by the words themselves, so the animation is the same: Artifact and Creature
+ * added, the size set, the colours and the creature types as printed. The permanent itself only: a
+ * target ("target noncreature artifact you control becomes a 4/4 artifact creature") is refused,
+ * because the land reader's targets are lands. Reached through `readEffect`, so an activated
+ * ability and a trigger read it alike.
+ */
+function animateArtifactSelf(clause: string, name: string): ReadEffect | null {
+  const text = plain(clause).trim().replace(/\.\s*$/, '');
+  if (/still a land/i.test(text) || !/ artifact creature(?: with [^."]+?)?(?: until end of turn)?$/i.test(text)) return null;
+  // The land reader aims only at a land phrase, so an artifact it is handed is always the card itself.
+  return animateSelf(`${text}. It's still a land`, name);
 }
 
 /**
