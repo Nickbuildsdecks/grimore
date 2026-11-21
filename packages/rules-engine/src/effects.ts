@@ -159,6 +159,12 @@ export interface EffectContext {
   /** The subject's power and toughness as the event happened (D1020). See `StackObject.subjectStats`. */
   readonly subjectStats?: { readonly power: number; readonly toughness: number };
   /**
+   * Each card target's power and toughness as the composed resolution began (D1080), by id: the
+   * last known information "its toughness" asks for once the clause before has destroyed or exiled
+   * the creature (CR 608.2h). A target still on the battlefield is read live instead.
+   */
+  readonly targetStats?: Readonly<Record<string, { readonly power: number; readonly toughness: number }>>;
+  /**
    * The permanent sacrificed to pay for this spell or ability, as it last was (D586).
    *
    * Undefined for everything that sacrificed nothing as a cost. `subjectCounters`' neighbour and

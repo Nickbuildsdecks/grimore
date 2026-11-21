@@ -30707,6 +30707,57 @@ describe('an oil or charge counter on a target (D1079)', () => {
   });
 });
 
+describe('"its power" after the clause that aimed at it (D1080)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    I('Test Chastise', 'Destroy target creature. You gain life equal to its power.'),
+    I('Test Scars', "Regenerate target creature. You gain life equal to that creature's toughness."),
+    I('Test Growth', 'Target creature gets +3/+3 until end of turn.'),
+    I('Test Bless', 'Target creature gets +2/+2 until end of turn. You gain life equal to its toughness.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '4' },
+  ];
+  const deck = customDeck({ id: 'd1080', name: 'Its power', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 52 }], data: ROWS as never[] });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1080', 1: 'd1080' }, deckSpecs: { d1080: deck.deck },
+    battlefield: { 0: ['Plains'], 1: ['Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action)), 30);
+
+  it('reads every row whole; "its power" with nothing aimed at before it stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const odd = compileCard(I('Test Odd', 'You gain life equal to its power.') as never);
+    expect(odd.ok && odd.unread.length).toBe(1);
+  });
+
+  it('destroyed: the power it last had, pump included (CR 608.2h)', () => {
+    let s = table(['Test Growth', 'Test Chastise']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = cast(s, 'Test Growth', bear);
+    const before = life(s, 0);
+    s = cast(s, 'Test Chastise', bear);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 5);
+  });
+
+  it('changed by the clause before and still there: the value now, not the snapshot', () => {
+    let s = table(['Test Bless']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const before = life(s, 0);
+    s = cast(s, 'Test Bless', bear);
+    expect(life(s, 0)).toBe(before + 6);
+  });
+
+  it('still there: its toughness now', () => {
+    let s = table(['Test Scars']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const before = life(s, 0);
+    s = cast(s, 'Test Scars', bear);
+    expect(life(s, 0)).toBe(before + 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
