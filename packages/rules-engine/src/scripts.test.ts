@@ -29563,8 +29563,9 @@ describe('the delayed blink: back at the beginning of the next end step (D1060)'
     for (const text of [
       "Exile target creature. Return it to the battlefield tapped under its owner's control at the beginning of the next end step.",
       "{0}: Exile Test Odd. Return it to the battlefield tapped under its owner's control at the beginning of the next end step.",
-      // From the graveyard: a dies trigger's "it" is not a card in exile, and is not this reader's.
-      "When Test Odd dies, return it to the battlefield under its owner's control at the beginning of the next end step.",
+      // A card that left for anywhere: no reader knows where "it" is. (From the graveyard is D1061's,
+      // whose delayed test is what fails if this reader takes a dies trigger.)
+      "When Test Odd leaves the battlefield, return it to the battlefield under its owner's control at the beginning of the next end step.",
     ]) {
       const read = compileCard({ ...ROWS[2], name: 'Test Odd', oracle_text: text } as never);
       expect(read.ok && read.unread.length, text).toBe(1);
@@ -29619,6 +29620,81 @@ describe('the delayed blink: back at the beginning of the next end step (D1060)'
     expect(s.delayed.length).toBe(0);
     s = drain(advanceTo(s, 'end'), 30);
     expect(s.instances[sphinx]!.zone).toBe('graveyard');
+  });
+});
+
+describe('back from the graveyard: a death trigger returns the card (D1061)', () => {
+  const R = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Demise', 'Enchantment — Aura', 'Enchant creature\nWhen enchanted creature dies, return that card to the battlefield under your control.'),
+    R('Test Phoenix', 'Creature — Phoenix', "When Test Phoenix dies, return it to the battlefield tapped under its owner's control.", ['2', '2']),
+    R('Test Angel', 'Creature — Angel', "Defender\nWhenever a creature an opponent controls dies, return it to the battlefield under its owner's control at the beginning of the next end step.", ['0', '4']),
+    R('Test Kill', 'Instant', 'Destroy target creature.'),
+    R('Test Bear', 'Creature — Bear', '', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1061', name: 'Grave', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1061', 1: 'd1061' }, deckSpecs: { d1061: deck.deck },
+    battlefield: { 0: ['Swamp', ...mine], 1: ['Test Bear'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, id: string) =>
+    passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action));
+
+  it('reads every row whole; a tapped delayed return and a return off the battlefield stay unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      "When Test Odd dies, return it to the battlefield tapped under its owner's control at the beginning of the next end step.",
+      "When Test Odd enters, return it to the battlefield under its owner's control.",
+    ]) {
+      const read = compileCard({ ...ROWS[1], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+  });
+
+  it("an Aura's \"that card\" is the creature that died, returned under the Aura's controller", () => {
+    let s = table([], ['Test Demise', 'Test Kill']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(cast(s, 'Test Demise', bear), 30);
+    const aura = find(s, 0, 'battlefield', 'Test Demise');
+    s = drain(cast(s, 'Test Kill', bear), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.zoneSeat).toBe(0);
+    expect(s.instances[aura]!.zone).toBe('graveyard');
+  });
+
+  it('its own death: back tapped, under its owner', () => {
+    let s = table(['Test Phoenix'], ['Test Kill']);
+    const phoenix = find(s, 0, 'battlefield', 'Test Phoenix');
+    s = drain(cast(s, 'Test Kill', phoenix), 30);
+    expect(s.instances[phoenix]!.zone).toBe('battlefield');
+    expect(s.instances[phoenix]!.tapped).toBe(true);
+    expect(s.instances[phoenix]!.zoneSeat).toBe(0);
+  });
+
+  it('a card exiled from the graveyard before the trigger resolves stays exiled', () => {
+    let s = table(['Test Phoenix'], ['Test Kill']);
+    const phoenix = find(s, 0, 'battlefield', 'Test Phoenix');
+    s = cast(s, 'Test Kill', phoenix);
+    expect(s.instances[phoenix]!.zone).toBe('graveyard');
+    s = apply(s, { type: 'card:move', by: 0, card: phoenix, toZone: 'exile' } as Action);
+    s = drain(passBoth(s), 30);
+    expect(s.instances[phoenix]!.zone).toBe('exile');
+  });
+
+  it('the delayed return: in the graveyard until the end step, then back', () => {
+    // The opponent's Bear, so its owner is not the Angel's controller and "its owner's" is visible.
+    let s = table(['Test Angel'], ['Test Kill']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(cast(s, 'Test Kill', bear), 30);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.delayed.length).toBe(1);
+    s = drain(advanceTo(s, 'end'), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.zoneSeat).toBe(1);
   });
 });
 

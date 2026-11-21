@@ -15623,6 +15623,53 @@ function selfEffect(
   }
 
   /*
+    **Back from the graveyard** (D1061): "When ~ dies, return it to the battlefield under its owner's
+    control", the Aura's "When enchanted creature dies, return that card to the battlefield under
+    your control" (False Demise, Shade's Form, Abduction), and Avacyn, Angel of Horror's "… at the
+    beginning of the next end step".
+
+    Only on a death or a put-into-a-graveyard trigger (`where === 'graveyard'`), where "it" and
+    "that card" are the card the event put there (`itMeans`: the event's subject, or the source for
+    its own name). Only while the card is still in that graveyard (CR 400.7): one exiled in response
+    has become a new object and stays where it went, and a token is gone as it left the battlefield.
+
+    "Your control" is the trigger's controller, which on an Aura is the Aura's: a False Demise on an
+    opponent's creature steals it back, which is the card. The delayed form is the engine's own
+    return (D1060), scheduled about the card in the graveyard, and it refuses "tapped" because that
+    return does not tap.
+  */
+  const backFromTheGrave = new RegExp(
+    `^return (?:(${self})|it|that card) to the battlefield( tapped)? under (its owner's|your) control( at the beginning of the next end step)?$`, 'i',
+  ).exec(text);
+  if (backFromTheGrave !== null && where === 'graveyard'
+    && !(backFromTheGrave[2] !== undefined && backFromTheGrave[4] !== undefined)) {
+    const named = backFromTheGrave[1];
+    const tapped = backFromTheGrave[2] !== undefined;
+    const toOwner = backFromTheGrave[3]!.toLowerCase().startsWith('its');
+    const later = backFromTheGrave[4] !== undefined;
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        const inst = c.state.instances[id];
+        if (inst === undefined || inst.zone !== 'graveyard') return c.state;
+        if (later) {
+          return scheduleDelayed(c.state, {
+            source: c.source,
+            controller: c.controller,
+            abilityIndex: -1,
+            step: 'end',
+            of: 'any',
+            subject: id,
+            builtin: toOwner ? 'return-to-owner' : 'return-to-you',
+            description: `return ${nameOfCard(c.state, id)} to the battlefield`,
+          });
+        }
+        return putOntoBattlefield(c.state, id, toOwner ? inst.owner : c.controller, tapped ? { tapped: true } : {});
+      },
+    };
+  }
+
+  /*
     "Sacrifice it" — the card eating itself, which is the Illusion drawback (D514).
 
     **15 legal cards** print `When ~ becomes the target of a spell or ability, sacrifice it`, 13 of
