@@ -30360,6 +30360,64 @@ describe('clash with an opponent (D1071)', () => {
   });
 });
 
+describe('kinship (D1072)', () => {
+  const C = (name: string, type: string, text: string) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: text, power: '1', toughness: '1',
+  });
+  const ROWS = [
+    C('Test Schemer', 'Creature — Faerie Rogue', 'Kinship — At the beginning of your upkeep, you may look at the top card of your library. If it shares a creature type with Test Schemer, you may reveal it. If you do, each opponent loses 2 life.'),
+    C('Test Sprite', 'Creature — Faerie', ''),
+    C('Test Shifter', 'Creature — Shapeshifter', 'Changeling'),
+    C('Test Bear', 'Creature — Bear', ''),
+  ];
+  const deck = customDeck({ id: 'd1072', name: 'Kin', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 52 }], data: ROWS as never[] });
+  /** The Schemer out, `top` on top of seat 0's library, at the start of seat 0's turn. */
+  const upkeep = (top: string) => {
+    let s = arena({
+      decks: { 0: 'd1072', 1: 'd1072' }, deckSpecs: { d1072: deck.deck },
+      battlefield: { 0: ['Swamp', 'Test Schemer'], 1: [] }, turn: 2, firstSeat: 1,
+    });
+    s = putOnTopOfLibrary(s, find(s, 0, 'library', top));
+    s = advanceTo(nextTurn(s), 'upkeep');
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return s;
+  };
+  const finish = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+    // A payoff that aims or asks: the reveal is answered as the ability resolves, after targets.
+    for (const payoff of ['target creature gets -1/-1 until end of turn', 'discard a card']) {
+      const text = `Kinship — At the beginning of your upkeep, you may look at the top card of your library. If it shares a creature type with Test Odd, you may reveal it. If you do, ${payoff}.`;
+      const odd = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: text } as never);
+      expect(odd.ok && odd.unread.length, payoff).toBe(1);
+    }
+  });
+
+  it('a Faerie on top: asked, revealed, and the opponent loses 2', () => {
+    const s = upkeep('Test Sprite');
+    expect(s.pendingDecision?.options).toEqual(['Reveal it', 'Keep it hidden']);
+    const theirs = life(s, 1);
+    const yes = finish(drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Reveal it' } as Action), 30));
+    expect(life(yes, 1)).toBe(theirs - 2);
+    const no = finish(drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Keep it hidden' } as Action), 30));
+    expect(life(no, 1)).toBe(theirs);
+  });
+
+  it('a changeling shares every type; a Bear shares none and nothing is asked', () => {
+    const kin = upkeep('Test Shifter');
+    expect(kin.pendingDecision?.options).toEqual(['Reveal it', 'Keep it hidden']);
+    const bear = finish(upkeep('Test Bear'));
+    expect(bear.pendingDecision).toBeNull();
+    expect(life(bear, 1)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

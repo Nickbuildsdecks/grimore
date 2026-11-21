@@ -26137,6 +26137,47 @@ function readEffect(
     };
   }
   /*
+    **Kinship** (D1072): "At the beginning of your upkeep, you may look at the top card of your
+    library. If it shares a creature type with ~, you may reveal it. If you do, each opponent loses 2
+    life" (Lorwyn's kinship creatures: Nightshade Schemers, Ink Dissolver, Wolf-Skull Shaman). Held
+    as one clause by `clausesOf`, which marks it.
+
+    The look is private and costs nothing, so it is not asked. The reveal is: a yes-or-no for the
+    controller, offered only when the top card shares a creature type with the permanent (changeling
+    counts, through `characteristicsOf`), so a top card that does not is a question that answers
+    itself. The payoff is any clause the reader reads with no question or target of its own.
+  */
+  if (clause.startsWith('\u0014')) {
+    const rest = clause.slice(1).trim();
+    const payoff = readEffect(`${rest.charAt(0).toUpperCase()}${rest.slice(1)}`, name, where);
+    if (payoff === null || (payoff.decisions ?? []).length > 0 || payoff.beforeDecisions !== undefined
+      || (payoff.targets ?? []).length > 0) return null;
+    const REVEAL = 'Reveal it';
+    const HIDE = 'Keep it hidden';
+    const creatureTypes = (state: GameState, id: string): readonly string[] => {
+      const inst = state.instances[id];
+      return inst === undefined ? [] : characteristicsOf(state, inst).typeLine.subtypes.filter((t) => isCreatureType(t));
+    };
+    const kin = (state: GameState, seat: SeatIndex, source: string): boolean => {
+      const top = listAt(state, zoneKey(seat, 'library'))[0];
+      if (top === undefined) return false;
+      const mine = new Set(creatureTypes(state, source));
+      return creatureTypes(state, top).some((t) => mine.has(t));
+    };
+    return {
+      decisions: [(state: GameState, source: string): ChoiceDecisionSpec => ({
+        who: 'controller',
+        prompt: 'Kinship: reveal the top card of your library?',
+        options: [REVEAL, HIDE],
+        optionsFor: (now, chooser) => (kin(now, chooser, source) ? [REVEAL, HIDE] : [HIDE]),
+        best: () => REVEAL,
+      })],
+      effect: (c) => (c.decisions[0]?.option === REVEAL && kin(c.state, c.controller, c.source)
+        ? payoff.effect({ ...c, decisions: [] })
+        : c.state),
+    };
+  }
+  /*
     **Clash** (D1071, CR 701.23): "Clash with an opponent. If you win, put a +1/+1 counter on ~"
     (Lorwyn's clash creatures), "… If you win, ~ deals 4 damage to each creature blocking it", "…
     If you win, target player discards two cards. Otherwise, that player discards a card".
@@ -27082,6 +27123,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/\.\s+You gain life equal to the life lost this way/gi, '\u0004')
     // And a pick from what was just milled (D1038): "Mill three cards. You may put a land card from among them …".
     .replace(/(mill (?:a card|\w+ cards))\.\s+(you may )?put (an? [^.]+?) from among (?:them|the milled cards|the cards milled this way) into your hand/gi, '$1 and $2put $3 from among them into your hand')
+    // Kinship (D1072): the look, the reveal and its payoff are one ability's three sentences.
+    .replace(/(?:you may )?look at the top card of your library\.\s+If it shares a creature type with [^,.]+, you may reveal it\.\s+If you do, ([^.]+)/gi, '\u0014$1')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
