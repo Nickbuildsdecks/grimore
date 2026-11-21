@@ -25495,6 +25495,79 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     reader's three-way hint: hexproof or shroud protects, haste or infect is for the attack, and
     the rest waits for blockers.
   */
+  /*
+    **A new body for the turn** (D1066): "Until end of turn, target creature loses all abilities and
+    has base power and toughness 0/1" (Humble, Ovinize), "Target creature has base power and
+    toughness 1/1 until end of turn" (Diminish, Multiply by Zero, Gigantomancer's 7/7), "… becomes a
+    Dragon with base power and toughness 4/4 and gains flying" (Mordenkainen's Polymorph), "… loses
+    all abilities and becomes a blue Frog with base power and toughness 1/1" (Turn to Frog's own
+    words, which `compiled-vs-written.test.ts` holds this to).
+
+    One target, "until end of turn" exactly once, and a list of predicates joined by "," or "and",
+    each one of: "loses all abilities" (layer 6), "has base power and toughness N/N" (7b, so a
+    Giant Growth on top still counts), "becomes a [colours] [creature types] [with base power and
+    toughness N/N] [in addition to its other types]" (colour replaced, types replaced unless it says
+    in addition, CR 205.1b), "gets +N/+N" (7c), "gains <keywords>". All in one effect, so the
+    abilities go before the keywords it gains (CR 613.1f). It has to set something — a base size, a
+    type or the abilities — or it is the pump readers' sentence, including the ones they refuse on
+    purpose: "gets -2/-2 and gains menace" is a shrink with a grant no card prints (D454, D259),
+    and compile.test's row for it is what fails if this reader takes it.
+
+    A body made small or blank is removal for the turn (`removesACreature`, hostile aim); one made
+    big is a gift. Either wears off, so the bot holds it (`expiresAtEndOfTurn`).
+  */
+  const reshaped = /^(until end of turn, )?((?:up to one (?:other )?|another )?target .+?) ((?:loses|has|becomes|gets|gains) .+?)( until end of turn)?$/i.exec(text);
+  if (reshaped !== null && (reshaped[1] === undefined) !== (reshaped[4] === undefined)) {
+    const parts = reshaped[3]!.split(/(?:,? and |, )(?=(?:loses|has|becomes|gets|gains) )/i);
+    let opts: PumpOptions = {};
+    let sets = false;
+    let ok = true;
+    for (const part of parts) {
+      const p = part.trim();
+      const base = /^has base power and toughness (\d+)\/(\d+)$/i.exec(p);
+      const pumped = /^gets ([+-]\d+)\/([+-]\d+)$/i.exec(p);
+      const gains = /^gains ([a-z][a-z, ]*)$/i.exec(p);
+      const becomes = /^becomes an? ((?:(?:white|blue|black|red|green)(?:,? and | ))*)((?:[A-Z][A-Za-z'-]* )*[A-Z][A-Za-z'-]*)(?: with base power and toughness (\d+)\/(\d+))?( in addition to its other types)?$/.exec(p);
+      if (/^loses all abilities$/i.test(p) && opts.losesAllAbilities === undefined) {
+        opts = { ...opts, losesAllAbilities: true }; sets = true;
+      } else if (base !== null && opts.setPower === undefined) {
+        opts = { ...opts, setPower: Number(base[1]), setToughness: Number(base[2]) }; sets = true;
+      } else if (pumped !== null && opts.power === undefined) {
+        opts = { ...opts, power: Number(pumped[1]), toughness: Number(pumped[2]) };
+      } else if (gains !== null && opts.keywords === undefined) {
+        const words = grantedKeywordList(gains[1]!);
+        if (words === null) { ok = false; break; }
+        opts = { ...opts, keywords: words };
+      } else if (becomes !== null && opts.setCreatureTypes === undefined && opts.addSubtypes === undefined) {
+        const types = becomes[2]!.split(' ');
+        if (!types.every((word) => isCreatureType(word))) { ok = false; break; }
+        const colours = (becomes[1] ?? '').toLowerCase().split(/,? and | /).filter((w) => w !== '').map((w) => COLOUR_WORDS[w]!);
+        if (becomes[3] !== undefined && opts.setPower !== undefined) { ok = false; break; }
+        opts = {
+          ...opts,
+          ...(becomes[5] === undefined ? { setCreatureTypes: types } : { addSubtypes: types }),
+          ...(colours.length === 0 ? {} : { setColors: colours }),
+          ...(becomes[3] === undefined ? {} : { setPower: Number(becomes[3]), setToughness: Number(becomes[4]) }),
+        };
+        sets = true;
+      } else { ok = false; break; }
+    }
+    const spec = ok && sets ? targetSpecFrom(reshaped[2]!, false) : null;
+    if (spec !== null && pointsAtAPermanent(spec) && spec.kind === 'creature') {
+      const shrinks = opts.losesAllAbilities === true
+        || (opts.setPower !== undefined && (opts.setPower <= 1 || opts.setToughness! <= 1));
+      const final = opts;
+      return {
+        targets: [shrinks ? spec : { ...spec, friendly: true }],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : pump(c.state, [id], c.source, c.controller, final);
+        },
+        spellFlags: shrinks ? { removesACreature: true, expiresAtEndOfTurn: true } : { expiresAtEndOfTurn: true },
+      };
+    }
+  }
+
   const grantedMany = new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}target .+?) (?:each )?gain ([a-z][a-z', ]*?) until end of turn$`, 'i').exec(text);
   if (grantedMany !== null) {
     const words = grantedKeywordList(grantedMany[2]!);

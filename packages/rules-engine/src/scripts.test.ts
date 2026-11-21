@@ -29983,6 +29983,84 @@ describe('a quoted ability granted to the team until end of turn (D1065)', () =>
   });
 });
 
+describe('a new body for the turn: base size, lost abilities, a new type (D1066)', () => {
+  const R = (name: string, type: string, text: string, pt?: [string, string]) => ({
+    name, type_line: type, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: text,
+    ...(pt === undefined ? {} : { power: pt[0], toughness: pt[1] }),
+  });
+  const ROWS = [
+    R('Test Humble', 'Instant', 'Until end of turn, target creature loses all abilities and has base power and toughness 0/1.'),
+    R('Test Polymorph', 'Instant', 'Until end of turn, target creature becomes a Dragon with base power and toughness 4/4 and gains trample.'),
+    R('Test Grower', 'Instant', 'Target creature has base power and toughness 5/5 until end of turn.'),
+    R('Test Giant', 'Instant', 'Target creature gets +3/+3 until end of turn.'),
+    R('Test Knight', 'Creature — Human Knight', 'Flying', ['2', '2']),
+  ];
+  const deck = customDeck({ id: 'd1066', name: 'Bodies', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }], data: ROWS as never[] });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1066', 1: 'd1066' }, deckSpecs: { d1066: deck.deck },
+    battlefield: { 0: ['Island'], 1: ['Test Knight'] }, hands: { 0: hand }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, id: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] } as Action)), 30);
+  const knight = (s: GameState) => find(s, 1, 'battlefield', 'Test Knight');
+  const body = (s: GameState) => characteristicsOf(s, s.instances[knight(s)]!);
+
+  it('reads every row whole; no duration, or a type that is not one, stays unread; small is hostile, big a gift', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    for (const text of [
+      'Target creature has base power and toughness 0/1.',
+      'Until end of turn, target creature becomes a Glorp with base power and toughness 4/4.',
+    ]) {
+      const read = compileCard({ ...ROWS[0], name: 'Test Odd', oracle_text: text } as never);
+      expect(read.ok && read.unread.length, text).toBe(1);
+    }
+    const humble = compileCard(ROWS[0] as never);
+    expect(humble.ok && humble.script?.removesACreature).toBe(true);
+    expect(humble.ok && humble.script?.targets?.[0]?.friendly).toBeUndefined();
+    // Small is hostile even with its abilities kept (Diminish).
+    const diminish = compileCard({ ...ROWS[2], name: 'Test Diminish', oracle_text: 'Target creature has base power and toughness 1/1 until end of turn.' } as never);
+    expect(diminish.ok && diminish.script?.removesACreature).toBe(true);
+    // Setting nothing, it is the pump readers' sentence, with their hints: hexproof protects.
+    const shield = compileCard({ ...ROWS[2], name: 'Test Shield', oracle_text: 'Target creature gains hexproof until end of turn.' } as never);
+    expect(shield.ok && shield.script?.protectsACreature).toBe(true);
+    const grower = compileCard(ROWS[2] as never);
+    expect(grower.ok && grower.script?.removesACreature).toBeUndefined();
+    expect(grower.ok && grower.script?.targets?.[0]?.friendly).toBe(true);
+  });
+
+  it('a 0/1 with nothing, until the turn ends', () => {
+    let s = table(['Test Humble']);
+    s = cast(s, 'Test Humble', knight(s));
+    expect([body(s).power, body(s).toughness]).toEqual([0, 1]);
+    expect(body(s).keywords.has('flying')).toBe(false);
+    s = nextTurn(s);
+    expect([body(s).power, body(s).toughness]).toEqual([2, 2]);
+    expect(body(s).keywords.has('flying')).toBe(true);
+  });
+
+  it('a Giant Growth before it still counts on top (layer 7c over 7b)', () => {
+    let s = table(['Test Giant', 'Test Humble']);
+    s = cast(s, 'Test Giant', knight(s));
+    s = cast(s, 'Test Humble', knight(s));
+    expect([body(s).power, body(s).toughness]).toEqual([3, 4]);
+  });
+
+  it('a Dragon and nothing else, 4/4 with trample', () => {
+    let s = table(['Test Polymorph']);
+    s = cast(s, 'Test Polymorph', knight(s));
+    expect([body(s).power, body(s).toughness]).toEqual([4, 4]);
+    expect(body(s).typeLine.subtypes).toEqual(['Dragon']);
+    expect(body(s).keywords.has('trample')).toBe(true);
+  });
+
+  it('base 5/5 for a gift', () => {
+    let s = table(['Test Grower']);
+    s = cast(s, 'Test Grower', knight(s));
+    expect([body(s).power, body(s).toughness]).toEqual([5, 5]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
