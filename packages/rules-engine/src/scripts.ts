@@ -25845,14 +25845,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
-  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
+  // And oil and charge on a target (D1079): counters other cards read ("for each oil counter on …"),
+  // as their own lines read them on the card itself (D1078). Aimed as a gift, as a +1/+1 counter is.
+  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|oil|charge|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
     const printedKind = countered[2]!.toLowerCase();
     const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind === '-1/-1' ? '-1/-1' : printedKind;
     // A keyword is a gift, as a +1/+1 counter is; a stun or -1/-1 counter is for somebody else's.
-    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || kind === 'shield' || isKeyword(kind));
+    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || kind === 'shield' || kind === 'oil' || kind === 'charge' || isKeyword(kind));
     if (spec !== null && many !== undefined) {
       return {
         targets: [spec],

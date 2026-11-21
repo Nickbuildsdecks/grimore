@@ -30687,6 +30687,26 @@ describe('entering with counters of its own (D1078)', () => {
   });
 });
 
+describe('an oil or charge counter on a target (D1079)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: text });
+  const ROWS = [A('Test Oiler', '{T}: Put an oil counter on target artifact you control.'), A('Test Relic', '')];
+  const deck = customDeck({ id: 'd1079', name: 'Oil', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole, aimed as a gift, and the counter goes on the target', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.abilities?.[0]?.targets?.[0]?.friendly).toBe(true);
+    let s = advanceTo(arena({
+      decks: { 0: 'd1079', 1: 'd1079' }, deckSpecs: { d1079: deck.deck },
+      battlefield: { 0: ['Test Oiler', 'Test Relic'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const relic = find(s, 0, 'battlefield', 'Test Relic');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Oiler'), abilityIndex: 0, targets: [{ kind: 'card', id: relic }] } as Action)), 30);
+    expect(s.instances[relic]!.counters['oil']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
