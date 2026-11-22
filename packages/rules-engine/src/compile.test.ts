@@ -14700,13 +14700,24 @@ describe('the upkeep tax: sacrifice unless you pay (D529)', () => {
     // reader: a choice and then a card question. See "sacrifice it unless you <cost>" (D724).
     ['a price this engine cannot parse',
       'At the beginning of your upkeep, sacrifice Not A Card unless you pay {X}.'],
-    ['a price of life, which is a cost and not mana',
-      'At the beginning of your upkeep, sacrifice Not A Card unless you pay 3 life.'],
+    // Retargeted by D1105: "a price of life, which is a cost and not mana" is a `payIfChosen` life
+    // price now, the one D989 gave "you may pay N life".
   ])('refuses %s', (_why, text) => {
     const read = permanent(text as string);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+
+  // Retargeted by D1105: a price of life is a choice priced in life, with the permanent as the forfeit.
+  it('reads a price of life as a choice priced in life (D1105)', () => {
+    const read = permanent('At the beginning of your upkeep, sacrifice Not A Card unless you pay 3 life.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const spec = read.script?.triggers?.[0]?.decisions?.[0];
+    expect(typeof spec === 'object' && spec !== null && 'payIfChosen' in spec ? spec.payIfChosen : null)
+      .toEqual({ option: 'Pay 3 life', life: 3 });
   });
 });
 

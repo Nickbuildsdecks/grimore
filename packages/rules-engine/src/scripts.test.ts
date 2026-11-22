@@ -32603,6 +32603,60 @@ describe('abilities granted in quotes to artifacts and enchantments (D1104)', ()
   });
 });
 
+describe('upkeep taxes paid in life, and taxes whose forfeit is a tap (D1105)', () => {
+  // Carnophage's "tap ~ unless you pay 1 life", Season of the Witch's life tax, Heavyweight Demolisher's {3}.
+  const R = (name: string, text: string) => ({ name, type_line: 'Creature — Zombie', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: text });
+  const PHAGE = R('Test Phage', 'At the beginning of your upkeep, tap Test Phage unless you pay 1 life.');
+  const WITCH = R('Test Witch', 'At the beginning of your upkeep, sacrifice Test Witch unless you pay 2 life.');
+  const HULK = R('Test Hulk', 'At the beginning of your upkeep, tap Test Hulk unless you pay {3}.');
+  const ROWS = [PHAGE, WITCH, HULK];
+  const deck = customDeck({
+    id: 'd1105', name: 'Taxes', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 54 }], data: ROWS as never[],
+  });
+  const toTheTax = (lands: number, mine: string) => drain(advanceTo(arena({
+    decks: { 0: 'd1105', 1: 'd1105' }, deckSpecs: { d1105: deck.deck },
+    battlefield: { 0: [...Array.from({ length: lands }, () => 'Swamp'), mine] }, turn: 5, firstSeat: 0,
+  }), 'upkeep'), 40);
+  const answer = (s: GameState, option: string) => drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option } as Action), 60);
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a life tax: paid, the life goes and it stays untapped; declined, it is tapped and kept', () => {
+    const s = toTheTax(0, 'Test Phage');
+    const phage = find(s, 0, 'battlefield', 'Test Phage');
+    expect(s.pendingDecision?.options).toEqual(['Tap it', 'Pay 1 life']);
+    const paid = answer(s, 'Pay 1 life');
+    expect(life(paid, 0)).toBe(life(s, 0) - 1);
+    expect(paid.instances[phage]!.tapped).toBe(false);
+    const declined = answer(s, 'Tap it');
+    expect(life(declined, 0)).toBe(life(s, 0));
+    expect(declined.instances[phage]!.tapped).toBe(true);
+    expect(namesIn(declined, 0, 'battlefield')).toContain('Test Phage');
+  });
+
+  it('a life tax whose forfeit is the permanent', () => {
+    const s = toTheTax(0, 'Test Witch');
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay 2 life']);
+    expect(namesIn(answer(s, 'Sacrifice it'), 0, 'graveyard')).toContain('Test Witch');
+    const paid = answer(s, 'Pay 2 life');
+    expect(life(paid, 0)).toBe(life(s, 0) - 2);
+    expect(namesIn(paid, 0, 'battlefield')).toContain('Test Witch');
+  });
+
+  it('a mana tax whose forfeit is a tap: with no mana it is not asked, and the creature is tapped', () => {
+    const s = toTheTax(0, 'Test Hulk');
+    expect(s.pendingDecision).toBeNull();
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Hulk')]!.tapped).toBe(true);
+    const rich = toTheTax(3, 'Test Hulk');
+    expect(rich.pendingDecision?.options).toEqual(['Tap it', 'Pay {3}']);
+    const kept = answer(rich, 'Pay {3}');
+    expect(kept.instances[find(kept, 0, 'battlefield', 'Test Hulk')]!.tapped).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

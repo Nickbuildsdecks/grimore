@@ -15607,11 +15607,39 @@ function selfEffect(
     it records an unrecognised symbol rather than reading it as generic mana, the same guard D446's
     ability costs lean on.
   */
+  /*
+    D1105: the same price in **life** ("sacrifice ~ unless you pay 2 life", Season of the Witch),
+    and the same question with a lighter forfeit: "**tap** ~ unless you pay 1 life" (Carnophage,
+    Sangrophage), "tap ~ unless you pay {3}" (Heavyweight Demolisher). Declined, a tap is a tap,
+    and the permanent stays; "Tap it" is first for "Sacrifice it"'s reason.
+  */
+  const lifeTaxed = new RegExp(`^(sacrifice|tap) (?:${self}|it) unless you pay (\\w+) life$`, 'i').exec(text);
+  if (lifeTaxed !== null) {
+    const word = lifeTaxed[2]!.toLowerCase();
+    const n = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
+    if (n !== undefined && n > 0) {
+      const pay = `Pay ${n} life`;
+      const tapped = lifeTaxed[1]!.toLowerCase() === 'tap';
+      const forfeit = tapped ? 'Tap it' : 'Sacrifice it';
+      return {
+        decisions: [{
+          who: 'controller',
+          prompt: `${pay}, or ${tapped ? 'tap' : 'sacrifice'} this permanent?`,
+          options: [forfeit, pay],
+          payIfChosen: { option: pay, life: n },
+          best: () => pay,
+        }],
+        effect: (c) => (chosenOption(c) === pay || c.state.instances[c.source]?.zone !== 'battlefield' ? c.state
+          : tapped ? tap(c.state, c.source) : moveToGraveyard(c.state, [c.source])),
+      };
+    }
+  }
   const taxed = new RegExp(
-    `^sacrifice (?:${self}|it) unless you pay ((?:\\{[^}]+\\})+)$`, 'i',
+    `^(?:sacrifice|(tap)) (?:${self}|it) unless you pay ((?:\\{[^}]+\\})+)$`, 'i',
   ).exec(text);
   if (taxed !== null) {
-    const printed = taxed[1]!;
+    const tapped = taxed[1] !== undefined;
+    const printed = taxed[2]!;
     const energy = /^(?:\{E\})+$/i.test(printed)
       ? (printed.match(/\{E\}/gi) ?? []).length
       : null;
@@ -15628,8 +15656,8 @@ function selfEffect(
       return {
         decisions: [{
           who: 'controller',
-          prompt: `${pay}, or sacrifice this permanent?`,
-          options: ['Sacrifice it', pay],
+          prompt: `${pay}, or ${tapped ? 'tap' : 'sacrifice'} this permanent?`,
+          options: [tapped ? 'Tap it' : 'Sacrifice it', pay],
           payIfChosen: energy === null
             ? { option: pay, cost: printed }
             : { option: pay, energy },
@@ -15638,7 +15666,8 @@ function selfEffect(
         }],
         effect: (c) => (chosenOption(c) === pay
           ? c.state
-          : moveToGraveyard(c.state, [c.source])),
+          : tapped ? (c.state.instances[c.source]?.zone === 'battlefield' ? tap(c.state, c.source) : c.state)
+            : moveToGraveyard(c.state, [c.source])),
       };
     }
   }
