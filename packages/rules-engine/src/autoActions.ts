@@ -1367,6 +1367,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     subtypes: characteristics.typeLine.subtypes,
     // For "a historic spell" (D606): legendary is a supertype.
     supertypes: characteristics.typeLine.supertypes,
+    // And an X in its printed cost (D1120), for "a spell with {X} in its mana cost".
+    hasX: /\{X\}/i.test(next.cardDefs[inst.defKey]?.manaCost ?? ''),
     /*
       And what it was pointed at, for heroic (D476). Card targets only, because that is the whole
       of what the printed sentence asks — "a spell that targets **this creature**" — and a seat in

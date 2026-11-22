@@ -1269,6 +1269,10 @@ function triggerMatches(
       // D616: the turn it was cast in, where it was cast from, and whether it was kicked.
       if (want.duringOpponentsTurn === true && (e.activeSeat === undefined || e.activeSeat === sourceSeat)) return false;
       if (want.fromZone === 'graveyard' && e.castFrom !== 'graveyard') return false;
+      // D1120: from exile, a legendary spell, an X in the cost.
+      if (want.fromZone === 'exile' && e.castFrom !== 'exile') return false;
+      if (want.legendary === true && !(e.supertypes ?? []).some((s) => s.toLowerCase() === 'legendary')) return false;
+      if (want.withX === true && e.hasX !== true) return false;
       if (want.fromZone === 'not-hand' && (e.castFrom === undefined || e.castFrom === 'hand')) return false;
       if (want.wasKicked === true && e.kicked !== true) return false;
       const by = want.by ?? 'you';

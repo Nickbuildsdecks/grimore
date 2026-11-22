@@ -1161,7 +1161,15 @@ export type TriggerEvent =
        * the engine sets as it raises it.
        */
       readonly duringOpponentsTurn?: true;
-      readonly fromZone?: 'graveyard' | 'not-hand';
+      readonly fromZone?: 'graveyard' | 'not-hand' | 'exile';
+      /**
+       * "Whenever you cast a **legendary** spell" and "a spell **with {X} in its mana cost**"
+       * (D1120): the supertype, and an X in the printed cost, which the event carries as `hasX`.
+       */
+      readonly legendary?: true;
+      readonly withX?: true;
+      /** Set by the engine (D1120): whether the spell's printed mana cost has an {X}. */
+      readonly hasX?: boolean;
       readonly wasKicked?: true;
       /** Set by the engine when it raises the event: whose turn it is. */
       readonly activeSeat?: SeatIndex;

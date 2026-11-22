@@ -7664,7 +7664,7 @@ describe('the cast trigger, read off the prologue', () => {
     */
     // "A historic spell" was a row here ("artifact or legendary or Saga, not one field"); D606 gave
     // it that one field, answered from the event's types, supertypes and subtypes.
-    ['Whenever you cast a legendary spell', 'a supertype alone, which no cast field asks for (historic does, with the rest)'],
+    // Retargeted by D1120: 'Whenever you cast a legendary spell' reads, on the cast event's `legendary`.
     ['Whenever an opponent casts a white or blue instant or sorcery spell',
       'a colour and a type in one descriptor: read as neither, not as half of each'],
     ['Whenever an opponent casts a spell that targets you or a creature you control',
@@ -7680,6 +7680,13 @@ describe('the cast trigger, read off the prologue', () => {
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  // Retargeted by D1120: a supertype alone is a field the cast event asks now.
+  it('reads Whenever you cast a legendary spell (D1120)', () => {
+    const got = compileCard({ name: 'Grave Titan', type_line: 'Creature — Giant', mana_cost: '{4}{B}{B}', cmc: 6, colors: ['B'], power: '6', toughness: '6', layout: 'normal', oracle_text: 'Whenever you cast a legendary spell, you gain 2 life.' });
+    expect(got.ok && got.unread).toEqual([]);
+    expect(got.ok ? got.script?.triggers?.[0]?.on : null).toMatchObject({ kind: 'spell-cast', by: 'you', legendary: true });
   });
 });
 

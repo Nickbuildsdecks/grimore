@@ -33197,6 +33197,40 @@ describe('"whenever a creature you control explores" (D1119)', () => {
   });
 });
 
+describe('a legendary spell, a spell with {X}, a spell from exile (D1120)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const REKI = C('Test Reki', 'Whenever you cast a legendary spell, you gain 1 life.');
+  const MAGE = C('Test Mage', 'Whenever you cast a spell with {X} in its mana cost, you gain 2 life.');
+  const HERO = C('Test Hero', '', 'Legendary Creature — Human');
+  const BEAR = C('Test Bear', '');
+  const BLAST = { name: 'Test Blast', type_line: 'Sorcery', mana_cost: '{X}{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'You gain X life.' };
+  const ROWS = [REKI, MAGE, HERO, BEAR, BLAST];
+  const deck = customDeck({
+    id: 'd1120', name: 'Casts', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  const gained = (watcher: string, spell: string, extra: Record<string, unknown> = {}) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1120', 1: 'd1120' }, deckSpecs: { d1120: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Forest', 'Forest', watcher] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...extra } as Action)), 30);
+    return life(after, 0) - life(s, 0);
+  };
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [REKI, MAGE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a legendary spell gains, another does not; a spell with {X} gains', () => {
+    expect(gained('Test Reki', 'Test Hero')).toBe(1);
+    expect(gained('Test Reki', 'Test Bear')).toBe(0);
+    // X = 1: 1 life from the Blast and 2 from the Mage.
+    expect(gained('Test Mage', 'Test Blast', { x: 1 })).toBe(3);
+    expect(gained('Test Mage', 'Test Bear')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

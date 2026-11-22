@@ -18236,6 +18236,8 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
   // D606: see the event's own fields.
   if (lower === 'historic') return { historic: true };
   if (lower === 'colorless' || lower === 'colourless') return { colorless: true };
+  // "A legendary spell" (D1120).
+  if (lower === 'legendary') return { legendary: true };
   /*
     "An instant, sorcery, or Wizard spell" (Rockslide Sorcerer, Master of Winds), and "an artifact or
     enchantment spell": a list of card types and capitalised subtypes, any of them. Two subtypes
@@ -18298,6 +18300,9 @@ function castBound(printed: string, self: string): Partial<CastEvent> | null {
   if (/^during an opponent's turn$/i.test(text)) return { duringOpponentsTurn: true };
   if (/^from your graveyard$/i.test(text)) return { fromZone: 'graveyard' };
   if (/^from anywhere other than your hand$/i.test(text)) return { fromZone: 'not-hand' };
+  // D1120: "from exile", and "with {X} in its mana cost".
+  if (/^from exile$/i.test(text)) return { fromZone: 'exile' };
+  if (/^with \{X\} in its mana cost$/i.test(text)) return { withX: true };
   return null;
 }
 
