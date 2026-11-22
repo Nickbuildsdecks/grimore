@@ -56216,3 +56216,40 @@ Faults injected by hand: 1 (the queue never asked). Two tests catch it.
 The D561 compile row that pinned "Kicker {2} and/or {1}{R}" as unread is retargeted (the D516 way). It now asserts that the line reads as a double kicker with its second cost.
 
 Coverage: 14,876 of 31,900 cards (+7 over D1098's 14,869), 36,587 of 59,888 lines (+21).
+
+## D1100 — multikicker, and "for each time it was kicked"
+
+Multikicker (CR 702.33a): "Multikicker {2}" may be paid any number of times, and the card counts
+the kicks. 19 legal lines. Everflowing Chalice is the Commander one.
+
+- **Engine:** `kicker.multi`.
+  - The cast offers one kicked play per count the mana covers ("multikicker x1", "x2", …), the way
+    replicate offers its rows.
+  - The count travels as `kickCount` on the play, the action and the stack object.
+  - The `KICKED` marker the arrival writes is now the **count**: a multikicker's, two for both
+    kickers of a double kicker (D1099), or one.
+- **The count:** "for each time it was kicked" and "the number of times this spell was kicked" are
+  in the counting vocabulary. A spell reads its own count off the stack; a permanent reads it off
+  `KICKED`. The counted enters-with reader (D1047) no longer excludes the phrase, so "enters with a
+  +1/+1 counter on it for each time it was kicked" reads too.
+- **The keyword:** "Multikicker {cost}" reads on its own, unlike a kicker (D561). Every printed
+  multikicker counts its kicks on another line, and a payoff line that does not read keeps the
+  card's badge.
+
+Ten now read whole: Apex Hawks, Enclave Elite, Everflowing Chalice, Flametongue Yearling, Gnarlid
+Pack, Lightkeeper of Emeria, Quag Vampires, Skitter of Lizards, Spell Contortion and Wolfbriar
+Elemental. "Up to X targets, where X is the number of times …" (Voyager Drake, Comet
+Storm) is not read yet.
+
+**Tests.** 3 engine tests:
+- The cards read whole, and each count the mana covers is offered, no more.
+- The Chalice gets a charge counter per kick and taps for that much; unkicked, none.
+- A Wolf per kick, and a spell that draws a card per kick.
+
+The D561 row that pinned "Multikicker {1}{G}" as unread is retargeted (the D516 way). It now
+asserts that the multikicker reads, while an "if it was kicked" line it does not pair with stays
+unread.
+
+Faults injected by hand: 1 (the marker written once, not per kick). Two tests catch it.
+
+Coverage: 14,886 of 31,900 cards (+10 over D1099's 14,876), 36,619 of 59,888 lines (+32).
