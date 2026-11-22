@@ -1038,6 +1038,12 @@ export type TriggerEvent =
       /** This spell's ordinal among its caster's spells of the same kind this turn (D678). Engine-set. */
       readonly kindNth?: number;
       /**
+       * Its ordinal among its caster's instant and sorcery spells this turn (D1114), set only on an
+       * instant or a sorcery. `nthOfKind` with `spell: 'instant-or-sorcery'` counts on it: "Whenever
+       * you cast your first instant or sorcery spell each turn".
+       */
+      readonly instantOrSorceryNth?: number;
+      /**
        * Which of its caster's spells this was, this turn — 1 for the first. Set by the engine when
        * the event is raised, never by a script.
        */

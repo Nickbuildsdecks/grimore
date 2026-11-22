@@ -19014,6 +19014,18 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you cast your first spell each turn, (.+)$/i,
     on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
   },
+  /*
+    "Your first / second instant or sorcery spell each turn" (D1114): Arcane Bombardment, Aquatic
+    Alchemist, Baral and Kari Zev. Counted among the caster's instants and sorceries only, so a
+    creature cast first does not use it up.
+  */
+  {
+    prologue: () => /^Whenever you cast your (?<n>first|second) instant or sorcery spell each turn, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'spell-cast' as const, by: 'you' as const, spell: 'instant-or-sorcery' as const,
+      onNth: /first/i.test(matched.groups?.n ?? '') ? 1 : 2, nthOfKind: true as const,
+    }],
+  },
   // Anybody's second (D1003): "Whenever a player casts their second spell each turn", counted per caster.
   {
     prologue: () => /^Whenever a player casts their second spell each turn, (.+)$/i,

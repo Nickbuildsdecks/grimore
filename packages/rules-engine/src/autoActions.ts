@@ -104,10 +104,12 @@ const statsAsItLeaves = (state: GameState, inst: CardInstance): SacrificedStats 
  * spell a seat casts in a turn, which is what `spell-cast`'s `nth` carries.
  */
 function countCast(
-  state: GameState, seat: SeatIndex, kind: 'creature' | 'noncreature',
+  state: GameState, seat: SeatIndex, kind: 'creature' | 'noncreature', instantOrSorcery = false,
 ): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy' | 'spellsCastThisTurnByKind'> {
   const key = String(seat);
   const byKind = `${seat}:${kind}`;
+  // And instants and sorceries together (D1114): "your first instant or sorcery spell each turn".
+  const bySorcery = `${seat}:instant-or-sorcery`;
   return {
     spellsCastThisTurn: state.spellsCastThisTurn + 1,
     spellsCastThisTurnBy: {
@@ -117,6 +119,7 @@ function countCast(
     spellsCastThisTurnByKind: {
       ...(state.spellsCastThisTurnByKind ?? {}),
       [byKind]: (state.spellsCastThisTurnByKind?.[byKind] ?? 0) + 1,
+      ...(instantOrSorcery ? { [bySorcery]: (state.spellsCastThisTurnByKind?.[bySorcery] ?? 0) + 1 } : {}),
     },
   };
 }
@@ -1320,7 +1323,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // each turn" counts. Incremented as the spell goes on the stack — a spell is cast once it is
     // there with its costs paid (CR 601.2i) — and *after* the object has taken its snapshot, so a
     // storm spell never counts itself. See `countCast`.
-    ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature'),
+    ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature',
+      hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery')),
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a
@@ -1337,6 +1341,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
     // And among its own kind (D678): "their first noncreature spell each turn".
     kindNth: next.spellsCastThisTurnByKind?.[`${action.by}:${spellKind}`] ?? 1,
+    // And among its caster's instants and sorceries (D1114), for an instant or sorcery spell.
+    ...(hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery')
+      ? { instantOrSorceryNth: next.spellsCastThisTurnByKind?.[`${action.by}:instant-or-sorcery`] ?? 1 } : {}),
     // D616: whose turn, where from, and kicked — for "during an opponent's turn", "from your
     // graveyard" and "a kicked spell".
     activeSeat: state.activeSeat,

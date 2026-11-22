@@ -1262,7 +1262,10 @@ function triggerMatches(
         tally has moved on. Counted per caster, so at a four-seat table it is your second spell and
         not the table's. See `GameState.spellsCastThisTurnBy`.
       */
-      if (want.onNth !== undefined && (want.nthOfKind === true ? e.kindNth : e.nth) !== want.onNth) return false;
+      if (want.onNth !== undefined && (want.nthOfKind === true
+        // Instants and sorceries counted together (D1114).
+        ? (want.spell === 'instant-or-sorcery' ? e.instantOrSorceryNth : e.kindNth)
+        : e.nth) !== want.onNth) return false;
       // D616: the turn it was cast in, where it was cast from, and whether it was kicked.
       if (want.duringOpponentsTurn === true && (e.activeSeat === undefined || e.activeSeat === sourceSeat)) return false;
       if (want.fromZone === 'graveyard' && e.castFrom !== 'graveyard') return false;

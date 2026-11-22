@@ -32984,6 +32984,37 @@ describe('a death named with subject words: nontoken, token, legendary, colour, 
   });
 });
 
+describe('"your first instant or sorcery spell each turn" (D1114)', () => {
+  // Counted among the caster's instants and sorceries: a creature cast first does not use it up.
+  const SAGE = { name: 'Test Sage', type_line: 'Creature — Human Wizard', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Whenever you cast your first instant or sorcery spell each turn, you gain 1 life.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const OPT = { name: 'Test Opt', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.' };
+  const ROWS = [SAGE, BEAR, OPT];
+  const deck = customDeck({
+    id: 'd1114', name: 'Sages', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }], data: ROWS as never[],
+  });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SAGE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature first does not count; the first instant gains, the second does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1114', 1: 'd1114' }, deckSpecs: { d1114: deck.deck },
+      hands: { 0: ['Test Bear', 'Test Opt', 'Test Opt'] }, battlefield: { 0: ['Island', 'Island', 'Island', 'Test Sage'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const start = life(s, 0);
+    const cast = (state: GameState, card: string) => drain(passBoth(apply(state, { type: 'auto:cast', by: 0, card: find(state, 0, 'hand', card) } as Action)), 30);
+    s = cast(s, 'Test Bear');
+    expect(life(s, 0)).toBe(start);
+    s = cast(s, 'Test Opt');
+    expect(life(s, 0)).toBe(start + 1);
+    s = cast(s, 'Test Opt');
+    expect(life(s, 0)).toBe(start + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
