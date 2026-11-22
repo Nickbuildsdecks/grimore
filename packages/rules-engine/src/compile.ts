@@ -733,6 +733,32 @@ function singularSelf(line: string, name: string): string {
       `${who} ${verb(first)}${joiner === undefined ? '' : `${joiner}${verb(second!)}`}`);
 }
 
+/**
+ * Whether battles are permanents this engine plays (CR 310). False while battle cards are refused
+ * (D591): their defense comes from card data the production import does not have yet.
+ */
+const BATTLES_PLAYED = false;
+
+/**
+ * A battle named where a player or a permanent may be (D1111): "to a player or battle", "target
+ * opponent, battle, or planeswalker", "target creature, planeswalker, or battle". While battles are
+ * refused (`BATTLES_PLAYED`), no battle can be on the battlefield, so the word names nothing that
+ * can exist, and taking it out of the list changes no game. It stays in the text the card shows;
+ * this is only what the readers are given. When battles are played, this goes, and the readers
+ * have to learn the word instead.
+ */
+function withoutBattles(line: string): string {
+  // Not a battle **card** ("an instant, sorcery, or battle card"): a battle card is a card like
+  // any other in a hand, a library or a graveyard, refused or not.
+  if (BATTLES_PLAYED || !/\bbattles?\b(?! cards?\b)/i.test(line)) return line;
+  return line
+    // "A, B, or battle" and "A, battle, or B": the list one shorter.
+    .replace(/((?:[\w'-]+ )*[\w'-]+), ((?:[\w'-]+ )*[\w'-]+), (or|and\/or) battles?\b(?! cards?\b)/gi, '$1 $3 $2')
+    .replace(/((?:[\w'-]+ )*[\w'-]+), battles?, (or|and\/or) (?!(?:[\w'-]+ )*cards?\b)/gi, '$1 $2 ')
+    // "A or battle", "A and/or battle".
+    .replace(/ (?:or|and\/or) battles?\b(?! cards?\b)/gi, '');
+}
+
 /** One face, or a card with only one. */
 function compileSingle(row: CardDataRow): Compilation {
   const printed = printedDef(row);
@@ -740,7 +766,8 @@ function compileSingle(row: CardDataRow): Compilation {
   let def = printed.def;
   const typeLine = parseTypeLine(def.typeLine);
   // A plural self reference in the singular (D1107): see `singularSelf`.
-  const lines = printedRulesLines(row.oracle_text).map((line) => singularSelf(line, def.name));
+  // And a battle where nothing can be one (D1111): see `withoutBattles`.
+  const lines = printedRulesLines(row.oracle_text).map((line) => withoutBattles(singularSelf(line, def.name)));
 
   /*
     A planeswalker with no starting loyalty this engine can read is refused outright rather than

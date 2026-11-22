@@ -32844,6 +32844,38 @@ describe('"that many" off a batch of arrivals or deaths (D1110)', () => {
   });
 });
 
+describe('a battle named where nothing can be one (D1111)', () => {
+  // Battles are refused (D591), so none is ever on the battlefield; a list naming one is the list without it.
+  const read = (text: string) => compileCard({ name: 'Test Card', type_line: 'Creature — Human', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: text } as never) as { ok: boolean; unread: readonly { line: string }[] };
+
+  it.each([
+    'Whenever Test Card deals combat damage to a player or battle, draw a card.',
+    '{T}: Test Card deals 2 damage to target opponent, battle, or planeswalker.',
+    'When Test Card enters, it deals 5 damage to target creature, planeswalker, or battle.',
+    '{T}: Test Card deals 2 damage to target player or battle.',
+  ])('reads %s', (text) => {
+    expect(read(text).unread).toEqual([]);
+  });
+
+  it('leaves a battle card alone: it can be in a graveyard whether battles are played or not', () => {
+    const line = 'When Test Card enters, you may put an instant, sorcery, or battle card from your graveyard into your hand.';
+    expect(read(line).unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  it('"target player or battle" offers the players', () => {
+    const PINGER = { name: 'Test Pinger', type_line: 'Creature — Human', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{T}: Test Pinger deals 2 damage to target player or battle.' };
+    const deck = customDeck({ id: 'd1111', name: 'Pingers', entries: [{ name: PINGER.name, count: 4 }, { name: 'Mountain', count: 56 }], data: [PINGER] as never[] });
+    const s = advanceTo(arena({
+      decks: { 0: 'd1111', 1: 'd1111' }, deckSpecs: { d1111: deck.deck },
+      battlefield: { 0: ['Test Pinger'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.name === 'Test Pinger')!;
+    expect(row.candidates[0]!.map((t) => t.kind)).toEqual(['player', 'player']);
+    const after = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    expect(life(after, 1)).toBe(life(s, 1) - 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
