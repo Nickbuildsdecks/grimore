@@ -33638,6 +33638,62 @@ describe('"~ can\'t attack or block alone" (D1128)', () => {
   });
 });
 
+describe('bolster, and counters on a creature you choose (D1129)', () => {
+  const C = (name: string, size: string) => ({ name, type_line: 'Creature — Human', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: size, toughness: size, oracle_text: '' });
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text });
+  const SMALL = C('Test Small', '1');
+  const OTHER = C('Test Other', '1');
+  const BIG = C('Test Big', '3');
+  const BOLSTER = S('Test Bolster', 'Bolster 2.');
+  const FEED = S('Test Feed', 'Put two +1/+1 counters on a creature you control.');
+  const ROWS = [SMALL, OTHER, BIG, BOLSTER, FEED];
+  const deck = customDeck({
+    id: 'd1129', name: 'Bolster', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  /** Casts `spell`, answers its question with `pick` (by name) or shows what was offered. */
+  const cast = (spell: string, mine: readonly string[], pick?: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1129', 1: 'd1129' }, deckSpecs: { d1129: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Forest', ...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action));
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)).sort();
+    if (s.pendingDecision !== null) {
+      const chosen = s.pendingDecision.candidates.find((id) => nameOf(s, id) === pick) ?? s.pendingDecision.candidates[0]!;
+      s = apply(s, { type: 'auto:decide', by: 0, cards: [chosen] } as Action);
+    }
+    s = drain(s, 30);
+    const counters = (n: string) => s.instances[find(s, 0, 'battlefield', n)]!.counters['+1/+1'] ?? 0;
+    return { offered, counters };
+  };
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [BOLSTER, FEED]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('bolster offers only the least toughness and puts the counters there', () => {
+    const read = cast('Test Bolster', ['Test Small', 'Test Big'], 'Test Big');
+    // One candidate: nothing to ask, and the Big one was never on offer.
+    expect(read.offered).toEqual([]);
+    expect(read.counters('Test Small')).toBe(2);
+    expect(read.counters('Test Big')).toBe(0);
+  });
+
+  it('a tie for least toughness is the controller\'s choice', () => {
+    const read = cast('Test Bolster', ['Test Small', 'Test Other', 'Test Big'], 'Test Other');
+    expect(read.offered).toEqual(['Test Other', 'Test Small']);
+    expect(read.counters('Test Other')).toBe(2);
+    expect(read.counters('Test Small')).toBe(0);
+  });
+
+  it('"a creature you control" offers any of them', () => {
+    const read = cast('Test Feed', ['Test Small', 'Test Big'], 'Test Big');
+    expect(read.offered).toEqual(['Test Big', 'Test Small']);
+    expect(read.counters('Test Big')).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

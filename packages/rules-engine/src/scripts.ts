@@ -27510,6 +27510,9 @@ function readEffect(
       },
     };
   }
+  // Bolster, and +1/+1 counters on a creature you choose (D1129): see `chosenCounterClause`.
+  const chosenCounter = chosenCounterClause(clause);
+  if (chosenCounter !== null) return chosenCounter;
   // An emblem (D734): see `emblemClause`.
   const emblem = emblemClause(clause, name);
   if (emblem !== null) return emblem;
@@ -28141,6 +28144,53 @@ const showEmblemText = (text: string): string => EMBLEM_HIDDEN.reduce((t, [from,
  * "You get an emblem with "…"" (D734, CR 114): the quoted abilities, read as a card would be, and
  * refused unless every one of them reads. Two quoted abilities ("A" and "B") are two lines.
  */
+/**
+ * **Bolster N** (D1129, CR 701.39a): "choose a creature with the least toughness among creatures you
+ * control and put N +1/+1 counters on it". And the same counters on a creature the controller
+ * picks, not targeted: "put a +1/+1 counter on a creature you control" (Humiliate's kin). Asked as
+ * the effect resolves, of the controller's own battlefield; with nothing to choose, nothing happens
+ * (CR 701.39b). A tie for least toughness is the controller's choice. The engine's own seat puts the
+ * counters on its strongest candidate.
+ */
+function chosenCounterClause(clause: string): ReadEffect | null {
+  const text = plain(clause).trim().replace(/\.$/, '');
+  const bolster = /^bolster (\d+)$/i.exec(text);
+  const put = /^put (a|an|one|two|three|four|five|\d+) \+1\/\+1 counters? on a creature you control$/i.exec(text);
+  if (bolster === null && put === null) return null;
+  const words: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const n = bolster !== null ? Number(bolster[1]) : words[put![1]!.toLowerCase()] ?? Number(put![1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const least = bolster !== null;
+  const toughnessOf = (state: GameState, id: string): number | null => {
+    const inst = state.instances[id];
+    if (inst === undefined) return null;
+    const ch = characteristicsOf(state, inst);
+    return ch.isCreature ? ch.toughness : null;
+  };
+  return {
+    decisions: [{
+      who: 'controller', from: 'battlefield', min: 1, max: 1,
+      prompt: least
+        ? `Bolster ${n}: choose a creature with the least toughness among creatures you control`
+        : `Choose a creature you control to put ${n === 1 ? 'a +1/+1 counter' : `${n} +1/+1 counters`} on`,
+      filter: (state, id) => {
+        const mine = toughnessOf(state, id);
+        if (mine === null) return false;
+        if (!least) return true;
+        const seat = state.instances[id]!.zoneSeat;
+        const all = listAt(state, zoneKey(seat, 'battlefield')).map((other) => toughnessOf(state, other)).filter((t): t is number => t !== null);
+        return mine <= Math.min(...all);
+      },
+      pick: (state, _chooser, candidates) => {
+        const power = (id: string): number => characteristicsOf(state, state.instances[id]!).power;
+        const best = [...candidates].sort((a, b) => power(b) - power(a))[0];
+        return best === undefined ? [] : [best];
+      },
+    }],
+    effect: (c) => chosenCards(c).reduce((state, id) => addCounters(state, id, '+1/+1', n), c.state),
+  };
+}
+
 function emblemClause(clause: string, name: string): ReadEffect | null {
   const m = /^you get an emblem with (.+)$/i.exec(clause.trim());
   if (m === null) return null;
