@@ -709,13 +709,38 @@ function compileUncached(row: CardDataRow): Compilation {
   return compileSingle(row);
 }
 
+/** The verbs a card names itself with in the plural (D1107), and their singular. */
+const PLURAL_SELF_VERBS: Readonly<Record<string, string>> = {
+  enter: 'enters', attack: 'attacks', die: 'dies', deal: 'deals', block: 'blocks', get: 'gets',
+  have: 'has', gain: 'gains', become: 'becomes', leave: 'leaves', are: 'is', "aren't": "isn't",
+};
+
+/**
+ * A card that is two characters, or a crowd (D1107): "When Cloak and Dagger enter", "Whenever
+ * Bebop & Rocksteady attack or block", "When The Duras Sisters die". Every reader spells the self
+ * reference with a singular verb, so the plural is put in the singular before the lines are read:
+ * the rules are the same for one permanent whatever its name says it is (CR 201.5). Only for a name
+ * that is plural ("and", "&", or "The …s"), and only the verb straight after the name.
+ */
+function singularSelf(line: string, name: string): string {
+  const short = name.includes(', ') ? name.slice(0, name.indexOf(', ')) : name;
+  if (!/\s(?:and|&)\s/.test(short) && !/^The .+s$/.test(short)) return line;
+  const names = [...new Set([name, short])].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const verbs = Object.keys(PLURAL_SELF_VERBS).join('|');
+  const verb = (word: string): string => PLURAL_SELF_VERBS[word.toLowerCase()] ?? word;
+  return line.replace(new RegExp(`\\b(${names}) (${verbs})\\b(?:( or | and/or | and )(${verbs})\\b)?`, 'g'),
+    (_all, who: string, first: string, joiner?: string, second?: string) =>
+      `${who} ${verb(first)}${joiner === undefined ? '' : `${joiner}${verb(second!)}`}`);
+}
+
 /** One face, or a card with only one. */
 function compileSingle(row: CardDataRow): Compilation {
   const printed = printedDef(row);
   if ('why' in printed) return { ok: false, why: printed.why };
   let def = printed.def;
   const typeLine = parseTypeLine(def.typeLine);
-  const lines = printedRulesLines(row.oracle_text);
+  // A plural self reference in the singular (D1107): see `singularSelf`.
+  const lines = printedRulesLines(row.oracle_text).map((line) => singularSelf(line, def.name));
 
   /*
     A planeswalker with no starting loyalty this engine can read is refused outright rather than

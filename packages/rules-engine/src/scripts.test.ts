@@ -32705,6 +32705,38 @@ describe('one mana of any type that land produced: Mana Flare, Zendikar Resurgen
   });
 });
 
+describe('a card that names itself in the plural (D1107)', () => {
+  // "When Cloak and Dagger enter", "Whenever Bebop & Rocksteady attack or block": one permanent (CR 201.5).
+  const DUO = { name: 'Test One and Two, Pair', type_line: 'Legendary Creature — Human', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'When Test One and Two enter, draw a card.\nWhenever Test One and Two attack or block, you gain 1 life.' };
+  const CROWD = { name: 'The Test Sisters', type_line: 'Legendary Creature — Human', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'When The Test Sisters die, draw a card.' };
+  const deck = customDeck({
+    id: 'd1107', name: 'Duos', entries: [{ name: DUO.name, count: 2 }, { name: CROWD.name, count: 2 }, { name: 'Island', count: 56 }], data: [DUO, CROWD] as never[],
+  });
+
+  it('reads both whole, in the singular', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [DUO, CROWD]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const script = (compileCard(DUO as never) as { script: { triggers?: readonly { on: { kind: string } }[] } }).script;
+    expect(script.triggers?.map((t) => t.on.kind)).toEqual(['etb', 'attacks', 'blocking-creature']);
+  });
+
+  it('enters and draws, attacks and gains life', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1107', 1: 'd1107' }, deckSpecs: { d1107: deck.deck },
+      hands: { 0: [DUO.name] }, battlefield: { 0: ['Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const hand = ids(s, 0, 'hand').length;
+    const cast = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', DUO.name) } as Action)), 30);
+    expect(namesIn(cast, 0, 'battlefield')).toContain(DUO.name);
+    expect(ids(cast, 0, 'hand').length).toBe(hand - 1 + 1);
+  });
+
+  it('leaves a singular name alone', () => {
+    const plain = { ...DUO, name: 'Test Solo', oracle_text: 'When Test Solo enter, draw a card.' };
+    expect((compileCard(plain as never) as { unread: readonly unknown[] }).unread).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
