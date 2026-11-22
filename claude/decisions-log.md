@@ -56294,3 +56294,59 @@ Retargeted (the D516 way):
 Faults injected by hand: 1 (the two shapes not joined). Two tests catch it.
 
 Coverage: 14,907 of 31,900 cards (+21 over D1100's 14,886), 36,709 of 59,888 lines (+90).
+
+## D1102 — kicked halves that refer back to the base
+
+D562 read a kicked clause alone, then joined it to the base. A clause that names the base's
+things again ("that creature", "those creatures", "they") does not read alone, so these were
+refused:
+
+- "If this spell was kicked, that creature also gains hexproof until end of turn" (Shell Shield;
+  the gift's Crumb and Get It).
+- "Blooming Blast also deals 3 damage to that creature's controller".
+- "those creatures get +2/+1 until end of turn instead" (Dauntless Unity, Marsh Casualties) and
+  "they get +1/+1 until end of turn" (Savage Offensive), "those creatures also gain trample"
+  (Heroic Charge).
+- Gift of Growth: "Untap target creature. It gets +2/+2 until end of turn. If this spell was
+  kicked, that creature gets +4/+4 until end of turn instead."
+
+**Read together.** The kicked half is now read with the base, as one text, when it does not read
+alone: the base and "That creature gains hexproof until end of turn." The kicked cast runs that
+text, the unkicked cast the base. The reading is kept only when it has the base's shape (the
+same targets, nothing asked), so one set of targets is announced either way, as the kicker is
+announced before targets (CR 601.2b-c). The "also" is dropped first; it says only that the base
+still happens.
+
+**"Instead" replaces the sentence before it.** For a base of several sentences, the kicked text is
+the base without its last sentence, then the new half. Before this the whole base was replaced, so
+a kicked Gift of Growth would have lost its untap; it was refused for a different reason (below),
+so no card played that way.
+
+**"Those creatures" and "they"** after a mass effect are named again as the base's subject
+("creatures you control", "creatures target player controls").
+
+**Hints out of the shape.** Two halves were compared with the bot's hints included
+(`expiresAtEndOfTurn`, a target's `friendly`, `blinks`, `helpsInCombat`), so Colossal Growth's
+"+4/+4 and gains trample and haste" did not match its "+3/+3", and the modal fallback refused the
+hint. The comparison leaves them out, and a kicker mode carries `expiresAtEndOfTurn`.
+
+Ten cards checked by hand read whole: Colossal Growth, Gift of Growth, Dauntless Unity, Marsh
+Casualties, Heroic Charge, Shell Shield, Savage Offensive, Crumb and Get It, Blooming Blast and
+Valley Rally. Still refused: Vines of Vastwood ("can't be the target" then "that creature gets"),
+and kickers that cost a sacrifice ("Kicker—Sacrifice a creature.", 6 cards).
+
+**Tests.** 4 engine tests:
+- All four test spells read whole.
+- Gift of Growth's shape, kicked: still untaps, and +4/+4 in place of +2/+2. Unkicked, +2/+2.
+- "Those creatures … instead" reaches only the caster's creatures; "they get" adds +1/+1 to the
+  first strike.
+- "That creature also gains hexproof": one target asked either way, and hexproof only when kicked.
+
+Retargeted (the D516 way): D562's row "a kicked half that refers back without replacing" ("that
+creature gets +7/+0") now reads, with one target, in a new test beside the refusals.
+
+Faults injected by hand: 2. The multi-sentence "instead" path turned off (caught by the Gift of
+Growth test), and the shape check on the joined reading turned off (caught by D562's "a target of
+its own, chosen only when kicked").
+
+Coverage: 14,918 of 31,900 cards (+11 over D1101's 14,907), 36,731 of 59,888 lines (+22).
