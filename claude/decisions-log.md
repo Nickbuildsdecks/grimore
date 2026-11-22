@@ -57019,3 +57019,44 @@ new test.
 Faults injected by hand: 1. The legendary check removed (caught).
 
 Coverage: 15,032 of 31,900 cards (+3 over D1119's 15,029), 36,908 of 59,888 lines (+10).
+
+## D1121 — the board's "becomes tapped" and "leaves the battlefield"
+
+Both events were offered only to the permanent they happened to (`selfOnly` in `raise`), since a
+tap is raised for every land tapped for mana. About 50 legal lines watch the board for them:
+
+- "Whenever a creature an opponent controls becomes tapped" (Gideon's Avenger, Palliation Accord,
+  Verity Circle, and Rhoda with "if it isn't being declared as an attacker"), "a Dwarf / Merfolk you
+  control" (Magda, Judge of Currents), "a Mountain / Forest / Island an opponent controls"
+  (Lifeblood, Lifetap, Thoughtleech).
+- "Whenever another creature you control leaves the battlefield" (Ninth Bridge Patrol, Flaming Fist
+  Officer), "a token you control" (Nadier's Nightblade), "a creature token" (Twilight Drover),
+  "another nontoken creature you control" (Tokka & Rahzar), "another permanent" (Super Shredder),
+  "without dying" / "if it didn't die" (Imperial Cosmographer, Taeko), "if it had counters on it"
+  (Leader's Talent, Nikara, Angelic Sleuth).
+
+`BoardSubjectFilter` (who, of, what, subtype, token or nontoken, a counter, without dying, not
+attacking) is shared by the two events. `raise` asks `boardWatched` first, which looks for a
+printed `any`/`another` trigger on a permanent or an emblem; only then is the event enriched and
+offered to the whole board. A leave is read as it last was, from the `vanished` snapshot. The leave
+event carries `died`, and the tap carries `declaredAttacking`.
+
+A rules fix rides along: the plain "when ~ leaves the battlefield" matcher returned true for any
+leave it was offered. That was harmless while only the subject was asked. It now asks for its own
+leave.
+
+**Tests.** 4 engine tests:
+- The watchers read whole, and the shape is correct.
+- An opponent's creature tapping gains life, and one's own does not.
+- Another creature of one's own leaving gains life, and an opponent's does not. A self-leave watcher
+  on the same board stays its own: 1 life, not 4. Its own leave still pays.
+- "Without dying": a bounce gains life, and a death does not.
+
+Retargeted (the D516 way): the compile refusal "Whenever another creature you control leaves the
+battlefield" reads now, in a new test.
+
+Faults injected by hand: 2.
+- The self check on the plain leave removed (caught).
+- The without-dying check removed (caught).
+
+Coverage: 15,053 of 31,900 cards (+21 over D1120's 15,032), 36,940 of 59,888 lines (+32).
