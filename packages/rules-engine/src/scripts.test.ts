@@ -33841,6 +33841,43 @@ describe('extra turns (D1132)', () => {
   });
 });
 
+describe('exhaust and "Activate only once" (D1133)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const GUARDIAN = C('Test Guardian', 'Exhaust — {G}: Put a +1/+1 counter on Test Guardian.');
+  const ONCE = C('Test Once', '{G}: Put a +1/+1 counter on Test Once. Activate only once.');
+  const BLINK = { name: 'Test Blink', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Exile target creature you control, then return that card to the battlefield under your control.' };
+  const ROWS = [GUARDIAN, ONCE, BLINK];
+  const deck = customDeck({
+    id: 'd1133', name: 'Once', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 54 }], data: ROWS as never[],
+  });
+  const table = (creature: string) => advanceTo(arena({
+    decks: { 0: 'd1133', 1: 'd1133' }, deckSpecs: { d1133: deck.deck },
+    hands: { 0: ['Test Blink'] }, battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', creature] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, id: string) => drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 30);
+  const offered = (s: GameState, id: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === id);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [GUARDIAN, ONCE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  for (const name of ['Test Guardian', 'Test Once']) {
+    it(`${name}: once, then not again, and again once it is a new object`, () => {
+      let s = table(name);
+      const id = find(s, 0, 'battlefield', name);
+      expect(offered(s, id)).toBe(true);
+      s = activate(s, id);
+      expect(s.instances[id]!.counters['+1/+1']).toBe(1);
+      expect(offered(s, id)).toBe(false);
+      expect(() => apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)).toThrow();
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blink'), targets: [{ kind: 'card', id }] } as Action)), 30);
+      expect(s.instances[id]!.zone).toBe('battlefield');
+      expect(offered(s, id)).toBe(true);
+    });
+  }
+});
+
 describe('{X} in an activated ability\'s cost (D789)', () => {
   const RUN = { name: 'Test Run', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.' };
   const VAULT = { name: 'Test Vault', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}{X}, {T}, Sacrifice Test Vault: Create X Treasure tokens.' };

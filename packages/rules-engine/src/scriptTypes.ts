@@ -2849,6 +2849,12 @@ export interface AbilityDef {
    */
   readonly timesEachTurn?: number;
   /**
+   * "Activate only once." and exhaust (D1133, CR 702.177a): once for as long as this object is on
+   * the battlefield. Recorded against the permanent's `objectSeq`, so a permanent that leaves and
+   * returns is a new object that may activate it again (CR 400.7).
+   */
+  readonly onceEver?: true;
+  /**
    * "Activate only during your turn / your upkeep / your turn, before attackers are declared."
    * — CR 602.5d, and **32 legal corpus cards across the three clauses** (18, 8 and 6), measured
    * the same way D508's 38 were and recorded under D509 in `claude/decisions-log.md`.

@@ -39968,6 +39968,38 @@ Pod sweep 61801 (100 games, D1131 build): 100 finished, no throw, no stall.
 
 Coverage: 15,195 of 31,900 cards (+16 over D1131's 15,179), 37,126 of 59,888 lines (+27).
 
+## D1133 — exhaust and "Activate only once"
+
+Exhaust (CR 702.177a) is an activated ability that may be activated only once. Since D612 the label
+has been deliberately kept on, so the remainder could never read as an unrestricted ability. Now it
+reads *with* the restriction:
+
+- `AbilityDef.onceEver` marks the ability.
+- `abilityFromLine` takes "Exhaust — " off and sets it.
+- The activation restriction reader sets it for the plain sentence "Activate only once."
+
+The use is recorded at activation (CR 602.5f, like once-each-turn) on
+`CardInstance.abilityExhausted`, against the permanent's `objectSeq`. So a permanent that leaves
+and returns is a new object and may use it again (CR 400.7). `usesLeftThisTurn` answers 0 while
+that object has spent it, and both the offer and the activation path ask it.
+
+Read whole now (11): Camera Launcher, First Little Pig, Greenbelt Guardian, Hazard of the Dunes,
+Hog-Monkey, Keen Buccaneer, Mai, Jaded Edge, Pacesetter Paragon, Prowcatcher Specialist, Skystreak
+Engineer, Stampeding Scurryfoot.
+
+**Tests.** 3 engine tests and 1 compile test:
+- Both forms read whole.
+- For each form: offered once and used, not offered or accepted again, and offered again after a
+  blink.
+- Retargeted (the D516 way): the compile refusal "a keyword that is the restriction (exhaust)"
+  reads now, asserting `onceEver`.
+
+Faults injected by hand: 2.
+- The object binding ignored (caught: the blinked permanent stays spent).
+- The record never written (caught).
+
+Coverage: 15,207 of 31,900 cards (+12 over D1132's 15,195), 37,146 of 59,888 lines (+20).
+
 ## D789 — {X} in an activated ability's cost
 
 Most-played order: Kessig Wolf Run (rank 412), Treasure Vault (463), Blast Zone's counter line
