@@ -38605,3 +38605,38 @@ targets, picked by the kicker.
 Faults injected by hand: 1 ("also" given only the kicked mode). It is caught.
 
 Coverage: 14,850 of 31,900 cards (+5 over D1094's 14,845), 36,538 of 59,888 lines (+10).
+
+## D1096 — gift, on the kicker's machinery
+
+Gift (CR 702.174, Bloomburrow): "Gift a card (You may promise an opponent a gift as you cast this
+spell. If you do, they draw a card before its other effects.)". The spell's text then asks "if the
+gift was promised". 27 legal cards. To the rules of casting it is a kicker: a choice announced
+with the spell that its text reads later.
+
+- **Reader:** `giftSpellFor`, on instants and sorceries. The declaration becomes a free kicker
+  (`{0}`) marked `gift`, "the gift was promised" becomes "this spell was kicked", and the whole
+  card must then read through the kicker readers (D562, D1095). The gift is given first, as the
+  spell resolves: before the effect, or before the mode the promised cast runs first.
+- **Gifts:** a card (they draw), a tapped 1/1 blue Fish, a Food, a Treasure, an 8/8 blue Octopus.
+  "An extra turn" and the rest stay unread.
+- **The opponent:** with one opponent there is nothing to choose. In a pod the caster is asked as
+  the spell resolves, and only when the gift was promised (`askOnlyIf`, now on choice questions
+  too). The rules ask at casting; nothing between the two can change the answer, since the gift is
+  not a target.
+- **Not a kicker:** the cast event's `kicked` is false for a promised gift, so cards that watch
+  "a kicked spell" do not fire for it.
+
+Seven gift cards now read whole: Consumed by Greed, Into the Flood Maw, Long River's Pull, Mind
+Spiral, Nocturnal Hunger, Peerless Recycling and Wildfire Howl. Permanents with gift (Scrapshooter,
+Starforged Sword, Kitnap) need the gift given on the permanent's side and are not read yet.
+
+**Tests.** 4 engine tests:
+- The card reads whole and is offered as two casts.
+- Promised, the opponent draws and no life is lost. Not promised, you lose 2 life.
+- On an "instead" spell, the gift comes with the kicked mode: the opponent draws and the artifact
+  is returned.
+- In a pod the caster names the opponent, and only that one draws.
+
+Faults injected by hand: 1 (the gift dropped from the modal path). It is caught.
+
+Coverage: 14,857 of 31,900 cards (+7 over D1095's 14,850), 36,552 of 59,888 lines (+14).
