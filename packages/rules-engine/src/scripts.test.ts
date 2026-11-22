@@ -31981,6 +31981,52 @@ describe('graft: enters with counters, and moves one onto a creature that enters
   });
 });
 
+describe('champion: exile another of a kind until it leaves, or it is sacrificed (D1094)', () => {
+  // CR 702.72a. The exile is a choice, not a target; the card comes back when the champion leaves.
+  const ROWS = [
+    { name: 'Test Champion', type_line: 'Creature — Goblin Warrior', oracle_text: 'Champion a Goblin (When this enters, sacrifice it unless you exile another Goblin you control. When this leaves the battlefield, that card returns to the battlefield under its owner\'s control.)', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Goblin', type_line: 'Creature — Goblin', oracle_text: 'Hexproof', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1094', name: 'Champions', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 50 }], data: ROWS as never[],
+  });
+  const enter = (board: string[], pick: (s: GameState) => string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1094', 1: 'd1094' }, deckSpecs: { d1094: deck.deck },
+      hands: { 0: ['Test Champion'] }, battlefield: { 0: board }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Champion') } as Action);
+    for (let i = 0; i < 12 && (t.stackOrder.length > 0 || t.pendingDecision !== null); i++) {
+      t = t.pendingDecision !== null ? apply(t, { type: 'auto:decide', by: 0, cards: pick(t) } as Action) : passBoth(t);
+    }
+    return t;
+  };
+
+  it('reads whole, with its reminder text', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a hexproof Goblin may be championed; it comes back when the champion leaves', () => {
+    let s = enter(['Test Goblin', 'Test Bear'], (t) => {
+      // Only the other Goblin is offered: not the Bear, and not the champion itself.
+      expect(t.pendingDecision!.candidates.map((id) => nameOf(t, id))).toEqual(['Test Goblin']);
+      return [...t.pendingDecision!.candidates];
+    });
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Champion');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Goblin');
+    s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Test Champion'), toZone: 'graveyard' } as Action)), 20);
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Goblin');
+  });
+
+  it('with no other Goblin, or choosing none, the champion is sacrificed', () => {
+    expect(namesIn(enter(['Test Bear'], () => []), 0, 'battlefield')).not.toContain('Test Champion');
+    expect(namesIn(enter(['Test Goblin'], () => []), 0, 'battlefield')).not.toContain('Test Champion');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

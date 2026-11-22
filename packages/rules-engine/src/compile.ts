@@ -40,14 +40,14 @@
  */
 import type { CardDef, CardFaces } from './cards.js';
 import { costValue, parseManaCost } from './mana.js';
-import { hasType, isPrintedAbilityLine, parseTypeLine, printedKeywords, LEVEL_BAND_HEADER } from './characteristics.js';
+import { hasType, isCreatureType, isPrintedAbilityLine, parseTypeLine, printedKeywords, LEVEL_BAND_HEADER } from './characteristics.js';
 import {
   cardFromData, intrinsicManaAbilities, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
   printedLoyalty, printedRulesLines,
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
+  championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
   manaSpentScryTrigger, modalTriggerFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
@@ -920,6 +920,19 @@ function compileSingle(row: CardDataRow): Compilation {
       if (enters !== null && moves !== null && moves.triggers?.length === 1 && Object.keys(moves).length === 1) {
         const fragment: Partial<CardScript> = { ...enters, triggers: [{ ...moves.triggers[0]!, description: `Graft ${graft[1]}` }] };
         if (merge(built, fragment) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        compiled.push(line);
+        continue;
+      }
+    }
+    /*
+      Champion an X (D1094): "Champion a creature", "Champion a Goblin", "Champion a Treefolk or
+      Warrior". See `championTriggers`. A word that is not "creature" or a creature type stays unread.
+    */
+    const champion = /^champion an? (.+?)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (champion !== null) {
+      const kinds = champion[1]!.split(/\s+or\s+/).map((k) => k.trim());
+      if (kinds.every((k) => k.toLowerCase() === 'creature' || isCreatureType(k))) {
+        if (merge(built, { triggers: [...championTriggers(kinds, champion[1]!)] }) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
         compiled.push(line);
         continue;
       }

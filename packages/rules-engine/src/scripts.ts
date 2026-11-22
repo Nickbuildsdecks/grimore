@@ -5077,6 +5077,57 @@ const exileUntilItLeaves = (
   };
 };
 
+/**
+ * Champion (D1094, CR 702.72a): "When this enters, sacrifice it unless you exile another [kind] you
+ * control. When this leaves the battlefield, that card returns to the battlefield under its
+ * owner's control." The exile is a **choice**, not a target, so a hexproof creature may be
+ * championed. It is held the way an exile-until-it-leaves holds its card (`exileUntilLeaves`), and
+ * the return is the same `returnExiledBy`. `kinds` is "creature" or one or more creature types.
+ * Choosing nothing, or having nothing to choose, sacrifices it.
+ */
+export function championTriggers(kinds: readonly string[], words: string): readonly TriggerDef[] {
+  const fits = (s: GameState, id: string): boolean => {
+    const inst = s.instances[id];
+    if (inst === undefined) return false;
+    const ch = characteristicsOf(s, inst);
+    if (!ch.isCreature) return false;
+    return kinds.some((kind) => kind.toLowerCase() === 'creature' || hasSubtype(ch.typeLine, kind));
+  };
+  return [
+    {
+      on: { kind: 'etb' },
+      description: `sacrifice it unless you exile another ${words} you control (champion)`,
+      decisions: [(_state: GameState, source: string) => ({
+        who: 'controller' as const,
+        from: 'battlefield' as const,
+        prompt: `Champion: exile another ${words} you control, or choose none and sacrifice this`,
+        min: 0,
+        max: 1,
+        filter: (s: GameState, id: string) => id !== source && fits(s, id),
+        // The computer champions its weakest candidate, and keeps the champion whenever it can.
+        pick: (s: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+          const power = (id: string) => characteristicsOf(s, s.instances[id]!).power;
+          const weakest = [...candidates].sort((a, b) => power(a) - power(b))[0];
+          return weakest === undefined ? [] : [weakest];
+        },
+      })],
+      effect: (c) => {
+        const chosen = chosenCards(c)[0];
+        const self = c.state.instances[c.source];
+        if (chosen !== undefined && c.state.instances[chosen]?.zone === 'battlefield') {
+          return exileUntilLeaves(c.state, chosen, c.source);
+        }
+        return self === undefined || self.zone !== 'battlefield' ? c.state : moveToGraveyard(c.state, [c.source]);
+      },
+    },
+    {
+      on: { kind: 'leaves' },
+      description: 'return the championed card to the battlefield under its owner\u2019s control',
+      effect: (c) => returnExiledBy(c.state, c.source),
+    },
+  ];
+}
+
 /** Banisher Priest: a 2/2 holding a creature hostage, and the creature comes back when it dies. */
 const BANISHER_PRIEST: CardScript = exileUntilItLeaves('Banisher Priest', {
   kind: 'creature',
