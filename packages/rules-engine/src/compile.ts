@@ -908,6 +908,22 @@ function compileSingle(row: CardDataRow): Compilation {
       shuffle." Read by giving that sentence to the line reader, which reads every word of it
       already (D986's search by name), so the keyword and its printed reminder cannot disagree.
     */
+    /*
+      Graft N (D1093, CR 702.58a): "This creature enters with N +1/+1 counters on it" and "Whenever
+      another creature enters, you may move a +1/+1 counter from this creature onto it." Read as
+      those two sentences, the way "Partner with" is just below.
+    */
+    const graft = /^graft (\d+)$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (graft !== null) {
+      const enters = lineScriptFor(`${def.name} enters with ${graft[1]} +1/+1 counters on it.`, def.name);
+      const moves = lineScriptFor(`Whenever another creature enters, you may move a +1/+1 counter from ${def.name} onto it.`, def.name);
+      if (enters !== null && moves !== null && moves.triggers?.length === 1 && Object.keys(moves).length === 1) {
+        const fragment: Partial<CardScript> = { ...enters, triggers: [{ ...moves.triggers[0]!, description: `Graft ${graft[1]}` }] };
+        if (merge(built, fragment) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        compiled.push(line);
+        continue;
+      }
+    }
     const partnerWith = /^partner with (.+?)\.?$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
     if (partnerWith !== null) {
       const named = partnerWith[1]!;

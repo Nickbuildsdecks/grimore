@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -20753,6 +20753,20 @@ function eventRelativeEffect(
     graveyard is refused rather than read that way: there the stolen case is the common one for
     the player who mattered (CR 608.2h asks for the controller as it last existed).
   */
+  /*
+    "Move a +1/+1 counter from ~ onto it" (D1093): graft's second half, on "whenever another
+    creature enters", where "it" is the creature that entered. See `moveCounter`.
+  */
+  const movesOnto = new RegExp(
+    `^move a \\+1\\/\\+1 counter from (?:${self}|this creature) onto (?:it|that creature)$`, 'i',
+  ).exec(text);
+  if (movesOnto !== null && events.length > 0 && events.every((one) => one.kind === 'etb'
+    && (one as { readonly who?: string }).who !== undefined && (one as { readonly who?: string }).who !== 'self')) {
+    return {
+      effect: (c) => (c.subject === undefined ? c.state : moveCounter(c.state, c.source, c.subject)),
+    };
+  }
+
   const toItsController = new RegExp(
     `^(?:${self}|it) deals (\\d+) damage to (?:that|the) (?:creature|land|artifact|enchantment|permanent)'s controller$`, 'i',
   ).exec(text);

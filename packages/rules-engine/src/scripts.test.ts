@@ -31934,6 +31934,53 @@ describe('typed equip: "Equip Human {1}", "Equip legendary creature {3}" (D1092)
   });
 });
 
+describe('graft: enters with counters, and moves one onto a creature that enters (D1093)', () => {
+  // CR 702.58a, and moving a counter is not putting one (CR 122.6): Hardened Scales adds none.
+  const ROWS = [
+    { name: 'Test Grafter', type_line: 'Creature — Spider Mutant', oracle_text: 'Graft 2 (This creature enters with two +1/+1 counters on it. Whenever another creature enters, you may move a +1/+1 counter from this creature onto it.)', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '0' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Scales', type_line: 'Enchantment', oracle_text: 'If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1093', name: 'Graft', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  const castThen = (s: GameState, name: string, answer?: string): GameState => {
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action);
+    for (let i = 0; i < 12 && (t.stackOrder.length > 0 || t.pendingDecision !== null); i++) {
+      t = t.pendingDecision !== null
+        ? apply(t, { type: 'auto:decide', by: t.pendingDecision.seat, cards: [], option: answer ?? t.pendingDecision.options?.[0] } as Action)
+        : passBoth(t);
+    }
+    return t;
+  };
+  const table = (board: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1093', 1: 'd1093' }, deckSpecs: { d1093: deck.deck },
+    hands: { 0: ['Test Grafter', 'Test Bear'] }, battlefield: { 0: board }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const counters = (s: GameState, name: string) => s.instances[find(s, 0, 'battlefield', name)]!.counters['+1/+1'] ?? 0;
+
+  it('reads whole, with its reminder text', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('enters with two; a creature that enters after may take one', () => {
+    const s = castThen(table(), 'Test Grafter');
+    expect(counters(s, 'Test Grafter')).toBe(2);
+    const yes = castThen(s, 'Test Bear');
+    expect(counters(yes, 'Test Grafter')).toBe(1);
+    expect(counters(yes, 'Test Bear')).toBe(1);
+  });
+
+  it('under Hardened Scales it enters with three, and the moved counter is still one', () => {
+    const s = castThen(table(['Test Scales']), 'Test Grafter');
+    expect(counters(s, 'Test Grafter')).toBe(3);
+    const after = castThen(s, 'Test Bear');
+    expect(counters(after, 'Test Bear')).toBe(1);
+    expect(counters(after, 'Test Grafter')).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

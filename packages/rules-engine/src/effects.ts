@@ -2181,6 +2181,32 @@ export function proliferate(state: GameState, chosen: readonly string[]): GameSt
   return next;
 }
 
+/**
+ * Moves one counter of `key` from one permanent to another (D1093): graft's "you may move a +1/+1
+ * counter from this creature onto it". Nothing happens unless `from` has one and `to` is on the
+ * battlefield. Moving is not putting (CR 122.6), so Hardened Scales and Doubling Season do not
+ * change how many arrive: the counters are edited directly rather than through `addCounters`.
+ */
+export function moveCounter(state: GameState, from: string, to: string, key = '+1/+1'): GameState {
+  const source = state.instances[from];
+  const target = state.instances[to];
+  if (source === undefined || target === undefined || from === to) return state;
+  if (source.zone !== 'battlefield' || target.zone !== 'battlefield') return state;
+  const have = source.counters[key] ?? 0;
+  if (have <= 0) return state;
+  const left = { ...source.counters };
+  if (have === 1) delete left[key];
+  else left[key] = have - 1;
+  return {
+    ...state,
+    instances: {
+      ...state.instances,
+      [from]: { ...source, counters: left },
+      [to]: { ...target, counters: { ...target.counters, [key]: (target.counters[key] ?? 0) + 1 } },
+    },
+  };
+}
+
 export function addCounters(state: GameState, id: string, key: string, amount: number): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
