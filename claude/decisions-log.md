@@ -56651,3 +56651,41 @@ Faults injected by hand: 2. The amount fixed at 1 (caught by both count tests), 
 kinds not marked (all three fail).
 
 Coverage: 14,959 of 31,900 cards (+2 over D1109's 14,957), 36,796 of 59,888 lines (+3).
+
+## D1111 — a battle named where nothing can be one
+
+**Pod sweep 61201** (100 four-player Commander games on the D1109 build): all 100 finished, 57.0
+turns and 321 moves on average, with no throw and no stall. This follows D1109's fix of the
+Chimeric Idol loop found by sweep 61101.
+
+Cards printed since battles (March of the Machine) name them beside players and permanents:
+"Whenever ~ deals combat damage to a player or battle", "{T}: ~ deals 2 damage to target
+opponent, battle, or planeswalker", "target creature, planeswalker, or battle". The readers do not
+know the word, so 18 legal cards were a line short on it alone or with something else.
+
+**The word names nothing that can exist.** Battle cards are refused (D591, CR 310), because their
+defense counters come from card data the production import does not have yet. So no battle is ever
+on the battlefield. `withoutBattles` in `compileSingle` takes "battle" out of such a list before
+the readers see the line:
+- "A, B, or battle" and "A, battle, or B" become "A or B";
+- "A or battle" becomes "A".
+
+No game changes: the choices were only ever players and the other permanents. A **battle card**
+("an instant, sorcery, or battle card from your graveyard") is left alone, since a battle card is a
+card in a hand, library or graveyard whether battles are played or not.
+
+The rewrite is behind `BATTLES_PLAYED = false`. When battles are played (after the Scryfall import,
+Nick's decision), the switch goes and the readers learn the word.
+
+Read whole now: Aetherblade Agent, Beamtown Beatstick, Jeska and Kamahl, Onakke Javelineer and
+Thorin, Company's Leader, among others.
+
+**Tests.** 6 engine tests:
+- Four battle wordings read.
+- A battle card line is left as printed.
+- "Target player or battle" offers the two players, and the ping deals 2.
+
+Faults injected by hand: 2. The switch turned on (all four wordings fail), and the battle-card guard
+removed (caught by the battle-card test).
+
+Coverage: 14,964 of 31,900 cards (+5 over D1110's 14,959), 36,802 of 59,888 lines (+6).
