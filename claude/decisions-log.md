@@ -56441,3 +56441,41 @@ Faults injected by hand: 2. `artifacts-you-control` not checking the controller 
 mana test), and `all-artifacts` matching nothing (caught by both Kataki tests).
 
 Coverage: 14,931 of 31,900 cards (+4 over D1103's 14,927), 36,754 of 59,888 lines (+5).
+
+## D1105 — upkeep taxes priced in life, and taxes whose forfeit is a tap
+
+D529 read "sacrifice ~ unless you pay {N}" (and energy) as a choice whose unpaid answer is the
+sacrifice, with `payIfChosen` doing the paying and leaving an unpayable price unasked. It refused
+two neighbours:
+
+- A price of **life**: "sacrifice ~ unless you pay 2 life" (Season of the Witch; Vile
+  Consumption's grant).
+- A **tap** as the forfeit: "At the beginning of your upkeep, tap Carnophage unless you pay 1 life"
+  (Carnophage, Sangrophage), "tap ~ unless you pay {3}" (Heavyweight Demolisher), "tap ~ unless you
+  pay {E}" (Electrozoa).
+
+**Life.** `payIfChosen.life` has been the price of "you may pay N life" since D989, so the same
+question takes it as its price: "Pay N life", refused at the life that would end the game, the
+rule every life cost here keeps.
+
+**Tap.** The same question with "Tap it" first instead of "Sacrifice it". Declined (or unpayable),
+the permanent is tapped and stays. It is not sacrificed, and nothing is done if it has already
+left the battlefield.
+
+Read whole: Carnophage, Sangrophage, Heavyweight Demolisher, Vile Consumption and Electrozoa.
+Season of the Witch is still short its end-step line.
+
+**Tests.** 4 engine tests:
+- All three test cards read whole.
+- A life tax. Paid, the life goes and the creature stays untapped. Declined, it is tapped and kept.
+- A life tax whose forfeit is the permanent.
+- A mana tax whose forfeit is a tap. With no mana it is not asked and the creature is tapped; with
+  mana it is asked and paid.
+
+Retargeted (the D516 way): D529's row "a price of life, which is a cost and not mana" now reads, in
+a new test that checks its `payIfChosen`.
+
+Faults injected by hand: 2. The life forfeit sacrificing instead of tapping (caught by the life
+test), and the mana forfeit doing nothing (caught by the tap test).
+
+Coverage: 14,936 of 31,900 cards (+5 over D1104's 14,931), 36,760 of 59,888 lines (+6).
