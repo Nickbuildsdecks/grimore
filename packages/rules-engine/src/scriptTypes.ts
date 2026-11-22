@@ -680,7 +680,8 @@ export type TriggerEvent =
    */
   | {
       readonly kind: 'blocks';
-      readonly who?: 'self' | 'another' | 'any';
+      // `attached` (D1125): "whenever equipped creature blocks or becomes blocked".
+      readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
       /** Set by the engine: the seat that controls the blocking creature. */
       readonly subjectSeat?: SeatIndex;
@@ -709,7 +710,8 @@ export type TriggerEvent =
    */
   | {
       readonly kind: 'becomes-blocked';
-      readonly who?: 'self' | 'another' | 'any';
+      // `attached` (D1125): "whenever equipped creature blocks or becomes blocked".
+      readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
       /** Set by the engine: the seat that controls the attacking creature. */
       readonly subjectSeat?: SeatIndex;

@@ -18229,12 +18229,19 @@ function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
     ? { nontoken: true as const }
     : {};
   const printed = (groups.what ?? '').trim().replace(/^nontoken /i, '');
+  // "With flying", "with a +1/+1 counter on it" (D1125), on the `another` half: the card printing the
+  // line has the quality it names (Archon of Redemption flies).
+  const filter = boardFilter(groups.filter ?? '');
+  if (filter === null) return null;
+  // "Another creature or artifact you control dies" (D1125, Al Bhed Salvagers): D1122's either-type.
+  const pair = /^(?:creature or artifact|artifact or creature)$/i.test(printed);
+  if (pair && !dies) return null;
   // A tribe optionally followed by the type it is a tribe of: "another Human creature you control".
-  const parts = /^([A-Z][A-Za-z'-]*)(?: (creature|permanent|artifact|enchantment))?$/.exec(printed);
-  const bare = /^(creature|permanent|artifact|enchantment|land)$/i.exec(printed);
-  if (parts === null && bare === null) return null;
+  const parts = pair ? null : /^([A-Z][A-Za-z'-]*)(?: (creature|permanent|artifact|enchantment))?$/.exec(printed);
+  const bare = pair ? null : /^(creature|permanent|artifact|enchantment|land)$/i.exec(printed);
+  if (parts === null && bare === null && !pair) return null;
   const self: BoardEvent = { kind: dies ? 'dies' : 'etb', who: 'self' } as BoardEvent;
-  const what = (parts?.[2] ?? bare?.[1] ?? 'permanent').toLowerCase();
+  const what = pair ? 'artifact-or-creature' : (parts?.[2] ?? bare?.[1] ?? 'permanent').toLowerCase();
   // `dies` is defined for creatures (CR 700.4), so a land has no death half — the same refusal
   // `boardTrigger` makes.
   if (dies && what === 'land') return null;
@@ -18245,6 +18252,7 @@ function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
     what,
     ...nonToken,
     ...(parts === null ? {} : { ofSubtypes: [parts[1]!] }),
+    ...filter,
   } as BoardEvent;
   return [self, another];
 }
@@ -18437,6 +18445,23 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever (?:equipped|enchanted) creature attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'attached' }],
+  },
+  /*
+    The host's other combat lines (D1125): "attacks or blocks" (Luminous Wake, Contaminated Bond),
+    "attacks alone" (Sigil of Valor, Reaper's Talisman), and "blocks or becomes blocked [by a
+    creature]" (Barrow-Blade, Dead-Iron Sledge) — each event the host's own, `who: 'attached'`.
+  */
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature attacks or blocks, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'attached' }, { kind: 'blocks', who: 'attached' }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature attacks alone, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'attached', alone: true }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature blocks or becomes blocked(?: by a creature)?, (.+)$/i,
+    on: [{ kind: 'blocks', who: 'attached' }, { kind: 'becomes-blocked', who: 'attached' }],
   },
   {
     prologue: () => /^Whenever (?:equipped|enchanted) creature deals combat damage to a player, (.+)$/i,
@@ -18947,7 +18972,7 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: (self) => new RegExp(
-      `^When(?:ever)? ${self} or another (?<what>[^,]*?) you control`
+      `^When(?:ever)? ${self} or another (?<what>[^,]*?) you control(?<filter> with [^,]+?)?`
       + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
       'i',
     ),
@@ -19835,6 +19860,12 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever you attack a player, (.+)$/i,
     on: [{ kind: 'attack-declared', by: 'you', atAPlayer: true }],
+  },
+  // Anybody's declaration with any count (D1125): "Whenever one or more creatures attack"
+  // (Duelist's Heritage, Lightmine Field), and "Whenever a player attacks" (Mirkwood Trapper).
+  {
+    prologue: () => /^Whenever (?:one or more creatures attack|a player attacks), (.+)$/i,
+    on: [{ kind: 'attack-declared', by: 'any' }],
   },
   /*
     The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`

@@ -33432,6 +33432,66 @@ describe('"whenever ~ becomes untapped", and enchantment creature tokens (D1124)
   });
 });
 
+describe('attached combat lines, anybody\'s attack, "~ or another" with a filter (D1125)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}', power = '1') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power, toughness: '1', oracle_text: text });
+  const SIGIL = C('Test Sigil', 'Enchant creature\nWhenever enchanted creature attacks alone, you gain 2 life.', 'Enchantment — Aura');
+  const HERITAGE = C('Test Heritage', 'Whenever one or more creatures attack, you gain 1 life.', 'Enchantment');
+  const ARCHON = C('Test Archon', 'Flying\nWhenever Test Archon or another creature you control with flying enters, you gain 1 life.');
+  const SALVAGER = C('Test Salvager', 'Whenever this creature or another creature or artifact you control dies, you gain 1 life.');
+  const BIRD = C('Test Bird', 'Flying');
+  const BEAR = C('Test Bear', '');
+  const ROCK = C('Test Rock', '', 'Artifact');
+  const KILL = { name: 'Test Kill', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Destroy target nonland permanent.' };
+  const ROWS = [SIGIL, HERITAGE, ARCHON, SALVAGER, BIRD, BEAR, ROCK, KILL];
+  const deck = customDeck({
+    id: 'd1125', name: 'Combat lines', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1125', 1: 'd1125' }, deckSpecs: { d1125: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Forest', 'Forest', 'Forest', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Attacks seat 1 with these of seat 0's creatures and returns seat 0's life gained by the end of the step. */
+  const attackGain = (s0: GameState, attackers: readonly string[]) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    const before = life(s, 0);
+    const chosen = attackers.map((name) => find(s, 0, 'battlefield', name));
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: chosen.map((attacker) => ({ attacker, defender: 1 })) } as Action), 30);
+    return life(s, 0) - before;
+  };
+  const castGain = (hand: string, mine: readonly string[], target?: string) => {
+    const s = table([hand], mine);
+    const aim = target === undefined ? {} : { targets: [{ kind: 'card', id: find(s, 0, 'battlefield', target) }] };
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', hand), ...aim } as Action)), 30);
+    return life(after, 0) - life(s, 0);
+  };
+
+  it('reads the watchers whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [SIGIL, HERITAGE, ARCHON, SALVAGER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"enchanted creature attacks alone" pays for its host alone, not for two attackers', () => {
+    const cast = (s: GameState) => drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sigil'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }],
+    } as Action)), 30);
+    expect(attackGain(cast(table(['Test Sigil'], ['Test Bear'])), ['Test Bear'])).toBe(2);
+    expect(attackGain(cast(table(['Test Sigil'], ['Test Bear', 'Test Bird'])), ['Test Bear', 'Test Bird'])).toBe(0);
+  });
+
+  it('"one or more creatures attack" pays once a declaration', () => {
+    expect(attackGain(table([], ['Test Heritage', 'Test Bear', 'Test Bird']), ['Test Bear', 'Test Bird'])).toBe(1);
+  });
+
+  it('"~ or another creature you control with flying enters": a flier gains, a ground creature does not', () => {
+    expect(castGain('Test Bird', ['Test Archon'])).toBe(1);
+    expect(castGain('Test Bear', ['Test Archon'])).toBe(0);
+  });
+
+  it('"another creature or artifact you control dies": an artifact gains', () => {
+    expect(castGain('Test Kill', ['Test Salvager', 'Test Rock'], 'Test Rock')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
