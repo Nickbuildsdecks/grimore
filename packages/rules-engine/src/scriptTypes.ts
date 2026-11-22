@@ -178,6 +178,34 @@ export interface TargetSpec {
  * engine raises as it works, and adding a new one means raising it in the engine as well — which is
  * deliberate friction: a trigger nothing fires is worse than no trigger at all.
  */
+/**
+ * Who a board-watching "becomes tapped" or "leaves the battlefield" is about (D1121). With no `who`
+ * (or `self`) it is the permanent's own event, as it always was; `attached` is its host (D994).
+ * `any` and `another` watch the board, narrowed by the rest: whose (`of`), what card type or
+ * subtype, token or not, and a counter on it. `withoutDying` is "leaves the battlefield without
+ * dying"; `wasAttacking` is the subject being declared as an attacker as it tapped, refused by
+ * `notAttacking` ("if it isn't being declared as an attacker").
+ */
+export interface BoardSubjectFilter {
+  readonly who?: 'self' | 'attached' | 'any' | 'another';
+  readonly of?: 'you' | 'opponent';
+  readonly what?: 'creature' | 'artifact' | 'land' | 'permanent' | 'creature-or-land';
+  readonly ofSubtypes?: readonly string[];
+  readonly nontoken?: true;
+  readonly token?: true;
+  readonly withCounter?: string;
+  readonly withoutDying?: true;
+  readonly notAttacking?: true;
+  // What `raise` writes on the event when the board watches it (D1121), never on a trigger.
+  readonly subjectSeat?: SeatIndex;
+  readonly subjectTypes?: readonly string[];
+  readonly subjectSubtypes?: readonly string[];
+  readonly subjectIsToken?: boolean;
+  readonly subjectCounters?: Readonly<Record<string, number>>;
+  readonly died?: boolean;
+  readonly declaredAttacking?: boolean;
+}
+
 export type TriggerEvent =
   | {
       readonly kind: 'etb';
@@ -756,16 +784,19 @@ export type TriggerEvent =
     }
   /**
    * This permanent has left the battlefield, however it left (CR 603.6c) — destroyed, exiled,
-   * bounced or sacrificed. Only its own script can care, which is why it takes no `who`: a card
-   * that wants to watch *another* permanent leave would be watching the board rather than itself,
-   * and nothing in the pool does.
+   * bounced or sacrificed. Its own by default; since D1121 the board's too, with a `who` — see
+   * `BoardSubjectFilter`.
    */
-  | { readonly kind: 'leaves' }
+  | ({ readonly kind: 'leaves' } & BoardSubjectFilter)
   /**
    * `who: 'attached'` (D994): "Whenever enchanted creature / enchanted land becomes tapped". The
    * engine sets `attachments` to what was attached as it tapped.
+   *
+   * `who: 'any' | 'another'` (D1121): the board's version, "whenever a creature an opponent controls
+   * becomes tapped", with `BoardSubjectFilter`'s words. `leaves` takes the same (D1121): "whenever
+   * another creature you control leaves the battlefield".
    */
-  | { readonly kind: 'becomes-tapped'; readonly who?: 'self' | 'attached'; readonly attachments?: readonly string[] }
+  | ({ readonly kind: 'becomes-tapped'; readonly attachments?: readonly string[] } & BoardSubjectFilter)
   /**
    * "Whenever ~ **is dealt damage**" — enrage, and every card printed before the word (D566).
    *

@@ -7811,8 +7811,8 @@ describe('the board trigger, read off the prologue', () => {
     ['Whenever a creature you control with annihilator enters',
       'a word this engine has no keyword for: `isKeyword` refuses it rather than compiling a'
       + ' filter nothing ever has'],
-    ['Whenever another creature you control leaves the battlefield',
-      'a different event, whose filters this parse did not widen'],
+    // Retargeted by D1121: "another creature you control leaves the battlefield" reads now, on the
+    // `leaves` event's own board filters; see the row below.
     ['Whenever a land you control dies',
       'dies is defined for creatures only (CR 700.4), so the parse refuses it'],
   ])('leaves "%s" unread: %s', (prologue) => {
@@ -7821,6 +7821,13 @@ describe('the board trigger, read off the prologue', () => {
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  it('reads "another creature you control leaves the battlefield" on the leave event since D1121', () => {
+    const read = permanent('Whenever another creature you control leaves the battlefield, you gain 1 life.');
+    expect(read.ok && read.unread).toEqual([]);
+    if (!read.ok) return;
+    expect(field(read.script, 'triggers')).toMatchObject([{ on: { kind: 'leaves', who: 'another', of: 'you', what: 'creature' } }]);
   });
 
   it('reads "with a counter on it" as any counter since D1008', () => {

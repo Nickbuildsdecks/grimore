@@ -33231,6 +33231,60 @@ describe('a legendary spell, a spell with {X}, a spell from exile (D1120)', () =
   });
 });
 
+describe('the board\'s "becomes tapped" and "leaves the battlefield" (D1121)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const AVENGER = C('Test Avenger', 'Whenever a creature an opponent controls becomes tapped, you gain 1 life.');
+  const PATROL = C('Test Patrol', 'Whenever another creature you control leaves the battlefield, you gain 1 life.');
+  const COSMO = C('Test Cosmographer', 'Whenever another creature you control leaves the battlefield without dying, you gain 2 life.');
+  const KEEPER = C('Test Keeper', 'When Test Keeper leaves the battlefield, you gain 3 life.');
+  const BEAR = C('Test Bear', '');
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text });
+  const TAP = S('Test Tap', 'Tap target creature.');
+  const BOUNCE = S('Test Bounce', "Return target creature to its owner's hand.");
+  const KILL = S('Test Kill', 'Destroy target creature.');
+  const ROWS = [AVENGER, PATROL, COSMO, KEEPER, BEAR, TAP, BOUNCE, KILL];
+  const deck = customDeck({
+    id: 'd1121', name: 'Board', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }], data: ROWS as never[],
+  });
+  const gained = (mine: readonly string[], theirs: readonly string[], spell: string, victim: [0 | 1, string]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1121', 1: 'd1121' }, deckSpecs: { d1121: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Forest', 'Forest', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const target = find(s, victim[0], 'battlefield', victim[1]);
+    const after = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: target }],
+    } as Action)), 30);
+    return life(after, 0) - life(s, 0);
+  };
+
+  it('reads the watchers whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [AVENGER, PATROL, COSMO, KEEPER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const read = compileCard(AVENGER as never);
+    expect(read.ok && read.script?.triggers?.[0]?.on).toEqual({ kind: 'becomes-tapped', who: 'any', of: 'opponent', what: 'creature' });
+  });
+
+  it("an opponent's creature tapping gains, and one's own does not", () => {
+    expect(gained(['Test Avenger'], ['Test Bear'], 'Test Tap', [1, 'Test Bear'])).toBe(1);
+    expect(gained(['Test Avenger', 'Test Bear'], [], 'Test Tap', [0, 'Test Bear'])).toBe(0);
+  });
+
+  it("another creature of one's own leaving gains; an opponent's does not, and the watcher's own plain leave stays its own", () => {
+    expect(gained(['Test Patrol', 'Test Bear'], [], 'Test Bounce', [0, 'Test Bear'])).toBe(1);
+    expect(gained(['Test Patrol'], ['Test Bear'], 'Test Bounce', [1, 'Test Bear'])).toBe(0);
+    // Test Keeper's "when ~ leaves" is not another creature's leave: 1, not 4.
+    expect(gained(['Test Patrol', 'Test Keeper', 'Test Bear'], [], 'Test Bounce', [0, 'Test Bear'])).toBe(1);
+    // And its own leave still pays: 3 for itself and 1 from the Patrol.
+    expect(gained(['Test Patrol', 'Test Keeper'], [], 'Test Bounce', [0, 'Test Keeper'])).toBe(4);
+  });
+
+  it('"without dying": a bounce gains, a death does not', () => {
+    expect(gained(['Test Cosmographer', 'Test Bear'], [], 'Test Bounce', [0, 'Test Bear'])).toBe(2);
+    expect(gained(['Test Cosmographer', 'Test Bear'], [], 'Test Kill', [0, 'Test Bear'])).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

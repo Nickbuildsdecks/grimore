@@ -64,7 +64,7 @@ import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './inter
 import { DISGUISE_GRANT, DISGUISED_FACE_DOWN, RIOT, scriptFor, soleTargetSpecOf } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
+  AbilityCost, AbilityDef, BoardSubjectFilter, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
   DecisionSpec, DecisionSpecOf, ModeDef, PaymentFor, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,
 } from './scriptTypes.js';
 import {
@@ -1231,6 +1231,54 @@ export function endTurnCleanup(state: GameState): GameState {
 
 // ── Triggers ─────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A board-watching "becomes tapped" or "leaves the battlefield" (D1121), asked of the facts `raise`
+ * wrote on the event: whose the permanent was, its card types and subtypes, whether it was a token,
+ * what counters it had, whether it died, and whether it was tapped by being declared as an attacker.
+ * A missing fact refuses, as on the other board events (D478).
+ */
+function boardSubjectMatches(
+  want: BoardSubjectFilter, event: BoardSubjectFilter, sourceSeat: SeatIndex, isSubject: boolean,
+): boolean {
+  if (want.who === 'another' && isSubject) return false;
+  const types = event.subjectTypes ?? [];
+  const what = want.what ?? 'permanent';
+  if (what === 'creature-or-land' ? !types.includes('creature') && !types.includes('land')
+    : what !== 'permanent' && !types.includes(what)) return false;
+  if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+    (event.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+  ))) return false;
+  if (want.token === true && event.subjectIsToken !== true) return false;
+  if (want.nontoken === true && event.subjectIsToken !== false) return false;
+  if (want.withCounter !== undefined && (want.withCounter === 'any'
+    ? !Object.values(event.subjectCounters ?? {}).some((n) => n > 0)
+    : (event.subjectCounters?.[want.withCounter] ?? 0) < 1)) return false;
+  if (want.withoutDying === true && event.died !== false) return false;
+  if (want.notAttacking === true && event.declaredAttacking !== false) return false;
+  if (want.of === undefined) return true;
+  if (event.subjectSeat === undefined) return false;
+  return want.of === 'you' ? event.subjectSeat === sourceSeat : event.subjectSeat !== sourceSeat;
+}
+
+/**
+ * Whether anything in play watches the board for this event (D1121) — a printed trigger on a
+ * permanent or an emblem with a `who` of `any` or `another`. `raise` asks before it offers a tap or
+ * a leave to the whole board, since a tap is raised for every land tapped for mana.
+ */
+function boardWatched(state: GameState, kind: 'becomes-tapped' | 'leaves'): boolean {
+  for (const key of Object.keys(state.zones)) {
+    const battlefield = key.endsWith(':battlefield');
+    if (!battlefield && !key.endsWith(':command')) continue;
+    for (const id of state.zones[key] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined || (!battlefield && inst.emblem !== true)) continue;
+      const triggers = scriptForCard(state.cardDefs[inst.defKey])?.triggers ?? [];
+      if (triggers.some((t) => t.on.kind === kind && (t.on.who === 'any' || t.on.who === 'another'))) return true;
+    }
+  }
+  return false;
+}
+
 function triggerMatches(
   event: TriggerEvent, want: TriggerEvent, sourceSeat: SeatIndex, actorSeat: SeatIndex | undefined,
   isSubject = true, isAttachedSubject = false,
@@ -1817,13 +1865,28 @@ function triggerMatches(
     */
     case 'becomes-tapped':
     case 'damaged': {
+      // The board's version (D1121): "whenever a creature an opponent controls becomes tapped".
+      if (want.kind === 'becomes-tapped' && (want.who === 'any' || want.who === 'another')) {
+        return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'becomes-tapped' }>, sourceSeat, isSubject);
+      }
       // An attached watcher is only ever offered its own host's event by `raise`, so only `self`
       // needs asking: an Aura's own "this enchantment becomes tapped" is not its host tapping.
       const who = (want as { who?: 'self' | 'attached' }).who ?? 'self';
       if (who === 'self' && !isSubject) return false;
       return !(want.kind === 'damaged' && want.combatOnly === true && (event as { combat?: boolean }).combat !== true);
     }
-    case 'leaves':
+    /*
+      Its own leaving, and since D1121 the board's: "whenever another creature you control leaves
+      the battlefield". `raise` offers a leave to the whole board only while something there
+      watches for one, so the plain trigger now asks whether the leave was its own.
+    */
+    case 'leaves': {
+      const who = want.who ?? 'self';
+      if (who === 'any' || who === 'another') {
+        return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'leaves' }>, sourceSeat, isSubject);
+      }
+      return isSubject;
+    }
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
     case 'turned-face-up':
@@ -2586,6 +2649,29 @@ function raise(
   */
   // \`targeted\` left this set in D1021, for "whenever a creature you control becomes the target of
   // a spell": it falls through to the whole board below, with its attachments.
+  /*
+    A tap or a leave the board watches (D1121), with what the board asks about the permanent: as
+    it is for a tap, and as it last was for a leave (a token's `vanished` snapshot; a card's own
+    instance, now wherever it went, whose seat is its owner's — the same reading a death takes).
+    Asked only while something watches, since one characteristics computation per land tapped for
+    mana is what `selfOnly` below exists to avoid.
+  */
+  const watchedByBoard = subject !== undefined && (event.kind === 'becomes-tapped' || event.kind === 'leaves')
+    && boardWatched(next, event.kind);
+  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'leaves')) {
+    const inst = next.vanished[subject as string] ?? next.instances[subject as string];
+    if (inst !== undefined) {
+      const ch = characteristicsOf(next, inst);
+      event = {
+        ...event,
+        subjectSeat: inst.zoneSeat,
+        subjectTypes: ch.typeLine.types.map((t) => t.toLowerCase()),
+        subjectSubtypes: ch.typeLine.subtypes,
+        subjectIsToken: inst.isToken === true,
+        ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
+      };
+    }
+  }
   const selfOnly = new Set([
     'becomes-tapped', 'leaves', 'turned-face-up', 'phases-in', 'phases-out', 'transformed', 'state',
     'chapter',
@@ -2637,7 +2723,7 @@ function raise(
     || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
     || event.kind === 'attacks-unblocked'
     ? everyBattlefieldAndAttached
-    : selfOnly.has(event.kind)
+    : selfOnly.has(event.kind) && !watchedByBoard
       // And, for the two that have them (D994), what was attached to it.
       ? subject === undefined ? [] : [...new Set([subject, ...attachedWatchers])]
       /*
@@ -4398,7 +4484,8 @@ function settle(state: GameState, before: GameState): GameState {
       return [{ id, seat: was.zoneSeat, token: was.isToken === true, types: ch.typeLine.types.map((t) => t.toLowerCase()) }];
     });
     if (diedCreatures.length > 0) next = raise(next, { kind: 'creatures-died', died: diedCreatures }, undefined);
-    for (const id of gone) next = raise(next, { kind: 'leaves' }, next.instances[id]?.zoneSeat, id);
+    // Whether it died (D1121), for "leaves the battlefield without dying".
+    for (const id of gone) next = raise(next, { kind: 'leaves', died: dead.includes(id) }, next.instances[id]?.zoneSeat, id);
     /*
       And the card arriving in a graveyard, which is a different event from the death that often
       caused it and is raised after it.
@@ -4632,7 +4719,13 @@ function settle(state: GameState, before: GameState): GameState {
       if (was === undefined || was.tapped || was.zone !== 'battlefield') continue;
       // With what is attached to it (D994), for "whenever enchanted creature becomes tapped".
       const hosted = Object.values(next.instances).filter((other) => other.zone === 'battlefield' && other.attachedTo === id).map((other) => other.id);
-      next = raise(next, { kind: 'becomes-tapped', ...(hosted.length === 0 ? {} : { attachments: hosted }) }, now.zoneSeat, id);
+      // And whether it tapped by being declared as an attacker (D1121), for Verity Circle's "if it
+      // isn't being declared as an attacker".
+      const declaredAttacking = next.combat.attacks.some((a) => a.attacker === id)
+        && !before.combat.attacks.some((a) => a.attacker === id);
+      next = raise(next, {
+        kind: 'becomes-tapped', declaredAttacking, ...(hosted.length === 0 ? {} : { attachments: hosted }),
+      }, now.zoneSeat, id);
     }
   }
   for (const seat of next.seats) {

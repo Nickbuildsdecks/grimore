@@ -53,7 +53,7 @@ import {
 } from './effects.js';
 import { spendRestriction } from './spending.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, CastLimit, ChoiceDecisionSpec,
+  AbilityCost, AbilityDef, BoardSubjectFilter, CardScript, CardsDecisionSpec, CastLimit, ChoiceDecisionSpec,
   CountersDecisionSpec, DecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
   SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
@@ -18090,6 +18090,56 @@ function richDeathTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
   } as BoardEvent];
 }
 
+/**
+ * The board's "becomes tapped" and "leaves the battlefield" (D1121): "Whenever a creature an
+ * opponent controls becomes tapped" (Gideon's Avenger, Verity Circle), "a Dwarf you control"
+ * (Magda), "a Mountain an opponent controls" (Lifeblood), "a land with a mine counter on it" (Mine
+ * Layer), "another creature you control leaves the battlefield" (Ninth Bridge Patrol), "a token you
+ * control" (Nadier's Nightblade), "without dying" and "if it didn't die" (Imperial Cosmographer,
+ * Taeko), "if it had counters on it" (The Ozolith), "if it isn't being declared as an attacker"
+ * (Rhoda). A capitalised word is a subtype only if it is a creature type or a basic land type.
+ */
+function boardSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
+  const g = matched.groups ?? {};
+  const who = BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+  if (who === undefined) return null;
+  const tapped = /tapped/i.test(g.event ?? '');
+  const printed = g.what ?? '';
+  const cond = (g.cond ?? '').toLowerCase();
+  // An attacker's declaration is a tap's question; dying and counters are a leave's.
+  if (/attacker/.test(cond) !== (tapped && cond !== '')) return null;
+  if (tapped && g.without !== undefined) return null;
+  let what: BoardSubjectFilter['what'];
+  let ofSubtypes: readonly string[] | undefined;
+  let token = g.token !== undefined;
+  if (/^[A-Z]/.test(printed)) {
+    if (!isCreatureType(printed) && !/^(?:Plains|Island|Swamp|Mountain|Forest)$/.test(printed)) return null;
+    ofSubtypes = [printed];
+  } else if (printed.toLowerCase() === 'token') {
+    if (token) return null;
+    token = true;
+  } else {
+    what = printed.toLowerCase() === 'creature or land' ? 'creature-or-land' : printed.toLowerCase() as BoardSubjectFilter['what'];
+  }
+  if (token && g.qual !== undefined) return null;
+  const counter = /^ with an? (.+?) counter on it$/i.exec(g.filter ?? '')?.[1]?.toLowerCase();
+  if (counter !== undefined && /\s/.test(counter)) return null;
+  const hadCounters = /had/.test(cond);
+  if (counter !== undefined && hadCounters) return null;
+  const of = g.of === undefined ? {} : /you control/i.test(g.of) ? { of: 'you' as const } : { of: 'opponent' as const };
+  return [{
+    kind: tapped ? 'becomes-tapped' : 'leaves', who, ...of,
+    ...(what === undefined ? {} : { what }),
+    ...(ofSubtypes === undefined ? {} : { ofSubtypes }),
+    ...(g.qual === undefined ? {} : { nontoken: true as const }),
+    ...(token ? { token: true as const } : {}),
+    ...(counter === undefined ? {} : { withCounter: counter }),
+    ...(hadCounters ? { withCounter: 'any' } : {}),
+    ...(g.without !== undefined || /didn't die/.test(cond) ? { withoutDying: true as const } : {}),
+    ...(/attacker/.test(cond) ? { notAttacking: true as const } : {}),
+  } as TriggerDef['on']];
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -18573,6 +18623,18 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: (self) => new RegExp(`^Whenever ${self} becomes tapped, (.+)$`, 'i'),
     on: [{ kind: 'becomes-tapped' }],
+  },
+  // The board's taps and leaves (D1121): see `boardSubjectTrigger`.
+  {
+    prologue: () => new RegExp(
+      `^When(?:ever)? (?<who>a|an|another) (?<qual>nontoken )?`
+      + `(?<what>creature or land|creature|artifact|land|permanent|token|[A-Z][A-Za-z'-]*)(?<token> token)?`
+      + `(?<of> you control| an opponent controls)?(?<filter> with an? [^,]+? counter on it)?`
+      + ` (?<event>becomes tapped|leaves the battlefield)(?<without> without dying)?`
+      + `(?<cond>, if it (?:isn't being declared as an attacker|didn't die|had (?:a counter|counters|one or more counters) on it))?`
+      + `, (?<clause>.+)$`,
+    ),
+    from: boardSubjectTrigger,
   },
   /*
     "Whenever one or more +1/+1 counters are put on ~" (D633): Benthic Biomancer, Dreamdrinker
