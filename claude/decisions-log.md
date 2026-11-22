@@ -56106,3 +56106,34 @@ Starforged Sword, Kitnap) need the gift given on the permanent's side and are no
 Faults injected by hand: 1 (the gift dropped from the modal path). It is caught.
 
 Coverage: 14,857 of 31,900 cards (+7 over D1095's 14,850), 36,552 of 59,888 lines (+14).
+
+## D1097 — impending: the Duskmourn Overlords
+
+"Impending 4—{2}{W}{W} (If you cast this spell for its impending cost, it enters with four time
+counters and isn't a creature until the last is removed. At the beginning of your end step, remove
+a time counter from it.)" (CR 702.176a). The five Overlords are Commander staples, and three of
+them were short only this keyword.
+
+- **Engine:** an alternative cost, `impended`, on prototype's path (D934): offered as its own row
+  in `legalActions`, validated with the other alternative costs, and carried on the stack object.
+  As the permanent arrives, it gets N time counters and the `IMPENDED` marker, where evoke writes
+  its marker.
+- **The type:** a self static with `removeTypes: ['Creature']`, the Theros gods' layer-4 removal
+  (D657). Its condition is `source-has-counter` on time counters with the new `alsoCounter:
+  IMPENDED`, so only an impended permanent with a time counter is not a creature. One that was
+  cast for its full cost never is, whatever counters it later gets.
+- **The countdown:** the keyword's own trigger, "at the beginning of your end step, remove a time
+  counter from it", skipped when there is none.
+
+Overlord of the Mistmoors, Floodpits and Boilerbilges now read whole. Hauntwoods and Balemurk are
+short on their enters-or-attacks lines.
+
+**Tests.** 3 engine tests:
+- It reads whole, and both casts are offered.
+- Impended, it has two time counters and is not a creature. It has one after your end step, and
+  after your next one it has none and is a creature.
+- Cast for its printed cost, it is a creature at once, with no counters.
+
+Faults injected by hand: 1 (the marker not written, so it stays a creature). It is caught.
+
+Coverage: 14,860 of 31,900 cards (+3 over D1096's 14,857), 36,557 of 59,888 lines (+5).
