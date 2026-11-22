@@ -39125,3 +39125,33 @@ Faults injected by hand: 2. One event per arrival instead of one per batch (caug
 test), and the power filter dropped (caught by the filter test).
 
 Coverage: 14,957 of 31,900 cards (+9 over D1107's 14,948), 36,793 of 59,888 lines (+16).
+
+## D1109 — an animation beside another clause keeps its bot hint
+
+**Pod sweep 61101** (100 four-player Commander games on the D1107 build, random decks from the whole
+legal pool): 99 finished, 59.0 turns and 343 moves on average, no throw. One looped. In seed 61157 a
+bot pressed Chimeric Idol's "{0}: Tap all lands you control. Chimeric Idol becomes a 3/3 Turtle
+artifact creature until end of turn." a thousand times in one precombat main phase, and the harness
+ended the game.
+
+**Why.** `AbilityDef.animates` is the bot's rule for an animation: press it only when there is an
+attack or a block to make with it, and not when the permanent is already a creature or the
+animation is already on the stack (`animationCouldMatter`). The "becomes a creature" reader sets
+it, as `abilityFlags`. Chimeric Idol's ability is two clauses, though, and `composeEffects` carried
+`spellFlags` outwards but not `abilityFlags`. So the composed ability had no hint, and to the search
+a free activation that taps already-tapped lands and re-animates a creature always looked worth one
+more press.
+
+**The fix.** A composition carries `animates` when any part has it. Other ability flags are left
+alone. `untapsOnly` and `selfShrink` each describe an ability whose whole effect is that one
+clause, which a composition is not.
+
+Seed 61157 rerun on this build: finished, 71 turns, no throw and no stall.
+
+**Tests.** 2 engine tests:
+- The Idol's ability reads whole, with `animates` on the composed ability.
+- Driven by the bot through its main phase, the Idol is animated at most once.
+
+Faults injected by hand: 1. The carry removed: both tests fail.
+
+Coverage: 14,957 of 31,900 cards (+0 over D1108's 14,957), 36,793 of 59,888 lines (+0).
