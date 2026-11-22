@@ -38671,3 +38671,35 @@ short on their enters-or-attacks lines.
 Faults injected by hand: 1 (the marker not written, so it stays a creature). It is caught.
 
 Coverage: 14,860 of 31,900 cards (+3 over D1096's 14,857), 36,557 of 59,888 lines (+5).
+
+## D1098 — land tokens, and "a non-Avatar creature card"
+
+The last two Overlords after D1097: Overlord of the Hauntwoods ("create a tapped colorless land
+token named Everywhere that is every basic land type") and Overlord of the Balemurk ("… you may
+return a non-Avatar creature card or a planeswalker card from your graveyard to your hand").
+
+- **Land tokens**, in the three printed shapes:
+  - "create a Forest land token" (Generated Horizons);
+  - Everywhere;
+  - "create a tapped Planet land token named New Planet with "{T}: Add one mana of any color."",
+    the Doctor Who Anomalies.
+
+  A basic land type gives the token its mana (CR 305.6), and a quoted ability is the token's text,
+  read the way a Treasure's is. 12 legal lines.
+- **"Non-<Subtype>" in a card filter:** "a non-Avatar creature card", "a non-Human creature card".
+  The battlefield readers have read this shape since D453, and the card-filter reader now does
+  too. 10 legal lines.
+
+Overlord of the Hauntwoods, Overlord of the Balemurk, Generated Horizons and Stable Wormhole now
+read whole, so all five Overlords do. The other Planet cards are short on other lines.
+
+**Tests.** 4 engine tests:
+- All four read whole.
+- Everywhere arrives tapped as a land with all five basic land types, and taps for any colour once
+  untapped.
+- A Planet token taps for any colour, and a Forest token is a Forest token.
+- From the graveyard, the Bear is offered and the Avatar is not.
+
+Faults injected by hand: 1 (the subtype not negated). It is caught.
+
+Coverage: 14,869 of 31,900 cards (+9 over D1097's 14,860), 36,566 of 59,888 lines (+9).
