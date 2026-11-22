@@ -22124,7 +22124,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const printedClause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
     const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged'
-      || k.kind === 'life-lost' || k.kind === 'life-gained')
+      || k.kind === 'life-lost' || k.kind === 'life-gained'
+      // And how many of a batch (D1110): "whenever one or more tokens you control enter, … that many".
+      || k.kind === 'permanents-entered' || k.kind === 'creatures-died')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
@@ -27026,6 +27028,13 @@ function readEffect(
           const t = c.targets[0];
           return t !== undefined && t.kind === 'player' ? loseLife(c.state, t.seat, n(c)) : c.state;
         },
+      };
+    }
+    // "Deals that much damage to each opponent" (D1110): Ingenious Artillerist.
+    if (new RegExp(`^(?:it|${selfRef(name)}) deals \u000e much damage to each opponent$`, 'i').test(text)) {
+      return {
+        effect: (c) => opponentsOf(c.state, c.controller).reduce(
+          (state, seat) => dealDamage(state, { kind: 'player', seat }, n(c), { controller: c.controller, source: c.source }), c.state),
       };
     }
     // "Each other opponent": every opponent but the one that was hit.

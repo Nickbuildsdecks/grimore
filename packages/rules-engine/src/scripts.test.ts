@@ -32807,6 +32807,43 @@ describe('an animation beside another clause keeps its bot hint (D1109)', () => 
   });
 });
 
+describe('"that many" off a batch of arrivals or deaths (D1110)', () => {
+  // The count is the batch's members the trigger names: three tokens, three counters.
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Elf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const CHAMPION = C('Test Champion', 'Whenever one or more tokens you control enter, put that many +1/+1 counters on Test Champion.');
+  const GUNNER = C('Test Gunner', 'Whenever one or more artifacts you control enter, Test Gunner deals that much damage to each opponent.');
+  const ARMY = { name: 'Test Army', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Create three 1/1 green Saproling creature tokens.' };
+  const HOARD = { name: 'Test Hoard', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Create two Treasure tokens.' };
+  const ROWS = [CHAMPION, GUNNER, ARMY, HOARD];
+  const deck = customDeck({
+    id: 'd1110', name: 'Counts', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const table = (spell: string, mine: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1110', 1: 'd1110' }, deckSpecs: { d1110: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: ['Forest', 'Forest', mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [CHAMPION, GUNNER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three tokens at once: one trigger, three counters', () => {
+    const s = table('Test Army', 'Test Champion');
+    const after = cast(s, 'Test Army');
+    expect(after.instances[find(after, 0, 'battlefield', 'Test Champion')]!.counters['+1/+1']).toBe(3);
+  });
+
+  it('two Treasures: that much damage, two, to each opponent; the count is of what the trigger names', () => {
+    const s = table('Test Hoard', 'Test Gunner');
+    expect(life(cast(s, 'Test Hoard'), 1)).toBe(life(s, 1) - 2);
+    // Three Saprolings are no artifacts: nothing.
+    const t = table('Test Army', 'Test Gunner');
+    expect(life(cast(t, 'Test Army'), 1)).toBe(life(t, 1));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

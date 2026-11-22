@@ -1989,28 +1989,11 @@ function fireTrigger(
   // "One or more [other] [nontoken] creatures [you control] die" (D1000): at least one in the batch
   // has to be what the trigger names, and "other" is asked of the watcher itself.
   if (trigger.on.kind === 'creatures-died') {
-    const want = trigger.on;
-    const died = event.kind === 'creatures-died' ? event.died ?? [] : [];
-    const of = want.of ?? 'any';
-    if (!died.some((d) => (want.other !== true || d.id !== holder)
-      && (want.nontoken !== true || !d.token)
-      && (want.what === undefined || d.types.includes(want.what))
-      && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
+    if (batchCount(trigger.on, event, holder, inst.zoneSeat) === 0) return next;
   }
   // "One or more [other] [nontoken] <kind> [you control] enter" (D1108): at least one in the batch.
   if (trigger.on.kind === 'permanents-entered') {
-    const want = trigger.on;
-    const entered = event.kind === 'permanents-entered' ? event.entered ?? [] : [];
-    const of = want.of ?? 'any';
-    if (!entered.some((d) => (want.other !== true || d.id !== holder)
-      && (want.nontoken !== true || !d.token)
-      && (want.tokens !== true || d.token)
-      && (want.what === 'permanent' || d.types.includes(want.what))
-      && (want.alsoType === undefined || d.types.includes(want.alsoType))
-      && (want.subtype === undefined || d.subtypes.includes(want.subtype.toLowerCase()))
-      && (want.powerAtMost === undefined || d.power <= want.powerAtMost)
-      && (want.manaValueAtMost === undefined || d.manaValue <= want.manaValueAtMost)
-      && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
+    if (batchCount(trigger.on, event, holder, inst.zoneSeat) === 0) return next;
   }
   // A state trigger (D1004, CR 603.8): only while the state holds, and not again while it is on the stack.
   if (trigger.on.kind === 'state') {
@@ -2143,6 +2126,10 @@ function fireTrigger(
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
     ...(event.kind === 'attacks' && event.opponentsAttacked !== undefined
       ? { eventAmount: event.opponentsAttacked } : {}),
+    // And a batch, how many of it the trigger names (D1110): Woodland Champion's "that many".
+    ...((trigger.on.kind === 'creatures-died' || trigger.on.kind === 'permanents-entered')
+      && (event.kind === 'creatures-died' || event.kind === 'permanents-entered')
+      ? { eventAmount: batchCount(trigger.on, event, holder, inst.zoneSeat) } : {}),
     ...(answering === undefined ? {} : { answering }),
     ...(subject === undefined
       || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
@@ -2271,6 +2258,36 @@ export function nextTargetQuestion(state: GameState, answered: NonNullable<GameS
     if (state.stackObjects[next.stackId] !== undefined) return rest.length === 0 ? next : { ...next, queued: rest };
   }
   return null;
+}
+
+/**
+ * How many of a batch event's permanents a batch trigger names (D1000, D1108, D1110): the deaths or
+ * arrivals that fit its filters, as seen by the watcher `holder`, controlled by `seat`. Zero is no
+ * trigger; the number is what "that many" counts.
+ */
+function batchCount(
+  want: Extract<TriggerEvent, { readonly kind: 'creatures-died' | 'permanents-entered' }>,
+  event: TriggerEvent, holder: string, seat: SeatIndex,
+): number {
+  const of = want.of ?? 'any';
+  const whose = (d: { readonly seat: SeatIndex }) => of === 'any' || (of === 'you' ? d.seat === seat : d.seat !== seat);
+  if (want.kind === 'creatures-died') {
+    const died = event.kind === 'creatures-died' ? event.died ?? [] : [];
+    return died.filter((d) => (want.other !== true || d.id !== holder)
+      && (want.nontoken !== true || !d.token)
+      && (want.what === undefined || d.types.includes(want.what))
+      && whose(d)).length;
+  }
+  const entered = event.kind === 'permanents-entered' ? event.entered ?? [] : [];
+  return entered.filter((d) => (want.other !== true || d.id !== holder)
+    && (want.nontoken !== true || !d.token)
+    && (want.tokens !== true || d.token)
+    && (want.what === 'permanent' || d.types.includes(want.what))
+    && (want.alsoType === undefined || d.types.includes(want.alsoType))
+    && (want.subtype === undefined || d.subtypes.includes(want.subtype.toLowerCase()))
+    && (want.powerAtMost === undefined || d.power <= want.powerAtMost)
+    && (want.manaValueAtMost === undefined || d.manaValue <= want.manaValueAtMost)
+    && whose(d)).length;
 }
 
 function raise(
