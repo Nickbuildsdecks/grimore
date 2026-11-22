@@ -39474,3 +39474,28 @@ cycle trigger, in a new test.
 Faults injected by hand: 1. The flag dropped (both tests fail).
 
 Coverage: 15,024 of 31,900 cards (+9 over D1116's 15,015), 36,893 of 59,888 lines (+15).
+
+## D1118 — anybody's attack with two or more, and "you attack a player"
+
+D631 read "Whenever you attack with three or more creatures" on `attack-declared.atLeast`, and D996
+"Whenever an opponent attacks you". Two neighbours were unread:
+
+- "Whenever two / three or more creatures attack" with nobody's side named (Argent Dais, Duelist's
+  Heritage's kin): `by: 'any'` with the count.
+- "Whenever you attack a player" (7 legal lines): a new `atAPlayer` on the watched event, so at
+  least one attacker had to be declared at a player, not only at planeswalkers. The players
+  attacked were already on the raised event (D996).
+
+Read whole now: Argent Dais and Long-Range Sensor. Echoing Assault, Ordruun Mentor and Soaring
+Lightbringer are short on "target creature that's attacking that player".
+
+**Tests.** 2 engine tests:
+- Both test cards read whole.
+- Two attackers gain life and one does not; attacking a player gains.
+
+Retargeted (the D516 way): the declaration refusals' "Whenever you attack a player" reads now, in a
+new test that checks its shape.
+
+Faults injected by hand: 1. The count dropped from the new rows: one attacker gains (caught).
+
+Coverage: 15,026 of 31,900 cards (+2 over D1117's 15,024), 36,895 of 59,888 lines (+2).
