@@ -39054,3 +39054,35 @@ Faults injected by hand: 2. "Anyone" narrowed to the watcher's own lands (caught
 test), and the solver leaving out a choice source's echo (caught by the dual land test).
 
 Coverage: 14,944 of 31,900 cards (+8 over D1105's 14,936), 36,770 of 59,888 lines (+10).
+
+## D1107 — a card that names itself in the plural
+
+A card that is two characters or a crowd names itself with a plural verb: "When Cloak and Dagger
+enter", "Whenever Bebop & Rocksteady attack or block", "When The Duras Sisters die", "Whenever
+Falcon and Redwing deal combat damage to a player". Every reader spells the self reference with a
+singular verb ("enters", "attacks"), so 16 legal cards had a line unread for the grammar alone.
+
+**Put in the singular before the lines are read.** `singularSelf` in `compileSingle` rewrites the
+verb straight after the card's name or short name:
+- enter, attack, die, deal, block, get, have, gain, become and leave take an "s";
+- "are" becomes "is" and "aren't" becomes "isn't";
+- a second verb joined by "or", "and" or "and/or" changes too.
+
+The rules are the same for one permanent whatever its name says it is (CR 201.5). It runs only for
+a name that is plural ("and", "&", or "The …s"), so "When Test Solo enter" on a card with a
+singular name is still refused. An unread line is reported in the singular.
+
+Read whole now: Falcon and Redwing, The Duras Sisters, David and Carol Marcus and The Immortal
+Weapons. Most of the rest print "enters or attacks", "they're not a token" or other lines that are
+short for other reasons.
+
+**Tests.** 3 engine tests:
+- Both test cards read whole, with the plural prologues in the singular ("attack or block" is two
+  triggers).
+- The pair enters and draws a card.
+- A singular name is left alone.
+
+Faults injected by hand: 2. The rewrite turned off (caught by both reading tests), and the plural
+guard removed (caught by the singular-name test).
+
+Coverage: 14,948 of 31,900 cards (+4 over D1106's 14,944), 36,777 of 59,888 lines (+7).
