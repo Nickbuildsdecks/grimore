@@ -19664,6 +19664,19 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'attack-declared' as const, by: 'you' as const, atLeast: n }],
   })),
   /*
+    And anybody's (D1118): "Whenever two / three or more creatures attack" (Duelist's Heritage,
+    Lightmine Field's kin), and "Whenever you attack a player" (Echoing Assault's kin): a player and
+    not only planeswalkers.
+  */
+  ...[2, 3, 4, 5].map((n) => ({
+    prologue: () => new RegExp(`^Whenever (?:${n}|${['', '', 'two', 'three', 'four', 'five'][n]}) or more creatures attack, (.+)$`, 'i'),
+    on: [{ kind: 'attack-declared' as const, by: 'any' as const, atLeast: n }],
+  })),
+  {
+    prologue: () => /^Whenever you attack a player, (.+)$/i,
+    on: [{ kind: 'attack-declared', by: 'you', atAPlayer: true }],
+  },
+  /*
     The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`
     on `dies` as well as on `attacks` and `combat-damage`. 52 legal lines print "enchanted creature
     dies" (**7** cards finished) and 17 "equipped creature dies" (**5**).

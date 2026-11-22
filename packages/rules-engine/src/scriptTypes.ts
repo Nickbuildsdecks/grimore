@@ -504,6 +504,11 @@ export type TriggerEvent =
        * player only for `you`, the player or one of their planeswalkers for `you-or-planeswalker`.
        */
       readonly at?: 'you' | 'you-or-planeswalker';
+      /**
+       * "Whenever you attack **a player**" (D1118): at least one attacker was declared at a player,
+       * not only at planeswalkers.
+       */
+      readonly atAPlayer?: true;
       /** Set by the engine (D996): the seats attacked as players, and the seats attacked at all. */
       readonly playersAttacked?: readonly SeatIndex[];
       readonly seatsAttacked?: readonly SeatIndex[];

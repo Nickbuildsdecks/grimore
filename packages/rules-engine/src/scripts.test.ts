@@ -33136,6 +33136,37 @@ describe('"for the first time each turn" in the prologue (D1117)', () => {
   });
 });
 
+describe('anybody\'s attack with two or more, and "you attack a player" (D1118)', () => {
+  const card = (name: string, text: string) => ({ name, type_line: 'Enchantment', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: null, toughness: null, oracle_text: text });
+  const DAIS = card('Test Dais', 'Whenever two or more creatures attack, you gain 1 life.');
+  const SENSOR = card('Test Sensor', 'Whenever you attack a player, you gain 2 life.');
+  const ROWS = [DAIS, SENSOR];
+  const deck = customDeck({
+    id: 'd1118', name: 'Attacks', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Raging Goblin', count: 6 }, { name: 'Mountain', count: 50 }],
+    data: ROWS as never[],
+  });
+  const attack = (mine: string[], count: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1118', 1: 'd1118' }, deckSpecs: { d1118: deck.deck },
+      battlefield: { 0: ['Mountain', ...mine, 'Raging Goblin', 'Raging Goblin'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const goblins = ids(s, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === 'Raging Goblin');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: goblins.slice(0, count).map((id) => ({ attacker: id, defender: 1 })) } as Action));
+    return life(s, 0);
+  };
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two attackers gain, one does not; attacking a player gains', () => {
+    expect(attack(['Test Dais'], 2)).toBe(21);
+    expect(attack(['Test Dais'], 1)).toBe(20);
+    expect(attack(['Test Sensor'], 1)).toBe(22);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

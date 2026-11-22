@@ -1438,6 +1438,9 @@ function triggerMatches(
         const reached = want.at === 'you' ? declared.playersAttacked : declared.seatsAttacked;
         if (!(reached ?? []).includes(sourceSeat)) return false;
       }
+      // "You attack a player" (D1118): a player, not only planeswalkers.
+      if (want.atAPlayer === true
+        && ((event as Extract<TriggerEvent, { kind: 'attack-declared' }>).playersAttacked ?? []).length === 0) return false;
       const by = want.by ?? 'you';
       if (by === 'you') return actorSeat === sourceSeat;
       if (by === 'opponent') return actorSeat !== sourceSeat;

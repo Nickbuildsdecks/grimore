@@ -8387,7 +8387,7 @@ describe('the declaration, read off the prologue', () => {
     // unread — and these rows fail if a prologue row is ever widened to swallow one.
     // "With three / two or more creatures" read since D631, on `attack-declared.atLeast`.
     ['Whenever you attack with one or more creatures'],         // 3
-    ['Whenever you attack a player'],                           // 7
+    // Retargeted by D1118: 'Whenever you attack a player' reads, as `attack-declared.atAPlayer`.
     ['Whenever you attack with your commander'],                // 2
     ['Whenever two or more creatures you control attack a player'], // 2
   ])('refuses %s, which this event cannot express', (prologue) => {
@@ -8396,6 +8396,14 @@ describe('the declaration, read off the prologue', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  // Retargeted by D1118: "a player" is a filter the event carries now.
+  it('reads Whenever you attack a player (D1118)', () => {
+    const read = creature('Whenever you attack a player, you gain 2 life.');
+    expect(read.ok && read.unread).toEqual([]);
+    if (!read.ok) return;
+    expect(read.script?.triggers?.[0]?.on).toEqual({ kind: 'attack-declared', by: 'you', atAPlayer: true });
   });
 
   it('still reads one creature attacking, which is a different trigger', () => {
