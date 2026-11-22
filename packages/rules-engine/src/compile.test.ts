@@ -2046,11 +2046,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a cost whose symbols are not mana', () => {
       /*
-        `{E}` is energy and `{X}` is announced, and neither is mana this reader can put in
-        `AbilityCost.mana`. Both would otherwise pass the "a run of symbols" shape and be read as
-        generic — `{E}` silently as one mana, `{X}` as nothing at all — which is the dropped cost
+        `{E}` is energy, not mana this reader can put in `AbilityCost.mana`. It would otherwise
+        pass the "a run of symbols" shape and be read as one generic mana — the dropped cost
         component again, wearing a symbol instead of a sentence. `parseManaCost` is what catches
-        them: it records an unrecognised symbol rather than ignoring it.
+        it: it records an unrecognised symbol rather than ignoring it.
+
+        `{X}` was refused here too until D789, which reads it: it is announced with the activation
+        and paid with the rest, so it stays in the mana as `{X}` rather than vanishing.
       */
       const refusedCost = (text: string) => {
         const card = compileCard({
@@ -2060,7 +2062,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         return card.ok ? card.script : 'refused-outright';
       };
       expect(refusedCost('{E}, {T}: Draw a card.')).toBeUndefined();
-      expect(refusedCost('{X}{R}, {T}: Draw a card.')).toBeUndefined();
+      const withX = refusedCost('{X}{R}, {T}: Draw a card.') as { abilities?: { cost: { mana?: string } }[] };
+      expect(withX.abilities?.[0]?.cost.mana).toBe('{X}{R}');
       // The same shape with a real mana cost is read, so the refusals above are about the symbols.
       expect(refusedCost('{2}{R}, {T}: Draw a card.')).toBeDefined();
     });

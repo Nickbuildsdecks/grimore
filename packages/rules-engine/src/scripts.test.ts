@@ -33841,6 +33841,77 @@ describe('extra turns (D1132)', () => {
   });
 });
 
+describe('{X} in an activated ability\'s cost (D789)', () => {
+  const RUN = { name: 'Test Run', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.' };
+  const VAULT = { name: 'Test Vault', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}{X}, {T}, Sacrifice Test Vault: Create X Treasure tokens.' };
+  const NECTAR = { name: 'Test Nectar', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}, {T}: You gain X life.' };
+  const FLUTE = { name: 'Test Flute', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}, {T}: Search your library for a creature card with mana value X or less, reveal it, put it into your hand, then shuffle.' };
+  const ROCK = { name: 'Test Plain Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{1}, {T}: You gain 1 life.' };
+  const SMALL = { name: 'Test Small', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const LARGE = { name: 'Test Large', type_line: 'Creature — Beast', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd789', name: 'Ex',
+    entries: [RUN, VAULT, NECTAR, FLUTE, ROCK].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Small', count: 3 }, { name: 'Test Large', count: 3 }, { name: 'Mountain', count: 25 }, { name: 'Forest', count: 24 }]),
+    data: [RUN, VAULT, NECTAR, FLUTE, ROCK, SMALL, LARGE] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd789', 1: 'd789' }, deckSpecs: { d789: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const xRow = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name) && /X/.test(p.manaCost));
+  const untappedLands = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => /Mountain|Forest/.test(s.cardDefs[s.instances[id]!.defKey]!.name) && s.instances[id]!.tapped !== true).length;
+
+  it('reads', () => {
+    for (const card of [RUN, VAULT, NECTAR, FLUTE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Kessig Wolf Run: offered with the most X the rest can pay, and pumps by the X announced', () => {
+    let s = table(['Test Run', 'Mountain', 'Forest', 'Forest', 'Forest', 'Mountain', 'Test Small']);
+    const row = xRow(s, 'Test Run')!;
+    // Five lands: {R}{G} from two, X from the other three. The Run taps itself and makes none of it.
+    expect(row.xMax).toBe(3);
+    const bear = find(s, 0, 'battlefield', 'Test Small');
+    s = apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2, targets: [{ kind: 'card', id: bear }] });
+    expect(untappedLands(s)).toBe(1);
+    s = drain(passBoth(s));
+    expect([power(s, bear), toughness(s, bear)]).toEqual([4, 2]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('trample')).toBe(true);
+  });
+
+  it('{X}{X} is paid twice: two Treasures cost four', () => {
+    let s = table(['Test Vault', 'Mountain', 'Mountain', 'Forest', 'Forest', 'Forest']);
+    const row = xRow(s, 'Test Vault')!;
+    expect(row.xMax).toBe(2);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2 })));
+    expect(untappedLands(s)).toBe(1);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Treasure')).toHaveLength(2);
+  });
+
+  it('an X too large, an X on a cost without one, or a negative one is refused; an absent X is zero', () => {
+    const s = table(['Test Nectar', 'Test Plain Rock', 'Forest', 'Forest']);
+    const nectar = find(s, 0, 'battlefield', 'Test Nectar');
+    const rock = find(s, 0, 'battlefield', 'Test Plain Rock');
+    const nectarIndex = xRow(s, 'Test Nectar')!.abilityIndex!;
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: 3 })).not.toBeNull();
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: -1 })).toMatch(/whole number/);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: rock, abilityIndex: 0, x: 1 })).toMatch(/no X/);
+    const before = life(s, 0);
+    const gained = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: 2 })));
+    expect(life(gained, 0)).toBe(before + 2);
+    const none = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex })));
+    expect(life(none, 0)).toBe(before);
+  });
+
+  it('"mana value X or less" is the X paid', () => {
+    let s = table(['Test Flute', 'Forest', 'Forest']);
+    const row = xRow(s, 'Test Flute')!;
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2 }));
+    const names = (s.pendingDecision?.candidates ?? []).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(new Set(names)).toEqual(new Set(['Test Small']));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

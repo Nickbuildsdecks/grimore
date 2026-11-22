@@ -1893,6 +1893,7 @@ function activate(
   action: {
     by: SeatIndex; card: string; abilityIndex: number;
     targets?: readonly Target[]; sacrifice?: string; returned?: string; discarded?: string;
+    x?: number;
     sacrifices?: readonly string[];
     grantedBy?: GrantedTriggerRef;
   },
@@ -2226,7 +2227,20 @@ function activate(
     ...sacrificedMany,
   ]);
   // What it costs now (D781): see `abilityManaText`.
-  const paid = payFrom(state, action.by, abilityManaText(state, action.by, ability, action.card), 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
+  const manaText = abilityManaText(state, action.by, ability, action.card);
+  /*
+    The X announced with it (D789, CR 602.2b): only on a cost that has one, a whole number, and paid
+    with the rest. Absent on a cost with one, it is zero, as a spell's is.
+  */
+  const paysX = parseManaCost(manaText).x;
+  if (action.x !== undefined && !paysX) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that ability has no X in its cost');
+  }
+  if (action.x !== undefined && (!Number.isInteger(action.x) || action.x < 0)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, zero or more');
+  }
+  const xPaid = paysX ? action.x ?? 0 : undefined;
+  const paid = payFrom(state, action.by, manaText, xPaid ?? 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.
@@ -2395,11 +2409,12 @@ function activate(
     before it picks which of the two tables to read.
   */
   next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated',
-    `${ch.name}: ${ability.description}`,
+    `${ch.name}: ${ability.description}${xPaid === undefined ? '' : ` (X=${xPaid})`}`,
     {
       ...(ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget }),
       ...(sacrificedStats === null ? {} : { sacrificed: sacrificedStats }),
       ...(tappedPower === null ? {} : { tappedPower }),
+      ...(xPaid === undefined ? {} : { x: xPaid }),
     },
     action.grantedBy,
     // The face it was activated from, read before the costs were paid (D982).

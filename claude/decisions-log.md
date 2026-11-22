@@ -57433,3 +57433,46 @@ Faults injected by hand: 2.
 Pod sweep 61801 (100 games, D1131 build): 100 finished, no throw, no stall.
 
 Coverage: 15,195 of 31,900 cards (+16 over D1131's 15,179), 37,126 of 59,888 lines (+27).
+
+## D789 — {X} in an activated ability's cost
+
+Most-played order: Kessig Wolf Run (rank 412), Treasure Vault (463), Blast Zone's counter line
+(1682), Folio of Fancies' draw (2774), Helix Pinnacle's counters (4474), Fiend Artisan (4496), and
+the rest of the 143 legal cards whose unread lines included an ability with {X} in its cost.
+
+The cost reader refused `{X}` outright ("announcing X on an activated ability is machinery this
+reader does not reach"). The machinery was mostly there: the effect side has read the X its own cost
+pays since D1055 (`xPayable`, `xAsPaid`), and resolution already hands `object.x` to the effect for
+any stack object. What was missing, now added:
+
+- **The cost**: `{X}` reads as part of the mana component, `{X}{X}` as one number paid twice.
+- **The offer**: an ability whose cost has X carries `xMax`, the most the rest of the cost leaves
+  room for, with the source's own {T} and anything crewed or tapped for the cost kept out of the
+  mana (a Kessig Wolf Run does not count itself).
+- **The action**: `AutoActivateAction.x`, refused on a cost without an X and when it is not a whole
+  number of zero or more; absent on a cost with one, it is zero. Paid with the rest of the cost and
+  carried on the stack object; the log line says `(X=2)`.
+- **The table**: the web client's X picker, which spells already used, now opens for an ability too
+  and sends `x` with the activation.
+- **The bot** activates with the most X it can pay, as it casts a Fireball.
+
+Coverage: 25 of the 143 cards are now fully read, and the X line of 31. The rest stop on a word the
+effect vocabulary does not have yet ("X target lands", "mana value X" as an exact match, "Spend only
+black mana on X", base power and toughness X/X).
+
+**Tests.** 5 engine tests and 1 web client test: the cards read; a Kessig Wolf Run with five lands
+is offered with X up to 3 (the Run itself does not count), and activated for 2 it taps four lands and
+gives +2/+0 and trample; `{X}{X}` for 2 takes four mana and makes two Treasures; an X too large, an X
+on a cost without one, and a negative X are refused, and no X is zero; "mana value X or less" searches
+with the X paid. In the client, the X picker opens on an ability's `xMax` and the chosen X goes out
+with the activation and its target.
+
+The hand-written compile test that pinned "{X} in an ability cost is refused" now pins the opposite:
+the cost reads and keeps `{X}` in its mana. The first gate run caught it.
+
+Faults injected by script: 7 of 7 caught.
+
+    engine tests: 5,993, all passing; web: 275 (on 94f589d)
+
+Coverage: 15,196 to 15,222 of 31,900 cards with every line read, and 37,128 to 37,164 of 59,888
+lines, against 94f589d.

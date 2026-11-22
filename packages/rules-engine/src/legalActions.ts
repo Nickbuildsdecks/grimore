@@ -3021,6 +3021,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
           ? ability.description
           : `${ability.description} (tapping ${crew.length})`,
         manaCost: manaNow ?? '', abilityIndex: i,
+        // How high its X may go (D789), with what the rest of the cost spends kept out of the mana.
+        ...(manaNow && parseManaCost(manaNow).x ? {
+          xMax: maxAffordableX(poolOf(state, seat), parseManaCost(manaNow),
+            (restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources)
+              .filter((source) => !(ability.cost.tap === true && source.key === id) && !(crew ?? []).includes(source.key) && !(tapped ?? []).includes(source.key))),
+        } : {}),
         // Which card defines it, when this permanent did not print it. See `LegalPlay.grantedBy`.
         ...(grantedBy === undefined ? {} : { grantedBy }),
         ...(zone === 'hand' ? { fromHand: true } : {}),

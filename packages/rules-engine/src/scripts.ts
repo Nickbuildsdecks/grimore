@@ -30992,11 +30992,11 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     /*
       `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
       the validator here: `{E}` or `{T}` inside a run would otherwise be read as generic mana. `{X}`
-      is refused too — announcing X on an activated ability is machinery this reader does not reach,
-      and nothing in the pool hand-writes an X ability cost to compare against.
+      is read (D789): it is announced as the ability is activated (`AutoActivateAction.x`), paid
+      with the rest, and handed to the effect as `c.x`, which `xAsPaid` reads.
     */
     const parsed = parseManaCost(component);
-    if (parsed.unsupported !== undefined || parsed.x) return null;
+    if (parsed.unsupported !== undefined) return null;
     mana.push(component);
   }
   /*

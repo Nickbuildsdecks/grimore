@@ -3241,6 +3241,8 @@ interface TriggerAbout {
   readonly sacrificed?: SacrificedStats;
   /** The power tapped to pay for it (D637). See `StackObject.tappedPower`. */
   readonly tappedPower?: number;
+  /** The X announced as it was activated (D789). See `AutoActivateAction.x`. */
+  readonly x?: number;
   /** How much damage the event was (D903). See `StackObject.eventAmount`. */
   readonly eventAmount?: number;
 }
@@ -3334,6 +3336,7 @@ function pushAbility(
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     ...(about.sacrificed === undefined ? {} : { sacrificedStats: about.sacrificed }),
     ...(about.tappedPower === undefined ? {} : { tappedPower: about.tappedPower }),
+    ...(about.x === undefined ? {} : { x: about.x }),
     ...(about.eventAmount === undefined ? {} : { eventAmount: about.eventAmount }),
     targetSeqs: targetSeqsFor(state, targets),
     ...aboutSeqsFor(state, about),
