@@ -16145,17 +16145,28 @@ function selfEffect(
     call with only `keywords` in it, which is how the hand-written Skithiryx writes it — a keyword
     granted until end of turn is a continuous effect like a pump, not a different mechanism.
   */
+  // And with no duration (D1131): "It gains haste." after a return (Grave Upheaval, Whip of Erebos).
+  // It lasts as long as the object (CR 611.2a): the creature is the effect's own source, so the
+  // `permanent` duration ends as it leaves.
   const gained = new RegExp(
-    `^(?:(${self})|it) gains ([a-z][a-z', ]*?) until end of turn$`, 'i',
+    `^(?:(${self})|it) gains ([a-z][a-z', ]*?)( until end of turn)?$`, 'i',
   ).exec(text);
   if (gained !== null) {
     const word = gained[2]!.trim().toLowerCase();
     if (isKeyword(word)) {
       const named = gained[1];
+      const lasting = gained[3] === undefined;
       return {
-        effect: (c) => pump(
-          c.state, [itMeans(named, c)], c.source, c.controller, { keywords: [word] },
-        ),
+        effect: (c) => {
+          /*
+            A bare "it" after a clause that aimed at a card is that card (D1131): "Return target
+            creature card from your graveyard to the battlefield. It gains haste." Before this it
+            was the spell, so the haste went to a card on its way to the graveyard.
+          */
+          const id = named === undefined ? firstCardTarget(c) ?? itMeans(named, c) : itMeans(named, c);
+          return pump(c.state, [id], lasting ? id : c.source, c.controller,
+            { keywords: [word], ...(lasting ? { duration: 'permanent' as const } : {}) });
+        },
       };
     }
   }
@@ -26495,8 +26506,15 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     family), "another target creature you control gains deathtouch", "target attacking creature
     gains first strike", "target Elf gains trample", "up to one target creature gains haste".
   */
+  /*
+    And with no duration at all (D1131): "It gains haste." after "Return target creature card from
+    your graveyard to the battlefield" (Grave Upheaval, Haunted House, Whip of Erebos), through the
+    referent swap. A grant with no duration lasts as long as the object does (CR 611.2a), so the
+    effect's source is the creature itself and `duration: 'permanent'` ends it the moment it leaves:
+    the sweep in `settle` drops a permanent effect whose source is gone.
+  */
   const granted =
-    /^((?:another |up to one (?:other )?)?target [^,]+?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?) until end of turn$/i
+    /^((?:another |up to one (?:other )?)?target [^,]+?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?)( until end of turn)?$/i
       .exec(text);
   if (granted !== null) {
     const words = grantedKeywordList(granted[3]!);
@@ -26510,16 +26528,17 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (words !== null && spec !== null && colourOk) {
       const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
       const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
+      const lasting = granted[4] === undefined;
       const options: PumpOptions = becomes === undefined || becomes === null
-        ? { keywords: words }
-        : { keywords: words, setColors: [becomes] };
+        ? { keywords: words, ...(lasting ? { duration: 'permanent' as const } : {}) }
+        : { keywords: words, setColors: [becomes], ...(lasting ? { duration: 'permanent' as const } : {}) };
       return {
         targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null
             ? c.state
-            : pump(c.state, [id], c.source, c.controller, options);
+            : pump(c.state, [id], lasting ? id : c.source, c.controller, options);
         },
         /*
           Three cases, not two, and the middle one is a correction (D412).
@@ -27844,7 +27863,7 @@ function readEffect(
     and an engine-known delayed ability (`DelayedTrigger.builtin`) that sacrifices or exiles it at
     the next end step, on the stack like any other trigger.
   */
-  const rider = /^(.+); (with haste, )?(sacrifice|exile) at the beginning of the next end step$/i.exec(clause.trim());
+  const rider = /^(.+); (with haste, )?(sacrifice|exile) at the beginning of (the|your) next end step$/i.exec(clause.trim());
   if (rider !== null) {
     const inner = readEffect(rider[1]!, name, where);
     if (inner === null) return null;
@@ -27859,7 +27878,9 @@ function readEffect(
       if (hasty && arrived.length > 0) next = pump(next, arrived, c.source, c.controller, { keywords: ['haste'] });
       for (const id of arrived) {
         next = scheduleDelayed(next, {
-          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of: 'any',
+          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end',
+          // "Your next end step" (D1131) waits for the controller's own.
+          of: rider[4]!.toLowerCase() === 'your' ? 'you' : 'any',
           subject: id, builtin: verb,
           description: `${verb} ${next.cardDefs[next.instances[id]?.defKey ?? '']?.name ?? 'it'}`,
         });
@@ -28261,8 +28282,10 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(put it onto the battlefield tapped),\s+then shuffle\.\s+Then if you control (\w+) or more lands, untap that land/gi, '$1 and untap it if you control $2 or more lands, then shuffle')
     // Kiki-Jiki and Sneak Attack (D696): what the first sentence put onto the battlefield is what the
     // rider sacrifices or exiles, so the two (and a haste sentence between them) are one clause.
-    .replace(/((?:create|put)[^.;]*?)\.\s+(?:(?:it|they|that creature|those creatures|the creature|the token|the tokens|that token|those tokens) gains? haste(?: until end of turn)?\.\s+)?(sacrifice|exile) (?:it|them|that token|those tokens|that creature|those creatures|the creature|the token|the tokens) at the beginning of the next end step/gi,
-      (_m, first: string, verb: string) => `${first}; ${/gains? haste/i.test(_m) ? 'with haste, ' : ''}${verb.toLowerCase()} at the beginning of the next end step`)
+    // And "return" (D1131): Haunted House, Postmortem Lunge, Kami of Industry; and "your next end
+    // step", the controller's own.
+    .replace(/((?:create|put|return)[^.;]*?)\.\s+(?:(?:it|they|that creature|those creatures|the creature|the token|the tokens|that token|those tokens) gains? haste(?: until end of turn)?\.\s+)?(sacrifice|exile) (?:it|them|that token|those tokens|that creature|those creatures|the creature|the token|the tokens) at the beginning of (the|your) next end step/gi,
+      (_m, first: string, verb: string, whose: string) => `${first}; ${/gains? haste/i.test(_m) ? 'with haste, ' : ''}${verb.toLowerCase()} at the beginning of ${whose.toLowerCase()} next end step`)
     // Snapcaster Mage (D694): the second sentence says what the flashback costs, which is the one
     // thing `flashbackGrantedTurn` already means.
     .replace(/(gains flashback until end of turn)\.\s+The flashback cost is equal to its mana cost/gi, '$1')

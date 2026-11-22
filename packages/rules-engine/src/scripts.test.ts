@@ -33734,6 +33734,68 @@ describe('suspend spells that exile themselves with time counters (D1130)', () =
   });
 });
 
+describe('"It gains haste." and an end-step exile after a return (D1131)', () => {
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: text });
+  const UPHEAVAL = I('Test Upheaval', 'Return target creature card from your graveyard to the battlefield. It gains haste.');
+  const LUNGE = I('Test Lunge', 'Return target creature card from your graveyard to the battlefield. It gains haste. Exile it at the beginning of the next end step.');
+  const HOUSE = I('Test House', 'Return target creature card from your graveyard to the battlefield. Exile it at the beginning of your next end step.');
+  const SCRAP = I('Test Scrap', 'Return target creature card from your graveyard to the battlefield. It gains haste until end of turn.');
+  const ROWS = [BEAR, UPHEAVAL, LUNGE, HOUSE, SCRAP];
+  const deck = customDeck({
+    id: 'd1131', name: 'Returns', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  /** Seat 0 casts `spell` at the Bear in its graveyard, on its own turn or (with `theirs`) on seat 1's. */
+  const returned = (spell: string, theirs = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1131', 1: 'd1131' }, deckSpecs: { d1131: deck.deck },
+      hands: { 0: [spell, 'Test Bear'] }, battlefield: { 0: ['Swamp'], 1: ['Swamp'] }, turn: 3, firstSeat: theirs ? 1 : 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = apply(s, { type: 'card:move', by: 0, card: bear, toZone: 'graveyard' } as Action);
+    if (theirs) s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    return { s, bear };
+  };
+  const hasty = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).keywords.has('haste');
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [UPHEAVAL, LUNGE, HOUSE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"It gains haste." outlasts the turn', () => {
+    const { s, bear } = returned('Test Upheaval');
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(hasty(s, bear)).toBe(true);
+    const later = drain(nextTurn(s), 30);
+    expect(later.instances[bear]!.zone).toBe('battlefield');
+    expect(hasty(later, bear)).toBe(true);
+  });
+
+  it('"until end of turn" gives the haste to the returned creature, not the spell', () => {
+    const { s, bear } = returned('Test Scrap');
+    expect(hasty(s, bear)).toBe(true);
+    expect(hasty(drain(nextTurn(s), 30), bear)).toBe(false);
+  });
+
+  it('the returned creature is exiled at the next end step', () => {
+    const { s, bear } = returned('Test Lunge');
+    expect(hasty(s, bear)).toBe(true);
+    const later = drain(nextTurn(s), 30);
+    expect(later.instances[bear]!.zone).toBe('exile');
+  });
+
+  it('"your next end step" waits past an opponent\'s turn for its controller\'s own', () => {
+    const { s, bear } = returned('Test House', true);
+    expect(s.activeSeat).toBe(1);
+    const afterTheirs = drain(nextTurn(s), 30);
+    expect(afterTheirs.instances[bear]!.zone).toBe('battlefield');
+    const afterMine = drain(nextTurn(afterTheirs), 30);
+    expect(afterMine.instances[bear]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
