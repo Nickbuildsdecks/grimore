@@ -56033,3 +56033,41 @@ and Unstoppable Ash. Mistbind Clique's own "when a Faerie is championed" trigger
 Faults injected by hand: 1 (the return removed). It is caught.
 
 Coverage: 14,845 of 31,900 cards (+10 over D1093's 14,835), 36,528 of 59,888 lines (+12).
+
+## D1095 — kicked halves with targets of their own, and "if this spell wasn't kicked"
+
+D562 read a kicker spell's two halves when they shared one list of targets. It refused a kicked
+half with targets of its own ("If this spell was kicked, tap target creature an opponent
+controls") and an "instead" that points elsewhere ("instead return target nonland permanent"),
+because "a script has one list of targets whether it was kicked or not".
+
+The kicker is announced before targets (CR 601.2b-c), and modes already make the target list
+depend on an announced choice. So such a spell is now **two modes the kicker picks**:
+
+- `ModalDef.kickerModes`. With `instead`, the unkicked cast is mode 0 and the kicked cast is
+  mode 1. With `also`, the kicked cast is both modes, in printed order.
+- `modeCombinations` returns the one combination the kicker allows. `legalActions` offers the
+  kicked cast through the row entwine already uses, so the plain and kicked casts each ask for
+  their own targets.
+- A half becomes a mode only when it holds nothing but targets, questions and an effect, so
+  nothing either half read is dropped.
+- "If this spell wasn't kicked, <effect>" (Nocturnal Hunger, Archival Whorl): the effect runs only
+  on the unkicked cast, after the base. It must be an effect only.
+
+This is the groundwork for gift (D1096). Rewritten as kicker, seven of the 27 gift cards read once
+this is in.
+
+**Tests.** 4 engine tests:
+- All three shapes read whole.
+- "Instead": the plain cast reaches only creatures, the kicked cast any nonland permanent, and the
+  artifact is returned.
+- "Also": the kicked cast asks for and taps the extra target, and the plain cast only draws.
+- "Wasn't kicked": the life is lost only on the plain cast.
+
+Two rows of D562's refusal table now read and are retargeted (the D516 way) into a positive test:
+the Tear Asunder shape and the "different restriction" shape. It asserts two modes with different
+targets, picked by the kicker.
+
+Faults injected by hand: 1 ("also" given only the kicked mode). It is caught.
+
+Coverage: 14,850 of 31,900 cards (+5 over D1094's 14,845), 36,538 of 59,888 lines (+10).
