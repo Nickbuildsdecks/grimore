@@ -39899,3 +39899,37 @@ The deck-coverage test exempts 'script exilesWithTimeCounters': no pool deck pla
 Faults injected by hand: 1. The counters not put on (caught).
 
 Coverage: 15,172 of 31,900 cards (+7 over D1129's 15,165), 37,088 of 59,888 lines (+7).
+
+## D1131 — "It gains haste." and an end-step exile after a return, and a fix to "it"
+
+**Grants with no duration.** "It gains haste." after "Return target creature card from your
+graveyard to the battlefield" (Grave Upheaval, Whip of Erebos, Haunted House), and "Target
+creature gains haste." on its own, last as long as the object does (CR 611.2a). The effect's source
+is the creature itself with `duration: 'permanent'`, so the sweep in `settle` ends it the moment
+the creature leaves.
+
+**The end-step rider for returned cards.** D696's "Sacrifice / Exile it at the beginning of the next
+end step" joined only a "create" or "put" sentence. It now joins "return" too (Kami of Industry,
+Postmortem Lunge, Footsteps of the Goryo). "Your next end step" schedules the delayed ability for the
+controller's own end step, where "the next" is anybody's.
+
+**A fix found on the way.** In a spell, the self reader took a bare "it" as the spell itself. So the
+long-standing reading of "Return target creature card … It gains haste until end of turn" (Scrap
+Welder's kin) gave the haste to a card on its way to the graveyard, and the creature came back
+without it. A bare "it" after a clause that aimed at a card is now that card.
+
+Read whole now: Dawn of the Dead, Footsteps of the Goryo, Grave Upheaval, Harried Dronesmith, Kami
+of Industry, Stone Idol Trap.
+
+**Tests.** 5 engine tests:
+- All read whole.
+- "It gains haste." outlasts the turn.
+- "Until end of turn" gives the haste to the returned creature, and it is gone a turn later.
+- The returned creature is exiled at the next end step.
+- "Your next end step", cast on an opponent's turn, waits past that turn for its controller's own.
+
+Faults injected by hand: 2.
+- "It" back to the spell (caught, two tests).
+- The lasting grant's source back to the spell (caught).
+
+Coverage: 15,179 of 31,900 cards (+7 over D1130's 15,172), 37,099 of 59,888 lines (+11).
