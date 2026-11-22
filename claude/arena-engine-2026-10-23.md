@@ -40032,3 +40032,38 @@ more than 1,000 permanents, 986 of them Troubling Tribbles. That card copies its
 so it doubles each turn as printed; it is the card, not an engine fault.
 
 Coverage: 15,218 of 31,900 cards (+11 over D1133's 15,207), 37,158 of 59,888 lines (+12).
+
+## D1135 — bloodrush from the hand, renew from the graveyard
+
+Two labels in front of an activated ability that D612 kept on, for D582's reason. Read
+remainder-only, each would be offered from the battlefield. Each now comes off exactly when the
+remainder's cost says where the ability is used from:
+
+- **Bloodrush** joins channel's branch: "Bloodrush — {R}, Discard ~: Target attacking creature gets
+  +4/+4 until end of turn." The cost discards the card itself (`discardSelf`), which is what
+  `legalActions` and `activate` read as "used from the hand" since cycling (#45).
+- **Renew** (Tarkir: Dragonstorm) is the graveyard's twin: "Renew — {B}, Exile this card from your
+  graveyard: …". It comes off only when the cost left exiles the card from the graveyard
+  (`fromGraveyard` with `exileSelf`). A "Renew —" whose cost did not would stay unread.
+
+Read whole now (17):
+- Bloodrush: Ghor-Clan Rampager, Pyrewild Shaman, Rubblebelt Maaka, Rubblehulk, Scab-Clan Charger,
+  Scorchwalker, Skarrg Goliath, Skinbrand Goblin, Slaughterhorn, Viashino Shanktail, Wasteland
+  Viper, Wrecking Ogre, Zhur-Taa Swine.
+- Renew: Adorned Crocodile, Agent of Kotis and two more.
+
+**Tests.** 4 engine tests:
+- Both read whole, and a stray "Renew —" with no graveyard cost stays unread.
+- Bloodrush is used from the hand on an attacker (+4/+4), and the card is discarded.
+- Renew is used from the graveyard (a counter on the target), and the card is exiled.
+- Neither is offered from the battlefield.
+
+Faults injected by hand: 2.
+- Bloodrush taken out of the branch (caught, two tests).
+- Renew's cost check removed: caught only after the stray probe was added, since every printed
+  Renew line has the graveyard cost.
+
+Shipped after a hold from the D7xx session (its D789), committed locally with D1134 and pushed
+after its release.
+
+Coverage: 15,235 of 31,900 cards (+17 over D1134's 15,218), 37,176 of 59,888 lines (+18).
