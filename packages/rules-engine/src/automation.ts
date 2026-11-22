@@ -4823,6 +4823,8 @@ export function modeCombinations(
   const total = modal.modes.length;
   // Entwined (D675): every mode, and only that.
   if (modal.entwine === true && kicked) return [Array.from({ length: total }, (_, i) => i)];
+  // The kicker picks (D1095): see `ModalDef.kickerModes`.
+  if (modal.kickerModes !== undefined) return kicked ? [modal.kickerModes === 'also' ? [0, 1] : [1]] : [[0]];
   // The Will cycle (D668): more modes while the caster controls a commander on the battlefield.
   const commanded = modal.maxWithCommander !== undefined && state !== undefined && seat !== undefined
     && Object.values(state.instances).some((inst) => inst.isCommander && inst.zone === 'battlefield' && inst.zoneSeat === seat);

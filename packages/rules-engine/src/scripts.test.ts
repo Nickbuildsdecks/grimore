@@ -32027,6 +32027,67 @@ describe('champion: exile another of a kind until it leaves, or it is sacrificed
   });
 });
 
+describe('kicked halves with targets of their own, and "if this spell wasn\'t kicked" (D1095)', () => {
+  /*
+    The kicker is announced before targets (CR 601.2b-c), so a kicked half with targets is a mode
+    the kicker picks: "instead" swaps the spell for it, "also" adds it. And "wasn't kicked" runs an
+    extra effect only on the unkicked cast.
+  */
+  const R = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: text });
+  const MAW = R('Test Maw', "Kicker {1}\nReturn target creature an opponent controls to its owner's hand. If this spell was kicked, instead return target nonland permanent an opponent controls to its owner's hand.");
+  const SPIRAL = R('Test Spiral', 'Kicker {1}\nTarget player draws a card. If this spell was kicked, tap target creature an opponent controls.');
+  const HUNGER = R('Test Hunger', "Kicker {1}\nDestroy target creature. If this spell wasn't kicked, you lose 2 life.");
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ROWS = [MAW, SPIRAL, HUNGER, BEAR, ROCK];
+  const deck = customDeck({
+    id: 'd1095', name: 'Kicked', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }], data: ROWS as never[],
+  });
+  const table = (spell: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1095', 1: 'd1095' }, deckSpecs: { d1095: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: ['Island', 'Island', 'Island'], 1: ['Test Bear', 'Test Rock'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const rows = (s: GameState, spell: string) => legalActions(s, 0).plays
+    .filter((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', spell));
+  const cast = (s: GameState, spell: string, kicked: boolean, targets: Target[]): GameState => {
+    const row = rows(s, spell).find((p) => (p.kicked === true) === kicked)!;
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: row.card, kicked: kicked || undefined, modes: row.modes, targets } as Action)), 20);
+  };
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [MAW, SPIRAL, HUNGER]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"instead": unkicked it reaches only creatures, kicked any nonland permanent', () => {
+    const s = table('Test Maw');
+    const rock = find(s, 1, 'battlefield', 'Test Rock');
+    const plain = rows(s, 'Test Maw').find((p) => p.kicked !== true)!;
+    const kicked = rows(s, 'Test Maw').find((p) => p.kicked === true)!;
+    expect(plain.candidates[0]!.some((t) => t.kind === 'card' && t.id === rock)).toBe(false);
+    expect(kicked.candidates[0]!.some((t) => t.kind === 'card' && t.id === rock)).toBe(true);
+    const after = cast(s, 'Test Maw', true, [{ kind: 'card', id: rock }]);
+    expect(namesIn(after, 1, 'hand')).toContain('Test Rock');
+  });
+
+  it('"also": the kicked cast asks for the extra target and taps it; unkicked only draws', () => {
+    const s = table('Test Spiral');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const kicked = cast(s, 'Test Spiral', true, [{ kind: 'player', seat: 0 }, { kind: 'card', id: bear }]);
+    expect(kicked.instances[bear]!.tapped).toBe(true);
+    const plain = cast(s, 'Test Spiral', false, [{ kind: 'player', seat: 0 }]);
+    expect(plain.instances[bear]!.tapped).toBe(false);
+    expect(ids(plain, 0, 'hand').length).toBe(ids(s, 0, 'hand').length);
+  });
+
+  it('"wasn\'t kicked": the life is lost only on the unkicked cast', () => {
+    const s = table('Test Hunger');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    expect(life(cast(s, 'Test Hunger', false, [{ kind: 'card', id: bear }]), 0)).toBe(life(s, 0) - 2);
+    expect(life(cast(s, 'Test Hunger', true, [{ kind: 'card', id: bear }]), 0)).toBe(life(s, 0));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

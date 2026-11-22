@@ -33554,6 +33554,36 @@ function kickerClausePairFor(
   const body = lines.find((line) => line !== declaration);
   if (declaration === undefined || body === undefined) return null;
 
+  /*
+    "If this spell wasn't kicked, <effect>" (D1095): the extra half runs only unkicked, after the
+    base. Nocturnal Hunger's "you lose 2 life", Archival Whorl's. An effect only, for the "also"
+    rule below: a target asked only when the spell is not kicked has no mode to live in.
+  */
+  const unkicked = /^(.*[.])\s+If this spell wasn't kicked, (.+)$/s.exec(plain(body).trim());
+  if (unkicked !== null && !/\bkick/i.test(unkicked[1]!)) {
+    const kickerDecl = { cost: declaring.exec(plain(declaration).trim())![1]!, description: plain(declaration).trim() };
+    const baseRead = spellScriptFor([unkicked[1]!.trim()], name);
+    const tailText = unkicked[2]!.trim();
+    const extraRead = spellScriptFor([`${tailText[0]!.toUpperCase()}${tailText.slice(1)}${/[.]$/.test(tailText) ? '' : '.'}`], name);
+    const baseRun = baseRead.script?.onResolve;
+    const extraRun = extraRead.script?.onResolve;
+    if (baseRead.script !== null && baseRead.unread.length === 0 && baseRead.script.modal === undefined && baseRun !== undefined
+      && extraRead.script !== null && extraRead.unread.length === 0 && Object.keys(extraRead.script).length === 1 && extraRun !== undefined) {
+      return {
+        fragment: {
+          ...baseRead.script,
+          kicker: kickerDecl,
+          onResolve: (c) => {
+            const state = baseRun(c);
+            return c.kicked === true ? state : extraRun({ ...c, state });
+          },
+        },
+        claimed: [...lines],
+      };
+    }
+    return null;
+  }
+
   // Greedy, so this is the **last** "If this spell was kicked," and everything before it is base.
   const split = /^(.*[.])\s+If this spell was kicked, (.+)$/s.exec(plain(body).trim());
   if (split === null) return null;
@@ -33574,11 +33604,36 @@ function kickerClausePairFor(
     cost: declaring.exec(plain(declaration).trim())![1]!,
     description: plain(declaration).trim(),
   };
+  /*
+    A kicked half with targets of its own (D1095) is a mode the kicker picks: see
+    `ModalDef.kickerModes`. Only halves made of what a mode can hold — targets, questions and an
+    effect — so nothing either half read is dropped on the way into one.
+    */
+  const MODE_KEYS = new Set(['targets', 'decisions', 'beforeDecisions', 'onResolve']);
+  const asMode = (script: Partial<CardScript>, description: string): ModeDef | null => {
+    if (!Object.keys(script).every((key) => MODE_KEYS.has(key)) || script.onResolve === undefined) return null;
+    return {
+      description,
+      ...(script.targets === undefined ? {} : { targets: script.targets }),
+      ...(script.decisions === undefined ? {} : { decisions: script.decisions }),
+      ...(script.beforeDecisions === undefined ? {} : { beforeDecisions: script.beforeDecisions }),
+      effect: script.onResolve,
+    };
+  };
+  const kickedModal = (other: Partial<CardScript>, otherText: string, how: 'also' | 'instead'): { fragment: Partial<CardScript>; claimed: readonly string[] } | null => {
+    const first = asMode(base.script!, baseText.replace(/\.$/, ''));
+    const second = asMode(other, otherText.replace(/\.$/, ''));
+    if (first === null || second === null) return null;
+    return { fragment: { kicker, modal: { modes: [first, second], kickerModes: how } }, claimed: [...lines] };
+  };
 
   if (!instead) {
     const extra = spellScriptFor([sentence(tail)], name);
     const keys = extra.script === null ? [] : Object.keys(extra.script);
     const extraEffect = extra.script?.onResolve;
+    if (extra.script !== null && extra.unread.length === 0 && extra.script.targets !== undefined) {
+      return kickedModal(extra.script, tail, 'also');
+    }
     if (extra.unread.length > 0 || keys.length !== 1 || extraEffect === undefined) return null;
     return {
       fragment: {
@@ -33617,7 +33672,8 @@ function kickerClausePairFor(
   const shape = (script: Partial<CardScript>): string => JSON.stringify(
     Object.fromEntries(Object.entries(script).filter(([key]) => key !== 'onResolve').sort()),
   );
-  if (shape(base.script) !== shape(alt.script)) return null;
+  // Different targets on each branch (D1095): two modes, and the kicker picks which.
+  if (shape(base.script) !== shape(alt.script)) return kickedModal(alt.script, altText, 'instead');
   if (base.script.decisions !== undefined || base.script.beforeDecisions !== undefined) return null;
   return {
     fragment: {

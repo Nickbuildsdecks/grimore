@@ -2877,6 +2877,15 @@ export interface ModalDef {
    * `kicker` (so the cast charges it), and a kicked cast takes every mode and nothing else.
    */
   readonly entwine?: true;
+  /**
+   * The kicker picks the modes (D1095): a kicked spell whose kicked half has targets of its own.
+   * Two modes, the unkicked spell and the kicked half. `instead` casts mode 0 unkicked and mode 1
+   * kicked ("If this spell was kicked, instead destroy two target artifacts"); `also` casts mode 0
+   * unkicked and both kicked ("If this spell was kicked, tap target creature an opponent
+   * controls"). The targets are chosen once the kicker is announced (CR 601.2b-c), which is what
+   * modes already do, so each branch asks only for its own.
+   */
+  readonly kickerModes?: 'also' | 'instead';
 }
 
 /** One of `CardScript.castLimits` (D788). */

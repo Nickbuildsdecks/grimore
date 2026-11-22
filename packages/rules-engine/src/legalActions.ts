@@ -2418,7 +2418,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         Entwined (D675): every mode, for the printed cost plus the entwine cost, offered as the
         kicker's second row is and only when the whole thing can be paid.
       */
-      const entwine = script?.modal?.entwine === true && !flashback && !escape && !foretold ? script.kicker : undefined;
+      // And a kicker that picks the modes (D1095), offered the same way: one row, kicked.
+      const entwine = (script?.modal?.entwine === true || script?.modal?.kickerModes !== undefined)
+        && !flashback && !escape && !foretold ? script?.kicker : undefined;
       if (entwine !== undefined) {
         const all = modeCombinations(script, state, seat, true)[0]!;
         const chosen = modesOf(script, all);

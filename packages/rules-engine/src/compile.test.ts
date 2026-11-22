@@ -17877,10 +17877,6 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
       "Return target creature to its owner's hand. If this spell was kicked, it deals 2 damage to another target creature."],
     ['a kicked half that asks a question',
       'Destroy target tapped creature. If this spell was kicked, scry 2.'],
-    ['an "instead" that points at something different',
-      'Exile target artifact or enchantment. If this spell was kicked, exile target nonland permanent instead.'],
-    ['an "instead" with a different restriction on the same kind of target',
-      'Counter target spell with mana value 2 or less. If this spell was kicked, counter target spell instead.'],
     ['a referent the base never named',
       'Draw two cards. If this spell was kicked, that creature gets +5/+5 until end of turn instead.'],
     ['a kicked half that refers back without replacing',
@@ -17898,6 +17894,21 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
     const got = read(body);
     expect(got.script?.kicker).toBeUndefined();
     expect(got.unread.map((u) => u.line)).toEqual(['Kicker {1}{U}', body]);
+  });
+
+  // Retargeted by D1095: an "instead" with targets of its own is two modes the kicker picks.
+  it.each([
+    ['an "instead" that points at something different',
+      'Exile target artifact or enchantment. If this spell was kicked, exile target nonland permanent instead.'],
+    ['an "instead" with a different restriction on the same kind of target',
+      'Counter target spell with mana value 2 or less. If this spell was kicked, counter target spell instead.'],
+  ])('reads %s as two modes the kicker picks (D1095)', (_what, body) => {
+    const got = read(body);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker?.cost).toBe('{1}{U}');
+    expect(got.script?.modal?.kickerModes).toBe('instead');
+    const [unkicked, kicked] = got.script!.modal!.modes;
+    expect(unkicked!.targets!.map((t) => t.description)).not.toEqual(kicked!.targets!.map((t) => t.description));
   });
 
   it('still reads the two-number damage family the way D423 did', () => {
