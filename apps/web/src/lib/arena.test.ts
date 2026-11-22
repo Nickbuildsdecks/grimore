@@ -843,6 +843,20 @@ describe("choosing X", () => {
     expect(sent.action).toEqual({ type: "auto:cast", card: "c1", x: 2, targets: [player(1)] })
   })
 
+  it("asks an ability's X the same way and sends it with the activation (D789)", () => {
+    const wolfRun = play({
+      kind: "activate", name: "Kessig Wolf Run", manaCost: "{X}{R}{G}", abilityIndex: 1, xMax: 3,
+    })
+    const asked = arenaReducer(IDLE, { kind: "choosePlay", play: wolfRun })
+    expect(asked.mode).toEqual({ kind: "payingX", play: wolfRun, chosen: 3 })
+    const lowered = arenaReducer(asked.mode, { kind: "setX", amount: 2 }).mode
+    const aimed = arenaReducer(lowered, { kind: "confirm" })
+    expect(aimed.mode.kind).toBe("targeting")
+    expect(arenaReducer(aimed.mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 1, x: 2, targets: [player(1)],
+    })
+  })
+
   it("opens on the card's own best X where it names one, rather than on the largest", () => {
     // Toxic Deluge pays X life: nineteen is legal and one is what the board wants.
     const deluge = fireball({

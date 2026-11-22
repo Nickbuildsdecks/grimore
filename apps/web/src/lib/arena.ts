@@ -567,7 +567,8 @@ function playAction(
   }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
-    ...withTargets, ...withSacrifice, ...withReturned, ...withDiscarded,
+    // An ability's X (D789), announced the same way a spell's is.
+    ...withX, ...withTargets, ...withSacrifice, ...withReturned, ...withDiscarded,
   }
 }
 

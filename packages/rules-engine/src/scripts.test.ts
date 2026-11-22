@@ -33964,6 +33964,135 @@ describe('bloodrush from the hand, renew from the graveyard (D1135)', () => {
   });
 });
 
+describe('{X} in an activated ability\'s cost (D789)', () => {
+  const RUN = { name: 'Test Run', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.' };
+  const VAULT = { name: 'Test Vault', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}{X}, {T}, Sacrifice Test Vault: Create X Treasure tokens.' };
+  const NECTAR = { name: 'Test Nectar', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}, {T}: You gain X life.' };
+  const FLUTE = { name: 'Test Flute', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{X}, {T}: Search your library for a creature card with mana value X or less, reveal it, put it into your hand, then shuffle.' };
+  const ROCK = { name: 'Test Plain Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{1}, {T}: You gain 1 life.' };
+  const SMALL = { name: 'Test Small', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const LARGE = { name: 'Test Large', type_line: 'Creature — Beast', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd789', name: 'Ex',
+    entries: [RUN, VAULT, NECTAR, FLUTE, ROCK].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Small', count: 3 }, { name: 'Test Large', count: 3 }, { name: 'Mountain', count: 25 }, { name: 'Forest', count: 24 }]),
+    data: [RUN, VAULT, NECTAR, FLUTE, ROCK, SMALL, LARGE] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd789', 1: 'd789' }, deckSpecs: { d789: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const xRow = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name) && /X/.test(p.manaCost));
+  const untappedLands = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => /Mountain|Forest/.test(s.cardDefs[s.instances[id]!.defKey]!.name) && s.instances[id]!.tapped !== true).length;
+
+  it('reads', () => {
+    for (const card of [RUN, VAULT, NECTAR, FLUTE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Kessig Wolf Run: offered with the most X the rest can pay, and pumps by the X announced', () => {
+    let s = table(['Test Run', 'Mountain', 'Forest', 'Forest', 'Forest', 'Mountain', 'Test Small']);
+    const row = xRow(s, 'Test Run')!;
+    // Five lands: {R}{G} from two, X from the other three. The Run taps itself and makes none of it.
+    expect(row.xMax).toBe(3);
+    const bear = find(s, 0, 'battlefield', 'Test Small');
+    s = apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2, targets: [{ kind: 'card', id: bear }] });
+    expect(untappedLands(s)).toBe(1);
+    s = drain(passBoth(s));
+    expect([power(s, bear), toughness(s, bear)]).toEqual([4, 2]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('trample')).toBe(true);
+  });
+
+  it('{X}{X} is paid twice: two Treasures cost four', () => {
+    let s = table(['Test Vault', 'Mountain', 'Mountain', 'Forest', 'Forest', 'Forest']);
+    const row = xRow(s, 'Test Vault')!;
+    expect(row.xMax).toBe(2);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2 })));
+    expect(untappedLands(s)).toBe(1);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Treasure')).toHaveLength(2);
+  });
+
+  it('an X too large, an X on a cost without one, or a negative one is refused; an absent X is zero', () => {
+    const s = table(['Test Nectar', 'Test Plain Rock', 'Forest', 'Forest']);
+    const nectar = find(s, 0, 'battlefield', 'Test Nectar');
+    const rock = find(s, 0, 'battlefield', 'Test Plain Rock');
+    const nectarIndex = xRow(s, 'Test Nectar')!.abilityIndex!;
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: 3 })).not.toBeNull();
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: -1 })).toMatch(/whole number/);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: rock, abilityIndex: 0, x: 1 })).toMatch(/no X/);
+    const before = life(s, 0);
+    const gained = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex, x: 2 })));
+    expect(life(gained, 0)).toBe(before + 2);
+    const none = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: nectar, abilityIndex: nectarIndex })));
+    expect(life(none, 0)).toBe(before);
+  });
+
+  it('"mana value X or less" is the X paid', () => {
+    let s = table(['Test Flute', 'Forest', 'Forest']);
+    const row = xRow(s, 'Test Flute')!;
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, x: 2 }));
+    const names = (s.pendingDecision?.candidates ?? []).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(new Set(names)).toEqual(new Set(['Test Small']));
+  });
+});
+
+describe('a rider with keywords, "you and target opponent each", two or more attackers (D790)', () => {
+  const CLOAK = { name: 'Test Cloak', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Equipped creature can't be blocked and has shroud.\nEquip {0}" };
+  const TETHER = { name: 'Test Tether', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equipped creature has defender and loses flying.\nEquip {0}' };
+  const LORAN = { name: 'Test Loran', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: You and target opponent each draw a card.' };
+  const RENDEZVOUS = { name: 'Test Rendezvous', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'You and target opponent each draw three cards.' };
+  const TIRITH = { name: 'Test Tirith', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {W}.\n{T}: Draw a card. Activate only if you attacked with two or more creatures this turn.' };
+  const BIRD = { name: 'Test Bird', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' };
+  const deck = customDeck({
+    id: 'd790', name: 'Each',
+    entries: [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Bird', count: 4 }, { name: 'Plains', count: 51 }]),
+    data: [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH, BIRD] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd790', 1: 'd790' }, deckSpecs: { d790: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const equip = (s0: GameState, gear: string, onto: string) => {
+    const row = legalActions(s0, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s0, 0, 'battlefield', gear))!;
+    return drain(passBoth(apply(s0, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, targets: [{ kind: 'card', id: onto }] })));
+  };
+
+  it('reads', () => {
+    for (const card of [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Whispersilk Cloak: can't be blocked and has shroud; Sky Tether: defender, and the flying gone", () => {
+    let s = table(['Test Cloak', 'Test Tether', 'Test Bird', 'Test Bird']);
+    const [one, two] = ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bird');
+    s = equip(s, 'Test Cloak', one!);
+    const cloaked = characteristicsOf(s, s.instances[one!]!);
+    expect(cloaked.cantBeBlocked).toBe(true);
+    expect(cloaked.keywords.has('shroud')).toBe(true);
+    s = equip(s, 'Test Tether', two!);
+    const tethered = characteristicsOf(s, s.instances[two!]!);
+    expect(tethered.keywords.has('defender')).toBe(true);
+    expect(tethered.keywords.has('flying')).toBe(false);
+  });
+
+  it('you and target opponent each draw, yours and theirs, as many as printed', () => {
+    let s = table(['Test Loran'], ['Test Rendezvous']);
+    const [mine, theirs] = [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length];
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Loran'), abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] })));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine + 1, theirs + 1]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rendezvous'), targets: [{ kind: 'player', seat: 1 }] })));
+    // The Rendezvous left the hand and three came in.
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine + 1 - 1 + 3, theirs + 4]);
+  });
+
+  it('Minas Tirith: only after two or more creatures attacked', () => {
+    const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', 'Test Tirith') && !p.isManaAbility);
+    expect(offered(table(['Test Tirith']))).toBe(false);
+    const two = { ...table(['Test Tirith']) };
+    expect(offered({ ...two, attackedThisTurn: { '0': 2 } })).toBe(true);
+    expect(offered({ ...two, attackedThisTurn: { '0': 1 } })).toBe(false);
+    expect(offered({ ...two, attackedThisTurn: { '1': 3 } })).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

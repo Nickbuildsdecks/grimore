@@ -2612,6 +2612,8 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // The most X it can pay (D789), as a Fireball is cast for everything available.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
             // Which card defines the ability, when this permanent did not print it (CR 113.6) —
             // copied from the play unchanged, because `abilityIndex` means nothing without it.
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
@@ -2652,6 +2654,8 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // The most X it can pay (D789), as a Fireball is cast for everything available.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             discarded: pitch,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
@@ -2677,6 +2681,8 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // The most X it can pay (D789), as a Fireball is cast for everything available.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
             // Which card defines the ability, when this permanent did not print it (CR 113.6) —
             // copied from the play unchanged, because `abilityIndex` means nothing without it.
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
@@ -2697,6 +2703,8 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // The most X it can pay (D789), as a Fireball is cast for everything available.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
             // Which card defines the ability, when this permanent did not print it (CR 113.6) —
             // copied from the play unchanged, because `abilityIndex` means nothing without it.
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
@@ -2709,6 +2717,8 @@ function candidateActions(
       out.push({
         action: {
           type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // The most X it can pay (D789), as a Fireball is cast for everything available.
+            ...(play.xMax === undefined ? {} : { x: play.xMax }),
           ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
           ...(targets.length > 0 ? { targets: [...targets] } : {}),
         },

@@ -2027,6 +2027,12 @@ export interface AutoTurnUpAction {
 export interface AutoActivateAction {
   readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
   readonly abilityIndex: number; readonly targets?: readonly Target[];
+  /**
+   * The X announced for an ability whose cost has {X} in it (D789, CR 602.2b): paid with the rest
+   * of the cost and carried on the stack object, as a spell's is. Refused on a cost without one;
+   * absent on a cost with one, it is zero.
+   */
+  readonly x?: number;
   /** The creature sacrificed to pay for it, when the ability's cost asks for one. */
   readonly sacrifice?: string;
   /**

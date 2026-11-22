@@ -16647,6 +16647,24 @@ function attachmentBonus(
   */
   const alone = attachmentRider(tail);
   if (alone !== null) return alone;
+  /*
+    A rider and keywords in one sentence (D790), either way round: "Equipped creature can't be
+    blocked and has shroud" (Whispersilk Cloak, Protective Bubble), "Enchanted creature has hexproof
+    and can't be blocked by more than one creature" (Alpha Authority), "… has defender and loses
+    flying" (Sky Tether). Both halves must read.
+  */
+  const riderFirst = /^(.+?) and has ([a-z ,]+)$/i.exec(tail);
+  if (riderFirst !== null) {
+    const rider = attachmentRider(riderFirst[1]!);
+    const keywords = grantedKeywords(riderFirst[2]!);
+    if (rider !== null && keywords !== null) return { bonus: { ...rider.bonus, keywords }, harmful: rider.harmful };
+  }
+  const keywordsFirst = /^has ([a-z]+(?: [a-z]+)?) and (.+)$/i.exec(tail);
+  if (keywordsFirst !== null) {
+    const keywords = grantedKeywords(keywordsFirst[1]!);
+    const rider = attachmentRider(keywordsFirst[2]!);
+    if (rider !== null && keywords !== null) return { bonus: { ...rider.bonus, keywords }, harmful: rider.harmful };
+  }
 
   const got = /^gets ([+-]\d+)\/([+-]\d+)(?: and has (.+))?$/i.exec(tail);
   /*
@@ -27617,6 +27635,17 @@ function readEffect(
     "That player draws an additional card" (D785): Howling Mine and Rites of Flourishing's kin, on a
     draw-step trigger. The word says why the card is there; the draw is a card drawn.
   */
+  /*
+    "You and target opponent each draw a card" (D790): Loran of the Third Path, Secret Rendezvous,
+    Flumph, and "you and that player each …" on a trigger. Two sentences, yours first: "You draw a
+    card. Target opponent draws a card." The verb is the bare form for you and takes an -s for them.
+  */
+  const both = /^you and (target opponent|target player|that player) each ([a-z]+)(.*)$/i.exec(clause.trim());
+  if (both !== null && /^(draw|gain|lose|mill|discard|sacrifice|create|scry|surveil)$/i.test(both[2]!)) {
+    const verb = both[2]!.toLowerCase();
+    const third = verb === 'scry' ? 'scries' : `${verb}s`;
+    return composeEffects([`you ${verb}${both[3]!}`, `${both[1]!} ${third}${both[3]!}`], name, where);
+  }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
     const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
@@ -31047,11 +31076,11 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     /*
       `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
       the validator here: `{E}` or `{T}` inside a run would otherwise be read as generic mana. `{X}`
-      is refused too — announcing X on an activated ability is machinery this reader does not reach,
-      and nothing in the pool hand-writes an X ability cost to compare against.
+      is read (D789): it is announced as the ability is activated (`AutoActivateAction.x`), paid
+      with the rest, and handed to the effect as `c.x`, which `xAsPaid` reads.
     */
     const parsed = parseManaCost(component);
-    if (parsed.unsupported !== undefined || parsed.x) return null;
+    if (parsed.unsupported !== undefined) return null;
     mana.push(component);
   }
   /*
@@ -33631,6 +33660,13 @@ function interveningConditionRows(
   */
   if (/^you attacked(?: with a creature)? this turn$/i.test(text)) {
     return (c) => turnFacts.attacked(c.state, c.controller) > 0;
+  }
+  // "If you attacked with two or more creatures this turn" (D790): Minas Tirith, Windbrisk Heights.
+  // The creatures declared, as raid counts them (`GameState.attackedThisTurn`).
+  const attackedWith = /^you attacked with (two|three|four|five|\d+) or more creatures this turn$/i.exec(text);
+  if (attackedWith !== null) {
+    const least = number(attackedWith[1]!);
+    if (least !== undefined) return (c) => turnFacts.attacked(c.state, c.controller) >= least;
   }
   if (/^a creature died this turn$/i.test(text)) {
     return (c) => turnFacts.creaturesDied(c.state) > 0;
