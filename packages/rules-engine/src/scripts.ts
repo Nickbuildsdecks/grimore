@@ -29568,6 +29568,13 @@ function composeEffects(
     ...(specsOut === undefined ? {} : { targets: specsOut }),
     ...(decisions.length === 0 ? {} : { decisions }),
     ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
+    /*
+      An ability that animates its own permanent is still one with another clause beside it
+      (D1109): Chimeric Idol's "Tap all lands you control. ~ becomes a 3/3 Turtle artifact creature
+      until end of turn." Dropping the hint let the bot press the {0} ability a thousand times in a
+      sweep (seed 61157), since nothing else said "only with an attack to make, and not twice".
+    */
+    ...(parts.some((part) => part.abilityFlags?.animates === true) ? { abilityFlags: { animates: true } } : {}),
   };
 }
 

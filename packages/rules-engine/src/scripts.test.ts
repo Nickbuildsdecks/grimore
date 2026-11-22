@@ -32778,6 +32778,35 @@ describe('"whenever one or more … enter": one trigger for the batch (D1108)', 
   });
 });
 
+describe('an animation beside another clause keeps its bot hint (D1109)', () => {
+  // Sweep 61101, seed 61157: the bot pressed Chimeric Idol's {0} a thousand times in one main phase.
+  const IDOL = { name: 'Test Idol', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: '{0}: Tap all lands you control. Test Idol becomes a 3/3 Turtle artifact creature until end of turn.' };
+  const deck = customDeck({ id: 'd1109', name: 'Idols', entries: [{ name: IDOL.name, count: 4 }, { name: 'Plains', count: 56 }], data: [IDOL] as never[] });
+
+  it('reads whole, with `animates` on the composed ability', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(IDOL as never) as { ok: boolean; unread: readonly unknown[]; script: { abilities?: readonly { animates?: boolean }[] } };
+    expect(read.unread).toEqual([]);
+    expect(read.script.abilities?.[0]?.animates).toBe(true);
+  });
+
+  it('the bot animates it at most once, and never when it is already a creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1109', 1: 'd1109' }, deckSpecs: { d1109: deck.deck },
+      battlefield: { 0: ['Plains', 'Test Idol'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const idol = find(s, 0, 'battlefield', 'Test Idol');
+    let presses = 0;
+    for (let i = 0; i < 12 && s.activeSeat === 0 && s.step === 'precombat-main'; i++) {
+      const action = botAction(s, 0);
+      if (action === null) break;
+      if (action.type === 'auto:activate' && action.card === idol) presses++;
+      s = drain(apply(s, action), 10);
+    }
+    expect(presses).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
