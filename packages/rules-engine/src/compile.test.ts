@@ -17816,13 +17816,23 @@ describe('kicker on a permanent: the declaration and its kicked line, as one uni
     expect(got.unread.map((u) => u.line)).toEqual(['Kicker {2}{G}', first, second]);
   });
 
+  // Retargeted by D1103: "Kicker—Sacrifice a land." is read now, as a kicker paid in a sacrifice;
+  // a cost no additional cost can pay is still not taken for the plain mana form.
   it.each([
-    'Kicker—Sacrifice a land.',
+    "Kicker—Return a land you control to its owner's hand.",
+    'Kicker—Sacrifice two lands.',
   ])('does not take %s for the plain mana form', (declaration) => {
     const line = 'When Citanul Woodreaders enters, if it was kicked, draw two cards.';
     const got = creature(`${declaration}\n${line}`);
     expect(got.script?.kicker).toBeUndefined();
     expect(got.unread.map((u) => u.line)).toContain(line);
+  });
+
+  it('reads Kicker—Sacrifice a land. as a kicker paid in a sacrifice (D1103)', () => {
+    const line = 'When Citanul Woodreaders enters, if it was kicked, draw two cards.';
+    const got = creature(`Kicker—Sacrifice a land.\n${line}`);
+    expect(got.unread).toEqual([]);
+    expect(got.script?.kicker).toMatchObject({ cost: '{0}', additional: { sacrifice: 'land' } });
   });
 
   // Retargeted by D1100: a multikicker is read on its own now; the "if it was kicked" line still is not.

@@ -706,9 +706,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let sacrificed: string | null = null;
   let sacrificedName = '';
   let sacrificedStats: SacrificedStats | null = null;
+  // A kicker paid in a sacrifice or in life (D1103): an additional cost of the kicked cast only.
+  const kickerExtra = action.kicked === true ? script?.kicker?.additional : undefined;
   const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
     ? script.additionalCost
-    : undefined;
+    : kickerExtra !== undefined && 'sacrifice' in kickerExtra ? kickerExtra : undefined;
   // "Pay X life" as an additional cost (D579): see `CardScript.additionalCost`.
   const lifeX = script?.additionalCost !== undefined && 'lifeX' in script.additionalCost;
   if (sacrificeAsked !== undefined) {
@@ -801,9 +803,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     And a printed amount of life (D585): nothing to choose, and refused at exactly the life that
     would end the game — the rule `AbilityCost.life` keeps, and the one the offer was made by.
   */
-  const lifeForCost = script?.additionalCost !== undefined && 'life' in script.additionalCost
+  const lifeForCost = (script?.additionalCost !== undefined && 'life' in script.additionalCost
     ? script.additionalCost.life
-    : 0;
+    : 0) + (kickerExtra !== undefined && 'life' in kickerExtra ? kickerExtra.life : 0);
   if (!canPayLife(state, action.by, lifeForCost)) {
     throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifeForCost} life to pay for ${characteristics.name}`);
   }

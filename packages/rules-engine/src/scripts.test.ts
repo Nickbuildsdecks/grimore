@@ -32501,6 +32501,63 @@ describe('kicked halves that refer back to the base (D1102)', () => {
   });
 });
 
+describe('kickers paid in a sacrifice or in life (D1103)', () => {
+  // CR 702.33a: "Kicker—Sacrifice a creature." is an additional cost of the kicked cast only.
+  const OFFERING = { name: 'Test Offering', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', oracle_text: 'Kicker—Sacrifice a creature. (You may sacrifice a creature in addition to any other costs as you cast this spell.)\nTarget creature gets -2/-2 until end of turn. If this spell was kicked, that creature gets -5/-5 until end of turn instead.' };
+  const SCUTA = { name: 'Test Scuta', type_line: 'Creature — Zombie', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '3', toughness: '3', oracle_text: 'Kicker—Pay 3 life. (You may pay 3 life in addition to any other costs as you cast this spell.)\nIf Test Scuta was kicked, it enters with two +1/+1 counters on it.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const GIANT = { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal', oracle_text: '', power: '6', toughness: '6' };
+  const ROWS = [OFFERING, SCUTA, BEAR, GIANT];
+  const deck = customDeck({
+    id: 'd1103', name: 'Cost kickers', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const table = (card: string, mine: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1103', 1: 'd1103' }, deckSpecs: { d1103: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Swamp', 'Swamp', ...mine], 1: ['Test Giant'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const rows = (s: GameState, card: string) => legalActions(s, 0).plays.filter((p) => p.kind === 'cast' && p.name === card);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [OFFERING, SCUTA]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the kicked cast is offered only with a creature to sacrifice, and lists it', () => {
+    expect(rows(table('Test Offering', []), 'Test Offering').map((p) => p.kicked === true)).toEqual([false]);
+    const s = table('Test Offering', ['Test Bear']);
+    const kicked = rows(s, 'Test Offering').find((p) => p.kicked === true)!;
+    expect(kicked.sacrificeOptions).toEqual([find(s, 0, 'battlefield', 'Test Bear')]);
+    expect(rows(s, 'Test Offering').find((p) => p.kicked !== true)!.sacrificeOptions).toEqual([]);
+  });
+
+  it('kicked, the creature is sacrificed as it is cast and the target gets -5/-5; unkicked, -2/-2 and nothing eaten', () => {
+    const s = table('Test Offering', ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const giant = find(s, 1, 'battlefield', 'Test Giant');
+    const card = find(s, 0, 'hand', 'Test Offering');
+    const cast = apply(s, { type: 'auto:cast', by: 0, card, kicked: true, sacrifice: bear, targets: [{ kind: 'card', id: giant }] } as Action);
+    expect(namesIn(cast, 0, 'graveyard')).toContain('Test Bear');
+    const done = drain(passBoth(cast), 20);
+    expect([power(done, giant), toughness(done, giant)]).toEqual([1, 1]);
+    const plain = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: giant }] } as Action)), 20);
+    expect(namesIn(plain, 0, 'battlefield')).toContain('Test Bear');
+    expect([power(plain, giant), toughness(plain, giant)]).toEqual([4, 4]);
+    expect(() => apply(s, { type: 'auto:cast', by: 0, card, kicked: true, targets: [{ kind: 'card', id: giant }] } as Action)).toThrow(/sacrifice/);
+  });
+
+  it('a kicker paid in life: 3 life, and the permanent enters with its counters', () => {
+    const s = table('Test Scuta', []);
+    const card = find(s, 0, 'hand', 'Test Scuta');
+    expect(rows(s, 'Test Scuta').some((p) => p.kicked === true)).toBe(true);
+    const kicked = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, kicked: true } as Action)), 20);
+    expect(life(kicked, 0)).toBe(life(s, 0) - 3);
+    expect(kicked.instances[card]!.counters['+1/+1']).toBe(2);
+    const plain = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card } as Action)), 20);
+    expect(life(plain, 0)).toBe(life(s, 0));
+    expect(plain.instances[card]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -2606,6 +2606,26 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       );
       // A multikicker paid more times than the mana covers is not offered, nor any count above it.
       if (kicking.count !== undefined && !(withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources))) break;
+      /*
+        A kicker paid in a sacrifice or in life (D1103): offered only when that can be paid too
+        (CR 601.2h), with the permanents it may eat on the play the way an additional cost's are.
+      */
+      const extra = kicker!.additional;
+      let kickVictims = victims;
+      let kickEats = {};
+      if (extra !== undefined) {
+        if (script?.additionalCost !== undefined) continue;
+        if ('life' in extra) {
+          if (!canPayLife(state, seat, extra.life)) continue;
+        } else {
+          kickVictims = sacrificeOptions(state, seat, id, extra);
+          if (kickVictims.length === 0) continue;
+          kickEats = {
+            ...(extra.sacrifice === 'artifact' || extra.sacrifice === 'artifact-or-creature' ? { sacrificeKind: extra.sacrifice } : {}),
+            sacrificeWords: sacrificeWords(extra),
+          };
+        }
+      }
       if (withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources)) {
         out.push({
           kind: 'cast', card: id, name: ch.name, kicked: true,
@@ -2614,7 +2634,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Cast ${ch.name} with ${kicking.words}`,
           manaCost: `${def?.manaCost ?? ''}${kicking.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
-          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: kickVictims, ...pitchOn, ...kickEats,
         });
       }
     }

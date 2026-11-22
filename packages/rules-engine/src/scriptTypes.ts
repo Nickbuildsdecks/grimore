@@ -3336,6 +3336,13 @@ export interface CardScript {
      * for anything that watches kicked spells.
      */
     readonly gift?: true;
+    /**
+     * A kicker paid in something besides mana (D1103): "Kicker—Sacrifice a creature.",
+     * "Kicker—{2}{R}, Sacrifice a land.", "Kicker—Pay 3 life." The mana part, if any, is `cost`
+     * (`{0}` when there is none); this is the rest, paid on the kicked cast only, the way
+     * `additionalCost` is paid on every cast. A sacrifice or a life payment.
+     */
+    readonly additional?: Extract<NonNullable<CardScript['additionalCost']>, { readonly sacrifice: unknown } | { readonly life: number }>;
   };
   /**
    * "If this was kicked, it enters with N +1/+1 counters on it [and with haste]" (D561).

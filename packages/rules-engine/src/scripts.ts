@@ -17757,7 +17757,25 @@ export function wholeCardShapeFor(
     ?? evokeShapeFor(lines)
     ?? doubleKickerShapeFor(def, lines)
     ?? kickerPermanentShapeFor(def, lines)
+    ?? costKickerPermanentShapeFor(def, lines)
     ?? escapeShapeFor(def, lines);
+}
+
+/**
+ * A permanent's kicker paid in a sacrifice or in life (D1103): "Kicker—Pay 3 life." (Phyrexian
+ * Scuta). The declaration swapped for its mana part, as `costKickerSpellFor` does for a spell, and
+ * read by `kickerPermanentShapeFor`; the rest rides the kicker as `additional`.
+ */
+function costKickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const cost = costKickerDeclaration(lines);
+  if (cost === null) return null;
+  const read = kickerPermanentShapeFor(def, lines.map((line, i) => (i === cost.at ? `Kicker ${cost.mana}` : line)));
+  const kicker = read?.fragment.kicker;
+  if (read === null || kicker === undefined || !read.claimed.includes(`Kicker ${cost.mana}`)) return null;
+  return {
+    fragment: { ...read.fragment, kicker: { ...kicker, description: cost.printed, additional: cost.extra } },
+    claimed: read.claimed.map((line) => (line === `Kicker ${cost.mana}` ? lines[cost.at]! : line)),
+  };
 }
 
 /** One `etb` or `dies` trigger, which is all the parsed board prologue below builds. */
@@ -33773,8 +33791,8 @@ function kickerClausePairFor(
   if (baseEffect === undefined) return null;
   /*
     What the two halves are made of, to tell whether one can stand for the other: their targets,
-    flags and questions. Not the bot's hints (D1102): \`expiresAtEndOfTurn\` and a target's
-    \`friendly\`, \`blinks\` and \`helpsInCombat\` say how a half is played, not what it is, and
+    flags and questions. Not the bot's hints (D1102): `expiresAtEndOfTurn` and a target's
+    `friendly`, `blinks` and `helpsInCombat` say how a half is played, not what it is, and
     Colossal Growth's "+4/+4 and gains trample and haste" carries a hint its "+3/+3" does not.
   */
   const shape = (script: Partial<CardScript>): string => JSON.stringify(
@@ -33892,7 +33910,7 @@ function kickerClausePairFor(
   const alt = spellScriptFor([sentence(altText)], name);
   const altEffect = alt.script?.onResolve;
   if (alt.script === null || alt.unread.length > 0 || altEffect === undefined) return null;
-  // The same shape apart from what each does (\`shape\`, above): same targets, same flags, and no
+  // The same shape apart from what each does (`shape`, above): same targets, same flags, and no
   // questions on either side, since a question asked on one branch only cannot be listed once for both.
   // Different targets on each branch (D1095): two modes, and the kicker picks which.
   if (shape(base.script) !== shape(alt.script)) return kickedModal(alt.script, altText, 'instead');
@@ -34009,10 +34027,56 @@ function giftSpellFor(lines: readonly string[], name: string): SpellReading | nu
   };
 }
 
+/**
+ * A kicker paid in something besides mana (D1103, CR 702.33a): "Kicker—Sacrifice a creature."
+ * (Vicious Offering), "Kicker—Sacrifice an artifact or creature." (Final Flourish),
+ * "Kicker—{2}{R}, Sacrifice a land." (Dwarven Landslide), "Kicker—Pay 3 life."
+ *
+ * The rest is a kicker like any other, so the declaration is swapped for one of its mana part
+ * (`{0}` when there is none) and the card is read by the kicker readers; the sacrifice or the
+ * life rides the kicker as `additional`. The cost itself is read by `additionalCostFromLine`,
+ * so a kicker can eat exactly what an additional cost can, and nothing else: "Sacrifice two
+ * lands", "Return a land you control to its owner's hand" and "Discard a creature card" stay
+ * unread.
+ */
+function costKickerDeclaration(lines: readonly string[]): {
+  readonly at: number; readonly printed: string; readonly mana: string;
+  readonly extra: NonNullable<NonNullable<CardScript['kicker']>['additional']>;
+} | null {
+  const at = lines.findIndex((line) => /^kicker\s*[—–]\s*/i.test(plain(line).trim()));
+  if (at < 0) return null;
+  const printed = plain(lines[at]!).trim().replace(/\.\s*$/, '');
+  const parts = /^kicker\s*[—–]\s*(?:((?:\{[^}]+\})+),\s*)?(.+)$/i.exec(printed);
+  if (parts === null) return null;
+  const words = parts[2]!;
+  const read = additionalCostFromLine(`As an additional cost to cast this spell, ${words[0]!.toLowerCase()}${words.slice(1)}.`);
+  const extra = read?.additionalCost;
+  if (extra === undefined || !('sacrifice' in extra || 'life' in extra)) return null;
+  return { at, printed, mana: parts[1] ?? '{0}', extra };
+}
+
+function costKickerSpellFor(lines: readonly string[], name: string): SpellReading | null {
+  const cost = costKickerDeclaration(lines);
+  if (cost === null) return null;
+  const { at, printed, extra } = cost;
+  const rest = spellScriptFor(lines.map((line, i) => (i === at ? `Kicker ${cost.mana}` : line)), name);
+  if (rest.script === null || rest.unread.length > 0 || rest.script.kicker === undefined
+    || rest.script.kicker.second !== undefined || rest.script.kicker.multi === true
+    || rest.script.additionalCost !== undefined) return null;
+  return {
+    script: { ...rest.script, kicker: { ...rest.script.kicker, description: printed, additional: extra } },
+    compiled: [...lines],
+    unread: [],
+  };
+}
+
 export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
   // Gift (D1096), read on the kicker's machinery before the kicker readers see the lines.
   const gifted = giftSpellFor(lines, name);
   if (gifted !== null) return gifted;
+  // A kicker paid in a sacrifice or in life (D1103), the same way.
+  const costKicked = costKickerSpellFor(lines, name);
+  if (costKicked !== null) return costKicked;
   /*
     The kicker pair, before anything else, because the keyword loop below would split it: the
     declaration would land in `declared` as an unimplemented keyword and the resolution line would
