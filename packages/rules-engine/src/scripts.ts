@@ -31,7 +31,7 @@ import {
   BLITZED,
   SURGED,
   SQUADDED,
-  addCounters, addToPool, addTokens, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard,
+  addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard,
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
@@ -26417,6 +26417,26 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     matters: a player taken to 0 by the life loss still drew the cards, and a player with no cards
     left to draw has already lost either way.
   */
+  /*
+    Extra turns (D1132, CR 500.7): "Take an extra turn after this one" (Time Walk, Temporal
+    Manipulation), "you take …", "target player takes an extra turn" (Time Warp, Beacon of
+    Tomorrows), "… two extra turns" (Time Stretch). See `GameState.extraTurns`.
+  */
+  const extra = /^(?:(you )?take|(target player|target opponent) takes) (an|one|two|three) extra turns? after this one$/i.exec(text);
+  if (extra !== null) {
+    const count = ({ an: 1, one: 1, two: 2, three: 3 } as Record<string, number>)[extra[3]!.toLowerCase()]!;
+    if (extra[2] === undefined) return { effect: (c) => grantExtraTurns(c.state, c.controller, count) };
+    const spec = targetSpecFrom(extra[2], /player/i.test(extra[2]));
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : grantExtraTurns(c.state, seat, count);
+        },
+      };
+    }
+  }
   const bled = /^target player draws ([\w]+) cards? and loses (\d+) life$/i.exec(text);
   if (bled !== null) {
     const cards = countFrom(bled[1]!);

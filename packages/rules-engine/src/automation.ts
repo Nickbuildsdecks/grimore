@@ -151,6 +151,28 @@ function nextAlive(state: GameState, from: SeatIndex): SeatIndex {
   return from;
 }
 
+/**
+ * Whose turn comes next, and the extra turns left after it (D1132): the newest extra turn of a
+ * player still in the game, or else the next seat in order. Extra turns of eliminated players are
+ * dropped (CR 800.4a: what they would have done does not happen).
+ */
+function takeExtraTurn(state: GameState): {
+  activeSeat: SeatIndex; extraTurns?: readonly SeatIndex[]; extraTurnResume?: SeatIndex;
+} {
+  const owed = [...(state.extraTurns ?? [])];
+  while (owed.length > 0) {
+    const seat = owed.pop()!;
+    if (state.seats[seat]?.eliminated === false) {
+      return {
+        activeSeat: seat,
+        extraTurns: owed.length === 0 ? undefined : owed,
+        extraTurnResume: state.extraTurnResume ?? state.activeSeat,
+      };
+    }
+  }
+  return { activeSeat: nextAlive(state, state.extraTurnResume ?? state.activeSeat), extraTurns: undefined, extraTurnResume: undefined };
+}
+
 /** The seat whose turn comes before `from`. `startAutomation` needs it to begin on the right seat. */
 function prevAlive(state: GameState, from: SeatIndex): SeatIndex {
   const n = state.seats.length;
@@ -724,7 +746,8 @@ function advanceStep(state: GameState): GameState {
         // The cleanup step has cleared that record, so this empties everything.
         ...emptyPools(next),
         turn: next.turn + 1,
-        activeSeat: nextAlive(next, next.activeSeat),
+        // An extra turn first (D1132, CR 500.7): the most recently created, of a player still in it.
+        ...takeExtraTurn(next),
         combat: EMPTY_COMBAT,
         // Added phases belong to the turn that made them (D726).
         extraPhases: undefined,

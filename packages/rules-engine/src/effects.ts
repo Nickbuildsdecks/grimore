@@ -3118,6 +3118,12 @@ function pushEffect(state: GameState, effect: Omit<ContinuousEffect, 'id' | 'cre
   return { ...state, autoSeq: seq, effects: [...state.effects, full] };
 }
 
+/** "Take an extra turn after this one" (D1132, CR 500.7): `count` more turns owed to `seat`. */
+export function grantExtraTurns(state: GameState, seat: SeatIndex, count: number): GameState {
+  if (count <= 0 || state.seats[seat]?.eliminated !== false) return state;
+  return { ...state, extraTurns: [...(state.extraTurns ?? []), ...Array.from({ length: count }, () => seat)] };
+}
+
 /** "Target creature gets +3/+3 until end of turn", and everything shaped like it. */
 export function pump(
   state: GameState, ids: readonly string[], source: string, controller: SeatIndex, opts: PumpOptions,

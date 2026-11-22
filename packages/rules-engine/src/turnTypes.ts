@@ -812,6 +812,20 @@ export interface AutomationState {
    */
   readonly extraPhases?: readonly ('beginning' | 'combat' | 'main')[];
   /**
+   * Extra turns still owed (D1132, CR 500.7): "Take an extra turn after this one" (Time Warp,
+   * Temporal Manipulation, Time Walk). A stack: the most recently created is taken first, which is
+   * the rule. When a turn ends, `advanceStep` takes the last one whose player is still in the game
+   * instead of passing to the next seat; when none are left the order picks up from whoever had
+   * the extra turns.
+   */
+  readonly extraTurns?: readonly SeatIndex[];
+  /**
+   * Whose regular turn the extra turns came after (D1132), so the order resumes after that seat
+   * once they are taken: Time Warp aimed at the player across the table does not skip the one in
+   * between. Set by the first extra turn taken, cleared when the order resumes.
+   */
+  readonly extraTurnResume?: SeatIndex;
+  /**
    * Cards a resolving spell has revealed to the table (D728, CR 701.20a): Fact or Fiction's "reveal
    * the top five cards of your library". Every seat sees them (`view.ts`), and a question may be
    * asked about them (`DecisionZone` `revealed`). Set by the spell and cleared by it as it finishes.

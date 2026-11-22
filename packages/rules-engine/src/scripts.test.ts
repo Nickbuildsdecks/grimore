@@ -33796,6 +33796,51 @@ describe('"It gains haste." and an end-step exile after a return (D1131)', () =>
   });
 });
 
+describe('extra turns (D1132)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: text });
+  const WALK = S('Test Walk', 'Take an extra turn after this one.');
+  const WARP = S('Test Warp', 'Target player takes an extra turn after this one.');
+  const STRETCH = S('Test Stretch', 'Target player takes two extra turns after this one.');
+  const ROWS = [WALK, WARP, STRETCH];
+  const deck = customDeck({
+    id: 'd1132', name: 'Time', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 54 }], data: ROWS as never[],
+  });
+  /** Seat 0 casts `spell` (at `aim` if it targets), then the next `turns` turns are walked; their active seats. */
+  const order = (spell: string, turns: number, seats: 2 | 3 = 2, aim?: 0 | 1 | 2) => {
+    const decks = seats === 3 ? { 0: 'd1132', 1: 'd1132', 2: 'd1132' } : { 0: 'd1132', 1: 'd1132' };
+    let s = advanceTo(arena({
+      ...(seats === 3 ? { format: 'pod', seats: 3 } : {}),
+      decks, deckSpecs: { d1132: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const targets = aim === undefined ? {} : { targets: [{ kind: 'player', seat: aim }] };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...targets } as Action)), 30);
+    const seen: number[] = [];
+    for (let i = 0; i < turns; i++) {
+      s = drain(nextTurn(s), 30);
+      seen.push(s.activeSeat);
+    }
+    return seen;
+  };
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"take an extra turn" is the caster\'s, then the order goes on', () => {
+    expect(order('Test Walk', 3)).toEqual([0, 1, 0]);
+  });
+
+  it('"two extra turns" are two', () => {
+    expect(order('Test Stretch', 4, 2, 0)).toEqual([0, 0, 1, 0]);
+  });
+
+  it('aimed across a three-player table, the order resumes after the caster, skipping nobody', () => {
+    expect(order('Test Warp', 4, 3, 2)).toEqual([2, 1, 2, 0]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
