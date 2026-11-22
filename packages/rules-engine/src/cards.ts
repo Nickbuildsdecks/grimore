@@ -489,6 +489,8 @@ export interface CardInstance {
    * "Activate no more than twice each turn". Absent for a key means once.
    */
   readonly abilityUseCount?: Readonly<Record<string, number>>;
+  /** Each "only once" ability used (D1133), keyed as `abilityUsedTurn`, with the object it was. */
+  readonly abilityExhausted?: Readonly<Record<string, number>>;
   /**
    * This permanent does not untap during its controller's next untap step (CR 502.2).
    *

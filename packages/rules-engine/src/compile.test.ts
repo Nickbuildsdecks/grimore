@@ -8314,11 +8314,7 @@ describe('the label in front of an ability, which has no rules meaning', () => {
       colors: ['W'], power: '3', toughness: '3', layout: 'normal',
       oracle_text: 'Boast — {1}{W}: Untap Axgard Braggart. Put a +1/+1 counter on it.',
     }],
-    ['a keyword that is the restriction (exhaust)', {
-      name: 'Afterburner Expert', type_line: 'Creature — Goblin Artificer', mana_cost: '{2}{G}',
-      cmc: 3, colors: ['G'], power: '4', toughness: '2', layout: 'normal',
-      oracle_text: 'Exhaust — {2}{G}{G}: Put two +1/+1 counters on this creature.',
-    }],
+    // Retargeted by D1133: exhaust reads now, with its restriction (`onceEver`); see the test below.
     // "Descend N" comes off since D612 (an ability word with a digit, and the sentence restates the
     // condition); this remainder — "an additional +2/+2" and a blocking limit — still does not read.
     ['a descend line whose remainder does not read', {
@@ -8332,6 +8328,18 @@ describe('the label in front of an ability, which has no rules meaning', () => {
     const read = card(row);
     expect(read.ok).toBe(true);
     expect(unreadLines(read)).toHaveLength(1);
+  });
+
+  it('reads exhaust with its restriction since D1133: the ability is "only once"', () => {
+    const read = card({
+      name: 'Afterburner Expert', type_line: 'Creature — Goblin Artificer', mana_cost: '{2}{G}',
+      cmc: 3, colors: ['G'], power: '4', toughness: '2', layout: 'normal',
+      oracle_text: 'Exhaust — {2}{G}{G}: Put two +1/+1 counters on this creature.',
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toEqual([]);
+    if (!read.ok) return;
+    expect(read.script?.abilities?.[0]?.onceEver).toBe(true);
   });
 
   /*

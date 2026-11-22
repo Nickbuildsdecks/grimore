@@ -770,8 +770,10 @@ export function spectacleRefusal(
  * for "only once each turn", N for "no more than N times each turn", less what was used this turn.
  */
 export function usesLeftThisTurn(
-  state: GameState, inst: CardInstance, ability: { readonly onceEachTurn?: true; readonly timesEachTurn?: number }, key: string,
+  state: GameState, inst: CardInstance, ability: { readonly onceEachTurn?: true; readonly timesEachTurn?: number; readonly onceEver?: true }, key: string,
 ): number {
+  // "Activate only once" / exhaust (D1133): spent for as long as this object exists.
+  if (ability.onceEver === true && inst.abilityExhausted?.[key] === (inst.objectSeq ?? 0)) return 0;
   const limit = ability.onceEachTurn === true ? 1 : ability.timesEachTurn;
   if (limit === undefined) return Infinity;
   const used = inst.abilityUsedTurn?.[key] === state.turn ? inst.abilityUseCount?.[key] ?? 1 : 0;

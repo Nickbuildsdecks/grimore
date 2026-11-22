@@ -30379,6 +30379,7 @@ function animateThen(clause: string, name: string): ReadEffect | null {
 interface ActivationFlags {
   sorcerySpeed?: true;
   onceEachTurn?: true;
+  onceEver?: true;
   timesEachTurn?: number;
   timing?: ActivationTiming;
   activateOnlyIf?: (state: GameState, source: string, controller: SeatIndex) => boolean;
@@ -30399,6 +30400,8 @@ function activationRestriction(
     const clause = part.trim().toLowerCase();
     if (clause === 'as a sorcery') flags.sorcerySpeed = true;
     else if (clause === 'once each turn') flags.onceEachTurn = true;
+    // "Activate only once." (D1133): see `AbilityDef.onceEver`.
+    else if (clause === 'once') flags.onceEver = true;
     /*
       The three timing clauses (D509). **Order matters inside this chain**: the longest reading is
       tried first, because "during your turn, before attackers are declared" starts with "during
@@ -30518,6 +30521,18 @@ function affinityCount(phrase: string): ((state: GameState, id: string) => boole
 
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
+  /*
+    Exhaust (D1133, CR 702.177a): "Exhaust — <cost>: <effect>" is an activated ability that may be
+    activated only once. The keyword is the restriction, which is why it is never stripped as an
+    ability word: read here, the ability carries `onceEver`.
+  */
+  const exhaust = /^exhaust\s*[\u2014\u2013]\s*(.+)$/i.exec(text);
+  if (exhaust !== null) {
+    const inner = abilityFromLine(exhaust[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (inner === null || abilities.length !== 1) return null;
+    return { ...inner, abilities: [{ ...abilities[0]!, onceEver: true }] };
+  }
   /*
     "… This ability costs {1} less to activate for each legendary creature you control." (D781):
     the last sentence comes off, the rest is read as it would be, and the count is carried on the

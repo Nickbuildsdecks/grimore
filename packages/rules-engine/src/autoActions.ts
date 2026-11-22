@@ -2269,6 +2269,11 @@ function activate(
       ...(ability.timesEachTurn === undefined ? {} : { abilityUseCount: { ...now.abilityUseCount, [useKey]: before + 1 } }),
     });
   }
+  // And "only once" (D1133): spent as it is activated, against this object.
+  if (ability.onceEver === true) {
+    const now = requireInstance(next, inst.id);
+    next = withInstance(next, inst.id, { abilityExhausted: { ...now.abilityExhausted, [useKey]: now.objectSeq ?? 0 } });
+  }
   if (ability.cost.loyalty !== undefined) {
     // Paid as the ability is activated (CR 606.2), so the counters move before it is on the
     // stack: a planeswalker that goes to zero this way is already dying while its own ability
