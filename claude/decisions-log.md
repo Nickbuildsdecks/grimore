@@ -56004,3 +56004,32 @@ Faults injected by hand: 1 (the move made through `addCounters`, so Scales adds 
 caught.
 
 Coverage: 14,835 of 31,900 cards (+10 over D1092's 14,825), 36,516 of 59,888 lines (+13).
+
+## D1094 — champion
+
+"Champion a Goblin" (CR 702.72a): "When this enters, sacrifice it unless you exile another Goblin
+you control. When this leaves the battlefield, that card returns to the battlefield under its
+owner's control." 12 legal cards, 10 of them a single keyword short.
+
+- **Engine:** `championTriggers(kinds, words)` returns two triggers.
+  - The enter trigger asks for up to one other creature of the kind you control. It is a
+    **choice, not a target**, so a hexproof creature may be championed. The chosen card is exiled
+    with `exileUntilLeaves`, the link Banisher Priest uses. Choosing nothing, or having nothing to
+    choose, sacrifices the champion.
+  - The leave trigger is the same `returnExiledBy`.
+  - The computer champions its weakest candidate.
+- **Reader:** "Champion a creature", "Champion a Goblin" and "Champion a Treefolk or Warrior". A
+  word that is neither "creature" nor a creature type stays unread.
+
+Seven now read whole: Boggart Mob, the three Changelings, Wren's Run Packmaster, Lightning Crafter
+and Unstoppable Ash. Mistbind Clique's own "when a Faerie is championed" trigger is still unread.
+
+**Tests.** 3 engine tests:
+- It reads whole, with its reminder text.
+- Only another Goblin is offered, a hexproof one included. It is exiled, and it comes back when
+  the champion leaves.
+- With no other Goblin, or choosing none, the champion is sacrificed.
+
+Faults injected by hand: 1 (the return removed). It is caught.
+
+Coverage: 14,845 of 31,900 cards (+10 over D1093's 14,835), 36,528 of 59,888 lines (+12).
