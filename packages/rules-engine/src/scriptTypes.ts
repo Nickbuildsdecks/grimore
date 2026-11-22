@@ -437,6 +437,24 @@ export type TriggerEvent =
       readonly subjectSubtypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
       readonly subject?: string;
+      /**
+       * The subject words of a death (D1113), as `etb` has them since D1112: "a **white** creature
+       * you control dies", "a **legendary** creature", "a creature **token** dies". Asked of what it
+       * was as it died.
+       */
+      readonly colour?: string;
+      readonly colorless?: true;
+      readonly legendary?: true;
+      readonly token?: true;
+      /** Set by the engine: the subject's colours as it died, and whether it was legendary. */
+      readonly subjectColours?: readonly string[];
+      readonly subjectLegendary?: boolean;
+      /**
+       * Set by the engine: the other permanents that died in the same pass (D1113). They are asked
+       * about this death too, from wherever they went: a Blood Artist destroyed in the same wipe
+       * still sees the others die (CR 603.10a, leaves-the-battlefield abilities look back).
+       */
+      readonly alongside?: readonly string[];
     }
   /**
    * "Whenever **you** attack" — one event for the whole declaration, not one per creature.

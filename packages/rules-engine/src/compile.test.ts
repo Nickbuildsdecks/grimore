@@ -18141,11 +18141,17 @@ describe('one sentence, two events — and two death prologues (D565)', () => {
       'Whenever Grave Titan enters or attacks, draw a card. This ability triggers only once each turn.'],
     ['three events', 'Whenever Grave Titan enters, attacks, or blocks, draw a card.'],
     ['a pair one of whose halves is not an event row', 'Whenever Grave Titan attacks or becomes untapped, draw a card.'],
-    ['a narrower death', 'Whenever a nontoken creature dies, you gain 1 life.'],
+    // Retargeted by D1113: "a narrower death" ("Whenever a nontoken creature dies") reads now, below.
   ])('leaves %s unread', (_what, line) => {
     const got = creature(line);
     expect(got.script?.triggers ?? []).toEqual([]);
     expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+  // Retargeted by D1113: a narrower death reads, with the filter on it.
+  it('reads "Whenever a nontoken creature dies" with its filter (D1113)', () => {
+    const got = creature('Whenever a nontoken creature dies, you gain 1 life.');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([{ kind: 'dies', who: 'any', what: 'creature', nontoken: true }]);
   });
 });
 

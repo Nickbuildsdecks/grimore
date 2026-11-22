@@ -18053,6 +18053,40 @@ function richEntryTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
   } as BoardEvent];
 }
 
+/**
+ * A death named with subject words (D1113), `richEntryTrigger`'s twin: "Whenever a **white**
+ * creature you control dies", "a **legendary** creature", "a creature **token** dies", "a
+ * **nontoken** creature an opponent controls dies", "another nontoken creature dies", "a creature
+ * **you own** dies", "a creature **with power 4 or greater** dies" with nobody's side named. Asked
+ * after the plainer rows, so it reads only what they refused.
+ */
+function richDeathTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
+  const g = matched.groups ?? {};
+  const who = BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+  if (who === undefined) return null;
+  const words = (g.qual ?? '').trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const colourWords = words.filter((w) => COLOUR_WORDS[w] !== undefined);
+  if (colourWords.length > 1) return null;
+  // Nothing but "a creature" or "another creature": the plainer rows' (D565), with their shapes.
+  if (words.length === 0 && g.token === undefined && g.of === undefined && g.filter === undefined) return null;
+  const filter = boardFilter(g.filter ?? '');
+  if (filter === null) return null;
+  const whose = (g.of ?? '').trim().toLowerCase();
+  const of = whose === 'you control' ? 'you' as const : whose === 'an opponent controls' ? 'opponent' as const : 'any' as const;
+  if (g.token !== undefined && words.includes('nontoken')) return null;
+  return [{
+    // Nobody's side named is no `of` at all, as the plainer death rows write it (D565).
+    kind: 'dies', who, ...(of === 'any' ? {} : { of }), what: g.what!.toLowerCase() as BoardEvent['what'],
+    ...(whose === 'you own' ? { owner: 'you' as const } : {}),
+    ...(colourWords.length === 1 ? { colour: COLOUR_WORDS[colourWords[0]!]! } : {}),
+    ...(words.includes('colorless') ? { colorless: true as const } : {}),
+    ...(words.includes('legendary') ? { legendary: true as const } : {}),
+    ...(words.includes('nontoken') ? { nontoken: true as const } : {}),
+    ...(g.token === undefined ? {} : { token: true as const }),
+    ...filter,
+  } as BoardEvent];
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -18789,6 +18823,15 @@ const TRIGGER_SHAPES: readonly ({
       'i',
     ),
     from: richEntryTrigger,
+  },
+  // Subject words on a death (D1113): see `richDeathTrigger`. After the plainer rows.
+  {
+    prologue: () => new RegExp(
+      `^When(?:ever)? (?<who>a|an|another) (?<qual>(?:(?:white|blue|black|red|green|colorless|legendary|nontoken) )+)?`
+      + `(?<what>creature)(?<token> token)?(?<of> you control| an opponent controls| you own)?(?<filter> with [^,]+?)? dies, (?<clause>.+)$`,
+      'i',
+    ),
+    from: richDeathTrigger,
   },
   {
     prologue: () => new RegExp(

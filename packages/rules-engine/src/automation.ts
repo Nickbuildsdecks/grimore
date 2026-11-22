@@ -1642,6 +1642,13 @@ function triggerMatches(
       if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
       // "Enters untapped" (D679), asked of the arrival itself.
       if (want.kind === 'etb' && want.untapped === true && (event as { subjectTapped?: boolean }).subjectTapped !== false) return false;
+      // And of a death (D1113): a colour, colorless, legendary, a token.
+      if (want.kind === 'dies' && event.kind === 'dies') {
+        if (want.colour !== undefined && !(event.subjectColours ?? []).includes(want.colour)) return false;
+        if (want.colorless === true && (event.subjectColours ?? ['?']).length > 0) return false;
+        if (want.legendary === true && event.subjectLegendary !== true) return false;
+        if (want.token === true && event.subjectIsToken !== true) return false;
+      }
       // The subject words of an entry (D1112): a colour, colorless, legendary, a mana value.
       if (want.kind === 'etb' && event.kind === 'etb') {
         if (want.colour !== undefined && !(event.subjectColours ?? []).includes(want.colour)) return false;
@@ -2452,6 +2459,11 @@ function raise(
           subjectLegendary: live.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'),
           subjectManaValue: next.cardDefs[inst.defKey]?.cmc ?? 0,
         } : {}),
+        // And a death's (D1113), as it last was.
+        ...(event.kind === 'dies' ? {
+          subjectColours: [...live.colors],
+          subjectLegendary: live.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'),
+        } : {}),
         /*
           And its live card types, for the artifact and enchantment board-watchers (D477). Read off
           the characteristics' type line, so a permanent whose type was changed by an effect is
@@ -2558,9 +2570,11 @@ function raise(
     || event.kind === 'targeted'
     ? (event as { attachments?: readonly string[] }).attachments ?? []
     : [];
-  const everyBattlefieldAndAttached = attachedWatchers.length === 0
+  // And what died alongside the subject (D1113): a Blood Artist in the same wipe still watches.
+  const diedAlongside = event.kind === 'dies' ? event.alongside ?? [] : [];
+  const everyBattlefieldAndAttached = attachedWatchers.length === 0 && diedAlongside.length === 0
     ? everyBattlefield
-    : [...new Set([...everyBattlefield, ...attachedWatchers])];
+    : [...new Set([...everyBattlefield, ...attachedWatchers, ...diedAlongside])];
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
     || event.kind === 'blocks' || event.kind === 'becomes-blocked'
     || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
@@ -2590,7 +2604,7 @@ function raise(
       `vanished` for exactly this read (CR 603.6d). Only for the subject — a vanished token is not
       on anybody's battlefield and so is not watching anything else.
     */
-    const inst = next.instances[id] ?? (id === subject ? next.vanished[id] : undefined);
+    const inst = next.instances[id] ?? (id === subject || diedAlongside.includes(id) ? next.vanished[id] : undefined);
     if (inst === undefined) continue;
     // A `dies` trigger fires from the graveyard, but only for the creature that died: any other
     // watcher has to still be on the battlefield to be watching.
@@ -2616,7 +2630,9 @@ function raise(
       wrote the trigger would be a worse rule than asking whether the event was about its host.
     */
     // A creature that died in the batch it watches still sees the others go (D1000, CR 603.10a).
-    const diedInBatch = event.kind === 'creatures-died' && (event.died ?? []).some((d) => d.id === id);
+    const diedInBatch = (event.kind === 'creatures-died' && (event.died ?? []).some((d) => d.id === id))
+      // And one that died alongside this death (D1113): it looks back too.
+      || diedAlongside.includes(id);
     const fromGraveyard = diedInBatch || (event.kind === 'dies' || event.kind === 'leaves'
       || event.kind === 'to-graveyard'
       // The Aura a lethal hit detached (D994): it was attached when the damage was dealt.
@@ -4277,7 +4293,11 @@ function settle(state: GameState, before: GameState): GameState {
       const were = detached[id];
       next = raise(
         next,
-        { kind: 'dies', ...(were === undefined || were.length === 0 ? {} : { attachments: were }) },
+        {
+          kind: 'dies', ...(were === undefined || were.length === 0 ? {} : { attachments: were }),
+          // What died with it (D1113, CR 603.10a): each still sees this death.
+          ...(dead.length > 1 ? { alongside: dead.filter((other) => other !== id) } : {}),
+        },
         next.instances[id]?.zoneSeat,
         id,
       );

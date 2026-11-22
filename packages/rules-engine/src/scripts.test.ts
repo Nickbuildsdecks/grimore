@@ -32920,6 +32920,70 @@ describe('an entry named with subject words: colour, colorless, legendary, token
   });
 });
 
+describe('a death named with subject words: nontoken, token, legendary, colour, whose (D1113)', () => {
+  // Harvester of Souls, Grismold, Fire Nation Sentinels, Ogre Slumlord, Overseer of the Damned.
+  const C = (name: string, text: string, extra: Partial<{ type_line: string; colors: string[] }> = {}) => ({ name, type_line: 'Creature — Human', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: text, ...extra });
+  const HARVESTER = C('Test Harvester', 'Whenever a nontoken creature an opponent controls dies, you gain 1 life.');
+  const MOURNER = C('Test Mourner', 'Whenever a legendary creature you control dies, you gain 1 life.');
+  const HERO = C('Test Hero', '', { type_line: 'Legendary Creature — Human' });
+  const BEAR = C('Test Bear', '');
+  const MURDER = { name: 'Test Murder', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const ROWS = [HARVESTER, MOURNER, HERO, BEAR, MURDER];
+  const deck = customDeck({
+    id: 'd1113', name: 'Deaths', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1113', 1: 'd1113' }, deckSpecs: { d1113: deck.deck },
+    hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Swamp', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, id: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Murder'), targets: [{ kind: 'card', id }] } as Action)), 40);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [HARVESTER, MOURNER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an opponent\u2019s nontoken creature: their Bear counts, mine does not', () => {
+    const s = table(['Test Harvester', 'Test Bear'], ['Test Bear']);
+    expect(life(kill(s, find(s, 1, 'battlefield', 'Test Bear')), 0)).toBe(life(s, 0) + 1);
+    expect(life(kill(s, find(s, 0, 'battlefield', 'Test Bear')), 0)).toBe(life(s, 0));
+  });
+
+  it('a legendary creature of mine: the Hero counts, the Bear does not', () => {
+    const s = table(['Test Mourner', 'Test Hero', 'Test Bear'], []);
+    expect(life(kill(s, find(s, 0, 'battlefield', 'Test Hero')), 0)).toBe(life(s, 0) + 1);
+    expect(life(kill(s, find(s, 0, 'battlefield', 'Test Bear')), 0)).toBe(life(s, 0));
+  });
+
+  /*
+    CR 603.10a: a leaves-the-battlefield ability looks back, so a watcher destroyed in the same wipe
+    still sees the others die. Before D1113 only `creatures-died` (D1000) did; "another creature
+    dies" in a wipe saw nothing, and "a creature you control dies" saw only its own death.
+  */
+  it('a watcher destroyed in the same wipe still sees the others die (CR 603.10a)', () => {
+    const ARTIST = C('Test Artist', 'Whenever Test Artist or another creature dies, you gain 1 life.');
+    const PLAGUE = { name: 'Test Plague', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'Destroy all creatures.' };
+    const rows = [ARTIST, HARVESTER, MOURNER, HERO, BEAR, PLAGUE];
+    const wipeDeck = customDeck({
+      id: 'd1113w', name: 'Wipes', entries: [...rows.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 48 }], data: rows as never[],
+    });
+    const wipe = (mine: string[], theirs: string[]): number => {
+      const s = advanceTo(arena({
+        decks: { 0: 'd1113w', 1: 'd1113w' }, deckSpecs: { d1113w: wipeDeck.deck },
+        hands: { 0: ['Test Plague'] }, battlefield: { 0: ['Swamp', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+      }), 'precombat-main');
+      const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Plague') } as Action)), 40);
+      return life(after, 0) - life(s, 0);
+    };
+    // Itself, my Bear, their Bear.
+    expect(wipe(['Test Artist', 'Test Bear'], ['Test Bear'])).toBe(3);
+    // Their nontoken Bear, though the Harvester dies too.
+    expect(wipe(['Test Harvester'], ['Test Bear'])).toBe(1);
+    // My Hero, though the Mourner dies too.
+    expect(wipe(['Test Mourner', 'Test Hero', 'Test Bear'], [])).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
