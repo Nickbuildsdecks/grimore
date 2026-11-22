@@ -56965,3 +56965,30 @@ new test that checks its shape.
 Faults injected by hand: 1. The count dropped from the new rows: one attacker gains (caught).
 
 Coverage: 15,026 of 31,900 cards (+2 over D1117's 15,024), 36,895 of 59,888 lines (+2).
+
+## D1119 — "whenever a creature you control explores"
+
+Explore has been an effect since D590 ("When ~ enters, it explores"), but it raised no event, so
+"Whenever a creature you control explores" (Lurking Chupacabra, Wildgrowth Walker, Shadowed Caravel,
+Merfolk Cave-Diver) was unread.
+
+**The event.** The explore effect records its explorer on the state (`explored`) as it explores,
+whether the revealed card is a land or not, and whether or not the question is asked. `settle`
+drains that list as it drains `countersPut` (D633), raising one `explores` event per explore with
+the explorer as its subject. A creature that has left the battlefield still explored (CR 701.44c),
+so the event is raised for it too, read from `vanished` if need be.
+
+**The trigger.** `explores` takes `who` (self, another, any) and `of` (you, any), asked as the board
+events ask them. Rows: "Whenever a creature you control explores", "Whenever another creature you
+control explores", "Whenever ~ explores".
+
+Read whole now: Lurking Chupacabra, Wildgrowth Walker and Shadowed Caravel. Jadelight Ranger's
+"explores, then it explores again" is still the D590 refusal.
+
+**Tests.** 2 engine tests:
+- Both test cards read whole.
+- The Scout explores (its question answered if asked) and the Walker gains 3 life.
+
+Faults injected by hand: 1. The event not raised (caught).
+
+Coverage: 15,029 of 31,900 cards (+3 over D1118's 15,026), 36,898 of 59,888 lines (+3).
