@@ -10963,9 +10963,12 @@ describe('deck-construction keywords are compiled and silent (D670)', () => {
     expect(read.unread).toEqual([]);
     expect(read.script).toBeUndefined();
   });
-  it('leaves "Partner with" unread, because its reminder is a real enter trigger', () => {
+  // Retargeted by D1091: "Partner with" is read now, and as its enter trigger, not as silence.
+  it('reads "Partner with" as its reminder\'s enter trigger, not as a silent keyword', () => {
     const read = legend('Partner with Other Thing (When this creature enters, target player may put Other Thing into their hand from their library, then shuffle.)');
-    expect(read.ok && read.unread.length).toBe(1);
+    expect(read.ok && read.unread).toEqual([]);
+    expect(read.ok && read.script?.triggers?.length).toBe(1);
+    expect(read.ok && read.script?.triggers?.[0]?.on.kind).toBe('etb');
   });
 });
 

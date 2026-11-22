@@ -893,13 +893,34 @@ function compileSingle(row: CardDataRow): Compilation {
       forever"), "Choose a Background", "Doctor's companion". Each says which second commander a deck may have and does
       nothing once the game starts, and `customDeck`'s `partnersLegally` (D640) is where it is
       enforced — so the line is compiled and emits nothing, like a printed keyword. "Partner with
-      <name>" is **not** one of them: its reminder text is a real enter trigger (CR 702.124j), which
-      nothing here reads yet.
+      <name>" is **not** one of them: its reminder text is a real enter trigger (CR 702.124j), read
+      just below (D1091).
     */
     if (/^(?:partner|partner\s*[—-]\s*[a-z' ]+|choose a background|doctor['’]s companion)$/i
       .test(line.replace(/\([^)]*\)/g, '').trim())) {
       compiled.push(line);
       continue;
+    }
+    /*
+      "Partner with <name>" (D1091, CR 702.124j): the deck half is `partnersLegally`'s, and the game
+      half is the reminder text's enter trigger — "When this creature enters, target player may
+      search their library for a card named <name>, reveal it, put it into their hand, then
+      shuffle." Read by giving that sentence to the line reader, which reads every word of it
+      already (D986's search by name), so the keyword and its printed reminder cannot disagree.
+    */
+    const partnerWith = /^partner with (.+?)\.?$/i.exec(line.replace(/\([^)]*\)/g, '').trim());
+    if (partnerWith !== null) {
+      const named = partnerWith[1]!;
+      const read = lineScriptFor(
+        `When ${def.name} enters, target player may search their library for a card named ${named}, reveal it, put it into their hand, then shuffle.`,
+        def.name,
+      );
+      if (read !== null && read.triggers?.length === 1 && Object.keys(read).length === 1) {
+        const fragment: Partial<CardScript> = { triggers: [{ ...read.triggers[0]!, description: `Partner with ${named}` }] };
+        if (merge(built, fragment) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
+        compiled.push(line);
+        continue;
+      }
     }
     /*
       "~ can be your commander." (D761): the planeswalkers and other cards that may lead a deck

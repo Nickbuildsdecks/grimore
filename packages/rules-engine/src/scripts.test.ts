@@ -31845,6 +31845,49 @@ describe('"attacks a player", "if no opponent has more life than that player" (D
   });
 });
 
+describe('"Partner with <name>": the enter trigger that fetches the partner (D1091)', () => {
+  // CR 702.124j: target player may search their library for the named card and put it in hand.
+  const ROWS = [
+    { name: 'Test Ram', type_line: 'Legendary Creature — Goat', oracle_text: 'Partner with Test Ewe (When this creature enters, target player may put Test Ewe into their hand from their library, then shuffle.)', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Ewe', type_line: 'Legendary Creature — Goat', oracle_text: 'Partner with Test Ram', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1091', name: 'Goats', entries: [{ name: 'Test Ram', count: 1 }, { name: 'Test Ewe', count: 1 }, { name: 'Forest', count: 40 }], data: ROWS as never[],
+  });
+  /** Casts the Ram and aims its trigger at `aim`; returns the state at the first search question. */
+  const enter = (aim: SeatIndex) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1091', 1: 'd1091' }, deckSpecs: { d1091: deck.deck },
+      hands: { 0: ['Test Ram'] }, battlefield: { 0: [], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ram') } as Action);
+    for (let i = 0; i < 10 && t.pendingDecision === null && (t.stackOrder.length > 0 || t.pendingChoice !== null); i++) {
+      t = t.pendingChoice !== null
+        ? apply(t, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: aim }] })
+        : passBoth(t);
+    }
+    return t;
+  };
+
+  it('reads whole, with its reminder text', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('you may put the named partner from your library into your hand', () => {
+    let s = enter(0 as SeatIndex);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect([...new Set(s.pendingDecision!.candidates.map((id) => nameOf(s, id)))]).toEqual(['Test Ewe']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [...s.pendingDecision!.candidates] } as Action), 20);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Ewe');
+  });
+
+  it('aimed at the opponent, it is their library and their choice', () => {
+    const s = enter(1 as SeatIndex);
+    expect(s.pendingDecision?.seat).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
