@@ -57092,3 +57092,31 @@ Faults injected by hand: 2.
 - The creature-or-artifact check removed (caught).
 
 Coverage: 15,062 of 31,900 cards (+9 over D1121's 15,053), 36,953 of 59,888 lines (+13).
+
+## D1123 — the board's "is turned face up"
+
+D1121's board filter, used a third time. `turned-face-up` was offered only to the permanent turned
+up. It now takes `BoardSubjectFilter`, and `raise` offers it to the board while something there
+watches. The prologues it reads:
+
+- "Whenever a permanent is turned face up" (Aphetto Runecaster, Aven Farseer, Bonethorn Valesk).
+- "Whenever ~ or another creature you control is turned face up" (Pine Walker, `who: 'any'`).
+- "a permanent you control".
+
+The plain "when ~ is turned face up" matcher asks for its own permanent now, the same fix D1121
+made for leaving.
+
+Read whole now: Aphetto Runecaster, Aven Farseer, Bonethorn Valesk, Pine Walker, True Identity.
+Experiment Twelve, Printlifter Ooze, Roalesk and Sleuth Instructor are short on their effects.
+Deathmist Raptor fires from the graveyard and is not read.
+
+**Tests.** 3 engine tests:
+- The watchers read whole.
+- Any permanent turned up gains life, and "~ or another" counts itself and another.
+- A permanent's own "when ~ is turned face up" stays its own on a watched board.
+
+Faults injected by hand: 2.
+- The plain matcher's self check removed (caught).
+- The board offer switched off for this event (caught).
+
+Coverage: 15,069 of 31,900 cards (+7 over D1122's 15,062), 36,963 of 59,888 lines (+10).
