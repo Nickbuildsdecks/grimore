@@ -38934,3 +38934,44 @@ Faults injected by hand: 2. The offer's sacrifice check turned off (caught by th
 the cast ignoring the kicker's cost (caught by both cast tests).
 
 Coverage: 14,927 of 31,900 cards (+9 over D1102's 14,918), 36,749 of 59,888 lines (+18).
+
+## D1104 — abilities granted in quotes to artifacts and enchantments
+
+A quoted grant ("Creatures you control have "…"") reached creatures (the lord scopes) and, since
+D779, lands ("Lands you control have", for Chromatic Lantern). Nothing reached an artifact or an
+enchantment that is not a creature, so these were unread:
+
+- Kataki, War's Wage: "All artifacts have "At the beginning of your upkeep, sacrifice this artifact
+  unless you pay {1}.""
+- Energy Flux: the same at {2}.
+- Aura Flux: "Other enchantments have "… sacrifice this enchantment unless you pay {2}.""
+- Galazeth Prismari: "Artifacts you control have "{T}: Add one mana of any color. Spend this
+  mana only to cast an instant or sorcery spell.""
+
+**Four scopes.** `artifacts-you-control`, `all-artifacts`, `all-enchantments` and
+`other-enchantments`, on a static's `scope` and on the continuous effect's, answered by
+`effectApplies` off the printed type line: on the battlefield, of the type, and the controller's or
+not the source where the words say so. The grant machinery is the creature lords' (`grants` and
+`grantsAbilities`, indices into `grantedTriggers` and `grantedAbilities`). `grantedTriggersOn` and
+the trigger loop were already asked of every permanent, so nothing else changed.
+
+**Whose ability.** CR 113.6 makes a granted ability the holder's, which is what Kataki needs: "your
+upkeep" in the quote is the upkeep of the artifact's controller, so each player pays for their own
+artifacts, and "this artifact" is the holder. The upkeep tax is D529's, with its rule that a seat
+who cannot pay is not asked.
+
+The reader is `lineScriptFor`'s, beside the land grant. A trigger is tried first, then an
+activated ability. Still unread: Food Fight's quote, which names its grantor (D511's guard), and
+Mm'menon's "spend this mana only to cast a spell from anywhere other than your hand".
+
+**Tests.** 4 engine tests:
+- Both test cards read whole.
+- An opponent's Kataki taxes your artifact in your upkeep. Paid, it stays.
+- With no mana the artifact goes, and the creature beside it is never asked.
+- "Artifacts you control have "{T}: Add {C}."": your artifact is a mana source, the opponent's is
+  not.
+
+Faults injected by hand: 2. `artifacts-you-control` not checking the controller (caught by the
+mana test), and `all-artifacts` matching nothing (caught by both Kataki tests).
+
+Coverage: 14,931 of 31,900 cards (+4 over D1103's 14,927), 36,754 of 59,888 lines (+5).
