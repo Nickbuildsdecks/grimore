@@ -57156,3 +57156,41 @@ watched-board case.
 - The untap raise removed.
 
 Coverage: 15,095 of 31,900 cards (+26 over D1123's 15,069), 36,990 of 59,888 lines (+27).
+
+## D1125 — attached combat lines, anybody's attack, "~ or another" with a filter
+
+These are small prologue shapes from the D1124 survey. Each is a parse onto events the engine
+already raises:
+
+- The host's combat lines (`who: 'attached'`, D433): "enchanted creature attacks or blocks"
+  (Luminous Wake), "equipped creature attacks alone" (Sigil of Valor, Reaper's Talisman), and
+  "equipped creature blocks or becomes blocked [by a creature]". `blocks` and `becomes-blocked` take
+  `attached` now, and the matcher's attached test was already event-agnostic.
+- Anybody's declaration with any count: "Whenever one or more creatures attack" (Duelist's
+  Heritage) and "Whenever a player attacks" (`attack-declared`, `by: 'any'`).
+- "~ or another <thing> you control" (D483) takes a filter after "you control": "with flying"
+  (Archon of Redemption, Plumecreed Mentor). On a death it takes D1122's "creature or artifact" (Al
+  Bhed Salvagers, Susurian Voidborn).
+
+Read whole now: Luminous Wake, Reaper's Talisman, Sigil of Valor, S.H.I.E.L.D. Spy Kit, Duelist's
+Heritage, Archon of Redemption, Plumecreed Mentor, Al Bhed Salvagers, Susurian Voidborn.
+
+Not read: "its controller loses N life" after an attached prologue (Contaminated Bond, Sinister
+Possession). That needs the host's controller as a player reference, which is a separate effect
+reader.
+
+**Tests.** 5 engine tests:
+- The watchers read whole.
+- "Enchanted creature attacks alone" pays for its host alone, and not for two attackers.
+- "One or more creatures attack" pays once a declaration.
+- "~ or another creature you control with flying enters": a flier gains, and a ground creature does
+  not.
+- "Another creature or artifact you control dies": an artifact gains.
+
+Faults injected by hand: 2.
+- `alone` dropped from the row (caught).
+- The filter dropped from the `another` half (caught).
+
+Checkpoint written with this entry: `claude/checkpoint-2026-11-22-d1124.md`.
+
+Coverage: 15,107 of 31,900 cards (+12 over D1124's 15,095), 37,005 of 59,888 lines (+15).
