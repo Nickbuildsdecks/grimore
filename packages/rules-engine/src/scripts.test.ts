@@ -8012,6 +8012,8 @@ describe('deck coverage', () => {
       'script controllerHas',
       // D1127: "If you would gain life, …instead" (Boon Reflection); no pool deck plays one.
       'script lifeGainReplacement',
+      // D1128: "~ can't attack or block alone"; no pool deck plays one.
+      'script cantAlone',
     ]);
 
     const declared = [
@@ -33584,6 +33586,55 @@ describe('replacements on gaining life (D1127)', () => {
     expect(changed([], ['Test Remedy'])).toBe(-3);
     expect(changed(['Test Remedy'])).toBe(3);
     expect(changed(['Test Boon'], ['Test Vortex'])).toBe(0);
+  });
+});
+
+describe('"~ can\'t attack or block alone" (D1128)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Beast', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: text });
+  const BEAST = C('Test Beast', "Test Beast can't attack or block alone.");
+  const BEAR = C('Test Bear', '');
+  const ROWS = [BEAST, BEAR];
+  const deck = customDeck({
+    id: 'd1128', name: 'Alone', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], theirs: readonly string[], firstSeat: 0 | 1) => arena({
+    decks: { 0: 'd1128', 1: 'd1128' }, deckSpecs: { d1128: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat,
+  });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(BEAST as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('may not attack alone, and may attack beside another creature', () => {
+    const s = advanceTo(table(['Test Beast', 'Test Bear'], [], 0), 'declare-attackers');
+    const beast = find(s, 0, 'battlefield', 'Test Beast');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(() => apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: beast, defender: 1 }] } as Action)).toThrow(/alone/);
+    const both = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: beast, defender: 1 }, { attacker: bear, defender: 1 }] } as Action);
+    expect(both.combat.attacks.map((a) => a.attacker)).toEqual(expect.arrayContaining([beast, bear]));
+  });
+
+  it('may not block alone, and may block beside another blocker', () => {
+    let s = advanceTo(table(['Test Beast', 'Test Bear'], ['Test Bear', 'Test Bear'], 1), 'declare-attackers');
+    const [a1, a2] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = advanceTo(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: a1!, defender: 0 }, { attacker: a2!, defender: 0 }] } as Action), 'declare-blockers');
+    const beast = find(s, 0, 'battlefield', 'Test Beast');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(() => apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: beast, attacker: a1! }] } as Action)).toThrow(/alone/);
+    const both = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: beast, attacker: a1! }, { blocker: bear, attacker: a2! }] } as Action);
+    expect(both.combat.attacks.find((a) => a.attacker === a1)?.blockers).toEqual([beast]);
+  });
+
+  it('the bot does not send it in alone', () => {
+    // A Bear in the same spot does go in: the board is open.
+    const open = advanceTo(table(['Test Bear'], [], 0), 'declare-attackers');
+    expect((botAction(open, 0) as { attackers?: readonly unknown[] }).attackers).toHaveLength(1);
+    const s = advanceTo(table(['Test Beast'], [], 0), 'declare-attackers');
+    const move = botAction(s, 0) as { type: string; attackers?: readonly unknown[] };
+    expect(move.type).toBe('auto:attack');
+    expect(move.attackers).toEqual([]);
   });
 });
 

@@ -12,12 +12,12 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  assignsNoCombatDamage, clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, isCreatureType, keywordBlockRules,
+  allAbilitiesLost, assignsNoCombatDamage, clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, isCreatureType, keywordBlockRules,
   protectionApplies,
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
-import { dealDamage, gainLife, pump } from './effects.js';
+import { dealDamage, gainLife, pump, scriptOfCard } from './effects.js';
 import { zoneKey, type CardInstance } from './cards.js';
 import { clampValue, replaceSeat } from './internal.js';
 import type { CombatAttack, CombatState, Target } from './turnTypes.js';
@@ -522,6 +522,20 @@ export function blockRequirementIssue(
  * step is the move `blockRequirementIssue` would have named. For the computer's own declarations,
  * which are chosen for value and then made legal, the way `forcedAttackers` is folded into an attack.
  */
+/**
+ * "~ can't attack alone" / "can't block alone" (D1128, CR 506.5): the reason a declaration of these
+ * creatures is illegal, or null. Only a declaration of exactly one creature can break it, and only
+ * when that creature says so and still has its abilities.
+ */
+export function aloneIssue(state: GameState, ids: readonly string[], kind: 'attack' | 'block'): string | null {
+  const distinct = [...new Set(ids)];
+  if (distinct.length !== 1) return null;
+  const inst = state.instances[distinct[0]!];
+  if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return null;
+  if (scriptOfCard(state.cardDefs[inst.defKey])?.cantAlone?.[kind] !== true) return null;
+  return `${characteristicsOf(state, inst).name} can't ${kind} alone`;
+}
+
 export function meetBlockRequirements(
   state: GameState, seat: SeatIndex, blocks: readonly BlockEntry[],
 ): BlockEntry[] {
@@ -535,6 +549,11 @@ export function meetBlockRequirements(
     out = better.blocks;
   }
   return out;
+}
+
+/** A bot's blocks with a lone "can't block alone" creature taken out (D1128). */
+export function withoutLoneBlock(state: GameState, blocks: readonly BlockEntry[]): BlockEntry[] {
+  return aloneIssue(state, blocks.map((b) => b.blocker), 'block') === null ? [...blocks] : [];
 }
 
 /**

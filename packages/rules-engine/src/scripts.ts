@@ -32238,6 +32238,14 @@ function spellKindTest(words: string): ((card: CardDef) => boolean) | null {
  * nobody named (everyone), and only generic mana moves, so a coloured change ("cost {B} more") and
  * a counted one ("for each …") stay unread.
  */
+/** "~ can't attack or block alone" (D1128): see `CardScript.cantAlone`. */
+function cantAloneFromLine(line: string, name: string): Partial<CardScript> | null {
+  const m = new RegExp(`^(?:${selfRef(name)}|this creature) can't (attack or block|attack|block) alone\\.?$`, 'i').exec(plain(line).trim());
+  if (m === null) return null;
+  const which = m[1]!.toLowerCase();
+  return { cantAlone: { ...(which !== 'block' ? { attack: true as const } : {}), ...(which !== 'attack' ? { block: true as const } : {}) } };
+}
+
 function costModifierFromLine(line: string, name: string): Partial<CardScript> | null {
   // An ability word in front ("Locus of Slaanesh — …") is only a name (CR 207.2c).
   const printed = withoutAbilityWord(plain(line).trim()).replace(/\.$/, '');
@@ -33968,6 +33976,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? staticFromLine(line)
     ?? preventionStaticFromLine(line, name)
     ?? costModifierFromLine(line, name)
+    ?? cantAloneFromLine(line, name)
     ?? groupStaticFromLine(line, name)
     ?? conditionalStaticFromLine(line, name)
     /*

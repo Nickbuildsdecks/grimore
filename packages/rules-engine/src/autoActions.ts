@@ -41,7 +41,7 @@ import {
 import { actionSeed, assertSeatIndex, mulberry32, replaceSeat, seatName } from './internal.js';
 import { costColors, reducedCostText, canPay, parseManaCost, type ManaCost } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
-import { blockRequirementIssue } from './combat.js';
+import { aloneIssue, blockRequirementIssue } from './combat.js';
 /*
   `scriptForCard` and not `scriptFor`: a card nobody wrote a script for still has whatever the
   oracle-text compiler could read off its printed text, and these four readers decide whether a cast,
@@ -2717,8 +2717,13 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     A creature that must attack need not when attacking costs something (CR 508.1d): one whose every
     legal defender charges an attack tax (D780) is not owed.
   */
+  // "Can't attack alone" (D1128, CR 506.5): a lone attacker that says so is not a legal declaration.
+  const lone = aloneIssue(state, action.attackers.map((entry) => entry.attacker), 'attack');
+  if (lone !== null) throw new EngineError('RULE_NOT_APPLICABLE', lone);
   const owed = forcedAttackers(state, action.by).filter((id) => !seen.has(id)
-    && legalDefenders(state, id, action.by).some((defender) => attackTaxFor(state, [{ defender }]) === 0));
+    && legalDefenders(state, id, action.by).some((defender) => attackTaxFor(state, [{ defender }]) === 0)
+    // And one that could only have attacked alone was not able to (D1128).
+    && !(seen.size === 0 && aloneIssue(state, [id], 'attack') !== null));
   if (owed.length > 0 && state.seats.some((s) => s.index !== action.by && !s.eliminated)) {
     throw new EngineError(
       'RULE_NOT_APPLICABLE',
@@ -2986,6 +2991,9 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE', `${name} can't be blocked by more than one creature`);
     }
   }
+  // "Can't block alone" (D1128, CR 509.1b): a lone blocker that says so is not a legal declaration.
+  const loneBlock = aloneIssue(state, action.blocks.map((entry) => entry.blocker), 'block');
+  if (loneBlock !== null) throw new EngineError('RULE_NOT_APPLICABLE', loneBlock);
   // The blocking requirements (CR 509.1c, D913): Lure, provoke, "must be blocked if able".
   const required = blockRequirementIssue(state, action.by, action.blocks);
   if (required !== null) throw new EngineError('RULE_NOT_APPLICABLE', required.reason);

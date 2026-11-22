@@ -30,7 +30,7 @@ import {
 } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
-  legalDefenders, meetBlockRequirements,
+  legalDefenders, meetBlockRequirements, aloneIssue, withoutLoneBlock,
 } from './combat.js';
 import { MYRIAD, SEAT_CHOICE, UNEARTHED, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
@@ -3261,7 +3261,7 @@ function throughCombat(state: GameState): GameState {
         // comparing plans against anyway.
         : owed.kind === 'order'
           ? { type: 'auto:order', by: seat, orders: damageOrdersOwed(next, seat) }
-          : { type: 'auto:block', by: seat, blocks: meetBlockRequirements(next, seat, chooseBlocks(next, seat)) };
+          : { type: 'auto:block', by: seat, blocks: withoutLoneBlock(next, meetBlockRequirements(next, seat, chooseBlocks(next, seat))) };
       try {
         next = applyAction(next, action, HOST);
       } catch {
@@ -3476,7 +3476,9 @@ function legalDeclaration(state: GameState, seat: SeatIndex, plan: AttackPlan): 
     const defender = weakestLegal(attacker);
     if (defender !== null) fixed.push({ attacker, defender });
   }
-  return affordableAttack(state, seat, fixed);
+  // A lone "can't attack alone" creature does not attack (D1128).
+  const kept = affordableAttack(state, seat, fixed);
+  return aloneIssue(state, kept.map((entry) => entry.attacker), 'attack') === null ? kept : [];
 }
 
 /**
@@ -3744,7 +3746,7 @@ function declareBySearch(
     } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false, opts) ?? fallback;
   }
   // Each plan chosen for value, then made to obey the blocking requirements (D913).
-  const plans = blockPlans(state, seat).map((blocks) => meetBlockRequirements(state, seat, blocks));
+  const plans = blockPlans(state, seat).map((blocks) => withoutLoneBlock(state, meetBlockRequirements(state, seat, blocks)));
   const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
   if (opts.lookahead === false) return fallback;
   return bestPlan(state, seat, plans.map((blocks) => ({

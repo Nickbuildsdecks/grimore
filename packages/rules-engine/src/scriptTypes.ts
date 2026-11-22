@@ -4091,6 +4091,12 @@ export interface CardScript {
    */
   readonly controllerHas?: 'hexproof' | 'shroud';
   /**
+   * "~ can't attack or block alone" (D1128, CR 506.5): it may attack only if another creature also
+   * attacks, and block only if another creature also blocks, in the same declaration. Ember Beast,
+   * Mogg Flunkies' "can't attack or block alone", Jackal Familiar, Bonded Horncrest.
+   */
+  readonly cantAlone?: { readonly attack?: true; readonly block?: true };
+  /**
    * A replacement on gaining life (D1127, CR 614.1a), while the permanent is on the battlefield:
    * "If you would gain life, you gain twice that much life instead" (Boon Reflection), "… that much
    * life plus 1 instead" (Angel of Vitality), "If an opponent would gain life, that player loses
