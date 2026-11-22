@@ -38787,3 +38787,44 @@ unread.
 Faults injected by hand: 1 (the marker written once, not per kick). Two tests catch it.
 
 Coverage: 14,886 of 31,900 cards (+10 over D1099's 14,876), 36,619 of 59,888 lines (+32).
+
+## D1101 — wider Aura hosts, and an Aura that exiles until it leaves
+
+D469 kept an Aura's host to the exact phrases of `targetSpecFrom`'s switch, so that a change to
+target phrases could not widen the attachment machinery by accident. These are widened on
+purpose, by name (`WIDER_HOSTS`):
+
+- "land you control" and "basic land you control" (Ossification, Dimensional Exile);
+- a basic land type, "Enchant Forest" (Utopia Sprawl);
+- "artifact you control", "Equipment", "planeswalker";
+- compounds of the card types and Vehicle: "artifact or creature" (22 legal lines), "creature or
+  Vehicle" (10), "creature or planeswalker", "creature or land".
+
+Each is a kind of permanent an Aura is written onto by `attachedTo` and policed by CR 704.5m
+through the same spec, as "Enchant land" always was. It is read with the printed capitals, which
+are what make "Forest" a subtype.
+
+**And two shapes on one card.** `wholeCardShapeFor` returned its first match, so an Aura that also
+exiles until it leaves (Ossification, Dimensional Exile, Hardlight Containment) had its exile pair
+sent to the per-line loop. No single line of that pair is a unit, so it was never read. The exile
+shape now reads what the Aura shape left, and the two join with their triggers side by side.
+
+Utopia Sprawl, Ossification, Dimensional Exile, Hardlight Containment and Aether Meltdown now read
+whole. Many other Auras with these hosts are short on lines of their own ("As long as enchanted
+permanent is a creature, …").
+
+**Tests.** 3 engine tests:
+- Both cards read whole.
+- Only a basic land you control is offered as Ossification's host. Cast, it attaches, the
+  opponent's creature is exiled, and it comes back when the Aura goes.
+- "Artifact or creature" offers the artifact and the creatures, not a land.
+
+Retargeted (the D516 way):
+- D456's four refusals: planeswalker, "artifact or creature", "creature or Vehicle" and "land you
+  control" now read as wider hosts.
+- D469's exact-phrase row now asserts that "Enchant token", a phrase off both lists, is still
+  refused.
+
+Faults injected by hand: 1 (the two shapes not joined). Two tests catch it.
+
+Coverage: 14,907 of 31,900 cards (+21 over D1100's 14,886), 36,709 of 59,888 lines (+90).
