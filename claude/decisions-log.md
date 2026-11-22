@@ -55951,3 +55951,29 @@ Faults injected by hand: 1 (the card's own name searched for instead of its part
 caught.
 
 Coverage: 14,814 of 31,900 cards (+16 over D1090's 14,798), 36,483 of 59,888 lines (+52).
+
+## D1092 — typed equip: "Equip legendary creature {3}", "Equip Human {1}"
+
+"Equip [quality] {N}" (CR 702.6e) is an equip ability whose target must have the quality. It is
+usually printed beside an ordinary, dearer equip: Blackblade Reforged's "Equip legendary creature
+{3}" and "Equip {7}". 20 legal cards print one. Before this, the ordinary line was read and the
+typed one left unread.
+
+- **Reader:** each typed line becomes its own equip ability, the main one's twin with its own cost
+  and quality. A card that prints only a typed equip (Excalibur, Sword of Eden) has it as its one
+  equip ability.
+- **Qualities:** "legendary creature" (the live supertype), "commander", "creature token", and one
+  or more creature types ("Human", "Shaman, Warlock, or Wizard"). Mjolnir's "worthy" is not a
+  quality the engine has, so it stays unread.
+- `equipFragment` takes the quality. It narrows the target filter and names the quality in the
+  description.
+
+**Tests.** 3 engine tests:
+- The cards read whole, with two equip abilities on the card that prints two.
+- The Human equip reaches a Human for {1} and refuses the Bear, and the ordinary equip takes
+  either.
+- A card with only a legendary equip refuses non-legendary creatures and equips a legend.
+
+Faults injected by hand: 1 (the legendary test always true). It is caught.
+
+Coverage: 14,825 of 31,900 cards (+11 over D1091's 14,814), 36,503 of 59,888 lines (+20).
