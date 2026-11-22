@@ -39872,3 +39872,30 @@ Pod sweep 61701 (100 games, D1128 build, with the "can't attack or block alone" 
 finished, no throw, no stall.
 
 Coverage: 15,165 of 31,900 cards (+18 over D1128's 15,147), 37,081 of 59,888 lines (+20).
+
+## D1130 — suspend spells that exile themselves with time counters
+
+"Exile ~ with three time counters on it." as a suspend spell's last sentence (Arc Blade, Inspiring
+Refrain, Reality Strobe and the rest of the Time Spiral / Modern Horizons cycle) is where the card
+goes as it resolves, not something the resolution does. It extends D733's "Exile ~.":
+- The same reader takes the count, as `CardScript.exilesWithTimeCounters`.
+- The resolution exiles the card and puts that many time counters on it.
+
+That is all "suspended" means here. The owner's upkeep already takes a counter off any exiled card
+with time counters and offers the cast at zero (CR 702.62b–c), so the card loops as printed.
+
+Read whole now: Arc Blade, Cyclical Evolution, Festering March, Inspiring Refrain, Reality Strobe,
+Rousing Refrain, Suspended Sentence. Charnel Serenade, Chronomantic Escape and Venture Forth are
+short on other sentences.
+
+**Tests.** 3 engine tests:
+- It reads whole.
+- It resolves into exile with three time counters (two cards drawn), and the owner's next upkeep
+  takes one off.
+- A plain "Exile ~." gets none.
+
+The deck-coverage test exempts 'script exilesWithTimeCounters': no pool deck plays one.
+
+Faults injected by hand: 1. The counters not put on (caught).
+
+Coverage: 15,172 of 31,900 cards (+7 over D1129's 15,165), 37,088 of 59,888 lines (+7).
