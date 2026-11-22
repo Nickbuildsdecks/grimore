@@ -40042,3 +40042,30 @@ Faults injected by script: 7 of 7 caught.
 
 Coverage: 15,196 to 15,222 of 31,900 cards with every line read, and 37,128 to 37,164 of 59,888
 lines, against 94f589d.
+
+## D790 — A rider with keywords, "you and target opponent each", two or more attackers
+
+Most-played order: Whispersilk Cloak (rank 335), Loran of the Third Path (338), Minas Tirith (421),
+Secret Rendezvous (1100), Flumph (2904), Alpha Authority (3207), Vorrac Battlehorns, Sky Tether,
+Protective Bubble.
+
+- **"Equipped creature can't be blocked and has shroud."** An attachment's rider (D604) and its
+  keywords in one sentence, either way round: "has hexproof and can't be blocked by more than one
+  creature", "has defender and loses flying". Both halves must read.
+- **"You and target opponent each draw a card."** Read as two sentences, yours first: "You draw a
+  card. Target opponent draws a card." For draw, gain, lose, mill, discard, sacrifice, create, scry
+  and surveil, and for "that player" on a trigger, which the referent swap hands over as a target.
+- **"Activate only if you attacked with two or more creatures this turn."** The creatures declared,
+  as raid counts them (`GameState.attackedThisTurn`), for this seat only.
+
+**Tests.** 4 engine tests: the cards read; the Cloak's creature can't be blocked and has shroud, and
+the Tether's has defender and has lost flying; Loran's ability and the Rendezvous each give both
+players the printed number of cards; Minas Tirith's draw is offered after two attackers, not after
+one, and not after another player's three.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,000, all passing (on dde7126)
+
+Coverage: 15,235 to 15,249 of 31,900 cards with every line read, and 37,186 to 37,203 of 59,888
+lines, against dde7126.

@@ -33949,6 +33949,64 @@ describe('{X} in an activated ability\'s cost (D789)', () => {
   });
 });
 
+describe('a rider with keywords, "you and target opponent each", two or more attackers (D790)', () => {
+  const CLOAK = { name: 'Test Cloak', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Equipped creature can't be blocked and has shroud.\nEquip {0}" };
+  const TETHER = { name: 'Test Tether', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equipped creature has defender and loses flying.\nEquip {0}' };
+  const LORAN = { name: 'Test Loran', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: You and target opponent each draw a card.' };
+  const RENDEZVOUS = { name: 'Test Rendezvous', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'You and target opponent each draw three cards.' };
+  const TIRITH = { name: 'Test Tirith', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {W}.\n{T}: Draw a card. Activate only if you attacked with two or more creatures this turn.' };
+  const BIRD = { name: 'Test Bird', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' };
+  const deck = customDeck({
+    id: 'd790', name: 'Each',
+    entries: [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Bird', count: 4 }, { name: 'Plains', count: 51 }]),
+    data: [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH, BIRD] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd790', 1: 'd790' }, deckSpecs: { d790: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const equip = (s0: GameState, gear: string, onto: string) => {
+    const row = legalActions(s0, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s0, 0, 'battlefield', gear))!;
+    return drain(passBoth(apply(s0, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, targets: [{ kind: 'card', id: onto }] })));
+  };
+
+  it('reads', () => {
+    for (const card of [CLOAK, TETHER, LORAN, RENDEZVOUS, TIRITH]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Whispersilk Cloak: can't be blocked and has shroud; Sky Tether: defender, and the flying gone", () => {
+    let s = table(['Test Cloak', 'Test Tether', 'Test Bird', 'Test Bird']);
+    const [one, two] = ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bird');
+    s = equip(s, 'Test Cloak', one!);
+    const cloaked = characteristicsOf(s, s.instances[one!]!);
+    expect(cloaked.cantBeBlocked).toBe(true);
+    expect(cloaked.keywords.has('shroud')).toBe(true);
+    s = equip(s, 'Test Tether', two!);
+    const tethered = characteristicsOf(s, s.instances[two!]!);
+    expect(tethered.keywords.has('defender')).toBe(true);
+    expect(tethered.keywords.has('flying')).toBe(false);
+  });
+
+  it('you and target opponent each draw, yours and theirs, as many as printed', () => {
+    let s = table(['Test Loran'], ['Test Rendezvous']);
+    const [mine, theirs] = [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length];
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Loran'), abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] })));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine + 1, theirs + 1]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rendezvous'), targets: [{ kind: 'player', seat: 1 }] })));
+    // The Rendezvous left the hand and three came in.
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine + 1 - 1 + 3, theirs + 4]);
+  });
+
+  it('Minas Tirith: only after two or more creatures attacked', () => {
+    const offered = (s: GameState) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', 'Test Tirith') && !p.isManaAbility);
+    expect(offered(table(['Test Tirith']))).toBe(false);
+    const two = { ...table(['Test Tirith']) };
+    expect(offered({ ...two, attackedThisTurn: { '0': 2 } })).toBe(true);
+    expect(offered({ ...two, attackedThisTurn: { '0': 1 } })).toBe(false);
+    expect(offered({ ...two, attackedThisTurn: { '1': 3 } })).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
