@@ -18269,13 +18269,19 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
     // 'a batched discard' ("Whenever you discard one or more cards") reads since D993: the batch event.
     ['a discard somebody else caused',
       'When a spell or ability an opponent controls causes you to discard Drannith Healer, you gain 1 life.'],
-    ['a first-cycle-each-turn restriction',
-      'Whenever you cycle another card for the first time each turn, you gain 1 life.'],
+    // Retargeted by D1117: 'a first-cycle-each-turn restriction' reads now, as a once-a-turn cycle trigger.
     // 'a tribe attacking alone' ("a Samurai or Warrior you control attacks alone") reads since D1003.
   ])('leaves %s unread', (_what, line) => {
     const got = card(line);
     expect(got.script?.triggers ?? []).toEqual([]);
     expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  // Retargeted by D1117: "for the first time each turn" is the once-a-turn restriction.
+  it('reads a first-cycle-each-turn trigger as once a turn (D1117)', () => {
+    const got = card('Whenever you cycle another card for the first time each turn, you gain 1 life.');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.onceEachTurn)).toEqual([true]);
   });
 
   it('reads two tribes attacking alone since D1003', () => {

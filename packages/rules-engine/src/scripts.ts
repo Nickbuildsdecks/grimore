@@ -22007,7 +22007,19 @@ function optionalEffect(
  */
 function triggerRestriction(text: string): { readonly rest: string; readonly onceEachTurn?: true } {
   const found = /^(.*?)\s*This ability triggers only once (?:each|per) turn\.?\s*$/i.exec(text);
-  if (found === null) return { rest: text };
+  if (found === null) {
+    /*
+      "Whenever <event> **for the first time each turn**, <effect>" (D1117): the same restriction in
+      the prologue's words — Valiant's "becomes the target of a spell or ability you control for the
+      first time each turn", "you gain life for the first time each turn", "attacks for the first
+      time each turn". One firing a turn, on the first such event, which is exactly what the trailing
+      sentence's flag does (`fireTrigger` spends it when the trigger fires). Only where no "if"
+      follows: a condition would let a later event fire it after the first one did not.
+    */
+    const first = /^((?:When|Whenever) [^,]*?) for the first time (?:each|this) turn, (?!if\b)(.+)$/i.exec(text);
+    if (first !== null) return { rest: `${first[1]!}, ${first[2]!}`, onceEachTurn: true };
+    return { rest: text };
+  }
   return { rest: found[1]!, onceEachTurn: true };
 }
 

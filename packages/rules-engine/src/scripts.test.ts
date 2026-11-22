@@ -33110,6 +33110,32 @@ describe('a card put into a graveyard from anywhere, and the Colossus shuffle (D
   });
 });
 
+describe('"for the first time each turn" in the prologue (D1117)', () => {
+  // Cleric of Life's Bond, Vanguard Seraph, Valiant Rescuer: once a turn, on the first event.
+  const CLERIC = { name: 'Test Cleric', type_line: 'Creature — Human Cleric', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Whenever you gain life for the first time each turn, put a +1/+1 counter on Test Cleric.' };
+  const HEAL = { name: 'Test Heal', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'You gain 2 life.' };
+  const deck = customDeck({
+    id: 'd1117', name: 'Firsts', entries: [{ name: CLERIC.name, count: 3 }, { name: HEAL.name, count: 4 }, { name: 'Plains', count: 53 }], data: [CLERIC, HEAL] as never[],
+  });
+
+  it('reads whole, with the once-a-turn flag', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(CLERIC as never) as { ok: boolean; unread: readonly unknown[]; script: { triggers?: readonly { onceEachTurn?: true; on: { kind: string } }[] } };
+    expect(read.unread).toEqual([]);
+    expect(read.script.triggers?.map((t) => [t.on.kind, t.onceEachTurn])).toEqual([['life-gained', true]]);
+  });
+
+  it('two life gains in a turn: one counter', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1117', 1: 'd1117' }, deckSpecs: { d1117: deck.deck },
+      hands: { 0: ['Test Heal', 'Test Heal'] }, battlefield: { 0: ['Plains', 'Plains', 'Test Cleric'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const cleric = find(s, 0, 'battlefield', 'Test Cleric');
+    for (let i = 0; i < 2; i++) s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Heal') } as Action)), 30);
+    expect(s.instances[cleric]!.counters['+1/+1']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
