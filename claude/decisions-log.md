@@ -57236,3 +57236,39 @@ Faults injected by hand: 2.
 - The keyword test in `effectApplies` removed (caught).
 
 Coverage: 15,125 of 31,900 cards (+18 over D1125's 15,107), 37,031 of 59,888 lines (+26).
+
+## D1127 — replacements on gaining life
+
+"If you would gain life, …instead" had no reading. It is now `CardScript.lifeGainReplacement`,
+applied in `gainLife`, the one path every gain takes, lifelink included, while the permanent is on
+the battlefield with its abilities (CR 614.1a):
+
+- "you gain twice that much life instead" (Boon Reflection, Rhox Faithmender, The Wind Crystal);
+- "you gain that much life plus 1 instead" (Angel of Vitality, Heron of Hope, Honor Troll, Knight of
+  Dawn's Light, Bilbo);
+- "If an opponent would gain life, that player loses that much life instead" (Tainted Remedy);
+- "If a player would gain life, that player gains no life instead" (Sulfuric Vortex).
+
+The gaining player orders replacements (CR 616.1), and the engine takes the order that gains the
+most:
+1. "Gains no life" ends it.
+2. "Loses that much life" turns it into a loss.
+3. Otherwise every "plus N" comes before every "twice".
+
+Read whole now: Angel of Vitality, Bilbo, Birthday Celebrant, Boon Reflection, Heron of Hope, Honor
+Troll, Knight of Dawn's Light, Rhox Faithmender, Sulfuric Vortex, Tainted Remedy, The Wind Crystal.
+Plague Drone's "Rot Fly —" is a flavour label the line reader does not strip, so it is still unread.
+
+**Tests.** 3 engine tests:
+- The replacements read whole.
+- Twice, plus one, and both: 3 life is 6, 4 and 8. An opponent's Boon is not "you".
+- An opponent's Remedy turns the gain into a loss of 3, and one's own does not. A Vortex stops the
+  gain even with a Boon out.
+
+The deck-coverage test exempts 'script lifeGainReplacement': no pool deck plays one.
+
+Faults injected by hand: 2.
+- "Twice" before "plus" (caught).
+- The whose check removed (caught).
+
+Coverage: 15,135 of 31,900 cards (+10 over D1126's 15,125), 37,047 of 59,888 lines (+16).
