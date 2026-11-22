@@ -39223,3 +39223,44 @@ Faults injected by hand: 2. The switch turned on (all four wordings fail), and t
 removed (caught by the battle-card test).
 
 Coverage: 14,964 of 31,900 cards (+5 over D1110's 14,959), 36,802 of 59,888 lines (+6).
+
+## D1112 — an entry named with subject words
+
+The board prologue (D477, D478, D484) reads "Whenever a[nother] [nontoken] <type> you control
+[with power N or greater] enters". The words in front of the type, and a mana value, were refused:
+
+- a colour: "Whenever another white creature you control enters" (the Denizens);
+- "colorless": Eldrazi Mimic, Flayer Drone;
+- "legendary": Hero's Blade, Crown of Gondor;
+- "a creature token you control enters": Anointer Priest;
+- "a creature with mana value 6 or greater enters": Dragon Breath's cycle;
+- "another artifact enters" with nobody's side named: Arcbound Crusher.
+
+**The event carries them.** An entry now carries the subject's live colours, whether it is
+legendary, and its mana value (off the card's printed cost, which is what mana value is on the
+battlefield, CR 202.3). They are asked as the size filters are: a missing fact fails the filter,
+never passes it.
+
+**One row for the words** (`richEntryTrigger`), after the plainer rows so it reads only what they
+refused:
+- one colour or "colorless";
+- "legendary" and "nontoken";
+- "token" after the type;
+- "you control" or "an opponent controls", or neither (anybody's);
+- "with mana value N or greater / less".
+
+Two colours ("white and blue") are still refused.
+
+Read whole now: Court Street Denizen, Foundry Street Denizen, Anointer Priest, Arcbound Crusher and
+Flayer Drone among them. Eldrazi Mimic, Hero's Blade and Dragon Breath are short on their effects.
+
+**Tests.** 4 engine tests:
+- Three test cards read whole.
+- A colour: a white creature entering gains life, a green one does not.
+- A creature token: the token gains life, a card does not.
+- A mana value: 3 gains life, 1 does not.
+
+Faults injected by hand: 2. The colour check and the mana value check each removed (caught by
+their tests).
+
+Coverage: 14,981 of 31,900 cards (+17 over D1111's 14,964), 36,825 of 59,888 lines (+23).
