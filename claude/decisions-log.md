@@ -57060,3 +57060,35 @@ Faults injected by hand: 2.
 - The without-dying check removed (caught).
 
 Coverage: 15,053 of 31,900 cards (+21 over D1120's 15,032), 36,940 of 59,888 lines (+32).
+
+## D1122 — graveyard arrivals: an opponent's graveyard, "creature or artifact", "~ or another"
+
+These are more of the long spelling of "dies" and of the graveyard-arrival family (D569, D995,
+D1116):
+
+- "Whenever a [creature] card is put into **an opponent's** graveyard from anywhere" (The Haunt of
+  Hightower, Vulturous Zombie, Profane Memento): `to-graveyard` takes `into: 'opponents'`.
+- "When ~ is put into **your** graveyard from the battlefield": the same as "a graveyard", since a
+  card always goes to its owner's.
+- "Whenever another **creature or artifact** you control is put into a graveyard from the
+  battlefield" (Marionette Apprentice, Charforger, Vat of Rebirth, Tarrian's Soulcleaver), with
+  `what: 'artifact-or-creature'` on `dies`.
+- "~ **or another** artifact / nonland permanent you control" (`who: 'any'`, with `what: 'nonland'`
+  for the second).
+- "another nontoken Elf is put into **your** graveyard" (Prowess of the Fair), with the owner
+  (D1014).
+
+Read whole now: Charforger, Marionette Apprentice, Profane Memento, Prowess of the Fair, Tarrian's
+Soulcleaver, The Haunt of Hightower, Vat of Rebirth, Vulturous Zombie.
+
+**Tests.** 4 engine tests:
+- The watchers read whole.
+- Cards milled into an opponent's graveyard gain life, and into one's own do not.
+- A creature or an artifact of one's own gains life, and an enchantment does not.
+- "~ is put into your graveyard from the battlefield" pays for itself.
+
+Faults injected by hand: 2.
+- The opponents' check removed (caught).
+- The creature-or-artifact check removed (caught).
+
+Coverage: 15,062 of 31,900 cards (+9 over D1121's 15,053), 36,953 of 59,888 lines (+13).
