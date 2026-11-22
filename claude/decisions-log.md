@@ -57465,3 +57465,36 @@ Faults injected by hand: 2.
 - The record never written (caught).
 
 Coverage: 15,207 of 31,900 cards (+12 over D1132's 15,195), 37,146 of 59,888 lines (+20).
+
+## D1134 — boast
+
+Boast (CR 702.142a): "Activate only if this creature attacked this turn and only once each turn."
+D612 kept the label on so the remainder could never read without its restriction. D1133 did this for
+exhaust; now boast reads the same way:
+- `abilityFromLine` takes "Boast — " off and sets `onceEachTurn`.
+- It adds an `activateOnlyIf` that asks whether this object was declared as an attacker this turn.
+
+The record is D726's `GameState.attackersThisTurn` (an id with its `objectSeq`), so a creature put
+onto the battlefield attacking never attacked (CR 508.4), and one that left and came back is a new
+object.
+
+Read whole now (11): Axgard Braggart, Battershield Warrior, Draugr Recruiter, Duskwielder,
+Fearless Liberator, Fearless Pup, Goldmaw Champion, Hagi Mob, Horizon Seeker, Tuskeri Firewalker,
+Usher of the Fallen.
+
+**Tests.** 2 engine tests and 1 compile test:
+- It reads whole.
+- Not offered before it attacks. Offered after it attacks, and pays once. Not offered again that
+  turn, or on its controller's next turn without an attack.
+- Retargeted (the D516 way): the compile refusal "a keyword that is the restriction (boast)" reads
+  now, asserting both restrictions.
+
+Faults injected by hand: 2.
+- Once each turn dropped (caught).
+- The attacked check made always true (caught).
+
+Pod sweep 61901 (100 games, D1132 build): 99 finished and 1 runaway board. Seed 61946: seat 2 had
+more than 1,000 permanents, 986 of them Troubling Tribbles. That card copies itself every upkeep,
+so it doubles each turn as printed; it is the card, not an engine fault.
+
+Coverage: 15,218 of 31,900 cards (+11 over D1133's 15,207), 37,158 of 59,888 lines (+12).
