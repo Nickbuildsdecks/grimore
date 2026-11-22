@@ -56552,3 +56552,42 @@ Faults injected by hand: 2. The rewrite turned off (caught by both reading tests
 guard removed (caught by the singular-name test).
 
 Coverage: 14,948 of 31,900 cards (+4 over D1106's 14,944), 36,777 of 59,888 lines (+7).
+
+## D1108 — "whenever one or more … enter": one trigger for the batch
+
+D1000 batched deaths ("whenever one or more creatures die" fires once for a board wipe). The
+arrivals had no batch, so "Whenever one or more other creatures you control enter" (24 legal lines)
+was unread: Welcoming Vampire, Tocasia's Welcome, Woodland Champion, Ingenious Artillerist and
+others.
+
+**The event.** `permanents-entered`, raised once per settle pass, after the arrivals loop, with
+everything that arrived on the battlefield in it. Each entry is read as it now is: its controller,
+whether it is a token, its card types, creature types, power and mana value. A spell that makes
+three tokens is one event (CR 603.2c), so the trigger goes on the stack once.
+
+**The trigger** is asked in `fireTrigger`, which knows the watcher, as `creatures-died` is. At least
+one of the batch has to fit:
+- the kind: creatures, artifacts, enchantments, lands, tokens, artifact creatures, creature tokens,
+  or a creature type ("other Elves", "Merfolk"; the plurals Elves, Dwarves and Wolves by name, the
+  rest by their "s", validated as a creature type);
+- `other`, which leaves the watcher out;
+- `nontoken`;
+- whose they are ("you control", "your opponents control");
+- "with power N or less" and "with mana value N or less".
+
+The watcher arriving in the same batch counts itself unless the line says "other".
+
+Read whole now: Welcoming Vampire and Tocasia's Welcome (with "This ability triggers only once each
+turn", D532). Still short: "that many" and "that much" counted off the batch (Woodland Champion,
+Ingenious Artillerist), "Humans and/or Warriors", and "if they entered from a graveyard".
+
+**Tests.** 3 engine tests:
+- Both test cards read whole.
+- Three tokens made at once are one trigger: 1 life, not 3.
+- The filters. A 3-power creature does not draw and a 1-power one does, and the watcher entering
+  alone does not count itself as "other".
+
+Faults injected by hand: 2. One event per arrival instead of one per batch (caught by the token
+test), and the power filter dropped (caught by the filter test).
+
+Coverage: 14,957 of 31,900 cards (+9 over D1107's 14,948), 36,793 of 59,888 lines (+16).
