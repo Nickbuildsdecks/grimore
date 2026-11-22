@@ -4082,6 +4082,12 @@ export interface CardScript {
    * exile rather than the graveyard as it resolves. Not as it is countered.
    */
   readonly exilesItselfAsItResolves?: true;
+  /**
+   * "Exile ~ with three time counters on it." (D1130): the suspend spells that go back to being
+   * suspended as they resolve — Arc Blade, Inspiring Refrain, Reality Strobe. With
+   * `exilesItselfAsItResolves`; the counters are what makes the card suspended again (CR 702.62a).
+   */
+  readonly exilesWithTimeCounters?: number;
   /** "Your life total can't change." (D733) — Platinum Emperion, while it is on your battlefield. */
   readonly lifeTotalCantChange?: true;
   /**

@@ -34827,7 +34827,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   */
   const shuffled = new RegExp(`(?:^|\\.\\s+)Shuffle (?:${selfRef(name)}) into its owner's library\\.?$`, 'i');
   // And "Exile ~." the same way (D733): Teferi's Protection, and 24 more spells.
-  const exiled = new RegExp(`(?:^|\\.\\s+)Exile (?:${selfRef(name)})\\.?$`, 'i');
+  // And "Exile ~ with three time counters on it." (D1130): back to suspended, as it resolves.
+  const exiled = new RegExp(`(?:^|\\.\\s+)Exile (?:${selfRef(name)})(?: with (one|two|three|four|five|\\d+) time counters? on it)?\\.?$`, 'i');
   const last = resolution.length - 1;
   const exilesItself = last >= 0 && exiled.test(plain(resolution[last]!).trim());
   const recycled = exilesItself ? exiled : shuffled;
@@ -34982,6 +34983,13 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     built['triggers'] = [...((built['triggers'] ?? []) as readonly TriggerDef[]), ...laters.map((l) => l.trigger)];
   }
   if (read !== null && recycles) built[exilesItself ? 'exilesItselfAsItResolves' : 'shufflesIntoLibrary'] = true;
+  if (read !== null && exilesItself) {
+    const timed = exiled.exec(plain(resolution[last]!).trim())?.[1];
+    if (timed !== undefined) {
+      const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+      built['exilesWithTimeCounters'] = words[timed.toLowerCase()] ?? Number(timed);
+    }
+  }
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
     return { script, compiled, unread: [...declared, ...resolution] };

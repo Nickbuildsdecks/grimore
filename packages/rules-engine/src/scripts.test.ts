@@ -8014,6 +8014,8 @@ describe('deck coverage', () => {
       'script lifeGainReplacement',
       // D1128: "~ can't attack or block alone"; no pool deck plays one.
       'script cantAlone',
+      // D1130: "Exile ~ with three time counters on it" (Arc Blade); no pool deck plays one.
+      'script exilesWithTimeCounters',
     ]);
 
     const declared = [
@@ -33691,6 +33693,44 @@ describe('bolster, and counters on a creature you choose (D1129)', () => {
     const read = cast('Test Feed', ['Test Small', 'Test Big'], 'Test Big');
     expect(read.offered).toEqual(['Test Big', 'Test Small']);
     expect(read.counters('Test Big')).toBe(2);
+  });
+});
+
+describe('suspend spells that exile themselves with time counters (D1130)', () => {
+  const REFRAIN = { name: 'Test Refrain', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw two cards. Exile Test Refrain with three time counters on it.\nSuspend 3—{2}{U}' };
+  const PROTECT = { name: 'Test Protect', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card. Exile Test Protect.' };
+  const ROWS = [REFRAIN, PROTECT];
+  const deck = customDeck({
+    id: 'd1130', name: 'Refrains', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 56 }], data: ROWS as never[],
+  });
+  const resolved = (spell: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1130', 1: 'd1130' }, deckSpecs: { d1130: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', spell);
+    return { card, before: s, after: drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card } as Action)), 30) };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(REFRAIN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('resolves into exile with three time counters, and the owner\'s upkeep takes one off', () => {
+    const { card, before, after } = resolved('Test Refrain');
+    expect(ids(after, 0, 'hand').length).toBe(ids(before, 0, 'hand').length - 1 + 2);
+    expect(after.instances[card]!.zone).toBe('exile');
+    expect(after.instances[card]!.counters['time']).toBe(3);
+    const later = drain(nextTurn(nextTurn(after)), 30);
+    expect(later.activeSeat).toBe(0);
+    expect(later.instances[card]!.counters['time']).toBe(2);
+  });
+
+  it('a plain "Exile ~." gets no time counters', () => {
+    const { card, after } = resolved('Test Protect');
+    expect(after.instances[card]!.zone).toBe('exile');
+    expect(after.instances[card]!.counters['time'] ?? 0).toBe(0);
   });
 });
 

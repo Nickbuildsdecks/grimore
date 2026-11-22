@@ -6579,6 +6579,9 @@ function completeResolution(
       } else if (script?.exilesItselfAsItResolves === true) {
         // "Exile ~." (D733): exile in place of the graveyard, as it resolves.
         next = exileCard(next, inst.id);
+        // "… with three time counters on it" (D1130): suspended again.
+        const timed = script.exilesWithTimeCounters ?? 0;
+        if (timed > 0 && next.instances[inst.id]?.zone === 'exile') next = addCounters(next, inst.id, TIME, timed);
       } else if (script?.shufflesIntoLibrary === true && object.flashback !== true) {
         // "Shuffle ~ into its owner's library" (D687): only on resolving, and not past flashback.
         next = shuffleLibrary(putOnTopOfLibrary(next, inst.id), inst.owner);
