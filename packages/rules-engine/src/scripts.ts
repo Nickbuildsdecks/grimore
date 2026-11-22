@@ -30598,12 +30598,28 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 
     The description stays the printed line, label included, because that is what the button says.
   */
-  const channelled = /^Channel\s*[—–]\s*(.+)$/i.exec(text);
+  // And bloodrush (D1135): "Bloodrush — {R}, Discard ~: Target attacking creature gets +4/+4 until
+  // end of turn." The same shape and the same condition, its cost discarding the card itself.
+  const channelled = /^(?:Channel|Bloodrush)\s*[—–]\s*(.+)$/i.exec(text);
   if (channelled !== null) {
     const inner = abilityFromLine(channelled[1]!, name);
     const abilities = inner?.abilities ?? [];
     if (abilities.length === 0 || abilities.some((ability) => ability.cost.discardSelf !== true)) return null;
     return { abilities: abilities.map((ability) => ({ ...ability, description: text })) };
+  }
+  /*
+    **Renew** (D1135): "Renew — {B}, Exile this card from your graveyard: Put a +1/+1 counter on
+    target creature. Activate only as a sorcery." Channel's reasoning from the graveyard's side: the
+    label comes off only when the cost left exiles the card from the graveyard, which is what makes
+    the ability used from there (`fromGraveyard`, with `exileSelf`), so it can never be offered from
+    the battlefield.
+  */
+  const renewed = /^Renew\s*[—–]\s*(.+)$/i.exec(text);
+  if (renewed !== null) {
+    const inner = abilityFromLine(renewed[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (abilities.length === 0 || abilities.some((ability) => ability.cost.fromGraveyard !== true || ability.cost.exileSelf !== true)) return null;
+    return { ...inner, abilities: abilities.map((ability) => ({ ...ability, description: text })) };
   }
   /*
     **An ability word in front of an activated ability that restates it** (D623): "Threshold — {R},

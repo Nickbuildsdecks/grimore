@@ -33911,6 +33911,59 @@ describe('boast (D1134)', () => {
   });
 });
 
+describe('bloodrush from the hand, renew from the graveyard (D1135)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Beast', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const RAMPAGER = C('Test Rampager', 'Bloodrush — {G}, Discard Test Rampager: Target attacking creature gets +4/+4 until end of turn.');
+  const CROC = C('Test Croc', 'Renew — {G}, Exile this card from your graveyard: Put a +1/+1 counter on target creature. Activate only as a sorcery.');
+  const BEAR = C('Test Bear', '');
+  const ROWS = [RAMPAGER, CROC, BEAR];
+  const deck = customDeck({
+    id: 'd1135', name: 'Zones', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 54 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1135', 1: 'd1135' }, deckSpecs: { d1135: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Forest', 'Forest', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, id: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === id);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [RAMPAGER, CROC]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    // A "Renew —" whose cost does not exile it from the graveyard would be offered from the
+    // battlefield, so it stays unread.
+    const stray = compileCard(C('Test Stray', 'Renew — {G}: Put a +1/+1 counter on target creature.') as never);
+    expect(stray.ok && stray.unread.length).toBe(1);
+  });
+
+  it('bloodrush is used from the hand on an attacker, and the card is discarded', () => {
+    let s = advanceTo(table(['Test Rampager'], ['Test Bear']), 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] } as Action);
+    const rampager = find(s, 0, 'hand', 'Test Rampager');
+    expect(offered(s, rampager)).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: rampager, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(power(s, bear)).toBe(5);
+    expect(s.instances[rampager]!.zone).toBe('graveyard');
+  });
+
+  it('renew is used from the graveyard, and exiles the card', () => {
+    let s = table(['Test Croc'], ['Test Bear']);
+    const croc = find(s, 0, 'hand', 'Test Croc');
+    s = apply(s, { type: 'card:move', by: 0, card: croc, toZone: 'graveyard' } as Action);
+    expect(offered(s, croc)).toBe(true);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: croc, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bear]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[croc]!.zone).toBe('exile');
+  });
+
+  it('neither is offered from the battlefield', () => {
+    const s = table([], ['Test Rampager', 'Test Croc']);
+    expect(offered(s, find(s, 0, 'battlefield', 'Test Rampager'))).toBe(false);
+    expect(offered(s, find(s, 0, 'battlefield', 'Test Croc'))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
