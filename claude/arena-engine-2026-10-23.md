@@ -39933,3 +39933,37 @@ Faults injected by hand: 2.
 - The lasting grant's source back to the spell (caught).
 
 Coverage: 15,179 of 31,900 cards (+7 over D1130's 15,172), 37,099 of 59,888 lines (+11).
+
+## D1132 — extra turns
+
+"Take an extra turn after this one" had no mechanism (65 legal cards print an extra turn). Now:
+
+- `GameState.extraTurns` is a stack of seats owed a turn: the most recently created is taken first
+  (CR 500.7).
+- When a turn ends, `advanceStep` takes the newest one whose player is still in the game. An
+  eliminated player's extra turn is dropped.
+- `extraTurnResume` remembers whose regular turn they followed, so the order resumes after that
+  seat. Time Warp aimed across a three-player table does not skip the player in between.
+- Readers: "take an extra turn after this one" and "you take …" (the controller's, e.g. Time Walk,
+  Temporal Manipulation, Temporal Mastery), "target player / opponent takes an extra turn" (Time
+  Warp, Beacon of Tomorrows), "two extra turns" (Time Stretch).
+
+Read whole now (16): Alrund's Epiphany, Beacon of Tomorrows, Capture of Jingzhou, Karn's Temporal
+Sundering, Magistrate's Scepter, Mu Yanling, Part the Waterveil, Second Chance, Teferi, Timebender,
+Temporal Manipulation, Temporal Mastery, Temporal Trespass, Time Sieve, Time Stretch, Time Walk,
+Time Warp. Final Fortune's and Last Chance's "at the beginning of that turn's end step, you lose
+the game" is not read.
+
+**Tests.** 4 engine tests:
+- All read whole.
+- "Take an extra turn": turns go 0, 0, 1 after the cast.
+- "Two extra turns" at oneself: 0, 0, 1, 0, counting the turn after the cast.
+- Aimed at seat 2 of three: 2, 1, 2, 0. The order resumes after the caster.
+
+Faults injected by hand: 2.
+- The resume seat ignored (caught).
+- The extra turn never taken (caught, three tests).
+
+Pod sweep 61801 (100 games, D1131 build): 100 finished, no throw, no stall.
+
+Coverage: 15,195 of 31,900 cards (+16 over D1131's 15,179), 37,126 of 59,888 lines (+27).
