@@ -368,6 +368,12 @@ export interface ManaSource {
    */
   readonly extra?: readonly ManaType[];
   /**
+   * With `choose`: how many more of the colour chosen every tap adds (D1106) — a dual land under a
+   * Mana Flare makes two of whichever colour it is tapped for. A source that is not a choice has it
+   * in `produces`.
+   */
+  readonly echo?: number;
+  /**
    * Life the tap costs, for a land that charges you for the colour.
    *
    * The solver does not weigh it — it only carries it through to the pick, so whoever taps the
@@ -529,7 +535,7 @@ function snowMade(source: ManaSource, wanted: readonly ManaType[]): ManaType[] {
   if (source.choose !== true) return [...source.produces];
   // A choice source makes a colour the rest of the cost does not ask for, when it can.
   const type = source.produces.find((t) => !wanted.includes(t)) ?? source.produces[0]!;
-  return [...Array.from({ length: source.chooseRun ?? 1 }, () => type), ...(source.extra ?? [])];
+  return [...Array.from({ length: (source.chooseRun ?? 1) + (source.echo ?? 0) }, () => type), ...(source.extra ?? [])];
 }
 
 /**
@@ -634,7 +640,7 @@ function solvePlain(
       let bestSize = 0;
       for (let i = 0; i < left.length; i++) {
         const size = left[i]!.choose === true
-          ? (left[i]!.chooseRun ?? 1) + (left[i]!.extra?.length ?? 0) : left[i]!.produces.length;
+          ? (left[i]!.chooseRun ?? 1) + (left[i]!.echo ?? 0) + (left[i]!.extra?.length ?? 0) : left[i]!.produces.length;
         const fits = size <= short;
         const better = best < 0
           || (fits && (bestSize > short || size > bestSize))
@@ -652,7 +658,7 @@ function solvePlain(
     // A colour wanted from the extra mana (D1088) leaves the choice free: its first colour.
     const picked = wanted !== null && source.produces.includes(wanted) ? wanted : source.produces[0]!;
     const types = source.choose === true
-      ? [...Array.from({ length: source.chooseRun ?? 1 }, () => picked), ...(source.extra ?? [])]
+      ? [...Array.from({ length: (source.chooseRun ?? 1) + (source.echo ?? 0) }, () => picked), ...(source.extra ?? [])]
       : source.produces;
     for (const type of types) working = addMana(working, type, 1);
     chosen.push({

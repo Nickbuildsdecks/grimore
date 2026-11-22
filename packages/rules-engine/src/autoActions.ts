@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, attackTaxFor, tapManaExtras, bouncePlan, castProhibition, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -2351,6 +2351,8 @@ function activate(
     for (const type of made) next = addToPool(next, action.by, type, 1);
     // A Wild Growth on it, a Crypt Ghast beside it (D1088): read before the tap, as the mana is.
     if (ability.cost.tap) for (const type of tapManaExtras(state, inst.id)) next = addToPool(next, action.by, type, 1);
+    // A Mana Flare (D1106): one more of the first mana the tap made, per Flare.
+    if (ability.cost.tap && made.length > 0) next = addToPool(next, action.by, made[0]!, tapManaEchoes(state, inst.id));
     /*
       **A mana ability may do more than make mana** (CR 605.1a), and until D497 this branch ran the
       mana and returned, so an `effect` beside `produces` was silently dropped. Nothing in the pool

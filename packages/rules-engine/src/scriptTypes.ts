@@ -2957,9 +2957,18 @@ export interface CardScript {
    */
   readonly tapManaExtra?: {
     /** The permanent this is attached to, or a permanent of its controller's of the kind named. */
-    readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | { readonly subtype: string } };
-    /** The mana added, or one of the colour this permanent chose as it entered (Utopia Sprawl). */
-    readonly adds: readonly ManaType[] | 'chosen';
+    readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | { readonly subtype: string } }
+      /**
+       * Anybody's land of the kind (D1106): "Whenever a player taps a land for mana" (Mana Flare,
+       * Heartbeat of Spring), "… a basic land" (Lavaleaper), "… a Mountain, Forest, or Plains"
+       * (Keeper of Progenitus). The mana goes to the player who tapped it.
+       */
+      | { readonly anyone: 'land' | 'basic land' | { readonly subtypes: readonly string[] } };
+    /**
+     * The mana added, or one of the colour this permanent chose as it entered (Utopia Sprawl), or
+     * (D1106) "one mana of any type that land produced": one more of what the tap made.
+     */
+    readonly adds: readonly ManaType[] | 'chosen' | 'produced';
   };
   /**
    * "If ~ is in your opening hand, you may begin the game with it on the battlefield" (D778, CR

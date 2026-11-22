@@ -40,7 +40,7 @@ import {
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
-import { costChangeFor, tapManaExtras } from './legalActions.js';
+import { costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
 import { canAfford, reducedCostText, solveTap } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours, ownLandTypes, legendaryColours } from './fromCardData.js';
@@ -32654,6 +32654,54 @@ describe('upkeep taxes paid in life, and taxes whose forfeit is a tap (D1105)', 
     expect(rich.pendingDecision?.options).toEqual(['Tap it', 'Pay {3}']);
     const kept = answer(rich, 'Pay {3}');
     expect(kept.instances[find(kept, 0, 'battlefield', 'Test Hulk')]!.tapped).toBe(false);
+  });
+});
+
+describe('one mana of any type that land produced: Mana Flare, Zendikar Resurgent (D1106)', () => {
+  // CR 605.1b: a triggered mana ability, so the mana is part of the tap, for whoever tapped the land.
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: null, toughness: null, oracle_text: text });
+  const FLARE = E('Test Flare', 'Whenever a player taps a land for mana, that player adds one mana of any type that land produced.');
+  const RESURGENT = E('Test Resurgent', 'Whenever you tap a land for mana, add one mana of any type that land produced.');
+  const KEEPER = E('Test Keeper', 'Whenever a player taps a Mountain, Forest, or Plains for mana, that player adds one mana of any type that land produced.');
+  const DUAL = { name: 'Test Dual', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', power: null, toughness: null, oracle_text: '{T}: Add {U} or {B}.' };
+  const ROWS = [FLARE, RESURGENT, KEEPER, DUAL];
+  const deck = customDeck({
+    id: 'd1106', name: 'Flares', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 26 }, { name: 'Island', count: 26 }], data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1106', 1: 'd1106' }, deckSpecs: { d1106: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const source = (s: GameState, seat: SeatIndex, name: string) => manaSources(s, seat).find((src) => src.key === find(s, seat, 'battlefield', name));
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [FLARE, RESURGENT, KEEPER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Mana Flare doubles every player’s lands: in the sources, the pips and by hand', () => {
+    const s = table(['Forest', 'Test Flare'], ['Island']);
+    const forest = find(s, 0, 'battlefield', 'Forest');
+    expect(tapManaEchoes(s, forest)).toBe(1);
+    expect(source(s, 0, 'Forest')!.produces).toEqual(['G', 'G']);
+    expect(source(s, 1, 'Island')!.produces).toEqual(['U', 'U']);
+    expect(potentialMana(s, 0).G).toBe(2);
+    expect(poolOf(apply(s, { type: 'auto:activate', by: 0, card: forest, abilityIndex: 0 }), 0).G).toBe(2);
+  });
+
+  it('a dual land makes two of the colour it is tapped for, and pays {B}{B} alone', () => {
+    const s = table(['Test Dual', 'Test Flare'], []);
+    expect(source(s, 0, 'Test Dual')).toMatchObject({ choose: true, echo: 1 });
+    expect(solveTap(poolOf(s, 0), parseManaCost('{B}{B}'), manaSources(s, 0))?.[0]?.types).toEqual(['B', 'B']);
+  });
+
+  it('"you tap" is the controller’s lands only, and a subtype list is those subtypes only', () => {
+    const s = table(['Forest', 'Test Resurgent'], ['Forest']);
+    expect(source(s, 0, 'Forest')!.produces).toEqual(['G', 'G']);
+    expect(source(s, 1, 'Forest')!.produces).toEqual(['G']);
+    const k = table(['Forest', 'Island', 'Test Keeper'], []);
+    expect(source(k, 0, 'Forest')!.produces).toEqual(['G', 'G']);
+    expect(source(k, 0, 'Island')!.produces).toEqual(['U']);
   });
 });
 

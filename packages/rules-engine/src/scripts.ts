@@ -33419,6 +33419,24 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
       : [...tapExtra[3]!.matchAll(/\{([WUBRGC])\}/gi)].map((m) => m[1]!.toUpperCase() as ManaType);
     return { tapManaExtra: { watches, adds } };
   }
+  /*
+    "Whenever a player taps a land for mana, that player adds one mana of any type that land
+    produced" (D1106): Mana Flare, Heartbeat of Spring, Dictate of Karametra, Zhur-Taa Ancient;
+    "… a basic land" (Lavaleaper), "… a Mountain, Forest, or Plains" (Keeper of Progenitus); and
+    "Whenever you tap a land for mana, add one mana of any type that land produced" (Zendikar
+    Resurgent, Mirari's Wake). See `CardScript.tapManaExtra`.
+  */
+  const echoed = /^whenever (a player|you) taps? an? (land|basic land|(?:(?:plains|island|swamp|mountain|forest)(?:, or |, | or ))*(?:plains|island|swamp|mountain|forest)) for mana, (?:that player adds|add) one mana of any type that land produced\.?$/i.exec(plain(line).trim());
+  if (echoed !== null) {
+    const kind = echoed[2]!.toLowerCase();
+    const anyone = kind === 'land' || kind === 'basic land' ? kind as 'land' | 'basic land'
+      : { subtypes: kind.split(/, or |, | or /).map((t) => t[0]!.toUpperCase() + t.slice(1)) };
+    if (/^you$/i.test(echoed[1]!)) {
+      if (kind !== 'land') return null;
+      return { tapManaExtra: { watches: { yours: 'land' }, adds: 'produced' } };
+    }
+    return { tapManaExtra: { watches: { anyone }, adds: 'produced' } };
+  }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());
   if (taxed !== null) return { attackTax: Number(taxed[1]) };

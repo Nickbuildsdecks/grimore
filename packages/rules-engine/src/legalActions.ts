@@ -1208,18 +1208,7 @@ export function tapManaExtras(state: GameState, tapped: string): readonly ManaTy
   let ch: ReturnType<typeof characteristicsOf> | undefined;
   for (const watcher of watchers) {
     const extra = scriptForCard(state.cardDefs[watcher.defKey])!.tapManaExtra!;
-    if (extra.watches === 'enchanted') {
-      if (watcher.attachedTo !== tapped) continue;
-    } else {
-      if (watcher.zoneSeat !== target.zoneSeat) continue;
-      ch ??= characteristicsOf(state, target);
-      const kind = extra.watches.yours;
-      const fits = kind === 'land' ? ch.isLand
-        : kind === 'creature' ? ch.isCreature
-          : kind === 'land creature' ? ch.isLand && ch.isCreature
-            : ch.typeLine.subtypes.some((s) => s.toLowerCase() === kind.subtype.toLowerCase());
-      if (!fits) continue;
-    }
+    if (extra.adds === 'produced' || !watcherSees(state, watcher, extra.watches, target, () => (ch ??= characteristicsOf(state, target)))) continue;
     if (allAbilitiesLost(state, watcher)) continue;
     if (extra.adds === 'chosen') {
       const colour = watcher.chosen?.color;
@@ -1229,6 +1218,51 @@ export function tapManaExtras(state: GameState, tapped: string): readonly ManaTy
     }
   }
   return out;
+}
+
+/** Whether a watcher's `watches` takes in this tapped permanent (D1088, D1106). */
+function watcherSees(
+  state: GameState, watcher: CardInstance, watches: NonNullable<CardScript['tapManaExtra']>['watches'],
+  target: CardInstance, ch: () => ReturnType<typeof characteristicsOf>,
+): boolean {
+  if (watches === 'enchanted') return watcher.attachedTo === target.id;
+  if ('anyone' in watches) {
+    const c = ch();
+    if (!c.isLand) return false;
+    const kind = watches.anyone;
+    return kind === 'land' ? true
+      : kind === 'basic land' ? c.typeLine.supertypes.some((s) => s.toLowerCase() === 'basic')
+        : c.typeLine.subtypes.some((s) => kind.subtypes.some((t) => t.toLowerCase() === s.toLowerCase()));
+  }
+  if (watcher.zoneSeat !== target.zoneSeat) return false;
+  const c = ch();
+  const kind = watches.yours;
+  return kind === 'land' ? c.isLand
+    : kind === 'creature' ? c.isCreature
+      : kind === 'land creature' ? c.isLand && c.isCreature
+        : c.typeLine.subtypes.some((s) => s.toLowerCase() === kind.subtype.toLowerCase());
+}
+
+/**
+ * How many more mana of the type the tap made (D1106, CR 106.12): "Whenever a player taps a land
+ * for mana, that player adds one mana of any type that land produced", once per Mana Flare. One
+ * mana each, whatever the land made: Ancient Tomb's {C}{C} gets one {C} more, a dual one of the
+ * colour it was tapped for.
+ */
+export function tapManaEchoes(state: GameState, tapped: string): number {
+  const watchers = tapWatchers(state);
+  if (watchers.length === 0) return 0;
+  const target = state.instances[tapped];
+  if (target === undefined || target.zone !== 'battlefield') return 0;
+  let ch: ReturnType<typeof characteristicsOf> | undefined;
+  let n = 0;
+  for (const watcher of watchers) {
+    const extra = scriptForCard(state.cardDefs[watcher.defKey])!.tapManaExtra!;
+    if (extra.adds !== 'produced' || !watcherSees(state, watcher, extra.watches, target, () => (ch ??= characteristicsOf(state, target)))) continue;
+    if (allAbilitiesLost(state, watcher)) continue;
+    n++;
+  }
+  return n;
 }
 
 export function manaSources(
@@ -1429,12 +1463,14 @@ export function manaSources(
       ? { snow: true as const } : {};
     // What a Wild Growth on it adds to every tap (D1088): part of the sum, or beside the choice.
     const extra = usable.every((u) => u.taps) ? tapManaExtras(state, id) : [];
+    // And a Mana Flare's (D1106): one more of what the tap made.
+    const echo = usable.every((u) => u.taps) ? tapManaEchoes(state, id) : 0;
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
     if (usable.length === 1) {
       bucket.push({
-        key: id, produces: [...usable[0]!.produces, ...extra], abilityIndex: usable[0]!.index,
+        key: id, produces: [...usable[0]!.produces, ...Array.from({ length: usable[0]!.produces.length > 0 ? echo : 0 }, () => usable[0]!.produces[0]!), ...extra], abilityIndex: usable[0]!.index,
         ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
         ...(usable[0]!.restricted === true ? { restricted: true as const } : {}),
         ...(cost > 0 ? { life: cost } : {}),
@@ -1458,6 +1494,7 @@ export function manaSources(
       ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
       choose: true,
       ...(extra.length > 0 ? { extra } : {}),
+      ...(echo > 0 ? { echo } : {}),
       ...(cost > 0 ? { life: cost } : {}),
       ...(eats ? { sacrifices: true } : {}),
       ...snowy,
@@ -1483,6 +1520,8 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
     let tapsForMana = false;
+    // The kinds its taps make, for a Mana Flare's one more (D1106): optimistic, as the rest is.
+    const tapKinds = new Set<ManaType>();
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
     // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
     if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
@@ -1519,11 +1558,17 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       // because a player looking at Mana Confluence already counts it as a land.
       const life = ability.cost.life ?? 0;
       if (!canPayLife(state, seat, life)) continue;
-      for (const type of producedBy(state, ability, id, seat)) pool = addMana(pool, type as ManaType, 1);
+      for (const type of producedBy(state, ability, id, seat)) {
+        pool = addMana(pool, type as ManaType, 1);
+        if (ability.cost.tap) tapKinds.add(type as ManaType);
+      }
       if (ability.cost.tap) tapsForMana = true;
     }
     // A Wild Growth's mana, once for the one tap (D1088).
     if (tapsForMana) for (const type of tapManaExtras(state, id)) pool = addMana(pool, type, 1);
+    // A Mana Flare's (D1106).
+    const echoes = tapsForMana ? tapManaEchoes(state, id) : 0;
+    for (let i = 0; i < echoes; i++) for (const type of tapKinds) pool = addMana(pool, type, 1);
   }
   return pool;
 }
