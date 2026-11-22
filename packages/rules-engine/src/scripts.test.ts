@@ -7986,6 +7986,8 @@ describe('deck coverage', () => {
       'trigger expend',
       // D1108: "whenever one or more … enter", batched; no pool deck plays one.
       'trigger permanents-entered',
+      // D1124: "whenever ~ becomes untapped"; no pool deck plays one.
+      'trigger becomes-untapped',
       // D1115: "a source you control deals noncombat damage to an opponent"; no pool deck plays one.
       'trigger player-damaged',
       // D1119: "whenever a creature you control explores"; no pool deck plays one.
@@ -33369,6 +33371,64 @@ describe('the board\'s "is turned face up" (D1123)', () => {
 
   it("a permanent's own \"when ~ is turned face up\" stays its own on a watched board", () => {
     expect(gained(['Test Farseer', 'Test Shell'], 'Test Morph')).toBe(1);
+  });
+});
+
+describe('"whenever ~ becomes untapped", and enchantment creature tokens (D1124)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const SAGE = C('Test Sage', 'Inspired — Whenever Test Sage becomes untapped, you gain 3 life.');
+  const THRASHER = C('Test Thrasher', 'Whenever a permanent you control becomes untapped, you gain 1 life.');
+  const BEAR = C('Test Bear', '');
+  const TAP = { name: 'Test Tap', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Tap target creature.' };
+  const NYMPH = { name: 'Test Nymphs', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Create a 2/2 blue Bird enchantment creature token with flying.' };
+  const ROWS = [SAGE, THRASHER, BEAR, TAP, NYMPH];
+  const deck = customDeck({
+    id: 'd1124', name: 'Untaps', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  /** Seat 0 taps its own `victim` with one Forest's mana, then the game walks to its next upkeep. */
+  const gainedAtUpkeep = (mine: readonly string[], victim: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1124', 1: 'd1124' }, deckSpecs: { d1124: deck.deck },
+      hands: { 0: ['Test Tap'] }, battlefield: { 0: ['Forest', ...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tap'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', victim) }],
+    } as Action)), 30);
+    expect(s.instances[find(s, 0, 'battlefield', victim)]!.tapped).toBe(true);
+    const before = life(s, 0);
+    // Through seat 1's turn and into seat 0's next, where its untap step runs.
+    s = drain(nextTurn(nextTurn(s)), 30);
+    expect(s.activeSeat).toBe(0);
+    expect(s.turn).toBe(5);
+    return life(s, 0) - before;
+  };
+
+  it('reads the watchers and the token whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [SAGE, THRASHER, NYMPH]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('its own untap in the untap step pays at the upkeep', () => {
+    expect(gainedAtUpkeep(['Test Sage'], 'Test Sage')).toBe(3);
+    // Another creature's untap is not its own.
+    expect(gainedAtUpkeep(['Test Sage', 'Test Bear'], 'Test Bear')).toBe(0);
+  });
+
+  it('"a permanent you control becomes untapped": the Forest that paid and the creature tapped', () => {
+    expect(gainedAtUpkeep(['Test Thrasher', 'Test Bear'], 'Test Bear')).toBe(2);
+    // And on that watched board, the Sage's own untap trigger stays its own: still 2.
+    expect(gainedAtUpkeep(['Test Sage', 'Test Thrasher', 'Test Bear'], 'Test Bear')).toBe(2);
+  });
+
+  it('an enchantment creature token is an enchantment and a creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1124', 1: 'd1124' }, deckSpecs: { d1124: deck.deck },
+      hands: { 0: ['Test Nymphs'] }, battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Nymphs') } as Action)), 30);
+    const bird = find(s, 0, 'battlefield', 'Bird');
+    const ch = characteristicsOf(s, s.instances[bird]!);
+    expect(ch.typeLine.types).toEqual(expect.arrayContaining(['Enchantment', 'Creature']));
   });
 });
 

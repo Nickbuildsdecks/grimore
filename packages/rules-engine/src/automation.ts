@@ -1265,7 +1265,7 @@ function boardSubjectMatches(
  * permanent or an emblem with a `who` of `any` or `another`. `raise` asks before it offers a tap or
  * a leave to the whole board, since a tap is raised for every land tapped for mana.
  */
-function boardWatched(state: GameState, kind: 'becomes-tapped' | 'leaves' | 'turned-face-up'): boolean {
+function boardWatched(state: GameState, kind: 'becomes-tapped' | 'becomes-untapped' | 'leaves' | 'turned-face-up'): boolean {
   for (const key of Object.keys(state.zones)) {
     const battlefield = key.endsWith(':battlefield');
     if (!battlefield && !key.endsWith(':command')) continue;
@@ -1868,6 +1868,14 @@ function triggerMatches(
       permanent this Aura or Equipment was attached to (`who: 'attached'`). `raise` offers both.
       "Is dealt combat damage" (D992): the combat event only.
     */
+    // Its own untap, or the board's (D1124).
+    case 'becomes-untapped': {
+      const who = want.who ?? 'self';
+      if (who === 'any' || who === 'another') {
+        return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'becomes-untapped' }>, sourceSeat, isSubject);
+      }
+      return isSubject;
+    }
     case 'becomes-tapped':
     case 'damaged': {
       // The board's version (D1121): "whenever a creature an opponent controls becomes tapped".
@@ -2669,9 +2677,9 @@ function raise(
     mana is what `selfOnly` below exists to avoid.
   */
   const watchedByBoard = subject !== undefined
-    && (event.kind === 'becomes-tapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')
+    && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')
     && boardWatched(next, event.kind);
-  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')) {
+  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')) {
     const inst = next.vanished[subject as string] ?? next.instances[subject as string];
     if (inst !== undefined) {
       const ch = characteristicsOf(next, inst);
@@ -2686,7 +2694,7 @@ function raise(
     }
   }
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'turned-face-up', 'phases-in', 'phases-out', 'transformed', 'state',
+    'becomes-tapped', 'becomes-untapped', 'leaves', 'turned-face-up', 'phases-in', 'phases-out', 'transformed', 'state',
     'chapter',
     // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
     // permanent itself, and this event is raised for every landing of damage in every combat the
@@ -4728,6 +4736,11 @@ function settle(state: GameState, before: GameState): GameState {
     for (const id of next.zones[key] ?? []) {
       const now = next.instances[id];
       const was = before.instances[id];
+      // And the other way (D1124): a permanent that was tapped on the battlefield and is not now.
+      if (now !== undefined && !now.tapped && was !== undefined && was.tapped && was.zone === 'battlefield') {
+        next = raise(next, { kind: 'becomes-untapped' }, now.zoneSeat, id);
+        continue;
+      }
       if (now === undefined || !now.tapped) continue;
       if (was === undefined || was.tapped || was.zone !== 'battlefield') continue;
       // With what is attached to it (D994), for "whenever enchanted creature becomes tapped".

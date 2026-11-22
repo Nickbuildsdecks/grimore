@@ -18646,6 +18646,29 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} becomes tapped, (.+)$`, 'i'),
     on: [{ kind: 'becomes-tapped' }],
   },
+  /*
+    "Whenever ~ becomes untapped" (D1124): inspired (its ability word is stripped before this),
+    Key to the City, Hollowsage, Tui and La. And the board's: "whenever a permanent you control
+    becomes untapped" (Wake Thrasher), "a permanent becomes untapped" (Mesmeric Orb).
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} becomes untapped, (.+)$`, 'i'),
+    on: [{ kind: 'becomes-untapped' }],
+  },
+  {
+    prologue: () => /^Whenever (?<who>a|an|another) (?<what>creature|permanent|land|artifact)(?<of> you control| an opponent controls)? becomes untapped, (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const who = BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+      if (who === undefined) return null;
+      const what = g.what!.toLowerCase() as 'creature' | 'permanent' | 'land' | 'artifact';
+      return [{
+        kind: 'becomes-untapped' as const, who,
+        ...(g.of === undefined ? {} : { of: /you control/i.test(g.of) ? 'you' as const : 'opponent' as const }),
+        ...(what === 'permanent' ? {} : { what }),
+      }];
+    },
+  },
   // The board's taps and leaves (D1121): see `boardSubjectTrigger`.
   {
     prologue: () => new RegExp(
@@ -20470,7 +20493,9 @@ function tokenFrom(
 
   const rest = words.slice(i);
   const isArtifact = rest[rest.length - 1]?.toLowerCase() === 'artifact';
-  const subtypeWords = isArtifact ? rest.slice(0, -1) : rest;
+  // And "enchantment" (D1124): the Theros gods' "2/2 blue Bird enchantment creature token".
+  const isEnchantment = rest[rest.length - 1]?.toLowerCase() === 'enchantment';
+  const subtypeWords = isArtifact || isEnchantment ? rest.slice(0, -1) : rest;
   /*
     A subtype is printed capitalised: "Spirit", "Elf Warrior".
 
@@ -20522,7 +20547,7 @@ function tokenFrom(
 
   const token: CardDef = {
     name: subtype,
-    typeLine: `Token ${isArtifact ? 'Artifact ' : ''}Creature — ${subtype}`,
+    typeLine: `Token ${isArtifact ? 'Artifact ' : ''}${isEnchantment ? 'Enchantment ' : ''}Creature — ${subtype}`,
     manaCost: '',
     cmc: 0,
     power: made[2]!,
