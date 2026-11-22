@@ -33771,6 +33771,44 @@ function kickerClausePairFor(
   if (base.script === null || base.unread.length > 0 || base.script.modal !== undefined) return null;
   const baseEffect = base.script.onResolve;
   if (baseEffect === undefined) return null;
+  /*
+    What the two halves are made of, to tell whether one can stand for the other: their targets,
+    flags and questions. Not the bot's hints (D1102): \`expiresAtEndOfTurn\` and a target's
+    \`friendly\`, \`blinks\` and \`helpsInCombat\` say how a half is played, not what it is, and
+    Colossal Growth's "+4/+4 and gains trample and haste" carries a hint its "+3/+3" does not.
+  */
+  const shape = (script: Partial<CardScript>): string => JSON.stringify(
+    Object.entries(script)
+      .filter(([key]) => key !== 'onResolve' && key !== 'expiresAtEndOfTurn')
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, value]) => [key, key === 'targets'
+        ? (value as readonly TargetSpec[]).map(({ friendly: _f, blinks: _b, helpsInCombat: _h, ...spec }) => spec)
+        : value]),
+  );
+  /*
+    "Those creatures" and "they" (D1102): the creatures a mass effect's base names, which is what
+    Dauntless Unity's "those creatures get +2/+1 until end of turn instead" and Savage Offensive's
+    "they get +1/+1" mean. Named again, since they are the same creatures as the base resolves.
+  */
+  const massSubject = /^(creatures (?:you control|target player controls|your opponents control))\b/i.exec(baseText);
+  const named = (text: string): string => (massSubject === null ? text
+    : text.replace(/^(?:those creatures|they)\b/i, massSubject[1]!.toLowerCase()));
+  /*
+    The kicked half read with the base it refers back to (D1102), as one text: "that creature
+    also gains indestructible" means the base's target, and Gift of Growth's "that creature gets
+    +4/+4 instead" replaces only the sentence before it ("It gets +2/+2"), not the untap. Only when
+    the result has the base's shape, so the targets announced are the same either way.
+  */
+  const together = (text: string): EffectFn | null => {
+    if (base.script!.decisions !== undefined || base.script!.beforeDecisions !== undefined) return null;
+    const read = spellScriptFor([text], name);
+    if (read.script === null || read.unread.length > 0 || read.script.onResolve === undefined) return null;
+    return shape(read.script) === shape(base.script!) ? read.script.onResolve : null;
+  };
+  const withTogether = (kickedRun: EffectFn): { fragment: Partial<CardScript>; claimed: readonly string[] } => ({
+    fragment: { ...base.script!, kicker, onResolve: (c) => (c.kicked === true ? kickedRun(c) : baseEffect(c)) },
+    claimed: [...lines],
+  });
   const kicker = {
     cost: declaring.exec(plain(declaration).trim())![1]!,
     description: plain(declaration).trim(),
@@ -33780,7 +33818,7 @@ function kickerClausePairFor(
     `ModalDef.kickerModes`. Only halves made of what a mode can hold — targets, questions and an
     effect — so nothing either half read is dropped on the way into one.
     */
-  const MODE_KEYS = new Set(['targets', 'decisions', 'beforeDecisions', 'onResolve']);
+  const MODE_KEYS = new Set(['targets', 'decisions', 'beforeDecisions', 'onResolve', 'expiresAtEndOfTurn']);
   const asMode = (script: Partial<CardScript>, description: string): ModeDef | null => {
     if (!Object.keys(script).every((key) => MODE_KEYS.has(key)) || script.onResolve === undefined) return null;
     return {
@@ -33788,6 +33826,7 @@ function kickerClausePairFor(
       ...(script.targets === undefined ? {} : { targets: script.targets }),
       ...(script.decisions === undefined ? {} : { decisions: script.decisions }),
       ...(script.beforeDecisions === undefined ? {} : { beforeDecisions: script.beforeDecisions }),
+      ...(script.expiresAtEndOfTurn === undefined ? {} : { expiresAtEndOfTurn: script.expiresAtEndOfTurn }),
       effect: script.onResolve,
     };
   };
@@ -33799,13 +33838,19 @@ function kickerClausePairFor(
   };
 
   if (!instead) {
-    const extra = spellScriptFor([sentence(tail)], name);
-    const keys = extra.script === null ? [] : Object.keys(extra.script);
+    // "That creature also gains indestructible": the "also" says only that the base still happens (D1102).
+    const added = named(tail.replace(/^(\S+(?: \S+){0,3}?) also /i, '$1 '));
+    const extra = spellScriptFor([sentence(added)], name);
+    const keys = extra.script === null ? [] : Object.keys(extra.script).filter((key) => key !== 'expiresAtEndOfTurn');
     const extraEffect = extra.script?.onResolve;
     if (extra.script !== null && extra.unread.length === 0 && extra.script.targets !== undefined) {
-      return kickedModal(extra.script, tail, 'also');
+      const modal = kickedModal(extra.script, tail, 'also');
+      if (modal !== null) return modal;
     }
-    if (extra.unread.length > 0 || keys.length !== 1 || extraEffect === undefined) return null;
+    if (extra.unread.length > 0 || keys.length !== 1 || extraEffect === undefined) {
+      const both = together(`${baseText} ${sentence(added)}`);
+      return both === null ? null : withTogether(both);
+    }
     return {
       fragment: {
         ...base.script,
@@ -33819,8 +33864,17 @@ function kickerClausePairFor(
     };
   }
 
+  /*
+    A base of several sentences (D1102): "instead" replaces the last of them, so Gift of Growth
+    kicked still untaps its creature. The kicked text is the rest of the base and the new half.
+  */
+  const baseSentences = /"/.test(baseText) ? [baseText] : baseText.split(/(?<=[.])\s+(?=[A-Z])/);
+  if (baseSentences.length > 1) {
+    const kickedRun = together(`${baseSentences.slice(0, -1).join(' ')} ${sentence(named(tail))}`);
+    if (kickedRun !== null) return withTogether(kickedRun);
+  }
   const referent = KICKED_REFERENT.exec(tail);
-  let altText = tail;
+  let altText = named(tail);
   if (referent !== null) {
     const noun = referent[1]!.toLowerCase();
     const phrase = new RegExp(
@@ -33838,11 +33892,8 @@ function kickerClausePairFor(
   const alt = spellScriptFor([sentence(altText)], name);
   const altEffect = alt.script?.onResolve;
   if (alt.script === null || alt.unread.length > 0 || altEffect === undefined) return null;
-  // The same shape apart from what each does: same targets, same flags, and no questions on
-  // either side, since a question asked on one branch only cannot be listed once for both.
-  const shape = (script: Partial<CardScript>): string => JSON.stringify(
-    Object.fromEntries(Object.entries(script).filter(([key]) => key !== 'onResolve').sort()),
-  );
+  // The same shape apart from what each does (\`shape\`, above): same targets, same flags, and no
+  // questions on either side, since a question asked on one branch only cannot be listed once for both.
   // Different targets on each branch (D1095): two modes, and the kicker picks which.
   if (shape(base.script) !== shape(alt.script)) return kickedModal(alt.script, altText, 'instead');
   if (base.script.decisions !== undefined || base.script.beforeDecisions !== undefined) return null;

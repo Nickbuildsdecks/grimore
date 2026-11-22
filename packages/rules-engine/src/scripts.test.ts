@@ -32427,6 +32427,80 @@ describe('wider Aura hosts, and an Aura that exiles until it leaves (D1101)', ()
   });
 });
 
+describe('kicked halves that refer back to the base (D1102)', () => {
+  /*
+    "That creature also gains …", "those creatures get … instead", "they get …": the kicked half
+    is read with the base it names, and an "instead" replaces only the sentence before it.
+  */
+  const R = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: text });
+  const GROWTH = R('Test Growth', 'Kicker {1}\nUntap target creature. It gets +2/+2 until end of turn. If this spell was kicked, that creature gets +4/+4 until end of turn instead.');
+  const UNITY = R('Test Unity', 'Kicker {1}\nCreatures you control get +1/+1 until end of turn. If this spell was kicked, those creatures get +2/+1 until end of turn instead.');
+  const SHIELD = R('Test Shield', 'Kicker {1}\nTarget creature you control gets +0/+3 until end of turn. If this spell was kicked, that creature also gains hexproof until end of turn.');
+  const OFFENSIVE = R('Test Offensive', 'Kicker {1}\nCreatures you control gain first strike until end of turn. If this spell was kicked, they get +1/+1 until end of turn.');
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const SPELLS = [GROWTH, UNITY, SHIELD, OFFENSIVE];
+  const deck = customDeck({
+    id: 'd1102', name: 'Referents', entries: [...[...SPELLS, BEAR].map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }], data: [...SPELLS, BEAR] as never[],
+  });
+  const table = (spell: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1102', 1: 'd1102' }, deckSpecs: { d1102: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: ['Island', 'Island', 'Island', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, spell: string, kicked: boolean, targets: Target[]): GameState => {
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', spell) && (p.kicked === true) === kicked)!;
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: row.card, kicked: kicked || undefined, modes: row.modes, targets } as Action)), 20);
+  };
+  const pt = (s: GameState, id: string) => [power(s, id), toughness(s, id)];
+
+  it('reads all four whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of SPELLS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"instead" after two sentences: kicked it still untaps, and gets +4/+4 rather than +2/+2', () => {
+    const s0 = table('Test Growth');
+    const bear = find(s0, 0, 'battlefield', 'Test Bear');
+    const s = { ...s0, instances: { ...s0.instances, [bear]: { ...s0.instances[bear]!, tapped: true } } };
+    const kicked = cast(s, 'Test Growth', true, [{ kind: 'card', id: bear }]);
+    expect(kicked.instances[bear]!.tapped).toBe(false);
+    expect(pt(kicked, bear)).toEqual([6, 6]);
+    const plain = cast(s, 'Test Growth', false, [{ kind: 'card', id: bear }]);
+    expect(plain.instances[bear]!.tapped).toBe(false);
+    expect(pt(plain, bear)).toEqual([4, 4]);
+  });
+
+  it('"those creatures … instead" and "they get": the creatures the base names', () => {
+    const s = table('Test Unity');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const kicked = cast(s, 'Test Unity', true, []);
+    expect(pt(kicked, bear)).toEqual([4, 3]);
+    expect(pt(kicked, theirs)).toEqual([2, 2]);
+    expect(pt(cast(s, 'Test Unity', false, []), bear)).toEqual([3, 3]);
+    const t = table('Test Offensive');
+    const mine = find(t, 0, 'battlefield', 'Test Bear');
+    const offensive = cast(t, 'Test Offensive', true, []);
+    expect(pt(offensive, mine)).toEqual([3, 3]);
+    expect(characteristicsOf(offensive, offensive.instances[mine]!).keywords.has('first strike')).toBe(true);
+    const unkicked = cast(t, 'Test Offensive', false, []);
+    expect(pt(unkicked, mine)).toEqual([2, 2]);
+    expect(characteristicsOf(unkicked, unkicked.instances[mine]!).keywords.has('first strike')).toBe(true);
+  });
+
+  it('"that creature also gains": the base target gets both, and one target is asked either way', () => {
+    const s = table('Test Shield');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const rows = legalActions(s, 0).plays.filter((p) => p.kind === 'cast' && p.name === 'Test Shield');
+    for (const row of rows) expect(row.candidates).toHaveLength(1);
+    const kicked = cast(s, 'Test Shield', true, [{ kind: 'card', id: bear }]);
+    expect(pt(kicked, bear)).toEqual([2, 5]);
+    expect(characteristicsOf(kicked, kicked.instances[bear]!).keywords.has('hexproof')).toBe(true);
+    const plain = cast(s, 'Test Shield', false, [{ kind: 'card', id: bear }]);
+    expect(pt(plain, bear)).toEqual([2, 5]);
+    expect(characteristicsOf(plain, plain.instances[bear]!).keywords.has('hexproof')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

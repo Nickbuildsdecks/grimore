@@ -17893,8 +17893,7 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
       'Destroy target tapped creature. If this spell was kicked, scry 2.'],
     ['a referent the base never named',
       'Draw two cards. If this spell was kicked, that creature gets +5/+5 until end of turn instead.'],
-    ['a kicked half that refers back without replacing',
-      'Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +7/+0 until end of turn.'],
+    // Retargeted by D1102: "a kicked half that refers back without replacing" reads now, with the base it names.
     ['a kicked half nothing can read',
       'Draw a card. If this spell was kicked, each player votes for wind or rain.'],
     ['a base nothing can read',
@@ -17908,6 +17907,15 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
     const got = read(body);
     expect(got.script?.kicker).toBeUndefined();
     expect(got.unread.map((u) => u.line)).toEqual(['Kicker {1}{U}', body]);
+  });
+
+  // Retargeted by D1102: a kicked half that refers back to the base is read together with it.
+  it('reads a kicked half that refers back without replacing, with the base it names (D1102)', () => {
+    const body = 'Target creature gets +2/+2 until end of turn. If this spell was kicked, that creature gets +7/+0 until end of turn.';
+    const got = read(body);
+    expect(got.unread).toEqual([]);
+    expect(got.script?.kicker?.cost).toBe('{1}{U}');
+    expect(got.script?.targets).toHaveLength(1);
   });
 
   // Retargeted by D1095: an "instead" with targets of its own is two modes the kicker picks.
