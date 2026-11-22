@@ -31888,6 +31888,52 @@ describe('"Partner with <name>": the enter trigger that fetches the partner (D10
   });
 });
 
+describe('typed equip: "Equip Human {1}", "Equip legendary creature {3}" (D1092)', () => {
+  // CR 702.6e: an equip ability whose target must have the printed quality, beside the plain one.
+  const ROWS = [
+    { name: 'Test Blade', type_line: 'Artifact — Equipment', oracle_text: 'Equipped creature gets +2/+1.\nEquip Human {1}\nEquip {3}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Sword', type_line: 'Legendary Artifact — Equipment', oracle_text: 'Equipped creature gets +4/+0.\nEquip legendary creature {2}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Squire', type_line: 'Creature — Human Soldier', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Lord', type_line: 'Legendary Creature — Elf', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1092', name: 'Typed equip', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 52 }], data: ROWS as never[],
+  });
+  const table = (gear: string): GameState => advanceTo(arena({
+    decks: { 0: 'd1092', 1: 'd1092' }, deckSpecs: { d1092: deck.deck },
+    battlefield: { 0: [gear, 'Test Squire', 'Test Bear', 'Test Lord', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const equipAt = (s: GameState, gear: string, abilityIndex: number, on: string) => ({
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', gear), abilityIndex,
+    targets: [{ kind: 'card', id: find(s, 0, 'battlefield', on) }],
+  } as Action);
+
+  it('reads whole: two equip abilities, the typed one narrowed', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const blade = compileCard(ROWS[0] as never);
+    expect(blade.ok && blade.script?.abilities?.length).toBe(2);
+  });
+
+  it('the Human equip reaches a Human for {1} and refuses the Bear; the plain one takes either', () => {
+    const s = table('Test Blade');
+    expect(refusal(s, equipAt(s, 'Test Blade', 1, 'Test Bear'))).not.toBeNull();
+    const human = drain(passBoth(apply(s, equipAt(s, 'Test Blade', 1, 'Test Squire'))), 10);
+    expect(human.instances[find(human, 0, 'battlefield', 'Test Blade')]!.attachedTo).toBe(find(human, 0, 'battlefield', 'Test Squire'));
+    expect(ids(human, 0, 'battlefield').filter((id) => nameOf(human, id) === 'Plains' && human.instances[id]!.tapped)).toHaveLength(1);
+    expect(refusal(s, equipAt(s, 'Test Blade', 0, 'Test Bear'))).toBeNull();
+  });
+
+  it('a card with only a typed equip: a legendary creature or nothing', () => {
+    const s = table('Test Sword');
+    expect(refusal(s, equipAt(s, 'Test Sword', 0, 'Test Bear'))).not.toBeNull();
+    expect(refusal(s, equipAt(s, 'Test Sword', 0, 'Test Squire'))).not.toBeNull();
+    const lord = drain(passBoth(apply(s, equipAt(s, 'Test Sword', 0, 'Test Lord'))), 10);
+    expect(power(lord, find(lord, 0, 'battlefield', 'Test Lord'))).toBe(6);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

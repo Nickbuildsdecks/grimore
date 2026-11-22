@@ -25,7 +25,7 @@ import {
   type StaticCountable,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
-import { zoneKey, type CardDef } from './cards.js';
+import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt, withInstance, withZones } from './cardActions.js';
 import {
   BLITZED,
@@ -571,8 +571,34 @@ const FIREBALL: CardScript = {
  * table of calls into the builders above it, and the thing that keeps the compiled Bonesplitter and
  * the hand-written one the same card. See `attachmentScriptFor`.
  */
+/**
+ * "Equip [quality] {N}" (D1092, CR 702.6e): equip, onto a creature you control **with that
+ * quality**. `words` is the printed quality, `fits` asks it of the creature as it is now.
+ */
+interface EquipQuality {
+  readonly words: string;
+  readonly fits: (state: GameState, instance: CardInstance) => boolean;
+}
+
+/**
+ * The qualities typed equip prints (D1092): "legendary creature", "commander", "creature token",
+ * and one or more creature types ("Human", "Shaman, Warlock, or Wizard"). Null for any other word,
+ * Mjolnir's "worthy" among them, which the line then leaves unread.
+ */
+function equipQuality(words: string): EquipQuality | null {
+  const w = words.trim();
+  if (/^legendary creature$/i.test(w)) {
+    return { words: w, fits: (state, inst) => characteristicsOf(state, inst).typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary') };
+  }
+  if (/^commander$/i.test(w)) return { words: w, fits: (_state, inst) => inst.isCommander };
+  if (/^creature token$/i.test(w)) return { words: w, fits: (_state, inst) => inst.isToken };
+  const types = w.split(/\s*,\s*(?:or\s+)?|\s+or\s+/).map((t) => t.trim()).filter((t) => t !== '');
+  if (types.length === 0 || !types.every((t) => /^[A-Z][a-z]+$/.test(t) && isCreatureType(t))) return null;
+  return { words: w, fits: (state, inst) => types.some((t) => hasSubtype(characteristicsOf(state, inst).typeLine, t)) };
+}
+
 export const equipFragment = (
-  cost: string, bonus: PumpOptions, text: string,
+  cost: string, bonus: PumpOptions, text: string, quality?: EquipQuality,
 ): Partial<CardScript> => ({
   // Written down rather than closed over, because Balan needs to read it: a card that moves every
   // Equipment you control onto itself has to know what each of them does, and a bonus that only
@@ -582,10 +608,10 @@ export const equipFragment = (
     {
       cost: { mana: cost },
       sorcerySpeed: true,
-      description: `Equip ${cost} — ${text}`,
+      description: `Equip ${quality === undefined ? '' : `${quality.words} `}${cost} — ${text}`,
       targets: [{
         kind: 'creature',
-        description: 'creature you control',
+        description: quality === undefined ? 'creature you control' : `${quality.words} you control`,
         // Not the creature it is already on. Equipping it again is legal and does nothing, and a
         // play that does nothing is a trap for a person and a waste of mana for the bot — which
         // spent three quarters of its equips re-equipping the same creature before this line.
@@ -594,7 +620,10 @@ export const equipFragment = (
           && !(candidate.kind === 'card' && source !== undefined
             && state.instances[source]?.attachedTo === candidate.id)
           // Never itself: a reconfigure creature equips another creature (D775).
-          && !(candidate.kind === 'card' && candidate.id === source),
+          && !(candidate.kind === 'card' && candidate.id === source)
+          // Typed equip (D1092): only a creature with the printed quality.
+          && (quality === undefined || (candidate.kind === 'card' && state.instances[candidate.id] !== undefined
+            && quality.fits(state, state.instances[candidate.id]!))),
       }],
       effect: (c) => {
         const host = firstCardTarget(c);
@@ -16856,10 +16885,26 @@ export function attachmentScriptFor(
 
   // Reconfigure (D775, CR 702.151) is the equip ability on a creature, plus an unattach for the
   // same cost; the type change while attached is `characteristicsOf`'s.
-  const equip = lines
+  const plainEquip = lines
     .map((line) => /^(?:equip|reconfigure)\s*(\{[^\n]+\})$/i.exec(plain(line).trim()))
     .find((m) => m !== null);
-  if (equip === undefined || equip === null) return null;
+  /*
+    Typed equip (D1092): "Equip legendary creature {3}" beside "Equip {7}" (Blackblade Reforged),
+    "Equip Human {1}", "Equip commander {3}". Each is its own equip ability with its target
+    narrowed; a card that prints only a typed one (Excalibur, Sword of Eden) has it as its equip.
+  */
+  const typed = lines.flatMap((line) => {
+    const m = /^equip (.+?) ((?:\{[^}]+\})+)$/i.exec(plain(line).trim());
+    if (m === null || /^(?:abilities|costs)\b/i.test(m[1]!)) return [];
+    const quality = equipQuality(m[1]!);
+    return quality === null ? [] : [{ input: line, cost: m[2]!, quality }];
+  });
+  const main = plainEquip !== undefined && plainEquip !== null
+    ? { input: plainEquip.input, cost: plainEquip[1]!, quality: undefined as EquipQuality | undefined }
+    : typed[0];
+  if (main === undefined) return null;
+  const extraEquips = plainEquip !== undefined && plainEquip !== null ? typed : typed.slice(1);
+  const equip = Object.assign([main.input, main.cost], { input: main.input });
   const reconfigures = /^reconfigure/i.test(plain(equip.input).trim());
   if (reconfigures && !hasType(typeLine, 'creature')) return null;
   /*
@@ -17020,6 +17065,8 @@ export function attachmentScriptFor(
             const text = plain(staticLine!).trim().replace(/\.$/, '');
             return text.charAt(0).toLowerCase() + text.slice(1);
           })(),
+        // A card whose only equip is typed (Excalibur) narrows its one equip ability (D1092).
+        main.quality,
       ),
       ...(read?.grantedTriggers === undefined
         ? {}
@@ -17050,6 +17097,20 @@ export function attachmentScriptFor(
       ...(arrival === null ? [] : [arrival.line]),
     ],
   };
+  /*
+    The typed equip abilities beside the main one (D1092): the same bonus and description, each
+    with its own cost and quality, and each line claimed.
+  */
+  if (extraEquips.length > 0) {
+    const fragment = built.fragment as Partial<CardScript>;
+    const description = (fragment.abilities?.[0]?.description ?? '').replace(/^Equip [^—]*— /, '');
+    const typedAbilities = extraEquips.flatMap((extra) => equipFragment(extra.cost, equipBonus, description, extra.quality).abilities ?? []);
+    const withTyped: WholeCardReading = {
+      fragment: { ...fragment, abilities: [...(fragment.abilities ?? []), ...typedAbilities] },
+      claimed: [...built.claimed, ...extraEquips.map((extra) => extra.input)],
+    };
+    if (!reconfigures) return withTyped;
+  }
   if (!reconfigures) return built;
   /*
     Reconfigure's other half (D775): "or unattach from a creature", for the same cost and also only
