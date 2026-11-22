@@ -39395,3 +39395,44 @@ Faults injected by hand: 2. The old offer rule restored (caught by the Wind Sail
 "an opponent controls" check removed (caught by the Mask test).
 
 Coverage: 15,002 of 31,900 cards (+9 over D1114's 14,993), 36,856 of 59,888 lines (+15).
+
+## D1116 — a card put into a graveyard from anywhere, and the Colossus shuffle
+
+D569 gave the `to-graveyard` event a `self` and a "from the battlefield", read for Rancor. Three
+neighbours were unread.
+
+**"When ~ is put into a graveyard from anywhere"**: the Eldrazi titans' "its owner shuffles their
+graveyard into their library" (Kozilek, Butcher of Truth; Ulamog, the Infinite Gyre), and Serra
+Avatar's and Worldspine Wurm's "shuffle it into its owner's library". It is the card's own arrival
+from any zone (destroyed, milled, discarded, countered), fired from the graveyard it reached.
+"Your graveyard" says the same, since a card always goes to its owner's. The two effects are new
+readers:
+- the card back into its owner's library, then a shuffle, only while it is still in the graveyard;
+- the owner's whole graveyard back, the card with it, then a shuffle.
+
+**The Colossus replacement**: "If ~ would be put into a graveyard from anywhere, reveal ~ and
+shuffle it into its owner's library instead" (Blightsteel Colossus, Darksteel Colossus, Progenitus,
+Legacy Weapon). The card's own `replaces` entry on `to-graveyard`, the widest wording, so it covers
+a death, a mill and a discard alike. `replaceZoneChange` asks the card's own replacement first and
+from wherever it went (CR 616.1). The card never reaches the graveyard, so no death or graveyard
+trigger sees it.
+
+**"Whenever a land card is put into your graveyard from anywhere"** (Skola Grovedancer, Slogurk),
+"a Desert card" (Yuma) and "another card". The event now carries the card's printed types and
+subtypes, as a card in a graveyard has them. A trigger can ask for a card type or a subtype, and
+"your" for whose graveyard.
+
+Read whole now: Kozilek, Butcher of Truth; Ulamog, the Infinite Gyre; Serra Avatar; Worldspine
+Wurm; Blightsteel Colossus; Darksteel Colossus; Progenitus; Legacy Weapon; Skola Grovedancer;
+Slogurk, the Overslime; Yuma, Proud Protector.
+
+**Tests.** 4 engine tests:
+- Three test cards read whole.
+- The titan destroyed shuffles the whole graveyard (itself and the spell) back.
+- The Colossus destroyed goes into the library, and only the spell is in the graveyard.
+- A creature card reaching my graveyard gains life, and the instant does not.
+
+Faults injected by hand: 2. The replacement never applying (caught by the Colossus test), and the
+card-type filter removed (caught by the creature-card test).
+
+Coverage: 15,015 of 31,900 cards (+13 over D1115's 15,002), 36,878 of 59,888 lines (+22).
