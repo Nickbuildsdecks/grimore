@@ -87,6 +87,15 @@ export function isLegalAttachment(
  * The body both of the above share. `forAttachment` skips the two untargetable keywords and
  * nothing else: see `isLegalAttachment` for why that is the entire difference.
  */
+/**
+ * What a player's own permanents give them against targeting (D1126): `CardScript.controllerHas`.
+ * Registered by `effects.ts`, which can read scripts; targeting cannot import it without a cycle.
+ */
+let playerShield: ((state: GameState, seat: SeatIndex) => 'hexproof' | 'shroud' | null) | null = null;
+export function usePlayerShield(read: (state: GameState, seat: SeatIndex) => 'hexproof' | 'shroud' | null): void {
+  playerShield = read;
+}
+
 function satisfies(
   state: GameState, spec: TargetSpec, candidate: Target, controller: SeatIndex,
   source: string | undefined, forAttachment: boolean,
@@ -98,6 +107,9 @@ function satisfies(
     if (seat === undefined || seat.eliminated) return false;
     // Protection from everything (D718): no spell or ability may target them, their own included.
     if (!forAttachment && playerProtected(state, candidate.seat)) return false;
+    // "You have hexproof / shroud" (D1126): an opponent's spell or ability, or anybody's.
+    const shield = forAttachment || playerShield === null ? null : playerShield(state, candidate.seat);
+    if (shield === 'shroud' || (shield === 'hexproof' && controller !== candidate.seat)) return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
   }
 

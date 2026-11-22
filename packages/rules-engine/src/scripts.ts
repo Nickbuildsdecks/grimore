@@ -32513,6 +32513,9 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
   // "Your life total can't change." (D733): Platinum Emperion.
   if (/^your life total can't change\.?$/i.test(plain(line).trim())) return { lifeTotalCantChange: true };
+  // "You have hexproof." / "You have shroud." (D1126): see `CardScript.controllerHas`.
+  const shielded = /^you have (hexproof|shroud)\.?$/i.exec(plain(line).trim());
+  if (shielded !== null) return { controllerHas: shielded[1]!.toLowerCase() as 'hexproof' | 'shroud' };
   // "You may look at the top card of your library any time." (D731): Bolas's Citadel, Vizier.
   if (/^you may look at the top card of your library any time\.?$/i.test(plain(line).trim())) return { lookAtTop: true };
   const fromTop = spellsFromTopFromLine(line);
@@ -32602,6 +32605,13 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
   */
   const theirs = /^creatures your opponents control (get|have) (.+)$/i.exec(text);
   const attacking = /^attacking creatures you control (get|have) (.+)$/i.exec(text);
+  /*
+    D1126: "Other creatures you control with flying get +1/+1" (Empyrean Eagle, Thunderclap Wyvern,
+    Spirit of the Spires, Stalwart Shield-Bearers' "with defender"). A size change only: the
+    keyword filter reads the creature's live keywords, and a grant in the same static would be a
+    keyword deciding who gets a keyword.
+  */
+  const keyworded = /^(other )?creatures you control with ([a-z][a-z ]*?) get ([+-]\d+\/[+-]\d+)$/i.exec(text);
   const countered = /^(?:each creature you control with an? \+1\/\+1 counter on it (gets|has)|creatures you control with \+1\/\+1 counters on them (get|have)) (.+)$/i.exec(text);
   /*
     D735: your creatures of a colour or a kind — "Other green creatures you control get +1/+1",
@@ -32624,6 +32634,10 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
       : other ? 'other-controller-creatures' : 'controller-creatures';
     if (kinds.length > 0) filter = { onlyKind: kinds };
     predicate = `${kinded[3]!.toLowerCase()} ${kinded[4]}`;
+  } else if (keyworded !== null && isKeyword(keyworded[2]!.toLowerCase())) {
+    scope = keyworded[1] !== undefined ? 'other-controller-creatures' : 'controller-creatures';
+    filter = { onlyWithKeyword: keyworded[2]!.toLowerCase() as Keyword };
+    predicate = `get ${keyworded[3]}`;
   } else if (theirs !== null) {
     scope = 'opponent-creatures';
     predicate = `${theirs[1]!.toLowerCase()} ${theirs[2]}`;

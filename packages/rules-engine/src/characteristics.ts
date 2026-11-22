@@ -1770,6 +1770,13 @@ export interface ContinuousEffect {
   readonly onlyAttacking?: true;
   readonly onlyWithCounter?: string;
   /**
+   * "Other creatures you control **with flying** get +1/+1" (D1126): the creature's own keyword,
+   * read live after layer 6. Only on a static that changes size alone, which is what makes the
+   * guard in `effectApplies` sound: computing the keywords leaves this effect out, and leaving it
+   * out cannot change a keyword.
+   */
+  readonly onlyWithKeyword?: Keyword;
+  /**
    * And by what the creature is (D735): "Artifact creatures you control get +1/+1", "Legendary
    * creatures …", "Untapped creatures …", "Multicolored creatures …". Every word must hold, read
    * live off the creature's type line after layer 4 and its colours after layer 5.
@@ -2591,6 +2598,9 @@ function isEveryKind(
   });
 }
 
+/** The creatures whose keywords are being read for a keyword-filtered static (D1126). */
+const keywordFilterGuard = new Set<string>();
+
 function effectApplies(
   state: GameState, effect: ContinuousEffect, instance: CardInstance,
   creature: boolean, typeLine: TypeLine,
@@ -2603,6 +2613,17 @@ function effectApplies(
   // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
   if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
   if (effect.onlyWithCounter !== undefined && (instance.counters[effect.onlyWithCounter] ?? 0) <= 0) return false;
+  // A keyword (D1126), from the creature's characteristics computed without the keyword-filtered
+  // statics: they change size alone, so the keywords come out the same (see `onlyWithKeyword`).
+  if (effect.onlyWithKeyword !== undefined) {
+    if (keywordFilterGuard.has(instance.id)) return false;
+    keywordFilterGuard.add(instance.id);
+    try {
+      if (!characteristicsOf(state, instance).keywords.has(effect.onlyWithKeyword)) return false;
+    } finally {
+      keywordFilterGuard.delete(instance.id);
+    }
+  }
   if (effect.onlyKind !== undefined && !isEveryKind(state, instance, creature, typeLine, effect.onlyKind)) return false;
   switch (effect.scope.kind) {
     case 'cards':

@@ -23,7 +23,7 @@ import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
 import { actionSeed, clampValue, mulberry32, replaceSeat, shuffled } from './internal.js';
-import { targetSeqsFor } from './targeting.js';
+import { targetSeqsFor, usePlayerShield } from './targeting.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
 import type { AttackedTarget, DecisionAnswer, SacrificedStats, StackObject, Step, Target } from './turnTypes.js';
@@ -1220,6 +1220,25 @@ export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
     return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
   });
 }
+
+/**
+ * Whether a player has hexproof or shroud from a permanent of theirs (D1126): `controllerHas`.
+ * Shroud wins over hexproof, being the wider. A permanent that has lost its abilities says nothing.
+ */
+export function playerShieldOf(state: GameState, seat: SeatIndex): 'hexproof' | 'shroud' | null {
+  if (scriptLookup === null) return null;
+  const lookup = scriptLookup;
+  let shield: 'hexproof' | 'shroud' | null = null;
+  for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+    const has = lookup(state.cardDefs[inst.defKey])?.controllerHas;
+    if (has === 'shroud') return 'shroud';
+    if (has === 'hexproof') shield = 'hexproof';
+  }
+  return shield;
+}
+usePlayerShield(playerShieldOf);
 
 /**
  * Life a player could pay now (D733): none while their life total can't change (CR 119.8), else
@@ -2984,6 +3003,8 @@ export interface PumpOptions {
   /** See `ContinuousEffect.onlyAttacking` (D941). */
   readonly onlyAttacking?: true;
   readonly onlyWithCounter?: string;
+  /** See `ContinuousEffect.onlyWithKeyword` (D1126). */
+  readonly onlyWithKeyword?: Keyword;
   /** See `ContinuousEffect.onlyKind` (D735). */
   readonly onlyKind?: readonly CreatureKindWord[];
   readonly duration?: EffectDuration;
@@ -3054,6 +3075,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
     ...(opts.onlyAttacking ? { onlyAttacking: true as const } : {}),
     ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
+    ...(opts.onlyWithKeyword ? { onlyWithKeyword: opts.onlyWithKeyword } : {}),
     ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),
   };
 }

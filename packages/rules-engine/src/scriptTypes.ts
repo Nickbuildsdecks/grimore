@@ -4085,6 +4085,12 @@ export interface CardScript {
   /** "Your life total can't change." (D733) — Platinum Emperion, while it is on your battlefield. */
   readonly lifeTotalCantChange?: true;
   /**
+   * "You have hexproof." / "You have shroud." (D1126): Leyline of Sanctity, Aegis of the Gods, Ivory
+   * Mask. The controller can't be the target of spells or abilities an opponent controls
+   * (hexproof), or of any (shroud), while the permanent is on the battlefield with its abilities.
+   */
+  readonly controllerHas?: 'hexproof' | 'shroud';
+  /**
    * "Skip your draw step." (D719): Necropotence, Damia, Solitary Confinement and a dozen more.
    * While the permanent is on the battlefield and has its abilities, its controller's draw step
    * does not happen at all (CR 614.10): no draw, no priority in it, and nothing that triggers "at

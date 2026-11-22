@@ -8008,6 +8008,8 @@ describe('deck coverage', () => {
       'script impending',
       // D1099: the volvers' per-kicker arrival; no pool deck plays one.
       'script kickerEntersWith',
+      // D1126: "You have hexproof / shroud" (Leyline of Sanctity); no pool deck plays one.
+      'script controllerHas',
     ]);
 
     const declared = [
@@ -33489,6 +33491,56 @@ describe('attached combat lines, anybody\'s attack, "~ or another" with a filter
 
   it('"another creature or artifact you control dies": an artifact gains', () => {
     expect(castGain('Test Kill', ['Test Salvager', 'Test Rock'], 'Test Rock')).toBe(1);
+  });
+});
+
+describe('keyword anthems and a player with hexproof or shroud (D1126)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const EAGLE = C('Test Eagle', 'Flying\nOther creatures you control with flying get +1/+1.');
+  const BIRD = C('Test Bird', 'Flying');
+  const BEAR = C('Test Bear', '');
+  const LEYLINE = C('Test Leyline', 'You have hexproof.', 'Enchantment');
+  const MASK = C('Test Mask', 'You have shroud.', 'Enchantment');
+  const WINGS = { name: 'Test Wings', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gains flying until end of turn.' };
+  const ZAP = { name: 'Test Zap', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Test Zap deals 2 damage to any target.' };
+  const ROWS = [EAGLE, BIRD, BEAR, LEYLINE, MASK, WINGS, ZAP];
+  const deck = customDeck({
+    id: 'd1126', name: 'Shields', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 46 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1126', 1: 'd1126' }, deckSpecs: { d1126: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Forest', 'Forest', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads the statics whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [EAGLE, LEYLINE, MASK]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"other creatures you control with flying" grows the fliers, not the Eagle or the ground', () => {
+    const s = table([], ['Test Eagle', 'Test Bird', 'Test Bear']);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bird'))).toBe(2);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(1);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Eagle'))).toBe(1);
+  });
+
+  it('a creature given flying is grown while it flies', () => {
+    const s = table(['Test Wings'], ['Test Eagle', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wings'), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(power(after, bear)).toBe(2);
+  });
+
+  it('hexproof keeps the opponent from aiming at its controller; shroud keeps everyone', () => {
+    const zap = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Zap'), targets: [{ kind: 'player', seat: 1 }] } as Action)), 30);
+    const open = table(['Test Zap'], []);
+    expect(life(zap(open), 1)).toBe(life(open, 1) - 2);
+    const hexproof = table(['Test Zap'], [], ['Test Leyline']);
+    expect(() => zap(hexproof)).toThrow();
+    const self = drain(passBoth(apply(hexproof, { type: 'auto:cast', by: 0, card: find(hexproof, 0, 'hand', 'Test Zap'), targets: [{ kind: 'player', seat: 0 }] } as Action)), 30);
+    expect(life(self, 0)).toBe(life(hexproof, 0) - 2);
+    const shroud = table(['Test Zap'], ['Test Mask']);
+    expect(() => apply(shroud, { type: 'auto:cast', by: 0, card: find(shroud, 0, 'hand', 'Test Zap'), targets: [{ kind: 'player', seat: 0 }] } as Action)).toThrow();
   });
 });
 
