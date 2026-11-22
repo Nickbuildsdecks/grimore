@@ -32876,6 +32876,50 @@ describe('a battle named where nothing can be one (D1111)', () => {
   });
 });
 
+describe('an entry named with subject words: colour, colorless, legendary, token, mana value (D1112)', () => {
+  // The Denizens, Eldrazi Mimic's kin, Anointer Priest, Dragon Breath's cycle, Arcbound Crusher.
+  const C = (name: string, text: string, colors: string[] = ['W'], cost = '{W}', cmc = 1, type = 'Creature — Human') => ({ name, type_line: type, mana_cost: cost, cmc, colors, layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const DENIZEN = C('Test Denizen', 'Whenever another white creature you control enters, you gain 1 life.', ['R'], '{R}');
+  const PRIEST = C('Test Priest', 'Whenever a creature token you control enters, you gain 1 life.');
+  const WATCHER = C('Test Watcher', 'Whenever a creature with mana value 3 or greater enters, you gain 1 life.', ['G'], '{G}');
+  const SQUIRE = C('Test Squire', '');
+  const KNIGHT = C('Test Knight', '', ['W'], '{2}{W}', 3);
+  const BEAR = C('Test Bear', '', ['G'], '{G}');
+  const ARMY = { name: 'Test Army', type_line: 'Sorcery', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Create a 1/1 white Soldier creature token.' };
+  const ROWS = [DENIZEN, PRIEST, WATCHER, SQUIRE, KNIGHT, BEAR, ARMY];
+  const deck = customDeck({
+    id: 'd1112', name: 'Subjects', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 40 }, { name: 'Forest', count: 6 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1112', 1: 'd1112' }, deckSpecs: { d1112: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Forest', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads the three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [DENIZEN, PRIEST, WATCHER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a colour: a white creature gains, a green one does not', () => {
+    const s = table(['Test Squire', 'Test Bear'], ['Test Denizen']);
+    expect(life(cast(s, 'Test Squire'), 0)).toBe(life(s, 0) + 1);
+    expect(life(cast(s, 'Test Bear'), 0)).toBe(life(s, 0));
+  });
+
+  it('a creature token: the token gains, a card does not', () => {
+    const s = table(['Test Army', 'Test Squire'], ['Test Priest']);
+    expect(life(cast(s, 'Test Army'), 0)).toBe(life(s, 0) + 1);
+    expect(life(cast(s, 'Test Squire'), 0)).toBe(life(s, 0));
+  });
+
+  it('a mana value: 3 gains, 1 does not', () => {
+    const s = table(['Test Knight', 'Test Squire'], ['Test Watcher']);
+    expect(life(cast(s, 'Test Knight'), 0)).toBe(life(s, 0) + 1);
+    expect(life(cast(s, 'Test Squire'), 0)).toBe(life(s, 0));
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

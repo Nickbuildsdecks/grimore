@@ -1642,6 +1642,14 @@ function triggerMatches(
       if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
       // "Enters untapped" (D679), asked of the arrival itself.
       if (want.kind === 'etb' && want.untapped === true && (event as { subjectTapped?: boolean }).subjectTapped !== false) return false;
+      // The subject words of an entry (D1112): a colour, colorless, legendary, a mana value.
+      if (want.kind === 'etb' && event.kind === 'etb') {
+        if (want.colour !== undefined && !(event.subjectColours ?? []).includes(want.colour)) return false;
+        if (want.colorless === true && (event.subjectColours ?? ['?']).length > 0) return false;
+        if (want.legendary === true && event.subjectLegendary !== true) return false;
+        if (want.manaValueAtLeast !== undefined && !((event.subjectManaValue ?? -1) >= want.manaValueAtLeast)) return false;
+        if (want.manaValueAtMost !== undefined && !(event.subjectManaValue !== undefined && event.subjectManaValue <= want.manaValueAtMost)) return false;
+      }
       /*
         And the two the board prints as often as "creature" (D477): "whenever an **artifact** you
         control enters", constellation's and eerie's "an **enchantment** you control enters".
@@ -2438,6 +2446,12 @@ function raise(
         // And whether it was a land, for the landfall templating. Only on an entry: "whenever a
         // land dies" is not a card, and a field nothing reads is a field that drifts.
         ...(event.kind === 'etb' ? { subjectIsLand: live.isLand, subjectTapped: inst.tapped } : {}),
+        // And the subject words an entry can name (D1112): colours, legendary, mana value.
+        ...(event.kind === 'etb' ? {
+          subjectColours: [...live.colors],
+          subjectLegendary: live.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'),
+          subjectManaValue: next.cardDefs[inst.defKey]?.cmc ?? 0,
+        } : {}),
         /*
           And its live card types, for the artifact and enchantment board-watchers (D477). Read off
           the characteristics' type line, so a permanent whose type was changed by an effect is

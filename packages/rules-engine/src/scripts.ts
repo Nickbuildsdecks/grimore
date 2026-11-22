@@ -18025,6 +18025,34 @@ function graveyardFromPlayTrigger(matched: RegExpExecArray): readonly BoardEvent
   return [{ kind: 'dies', who, of, what, ...nonToken, ...filter } as BoardEvent];
 }
 
+/**
+ * An entry named with subject words (D1112): "Whenever another **white** creature you control
+ * enters" (the Denizens), "a **colorless** creature", "a **legendary** creature you control", "a
+ * creature **token** you control", "a creature **with mana value 6 or greater** enters" (Dragon
+ * Breath's cycle), and "another **artifact** enters" with nobody's side named (Arcbound Crusher).
+ * Asked after the plainer rows, so it reads only what they refused.
+ */
+function richEntryTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
+  const g = matched.groups ?? {};
+  const who = BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+  if (who === undefined) return null;
+  const words = (g.qual ?? '').trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const colourWords = words.filter((w) => COLOUR_WORDS[w] !== undefined);
+  if (colourWords.length > 1) return null;
+  const of = g.of === undefined ? 'any' as const : /you control/i.test(g.of) ? 'you' as const : 'opponent' as const;
+  const mv = g.mv === undefined ? {} : g.cmp!.toLowerCase() === 'greater'
+    ? { manaValueAtLeast: Number(g.mv) } : { manaValueAtMost: Number(g.mv) };
+  return [{
+    kind: 'etb', who, of, what: g.what!.toLowerCase() as BoardEvent['what'],
+    ...(colourWords.length === 1 ? { colour: COLOUR_WORDS[colourWords[0]!]! } : {}),
+    ...(words.includes('colorless') ? { colorless: true as const } : {}),
+    ...(words.includes('legendary') ? { legendary: true as const } : {}),
+    ...(words.includes('nontoken') ? { nontoken: true as const } : {}),
+    ...(g.token === undefined ? {} : { token: true as const }),
+    ...mv,
+  } as BoardEvent];
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -18751,6 +18779,16 @@ const TRIGGER_SHAPES: readonly ({
       'i',
     ),
     from: boardTrigger,
+  },
+  // Subject words on an entry (D1112): see `richEntryTrigger`. After the plainer rows.
+  {
+    prologue: () => new RegExp(
+      `^When(?:ever)? (?<who>a|an|another) (?<qual>(?:(?:white|blue|black|red|green|colorless|legendary|nontoken) )+)?`
+      + `(?<what>creature|artifact|enchantment|land|permanent)(?<token> token)?(?<of> you control| an opponent controls)?`
+      + `(?: with mana value (?<mv>\\d+) or (?<cmp>greater|less))? ${ENTERS}, (?<clause>.+)$`,
+      'i',
+    ),
+    from: richEntryTrigger,
   },
   {
     prologue: () => new RegExp(

@@ -301,6 +301,20 @@ export type TriggerEvent =
       readonly subjectSubtypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
       readonly subject?: string;
+      /**
+       * The subject words of an entry (D1112): "a **white** creature you control enters", "a
+       * **colorless** creature", "a **legendary** creature", "a creature **with mana value 6 or
+       * greater**" (Dragon Breath's cycle). Asked of what the event carries, as the size filters are.
+       */
+      readonly colour?: string;
+      readonly colorless?: true;
+      readonly legendary?: true;
+      readonly manaValueAtLeast?: number;
+      readonly manaValueAtMost?: number;
+      /** Set by the engine: the subject's live colours, whether it is legendary, its mana value. */
+      readonly subjectColours?: readonly string[];
+      readonly subjectLegendary?: boolean;
+      readonly subjectManaValue?: number;
     }
   | {
       readonly kind: 'dies';
