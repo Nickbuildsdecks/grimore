@@ -39526,3 +39526,30 @@ Read whole now: Lurking Chupacabra, Wildgrowth Walker and Shadowed Caravel. Jade
 Faults injected by hand: 1. The event not raised (caught).
 
 Coverage: 15,029 of 31,900 cards (+3 over D1118's 15,026), 36,898 of 59,888 lines (+3).
+
+## D1120 — a legendary spell, a spell with {X}, a spell from exile
+
+The parsed cast prologue (`castDescriptor`, `castBound`) read types, colours, subtypes, historic,
+mana value, kicked and "from your graveyard". Three printed filters were refused:
+
+- "Whenever you cast a **legendary** spell" (Reki, The Circle of Loyalty, Jodah): the event has
+  carried supertypes since D606 for historic, and the cast filter now asks for legendary alone.
+- "a spell **with {X} in its mana cost**" (Matterbending Mage, Zaxara, Geometer's Arthropod): the
+  event carries `hasX`, read off the printed mana cost.
+- "a spell **from exile**" (Nalfeshnee, Faldorn): `fromZone: 'exile'` against the zone the card was
+  cast from, which the event has carried since D616.
+
+Read whole now: Reki, the History of Kamigawa; Matterbending Mage; The Circle of Loyalty. Zaxara,
+Geometer's Arthropod and Nalfeshnee are short on their effects ("put X +1/+1 counters on it", "look
+at the top X cards", "copy it").
+
+**Tests.** 2 engine tests:
+- Both test cards read whole.
+- A legendary spell gains and another does not. A spell with {X} gains, and one without does not.
+
+Retargeted (the D516 way): the cast refusal "Whenever you cast a legendary spell" reads now, in a
+new test.
+
+Faults injected by hand: 1. The legendary check removed (caught).
+
+Coverage: 15,032 of 31,900 cards (+3 over D1119's 15,029), 36,908 of 59,888 lines (+10).
