@@ -39346,3 +39346,52 @@ Faults injected by hand: 2. The count taken from all spells (caught: the creatur
 the tally never raised (caught: the second instant fired it again).
 
 Coverage: 14,993 of 31,900 cards (+2 over D1113's 14,991), 36,841 of 59,888 lines (+2).
+
+## D1115 — a player dealt damage by any source, and "one or two" down to its minimum
+
+**Pod sweep 61301** (100 four-player Commander games on the D1113 build, which carries D1113's
+look-back for deaths): 99 finished, 58.6 turns and 345 moves on average, no stall. One threw (seed
+61396): a bot cast **Wind Sail** ("One or two target creatures gain flying until end of turn") with
+no creature on the battlefield, and the cast refused it.
+
+**The fix.** D1024 made "one or two target creatures" one spec with `count: 2`, `optional`, `min: 1`.
+The cast honoured the minimum. The offer (`playableTargets`) and the bot (`chooseTargets`) took
+`optional` to mean "none will do". Both now stop at the minimum. Seed 61396 rerun on this build:
+finished, 65 turns, no throw.
+
+**A player dealt damage, by any source.** `deals-damage` is raised only for a permanent's damage
+("whenever ~ deals damage" is an ability of a permanent), so a burn spell to the face raised nothing
+a "source you control" could see. A new event, `player-damaged`, is raised once per landing on a
+player, whatever dealt it. It carries:
+- how much was dealt, and whether it was combat damage;
+- who was dealt it;
+- who controlled the source: the damage record now keeps the controller `dealDamage` was given (a
+  spell's caster), falling back to the source's seat.
+
+Triggers ask from the watcher's side:
+- "Whenever a source you control deals [noncombat] damage to an opponent" (Niv-Mizzet, Visionary;
+  Virtue of Courage; Chandra's Pyreling);
+- "Whenever a source an opponent controls deals damage to you" (Farsight Mask, Retaliator Griffin);
+- "Whenever an opponent is dealt [noncombat] damage" (Chandra's Spitfire, Wildfire Elemental);
+- "Whenever you're dealt damage" (Darien, King of Kjeldor).
+
+"That many" and "that much" are the damage. "That player" is the one hit, unless that was the
+watcher's own controller, and then the one whose source hit them (Michiko Konda's "that player
+sacrifices a permanent").
+
+Read whole now: Niv-Mizzet, Visionary; Chandra's Pyreling; Chandra's Spitfire; Darien, King of
+Kjeldor; Farsight Mask; Retaliator Griffin; Wildfire Elemental; Asgardian Inspiration; Stick,
+Fearless Mentor.
+
+**Tests.** 4 engine tests:
+- Both test cards read whole.
+- A burn spell of mine to an opponent draws that many, and to myself draws nothing.
+- An opponent's Shock to me triggers my Mask, and my own does not.
+- "One or two target creatures" is not offered with no creature, and is offered with one.
+
+The bot, compile, automation, playout and combat suites pass (2,074 tests).
+
+Faults injected by hand: 2. The old offer rule restored (caught by the Wind Sail test), and the
+"an opponent controls" check removed (caught by the Mask test).
+
+Coverage: 15,002 of 31,900 cards (+9 over D1114's 14,993), 36,856 of 59,888 lines (+15).
