@@ -39806,3 +39806,35 @@ Faults injected by hand: 2.
 - The whose check removed (caught).
 
 Coverage: 15,135 of 31,900 cards (+10 over D1126's 15,125), 37,047 of 59,888 lines (+16).
+
+## D1128 — "~ can't attack or block alone"
+
+`CardScript.cantAlone` (CR 506.5): a creature that may attack only if another creature also attacks,
+and block only if another creature also blocks, in the same declaration.
+
+- `combat.ts` `aloneIssue` is the one test: a declaration of exactly one distinct creature that says
+  so, and still has its abilities.
+- `declareAttackers` refuses a lone attacker. A creature that must attack is not owed when it could
+  only have attacked alone.
+- `declareBlockers` refuses a lone blocker.
+- The bot's two declaration filters respect it: `legalDeclaration` sends a lone one home, and
+  `withoutLoneBlock` takes a lone block out. They feed the simulated playouts, which otherwise stop
+  short when a declaration is refused.
+
+Read whole now: Bonded Construct, Bonded Horncrest, Craven Hulk, Ember Beast, Jackal Familiar, Loyal
+Pegasus, Militia Rallier, Mogg Flunkies, Pet Sehlat, Raging Kronch, Trusty Companion, Wojek
+Bodyguard. Pipsqueak's "unless he has a +1/+1 counter on him" is not read.
+
+**Tests.** 4 engine tests:
+- It reads whole.
+- A lone attack is refused, and an attack beside another creature is fine.
+- A lone block is refused, and a block beside another blocker is fine.
+- The bot leaves it home alone, where a Bear in the same spot attacks.
+
+Faults injected by hand: 2.
+- The engine's attack check removed (caught).
+- The bot's attack filter removed: **not caught**. The bot's final choice already drops a plan the
+  engine refuses, so the outcome is the same. The filter is there for the playouts inside the
+  search, which no test isolates.
+
+Coverage: 15,147 of 31,900 cards (+12 over D1127's 15,135), 37,061 of 59,888 lines (+14).
