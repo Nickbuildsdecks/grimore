@@ -1917,6 +1917,12 @@ export interface ChoiceDecisionSpec {
    * which everybody can see. `options` is still the fallback for a reader with no state.
    */
   readonly optionsFor?: (state: GameState, chooser: SeatIndex) => readonly string[];
+  /**
+   * Asked only if this says so (D1096), the way `CardsDecisionSpec.askOnlyIf` is, and skipped the
+   * same way: an empty answer, so the positions effects index by do not move. A gift's recipient
+   * is asked only in a pod, and only when the gift was promised.
+   */
+  readonly askOnlyIf?: (state: GameState, controller: SeatIndex, source: string) => boolean;
   /** A step of the effect as this question is reached (D728). See `CardsDecisionSpec.onReach`. */
   readonly onReach?: (
     state: GameState, controller: SeatIndex, source: string, answers: readonly DecisionAnswer[],
@@ -3314,6 +3320,12 @@ export interface CardScript {
     readonly cost: string;
     /** As printed: "Kicker {3}". */
     readonly description: string;
+    /**
+     * A gift (D1096, CR 702.174), carried on the kicker's machinery: "promise a gift" is a free
+     * announced choice that the spell's text reads as "if the gift was promised". Not a kicker
+     * for anything that watches kicked spells.
+     */
+    readonly gift?: true;
   };
   /**
    * "If this was kicked, it enters with N +1/+1 counters on it [and with haste]" (D561).

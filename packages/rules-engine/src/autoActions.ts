@@ -1318,7 +1318,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // graveyard" and "a kicked spell".
     activeSeat: state.activeSeat,
     castFrom: inst.zone,
-    kicked: object.kicked === true,
+    // A promised gift rides the kicker's flag, and is no kicker to "a kicked spell" (D1096).
+    kicked: object.kicked === true && script?.kicker?.gift !== true,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
     /*
       The spell's colours and its mana value **as cast** (D474), for the two cast filters that are

@@ -32088,6 +32088,77 @@ describe('kicked halves with targets of their own, and "if this spell wasn\'t ki
   });
 });
 
+describe('gift: a promise to an opponent, read on the kicker (D1096)', () => {
+  // CR 702.174: promised as the spell is cast, given before its other effects.
+  const HUNGER = { name: 'Test Hunger', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: "Gift a card (You may promise an opponent a gift as you cast this spell. If you do, they draw a card before its other effects.)\nDestroy target creature. If the gift wasn't promised, you lose 2 life." };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const deck = customDeck({
+    id: 'd1096', name: 'Gifts', entries: [{ name: 'Test Hunger', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Swamp', count: 54 }], data: [HUNGER, BEAR] as never[],
+  });
+  const cast = (s: GameState, gift: boolean, answer?: (t: GameState) => string): GameState => {
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Hunger') && (p.kicked === true) === gift)!;
+    let t = apply(s, { type: 'auto:cast', by: 0, card: row.card, kicked: gift || undefined, modes: row.modes, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }] } as Action);
+    for (let i = 0; i < 12 && (t.stackOrder.length > 0 || t.pendingDecision !== null); i++) {
+      t = t.pendingDecision !== null ? apply(t, { type: 'auto:decide', by: 0, cards: [], option: answer!(t) } as Action) : passBoth(t);
+    }
+    return t;
+  };
+  const duel = () => advanceTo(arena({
+    decks: { 0: 'd1096', 1: 'd1096' }, deckSpecs: { d1096: deck.deck },
+    hands: { 0: ['Test Hunger'] }, battlefield: { 0: ['Swamp'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, and offers the promise as a free second cast', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(HUNGER as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.kicker).toMatchObject({ cost: '{0}', description: 'Gift a card', gift: true });
+    expect(legalActions(duel(), 0).plays.filter((p) => p.kind === 'cast' && p.name === 'Test Hunger')).toHaveLength(2);
+  });
+
+  it('promised: the opponent draws first, and you lose no life; not promised: you lose 2', () => {
+    const s = duel();
+    const gifted = cast(s, true);
+    expect(ids(gifted, 1, 'hand').length).toBe(ids(s, 1, 'hand').length + 1);
+    expect(life(gifted, 0)).toBe(life(s, 0));
+    expect(namesIn(gifted, 1, 'battlefield')).not.toContain('Test Bear');
+    const plain = cast(s, false);
+    expect(ids(plain, 1, 'hand').length).toBe(ids(s, 1, 'hand').length);
+    expect(life(plain, 0)).toBe(life(s, 0) - 2);
+  });
+
+  it('on an "instead" spell the gift comes with the kicked mode: the opponent draws, the artifact goes', () => {
+    const MAW = { name: 'Test Gift Maw', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: "Gift a card\nReturn target creature an opponent controls to its owner's hand. If the gift was promised, instead return target nonland permanent an opponent controls to its owner's hand." };
+    const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+    const maws = customDeck({ id: 'd1096m', name: 'Maws', entries: [{ name: 'Test Gift Maw', count: 2 }, { name: 'Test Rock', count: 2 }, { name: 'Island', count: 56 }], data: [MAW, ROCK] as never[] });
+    const s = advanceTo(arena({
+      decks: { 0: 'd1096m', 1: 'd1096m' }, deckSpecs: { d1096m: maws.deck },
+      hands: { 0: ['Test Gift Maw'] }, battlefield: { 0: ['Island'], 1: ['Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    expect(compileCard(MAW as never)).toMatchObject({ ok: true, unread: [] });
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.kicked === true)!;
+    const rock = find(s, 1, 'battlefield', 'Test Rock');
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: row.card, kicked: true, modes: row.modes, targets: [{ kind: 'card', id: rock }] } as Action)), 20);
+    expect(namesIn(t, 1, 'hand')).toContain('Test Rock');
+    expect(ids(t, 1, 'hand').length).toBe(ids(s, 1, 'hand').length + 2);
+  });
+
+  it('in a pod the caster names the opponent, and only that one draws', () => {
+    const s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd1096', 1: 'd1096', 2: 'd1096' }, deckSpecs: { d1096: deck.deck },
+      hands: { 0: ['Test Hunger'] }, battlefield: { 0: ['Swamp'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    let offered: readonly string[] = [];
+    const gifted = cast(s, true, (t) => {
+      offered = t.pendingDecision!.options ?? [];
+      return offered.find((o) => o.includes('seat 3'))!;
+    });
+    expect(offered).toHaveLength(2);
+    expect(ids(gifted, 2, 'hand').length).toBe(ids(s, 2, 'hand').length + 1);
+    expect(ids(gifted, 1, 'hand').length).toBe(ids(s, 1, 'hand').length);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

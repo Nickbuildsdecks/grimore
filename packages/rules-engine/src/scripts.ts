@@ -33685,7 +33685,112 @@ function kickerClausePairFor(
   };
 }
 
+/** The gift tokens (D1096): Bloomburrow's Fish and Octopus. */
+const GIFT_FISH: CardDef = {
+  name: 'Fish', typeLine: 'Token Creature — Fish', manaCost: '', cmc: 0, power: '1', toughness: '1', oracleText: '', colors: ['U'],
+};
+const GIFT_OCTOPUS: CardDef = {
+  name: 'Octopus', typeLine: 'Token Creature — Octopus', manaCost: '', cmc: 0, power: '8', toughness: '8', oracleText: '', colors: ['U'],
+};
+
+/** What each gift gives the opponent it was promised to (CR 702.174b). */
+const GIFTS: Readonly<Record<string, (state: GameState, to: SeatIndex) => GameState>> = {
+  'a card': (state, to) => draw(state, to, 1),
+  'a tapped fish': (state, to) => createTappedTokens(state, to, GIFT_FISH),
+  'a food': (state, to) => createToken(state, to, FOOD_TOKEN),
+  'a treasure': (state, to) => createToken(state, to, TREASURE_TOKEN),
+  'an octopus': (state, to) => createToken(state, to, GIFT_OCTOPUS),
+};
+
+/** An opponent as a gift's recipient is named in the question: their name and their seat. */
+const giftLabel = (state: GameState, seat: SeatIndex): string => `${state.seats[seat]?.name ?? 'Player'} (seat ${seat + 1})`;
+
+/**
+ * Gift (D1096, CR 702.174): "Gift a card (You may promise an opponent a gift as you cast this
+ * spell. If you do, they draw a card before its other effects.)", on an instant or sorcery.
+ *
+ * Read on the kicker's machinery, because that is what it is to the rules of casting: a choice
+ * announced with the spell that the spell's text asks about. The declaration becomes a free
+ * kicker marked `gift`, "the gift was promised" becomes "this spell was kicked", and the result
+ * has to read whole through the kicker readers (D562, D1095). Then the gift is given first, as the
+ * spell resolves, to the opponent it was promised to.
+ *
+ * **The opponent.** With one opponent there is nothing to choose. In a pod the caster is asked as
+ * the spell resolves, rather than as it is cast, which is the one liberty taken here: nothing can
+ * happen between the two that the choice depends on, since the gift is not a target. Only when
+ * the gift was promised.
+ *
+ * Read for "a card", "a tapped Fish", "a Food", "a Treasure" and "an Octopus". "An extra turn" and
+ * the rest stay unread.
+ */
+function giftSpellFor(lines: readonly string[], name: string): SpellReading | null {
+  const at = lines.findIndex((line) => /^gift (?:a card|a tapped fish|a food|a treasure|an octopus)$/i.test(plain(line).replace(/\s*\([^)]*\)\s*/g, ' ').trim()));
+  if (at < 0) return null;
+  const declaration = plain(lines[at]!).replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const give = GIFTS[declaration.replace(/^gift /i, '').toLowerCase()]!;
+  const rest = lines.filter((_line, i) => i !== at).map((line) => line
+    .replace(/the gift was promised/gi, 'this spell was kicked')
+    .replace(/the gift wasn['’]t promised/gi, "this spell wasn't kicked"));
+  const read = spellScriptFor(['Kicker {0}', ...rest], name);
+  if (read.script === null || read.unread.length > 0 || read.script.kicker === undefined) return null;
+  const script = read.script;
+
+  const promised = (state: GameState, source: string): boolean => state.stackOrder
+    .some((id) => state.stackObjects[id]?.source === source && state.stackObjects[id]?.kicked === true);
+  const recipientQuestion: ChoiceDecisionSpec = {
+    who: 'controller',
+    prompt: 'Which opponent gets the gift?',
+    options: [],
+    optionsFor: (state, chooser) => opponentsOf(state, chooser).map((seat) => giftLabel(state, seat)),
+    askOnlyIf: (state, controller, source) => opponentsOf(state, controller).length > 1 && promised(state, source),
+  };
+  /** The gift, given to its opponent, when the spell was cast with it. */
+  const giving = (asked: number) => (c: EffectContext): GameState => {
+    if (c.kicked !== true) return c.state;
+    const opponents = opponentsOf(c.state, c.controller);
+    const named = chosenOption(c, asked);
+    const to = opponents.find((seat) => giftLabel(c.state, seat) === named) ?? opponents[0];
+    return to === undefined ? c.state : give(c.state, to);
+  };
+  const kicker = { cost: '{0}', description: declaration, gift: true as const };
+
+  if (script.modal !== undefined) {
+    const how = script.modal.kickerModes;
+    if (how === undefined) return null;
+    // The mode the gifted cast always runs first: the kicked one alone, or the base before it.
+    const first = how === 'instead' ? 1 : 0;
+    const modes = script.modal.modes.map((mode, i) => {
+      if (i !== first) return mode;
+      const asked = (mode.decisions ?? []).length;
+      const gift = giving(asked);
+      return {
+        ...mode,
+        decisions: [...(mode.decisions ?? []), recipientQuestion],
+        effect: (c: EffectContext) => mode.effect({ ...c, state: gift(c) }),
+      };
+    });
+    return { script: { ...script, kicker, modal: { ...script.modal, modes } }, compiled: [...lines], unread: [] };
+  }
+  const resolve = script.onResolve;
+  if (resolve === undefined) return null;
+  const asked = (script.decisions ?? []).length;
+  const gift = giving(asked);
+  return {
+    script: {
+      ...script,
+      kicker,
+      decisions: [...(script.decisions ?? []), recipientQuestion],
+      onResolve: (c) => resolve({ ...c, state: gift(c) }),
+    },
+    compiled: [...lines],
+    unread: [],
+  };
+}
+
 export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
+  // Gift (D1096), read on the kicker's machinery before the kicker readers see the lines.
+  const gifted = giftSpellFor(lines, name);
+  if (gifted !== null) return gifted;
   /*
     The kicker pair, before anything else, because the keyword loop below would split it: the
     declaration would land in `declared` as an unimplemented keyword and the resolution line would
