@@ -1329,6 +1329,9 @@ function triggerMatches(
     case 'state':
       return true;
     // "Whenever you expend N" (D1002): this seat's Nth mana on spells this turn.
+    // Asked in `fireTrigger`, which knows the watcher (D1108).
+    case 'permanents-entered':
+      return true;
     case 'expend':
       return actorSeat === sourceSeat && (event as { n?: number }).n === want.n;
     // "Whenever you / an opponent / a player gains life" (D1039 for the opponent).
@@ -1992,6 +1995,21 @@ function fireTrigger(
     if (!died.some((d) => (want.other !== true || d.id !== holder)
       && (want.nontoken !== true || !d.token)
       && (want.what === undefined || d.types.includes(want.what))
+      && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
+  }
+  // "One or more [other] [nontoken] <kind> [you control] enter" (D1108): at least one in the batch.
+  if (trigger.on.kind === 'permanents-entered') {
+    const want = trigger.on;
+    const entered = event.kind === 'permanents-entered' ? event.entered ?? [] : [];
+    const of = want.of ?? 'any';
+    if (!entered.some((d) => (want.other !== true || d.id !== holder)
+      && (want.nontoken !== true || !d.token)
+      && (want.tokens !== true || d.token)
+      && (want.what === 'permanent' || d.types.includes(want.what))
+      && (want.alsoType === undefined || d.types.includes(want.alsoType))
+      && (want.subtype === undefined || d.subtypes.includes(want.subtype.toLowerCase()))
+      && (want.powerAtMost === undefined || d.power <= want.powerAtMost)
+      && (want.manaValueAtMost === undefined || d.manaValue <= want.manaValueAtMost)
       && (of === 'any' || (of === 'you' ? d.seat === inst.zoneSeat : d.seat !== inst.zoneSeat)))) return next;
   }
   // A state trigger (D1004, CR 603.8): only while the state holds, and not again while it is on the stack.
@@ -4444,6 +4462,21 @@ function settle(state: GameState, before: GameState): GameState {
         next = withInstance(next, id, { echoDue: true });
       }
     }
+    /*
+      And the batch (D1108): "whenever one or more creatures you control enter", once for everything
+      that arrived on the battlefield in this pass, each read as it now is.
+    */
+    const enteredBatch = arrived.flatMap((id) => {
+      const now = next.instances[id];
+      if (now === undefined || now.zone !== 'battlefield') return [];
+      const ch = characteristicsOf(next, now);
+      return [{
+        id, seat: now.zoneSeat, token: now.isToken === true, types: ch.typeLine.types.map((t) => t.toLowerCase()),
+        subtypes: ch.typeLine.subtypes.map((t) => t.toLowerCase()), power: ch.power,
+        manaValue: next.cardDefs[now.defKey]?.cmc ?? 0,
+      }];
+    });
+    if (enteredBatch.length > 0) next = raise(next, { kind: 'permanents-entered', what: 'permanent', entered: enteredBatch }, undefined);
     next = stateBasedActions(next);
   }
   /*

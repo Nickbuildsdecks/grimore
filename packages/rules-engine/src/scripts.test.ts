@@ -7984,6 +7984,8 @@ describe('deck coverage', () => {
       'trigger creatures-died',
       // D1002: "whenever you expend N" (Bloomburrow); the compiler reads it, no pool deck plays one.
       'trigger expend',
+      // D1108: "whenever one or more … enter", batched; no pool deck plays one.
+      'trigger permanents-entered',
       // D1004: state triggers ("When you control no Islands, sacrifice ~"); no pool deck plays one.
       'trigger state',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
@@ -32734,6 +32736,45 @@ describe('a card that names itself in the plural (D1107)', () => {
   it('leaves a singular name alone', () => {
     const plain = { ...DUO, name: 'Test Solo', oracle_text: 'When Test Solo enter, draw a card.' };
     expect((compileCard(plain as never) as { unread: readonly unknown[] }).unread).toHaveLength(1);
+  });
+});
+
+describe('"whenever one or more … enter": one trigger for the batch (D1108)', () => {
+  // CR 603.2c: a spell that makes three tokens is one event, so the batch trigger fires once.
+  const C = (name: string, text: string, power = '1', cost = '{W}') => ({ name, type_line: 'Creature — Human', mana_cost: cost, cmc: 1, colors: ['W'], layout: 'normal', power, toughness: '1', oracle_text: text });
+  const HERALD = C('Test Herald', 'Whenever one or more tokens you control enter, you gain 1 life.');
+  const WELCOMER = C('Test Welcomer', 'Whenever one or more other creatures you control with power 2 or less enter, draw a card. This ability triggers only once each turn.');
+  const ARMY = { name: 'Test Army', type_line: 'Sorcery', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Create three 1/1 white Soldier creature tokens.' };
+  const OGRE = C('Test Ogre', '', '3');
+  const ROWS = [HERALD, WELCOMER, ARMY, OGRE];
+  const deck = customDeck({
+    id: 'd1108', name: 'Batches', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd1108', 1: 'd1108' }, deckSpecs: { d1108: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Plains', 'Plains', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) } as Action)), 30);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [HERALD, WELCOMER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three tokens at once are one trigger, not three', () => {
+    const s = table(['Test Army'], ['Test Herald']);
+    const after = cast(s, 'Test Army');
+    expect(namesIn(after, 0, 'battlefield').filter((n) => n === 'Soldier')).toHaveLength(3);
+    expect(life(after, 0)).toBe(life(s, 0) + 1);
+  });
+
+  it('the filters: power 2 or less, and "other" leaves the watcher out', () => {
+    const s = table(['Test Ogre', 'Test Herald'], ['Test Welcomer']);
+    const hand = ids(s, 0, 'hand').length;
+    expect(ids(cast(s, 'Test Ogre'), 0, 'hand').length).toBe(hand - 1);
+    expect(ids(cast(s, 'Test Herald'), 0, 'hand').length).toBe(hand - 1 + 1);
+    const own = table(['Test Welcomer'], []);
+    expect(ids(cast(own, 'Test Welcomer'), 0, 'hand').length).toBe(ids(own, 0, 'hand').length - 1);
   });
 });
 

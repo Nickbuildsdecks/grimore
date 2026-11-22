@@ -1293,6 +1293,32 @@ export type TriggerEvent =
    */
   | { readonly kind: 'expend'; readonly n: number }
   /**
+   * "Whenever **one or more** [other] [nontoken] creatures [you control] **enter**" (D1108), and
+   * artifacts, enchantments, lands, tokens, artifact creatures and creature tokens: one event per
+   * settle for everything that arrived in it, so a spell making three tokens fires it once (CR
+   * 603.2c). Asked in `fireTrigger` against the watcher, as `creatures-died` is: `other` leaves the
+   * watcher out, `of` is whose they were as they arrived.
+   */
+  | {
+      readonly kind: 'permanents-entered';
+      readonly what: 'creature' | 'artifact' | 'enchantment' | 'land' | 'permanent';
+      /** Tokens only ("one or more tokens", "creature tokens"). */
+      readonly tokens?: true;
+      readonly nontoken?: true;
+      readonly other?: true;
+      /** And this card type too: "artifact creatures". */
+      readonly alsoType?: 'artifact';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Of this creature type: "one or more other Elves you control". */
+      readonly subtype?: string;
+      /** "With power 2 or less" (Welcoming Vampire). */
+      readonly powerAtMost?: number;
+      /** "With mana value 3 or less" (Tocasia's Welcome). */
+      readonly manaValueAtMost?: number;
+      /** Set by the engine: what arrived. */
+      readonly entered?: readonly EnteredPermanent[];
+    }
+  /**
    * A **state trigger** (D1004, CR 603.8): "When you control no Islands", "When there are no creatures
    * on the battlefield". It triggers whenever the game state matches, checked after every action,
    * and does not trigger again while its ability is on the stack. `none` is what must be absent:
@@ -4547,6 +4573,13 @@ export interface DiedCreature {
   readonly seat: SeatIndex;
   readonly token: boolean;
   readonly types: readonly string[];
+}
+
+/** A permanent in a batch of arrivals (D1108), read as it is on the battlefield. */
+export interface EnteredPermanent extends DiedCreature {
+  readonly subtypes: readonly string[];
+  readonly power: number;
+  readonly manaValue: number;
 }
 
 export type ReplacementEvent = 'dies' | 'to-graveyard' | 'leaves-battlefield';

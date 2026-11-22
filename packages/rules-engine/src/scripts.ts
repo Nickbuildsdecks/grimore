@@ -19587,6 +19587,39 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever you scry or surveil, (.+)$/i,
     on: [{ kind: 'scries', what: 'either' }],
   },
+  /*
+    "Whenever one or more [other] [nontoken] creatures [you control] enter" (D1108), and artifacts,
+    enchantments, lands, tokens, "artifact creatures" and "creature tokens". See `permanents-entered`.
+  */
+  {
+    prologue: () => /^Whenever one or more (?<other>other )?(?<nontoken>nontoken )?(?<kind>creatures|artifacts|enchantments|lands|tokens|artifact creatures|creature tokens|[A-Za-z'-]+)(?<of> you control| your opponents control)?(?: with (?<stat>power|mana value) (?<n>\d+) or less)? enter, (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const kind = g.kind!.toLowerCase();
+      // A creature type, in the plural the cards print: "Elves", "Merfolk", "Vampires".
+      const PLURALS: Readonly<Record<string, string>> = { elves: 'Elf', dwarves: 'Dwarf', wolves: 'Wolf', merfolk: 'Merfolk' };
+      const KINDS = new Set(['creatures', 'artifacts', 'enchantments', 'lands', 'tokens', 'artifact creatures', 'creature tokens']);
+      const typed = KINDS.has(kind) ? undefined
+        : PLURALS[kind] ?? (kind.endsWith('s') ? `${kind[0]!.toUpperCase()}${kind.slice(1, -1)}` : undefined);
+      if (!KINDS.has(kind) && (typed === undefined || !isCreatureType(typed))) return null;
+      const what = typed !== undefined || kind === 'creature tokens' || kind === 'artifact creatures' ? 'creature' as const
+        : kind === 'tokens' ? 'permanent' as const
+          : kind.slice(0, -1) as 'creature' | 'artifact' | 'enchantment' | 'land';
+      if (g.nontoken !== undefined && /tokens/.test(kind)) return null;
+      const n = g.n === undefined ? undefined : Number(g.n);
+      return [{
+        kind: 'permanents-entered' as const,
+        what,
+        ...(typed === undefined ? {} : { subtype: typed }),
+        ...(n === undefined ? {} : /power/i.test(g.stat!) ? { powerAtMost: n } : { manaValueAtMost: n }),
+        ...(/tokens/.test(kind) ? { tokens: true as const } : {}),
+        ...(kind === 'artifact creatures' ? { alsoType: 'artifact' as const } : {}),
+        ...(g.other === undefined ? {} : { other: true as const }),
+        ...(g.nontoken === undefined ? {} : { nontoken: true as const }),
+        of: g.of === undefined ? 'any' as const : /you control/i.test(g.of) ? 'you' as const : 'opponent' as const,
+      }];
+    },
+  },
   // "Whenever one or more [other] [nontoken] [artifact] creatures [you control] die" (D1000).
   {
     prologue: () => /^Whenever one or more (?<other>other )?(?<nontoken>nontoken )?(?<artifact>artifact )?creatures(?<of> you control| your opponents control)? die, (?<clause>.+)$/i,
