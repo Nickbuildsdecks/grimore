@@ -56902,3 +56902,41 @@ Faults injected by hand: 2. The replacement never applying (caught by the Coloss
 card-type filter removed (caught by the creature-card test).
 
 Coverage: 15,015 of 31,900 cards (+13 over D1115's 15,002), 36,878 of 59,888 lines (+22).
+
+## D1117 — "for the first time each turn" in the prologue
+
+**Pod sweep 61401** (100 four-player Commander games on the D1115 build): all 100 finished, 57.3
+turns and 314 moves on average, no throw and no stall.
+
+D532 read the trailing "This ability triggers only once each turn." as `onceEachTurn`, spent by
+`fireTrigger` when the trigger fires. The same restriction printed **in the prologue** was unread,
+37 single-unread lines:
+- Valiant's "Whenever ~ becomes the target of a spell or ability you control for the first time
+  each turn" (9);
+- "Whenever you gain life for the first time each turn" (Cleric of Life's Bond, Vanguard Seraph,
+  Leech Collector);
+- "attacks for the first time each turn", "you lose life …", "you surveil …", "you cycle another
+  card …".
+
+`triggerRestriction` now reads "<event> for the first time each turn, <effect>" as the event with
+`onceEachTurn`: one firing a turn, on the first such event. Only where no "if" follows the comma.
+With a condition, a later event could fire it after the first one failed the condition, which the
+flag would not allow.
+
+Read whole now: Axgard Artisan, Cleric of Life's Bond, Fear of Missing Out, Gonti's Machinations,
+Leech Collector, Raphael, Valiant Rescuer, Vanguard Seraph, Vengeful Warchief and Whispering
+Snitch.
+
+A checkpoint note for this run (D1101 to D1117: coverage, rules fixes, sweeps, Nick's pending
+decisions) is in `claude/checkpoint-2026-11-22-d1117.md`.
+
+**Tests.** 2 engine tests:
+- The test card reads whole, with the flag.
+- Two life gains in one turn put one counter on.
+
+Retargeted (the D516 way): D567's "a first-cycle-each-turn restriction" now reads as a once-a-turn
+cycle trigger, in a new test.
+
+Faults injected by hand: 1. The flag dropped (both tests fail).
+
+Coverage: 15,024 of 31,900 cards (+9 over D1116's 15,015), 36,893 of 59,888 lines (+15).
