@@ -33285,6 +33285,54 @@ describe('the board\'s "becomes tapped" and "leaves the battlefield" (D1121)', (
   });
 });
 
+describe('graveyard arrivals: an opponent\'s graveyard, "creature or artifact", "~ or another" (D1122)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const HAUNT = C('Test Haunt', "Whenever a card is put into an opponent's graveyard from anywhere, you gain 1 life.");
+  const VAT = C('Test Vat', 'Whenever another creature or artifact you control is put into a graveyard from the battlefield, you gain 1 life.');
+  const MEMENTO = C('Test Memento', 'When Test Memento is put into your graveyard from the battlefield, you gain 3 life.', 'Artifact');
+  const BEAR = C('Test Bear', '');
+  const ROCK = C('Test Rock', '', 'Artifact');
+  const CHARM = C('Test Charm', '', 'Enchantment');
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text });
+  const MILL = S('Test Mill', 'Target player mills two cards.');
+  const KILL = S('Test Kill', 'Destroy target nonland permanent.');
+  const ROWS = [HAUNT, VAT, MEMENTO, BEAR, ROCK, CHARM, MILL, KILL];
+  const deck = customDeck({
+    id: 'd1122', name: 'Graves', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }], data: ROWS as never[],
+  });
+  const gained = (mine: readonly string[], spell: string, target: { kind: 'player'; seat: 0 | 1 } | string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1122', 1: 'd1122' }, deckSpecs: { d1122: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Forest', 'Forest', ...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const aim = typeof target === 'string' ? { kind: 'card' as const, id: find(s, 0, 'battlefield', target) } : target;
+    const after = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [aim],
+    } as Action)), 30);
+    return life(after, 0) - life(s, 0);
+  };
+
+  it('reads the watchers whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [HAUNT, VAT, MEMENTO]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("cards milled into an opponent's graveyard gain, and into one's own do not", () => {
+    expect(gained(['Test Haunt'], 'Test Mill', { kind: 'player', seat: 1 })).toBe(2);
+    expect(gained(['Test Haunt'], 'Test Mill', { kind: 'player', seat: 0 })).toBe(0);
+  });
+
+  it('a creature or an artifact of one\'s own gains; an enchantment does not', () => {
+    expect(gained(['Test Vat', 'Test Bear'], 'Test Kill', 'Test Bear')).toBe(1);
+    expect(gained(['Test Vat', 'Test Rock'], 'Test Kill', 'Test Rock')).toBe(1);
+    expect(gained(['Test Vat', 'Test Charm'], 'Test Kill', 'Test Charm')).toBe(0);
+  });
+
+  it('"~ is put into your graveyard from the battlefield" pays for itself', () => {
+    expect(gained(['Test Memento'], 'Test Kill', 'Test Memento')).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

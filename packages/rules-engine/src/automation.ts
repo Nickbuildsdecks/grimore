@@ -1557,6 +1557,7 @@ function triggerMatches(
       // What kind of card, and whose graveyard (D1116).
       const card = event as { subjectSeat?: SeatIndex; subjectTypes?: readonly string[]; subjectSubtypes?: readonly string[] };
       if (want.into === 'yours' && card.subjectSeat !== sourceSeat) return false;
+      if (want.into === 'opponents' && (card.subjectSeat === undefined || card.subjectSeat === sourceSeat)) return false;
       if (want.what !== undefined && !(card.subjectTypes ?? []).includes(want.what)) return false;
       if (want.ofSubtype !== undefined && !(card.subjectSubtypes ?? []).includes(want.ofSubtype.toLowerCase())) return false;
       const who = want.who ?? 'another';
@@ -1744,6 +1745,10 @@ function triggerMatches(
         && !(e.subjectTypes ?? []).includes(want.what)) return false;
       // "A land is put into a graveyard from the battlefield" (D995), off the same live type line.
       if (want.kind === 'dies' && want.what === 'land' && !(e.subjectTypes ?? []).includes('land')) return false;
+      // "Another creature or artifact you control" and "a nonland permanent" (D1122), off the same.
+      if (want.kind === 'dies' && want.what === 'artifact-or-creature'
+        && e.subjectIsCreature !== true && !(e.subjectTypes ?? []).includes('artifact')) return false;
+      if (want.kind === 'dies' && want.what === 'nonland' && (e.subjectTypes ?? ['land']).includes('land')) return false;
       // "A creature or planeswalker dies" (D576): either type, off the same live type line.
       if (want.kind === 'dies' && want.what === 'creature-or-planeswalker'
         && e.subjectIsCreature !== true && !(e.subjectTypes ?? []).includes('planeswalker')) return false;

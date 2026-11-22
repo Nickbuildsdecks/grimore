@@ -380,7 +380,10 @@ export type TriggerEvent =
        * same event spelled out: the engine raises `dies` for every permanent that reaches a
        * graveyard from the battlefield, and "dies" is the word Magic keeps for creatures.
        */
-      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment' | 'land' | 'creature-or-planeswalker';
+      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment' | 'land' | 'creature-or-planeswalker'
+        // D1122: "another creature or artifact you control is put into a graveyard from the
+        // battlefield" (Marionette Apprentice) and "~ or another nonland permanent you control".
+        | 'artifact-or-creature' | 'nonland';
       /**
        * Set by the engine when it raises the event: what was attached to the dying permanent as it
        * left the battlefield, which is what `who: 'attached'` is answered from.
@@ -1675,7 +1678,8 @@ export type TriggerEvent =
        */
       readonly what?: 'land' | 'creature' | 'artifact' | 'enchantment' | 'instant' | 'sorcery';
       readonly ofSubtype?: string;
-      readonly into?: 'yours';
+      // "an opponent's graveyard" (D1122): The Haunt of Hightower, Bloodchief Ascension.
+      readonly into?: 'yours' | 'opponents';
       /** Set by the engine (D1116): the card's printed types and subtypes, lowercased. */
       readonly subjectTypes?: readonly string[];
       readonly subjectSubtypes?: readonly string[];

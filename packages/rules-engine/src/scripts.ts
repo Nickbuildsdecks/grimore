@@ -18706,7 +18706,7 @@ const TRIGGER_SHAPES: readonly ({
     Slogurk; "a Desert card" (Yuma); "another card" (Measure of Wickedness).
   */
   {
-    prologue: () => /^Whenever (?<who>an?|another) (?<what>land|creature|artifact|enchantment|instant|sorcery|[A-Z][A-Za-z'-]*)? ?card is put into (?<whose>your|a) graveyard from anywhere, (?<clause>.+)$/i,
+    prologue: () => /^Whenever (?<who>an?|another) (?<what>land|creature|artifact|enchantment|instant|sorcery|[A-Z][A-Za-z'-]*)? ?card is put into (?<whose>your|a|an opponent's) graveyard from anywhere, (?<clause>.+)$/i,
     from: (matched) => {
       const g = matched.groups ?? {};
       const word = g.what;
@@ -18719,12 +18719,15 @@ const TRIGGER_SHAPES: readonly ({
         ...(what === undefined ? {} : { what }),
         ...(word !== undefined && what === undefined ? { ofSubtype: word } : {}),
         ...(/your/i.test(g.whose!) ? { into: 'yours' as const } : {}),
+        // "An opponent's graveyard" (D1122): The Haunt of Hightower, Bloodchief Ascension.
+        ...(/opponent/i.test(g.whose!) ? { into: 'opponents' as const } : {}),
       }];
     },
   },
   {
     prologue: (self) => new RegExp(
-      `^When ${self} is put into a graveyard from the battlefield, (.+)$`, 'i',
+      // "Your graveyard" (D1122) says the same: a card always goes to its owner's.
+      `^When ${self} is put into (?:a|your) graveyard from the battlefield, (.+)$`, 'i',
     ),
     // `from: 'battlefield'` is the printed half of the sentence that was dropped until D569: see
     // the event's `from`. Without it an Aura discarded from a hand fires as if it had been in play.
@@ -18942,6 +18945,48 @@ const TRIGGER_SHAPES: readonly ({
       'i',
     ),
     from: graveyardFromPlayTrigger,
+  },
+  /*
+    The rest of the long spelling of "dies" (D1122): "~ **or another** artifact you control"
+    (Ichor Wellspring's kin), "another creature **or artifact** you control" (Marionette
+    Apprentice, Charforger), "a nonland permanent", "another nontoken Elf is put into **your**
+    graveyard" (the owner, D1014), "another creature is put into your graveyard". See
+    `graveyardFromPlayTrigger` for the plainer rows, asked first.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? (?<self>${self} or )?(?<who>a|an|another) (?<qual>nontoken )?`
+      + `(?<what>creature or artifact|artifact or creature|nonland permanent|creature|artifact|enchantment|land|permanent|[A-Z][A-Za-z'-]*)`
+      + `(?<of> you control| an opponent controls)? is put into (?<whose>a|your) graveyard from the battlefield, (?<clause>.+)$`,
+      'i',
+    ),
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const self = g.self !== undefined;
+      // "~ or a …" is not printed; "~ or another" is, and it means any of them, itself included.
+      if (self && !/^another$/i.test(g.who!)) return null;
+      const printed = g.what!;
+      const kinds: Record<string, BoardEvent['what']> = {
+        'creature or artifact': 'artifact-or-creature', 'artifact or creature': 'artifact-or-creature',
+        'nonland permanent': 'nonland', creature: 'creature', artifact: 'artifact', enchantment: 'enchantment',
+        land: 'land', permanent: 'permanent',
+      };
+      const what = kinds[printed.toLowerCase()];
+      const tribe = what === undefined && /^[A-Z]/.test(printed) && isCreatureType(printed) ? printed : undefined;
+      if (what === undefined && tribe === undefined) return null;
+      const whose = /your/i.test(g.whose!);
+      // Both "you control" and "your graveyard" is a stolen creature's question twice; not printed.
+      if (whose && g.of !== undefined) return null;
+      return [{
+        kind: 'dies' as const,
+        who: self ? 'any' as const : BOARD_WHO[g.who!.toLowerCase() as keyof typeof BOARD_WHO],
+        ...(g.of === undefined ? {} : { of: /you control/i.test(g.of) ? 'you' as const : 'opponent' as const }),
+        what: what ?? 'permanent',
+        ...(tribe === undefined ? {} : { ofSubtypes: [tribe] }),
+        ...(g.qual === undefined ? {} : { nontoken: true as const }),
+        ...(whose ? { owner: 'you' as const } : {}),
+      } as BoardEvent];
+    },
   },
   /*
     ── The cast family, parsed rather than enumerated ──────────────────────────────────────
