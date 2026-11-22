@@ -57194,3 +57194,45 @@ Faults injected by hand: 2.
 Checkpoint written with this entry: `claude/checkpoint-2026-11-22-d1124.md`.
 
 Coverage: 15,107 of 31,900 cards (+12 over D1124's 15,095), 37,005 of 59,888 lines (+15).
+
+## D1126 — keyword anthems, and a player with hexproof or shroud
+
+Two static shapes from the D1125 survey.
+
+**"Other creatures you control with flying get +1/+1"** (Empyrean Eagle, Thunderclap Wyvern, Spirit
+of the Spires, Windstorm Drake, Alela, and Stalwart Shield-Bearers' "with defender"). The group
+static takes a new filter, `onlyWithKeyword`, which reads the creature's live keywords. A creature
+given flying by a spell is grown while it flies.
+
+That is a keyword read in the middle of the effect loop that makes keywords. So `effectApplies`
+computes the creature's characteristics with a guard that leaves keyword-filtered statics out. The
+reader only accepts a size change ("get +N/+N"), so leaving such a static out cannot change a
+keyword, and the inner answer equals the outer one. `characteristicsOf` has no cache that could
+keep the inner result.
+
+**"You have hexproof." / "You have shroud."** (Leyline of Sanctity, Aegis of the Gods, Ivory Mask,
+Crystal Barricade, Solitary Confinement, Spirit of the Hearth, True Believer, Teyo, Metropolis
+Reformer) is `CardScript.controllerHas`. Targeting checks a player against it beside D718's
+protection:
+- Hexproof refuses spells and abilities an opponent controls.
+- Shroud refuses everyone's.
+
+The reader lives in `effects.ts`, which can read scripts, and is registered with `targeting.ts`
+through a hook, since targeting importing effects would be a cycle.
+
+Read whole now: those 15 cards.
+
+**Tests.** 4 engine tests:
+- The statics read whole.
+- The fliers grow, and the Eagle itself and the ground creature do not.
+- A creature given flying grows while it flies.
+- Hexproof keeps an opponent's burn off its controller, while their own still aims at themselves;
+  shroud keeps even its controller's own off.
+
+The deck-coverage test exempts 'script controllerHas': no pool deck plays one.
+
+Faults injected by hand: 2.
+- The shield check in targeting removed (caught).
+- The keyword test in `effectApplies` removed (caught).
+
+Coverage: 15,125 of 31,900 cards (+18 over D1125's 15,107), 37,031 of 59,888 lines (+26).
