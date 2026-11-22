@@ -4099,6 +4099,12 @@ export interface CardScript {
       | 'commander-creatures'
       /** Lands, for land types added in layer 4 (D699): Dryad of the Ilysian Grove, Urborg. */
       | 'controller-lands' | 'all-lands'
+      /**
+       * Artifacts and enchantments, for an ability granted in quotes (D1104): "All artifacts have
+       * "At the beginning of your upkeep, sacrifice this artifact unless you pay {1}."" (Kataki,
+       * War's Wage), "Artifacts you control have …", "Other enchantments have …" (Aura Flux).
+       */
+      | 'artifacts-you-control' | 'all-artifacts' | 'all-enchantments' | 'other-enchantments'
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
       | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean }
       /**

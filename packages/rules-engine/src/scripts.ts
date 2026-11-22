@@ -33353,6 +33353,28 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     }
   }
   /*
+    "All artifacts have "<ability>"" (D1104): Kataki, War's Wage and Energy Flux's upkeep tax,
+    "Artifacts you control have …", "All enchantments have …" and Aura Flux's "Other enchantments
+    have …". A triggered or an activated ability, on the scopes of the same names. "This artifact"
+    in the quote is the holder, as "this creature" is for a creature lord's grant.
+  */
+  const permanentGrant = /^(all artifacts|artifacts you control|all enchantments|other enchantments) have "([^"]+)"\.?$/i.exec(plain(line).trim());
+  if (permanentGrant !== null) {
+    const scopes = {
+      'all artifacts': 'all-artifacts', 'artifacts you control': 'artifacts-you-control',
+      'all enchantments': 'all-enchantments', 'other enchantments': 'other-enchantments',
+    } as const;
+    const scope = scopes[permanentGrant[1]!.toLowerCase() as keyof typeof scopes];
+    const triggers = grantedTriggerFrom(permanentGrant[2]!, name);
+    if (triggers !== null) {
+      return { statics: [{ scope, effect: { grants: triggers.map((_t, i) => i) } }], grantedTriggers: triggers };
+    }
+    const granted = grantedAbilityFrom(permanentGrant[2]!, name);
+    if (granted !== null) {
+      return { statics: [{ scope, effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
+    }
+  }
+  /*
     "Whenever enchanted land is tapped for mana, its controller adds an additional {G}" and "Whenever
     you tap a Swamp for mana, add an additional {B}" (D1088): see `CardScript.tapManaExtra`. Fixed
     mana, or "one mana of the chosen color"; "one mana of any color" is a second choice on the tap,

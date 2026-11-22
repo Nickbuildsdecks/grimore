@@ -6586,6 +6586,8 @@ function applyStatics(
       : entry.scope === 'commander-creatures' ? { kind: 'commander-creatures' }
       : entry.scope === 'controller-lands' ? { kind: 'controller-lands' }
       : entry.scope === 'all-lands' ? { kind: 'all-lands' }
+      : entry.scope === 'artifacts-you-control' || entry.scope === 'all-artifacts'
+        || entry.scope === 'all-enchantments' || entry.scope === 'other-enchantments' ? { kind: entry.scope }
       : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
       : entry.scope === 'opponent-creatures' ? { kind: 'opponent-creatures' }
       : { kind: 'all-creatures' };

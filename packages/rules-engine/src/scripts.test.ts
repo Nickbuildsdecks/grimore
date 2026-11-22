@@ -32558,6 +32558,51 @@ describe('kickers paid in a sacrifice or in life (D1103)', () => {
   });
 });
 
+describe('abilities granted in quotes to artifacts and enchantments (D1104)', () => {
+  // Kataki, War's Wage: every artifact has the upkeep tax, and it is its controller's to pay.
+  const KATAKI = { name: 'Test Kataki', type_line: 'Legendary Creature — Spirit', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '1', oracle_text: 'All artifacts have "At the beginning of your upkeep, sacrifice this artifact unless you pay {1}."' };
+  const FORGE = { name: 'Test Forge', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: 'Artifacts you control have "{T}: Add {C}."' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const ROWS = [KATAKI, FORGE, ROCK, BEAR];
+  const deck = customDeck({
+    id: 'd1104', name: 'Grants', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const seated = (lands: number, mine: readonly string[], theirs: readonly string[]) => arena({
+    decks: { 0: 'd1104', 1: 'd1104' }, deckSpecs: { d1104: deck.deck },
+    battlefield: { 0: [...Array.from({ length: lands }, () => 'Swamp'), ...mine], 1: [...theirs] }, turn: 5, firstSeat: 0,
+  });
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [KATAKI, FORGE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an opponent’s Kataki taxes your artifact in your upkeep: paid, it stays', () => {
+    let s = drain(advanceTo(seated(2, ['Test Rock', 'Test Bear'], ['Test Kataki']), 'upkeep'), 40);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {1}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}' } as Action), 60);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).toEqual(expect.arrayContaining(['Test Rock', 'Test Bear']));
+  });
+
+  it('unpaid, the artifact goes, and a creature is never asked', () => {
+    const s = drain(advanceTo(seated(0, ['Test Rock', 'Test Bear'], ['Test Kataki']), 'upkeep'), 40);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Rock');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('"Artifacts you control have" an activated ability: your artifact taps for mana, theirs does not', () => {
+    const s = advanceTo(seated(0, ['Test Forge', 'Test Rock'], ['Test Rock']), 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Test Rock');
+    const theirs = find(s, 1, 'battlefield', 'Test Rock');
+    expect(manaSources(s, 0).some((src) => src.key === mine)).toBe(true);
+    expect(manaSources(s, 1).some((src) => src.key === theirs)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

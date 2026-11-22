@@ -1546,6 +1546,13 @@ export interface ContinuousEffect {
     /** "Each land is a Swamp in addition to its other land types." (D699, Urborg). */
     | { readonly kind: 'all-lands' }
     /**
+     * Artifacts and enchantments on the battlefield (D1104), for an ability granted in quotes:
+     * the controller's artifacts, every artifact, every enchantment, or every enchantment but the
+     * source ("Other enchantments have …").
+     */
+    | { readonly kind: 'artifacts-you-control' } | { readonly kind: 'all-artifacts' }
+    | { readonly kind: 'all-enchantments' } | { readonly kind: 'other-enchantments' }
+    /**
      * Every creature its controller has **except the one that made it**.
      *
      * The usual templating on a creature that buffs a team — "*other* creatures you control get
@@ -2610,6 +2617,14 @@ function effectApplies(
       return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat === effect.controller;
     case 'all-lands':
       return instance.zone === 'battlefield' && hasType(typeLine, 'land');
+    case 'artifacts-you-control':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'artifact') && instance.zoneSeat === effect.controller;
+    case 'all-artifacts':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'artifact');
+    case 'all-enchantments':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment');
+    case 'other-enchantments':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment') && instance.id !== effect.source;
     case 'opponent-creatures':
       return creature && instance.zoneSeat !== effect.controller;
     case 'other-controller-creatures':
