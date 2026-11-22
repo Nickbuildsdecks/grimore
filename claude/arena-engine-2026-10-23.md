@@ -39013,3 +39013,44 @@ Faults injected by hand: 2. The life forfeit sacrificing instead of tapping (cau
 test), and the mana forfeit doing nothing (caught by the tap test).
 
 Coverage: 14,936 of 31,900 cards (+5 over D1104's 14,931), 36,760 of 59,888 lines (+6).
+
+## D1106 — one mana of any type that land produced
+
+D1088 read mana a permanent adds when something is tapped for mana, in two forms: a fixed list
+(Wild Growth's {G}, Crypt Ghast's {B}) or "one mana of the chosen color". The doublers were unread:
+
+- "Whenever a player taps a land for mana, that player adds one mana of any type that land
+  produced": Mana Flare, Heartbeat of Spring, Dictate of Karametra, Zhur-Taa Ancient.
+- "… a basic land" (Lavaleaper); "… a Mountain, Forest, or Plains" (Keeper of Progenitus).
+- "Whenever you tap a land for mana, add one mana of any type that land produced": Zendikar
+  Resurgent, Mirari's Wake.
+
+**The watcher.** `tapManaExtra.watches` gains `anyone`: any player's land, a basic land, or one of
+a list of subtypes. The mana goes to the player who tapped the land, which every tap path already
+does, since the mana is part of the tap (CR 605.1b). `watcherSees` is now the one check for all
+three kinds of watcher.
+
+**The mana.** `adds: 'produced'` is one more mana of what the tap made: one mana, whatever the land
+made (Ancient Tomb's {C}{C} gets one {C} more, CR 106.12), so it is counted separately by
+`tapManaEchoes`, not listed by `tapManaExtras`.
+- In the auto-tapper's sources, a fixed source lists it in `produces`. A choice source carries
+  `echo`, and the solver adds that many more of the colour it picks, so a dual land under a Mana
+  Flare pays {B}{B} alone.
+- The pips add one more of each kind the permanent's taps make, optimistic like the rest of
+  `potentialMana`.
+- A tap by hand adds one more of the first mana it made.
+
+Still unread: Overabundance ("…, and ~ deals 1 damage to the player"), Winter's Night ("snow
+land", and its untap clause), Barbflare Gremlin ("if ~ is tapped"), and "one mana of any color"
+extras (Fertile Ground), which are a second choice on the tap.
+
+**Tests.** 4 engine tests:
+- All three test cards read whole.
+- A Mana Flare doubles every player's lands, in the sources, the pips and by hand.
+- A dual land makes two of the colour it is tapped for and pays {B}{B} alone.
+- "You tap" covers only the controller's lands, and a subtype list only those subtypes.
+
+Faults injected by hand: 2. "Anyone" narrowed to the watcher's own lands (caught by the Mana Flare
+test), and the solver leaving out a choice source's echo (caught by the dual land test).
+
+Coverage: 14,944 of 31,900 cards (+8 over D1105's 14,936), 36,770 of 59,888 lines (+10).
