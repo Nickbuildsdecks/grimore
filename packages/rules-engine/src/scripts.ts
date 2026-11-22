@@ -45,7 +45,7 @@ import {
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, UNEARTHED, RENOWNED, MONSTROUS,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, RENOWNED, MONSTROUS,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, wasDealtDamageThisTurn, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, flipPermanent, recordExpiry, pairCreatures,
@@ -17551,6 +17551,75 @@ function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
  * the ability triggers: an unkicked creature puts nothing on the stack and asks nobody for a
  * target, which is what an intervening-if means (CR 603.4).
  */
+/**
+ * A double kicker on a permanent (D1099, CR 702.32b): "Kicker {2}{U} and/or {1}{B}", and a line
+ * for each kicker. Every line that mentions the kicker must be one of these, or nothing is read:
+ *
+ *     When ~ enters, if it was kicked with its {2}{U} kicker, <effect>.     (the Battlemages)
+ *     If ~ was kicked with its {1}{U} kicker, it enters with N +1/+1 counters on it and with <kw>.
+ *                                                                           (the volvers)
+ *     When ~ enters, if it was kicked[ twice], <effect>.                    (Archangel of Wrath)
+ *
+ * The condition is the marker the arrival writes for the kicker that was paid (`KICKED_FIRST`,
+ * `KICKED_SECOND`), asked as the ability triggers, which is what an intervening if means.
+ */
+function doubleKickerShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const declaring = /^kicker\s+((?:\{[^}]*\})+)\s+and\/or\s+((?:\{[^}]*\})+)$/i;
+  const declaration = lines.find((line) => declaring.test(plain(line).trim()));
+  if (declaration === undefined) return null;
+  const [, first, second] = declaring.exec(plain(declaration).trim())!;
+  const self = selfRef(def.name);
+  const which = (cost: string): 'first' | 'second' | null => (cost.toLowerCase() === first!.toLowerCase() ? 'first'
+    : cost.toLowerCase() === second!.toLowerCase() ? 'second' : null);
+  const kickedLines = lines.filter((line) => line !== declaration && /\bkick(?:ed|er)\b/i.test(line));
+  if (kickedLines.length === 0) return null;
+  const triggers: TriggerDef[] = [];
+  const entering: NonNullable<CardScript['kickerEntersWith']>[number][] = [];
+  const marked = (kind: 'first' | 'second' | 'any' | 'both'): NonNullable<TriggerDef['condition']> => (c) => {
+    const counters = c.state.instances[c.source]?.counters ?? {};
+    const a = (counters[KICKED_FIRST] ?? 0) > 0;
+    const b = (counters[KICKED_SECOND] ?? 0) > 0;
+    return kind === 'first' ? a : kind === 'second' ? b : kind === 'both' ? a && b : a || b;
+  };
+  for (const line of kickedLines) {
+    const text = plain(line).trim().replace(/\.\s*$/, '');
+    const arrives = new RegExp(
+      `^if (?:${self}|it) was kicked with its ((?:\\{[^}]*\\})+) kicker, it enters with (\\w+) \\+1/\\+1 counters? on it(?: and with (.+))?$`, 'i',
+    ).exec(text);
+    if (arrives !== null) {
+      const by = which(arrives[1]!);
+      const word = arrives[2]!.toLowerCase();
+      const amount = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
+      const keywords = arrives[3] === undefined ? undefined : grantedKeywordList(arrives[3]);
+      if (by === null || amount === undefined || amount <= 0 || keywords === null) return null;
+      entering.push({ by, counter: '+1/+1', amount, ...(keywords === undefined ? {} : { keywords }) });
+      continue;
+    }
+    const enters = new RegExp(`^(when ${self} enters), if it was kicked(?: with its ((?:\\{[^}]*\\})+) kicker| (twice))?, (.+)$`, 'i').exec(text);
+    if (enters === null) return null;
+    const kind = enters[2] !== undefined ? which(enters[2]) : enters[3] !== undefined ? 'both' as const : 'any' as const;
+    if (kind === null) return null;
+    const read = lineScriptFor(`${enters[1]}, ${enters[4]}.`, def.name);
+    const inner = read?.triggers?.[0];
+    if (read === null || Object.keys(read).length !== 1 || read.triggers!.length !== 1 || inner === undefined) return null;
+    const wanted = marked(kind);
+    const own = inner.condition;
+    triggers.push({
+      ...inner,
+      description: `if it was kicked${kind === 'both' ? ' twice' : kind === 'any' ? '' : ` with its ${kind === 'first' ? first : second} kicker`}, ${inner.description}`,
+      condition: own === undefined ? wanted : (c) => wanted(c) && own(c),
+    });
+  }
+  return {
+    fragment: {
+      kicker: { cost: first!, description: plain(declaration).trim(), second: { cost: second! } },
+      ...(triggers.length === 0 ? {} : { triggers }),
+      ...(entering.length === 0 ? {} : { kickerEntersWith: entering }),
+    },
+    claimed: [declaration, ...kickedLines],
+  };
+}
+
 function kickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
   const declaring = /^kicker\s+((?:\{[^}]*\})+)$/i;
   const declaration = lines.find((line) => declaring.test(plain(line).trim()));
@@ -17649,6 +17718,7 @@ export function wholeCardShapeFor(
     ?? soulbondShapeFor(def, lines)
     ?? bestowShapeFor(def, lines)
     ?? evokeShapeFor(lines)
+    ?? doubleKickerShapeFor(def, lines)
     ?? kickerPermanentShapeFor(def, lines)
     ?? escapeShapeFor(def, lines);
 }

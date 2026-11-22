@@ -41,7 +41,7 @@ import {
   SURGED,
   SQUADDED,
   createToken,
-  DASHED, EVOKED, IMPENDED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
+  DASHED, EVOKED, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -2222,13 +2222,37 @@ function fireTrigger(
     // the engine then refused.
     priority: null,
     passed: [],
-    pendingChoice: {
+    pendingChoice: withTargetQuestion(next, {
       seat: inst.zoneSeat,
       stackId,
       description: trigger.description,
       remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
-    },
+    }),
   };
+}
+
+/**
+ * A trigger's request for targets (D1099), put in front of any already waiting rather than over
+ * it: two triggers put on the stack together each get their question.
+ */
+export function withTargetQuestion(
+  state: GameState,
+  ask: { readonly seat: SeatIndex; readonly stackId: string; readonly description: string; readonly remaining: number },
+): GameState['pendingChoice'] {
+  const waiting = state.pendingChoice;
+  if (waiting === null) return ask;
+  const { queued, ...first } = waiting;
+  return { ...ask, queued: [first, ...(queued ?? [])] };
+}
+
+/** The next waiting question once one is answered (D1099), skipping any whose ability has gone. */
+export function nextTargetQuestion(state: GameState, answered: NonNullable<GameState['pendingChoice']>): GameState['pendingChoice'] {
+  const rest = [...(answered.queued ?? [])];
+  while (rest.length > 0) {
+    const next = rest.shift()!;
+    if (state.stackObjects[next.stackId] !== undefined) return rest.length === 0 ? next : { ...next, queued: rest };
+  }
+  return null;
 }
 
 function raise(
@@ -6063,6 +6087,17 @@ function completeResolution(
       }
       if (object.kicked === true) {
         next = addCounters(next, inst.id, KICKED, 1);
+        // Which of a double kicker's kickers (D1099), and what each makes it enter with.
+        const paid = object.kickedWith ?? 'first';
+        if (paid !== 'second') next = addCounters(next, inst.id, KICKED_FIRST, 1);
+        if (paid !== 'first') next = addCounters(next, inst.id, KICKED_SECOND, 1);
+        for (const entry of script?.kickerEntersWith ?? []) {
+          if (paid !== 'both' && paid !== entry.by) continue;
+          next = addCounters(next, inst.id, entry.counter, entry.amount);
+          if (entry.keywords !== undefined && entry.keywords.length > 0) {
+            next = pump(next, [inst.id], inst.id, object.controller, { keywords: [...entry.keywords], duration: 'permanent' });
+          }
+        }
         const kickedWith = script?.kickedEntersWith;
         if (kickedWith !== undefined) {
           next = addCounters(next, inst.id, kickedWith.counter, kickedWith.amount);
@@ -6424,12 +6459,12 @@ function aimModalTrigger(state: GameState, stackId: string, mode: number, trigge
     ...next,
     priority: null,
     passed: [],
-    pendingChoice: {
+    pendingChoice: withTargetQuestion(next, {
       seat: object.controller,
       stackId,
       description: chosen.description,
       remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
-    },
+    }),
   };
 }
 

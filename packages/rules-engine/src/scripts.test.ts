@@ -7998,6 +7998,8 @@ describe('deck coverage', () => {
       'script tapManaExtra',
       // D1097: impending (the Duskmourn Overlords); no pool deck plays one.
       'script impending',
+      // D1099: the volvers' per-kicker arrival; no pool deck plays one.
+      'script kickerEntersWith',
     ]);
 
     const declared = [
@@ -32256,6 +32258,86 @@ describe('land tokens, and "a non-Avatar creature card" (D1098)', () => {
     const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
     expect(offered).toContain('Test Bear');
     expect(offered).not.toContain('Test Avatar');
+  });
+});
+
+describe('a double kicker: "Kicker {B} and/or {R}" (D1099)', () => {
+  // CR 702.32b: either kicker, both, or neither; the card asks which, or whether twice.
+  const C = (name: string, text: string, pt = ['2', '2']) => ({ name, type_line: 'Creature — Angel', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', power: pt[0], toughness: pt[1], oracle_text: text });
+  const ANGEL = C('Test Archangel', 'Kicker {B} and/or {R}\nWhen Test Archangel enters, if it was kicked, it deals 2 damage to any target.\nWhen Test Archangel enters, if it was kicked twice, it deals 2 damage to any target.');
+  const MAGE = C('Test Battlemage', 'Kicker {R} and/or {W}\nWhen Test Battlemage enters, if it was kicked with its {R} kicker, it deals 2 damage to any target.\nWhen Test Battlemage enters, if it was kicked with its {W} kicker, you gain 3 life.');
+  const VOLVER = C('Test Volver', 'Kicker {1}{R} and/or {G}\nIf Test Volver was kicked with its {1}{R} kicker, it enters with two +1/+1 counters on it and with first strike.\nIf Test Volver was kicked with its {G} kicker, it enters with a +1/+1 counter on it and with trample.');
+  const ROWS = [ANGEL, MAGE, VOLVER];
+  const deck = customDeck({
+    id: 'd1099', name: 'Kickers', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 13 }, { name: 'Mountain', count: 14 }, { name: 'Plains', count: 13 }, { name: 'Forest', count: 14 }], data: ROWS as never[],
+  });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1099', 1: 'd1099' }, deckSpecs: { d1099: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Swamp', 'Mountain', 'Mountain', 'Plains', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castWith = (card: string, kickedWith?: 'first' | 'second' | 'both'): GameState => {
+    const s = table(card);
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(kickedWith === undefined ? {} : { kicked: true, kickedWith }) } as Action);
+    for (let i = 0; i < 16 && (t.stackOrder.length > 0 || t.pendingChoice !== null || t.pendingDecision !== null); i++) {
+      t = t.pendingChoice !== null ? apply(t, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] })
+        : t.pendingDecision !== null ? apply(t, { type: 'auto:decide', by: t.pendingDecision.seat, cards: [], option: t.pendingDecision.options?.[0] } as Action)
+          : passBoth(t);
+    }
+    return t;
+  };
+
+  it('reads whole, and offers the printed cast and three kicked ones', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const rows = legalActions(table('Test Archangel'), 0).plays.filter((p) => p.kind === 'cast' && p.name === 'Test Archangel');
+    expect(rows.map((p) => (p.kicked === true ? p.kickedWith ?? 'first' : 'none')).sort()).toEqual(['both', 'first', 'none', 'second']);
+  });
+
+  it('"kicked" and "kicked twice": one hit for either kicker, two for both, none unkicked', () => {
+    const start = life(table('Test Archangel'), 1);
+    expect(life(castWith('Test Archangel'), 1)).toBe(start);
+    expect(life(castWith('Test Archangel', 'second'), 1)).toBe(start - 2);
+    const b = castWith('Test Archangel', 'both');
+    expect(life(b, 1)).toBe(start - 4);
+  });
+
+  it('"kicked with its {W} kicker": only that kicker\'s line', () => {
+    const s = table('Test Battlemage');
+    const white = castWith('Test Battlemage', 'second');
+    expect(life(white, 0)).toBe(life(s, 0) + 3);
+    expect(life(white, 1)).toBe(life(s, 1));
+    const red = castWith('Test Battlemage', 'first');
+    expect(life(red, 0)).toBe(life(s, 0));
+    expect(life(red, 1)).toBe(life(s, 1) - 2);
+  });
+
+  it('two targeted triggers at once each get their own question (the queue, D1099)', () => {
+    const TWIN = C('Test Twin', 'When Test Twin enters, it deals 1 damage to any target.\nWhen Test Twin enters, it deals 2 damage to any target.');
+    const twins = customDeck({ id: 'd1099t', name: 'Twins', entries: [{ name: 'Test Twin', count: 2 }, { name: 'Plains', count: 58 }], data: [TWIN] as never[] });
+    const s = advanceTo(arena({
+      decks: { 0: 'd1099t', 1: 'd1099t' }, deckSpecs: { d1099t: twins.deck },
+      hands: { 0: ['Test Twin'] }, battlefield: { 0: ['Plains'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Twin') } as Action);
+    let asked = 0;
+    for (let i = 0; i < 12 && (t.stackOrder.length > 0 || t.pendingChoice !== null); i++) {
+      if (t.pendingChoice !== null) asked += 1;
+      t = t.pendingChoice !== null ? apply(t, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] }) : passBoth(t);
+    }
+    expect(asked).toBe(2);
+    expect(life(t, 1)).toBe(life(s, 1) - 3);
+  });
+
+  it('the volver enters with each paid kicker\'s counters and keyword', () => {
+    const both = castWith('Test Volver', 'both');
+    const volver = both.instances[find(both, 0, 'battlefield', 'Test Volver')]!;
+    expect(volver.counters['+1/+1']).toBe(3);
+    const kw = characteristicsOf(both, volver).keywords;
+    expect(kw.has('first strike') && kw.has('trample')).toBe(true);
+    const green = castWith('Test Volver', 'second');
+    const g = green.instances[find(green, 0, 'battlefield', 'Test Volver')]!;
+    expect(g.counters['+1/+1']).toBe(1);
+    expect(characteristicsOf(green, g).keywords.has('first strike')).toBe(false);
   });
 });
 

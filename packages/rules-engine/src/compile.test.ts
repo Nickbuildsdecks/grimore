@@ -17817,7 +17817,6 @@ describe('kicker on a permanent: the declaration and its kicked line, as one uni
   });
 
   it.each([
-    'Kicker {2} and/or {1}{R}',
     'Kicker—Sacrifice a land.',
     'Multikicker {1}{G}',
   ])('does not take %s for the plain mana form', (declaration) => {
@@ -17825,6 +17824,14 @@ describe('kicker on a permanent: the declaration and its kicked line, as one uni
     const got = creature(`${declaration}\n${line}`);
     expect(got.script?.kicker).toBeUndefined();
     expect(got.unread.map((u) => u.line)).toContain(line);
+  });
+
+  // Retargeted by D1099: a double kicker is read now, its "if it was kicked" meaning either kicker.
+  it('takes Kicker {2} and/or {1}{R} as a double kicker (D1099)', () => {
+    const line = 'When Citanul Woodreaders enters, if it was kicked, draw two cards.';
+    const got = creature(`Kicker {2} and/or {1}{R}\n${line}`);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.kicker).toMatchObject({ cost: '{2}', second: { cost: '{1}{R}' } });
   });
 
   it('leaves the rest of the card to the ordinary readers', () => {

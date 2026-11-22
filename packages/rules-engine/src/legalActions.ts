@@ -130,6 +130,8 @@ export interface LegalPlay {
   readonly fromGraveyard?: boolean;
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
+  /** Which of a double kicker's kickers this play pays (D1099); absent is the first. */
+  readonly kickedWith?: 'first' | 'second' | 'both';
   /** Set on the play that pays casualty (D923): `sacrificeOptions` are the creatures it may take. */
   readonly casualty?: boolean;
   /** Set on the play that pays conspire (D926). */
@@ -2582,8 +2584,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     // A flashback casting pays the flashback cost and nothing else, so the kicker is not on offer
     // with it: the two are alternative costs, and no card in the pool has both.
     const kicker = flashback || escape || foretold ? undefined : script?.kicker;
-    if (kicker !== undefined) {
-      const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicker.cost}`);
+    // A double kicker (D1099) is three plays: either kicker, or both.
+    const kickings: readonly { readonly with?: 'second' | 'both'; readonly cost: string; readonly words: string }[] = kicker === undefined ? []
+      : kicker.second === undefined ? [{ cost: kicker.cost, words: kicker.description.toLowerCase() }]
+        : [
+          { cost: kicker.cost, words: `kicker ${kicker.cost}` },
+          { with: 'second', cost: kicker.second.cost, words: `kicker ${kicker.second.cost}` },
+          { with: 'both', cost: `${kicker.cost}${kicker.second.cost}`, words: `both kickers (${kicker.cost} and ${kicker.second.cost})` },
+        ];
+    for (const kicking of kicker === undefined ? [] : kickings) {
+      const withKicker = parseManaCost(`${def?.manaCost ?? ''}${kicking.cost}`);
       const kickedCost: ManaCost = withCostChange(
         fromCommand && tax > 0
           ? { ...withKicker, generic: withKicker.generic + tax }
@@ -2593,8 +2603,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       if (withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources)) {
         out.push({
           kind: 'cast', card: id, name: ch.name, kicked: true,
-          description: `Cast ${ch.name} with ${kicker.description.toLowerCase()}`,
-          manaCost: `${def?.manaCost ?? ''}${kicker.cost}`, ...taxOn,
+          ...(kicking.with === undefined ? {} : { kickedWith: kicking.with }),
+          description: `Cast ${ch.name} with ${kicking.words}`,
+          manaCost: `${def?.manaCost ?? ''}${kicking.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
           targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });

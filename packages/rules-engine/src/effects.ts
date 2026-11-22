@@ -1029,7 +1029,10 @@ export const MONSTROUS = 'monstrous';
  * time counters; with at least one time counter it is not a creature (CR 702.176a).
  */
 export const IMPENDED = 'impended';
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED]);
+/** Which kicker of a double kicker was paid (D1099): "if it was kicked with its {B} kicker". */
+export const KICKED_FIRST = 'kicked-first';
+export const KICKED_SECOND = 'kicked-second';
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND]);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).

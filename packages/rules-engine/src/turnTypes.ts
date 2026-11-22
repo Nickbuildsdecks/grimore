@@ -431,6 +431,8 @@ export interface StackObject {
    * resolution. Absent on everything without a kicker.
    */
   readonly kicked?: boolean;
+  /** Which kickers of a double kicker were paid (D1099); absent is the first only. */
+  readonly kickedWith?: 'first' | 'second' | 'both';
   /**
    * The permanent sacrificed to cast or activate this, as it last was. See `SacrificedStats`.
    *
@@ -1164,6 +1166,12 @@ export interface AutomationState {
     readonly description: string;
     /** How many targets are still to choose, in order. */
     readonly remaining: number;
+    /**
+     * Questions raised before this one and still unanswered (D1099), asked in turn once this one
+     * is. Two triggers put on the stack together each want targets, and the second used to
+     * **replace** the first's question, so the first resolved aimed at nothing.
+     */
+    readonly queued?: readonly { readonly seat: SeatIndex; readonly stackId: string; readonly description: string; readonly remaining: number }[];
   } | null;
   /**
    * A resolution that has stopped to ask somebody a question.
@@ -1800,6 +1808,8 @@ export interface AutoCastAction {
   readonly division?: readonly number[];
   /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
   readonly kicked?: boolean;
+  /** Which of a double kicker's two (D1099); absent is the first. Needs `kicked`. */
+  readonly kickedWith?: 'first' | 'second' | 'both';
   /** Pay casualty (D923): `sacrifice` names the creature, of power N or greater. */
   readonly casualty?: boolean;
   /** Pay conspire (D926): the engine taps the two creatures. */

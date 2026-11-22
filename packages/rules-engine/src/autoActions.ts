@@ -15,7 +15,7 @@ import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPai
 import {
   characteristicsOf, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
-import { emergeOptions, conspireOptions, casualtyOptions,
+import { nextTargetQuestion, emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
   cleanupHolds, finishCleanup,
   attackAimIssue, grantedAbilityFor,
@@ -488,6 +488,14 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (kicked && script?.kicker === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no kicker`);
   }
+  // A double kicker's choice (D1099): which of the two, or both. Only with a second to choose.
+  const kickedWith = kicked ? action.kickedWith ?? 'first' : undefined;
+  if (kickedWith !== undefined && kickedWith !== 'first' && script?.kicker?.second === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has only one kicker`);
+  }
+  const kickerCost = kickedWith === 'second' ? script?.kicker?.second?.cost ?? ''
+    : kickedWith === 'both' ? `${script?.kicker?.cost ?? ''}${script?.kicker?.second?.cost ?? ''}`
+      : script?.kicker?.cost ?? '';
 
   /*
     And buyback, the kicker's twin: announced with the spell, refused on a card without one.
@@ -847,7 +855,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                     ? reducedCostText(script?.emerge?.cost ?? '', state.cardDefs[state.instances[sacrificed]!.defKey]?.cmc ?? 0) ?? undefined
                   // And a plotted card's later cast (D922): without paying its mana cost.
                   : commanderFree || pitchCast || plotCast || payLifeFromTop ? '{0}'
-                  : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
+                  : kicked ? `${def?.manaCost ?? ''}${kickerCost}`
                   // And buyback, which adds on top exactly as the kicker does — what differs
                   // between them is what the mana buys, not how it is paid.
                   : boughtBack ? `${def?.manaCost ?? ''}${script?.buyback?.cost ?? ''}`
@@ -1252,6 +1260,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
+    ...(kicked && script?.kicker?.second !== undefined ? { kickedWith } : {}),
     ...(sacrificedStats === null ? {} : { sacrificedStats }),
     // The other flag the card's destination depends on, and flashback's opposite number: this one
     // sends the card to its owner's hand as it leaves the stack, but only if it got that far.
@@ -1413,6 +1422,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     data: {
       card: inst.id, name: characteristics.name, tapped: [...paid.tapped],
       ...(kicked ? { kicked: true } : {}),
+    ...(kicked && script?.kicker?.second !== undefined ? { kickedWith } : {}),
       ...(boughtBack ? { buyback: true } : {}),
       ...(sacrificed === null ? {} : { sacrificed, sacrificedName }),
     },
@@ -3320,8 +3330,9 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
       stackOrder: state.stackOrder.filter((id) => id !== object.id),
       pendingChoice: null,
     };
+    const waiting = nextTargetQuestion(removed, pending);
     return {
-      state: resetPriority(settle(removed, state)),
+      state: waiting === null ? resetPriority(settle(removed, state)) : { ...removed, pendingChoice: waiting, priority: null, passed: [] },
       message: `${object.description} has no legal target left and is removed`,
       data: { ability: object.id, targets: 0 },
     };
@@ -3349,7 +3360,9 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   // The ability has its targets now, which is the moment ward's event happens for a trigger the
   // engine could not aim on its own. See `raiseTargeted`.
   next = raiseTargeted(next, object.id);
-  next = resetPriority(settle(next, state));
+  // Another trigger put on the stack with this one still waiting for its targets (D1099): ask now.
+  const waiting = nextTargetQuestion(next, pending);
+  next = waiting === null ? resetPriority(settle(next, state)) : { ...next, pendingChoice: waiting, priority: null, passed: [] };
   return {
     state: next,
     message: `${seatName(state, action.by)} aims ${object.description}`,

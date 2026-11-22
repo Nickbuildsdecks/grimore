@@ -3321,6 +3321,11 @@ export interface CardScript {
     /** As printed: "Kicker {3}". */
     readonly description: string;
     /**
+     * The second kicker of "Kicker {1}{U} and/or {B}" (D1099, CR 702.32b): either, both or neither
+     * may be paid, and the card asks which ("if it was kicked with its {B} kicker").
+     */
+    readonly second?: { readonly cost: string };
+    /**
      * A gift (D1096, CR 702.174), carried on the kicker's machinery: "promise a gift" is a free
      * announced choice that the spell's text reads as "if the gift was promised". Not a kicker
      * for anything that watches kicked spells.
@@ -3343,6 +3348,16 @@ export interface CardScript {
     readonly amount: number;
     readonly keywords?: readonly Keyword[];
   };
+  /**
+   * The same, per kicker of a double kicker (D1099): "If ~ was kicked with its {1}{U} kicker, it
+   * enters with two +1/+1 counters on it and with flying" (the Apocalypse volvers).
+   */
+  readonly kickerEntersWith?: readonly {
+    readonly by: 'first' | 'second';
+    readonly counter: string;
+    readonly amount: number;
+    readonly keywords?: readonly Keyword[];
+  }[];
   /**
    * Buyback: an optional additional cost that changes where the card **goes** (CR 702.26).
    *
