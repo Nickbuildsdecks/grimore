@@ -32513,6 +32513,21 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
   // "Your life total can't change." (D733): Platinum Emperion.
   if (/^your life total can't change\.?$/i.test(plain(line).trim())) return { lifeTotalCantChange: true };
+  // The replacements on gaining life (D1127): see `CardScript.lifeGainReplacement`.
+  {
+    const said = plain(line).trim().replace(/\.$/, '');
+    const twice = /^if you would gain life, you gain twice that much life instead$/i.test(said);
+    const plus = /^if you would gain life, you gain that much life plus (\d+|one|two|three) instead$/i.exec(said);
+    const loss = /^if an opponent would gain life, that player loses that much life instead$/i.test(said);
+    const none = /^if (a player|an opponent) would gain life, that player gains no life instead$/i.exec(said);
+    if (twice) return { lifeGainReplacement: { whose: 'you', becomes: 'twice' } };
+    if (plus !== null) {
+      const n = /^\d+$/.test(plus[1]!) ? Number(plus[1]) : ({ one: 1, two: 2, three: 3 } as Record<string, number>)[plus[1]!.toLowerCase()]!;
+      return { lifeGainReplacement: { whose: 'you', becomes: { plus: n } } };
+    }
+    if (loss) return { lifeGainReplacement: { whose: 'opponents', becomes: 'loss' } };
+    if (none !== null) return { lifeGainReplacement: { whose: /player/i.test(none[1]!) ? 'players' : 'opponents', becomes: 'none' } };
+  }
   // "You have hexproof." / "You have shroud." (D1126): see `CardScript.controllerHas`.
   const shielded = /^you have (hexproof|shroud)\.?$/i.exec(plain(line).trim());
   if (shielded !== null) return { controllerHas: shielded[1]!.toLowerCase() as 'hexproof' | 'shroud' };

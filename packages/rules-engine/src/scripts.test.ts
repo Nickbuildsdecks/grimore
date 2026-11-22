@@ -8010,6 +8010,8 @@ describe('deck coverage', () => {
       'script kickerEntersWith',
       // D1126: "You have hexproof / shroud" (Leyline of Sanctity); no pool deck plays one.
       'script controllerHas',
+      // D1127: "If you would gain life, …instead" (Boon Reflection); no pool deck plays one.
+      'script lifeGainReplacement',
     ]);
 
     const declared = [
@@ -33541,6 +33543,47 @@ describe('keyword anthems and a player with hexproof or shroud (D1126)', () => {
     expect(life(self, 0)).toBe(life(hexproof, 0) - 2);
     const shroud = table(['Test Zap'], ['Test Mask']);
     expect(() => apply(shroud, { type: 'auto:cast', by: 0, card: find(shroud, 0, 'hand', 'Test Zap'), targets: [{ kind: 'player', seat: 0 }] } as Action)).toThrow();
+  });
+});
+
+describe('replacements on gaining life (D1127)', () => {
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text });
+  const BOON = E('Test Boon', 'If you would gain life, you gain twice that much life instead.');
+  const ANGEL = E('Test Angel', 'If you would gain life, you gain that much life plus 1 instead.');
+  const REMEDY = E('Test Remedy', 'If an opponent would gain life, that player loses that much life instead.');
+  const VORTEX = E('Test Vortex', 'If a player would gain life, that player gains no life instead.');
+  const SALVE = { name: 'Test Salve', type_line: 'Sorcery', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'You gain 3 life.' };
+  const ROWS = [BOON, ANGEL, REMEDY, VORTEX, SALVE];
+  const deck = customDeck({
+    id: 'd1127', name: 'Life', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  const changed = (mine: readonly string[], theirs: readonly string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1127', 1: 'd1127' }, deckSpecs: { d1127: deck.deck },
+      hands: { 0: ['Test Salve'] }, battlefield: { 0: ['Forest', ...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') } as Action)), 30);
+    return life(after, 0) - life(s, 0);
+  };
+
+  it('reads the replacements whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [BOON, ANGEL, REMEDY, VORTEX]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('twice, plus one, and both in the order that gains the most', () => {
+    expect(changed([])).toBe(3);
+    expect(changed(['Test Boon'])).toBe(6);
+    expect(changed(['Test Angel'])).toBe(4);
+    expect(changed(['Test Boon', 'Test Angel'])).toBe(8);
+    // An opponent's Boon is not "you".
+    expect(changed([], ['Test Boon'])).toBe(3);
+  });
+
+  it("an opponent's Remedy turns the gain into a loss; a Vortex stops it for everyone", () => {
+    expect(changed([], ['Test Remedy'])).toBe(-3);
+    expect(changed(['Test Remedy'])).toBe(3);
+    expect(changed(['Test Boon'], ['Test Vortex'])).toBe(0);
   });
 });
 

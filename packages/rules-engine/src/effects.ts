@@ -756,10 +756,21 @@ export function givePoison(state: GameState, seat: SeatIndex, amount: number): G
   return replaceSeat(state, seat, { poison: clampValue(player.poison + amount) });
 }
 
-export function gainLife(state: GameState, seat: SeatIndex, amount: number): GameState {
-  if (amount <= 0) return state;
+export function gainLife(state: GameState, seat: SeatIndex, gained0: number): GameState {
+  if (gained0 <= 0) return state;
   // "Your life total can't change" (D733): no life is gained, so nothing triggers on it.
   if (lifeLocked(state, seat)) return state;
+  /*
+    The replacements on gaining life (D1127, CR 614.1a). The gaining player orders them (CR 616.1),
+    and the order that gains the most is taken: "gains no life" ends it, "loses that much life
+    instead" turns it into a loss, and otherwise every "plus N" before every "twice".
+  */
+  const replacing = lifeGainReplacementsFor(state, seat);
+  if (replacing.some((r) => r === 'none')) return state;
+  if (replacing.some((r) => r === 'loss')) return loseLife(state, seat, gained0);
+  let amount = gained0;
+  for (const r of replacing) if (typeof r === 'object') amount += r.plus;
+  for (const r of replacing) if (r === 'twice') amount *= 2;
   const s = state.seats[seat];
   if (s === undefined) return state;
   const key = String(seat);
@@ -1219,6 +1230,27 @@ export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
     return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
   });
+}
+
+/** Every life-gain replacement that applies to this seat gaining life now (D1127). */
+function lifeGainReplacementsFor(
+  state: GameState, seat: SeatIndex,
+): NonNullable<CardScript['lifeGainReplacement']>['becomes'][] {
+  if (scriptLookup === null) return [];
+  const lookup = scriptLookup;
+  const out: NonNullable<CardScript['lifeGainReplacement']>['becomes'][] = [];
+  for (const row of state.seats) {
+    if (row.eliminated) continue;
+    for (const id of [...listAt(state, zoneKey(row.index, 'battlefield')), ...emblemsOf(state, row.index)]) {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+      const r = lookup(state.cardDefs[inst.defKey])?.lifeGainReplacement;
+      if (r === undefined) continue;
+      const mine = row.index === seat;
+      if (r.whose === 'you' ? mine : r.whose === 'opponents' ? !mine : true) out.push(r.becomes);
+    }
+  }
+  return out;
 }
 
 /**
