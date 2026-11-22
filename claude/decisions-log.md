@@ -55924,3 +55924,30 @@ the Shadow Thieves still have effect clauses that do not read.
 Faults injected by hand: 1 (the life comparison always true). It is caught.
 
 Coverage: 14,798 of 31,900 cards (+2 over D1089's 14,796), 36,431 of 59,888 lines (+2).
+
+## D1091 — "Partner with <name>": the enter trigger that fetches the partner
+
+"Partner with <name>" is two things (CR 702.124j). The deck-construction half has been
+`partnersLegally`'s since D640. The game half is the reminder text's enter trigger: "When this
+creature enters, target player may search their library for a card named <name>, reveal it, put
+it into their hand, then shuffle." D670 left the line unread because nothing read that trigger.
+
+- **Reader:** `compileCard` gives that sentence, with the card's name and its partner's, to the
+  line reader. The line reader reads every word of it already (D986's search by name), so the
+  keyword and its printed reminder cannot disagree. It is the backup and embalm pattern: a keyword
+  read as the sentence it stands for.
+- 52 legal lines print it (26 pairs). Partner was the commonest unimplemented keyword among cards
+  one line short: 16 of them.
+
+**Tests.** 3 engine tests:
+- The pair reads whole, reminder text included.
+- Aimed at yourself, only the named partner is offered from your library, and it goes to your hand.
+- Aimed at the opponent, the question is theirs.
+
+The D670 compile row that pinned "Partner with" as unread is retargeted (the D516 way). It now
+asserts that the line reads as one enter trigger.
+
+Faults injected by hand: 1 (the card's own name searched for instead of its partner's). It is
+caught.
+
+Coverage: 14,814 of 31,900 cards (+16 over D1090's 14,798), 36,483 of 59,888 lines (+52).
