@@ -32341,6 +32341,47 @@ describe('a double kicker: "Kicker {B} and/or {R}" (D1099)', () => {
   });
 });
 
+describe('multikicker: a kicker paid any number of times, and counted (D1100)', () => {
+  // CR 702.33a: "for each time it was kicked".
+  const CHALICE = { name: 'Test Chalice', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Multikicker {1}\nTest Chalice enters with a charge counter on it for each time it was kicked.\n{T}: Add {C} for each charge counter on Test Chalice.' };
+  const WOLVES = { name: 'Test Wolfbriar', type_line: 'Creature — Elemental', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '4', toughness: '4', oracle_text: 'Multikicker {G}\nWhen Test Wolfbriar enters, create a 2/2 green Wolf creature token for each time it was kicked.' };
+  const STUDY = { name: 'Test Study', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Multikicker {1}\nDraw a card for each time this spell was kicked.' };
+  const ROWS = [CHALICE, WOLVES, STUDY];
+  const deck = customDeck({
+    id: 'd1100', name: 'Multikickers', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 54 }], data: ROWS as never[],
+  });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1100', 1: 'd1100' }, deckSpecs: { d1100: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Forest', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (card: string, times: number): GameState => {
+    const s = table(card);
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(times > 0 ? { kicked: true, kickCount: times } : {}) } as Action)), 30);
+  };
+
+  it('reads whole, and offers each count the mana covers, and no more', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const counts = legalActions(table('Test Chalice'), 0).plays
+      .filter((p) => p.kind === 'cast' && p.name === 'Test Chalice' && p.kicked === true).map((p) => p.kickCount);
+    expect(counts).toEqual([1, 2, 3]);
+  });
+
+  it('the Chalice gets a counter per kick and taps for that much; unkicked, none', () => {
+    const two = cast('Test Chalice', 2);
+    const chalice = find(two, 0, 'battlefield', 'Test Chalice');
+    expect(two.instances[chalice]!.counters.charge).toBe(2);
+    expect(manaSources(two, 0).find((src) => src.key === chalice)?.produces).toEqual(['C', 'C']);
+    expect(cast('Test Chalice', 0).instances[find(cast('Test Chalice', 0), 0, 'battlefield', 'Test Chalice')]!.counters.charge ?? 0).toBe(0);
+  });
+
+  it('a Wolf per kick, and a spell that draws per kick', () => {
+    expect(namesIn(cast('Test Wolfbriar', 3), 0, 'battlefield').filter((n) => n === 'Wolf')).toHaveLength(3);
+    const s = table('Test Study');
+    expect(ids(cast('Test Study', 2), 0, 'hand').length).toBe(ids(s, 0, 'hand').length - 1 + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -3326,6 +3326,11 @@ export interface CardScript {
      */
     readonly second?: { readonly cost: string };
     /**
+     * Multikicker (D1100, CR 702.33a): the cost may be paid any number of times, and the card
+     * counts them ("for each time it was kicked"). The count travels as `kickCount`.
+     */
+    readonly multi?: true;
+    /**
      * A gift (D1096, CR 702.174), carried on the kicker's machinery: "promise a gift" is a free
      * announced choice that the spell's text reads as "if the gift was promised". Not a kicker
      * for anything that watches kicked spells.

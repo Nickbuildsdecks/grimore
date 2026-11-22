@@ -11647,6 +11647,13 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       }],
     };
   }
+  /*
+    Multikicker {cost} (D1100): read on its own, unlike a kicker (D561), because a multikicker
+    printed without a payoff is not on any card: every one counts its kicks on another line, and a
+    payoff line that does not read keeps the card's badge.
+  */
+  const multikicker = /^multikicker\s*((?:\{[^}]+\})+)$/i.exec(text);
+  if (multikicker !== null) return { kicker: { cost: multikicker[1]!, description: `Multikicker ${multikicker[1]!}`, multi: true } };
   // Prototype {cost} — P/T (D934): see `CardScript.prototype`.
   const prototype = /^prototype ((?:\{[^}]+\})+)\s*[—–-]\s*(\d+)\/(\d+)$/i.exec(text);
   if (prototype !== null) return { prototype: { cost: prototype[1]!, power: Number(prototype[2]), toughness: Number(prototype[3]) } };
@@ -20162,6 +20169,18 @@ function countOfThing(
   const text = thing.trim();
   const self = selfRef(name);
 
+  /*
+    "For each time it was kicked", "the number of times this spell was kicked" (D1100): a spell's
+    own count off the stack, a permanent's off its `KICKED` marker (a multikicker's count, two for
+    both kickers of a double kicker).
+  */
+  if (new RegExp(`^(?:the number of )?times? (?:it|he|she|this spell|${self}) (?:was|were) kicked$`, 'i').test(text)) {
+    return (c) => {
+      const spell = c.resolving;
+      if (spell !== undefined) return spell.kicked !== true ? 0 : spell.kickCount ?? (spell.kickedWith === 'both' ? 2 : 1);
+      return c.state.instances[c.source]?.counters[KICKED] ?? 0;
+    };
+  }
   // "for each creature destroyed this way", "the number of permanents destroyed this way" (D682).
   const destroyed = /^(creature|permanent|artifact|enchantment|planeswalker|land)s? destroyed this way$/i.exec(text);
   if (destroyed !== null) {
@@ -32218,8 +32237,9 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     with it on the battlefield already, where the rule counts before it arrives (CR 614.1c).
   */
   const perThing = /^(.+) for each (.+)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
-  if (perThing !== null && !/color of mana|time it was kicked/i.test(perThing[2]!)) {
-    if (!/\bother\b|graveyard|died|your opponents control|an opponent controls/i.test(perThing[2]!)) return null;
+  if (perThing !== null && !/color of mana/i.test(perThing[2]!)) {
+    // "For each time it was kicked" (D1100): counted off the `KICKED` marker the arrival wrote.
+    if (!/\bother\b|graveyard|died|your opponents control|an opponent controls|was kicked/i.test(perThing[2]!)) return null;
     const count = forEachCount(perThing[2]!, name);
     const plainRead = count === null ? null : entersWithFromLine(perThing[1]!, name);
     const fixed = plainRead?.entersWith;

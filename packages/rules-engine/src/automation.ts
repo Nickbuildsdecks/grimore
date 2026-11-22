@@ -6086,7 +6086,8 @@ function completeResolution(
         next = addCounters(next, inst.id, SQUADDED, object.replicated!);
       }
       if (object.kicked === true) {
-        next = addCounters(next, inst.id, KICKED, 1);
+        // How many times it was kicked (D1100): a multikicker's count, both of a double kicker, or once.
+        next = addCounters(next, inst.id, KICKED, object.kickCount ?? (object.kickedWith === 'both' ? 2 : 1));
         // Which of a double kicker's kickers (D1099), and what each makes it enter with.
         const paid = object.kickedWith ?? 'first';
         if (paid !== 'second') next = addCounters(next, inst.id, KICKED_FIRST, 1);

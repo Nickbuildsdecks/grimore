@@ -132,6 +132,8 @@ export interface LegalPlay {
   readonly kicked?: boolean;
   /** Which of a double kicker's kickers this play pays (D1099); absent is the first. */
   readonly kickedWith?: 'first' | 'second' | 'both';
+  /** How many times this play pays a multikicker (D1100). */
+  readonly kickCount?: number;
   /** Set on the play that pays casualty (D923): `sacrificeOptions` are the creatures it may take. */
   readonly casualty?: boolean;
   /** Set on the play that pays conspire (D926). */
@@ -2585,7 +2587,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     // with it: the two are alternative costs, and no card in the pool has both.
     const kicker = flashback || escape || foretold ? undefined : script?.kicker;
     // A double kicker (D1099) is three plays: either kicker, or both.
-    const kickings: readonly { readonly with?: 'second' | 'both'; readonly cost: string; readonly words: string }[] = kicker === undefined ? []
+    const kickings: readonly { readonly with?: 'second' | 'both'; readonly count?: number; readonly cost: string; readonly words: string }[] = kicker === undefined ? []
+      // Multikicker (D1100): once, twice, … as far as the mana goes (the loop stops at the first it cannot pay).
+      : kicker.multi === true ? Array.from({ length: 8 }, (_, i) => ({ count: i + 1, cost: kicker.cost.repeat(i + 1), words: `multikicker x${i + 1}` }))
       : kicker.second === undefined ? [{ cost: kicker.cost, words: kicker.description.toLowerCase() }]
         : [
           { cost: kicker.cost, words: `kicker ${kicker.cost}` },
@@ -2600,10 +2604,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           : withKicker,
         change.generic,
       );
+      // A multikicker paid more times than the mana covers is not offered, nor any count above it.
+      if (kicking.count !== undefined && !(withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources))) break;
       if (withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources)) {
         out.push({
           kind: 'cast', card: id, name: ch.name, kicked: true,
           ...(kicking.with === undefined ? {} : { kickedWith: kicking.with }),
+          ...(kicking.count === undefined ? {} : { kickCount: kicking.count }),
           description: `Cast ${ch.name} with ${kicking.words}`,
           manaCost: `${def?.manaCost ?? ''}${kicking.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),

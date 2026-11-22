@@ -433,6 +433,8 @@ export interface StackObject {
   readonly kicked?: boolean;
   /** Which kickers of a double kicker were paid (D1099); absent is the first only. */
   readonly kickedWith?: 'first' | 'second' | 'both';
+  /** How many times a multikicker was paid (D1100). */
+  readonly kickCount?: number;
   /**
    * The permanent sacrificed to cast or activate this, as it last was. See `SacrificedStats`.
    *
@@ -1810,6 +1812,8 @@ export interface AutoCastAction {
   readonly kicked?: boolean;
   /** Which of a double kicker's two (D1099); absent is the first. Needs `kicked`. */
   readonly kickedWith?: 'first' | 'second' | 'both';
+  /** How many times to pay a multikicker (D1100); absent is once. Needs `kicked`. */
+  readonly kickCount?: number;
   /** Pay casualty (D923): `sacrifice` names the creature, of power N or greater. */
   readonly casualty?: boolean;
   /** Pay conspire (D926): the engine taps the two creatures. */

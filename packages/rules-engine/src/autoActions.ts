@@ -493,7 +493,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (kickedWith !== undefined && kickedWith !== 'first' && script?.kicker?.second === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has only one kicker`);
   }
-  const kickerCost = kickedWith === 'second' ? script?.kicker?.second?.cost ?? ''
+  // Multikicker (D1100): its cost once per time.
+  const kickCount = kicked && script?.kicker?.multi === true ? Math.max(1, Math.floor(action.kickCount ?? 1)) : undefined;
+  if (action.kickCount !== undefined && kickCount === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no multikicker`);
+  }
+  const kickerCost = kickCount !== undefined ? (script?.kicker?.cost ?? '').repeat(kickCount)
+    : kickedWith === 'second' ? script?.kicker?.second?.cost ?? ''
     : kickedWith === 'both' ? `${script?.kicker?.cost ?? ''}${script?.kicker?.second?.cost ?? ''}`
       : script?.kicker?.cost ?? '';
 
@@ -1261,6 +1267,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
     ...(kicked && script?.kicker?.second !== undefined ? { kickedWith } : {}),
+    ...(kickCount === undefined ? {} : { kickCount }),
     ...(sacrificedStats === null ? {} : { sacrificedStats }),
     // The other flag the card's destination depends on, and flashback's opposite number: this one
     // sends the card to its owner's hand as it leaves the stack, but only if it got that far.
@@ -1423,6 +1430,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       card: inst.id, name: characteristics.name, tapped: [...paid.tapped],
       ...(kicked ? { kicked: true } : {}),
     ...(kicked && script?.kicker?.second !== undefined ? { kickedWith } : {}),
+    ...(kickCount === undefined ? {} : { kickCount }),
       ...(boughtBack ? { buyback: true } : {}),
       ...(sacrificed === null ? {} : { sacrificed, sacrificedName }),
     },

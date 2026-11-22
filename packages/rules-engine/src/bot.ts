@@ -2470,6 +2470,7 @@ function candidateActions(
             // half of a card the table offered as the expensive one.
             ...(play.kicked === true ? { kicked: true } : {}),
             ...(play.kickedWith === undefined ? {} : { kickedWith: play.kickedWith }),
+            ...(play.kickCount === undefined ? {} : { kickCount: play.kickCount }),
             // And buyback, the same flag for the same reason at a different price: the row the
             // search chose is the one that gets the card back, and a cast sent without this is
             // quietly the printed one.
@@ -4924,7 +4925,7 @@ function castsARitual(state: GameState, action: Action): boolean {
 
 /** One play, identified well enough to tell "this is new" from "this was already on offer". */
 const playKey = (play: LegalPlay): string =>
-  `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? `k${play.kickedWith ?? ''}` : ''}`
+  `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? `k${play.kickedWith ?? ''}${play.kickCount ?? ''}` : ''}`
   + `${play.buyback === true ? 'y' : ''}`
   // And evoke, for the same reason as the kicker: the two castings of a Mulldrifter are two
   // plays, and a key that could not tell them apart would read the expensive one as still on
