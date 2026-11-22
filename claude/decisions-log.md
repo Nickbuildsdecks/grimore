@@ -56787,3 +56787,28 @@ Faults injected by hand: 2. The look-back removed (caught by the wipe test), and
 removed (caught by the legendary test and the wipe test).
 
 Coverage: 14,991 of 31,900 cards (+10 over D1112's 14,981), 36,839 of 59,888 lines (+14).
+
+## D1114 — "your first instant or sorcery spell each turn"
+
+"Whenever you cast your first spell each turn" has counted per caster since D436, and Esper
+Sentinel's "their first noncreature spell" among noncreature spells since D678 (`nthOfKind`).
+"Whenever you cast your **first instant or sorcery** spell each turn" had no count of its own, so
+it was unread (Arcane Bombardment, Aquatic Alchemist, Baral and Kari Zev, and "second" on others).
+
+**The count.** `countCast` keeps a third tally per caster, `<seat>:instant-or-sorcery`, raised for
+an instant or a sorcery only. The cast event carries that spell's ordinal among them
+(`instantOrSorceryNth`). `nthOfKind` with `spell: 'instant-or-sorcery'` counts on it, so a creature
+cast first does not use the trigger up, and the second instant of the turn does not fire it again.
+"First" and "second" are read.
+
+Read whole now: Aquatic Alchemist and Storm-Kiln Artist. Arcane Bombardment and Baral and Kari Zev
+are short on their effects.
+
+**Tests.** 2 engine tests:
+- The test card reads whole.
+- A creature cast first does not count. The first instant gains life and the second does not.
+
+Faults injected by hand: 2. The count taken from all spells (caught: the creature used it up), and
+the tally never raised (caught: the second instant fired it again).
+
+Coverage: 14,993 of 31,900 cards (+2 over D1113's 14,991), 36,841 of 59,888 lines (+2).
