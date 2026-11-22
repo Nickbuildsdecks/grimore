@@ -56621,3 +56621,33 @@ Seed 61157 rerun on this build: finished, 71 turns, no throw and no stall.
 Faults injected by hand: 1. The carry removed: both tests fail.
 
 Coverage: 14,957 of 31,900 cards (+0 over D1108's 14,957), 36,793 of 59,888 lines (+0).
+
+## D1110 — "that many" off a batch of arrivals or deaths
+
+"That many" and "that much" after a damage or life event have been the event's amount since D903:
+the trigger reader marks the words and `readEffect` reads them as `eventAmount`. A batch trigger
+had no amount, so Woodland Champion's "Whenever one or more tokens you control enter, put that many
++1/+1 counters on Woodland Champion" and Ingenious Artillerist's "Whenever one or more artifacts you
+control enter, Ingenious Artillerist deals that much damage to each opponent" were unread.
+
+**The count.** `batchCount` counts the members of a batch event that fit a batch trigger's filters,
+as seen by its watcher: the deaths for `creatures-died` (D1000) and the arrivals for
+`permanents-entered` (D1108). Both triggers now match on it (zero is no trigger), and it is the
+trigger's `eventAmount`. So the number is what the trigger names. Three Saprolings entering beside
+an Artillerist are not artifacts, and deal no damage.
+
+**The words.** Both batch kinds are marked for "that many" by the trigger reader, and the reader
+gains "~ deals that much damage to each opponent".
+
+Read whole now: Woodland Champion and Ingenious Artillerist. Every legal card printing "one or more
+… enter" or "… die" with "that many" or "that much" now reads.
+
+**Tests.** 3 engine tests:
+- Both test cards read whole.
+- Three tokens at once are one trigger and three counters.
+- Two Treasures deal 2 damage to each opponent, and three Saprolings deal none.
+
+Faults injected by hand: 2. The amount fixed at 1 (caught by both count tests), and the batch
+kinds not marked (all three fail).
+
+Coverage: 14,959 of 31,900 cards (+2 over D1109's 14,957), 36,796 of 59,888 lines (+3).
