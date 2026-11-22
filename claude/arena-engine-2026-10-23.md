@@ -39838,3 +39838,37 @@ Faults injected by hand: 2.
   search, which no test isolates.
 
 Coverage: 15,147 of 31,900 cards (+12 over D1127's 15,135), 37,061 of 59,888 lines (+14).
+
+## D1129 — bolster, and counters on a creature you choose
+
+**Bolster N** (CR 701.39a): "choose a creature with the least toughness among creatures you control
+and put N +1/+1 counters on it". It had no reader: 18 single-unread legal lines, across the Khans
+block's Abzan cards and their reprints.
+
+It is read now as a question asked as the effect resolves, of the controller's own battlefield, with
+a filter for the least live toughness:
+- A tie is the controller's choice.
+- One candidate is answered by the engine.
+- No creature means nothing happens (CR 701.39b).
+
+The same question without the filter reads "put a +1/+1 counter / two +1/+1 counters on a creature
+you control", which is not targeted (Humiliate's tail and its kin). The engine's own seat puts the
+counters on its strongest candidate.
+
+18 of the 27 tail cards that print either read whole now: Abzan Skycaptain, Anafenza, Kin-Tree
+Spirit, Aven Tactician, Abzan Advantage, Enduring Victory, Honor's Reward and more.
+
+**Tests.** 4 engine tests:
+- Both read whole.
+- Bolster's single candidate is the least toughness: no question, and the counters land there.
+- A tie is offered and the controller's pick gets them.
+- "A creature you control" offers every one.
+
+Faults injected by hand: 2.
+- The least-toughness filter removed (caught).
+- The count fixed at 1 (caught).
+
+Pod sweep 61701 (100 games, D1128 build, with the "can't attack or block alone" bot change): 100
+finished, no throw, no stall.
+
+Coverage: 15,165 of 31,900 cards (+18 over D1128's 15,147), 37,081 of 59,888 lines (+20).
