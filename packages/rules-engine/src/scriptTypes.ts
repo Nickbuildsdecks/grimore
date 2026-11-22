@@ -1336,6 +1336,19 @@ export type TriggerEvent =
    */
   | { readonly kind: 'expend'; readonly n: number }
   /**
+   * A creature explored (D1119, CR 701.44): "Whenever a creature you control explores" (Lurking
+   * Chupacabra, Merfolk Cave-Diver), "Whenever ~ explores". Raised by `settle` for each explorer
+   * the explore effect recorded, whether the revealed card was a land or not, and whether or not
+   * the creature is still on the battlefield (CR 701.44c).
+   */
+  | {
+      readonly kind: 'explores';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'any';
+      /** Set by the engine: who controls the creature that explored. */
+      readonly subjectSeat?: SeatIndex;
+    }
+  /**
    * A **player** dealt damage, by any source, a spell's included (D1115): "Whenever a source you
    * control deals noncombat damage to an opponent" (Niv-Mizzet, Visionary; Virtue of Courage),
    * "Whenever an opponent is dealt noncombat damage" (Chandra's Spitfire), "Whenever a source an

@@ -13284,10 +13284,13 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       const def = top === undefined ? undefined : state.cardDefs[state.instances[top]?.defKey ?? ''];
       return def !== undefined && hasType(parseTypeLine(def.typeLine), 'land');
     };
+    // And the explore itself, recorded for "whenever a creature you control explores" (D1119).
+    const record = (state: GameState, who: string): GameState => (state.automated
+      ? { ...state, explored: [...(state.explored ?? []), who] } : state);
     return {
-      beforeDecisions: (c) => (topOf(c.state, c.controller) === undefined || landOnTop(c.state, c.controller)
+      beforeDecisions: (c) => record(topOf(c.state, c.controller) === undefined || landOnTop(c.state, c.controller)
         ? c.state
-        : addCounters(c.state, explorer(c), '+1/+1', 1)),
+        : addCounters(c.state, explorer(c), '+1/+1', 1), explorer(c)),
       decisions: [{
         ...surveil(1),
         prompt: 'Explore — put the revealed card into your graveyard?',
@@ -19837,6 +19840,15 @@ const TRIGGER_SHAPES: readonly ({
       owner: /^your$/i.test(matched.groups?.whose ?? '') ? 'you' as const : 'opponent' as const,
       ...(matched.groups?.nontoken === undefined ? {} : { nontoken: true }),
     }],
+  },
+  // "Whenever a creature you control explores" and "Whenever ~ explores" (D1119).
+  {
+    prologue: () => /^Whenever (?:a|another) creature you control explores, (?<clause>.+)$/i,
+    from: (matched) => [{ kind: 'explores' as const, who: /^Whenever another/i.test(matched[0]) ? 'another' as const : 'any' as const, of: 'you' as const }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} explores, (?<clause>.+)$`, 'i'),
+    on: [{ kind: 'explores', who: 'self' }],
   },
   // "Whenever you expend N" (D1002): your Nth total mana spent on spells this turn.
   {

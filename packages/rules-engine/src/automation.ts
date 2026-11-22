@@ -1335,6 +1335,14 @@ function triggerMatches(
     // Asked in `fireTrigger`, which knows the watcher (D1108).
     case 'permanents-entered':
       return true;
+    // A creature explored (D1119): which one, and whose.
+    case 'explores': {
+      const who = want.who ?? 'self';
+      if (who === 'self' && !isSubject) return false;
+      if (who === 'another' && isSubject) return false;
+      if ((want.of ?? 'any') === 'you' && actorSeat !== sourceSeat) return false;
+      return true;
+    }
     // And this (D1115): whose source and who was hit are asked from the watcher's side.
     case 'player-damaged':
       return true;
@@ -3941,6 +3949,7 @@ function settle(state: GameState, before: GameState): GameState {
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
       || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0
       || (next.sacrificed ?? []).length > 0 || (next.countersPut ?? []).length > 0
+      || (next.explored ?? []).length > 0
       || (next.leftGraveyard ?? []).length > 0
       /*
         And the two lists drained below that were missing from this guard until D592: a transform
@@ -4003,6 +4012,8 @@ function settle(state: GameState, before: GameState): GameState {
     const cycledNow = next.cycled ?? [];
     // And the counters put on permanents (D633).
     const countered = next.countersPut ?? [];
+    // And the creatures that explored (D1119).
+    const explorers = next.explored ?? [];
     // And the cards that left a graveyard (D634).
     const exhumed = next.leftGraveyard ?? [];
     // And the permanents sacrificed (D570).
@@ -4055,6 +4066,7 @@ function settle(state: GameState, before: GameState): GameState {
       reflexive: [],
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
       copied: [], transformed: [], phased: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [], countersPut: [], leftGraveyard: [],
+      explored: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -4305,6 +4317,12 @@ function settle(state: GameState, before: GameState): GameState {
         kind: 'leaves-graveyard', subjectSeat: seat,
         anyCreature: exhumed.some((left) => left.seat === seat && left.creature),
       }, seat);
+    }
+    // "Whenever a creature you control explores" (D1119): one event per explore, wherever the creature is.
+    for (const card of explorers) {
+      const inst = next.instances[card] ?? next.vanished[card];
+      if (inst === undefined) continue;
+      next = raise(next, { kind: 'explores', subjectSeat: inst.zoneSeat }, inst.zoneSeat, card);
     }
     for (const { card, counter } of countered) {
       const inst = next.instances[card];

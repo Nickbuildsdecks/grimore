@@ -1104,6 +1104,12 @@ export interface AutomationState {
    */
   readonly countersPut?: readonly { readonly card: string; readonly counter: string }[];
   /**
+   * Creatures that explored and were not yet announced (D1119), in order. `settle` raises one
+   * `explores` event for each, for "Whenever a creature you control explores" (Lurking Chupacabra).
+   * Optional, so a game saved before it existed loads.
+   */
+  readonly explored?: readonly string[];
+  /**
    * Cards that left a graveyard and were not yet announced (D634): whose graveyard, and whether the
    * card was a creature card. `settle` announces them as **one** `leaves-graveyard` event per
    * graveyard, which is the "one or more cards leave your graveyard" every printing says.

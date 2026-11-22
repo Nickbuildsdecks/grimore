@@ -7988,6 +7988,8 @@ describe('deck coverage', () => {
       'trigger permanents-entered',
       // D1115: "a source you control deals noncombat damage to an opponent"; no pool deck plays one.
       'trigger player-damaged',
+      // D1119: "whenever a creature you control explores"; no pool deck plays one.
+      'trigger explores',
       // D1004: state triggers ("When you control no Islands, sacrifice ~"); no pool deck plays one.
       'trigger state',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
@@ -33164,6 +33166,34 @@ describe('anybody\'s attack with two or more, and "you attack a player" (D1118)'
     expect(attack(['Test Dais'], 2)).toBe(21);
     expect(attack(['Test Dais'], 1)).toBe(20);
     expect(attack(['Test Sensor'], 1)).toBe(22);
+  });
+});
+
+describe('"whenever a creature you control explores" (D1119)', () => {
+  // Lurking Chupacabra, Wildgrowth Walker: one event per explore, land on top or not.
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Merfolk', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: text });
+  const WALKER = C('Test Walker', 'Whenever a creature you control explores, you gain 3 life.');
+  const SCOUT = C('Test Scout', 'When Test Scout enters, it explores.');
+  const deck = customDeck({
+    id: 'd1119', name: 'Explorers', entries: [{ name: WALKER.name, count: 2 }, { name: SCOUT.name, count: 4 }, { name: 'Forest', count: 54 }], data: [WALKER, SCOUT] as never[],
+  });
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [WALKER, SCOUT]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Scout explores, and the Walker gains 3 life for it', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1119', 1: 'd1119' }, deckSpecs: { d1119: deck.deck },
+      hands: { 0: ['Test Scout'] }, battlefield: { 0: ['Forest', 'Test Walker'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const start = life(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Scout') } as Action);
+    for (let i = 0; i < 16 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null ? apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action) : passBoth(s);
+    }
+    expect(life(s, 0)).toBe(start + 3);
   });
 });
 
