@@ -55977,3 +55977,30 @@ typed one left unread.
 Faults injected by hand: 1 (the legendary test always true). It is caught.
 
 Coverage: 14,825 of 31,900 cards (+11 over D1091's 14,814), 36,503 of 59,888 lines (+20).
+
+## D1093 — graft, and moving a +1/+1 counter
+
+Graft N (CR 702.58a): "This creature enters with N +1/+1 counters on it. Whenever another creature
+enters, you may move a +1/+1 counter from this creature onto it." 13 legal lines, 10 of them on
+cards that were a single keyword short.
+
+- **Engine:** `moveCounter(state, from, to, key)`. It does nothing unless the source has such a
+  counter and both are on the battlefield. **Moving is not putting** (CR 122.6), so the counters
+  are edited directly, not through `addCounters`. Hardened Scales and Doubling Season, which
+  replace counters being put on a permanent, do not change how many arrive.
+- **Reader:** the event-relative sentence "move a +1/+1 counter from ~ onto it", on "whenever
+  another creature enters", where "it" is the creature that entered. The graft keyword reads as
+  its two sentences, as "Partner with" does (D1091).
+
+Five graft cards now read whole: Aquastrand Spider, Cytoplast Manipulator, Cytospawn Shambler,
+Simic Initiate and Plaxcaster Frogling.
+
+**Tests.** 3 engine tests:
+- Graft reads whole, with its reminder text.
+- It enters with two counters, and a creature that enters after it takes one.
+- Under Hardened Scales it enters with three, and the moved counter is still just one.
+
+Faults injected by hand: 1 (the move made through `addCounters`, so Scales adds to it). It is
+caught.
+
+Coverage: 14,835 of 31,900 cards (+10 over D1092's 14,825), 36,516 of 59,888 lines (+13).
