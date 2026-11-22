@@ -8309,11 +8309,7 @@ describe('the label in front of an ability, which has no rules meaning', () => {
       each exhaust ability only once), so reading the remainder on its own would offer an
       unrestricted ability. 23 wrong readings, not 23 lines left unread (D362).
     */
-    ['a keyword that is the restriction (boast)', {
-      name: 'Axgard Braggart', type_line: 'Creature — Dwarf Warrior', mana_cost: '{3}{W}', cmc: 4,
-      colors: ['W'], power: '3', toughness: '3', layout: 'normal',
-      oracle_text: 'Boast — {1}{W}: Untap Axgard Braggart. Put a +1/+1 counter on it.',
-    }],
+    // Retargeted by D1134: boast reads now, with its restriction; see the test below.
     // Retargeted by D1133: exhaust reads now, with its restriction (`onceEver`); see the test below.
     // "Descend N" comes off since D612 (an ability word with a digit, and the sentence restates the
     // condition); this remainder — "an additional +2/+2" and a blocking limit — still does not read.
@@ -8328,6 +8324,19 @@ describe('the label in front of an ability, which has no rules meaning', () => {
     const read = card(row);
     expect(read.ok).toBe(true);
     expect(unreadLines(read)).toHaveLength(1);
+  });
+
+  it('reads boast with its restriction since D1134: once each turn, only after it attacked', () => {
+    const read = card({
+      name: 'Axgard Braggart', type_line: 'Creature — Dwarf Warrior', mana_cost: '{3}{W}', cmc: 4,
+      colors: ['W'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Boast — {1}{W}: Untap Axgard Braggart. Put a +1/+1 counter on it.',
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toEqual([]);
+    if (!read.ok) return;
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+    expect(read.script?.abilities?.[0]?.activateOnlyIf).toBeTypeOf('function');
   });
 
   it('reads exhaust with its restriction since D1133: the ability is "only once"', () => {

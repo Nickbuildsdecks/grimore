@@ -30526,6 +30526,30 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     activated only once. The keyword is the restriction, which is why it is never stripped as an
     ability word: read here, the ability carries `onceEver`.
   */
+  /*
+    Boast (D1134, CR 702.142a): "Activate only if this creature attacked this turn and only once each
+    turn." The attack is this object's own declaration, as `GameState.attackersThisTurn` records it
+    (an id and its `objectSeq`): one put onto the battlefield attacking never attacked (CR 508.4).
+  */
+  const boast = /^boast\s*[\u2014\u2013]\s*(.+)$/i.exec(text);
+  if (boast !== null) {
+    const inner = abilityFromLine(boast[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (inner === null || abilities.length !== 1) return null;
+    const ability = abilities[0]!;
+    if (ability.activateOnlyIf !== undefined || ability.onceEachTurn === true) return null;
+    return {
+      ...inner,
+      abilities: [{
+        ...ability,
+        onceEachTurn: true,
+        activateOnlyIf: (state, source) => {
+          const seq = state.instances[source]?.objectSeq ?? 0;
+          return (state.attackersThisTurn ?? []).includes(`${source}#${seq}`);
+        },
+      }],
+    };
+  }
   const exhaust = /^exhaust\s*[\u2014\u2013]\s*(.+)$/i.exec(text);
   if (exhaust !== null) {
     const inner = abilityFromLine(exhaust[1]!, name);

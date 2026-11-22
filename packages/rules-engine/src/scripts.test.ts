@@ -33878,6 +33878,39 @@ describe('exhaust and "Activate only once" (D1133)', () => {
   }
 });
 
+describe('boast (D1134)', () => {
+  const HAGI = { name: 'Test Hagi', type_line: 'Creature — Dwarf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Boast — {G}: You gain 2 life.' };
+  const deck = customDeck({
+    id: 'd1134', name: 'Boast', entries: [{ name: 'Test Hagi', count: 4 }, { name: 'Forest', count: 56 }], data: [HAGI] as never[],
+  });
+  const offered = (s: GameState, id: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === id);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(HAGI as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('only after it attacked this turn, and only once', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1134', 1: 'd1134' }, deckSpecs: { d1134: deck.deck },
+      battlefield: { 0: ['Forest', 'Forest', 'Test Hagi'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const hagi = find(s, 0, 'battlefield', 'Test Hagi');
+    expect(offered(s, hagi)).toBe(false);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: hagi, defender: 1 }] } as Action);
+    expect(offered(s, hagi)).toBe(true);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: hagi, abilityIndex: 0 } as Action)), 30);
+    expect(life(s, 0)).toBe(before + 2);
+    expect(offered(s, hagi)).toBe(false);
+    // The next turn of its controller's, without an attack: not offered.
+    s = advanceTo(drain(nextTurn(drain(nextTurn(s), 30)), 30), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(offered(s, hagi)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
