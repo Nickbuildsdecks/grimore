@@ -32382,6 +32382,51 @@ describe('multikicker: a kicker paid any number of times, and counted (D1100)', 
   });
 });
 
+describe('wider Aura hosts, and an Aura that exiles until it leaves (D1101)', () => {
+  const OSS = { name: 'Test Ossify', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Enchant basic land you control\nWhen Test Ossify enters, exile target creature an opponent controls until Test Ossify leaves the battlefield.' };
+  const PAINT = { name: 'Test Paint', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Enchant artifact or creature\nEnchanted permanent has hexproof.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: '' };
+  const ROWS = [OSS, PAINT, BEAR, ROCK];
+  const deck = customDeck({
+    id: 'd1101', name: 'Hosts', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const table = (card: string) => advanceTo(arena({
+    decks: { 0: 'd1101', 1: 'd1101' }, deckSpecs: { d1101: deck.deck },
+    hands: { 0: [card] }, battlefield: { 0: ['Forest', 'Forest', 'Test Rock'], 1: ['Forest', 'Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const row = (s: GameState, card: string) => legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === card)!;
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [OSS, PAINT]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a basic land you control is the only host; the creature is exiled and comes back when the Aura goes', () => {
+    const s = table('Test Ossify');
+    const offered = row(s, 'Test Ossify').candidates[0]!.map((t) => (t.kind === 'card' ? `${nameOf(s, t.id)}@${s.instances[t.id]!.zoneSeat}` : 'player'));
+    expect(offered.sort()).toEqual(['Forest@0', 'Forest@0']);
+    const land = find(s, 0, 'battlefield', 'Forest');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ossify'), targets: [{ kind: 'card', id: land }] } as Action);
+    for (let i = 0; i < 10 && (t.stackOrder.length > 0 || t.pendingChoice !== null); i++) {
+      t = t.pendingChoice !== null ? apply(t, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] }) : passBoth(t);
+    }
+    expect(t.instances[find(t, 0, 'battlefield', 'Test Ossify')]!.attachedTo).toBe(land);
+    expect(t.instances[bear]!.zone).toBe('exile');
+    const gone = drain(passBoth(apply(t, { type: 'card:move', by: 0, card: find(t, 0, 'battlefield', 'Test Ossify'), toZone: 'graveyard' } as Action)), 20);
+    expect(namesIn(drain(passBoth(gone), 20), 1, 'battlefield')).toContain('Test Bear');
+  });
+
+  it('"artifact or creature": the artifact is a host as well as the creatures', () => {
+    const s = table('Test Paint');
+    const names = row(s, 'Test Paint').candidates[0]!.map((t) => (t.kind === 'card' ? nameOf(s, t.id) : ''));
+    expect(names).toContain('Test Rock');
+    expect(names).toContain('Test Bear');
+    expect(names).not.toContain('Forest');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -48209,14 +48254,16 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
     cards to count — not a side effect of a target-phrase change. It cost 26 cards with a script and
     one fully read, measured.
   */
-  it('keeps an Aura host to the exact phrases, not the parsed ones', () => {
+  // Retargeted by D1101: "Enchant planeswalker" is a host read by name now; a phrase off that list
+  // ("Enchant token") is still refused, which keeps the flag load-bearing.
+  it('keeps an Aura host to the exact phrases and the D1101 list, not the parsed ones', () => {
     const aura = compileCard({
       name: 'Probe Shackles', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2,
       colors: ['W'], power: null, toughness: null, loyalty: null, layout: 'normal',
-      oracle_text: 'Enchant planeswalker\nWhen this Aura enters, you gain 2 life.',
+      oracle_text: 'Enchant token\nWhen this Aura enters, you gain 2 life.',
     } as never);
     expect(aura.ok).toBe(true);
-    expect(aura.ok ? aura.unread.map((u) => u.line) : []).toContain('Enchant planeswalker');
+    expect(aura.ok ? aura.unread.map((u) => u.line) : []).toContain('Enchant token');
     // Still read as a target phrase in its own right, which is what makes the flag load-bearing.
     expect(specOf('destroy target planeswalker')).toMatchObject({ kind: 'permanent' });
   });

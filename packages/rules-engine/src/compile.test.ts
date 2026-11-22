@@ -9926,19 +9926,19 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
     expect(unreadLines(compiled)).toEqual(['At the beginning of the upkeep of enchanted player, that player loses 1 life.']);
   });
 
+  // Retargeted by D1101: these four were refusals (D469's exact host phrases); now each is a
+  // wider host read by name, with the count of legal Auras that print it.
   it.each([
-    // Refused by `targetSpecFrom`, which has no spec for any of them. Each is a real printed
-    // phrase, with the count of legal Auras that print it.
-    ['a planeswalker', 'Enchant planeswalker'],                 // 5
-    ['two types at once', 'Enchant artifact or creature'],      // 22
-    ['a type and a subtype', 'Enchant creature or Vehicle'],    // 10
-    ['a controller on a land', 'Enchant land you control'],     // 7
+    ['a planeswalker', 'Enchant planeswalker', 'permanent'],                 // 5
+    ['two types at once', 'Enchant artifact or creature', 'permanent'],      // 22
+    ['a type and a subtype', 'Enchant creature or Vehicle', 'permanent'],    // 10
+    ['a controller on a land', 'Enchant land you control', 'permanent'],     // 7
     // 'a colour' ("Enchant red or green creature") reads since D1010: D939 reads a narrower creature
     // host through the parsed vocabulary, and D1010 taught that vocabulary the two-colour pair.
-  ])('refuses "enchant %s"', (_label, declaration) => {
+  ])('reads "enchant %s" as a wider host (D1101)', (_label, declaration) => {
     const compiled = aura(`${declaration as string}\nWhen this Aura enters, you gain 2 life.`);
-    expect(attachment(compiled)).toBeUndefined();
-    expect(unreadLines(compiled)).toContain(declaration as string);
+    expect(attachment(compiled)).toBeDefined();
+    expect(unreadLines(compiled)).toEqual([]);
   });
 
   it('reads "Enchant red or green creature" since D1010', () => {

@@ -16890,8 +16890,21 @@ export function attachmentScriptFor(
       the Aura is attached as well, because CR 704.5m is checked against this same spec.
     */
     const parsedHost = targetSpecFrom(`target ${thing}`, kindly, true);
+    /*
+      **And a wider host, by name** (D1101): "Enchant land you control" (Utopia Sprawl's kin),
+      "Enchant basic land you control" (Ossification), "Enchant Forest", "Enchant artifact or
+      creature", "Enchant creature or Vehicle", "Enchant planeswalker". D469 kept the host
+      vocabulary to exact phrases so the attachment machinery was not widened by accident; these are
+      widened on purpose, each a kind of permanent an Aura is written onto and policed by CR 704.5m
+      through this same spec, as "Enchant land" already is. Read with the printed capitals, which
+      are what make "Forest" a subtype.
+    */
+    const printedThing = enchant[1]!.trim();
+    const WIDER_HOSTS = /^(?:(?:basic )?land you control|artifact you control|(?:Plains|Island|Swamp|Mountain|Forest|Desert)|planeswalker|Equipment|(?:artifact|creature|enchantment|land|planeswalker|Vehicle)(?: or (?:artifact|creature|enchantment|land|planeswalker|Vehicle))+)$/;
+    const widened = WIDER_HOSTS.test(printedThing) ? targetSpecFrom(`target ${printedThing}`, kindly, true) : null;
     const host = targetSpecFrom(`target ${thing}`, kindly, false)
-      ?? (parsedHost?.kind === 'creature' ? parsedHost : null);
+      ?? (parsedHost?.kind === 'creature' ? parsedHost : null)
+      ?? widened;
     if (host === null) return null;
     /*
       **The one trigger that does say whose creature the Aura wants (D575).**
@@ -17719,8 +17732,25 @@ function escapeShapeFor(def: CardDef, lines: readonly string[]): WholeCardReadin
 export function wholeCardShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
-  return attachmentScriptFor(def, lines)
-    ?? exileUntilLeavesShapeFor(def, lines)
+  /*
+    An Aura that also exiles until it leaves (D1101): Ossification, Dimensional Exile, Hardlight
+    Containment. Two shapes on one card, and the first match used to end the search, so the exile
+    pair went to the per-line loop, where no single line is a unit, and was never read. The exile
+    shape now reads what the Aura shape left, and the two are joined: their triggers side by side.
+  */
+  const attached = attachmentScriptFor(def, lines);
+  if (attached !== null) {
+    const exile = exileUntilLeavesShapeFor(def, lines.filter((line) => !attached.claimed.includes(line)));
+    if (exile === null) return attached;
+    const { triggers: exiling, ...rest } = exile.fragment;
+    const host = attached.fragment as Partial<CardScript>;
+    if (Object.keys(rest).some((key) => key in host)) return attached;
+    return {
+      fragment: { ...host, ...rest, triggers: [...(host.triggers ?? []), ...(exiling ?? [])] },
+      claimed: [...attached.claimed, ...exile.claimed],
+    };
+  }
+  return exileUntilLeavesShapeFor(def, lines)
     ?? handExileUntilLeavesShapeFor(def, lines)
     ?? soulbondShapeFor(def, lines)
     ?? bestowShapeFor(def, lines)
