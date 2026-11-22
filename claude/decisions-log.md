@@ -57120,3 +57120,39 @@ Faults injected by hand: 2.
 - The board offer switched off for this event (caught).
 
 Coverage: 15,069 of 31,900 cards (+7 over D1122's 15,062), 36,963 of 59,888 lines (+10).
+
+## D1124 — "whenever ~ becomes untapped", and enchantment creature tokens
+
+This adds a new trigger event, `becomes-untapped`. It is found the way a tap is (D994): `settle`
+compares each battlefield permanent before and after. So the untap step, an untap effect and a
+Seedborn Muse all raise it without knowing the event exists. A trigger from the untap step waits for
+the upkeep, where the first player gets priority (CR 502.4).
+
+It reads:
+- Inspired (Born of the Gods and Journey into Nyx; its ability word is stripped first), Key to the City and
+  Hollowsage, which are the permanent's own untap.
+- The board's untap, on D1121's filter: "whenever a permanent you control becomes untapped" (Wake
+  Thrasher).
+
+The token reader now takes "enchantment" as it took "artifact": "a 2/2 blue Bird enchantment
+creature token with flying" (the Inspired payers, Fated Intervention, the gods' tokens).
+
+26 tail cards read whole with the two together, among them Deepwater Hypnotist, Felhide
+Spiritbinder, Key to the City, King Macar, Pheres-Band Tromper, Siren of the Silent Song, Wake
+Thrasher, Aerie Worshippers, God-Favored General, Forlorn Pseudamma and Satyr Nyx-Smith.
+
+**Tests.** 4 engine tests:
+- The watchers and the token read whole.
+- Its own untap in the untap step pays at the upkeep, and another creature's untap does not.
+- "A permanent you control becomes untapped" counts the Forest that paid and the creature that was
+  tapped. On that watched board, a self watcher stays its own.
+- An enchantment creature token is an enchantment and a creature.
+
+The deck-coverage test exempts 'trigger becomes-untapped': no pool deck plays one.
+
+Faults injected by hand: 2. Both were caught, the first only after the test gained its
+watched-board case.
+- The self check removed.
+- The untap raise removed.
+
+Coverage: 15,095 of 31,900 cards (+26 over D1123's 15,069), 36,990 of 59,888 lines (+27).
