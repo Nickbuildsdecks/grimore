@@ -4414,6 +4414,13 @@ export interface CardScript {
    */
   readonly prototype?: { readonly cost: string; readonly power: number; readonly toughness: number };
   /**
+   * Impending (D1097, CR 702.176a): "Impending N—{cost}". An alternative cost (`impended`); a
+   * permanent cast for it enters with N time counters and the `IMPENDED` marker, and while it has
+   * both it is not a creature. The end-step trigger that takes a counter off is the keyword's
+   * own, in `triggers`.
+   */
+  readonly impending?: { readonly cost: string; readonly n: number };
+  /**
    * Cipher (D936, CR 702.99): as the spell resolves its controller may exile it **encoded** on a
    * creature they control, and whenever that creature deals combat damage to a player its
    * controller may cast a copy of the card without paying its mana cost. The choice is the spell's

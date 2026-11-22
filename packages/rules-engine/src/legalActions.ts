@@ -140,6 +140,8 @@ export interface LegalPlay {
   readonly awakened?: boolean;
   /** Set on the play that casts the card as a prototype (D934). */
   readonly prototyped?: boolean;
+  /** Cast for its impending cost (D1097). */
+  readonly impended?: boolean;
   /**
    * Set on the play that casts a copy of a prepared permanent's spell (D978): `card` is the
    * permanent and `half` is 0, its spell face. See `preparedCopyOf`.
@@ -2080,6 +2082,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
             note: `alternative cost (exile a ${COLOUR_NAMES[script.pitch.colour]} card from your hand${script.pitch.life === undefined ? '' : ` and pay ${script.pitch.life} life`})`,
             specs: specsFor(script),
           }]),
+        // Impending (D1097): cheaper, and not a creature until its time counters are gone.
+        ...(script?.impending === undefined ? [] : [{
+          flag: 'impended' as const,
+          cost: script.impending.cost,
+          note: `impending cost (${script.impending.cost}, enters with ${script.impending.n} time counters and is not a creature until the last is removed)`,
+          specs: specsFor(script),
+        }]),
         // Prototype (D934): the smaller, cheaper card.
         ...(script?.prototype === undefined ? [] : [{
           flag: 'prototyped' as const,

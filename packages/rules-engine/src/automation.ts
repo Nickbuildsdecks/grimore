@@ -41,7 +41,7 @@ import {
   SURGED,
   SQUADDED,
   createToken,
-  DASHED, EVOKED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
+  DASHED, EVOKED, IMPENDED, KICKED, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -6019,6 +6019,10 @@ function completeResolution(
         triggers (CR 603.4). A counter written afterwards would be a counter written too late.
       */
       if (object.evoked === true) next = addCounters(next, inst.id, EVOKED, 1);
+      // Impending (D1097): its time counters and the marker that it was impended, as it arrives.
+      if (object.impended === true && script?.impending !== undefined) {
+        next = addCounters(addCounters(next, inst.id, IMPENDED, 1), inst.id, TIME, script.impending.n);
+      }
       // Devour and amplify (D907): what was chosen as the spell resolved, counted onto it as it arrives.
       if (script?.entersCounting !== undefined) {
         const { kind, n } = script.entersCounting;

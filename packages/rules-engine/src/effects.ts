@@ -1024,7 +1024,12 @@ export const MONSTROUS = 'monstrous';
  * thing with counters on it.
  */
 // And the records D924, D928 and D933 write: squad's count, a surge and a blitz.
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS]);
+/**
+ * Impending (D1097): the permanent's impending cost was paid. Written as it arrives, beside its
+ * time counters; with at least one time counter it is not a creature (CR 702.176a).
+ */
+export const IMPENDED = 'impended';
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED]);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).

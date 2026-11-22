@@ -2009,6 +2009,8 @@ export interface ContinuousEffect {
         readonly kind: 'source-has-counter';
         readonly counter: string;
         readonly atLeast: number;
+        /** And at least one of this counter too (D1097): impending's time counter and its marker. */
+        readonly alsoCounter?: string;
         /**
          * And **fewer than** this many (D636): a level band's upper edge, "LEVEL 2-6" being at
          * least 2 and below 7. Absent: no upper edge.
@@ -2433,6 +2435,7 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];
     const held = source === undefined ? 0 : (source.counters[cond.counter] ?? 0);
+    if (cond.alsoCounter !== undefined && (source?.counters[cond.alsoCounter] ?? 0) <= 0) return false;
     return source !== undefined && held >= cond.atLeast && (cond.below === undefined || held < cond.below);
   }
   /*

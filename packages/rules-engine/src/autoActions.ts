@@ -598,10 +598,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const awakened = action.awakened === true;
   // And prototype (D934).
   const prototyped = action.prototyped === true;
-  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened || prototyped) {
+  // And impending (D1097).
+  const impended = action.impended === true;
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened || prototyped || impended) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
       : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : awakened ? 'awaken'
-        : prototyped ? 'prototype' : 'free cast';
+        : prototyped ? 'prototype' : impended ? 'impending' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -611,13 +613,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped, impended].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
       : bestowed ? script?.bestow : spectacled ? script?.spectacle
         : overloaded ? script?.overload : pitchCast ? script?.pitch : awakened ? script?.awaken
-          : prototyped ? script?.prototype : script?.freeWithCommander) === undefined) {
+          : prototyped ? script?.prototype : impended ? script?.impending : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     // Spectacle, and surge (D928), prowl and freerunning (D935): one flag, four conditions.
@@ -831,6 +833,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
             // And awaken (D932), another that replaces the printed cost.
             : awakened ? script?.awaken?.cost
             : prototyped ? script?.prototype?.cost
+            : impended ? script?.impending?.cost
               // And spectacle, the fifth and last of the chain: cheaper again, and the only one
               // whose availability is a fact about the turn rather than about the card.
               : spectacled ? script?.spectacle?.cost
@@ -1260,6 +1263,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And the flag the permanent's own life depends on: a creature that arrives from an evoked
     // casting is marked as it lands, and nothing else remembers by then how it was paid for.
     ...(evoked ? { evoked: true as const } : {}),
+    // And impending's (D1097), read as it arrives for its time counters.
+    ...(impended ? { impended: true as const } : {}),
     // And dash's, read at the same moment for the other consequence: haste, and a return to hand
     // scheduled as the permanent arrives.
     ...(dashed ? { dashed: true as const } : {}),

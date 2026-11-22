@@ -486,6 +486,8 @@ export interface StackObject {
    * arrives. See `EVOKED`.
    */
   readonly evoked?: true;
+  /** Cast for its impending cost (D1097): it arrives with its time counters and `IMPENDED`. */
+  readonly impended?: true;
   /**
    * Whether this spell was cast for its dash cost (CR 702.109a).
    *
@@ -1808,6 +1810,8 @@ export interface AutoCastAction {
   readonly awakened?: boolean;
   /** Cast as a prototype (D934). */
   readonly prototyped?: boolean;
+  /** Cast for its impending cost (D1097). */
+  readonly impended?: boolean;
   /**
    * Cast a copy of a prepared permanent's spell (D978): `card` is the permanent, `half` its spell
    * face (0, or absent). Refused when the permanent is not this seat's, not prepared, or has no

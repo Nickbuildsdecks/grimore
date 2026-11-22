@@ -35,7 +35,7 @@ import {
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
-  REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
+  IMPENDED, REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
@@ -11616,6 +11616,27 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   // Blitz (D933): dash's path with haste, a granted dies draw, and a sacrifice. See `CardScript.dash.blitz`.
   const blitz = /^blitz ((?:\{[^}]+\})+)$/i.exec(text);
   if (blitz !== null) return { dash: { cost: blitz[1]!, blitz: true }, triggers: [blitzSacrifice(), BLITZ_DIES_DRAW] };
+  /*
+    Impending N—{cost} (D1097): see `CardScript.impending`. The static that takes the creature type
+    away while it has a time counter and was impended, and "At the beginning of your end step,
+    remove a time counter from it".
+  */
+  const impending = /^impending (\d+)\s*[—–-]\s*((?:\{[^}]+\})+)$/i.exec(text);
+  if (impending !== null) {
+    return {
+      impending: { cost: impending[2]!, n: Number(impending[1]) },
+      statics: [{
+        scope: 'self',
+        effect: { removeTypes: ['Creature'], while: { kind: 'source-has-counter', counter: TIME, atLeast: 1, alsoCounter: IMPENDED } },
+      }],
+      triggers: [{
+        on: { kind: 'step', step: 'end', of: 'you' },
+        description: 'remove a time counter from it (impending)',
+        condition: (c) => (c.state.instances[c.source]?.counters[TIME] ?? 0) > 0,
+        effect: (c) => addCounters(c.state, c.source, TIME, -1),
+      }],
+    };
+  }
   // Prototype {cost} — P/T (D934): see `CardScript.prototype`.
   const prototype = /^prototype ((?:\{[^}]+\})+)\s*[—–-]\s*(\d+)\/(\d+)$/i.exec(text);
   if (prototype !== null) return { prototype: { cost: prototype[1]!, power: Number(prototype[2]), toughness: Number(prototype[3]) } };

@@ -7996,6 +7996,8 @@ describe('deck coverage', () => {
       'script attackTax',
       // D1088: mana added on a tap for mana (Wild Growth, Crypt Ghast); no pool deck plays one.
       'script tapManaExtra',
+      // D1097: impending (the Duskmourn Overlords); no pool deck plays one.
+      'script impending',
     ]);
 
     const declared = [
@@ -32156,6 +32158,50 @@ describe('gift: a promise to an opponent, read on the kicker (D1096)', () => {
     expect(offered).toHaveLength(2);
     expect(ids(gifted, 2, 'hand').length).toBe(ids(s, 2, 'hand').length + 1);
     expect(ids(gifted, 1, 'hand').length).toBe(ids(s, 1, 'hand').length);
+  });
+});
+
+describe('impending: cheaper, and not a creature until its time counters are gone (D1097)', () => {
+  // CR 702.176a: enters with N time counters, isn't a creature while it has one, loses one each end step.
+  const OVERLORD = { name: 'Test Overlord', type_line: 'Enchantment Creature — Avatar Horror', mana_cost: '{3}{W}{W}', cmc: 5, colors: ['W'], layout: 'normal', power: '5', toughness: '5', oracle_text: 'Impending 2—{1}{W} (If you cast this spell for its impending cost, it enters with two time counters and isn\'t a creature until the last is removed. At the beginning of your end step, remove a time counter from it.)' };
+  const deck = customDeck({
+    id: 'd1097', name: 'Overlords', entries: [{ name: 'Test Overlord', count: 2 }, { name: 'Plains', count: 58 }], data: [OVERLORD] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1097', 1: 'd1097' }, deckSpecs: { d1097: deck.deck },
+    hands: { 0: ['Test Overlord'] }, battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, impended: boolean) => {
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === 'Test Overlord' && (p.impended === true) === impended)!;
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: row.card, ...(impended ? { impended: true } : {}) } as Action)), 20);
+  };
+  const overlord = (s: GameState) => s.instances[find(s, 0, 'battlefield', 'Test Overlord')]!;
+  /** On to this seat's next end step, with its triggers resolved. */
+  const toMyEnd = (s: GameState) => drain(passBoth(advanceTo(s, 'end')), 20);
+
+  it('reads whole, and offers the impending cast beside the printed one', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(OVERLORD as never)).toMatchObject({ ok: true, unread: [] });
+    const rows = legalActions(table(), 0).plays.filter((p) => p.kind === 'cast' && p.name === 'Test Overlord');
+    expect(rows.map((p) => p.impended === true).sort()).toEqual([false, true]);
+  });
+
+  it('impended: two time counters, not a creature, and one fewer at each of your end steps', () => {
+    let s = cast(table(), true);
+    expect(overlord(s).counters.time).toBe(2);
+    expect(characteristicsOf(s, overlord(s)).isCreature).toBe(false);
+    s = toMyEnd(s);
+    expect(overlord(s).counters.time).toBe(1);
+    expect(characteristicsOf(s, overlord(s)).isCreature).toBe(false);
+    s = toMyEnd(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+    expect(overlord(s).counters.time ?? 0).toBe(0);
+    expect(characteristicsOf(s, overlord(s)).isCreature).toBe(true);
+  });
+
+  it('cast for its printed cost it is a creature at once, with no counters', () => {
+    const s = cast(table(), false);
+    expect(overlord(s).counters.time ?? 0).toBe(0);
+    expect(characteristicsOf(s, overlord(s)).isCreature).toBe(true);
   });
 });
 

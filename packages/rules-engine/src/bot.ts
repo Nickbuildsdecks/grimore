@@ -2537,6 +2537,7 @@ function candidateActions(
             ...(play.emerged === true ? { emerged: true } : {}),
             ...(play.awakened === true ? { awakened: true } : {}),
             ...(play.prototyped === true ? { prototyped: true } : {}),
+            ...(play.impended === true ? { impended: true } : {}),
             // And a prepared permanent's copy (D978): sent without it, a cast of face 0 of a
             // creature on the battlefield, which the engine refuses.
             ...(play.preparedCopy === true ? { preparedCopy: true } : {}),
