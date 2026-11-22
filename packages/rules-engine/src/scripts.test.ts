@@ -33065,6 +33065,51 @@ describe('a player dealt damage by any source, and "one or two" down to its mini
   });
 });
 
+describe('a card put into a graveyard from anywhere, and the Colossus shuffle (D1116)', () => {
+  // Kozilek and Ulamog's shuffle, Serra Avatar's, Blightsteel Colossus's replacement, Skola Grovedancer.
+  const C = (name: string, text: string, power = '2') => ({ name, type_line: 'Creature — Eldrazi', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power, toughness: power, oracle_text: text });
+  const TITAN = C('Test Titan', 'When Test Titan is put into a graveyard from anywhere, its owner shuffles their graveyard into their library.');
+  const COLOSSUS = C('Test Colossus', "If Test Colossus would be put into a graveyard from anywhere, reveal Test Colossus and shuffle it into its owner's library instead.");
+  const DANCER = C('Test Dancer', 'Whenever a creature card is put into your graveyard from anywhere, you gain 1 life.');
+  const BEAR = C('Test Bear', '');
+  const MURDER = { name: 'Test Murder', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const ROWS = [TITAN, COLOSSUS, DANCER, BEAR, MURDER];
+  const deck = customDeck({
+    id: 'd1116', name: 'Shuffles', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1116', 1: 'd1116' }, deckSpecs: { d1116: deck.deck },
+    hands: { 0: ['Test Murder'] }, battlefield: { 0: ['Swamp', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Murder'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', name) }] } as Action)), 40);
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [TITAN, COLOSSUS, DANCER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Titan reaching a graveyard shuffles the whole graveyard back', () => {
+    const s = table(['Test Titan']);
+    const library = ids(s, 0, 'library').length;
+    const after = kill(s, 'Test Titan');
+    expect(ids(after, 0, 'graveyard')).toEqual([]);
+    // The Titan and the Murder went back.
+    expect(ids(after, 0, 'library').length).toBe(library + 2);
+  });
+
+  it('the Colossus never reaches the graveyard: it goes into the library instead', () => {
+    const s = table(['Test Colossus']);
+    const after = kill(s, 'Test Colossus');
+    expect(namesIn(after, 0, 'graveyard')).toEqual(['Test Murder']);
+    expect(namesIn(after, 0, 'library')).toContain('Test Colossus');
+  });
+
+  it('a creature card into my graveyard gains; the instant does not', () => {
+    const s = table(['Test Dancer', 'Test Bear']);
+    expect(life(kill(s, 'Test Bear'), 0)).toBe(life(s, 0) + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

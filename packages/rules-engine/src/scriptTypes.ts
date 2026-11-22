@@ -1607,10 +1607,21 @@ export type TriggerEvent =
        * same channel exalted and evolve read their creature through.
        */
       readonly subject?: string;
-      /** Set by the engine: whose graveyard it arrived in. Nothing reads it yet; see above. */
+      /** Set by the engine: whose graveyard it arrived in. `into: 'yours'` reads it (D1116). */
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine: `battlefield` when the card arrived from there, absent otherwise. */
       readonly cameFrom?: 'battlefield';
+      /**
+       * "Whenever a **land** card is put into **your** graveyard from anywhere" (D1116): Skola
+       * Grovedancer, Slogurk; "a **Desert** card" (Yuma). The card's printed types, as a card in
+       * a graveyard has, and whose graveyard.
+       */
+      readonly what?: 'land' | 'creature' | 'artifact' | 'enchantment' | 'instant' | 'sorcery';
+      readonly ofSubtype?: string;
+      readonly into?: 'yours';
+      /** Set by the engine (D1116): the card's printed types and subtypes, lowercased. */
+      readonly subjectTypes?: readonly string[];
+      readonly subjectSubtypes?: readonly string[];
     }
   /**
    * "Whenever a creature you control is exiled" (CR 400.7) — the last zone change nothing could

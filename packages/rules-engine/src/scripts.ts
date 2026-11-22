@@ -18621,6 +18621,37 @@ const TRIGGER_SHAPES: readonly ({
     reading — so it is written out. Without it an Audacity would draw its controller a card every
     time anything reached any graveyard.
   */
+  /*
+    "When ~ is put into a graveyard from anywhere" (D1116): the Eldrazi titans' shuffle, Serra
+    Avatar's, Worldspine Wurm's — the card's own arrival in a graveyard, from any zone, fired from
+    the graveyard it reached (D569's `self`). "Your graveyard" says the same thing: a card always goes
+    to its owner's.
+  */
+  {
+    prologue: (self) => new RegExp(`^When ${self} is put into (?:a|your) graveyard from anywhere, (.+)$`, 'i'),
+    on: [{ kind: 'to-graveyard', who: 'self' }],
+  },
+  /*
+    "Whenever a land card is put into your graveyard from anywhere" (D1116): Skola Grovedancer,
+    Slogurk; "a Desert card" (Yuma); "another card" (Measure of Wickedness).
+  */
+  {
+    prologue: () => /^Whenever (?<who>an?|another) (?<what>land|creature|artifact|enchantment|instant|sorcery|[A-Z][A-Za-z'-]*)? ?card is put into (?<whose>your|a) graveyard from anywhere, (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const word = g.what;
+      const types = ['land', 'creature', 'artifact', 'enchantment', 'instant', 'sorcery'] as const;
+      const what = word === undefined ? undefined : types.find((t) => t === word.toLowerCase());
+      if (word !== undefined && what === undefined && !/^[A-Z]/.test(word)) return null;
+      return [{
+        kind: 'to-graveyard' as const,
+        who: /another/i.test(g.who!) ? 'another' as const : 'any' as const,
+        ...(what === undefined ? {} : { what }),
+        ...(word !== undefined && what === undefined ? { ofSubtype: word } : {}),
+        ...(/your/i.test(g.whose!) ? { into: 'yours' as const } : {}),
+      }];
+    },
+  },
   {
     prologue: (self) => new RegExp(
       `^When ${self} is put into a graveyard from the battlefield, (.+)$`, 'i',
@@ -24502,6 +24533,32 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         }),
       };
     }
+  }
+
+  /*
+    The card shuffling itself back (D1116), from the graveyard it has just reached: "shuffle it into
+    its owner's library" (Serra Avatar, Worldspine Wurm), and the Eldrazi titans' "its owner
+    shuffles their graveyard into their library", which takes the card with the rest. Only from a
+    graveyard: a card that has already gone elsewhere is a new object the line no longer means.
+  */
+  if (new RegExp(`^(?:shuffle (?:it|${selfRef(name)}) into its owner's library|its owner shuffles (?:it|${selfRef(name)}) into their library)$`, 'i').test(text)) {
+    return {
+      effect: (c) => {
+        const card = c.state.instances[c.source];
+        if (card === undefined || card.zone !== 'graveyard') return c.state;
+        return shuffleLibrary(putOnTopOfLibrary(c.state, c.source), card.owner);
+      },
+    };
+  }
+  if (/^its owner shuffles their graveyard into their library$/i.test(text)) {
+    return {
+      effect: (c) => {
+        const owner = c.state.instances[c.source]?.owner;
+        if (owner === undefined) return c.state;
+        const graveyard = listAt(c.state, zoneKey(owner, 'graveyard'));
+        return shuffleLibrary(graveyard.reduce((state, id) => putOnTopOfLibrary(state, id), c.state), owner);
+      },
+    };
   }
 
   /*
@@ -33607,6 +33664,26 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
       return { tapManaExtra: { watches: { yours: 'land' }, adds: 'produced' } };
     }
     return { tapManaExtra: { watches: { anyone }, adds: 'produced' } };
+  }
+  /*
+    "If ~ would be put into a graveyard from anywhere, reveal ~ and shuffle it into its owner's
+    library instead" (D1116): Blightsteel Colossus, Darksteel Colossus, Progenitus. The card's own
+    replacement, asked first and from wherever it went (see `replaceZoneChange`), so a milled or
+    discarded one goes back too. Revealing is the card's public move; nothing here hides it.
+  */
+  const tucks = new RegExp(`^if ${selfRef(name)} would be put into a graveyard from anywhere, (?:reveal (?:${selfRef(name)}|it) and )?shuffle it into its owner's library instead\\.?$`, 'i');
+  if (tucks.test(plain(line).trim())) {
+    return {
+      replaces: [{
+        on: 'to-graveyard',
+        description: "shuffled into its owner's library instead",
+        applies: (ctx) => ctx.subject === ctx.source,
+        instead: (ctx) => {
+          const card = ctx.state.instances[ctx.subject];
+          return card === undefined ? ctx.state : shuffleLibrary(putOnTopOfLibrary(ctx.state, ctx.subject), card.owner);
+        },
+      }],
+    };
   }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());

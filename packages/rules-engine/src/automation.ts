@@ -1491,6 +1491,11 @@ function triggerMatches(
       // "from the battlefield" (D569): a card that was milled, discarded or countered did not.
       if ((want.from ?? 'anywhere') === 'battlefield'
         && (event as { cameFrom?: string }).cameFrom !== 'battlefield') return false;
+      // What kind of card, and whose graveyard (D1116).
+      const card = event as { subjectSeat?: SeatIndex; subjectTypes?: readonly string[]; subjectSubtypes?: readonly string[] };
+      if (want.into === 'yours' && card.subjectSeat !== sourceSeat) return false;
+      if (want.what !== undefined && !(card.subjectTypes ?? []).includes(want.what)) return false;
+      if (want.ofSubtype !== undefined && !(card.subjectSubtypes ?? []).includes(want.ofSubtype.toLowerCase())) return false;
       const who = want.who ?? 'another';
       if (who === 'self') return isSubject;
       if (who === 'another') return !isSubject;
@@ -2370,6 +2375,15 @@ function raise(
   if (subject !== undefined && (event.kind === 'to-graveyard' || event.kind === 'combat-damage')) {
     const inst = next.instances[subject];
     if (inst !== undefined) event = { ...event, subjectSeat: inst.zoneSeat };
+    // And what the card is, as printed, for "a land card is put into your graveyard" (D1116).
+    if (inst !== undefined && event.kind === 'to-graveyard') {
+      const line = parseTypeLine(next.cardDefs[inst.defKey]?.typeLine);
+      event = {
+        ...event,
+        subjectTypes: line.types.map((t) => t.toLowerCase()),
+        subjectSubtypes: line.subtypes.map((t) => t.toLowerCase()),
+      };
+    }
   }
   // And whose permanent dealt it, for "a creature **you control** deals combat damage to an
   // opponent" (D566) — the live instance, as `combat-damage` reads it and for the same reason.
