@@ -894,7 +894,9 @@ export type TriggerEvent =
    * saying out loud: an entry trigger on a morph fires while the card has no abilities to fire it,
    * and this one fires when the card gets them.
    */
-  | { readonly kind: 'turned-face-up' }
+  // The board's too since D1123: "whenever a permanent is turned face up", "~ or another creature
+  // you control is turned face up". See `BoardSubjectFilter`.
+  | ({ readonly kind: 'turned-face-up' } & BoardSubjectFilter)
   /**
    * "When this creature transforms into ~" — a transforming double-faced card's own trigger
    * (CR 701.28, CR 603.2).

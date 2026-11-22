@@ -1265,7 +1265,7 @@ function boardSubjectMatches(
  * permanent or an emblem with a `who` of `any` or `another`. `raise` asks before it offers a tap or
  * a leave to the whole board, since a tap is raised for every land tapped for mana.
  */
-function boardWatched(state: GameState, kind: 'becomes-tapped' | 'leaves'): boolean {
+function boardWatched(state: GameState, kind: 'becomes-tapped' | 'leaves' | 'turned-face-up'): boolean {
   for (const key of Object.keys(state.zones)) {
     const battlefield = key.endsWith(':battlefield');
     if (!battlefield && !key.endsWith(':command')) continue;
@@ -1894,7 +1894,14 @@ function triggerMatches(
     }
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
-    case 'turned-face-up':
+    // And the board's version (D1123), the same question as D1121's.
+    case 'turned-face-up': {
+      const who = want.who ?? 'self';
+      if (who === 'any' || who === 'another') {
+        return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'turned-face-up' }>, sourceSeat, isSubject);
+      }
+      return isSubject;
+    }
     // And a transform, for exactly the same reason.
     case 'transformed':
     // And phasing (D1029), narrowed to its own permanent the same way.
@@ -2661,9 +2668,10 @@ function raise(
     Asked only while something watches, since one characteristics computation per land tapped for
     mana is what `selfOnly` below exists to avoid.
   */
-  const watchedByBoard = subject !== undefined && (event.kind === 'becomes-tapped' || event.kind === 'leaves')
+  const watchedByBoard = subject !== undefined
+    && (event.kind === 'becomes-tapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')
     && boardWatched(next, event.kind);
-  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'leaves')) {
+  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')) {
     const inst = next.vanished[subject as string] ?? next.instances[subject as string];
     if (inst !== undefined) {
       const ch = characteristicsOf(next, inst);

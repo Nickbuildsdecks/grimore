@@ -18572,6 +18572,28 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'etb' }, { kind: 'turned-face-up' }],
   },
   /*
+    The board's "turned face up" (D1123): "Whenever a permanent is turned face up" (Aphetto
+    Runecaster, Aven Farseer, Bonethorn Valesk), "a permanent you control", and "~ or another
+    creature / permanent you control is turned face up" (Pine Walker, Printlifter Ooze, Roalesk,
+    Sleuth Instructor). On D1121's board filter: offered to the board only while something watches.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? (?:(?<self>${self}) or another|(?<who>a|an|another)) (?<what>creature|permanent)(?<of> you control)? is turned face up, (?<clause>.+)$`,
+      'i',
+    ),
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const who = g.self !== undefined ? 'any' as const : BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+      if (who === undefined) return null;
+      return [{
+        kind: 'turned-face-up' as const, who,
+        ...(g.of === undefined ? {} : { of: 'you' as const }),
+        ...(/creature/i.test(g.what!) ? { what: 'creature' as const } : {}),
+      }];
+    },
+  },
+  /*
     ── The block, per creature (D480) ──────────────────────────────────────────────────────
 
     Ashmouth Hound, Thicket Basilisk's shape, Cave Tiger, Inferno Elemental: 47 legal lines across

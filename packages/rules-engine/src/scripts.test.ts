@@ -33333,6 +33333,45 @@ describe('graveyard arrivals: an opponent\'s graveyard, "creature or artifact", 
   });
 });
 
+describe('the board\'s "is turned face up" (D1123)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', cost = '{G}') => ({ name, type_line: type, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const FARSEER = C('Test Farseer', 'Whenever a permanent is turned face up, you gain 1 life.');
+  const PINE = C('Test Pine', 'Whenever Test Pine or another creature you control is turned face up, you gain 2 life.\nMorph {G}');
+  const SHELL = C('Test Shell', 'When Test Shell is turned face up, you gain 3 life.');
+  const MORPH = C('Test Morph', 'Morph {G}');
+  const ROWS = [FARSEER, PINE, SHELL, MORPH];
+  const deck = customDeck({
+    id: 'd1123', name: 'Faces', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const gained = (mine: readonly string[], morph: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1123', 1: 'd1123' }, deckSpecs: { d1123: deck.deck },
+      hands: { 0: [morph] }, battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', ...mine] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', morph);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, faceDown: true } as Action)), 30);
+    const before = life(s, 0);
+    s = drain(apply(s, { type: 'auto:turnUp', by: 0, card } as Action), 30);
+    expect(s.instances[card]!.faceDown).toBe(false);
+    return life(s, 0) - before;
+  };
+
+  it('reads the watchers whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [FARSEER, PINE, SHELL]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('any permanent turned up gains; "~ or another" counts itself and another', () => {
+    expect(gained(['Test Farseer'], 'Test Morph')).toBe(1);
+    expect(gained(['Test Pine'], 'Test Morph')).toBe(2);
+    expect(gained([], 'Test Pine')).toBe(2);
+  });
+
+  it("a permanent's own \"when ~ is turned face up\" stays its own on a watched board", () => {
+    expect(gained(['Test Farseer', 'Test Shell'], 'Test Morph')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
