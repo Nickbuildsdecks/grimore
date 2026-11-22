@@ -38884,3 +38884,53 @@ Growth test), and the shape check on the joined reading turned off (caught by D5
 its own, chosen only when kicked").
 
 Coverage: 14,918 of 31,900 cards (+11 over D1101's 14,907), 36,731 of 59,888 lines (+22).
+
+## D1103 — kickers paid in a sacrifice or in life
+
+Every kicker reader declared "Kicker {cost}" in mana. Eighteen legal cards print a kicker in
+something else, after an em dash: "Kicker—Sacrifice a creature." (Vicious Offering),
+"Kicker—Sacrifice an artifact or creature." (Final Flourish, Eject the Warp Core, Vayne's
+Treachery, Stomped by the Foot), "Kicker—Sacrifice a land." (Rushing River),
+"Kicker—{2}{R}, Sacrifice a land." (Dwarven Landslide), "Kicker—Pay 3 life." (Phyrexian Scuta).
+
+**The cost.** CR 702.33a makes a kicker an optional additional cost, so the rest is read by
+`additionalCostFromLine`, the reader of "As an additional cost to cast this spell, …". A kicker
+can eat exactly what an additional cost can. It rides the kicker as `kicker.additional`, and only
+a sacrifice or a life payment is taken.
+
+**The reading.** The declaration is swapped for one of its mana part (`{0}` when there is none)
+and the card goes through the kicker readers as before: `costKickerSpellFor` at the start of
+`spellScriptFor`, after the gift, and `costKickerPermanentShapeFor` after
+`kickerPermanentShapeFor` for a permanent. The printed declaration stays the kicker's
+description, so the table's row says "Cast Vicious Offering with kicker—sacrifice a creature".
+
+**The offer and the cast.** A kicked row is offered only when the sacrifice has a permanent to
+eat, or the life can be paid (CR 601.2h), and it carries the permanents on `sacrificeOptions`,
+the field an additional cost's victims travel on. The bot reads them the way it already does. The
+cast takes the kicker's sacrifice and life as the additional cost of the kicked cast only: the
+permanent is gone as the spell is cast, before anybody can respond. A card with an additional cost
+of its own and a cost kicker is not offered kicked, since one cast carries one sacrifice.
+
+Read whole: Vicious Offering, Final Flourish, Eject the Warp Core, Vayne's Treachery, Stomped by
+the Foot, Dwarven Landslide, Rushing River, Primal Growth and Phyrexian Scuta. Still unread:
+"Sacrifice two lands" (Bog Down, Magma Burst), "Return a creature you control to its owner's hand"
+(Arctic Merfolk), "Discard a creature card" (Dralnu's Pet), "Tap an untapped Vampire you control"
+(Blood Tribute), "an artifact or Goblin" (Goblin Barrage), and the cards whose kicked halves do not
+read (Falling Timber, Pollen Remedy).
+
+**Tests.** 4 engine tests:
+- Both test cards read whole.
+- The kicked cast is offered only with a creature to sacrifice, and it lists that creature.
+- Kicked, the creature is in the graveyard as soon as the spell is cast and the target gets
+  -5/-5. Unkicked, nothing is eaten and the target gets -2/-2. A kicked cast that names no victim
+  is refused.
+- A life kicker costs 3 life, and the permanent enters with its counters. Unkicked, neither.
+
+Retargeted (the D516 way): D561's refusal of "Kicker—Sacrifice a land." now reads, in a new test
+that checks `additional`. The refusal row keeps two costs nothing can pay ("Return a land you
+control to its owner's hand", "Sacrifice two lands").
+
+Faults injected by hand: 2. The offer's sacrifice check turned off (caught by the offer test), and
+the cast ignoring the kicker's cost (caught by both cast tests).
+
+Coverage: 14,927 of 31,900 cards (+9 over D1102's 14,918), 36,749 of 59,888 lines (+18).
