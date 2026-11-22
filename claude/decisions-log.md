@@ -56169,3 +56169,50 @@ read whole, so all five Overlords do. The other Planet cards are short on other 
 Faults injected by hand: 1 (the subtype not negated). It is caught.
 
 Coverage: 14,869 of 31,900 cards (+9 over D1097's 14,860), 36,566 of 59,888 lines (+9).
+
+## D1099 — a double kicker, and two target questions at once
+
+**Double kicker** (CR 702.32b): "Kicker {B} and/or {R}". Either, both or neither may be paid, and
+the card asks which. 18 legal cards. Archangel of Wrath is the Commander one.
+
+- **Engine:**
+  - `kicker.second` holds the second cost.
+  - The cast offers three kicked plays (either kicker, or both) beside the printed one, and the
+    choice travels as `kickedWith` on the play, the action and the stack object. The cost is the
+    printed one plus the kickers chosen.
+  - As the permanent arrives, it gets `KICKED` as before, plus `KICKED_FIRST` and/or
+    `KICKED_SECOND`.
+  - `kickerEntersWith` adds each paid kicker's counters and keywords.
+- **Reader:** `doubleKickerShapeFor`. Every kicker line must be one of:
+  - "When ~ enters, if it was kicked with its {X} kicker, …" (the Battlemages);
+  - "If ~ was kicked with its {X} kicker, it enters with N +1/+1 counters on it and with …" (the
+    volvers);
+  - "When ~ enters, if it was kicked [twice], …" (Archangel of Wrath).
+
+  Each condition is an intervening if on the markers.
+
+Archangel of Wrath, Sunscape, Thornscape, Thunderscape, Stormscape and Nightscape Battlemage, and
+Cetavolver now read whole. The other volvers grant quoted abilities the keyword list does not read.
+Spells with a double kicker (Illuminate, Temporal Firestorm), Wastescape's cast trigger and "for
+each time it was kicked" are not read yet.
+
+**A fix, found by this increment's test.** When two triggers that each want targets went on the
+stack together, the second's `pendingChoice` **replaced** the first's. The first then resolved
+aimed at nothing, silently. Archangel of Wrath kicked twice dealt 2 damage, not 4. Now
+`pendingChoice.queued` keeps the waiting questions: `withTargetQuestion` puts a new question in
+front of them, and `nextTargetQuestion` asks the next one once an answer is given (or once an
+unaimable one is removed). It applies to any card with two targeted enters triggers, not only
+kicker.
+
+**Tests.** 5 engine tests:
+- Three cards read whole, and four casts are offered.
+- "Kicked" and "kicked twice": no hit unkicked, one for either kicker, two for both.
+- "With its {W} kicker" runs only that kicker's line.
+- The volver gets each paid kicker's counters and keyword.
+- Two targeted enters triggers each get their question.
+
+Faults injected by hand: 1 (the queue never asked). Two tests catch it.
+
+The D561 compile row that pinned "Kicker {2} and/or {1}{R}" as unread is retargeted (the D516 way). It now asserts that the line reads as a double kicker with its second cost.
+
+Coverage: 14,876 of 31,900 cards (+7 over D1098's 14,869), 36,587 of 59,888 lines (+21).
