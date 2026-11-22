@@ -1335,6 +1335,9 @@ function triggerMatches(
     // Asked in `fireTrigger`, which knows the watcher (D1108).
     case 'permanents-entered':
       return true;
+    // And this (D1115): whose source and who was hit are asked from the watcher's side.
+    case 'player-damaged':
+      return true;
     case 'expend':
       return actorSeat === sourceSeat && (event as { n?: number }).n === want.n;
     // "Whenever you / an opponent / a player gains life" (D1039 for the opponent).
@@ -2009,6 +2012,18 @@ function fireTrigger(
   if (trigger.on.kind === 'creatures-died') {
     if (batchCount(trigger.on, event, holder, inst.zoneSeat) === 0) return next;
   }
+  // A player dealt damage (D1115): asked from the watcher's side.
+  if (trigger.on.kind === 'player-damaged') {
+    const want = trigger.on;
+    const hit = event.kind === 'player-damaged' ? event : undefined;
+    const mine = inst.zoneSeat;
+    if (hit?.defender === undefined) return next;
+    if ((want.to ?? 'any') === 'you' && hit.defender !== mine) return next;
+    if ((want.to ?? 'any') === 'opponent' && hit.defender === mine) return next;
+    if ((want.by ?? 'any') === 'you' && hit.sourceSeat !== mine) return next;
+    if ((want.by ?? 'any') === 'opponent' && (hit.sourceSeat === undefined || hit.sourceSeat === mine)) return next;
+    if (want.noncombat === true && hit.combat === true) return next;
+  }
   // "One or more [other] [nontoken] <kind> [you control] enter" (D1108): at least one in the batch.
   if (trigger.on.kind === 'permanents-entered') {
     if (batchCount(trigger.on, event, holder, inst.zoneSeat) === 0) return next;
@@ -2118,6 +2133,14 @@ function fireTrigger(
   */
   const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
     ? event.attacked
+    /*
+      "That player" after a player is dealt damage (D1115): the one hit, unless it was the watcher's
+      own controller, and then the one whose source hit them (Michiko Konda's "that player
+      sacrifices a permanent").
+    */
+    : event.kind === 'player-damaged' && event.defender !== undefined
+      ? (event.defender !== inst.zoneSeat ? { defender: event.defender }
+        : event.sourceSeat === undefined ? undefined : { defender: event.sourceSeat })
     : (event.kind === 'combat-damage' || event.kind === 'combat-damage-dealt'
       || event.kind === 'deals-damage')
       && event.defender !== undefined
@@ -2137,6 +2160,8 @@ function fireTrigger(
     ...(attacked === undefined ? {} : { attacked }),
     // How much damage the event was, for "that many" (D903).
     ...((event.kind === 'combat-damage' || event.kind === 'deals-damage' || event.kind === 'damaged'
+      // And a player dealt damage (D1115), for Niv-Mizzet's "you draw that many cards".
+      || event.kind === 'player-damaged'
       // And the life lost (D999), for Exquisite Blood's "that much"; and gained (D785), for Vito's.
       || event.kind === 'life-lost' || event.kind === 'life-gained')
       && event.amount !== undefined
@@ -4162,6 +4187,20 @@ function settle(state: GameState, before: GameState): GameState {
       next = raise(next, {
         kind: 'deals-damage', creature: true, blocked: creature, amount, ...(combat ? { combat: true } : {}),
       }, (next.vanished[source] ?? next.instances[source])?.zoneSeat, source);
+    }
+    /*
+      And a player dealt damage by anything, a spell's included (D1115): one event per landing, with
+      whose source it was. A spell's controller is its caster; a permanent's, as it dealt it.
+    */
+    for (const record of landed) {
+      if (record.to.kind !== 'player' || record.amount <= 0) continue;
+      const sourceSeat = record.controller
+        ?? (record.source === null ? undefined : (next.vanished[record.source] ?? next.instances[record.source])?.zoneSeat);
+      next = raise(next, {
+        kind: 'player-damaged', defender: record.to.seat, amount: record.amount,
+        ...(record.combat === true ? { combat: true as const } : {}),
+        ...(sourceSeat === undefined ? {} : { sourceSeat }),
+      }, undefined);
     }
     for (const record of landed) {
       if (record.to.kind === 'card') {

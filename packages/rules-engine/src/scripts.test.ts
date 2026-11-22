@@ -7986,6 +7986,8 @@ describe('deck coverage', () => {
       'trigger expend',
       // D1108: "whenever one or more … enter", batched; no pool deck plays one.
       'trigger permanents-entered',
+      // D1115: "a source you control deals noncombat damage to an opponent"; no pool deck plays one.
+      'trigger player-damaged',
       // D1004: state triggers ("When you control no Islands, sacrifice ~"); no pool deck plays one.
       'trigger state',
       // D762: ascend, 29 legal lines; the compiler reads them, no pool deck plays one.
@@ -33012,6 +33014,54 @@ describe('"your first instant or sorcery spell each turn" (D1114)', () => {
     expect(life(s, 0)).toBe(start + 1);
     s = cast(s, 'Test Opt');
     expect(life(s, 0)).toBe(start + 1);
+  });
+});
+
+describe('a player dealt damage by any source, and "one or two" down to its minimum (D1115)', () => {
+  // Niv-Mizzet, Visionary; Chandra's Spitfire; Farsight Mask. A spell's damage counts.
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Wizard', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: text });
+  const VISIONARY = C('Test Visionary', 'Whenever a source you control deals noncombat damage to an opponent, you draw that many cards.');
+  const MASK = C('Test Mask', 'Whenever a source an opponent controls deals damage to you, you gain 1 life.');
+  const SHOCK = { name: 'Test Shock', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', oracle_text: 'Test Shock deals 2 damage to any target.' };
+  const SAIL = { name: 'Test Sail', type_line: 'Sorcery', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'One or two target creatures gain flying until end of turn.' };
+  const ROWS = [VISIONARY, MASK, SHOCK, SAIL];
+  const deck = customDeck({
+    id: 'd1115', name: 'Burns', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 26 }, { name: 'Island', count: 26 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1115', 1: 'd1115' }, deckSpecs: { d1115: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Mountain', 'Island', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const shock = (s: GameState, by: SeatIndex, at: Target) => drain(passBoth(apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', 'Test Shock'), targets: [at] } as Action)), 30);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [VISIONARY, MASK]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a burn spell of mine to an opponent draws that many; to myself, nothing', () => {
+    const s = table(['Test Shock'], ['Test Visionary']);
+    const hand = ids(s, 0, 'hand').length;
+    expect(ids(shock(s, 0, { kind: 'player', seat: 1 }), 0, 'hand').length).toBe(hand - 1 + 2);
+    expect(ids(shock(s, 0, { kind: 'player', seat: 0 }), 0, 'hand').length).toBe(hand - 1);
+  });
+
+  it('an opponent\u2019s source dealing damage to me triggers my Mask; my own does not', () => {
+    const theirTurn = advanceTo(arena({
+      decks: { 0: 'd1115', 1: 'd1115' }, deckSpecs: { d1115: deck.deck },
+      hands: { 1: ['Test Shock'] }, battlefield: { 0: ['Test Mask'], 1: ['Mountain', 'Island'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    // 2 damage, then 1 life back for the Mask.
+    expect(life(shock(theirTurn, 1, { kind: 'player', seat: 0 }), 0)).toBe(life(theirTurn, 0) - 2 + 1);
+    const mine = table(['Test Shock'], ['Test Mask']);
+    expect(life(shock(mine, 0, { kind: 'player', seat: 0 }), 0)).toBe(life(mine, 0) - 2);
+  });
+
+  it('"one or two target creatures" is not offered with no creature, and is cast at one', () => {
+    const none = table(['Test Sail'], []);
+    expect(legalActions(none, 0).plays.some((p) => p.kind === 'cast' && p.name === 'Test Sail')).toBe(false);
+    const one = table(['Test Sail'], ['Test Mask']);
+    expect(legalActions(one, 0).plays.some((p) => p.kind === 'cast' && p.name === 'Test Sail')).toBe(true);
   });
 });
 

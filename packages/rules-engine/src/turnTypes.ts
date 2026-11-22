@@ -116,6 +116,8 @@ export interface DamageRecord {
     | { readonly kind: 'card'; readonly id: string };
   readonly source: string | null;
   readonly sourceInPlay: boolean;
+  /** Who controlled the source as it dealt the damage (D1115): a spell's caster, a permanent's controller. */
+  readonly controller?: SeatIndex;
   readonly amount: number;
   readonly combat?: true;
   /**

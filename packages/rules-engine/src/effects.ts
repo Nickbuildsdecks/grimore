@@ -652,7 +652,7 @@ export function dealDamage(
       const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - left) };
       next = withInstance(next, inst.id, { counters });
       if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
-      return recordDamage(next, target, left, opts.source);
+      return recordDamage(next, target, left, opts.source, opts.controller);
     }
     /*
       And to a creature, infect is `-1/-1` counters instead of marked damage (CR 702.90b) — as is
@@ -678,7 +678,7 @@ export function dealDamage(
       });
   }
   if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
-  return recordDamage(next, target, left, opts.source);
+  return recordDamage(next, target, left, opts.source, opts.controller);
 }
 
 /**
@@ -709,7 +709,7 @@ export function wasDealtDamageThisTurn(state: GameState, id: string): boolean {
  */
 function recordDamage(
   state: GameState, target: Exclude<Target, { kind: 'ability' }>, amount: number,
-  source: string | null,
+  source: string | null, controller?: SeatIndex,
 ): GameState {
   if (!state.automated) return state;
   const sourceInPlay = source !== null && state.instances[source]?.zone === 'battlefield';
@@ -722,7 +722,10 @@ function recordDamage(
     : [];
   let next: GameState = {
     ...state,
-    damageDealt: [...(state.damageDealt ?? []), { to, source, sourceInPlay, amount, ...(hosted.length === 0 ? {} : { hosted }) }],
+    damageDealt: [...(state.damageDealt ?? []), {
+      to, source, sourceInPlay, amount, ...(hosted.length === 0 ? {} : { hosted }),
+      ...(controller === undefined ? {} : { controller }),
+    }],
   };
   // "Was dealt damage this turn" (D759), whatever dealt it.
   if (to.kind === 'card' && amount > 0) {

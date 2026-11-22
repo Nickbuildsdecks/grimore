@@ -19015,6 +19015,33 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
   },
   /*
+    A player dealt damage by any source, a spell's included (D1115): see `player-damaged`.
+  */
+  {
+    prologue: () => /^Whenever a source (?<by>you control|an opponent controls) deals (?<non>noncombat )?damage to (?<to>an opponent|you), (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      return [{
+        kind: 'player-damaged' as const,
+        by: /you control/i.test(g.by!) ? 'you' as const : 'opponent' as const,
+        to: /opponent/i.test(g.to!) ? 'opponent' as const : 'you' as const,
+        ...(g.non === undefined ? {} : { noncombat: true as const }),
+      }];
+    },
+  },
+  {
+    prologue: () => /^Whenever (?<who>an opponent is|you're|you are|a player is) dealt (?<non>noncombat )?damage, (?<clause>.+)$/i,
+    from: (matched) => {
+      const g = matched.groups ?? {};
+      const who = g.who!.toLowerCase();
+      return [{
+        kind: 'player-damaged' as const,
+        to: who.startsWith('an opponent') ? 'opponent' as const : who.startsWith('a player') ? 'any' as const : 'you' as const,
+        ...(g.non === undefined ? {} : { noncombat: true as const }),
+      }];
+    },
+  },
+  /*
     "Your first / second instant or sorcery spell each turn" (D1114): Arcane Bombardment, Aquatic
     Alchemist, Baral and Kari Zev. Counted among the caster's instants and sorceries only, so a
     creature cast first does not use it up.
@@ -22219,7 +22246,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const clause = on.every((k) => k.kind === 'combat-damage' || k.kind === 'deals-damage' || k.kind === 'damaged'
       || k.kind === 'life-lost' || k.kind === 'life-gained'
       // And how many of a batch (D1110): "whenever one or more tokens you control enter, … that many".
-      || k.kind === 'permanents-entered' || k.kind === 'creatures-died')
+      || k.kind === 'permanents-entered' || k.kind === 'creatures-died'
+      // And a player dealt damage (D1115).
+      || k.kind === 'player-damaged')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;

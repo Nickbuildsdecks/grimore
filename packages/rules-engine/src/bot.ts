@@ -410,7 +410,8 @@ function chooseTargets(
         : bestFirst;
       const pick = allowed[0];
       if (pick === undefined) {
-        if (spec.optional) break;
+        // "One or two" (D1024) is optional only down to its minimum (D1115, sweep 61301).
+        if (spec.optional && taken >= (spec.min ?? 0)) break;
         return null;
       }
       used.add(targetKey(pick));

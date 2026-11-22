@@ -1580,7 +1580,12 @@ function playableTargets(
   state: GameState, specs: readonly TargetSpec[], seat: SeatIndex, source?: string,
 ): { ok: boolean; candidates: Target[][] } {
   const candidates = specs.map((spec) => legalTargets(state, spec, seat, source));
-  const ok = specs.every((spec, i) => spec.optional || (candidates[i]?.length ?? 0) > 0);
+  /*
+    An optional spec is optional down to its minimum (D1115): "one or two target creatures" with no
+    creature to target is not castable, and offering it had the bot cast Wind Sail at nothing, which
+    the cast then refused (sweep 61301, seed 61396).
+  */
+  const ok = specs.every((spec, i) => (candidates[i]?.length ?? 0) >= (spec.optional ? spec.min ?? 0 : 1));
   return { ok, candidates };
 }
 

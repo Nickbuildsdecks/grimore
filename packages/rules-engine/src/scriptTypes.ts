@@ -1331,6 +1331,25 @@ export type TriggerEvent =
    */
   | { readonly kind: 'expend'; readonly n: number }
   /**
+   * A **player** dealt damage, by any source, a spell's included (D1115): "Whenever a source you
+   * control deals noncombat damage to an opponent" (Niv-Mizzet, Visionary; Virtue of Courage),
+   * "Whenever an opponent is dealt noncombat damage" (Chandra's Spitfire), "Whenever a source an
+   * opponent controls deals damage to you" (Farsight Mask), "Whenever you're dealt damage"
+   * (Darien). One event per landing, combat damage per creature, as `deals-damage` is. `to` and
+   * `by` are asked from the watcher's side.
+   */
+  | {
+      readonly kind: 'player-damaged';
+      readonly to?: 'you' | 'opponent' | 'any';
+      readonly by?: 'you' | 'opponent' | 'any';
+      readonly noncombat?: true;
+      /** Set by the engine: who was dealt it, how much, whether in combat, and whose source. */
+      readonly defender?: SeatIndex;
+      readonly amount?: number;
+      readonly combat?: true;
+      readonly sourceSeat?: SeatIndex;
+    }
+  /**
    * "Whenever **one or more** [other] [nontoken] creatures [you control] **enter**" (D1108), and
    * artifacts, enchantments, lands, tokens, artifact creatures and creature tokens: one event per
    * settle for everything that arrived in it, so a spell making three tokens fires it once (CR
