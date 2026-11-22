@@ -39264,3 +39264,60 @@ Faults injected by hand: 2. The colour check and the mana value check each remov
 their tests).
 
 Coverage: 14,981 of 31,900 cards (+17 over D1111's 14,964), 36,825 of 59,888 lines (+23).
+
+## D1113 — death triggers with subject words, and the look-back in a wipe
+
+**Subject words on a death**, D1112's twin (`richDeathTrigger`, after the plainer death rows). These
+were refused, and now read:
+- "Whenever a nontoken creature an opponent controls dies" (Harvester of Souls, Fire Nation
+  Sentinels);
+- "another nontoken creature dies" (Ogre Slumlord);
+- "a creature token dies" (Grismold);
+- "a legendary creature you control dies";
+- "a white creature you control dies";
+- "a creature you own dies";
+- "a creature with power 4 or greater dies" with nobody's side named.
+
+A death now carries the creature's colours and whether it was legendary, as it last was. A "token"
+filter is asked of the death as `nontoken` already was.
+
+**The look-back (CR 603.10a), which was wrong.** A leaves-the-battlefield ability looks back in
+time: a permanent that leaves in the same event as others still "sees" them leave. D1000 gave that
+to the batched "one or more creatures die" trigger. The per-creature death events did not have it.
+
+A watcher destroyed in the same wipe was by then in a graveyard, so only its own death reached it:
+- "Whenever another creature dies" in a wipe saw nothing.
+- "Whenever ~ or another creature dies" (Blood Artist) saw only itself.
+- "Whenever a creature you control dies" (Zulaport Cutthroat, Grim Haruspex) likewise.
+
+A Blood Artist in a Wrath with four other creatures drained once instead of five times.
+
+A death event now carries the other permanents that died in the same settle pass (`alongside`).
+Each is asked about it from wherever it went, as an Aura from the creature it was on (D994) or a
+Morbid Opportunist from its own batch (D1000) already is. Pinned by a wipe test: itself, my Bear
+and their Bear is three; the Harvester still sees the opponent's Bear; the Mourner still sees my
+Hero.
+
+The new row steps aside for a line with no subject words at all ("Whenever another creature dies"), so the plainer rows keep reading those with their own shapes. The first pregate caught that row being taken.
+
+Read whole now: Harvester of Souls, Grismold, Fire Nation Sentinels, Ogre Slumlord, Overseer of the
+Damned.
+
+**Tests.** 4 engine tests:
+- Both test cards read whole.
+- An opponent's nontoken creature counts and mine does not.
+- A legendary creature of mine counts and a non-legendary one does not.
+- The wipe look-back test.
+
+The full rules-engine suite ran on this change, 5,922 tests. The only failures were D565's two
+rows below, both expected.
+
+Retargeted (the D516 way):
+- D565's refusal "a narrower death" ("Whenever a nontoken creature dies") now reads with its filter,
+  in a new test.
+- "Whenever a creature dies" keeps D565's exact shape: no `of` when nobody's side is named.
+
+Faults injected by hand: 2. The look-back removed (caught by the wipe test), and the legendary check
+removed (caught by the legendary test and the wipe test).
+
+Coverage: 14,991 of 31,900 cards (+10 over D1112's 14,981), 36,839 of 59,888 lines (+14).
