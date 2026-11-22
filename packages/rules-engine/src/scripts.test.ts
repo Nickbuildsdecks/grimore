@@ -32205,6 +32205,60 @@ describe('impending: cheaper, and not a creature until its time counters are gon
   });
 });
 
+describe('land tokens, and "a non-Avatar creature card" (D1098)', () => {
+  const R = (name: string, text: string, type = 'Sorcery') => ({ name, type_line: type, mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: text });
+  const EVERYWHERE = R('Test Everywhere', 'Create a tapped colorless land token named Everywhere that is every basic land type.');
+  const PLANET = R('Test Planet', 'Create a Planet land token named New Planet with "{T}: Add one mana of any color."');
+  const GROWTH = R('Test Growth', 'Create a Forest land token.');
+  const DIG = R('Test Dig', 'Mill four cards, then you may return a non-Avatar creature card from your graveyard to your hand.');
+  const AVATAR = { name: 'Test Avatar', type_line: 'Creature — Avatar', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: '', power: '3', toughness: '3' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', oracle_text: '', power: '2', toughness: '2' };
+  const ROWS = [EVERYWHERE, PLANET, GROWTH, DIG, AVATAR, BEAR];
+  const deck = customDeck({
+    id: 'd1098', name: 'Lands', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }], data: ROWS as never[],
+  });
+  const resolve = (spell: string, graveyard: string[] = []): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1098', 1: 'd1098' }, deckSpecs: { d1098: deck.deck },
+      hands: { 0: [spell] }, graveyard: { 0: graveyard }, battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action);
+    for (let i = 0; i < 8 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    return t;
+  };
+  const tokenSources = (s: GameState, name: string) => manaSources(s, 0).filter((src) => nameOf(s, src.key) === name);
+
+  it('reads all four whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [EVERYWHERE, PLANET, GROWTH, DIG]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Everywhere: a tapped land with every basic land type, which taps for any colour once untapped', () => {
+    const s = resolve('Test Everywhere');
+    const id = find(s, 0, 'battlefield', 'Everywhere');
+    expect(s.instances[id]!.tapped).toBe(true);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect(ch.isLand).toBe(true);
+    expect([...ch.typeLine.subtypes].sort()).toEqual(['Forest', 'Island', 'Mountain', 'Plains', 'Swamp']);
+    const untapped = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: false } } };
+    expect([...new Set(tokenSources(untapped, 'Everywhere').flatMap((src) => [...src.produces]))].sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+  });
+
+  it('a Planet land token with its quoted mana ability, and a Forest land token', () => {
+    const planet = resolve('Test Planet');
+    expect([...new Set(tokenSources(planet, 'New Planet').flatMap((src) => [...src.produces]))].sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+    const forest = resolve('Test Growth');
+    expect(ids(forest, 0, 'battlefield').filter((id) => forest.instances[id]!.isToken && nameOf(forest, id) === 'Forest')).toHaveLength(1);
+  });
+
+  it('"a non-Avatar creature card": the Bear may be returned, the Avatar is not offered', () => {
+    const s = resolve('Test Dig', ['Test Avatar', 'Test Bear']);
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(offered).toContain('Test Bear');
+    expect(offered).not.toContain('Test Avatar');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

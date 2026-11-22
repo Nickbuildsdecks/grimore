@@ -2679,6 +2679,16 @@ function cardWordMatch(word: string): ((line: TypeLine) => boolean) | null {
   const lower = word.toLowerCase();
   if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
   /*
+    "Non-" in front of a subtype (D1098): "a non-Avatar creature card" (Overlord of the Balemurk),
+    "a non-Human creature card". Capitalised after the hyphen, as a subtype always is; the
+    battlefield readers have read the same shape since D453.
+  */
+  const notSubtype = /^non-([A-Z][A-Za-z'-]*)$/.exec(word);
+  if (notSubtype !== null) {
+    const sub = notSubtype[1]!.toLowerCase();
+    return (line) => !hasSubtype(line, sub);
+  }
+  /*
     "Non" in front of a type or supertype (D717): "a nonland card", "a nonartifact, nonland card"
     (Chrome Mox). The word's own reading, negated; a "non" word whose rest is not one this function
     can name stays unread, as the rest would.
@@ -14465,6 +14475,26 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     if (n > 0) return { effect: (c) => addEnergy(c.state, c.controller, n) };
   }
 
+  /*
+    Land tokens (D1098), in the three shapes printed: "create a Forest land token" (Generated
+    Horizons), "create a tapped colorless land token named Everywhere that is every basic land type"
+    (Overlord of the Hauntwoods), and "create a tapped Planet land token named New Planet with
+    "{T}: Add one mana of any color."" (the Doctor Who Anomalies). A basic land type gives the token
+    its mana (CR 305.6); a quoted ability is the token's text, read the way a Treasure's is.
+  */
+  const landToken = /^[Cc]reate an? (tapped )?(?:(colorless) )?(?:([A-Z][a-z]+) )?land token(?: named ([A-Z][\w' ]*?))?(?: (that is every basic land type)| with "([^"]+)")?$/.exec(text);
+  if (landToken !== null && (landToken[3] === undefined || ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Planet', 'Desert', 'Cave'].includes(landToken[3]))) {
+    const [, tapped, , sub, named, every, quoted] = landToken;
+    const subtypes = every !== undefined ? ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] : sub === undefined ? [] : [sub];
+    if (named !== undefined || subtypes.length > 0) {
+      const def: CardDef = {
+        name: named ?? subtypes.join(' '),
+        typeLine: `Token Land${subtypes.length > 0 ? ` — ${subtypes.join(' ')}` : ''}`,
+        manaCost: '', cmc: 0, oracleText: quoted ?? '', colors: [],
+      };
+      return { effect: (c) => (tapped === undefined ? createToken(c.state, c.controller, def) : createTappedTokens(c.state, c.controller, def)) };
+    }
+  }
   // A token: the one family whose characteristics are entirely in the sentence. See `tokenEffect`.
   const token = tokenEffect(text, name);
   if (token !== null) return token;
