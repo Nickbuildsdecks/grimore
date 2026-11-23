@@ -1171,20 +1171,31 @@ export function abilityManaText(
 export function attackTaxFor(
   state: GameState, attacks: readonly { readonly defender: SeatIndex; readonly planeswalker?: string }[],
 ): number {
-  const perDefender = new Map<SeatIndex, number>();
-  const taxOf = (seat: SeatIndex): number => {
-    const known = perDefender.get(seat);
+  const perDefender = new Map<string, number>();
+  const taxOf = (seat: SeatIndex, walker: boolean): number => {
+    const key = `${seat}:${walker}`;
+    const known = perDefender.get(key);
     if (known !== undefined) return known;
     let sum = 0;
-    for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const theirs = listAt(state, zoneKey(seat, 'battlefield'));
+    for (const id of theirs) {
       const inst = state.instances[id];
       if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
-      sum += scriptForCard(state.cardDefs[inst.defKey])?.attackTax ?? 0;
+      const script = scriptForCard(state.cardDefs[inst.defKey]);
+      const tax = script?.attackTax;
+      if (tax === undefined || (walker && script?.attackTaxWalkers !== true)) continue;
+      // Sphere of Safety (D802): one for each enchantment its controller has, as it is now.
+      sum += tax === 'enchantments'
+        ? theirs.filter((other) => {
+          const there = state.instances[other];
+          return there !== undefined && hasType(characteristicsOf(state, there).typeLine, 'enchantment');
+        }).length
+        : tax;
     }
-    perDefender.set(seat, sum);
+    perDefender.set(key, sum);
     return sum;
   };
-  return attacks.reduce((total, a) => total + (a.planeswalker === undefined ? taxOf(a.defender) : 0), 0);
+  return attacks.reduce((total, a) => total + taxOf(a.defender, a.planeswalker !== undefined), 0);
 }
 
 /** The permanents on the battlefield with a `tapManaExtra` (D1088), found once per state. */
