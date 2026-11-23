@@ -58511,3 +58511,32 @@ Faults injected by script: 2 of 2 caught.
 
 Coverage: 15,548 to 15,554 of 31,900 cards with every line read, and 37,593 to 37,602 of 59,888
 lines, against fac438d.
+
+## D1151 — populate
+
+Populate (CR 701.36a) is printed on 26 legal cards and was read on none: "Choose a creature token
+you control, then create a token that's a copy of that creature token." It is now a clause:
+- **The question.** It is asked as the effect resolves, from the creature tokens you control.
+- **The copy.** It is made with `copyAsToken` off the token's own definition, which is its
+  copiable values, so counters, damage and effects on it are not copied.
+- **With no token, nothing happens.** A nontoken creature is never offered.
+
+"Create a 1/1 green Saproling creature token, then populate" makes the first token before the
+question is asked: the split at a chain's first question (D418) runs the clauses before it first.
+
+Read whole now: 18 of the 26 populate cards. Not read:
+- "populate X times";
+- "The token created this way gains haste" and "The token enters tapped and attacking";
+- "Whenever you attack with one or more Elves";
+- modal and other lines.
+
+**Tests.** 3 engine tests:
+- Both test spells read whole.
+- "Create a 1/1 Saproling, then populate" leaves two Saprolings, both tokens.
+- With only a nontoken Bear, "Populate." does nothing.
+
+Faults injected by hand: 1.
+- A nontoken creature offered (caught: the Bear is copied).
+
+Coverage: 15,633 of 31,900 cards (+24 over D1150's 15,609), 37,708 of 59,888 lines (+27). The difference also counts the D7xx
+session's D806, merged in after D1150 was measured; D1151's own share is the 18 populate cards.
