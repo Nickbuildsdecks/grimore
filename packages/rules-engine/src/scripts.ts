@@ -14318,6 +14318,28 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    The other direction (D793): "Permanents your opponents control lose hexproof and indestructible
+    until end of turn" (Shadowspear), "Creatures your opponents control lose flying until end of
+    turn". `removeKeywords` on the same frozen list (CR 611.2c), so a permanent arriving afterwards
+    keeps its keywords.
+  */
+  const theyLose = new RegExp(
+    `^(permanents your opponents control|${MASS_PUMP_SUBJECTS}) lose ([a-z][a-z', ]*?) until end of turn$`, 'i',
+  ).exec(text);
+  if (theyLose !== null) {
+    const words = grantedKeywordList(theyLose[2]!);
+    const permanents = /^permanents/i.test(theyLose[1]!);
+    const subject = permanents ? null : massPumpSubject(theyLose[1]!);
+    if (words !== null && (permanents || subject !== null)) {
+      return {
+        ...(subject?.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => pump(c.state, permanents
+          ? c.state.seats.filter((seat) => seat.index !== c.controller).flatMap((seat) => listAt(c.state, zoneKey(seat.index, 'battlefield')))
+          : subject!.ids(c), c.source, c.controller, { removeKeywords: words }),
+      };
+    }
+  }
   const teamGains = new RegExp(
     `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z', ]*?) until end of turn$`, 'i',
   ).exec(text);
@@ -18885,6 +18907,33 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'targeted', by: 'opponent' }],
   },
   /*
+    **A spell** rather than a spell or ability (D791): Fblthp, Departed Deckhand, Stormchaser Drake
+    ("… a spell you control"), Reality Smasher ("… a spell an opponent controls"). The same event
+    with `spellOnly`, which ward's machinery already sets on it.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? ${self} becomes the target of a spell(?<by> an opponent controls| you control)?, (?<clause>.+)$`, 'i',
+    ),
+    from: (m) => [{
+      kind: 'targeted' as const, spellOnly: true as const,
+      by: / opponent/i.test(m.groups?.by ?? '') ? 'opponent' as const : / you/i.test(m.groups?.by ?? '') ? 'you' as const : 'any' as const,
+    }],
+  },
+  /*
+    And "attacks or becomes the target of a spell" (D791): Goldspan Dragon, Tectonic Giant ("… a
+    spell an opponent controls"). Two events, one ability.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? ${self} attacks or becomes the target of a spell(?<by> an opponent controls)?, (?<clause>.+)$`, 'i',
+    ),
+    from: (m) => [
+      { kind: 'attacks' as const },
+      { kind: 'targeted' as const, spellOnly: true as const, by: m.groups?.by === undefined ? 'any' as const : 'opponent' as const },
+    ],
+  },
+  /*
     "When **enchanted creature** becomes the target of a spell or ability" (D998): the Aura watching
     its host, as D994's damage and tapping rows do. "Of a spell" alone is the narrower sentence and
     keeps to spells.
@@ -20692,6 +20741,20 @@ function countOfThing(
     own count off the stack, a permanent's off its `KICKED` marker (a multikicker's count, two for
     both kickers of a double kicker).
   */
+  /*
+    "For each spell you've cast this turn" (D792): Aetherflux Reservoir, Murmuration; "noncreature" and
+    "creature" from the per-kind tally, and "spells cast this turn" for everyone's. The turn's record
+    (`GameState.spellsCastThisTurnBy`), which counts a spell as it is cast, so a cast trigger counts
+    the spell that fired it.
+  */
+  const spellsCast = /^(?:the number of )?(noncreature |creature )?spells? (you've|you have) cast this turn$/i.exec(text);
+  if (spellsCast !== null) {
+    const kind = spellsCast[1]?.trim().toLowerCase();
+    return (c) => (kind === undefined
+      ? c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0
+      : c.state.spellsCastThisTurnByKind?.[`${c.controller}:${kind}`] ?? 0);
+  }
+  if (/^(?:the number of )?spells? cast this turn$/i.test(text)) return (c) => c.state.spellsCastThisTurn;
   if (new RegExp(`^(?:the number of )?times? (?:it|he|she|this spell|${self}) (?:was|were) kicked$`, 'i').test(text)) {
     return (c) => {
       const spell = c.resolving;
@@ -27686,6 +27749,23 @@ function readEffect(
     const verb = both[2]!.toLowerCase();
     const third = verb === 'scry' ? 'scries' : `${verb}s`;
     return composeEffects([`you ${verb}${both[3]!}`, `${both[1]!} ${third}${both[3]!}`], name, where);
+  }
+  /*
+    "Your opponents can't cast spells this turn" (D791): Silence, Mandate of Peace; "Target player
+    can't cast spells this turn", Orim's Chant's first sentence. See `GameState.castBannedTurn`.
+  */
+  const ban = (state: GameState, seats: readonly SeatIndex[]): GameState => ({
+    ...state,
+    castBannedTurn: { ...(state.castBannedTurn ?? {}), ...Object.fromEntries(seats.map((seat) => [String(seat), state.turn])) },
+  });
+  if (/^your opponents can't cast spells this turn$/i.test(clause.trim())) {
+    return { effect: (c) => ban(c.state, c.state.seats.filter((s) => s.index !== c.controller && !s.eliminated).map((s) => s.index)) };
+  }
+  if (/^target player can't cast spells this turn$/i.test(clause.trim())) {
+    return {
+      targets: [TARGET_PLAYER],
+      effect: (c) => { const seat = firstPlayerTarget(c); return seat === null ? c.state : ban(c.state, [seat]); },
+    };
   }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {

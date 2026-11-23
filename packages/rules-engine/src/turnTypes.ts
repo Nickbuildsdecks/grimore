@@ -1332,6 +1332,12 @@ export interface AutomationState {
    */
   readonly spellsCastThisTurnByKind?: Readonly<Record<string, number>>;
   /**
+   * "Can't cast spells this turn" (D791): Silence, Orim's Chant, Mandate of Peace. The turn number
+   * each seat is barred in, so it needs no reset: a ban from an earlier turn is a different number.
+   * Asked by `castProhibition`.
+   */
+  readonly castBannedTurn?: Readonly<Record<string, number>>;
+  /**
    * `spellsCastThisTurnBy` as it stood when the **previous** turn ended (D592).
    *
    * The werewolves' clock: "At the beginning of each upkeep, if no spells were cast last turn,

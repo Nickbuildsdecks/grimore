@@ -40228,3 +40228,77 @@ Faults injected by hand: 2.
 - Never kept (caught).
 
 Coverage: 15,327 of 31,900 cards (+8 over D1137's 15,319), 37,290 of 59,888 lines (+14).
+## D791 — "Becomes the target of a spell", and "can't cast spells this turn"
+
+Most-played order: Goldspan Dragon's first line (rank 359), Silence (392), Orim's Chant's first
+sentence (1671), Tectonic Giant's trigger (3181), Mandate of Peace's middle line (7624), Stormchaser
+Drake (9151), Fblthp's and Departed Deckhand's and Reality Smasher's triggers, and their kin.
+
+- **"Whenever ~ becomes the target of a spell, …"**, with "… a spell an opponent controls" and "… a
+  spell you control": the targeted event (ward's, D461) with `spellOnly`, which it already carried
+  for the enchanted-creature form (D998). An ability aimed at it does nothing.
+- **"Whenever ~ attacks or becomes the target of a spell, …"** (Goldspan Dragon, Tectonic Giant):
+  the two events on one ability.
+- **"Your opponents can't cast spells this turn"** and **"Target player can't cast spells this
+  turn"**: `GameState.castBannedTurn`, the turn number each seat is barred in, so there is nothing to
+  reset. `castProhibition` (D788) asks it where a cast is offered and where it is made.
+
+**Tests.** 6 engine tests: the cards read; Goldspan makes a Treasure for a spell aimed at it and none
+for an ability, and one when it attacks; the opponent-only trigger ignores its controller's own spell
+and fires for the opponent's; after Silence the opponent's spell is refused this turn and accepted on
+their own turn, while its caster's own spell is accepted; Orim's Chant bars the targeted player and not its caster.
+
+Faults injected by script: 7 of 7 caught (the caster's own spell after Silence was added after the
+first run missed a ban that reached the caster too).
+
+    engine tests: 6,006, all passing (on 218ada9)
+
+Coverage: 15,249 to 15,257 of 31,900 cards with every line read, and 37,203 to 37,216 of 59,888
+lines, against 218ada9.
+
+## D792 — "For each spell you've cast this turn"
+
+Most-played order: Aetherflux Reservoir (rank 364), then the count wherever a "for each" or "the
+number of" reads it: "for each noncreature spell you've cast this turn", "… creature spell …", and
+"the number of spells cast this turn" (everyone's).
+
+The turn's per-seat record (`GameState.spellsCastThisTurnBy`, and the per-kind tally beside it) is
+written as a spell is cast, so a cast trigger counts the spell that fired it: Aetherflux gains 1,
+then 2, then 3. Murmuration's "for each spell you've cast this turn, create …" leads with the count
+and stays unread, as does Surge of Brilliance's "from anywhere other than your hand".
+
+**Tests.** 4 engine tests: the cards read; Aetherflux gains 1, 2 and 3 over three spells; an
+opponent's spell cast in the same turn is not counted; "noncreature" counts two instants and the
+spell itself, not the creature between them.
+
+Faults injected by script: 3 of 3 caught (the opponent's-spell test was added after the first run
+missed a count of everyone's spells).
+
+    engine tests: 6,010, all passing (on c0eab10)
+
+Coverage: 15,257 to 15,261 of 31,900 cards with every line read, and 37,216 to 37,220 of 59,888
+lines, against c0eab10.
+
+## D793 — "Lose <keywords> until end of turn" on a mass subject
+
+Most-played order: Shadowspear's activated ability (rank 307), then "Creatures your opponents
+control lose flying until end of turn" and its kin.
+
+"Permanents your opponents control lose hexproof and indestructible until end of turn" and the same
+for every mass subject the team grant reads ("creatures your opponents control", "all creatures",
+…): `removeKeywords` on the list frozen as it resolves (CR 611.2c), so a permanent arriving later
+keeps its keywords. "Permanents" is every permanent on the opponents' battlefields, creature or not.
+The static form the Archetypes print ("… lose flying and can't have or gain flying") is a different
+rule and stays unread.
+
+**Tests.** 3 engine tests: the cards read; Shadowspear's ability strips hexproof and indestructible
+from the opponent's creature and indestructible from their noncreature artifact, leaves its
+controller's own creature alone, and is over by the next turn; "creatures your opponents control
+lose flying" grounds theirs and not ours.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,013, all passing (on beb147f)
+
+Coverage: 15,261 to 15,263 of 31,900 cards with every line read, and 37,220 to 37,223 of 59,888
+lines, against beb147f.
