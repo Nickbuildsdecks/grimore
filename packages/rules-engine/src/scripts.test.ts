@@ -34083,6 +34083,62 @@ describe('"becomes the target of a spell", and "can\'t cast spells this turn" (D
   });
 });
 
+describe('"for each spell you\'ve cast this turn" (D792)', () => {
+  const RESERVOIR = { name: 'Test Reservoir', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Whenever you cast a spell, you gain 1 life for each spell you've cast this turn." };
+  const GLIMPSE = { name: 'Test Glimpse', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Scry 1.' };
+  const PUP = { name: 'Test Pup', type_line: 'Creature — Dog', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const BURST = { name: 'Test Burst', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: "Draw a card for each noncreature spell you've cast this turn." };
+  const deck = customDeck({
+    id: 'd792', name: 'Storm',
+    entries: [{ name: 'Test Reservoir', count: 1 }, { name: 'Test Glimpse', count: 4 }, { name: 'Test Pup', count: 4 }, { name: 'Test Burst', count: 2 }, { name: 'Island', count: 49 }],
+    data: [RESERVOIR, GLIMPSE, PUP, BURST] as never[],
+  });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd792', 1: 'd792' }, deckSpecs: { d792: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolveAll = (s0: GameState) => { let s = s0; for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) s = s.pendingDecision !== null ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [] } as Action) : drain(passBoth(s)); return s; };
+  const cast = (s: GameState, name: string) => resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) }));
+
+  it('reads', () => {
+    for (const card of [RESERVOIR, BURST]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Aetherflux Reservoir: 1, then 2, then 3, counting the spell that fired it', () => {
+    let s = table(['Test Reservoir'], ['Test Pup', 'Test Pup', 'Test Pup']);
+    const start = life(s, 0);
+    s = cast(s, 'Test Pup');
+    expect(life(s, 0)).toBe(start + 1);
+    s = cast(s, 'Test Pup');
+    expect(life(s, 0)).toBe(start + 3);
+    s = cast(s, 'Test Pup');
+    expect(life(s, 0)).toBe(start + 6);
+  });
+
+  it("counts its controller's spells, not an opponent's cast the same turn", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd792', 1: 'd792' }, deckSpecs: { d792: deck.deck },
+      hands: { 0: ['Test Pup'], 1: ['Test Glimpse'] }, battlefield: { 0: ['Test Reservoir'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Glimpse') }));
+    const start = life(s, 0);
+    s = cast(s, 'Test Pup');
+    expect(life(s, 0)).toBe(start + 1);
+  });
+
+  it('"noncreature" counts only those: two instants and a creature, then the Burst draws three', () => {
+    let s = table([], ['Test Glimpse', 'Test Glimpse', 'Test Pup', 'Test Burst']);
+    s = cast(s, 'Test Glimpse');
+    s = cast(s, 'Test Glimpse');
+    s = cast(s, 'Test Pup');
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Burst');
+    // The Burst itself is the third noncreature spell; it left the hand and three came in.
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

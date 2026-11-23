@@ -57563,3 +57563,26 @@ first run missed a ban that reached the caster too).
 
 Coverage: 15,249 to 15,257 of 31,900 cards with every line read, and 37,203 to 37,216 of 59,888
 lines, against 218ada9.
+
+## D792 — "For each spell you've cast this turn"
+
+Most-played order: Aetherflux Reservoir (rank 364), then the count wherever a "for each" or "the
+number of" reads it: "for each noncreature spell you've cast this turn", "… creature spell …", and
+"the number of spells cast this turn" (everyone's).
+
+The turn's per-seat record (`GameState.spellsCastThisTurnBy`, and the per-kind tally beside it) is
+written as a spell is cast, so a cast trigger counts the spell that fired it: Aetherflux gains 1,
+then 2, then 3. Murmuration's "for each spell you've cast this turn, create …" leads with the count
+and stays unread, as does Surge of Brilliance's "from anywhere other than your hand".
+
+**Tests.** 4 engine tests: the cards read; Aetherflux gains 1, 2 and 3 over three spells; an
+opponent's spell cast in the same turn is not counted; "noncreature" counts two instants and the
+spell itself, not the creature between them.
+
+Faults injected by script: 3 of 3 caught (the opponent's-spell test was added after the first run
+missed a count of everyone's spells).
+
+    engine tests: 6,010, all passing (on c0eab10)
+
+Coverage: 15,257 to 15,261 of 31,900 cards with every line read, and 37,216 to 37,220 of 59,888
+lines, against c0eab10.

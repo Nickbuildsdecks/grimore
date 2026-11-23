@@ -20706,6 +20706,20 @@ function countOfThing(
     own count off the stack, a permanent's off its `KICKED` marker (a multikicker's count, two for
     both kickers of a double kicker).
   */
+  /*
+    "For each spell you've cast this turn" (D792): Aetherflux Reservoir, Murmuration; "noncreature" and
+    "creature" from the per-kind tally, and "spells cast this turn" for everyone's. The turn's record
+    (`GameState.spellsCastThisTurnBy`), which counts a spell as it is cast, so a cast trigger counts
+    the spell that fired it.
+  */
+  const spellsCast = /^(?:the number of )?(noncreature |creature )?spells? (you've|you have) cast this turn$/i.exec(text);
+  if (spellsCast !== null) {
+    const kind = spellsCast[1]?.trim().toLowerCase();
+    return (c) => (kind === undefined
+      ? c.state.spellsCastThisTurnBy[String(c.controller)] ?? 0
+      : c.state.spellsCastThisTurnByKind?.[`${c.controller}:${kind}`] ?? 0);
+  }
+  if (/^(?:the number of )?spells? cast this turn$/i.test(text)) return (c) => c.state.spellsCastThisTurn;
   if (new RegExp(`^(?:the number of )?times? (?:it|he|she|this spell|${self}) (?:was|were) kicked$`, 'i').test(text)) {
     return (c) => {
       const spell = c.resolving;
