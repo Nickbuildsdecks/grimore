@@ -42126,3 +42126,31 @@ Faults injected by hand: 3, all caught.
 - The old keyword split.
 
 Coverage: 15,885 of 31,900 cards (+19 over D1165's 15,866), 38,100 of 59,888 lines (+22). The difference also counts the D7xx session's D821 and D822, merged in after D1165 was measured.
+## D823 — Tokens counted by the dying creature's power: Elenda, Goldvein Hydra
+
+Most-played order: Elenda, the Dusk Rose (rank 1301) and Goldvein Hydra (rank 1425), with
+Elenda's Hierophant. The same reading now covers Murder Investigation, Nested Shambler,
+Stratagem Emulator and Threefold Thunderhulk.
+
+D1020 measured "its power" off the event's creature for life gained and cards drawn, but not for a
+token count: "create a number of tapped Treasure tokens equal to its power", or "create X 1/1 …
+tokens with lifelink, where X is Elenda's power".
+
+**Reader.** In the same block, on the same four events (entry, death, attack, combat hit),
+"create (a number of | X) <tokens>[ with <keywords>] (equal to its/that creature's power |,
+where X is its/that creature's/<self>'s power)" is read. The count is measured the way D1020
+measures: live while the creature is on the battlefield, and as it last was once it is gone,
+never below 0. `tokenEffect` gains an optional `countOverride` that takes the place of its own
+count tail. The clause then prints X, and a count tail of its own alongside one is refused.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- a 3/3 Hydra destroyed makes three tapped Treasures, and pumped to 5 power before it dies, five;
+- an Elenda referred to by its short name, pumped to 4 power and destroyed, makes four 1/1
+  lifelink Vampires.
+
+Faults injected by script: 4 of 4 caught. They cover the override ignored, a fixed count in place
+of the last-known power, keywords before the count refused, and the short name refused.
+
+- engine tests: 6202, all passing (on 85113d1)
+- Coverage: 15,821 to 15,828 of 31,900 cards with every line read, and 37,991 to 37,999 of 59,888 lines, against 85113d1.

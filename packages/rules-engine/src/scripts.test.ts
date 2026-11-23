@@ -37352,6 +37352,57 @@ describe('delayed sacrifice of the source or a target, and a token\'s Oxford-com
   });
 });
 
+describe('tokens counted by the dying creature\'s power, Elenda and Goldvein Hydra (D823)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Hydra', 'Creature — Hydra', 'When Test Hydra dies, create a number of tapped Treasure tokens equal to its power.', { power: '3', toughness: '3' }),
+    R('Test Elenda, the Rose', 'Legendary Creature — Vampire', "When Test Elenda dies, create X 1/1 white Vampire creature tokens with lifelink, where X is Test Elenda's power.", { power: '2', toughness: '2' }),
+    R('Test Growth', 'Instant', 'Target creature gets +2/+0 until end of turn.'),
+    R('Test Doom', 'Instant', 'Destroy target creature.'),
+  ];
+  const deck = customDeck({
+    id: 'd823', name: 'Measured', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[],
+  });
+  const kill = (creature: string, pumpFirst: boolean) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd823', 1: 'd823' }, deckSpecs: { d823: deck.deck },
+      hands: { 0: ['Test Growth', 'Test Doom'] }, battlefield: { 0: [creature] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const id = find(s, 0, 'battlefield', creature);
+    const cast = (t: GameState, card: string) => drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', card), targets: [{ kind: 'card', id }] })));
+    if (pumpFirst) s = cast(s, 'Test Growth');
+    s = cast(s, 'Test Doom');
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    expect(s.instances[id]!.zone).toBe('graveyard');
+    return s;
+  };
+  const tokens = (s: GameState, pattern: RegExp) => ids(s, 0, 'battlefield').filter((id) => pattern.test(nameOf(s, id)));
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 3/3 Hydra makes three tapped Treasures; pumped to 5 power before it dies, five', () => {
+    const plain = kill('Test Hydra', false);
+    const three = tokens(plain, /treasure/i);
+    expect(three).toHaveLength(3);
+    expect(three.every((id) => plain.instances[id]!.tapped)).toBe(true);
+    expect(tokens(kill('Test Hydra', true), /treasure/i)).toHaveLength(5);
+  });
+
+  it('Elenda by its short name: as many 1/1 lifelinkers as its power, as it last was', () => {
+    const s = kill('Test Elenda, the Rose', true);
+    const vampires = tokens(s, /vampire/i);
+    expect(vampires).toHaveLength(4);
+    const c = characteristicsOf(s, s.instances[vampires[0]!]!);
+    expect([c.power, c.toughness]).toEqual([1, 1]);
+    expect(c.keywords.has('lifelink')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
