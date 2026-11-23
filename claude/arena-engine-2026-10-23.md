@@ -41829,3 +41829,32 @@ Faults injected by hand: 3, all caught.
 - A land not counted for "an artifact, a creature, or a land".
 
 Coverage: 15,832 of 31,900 cards (+6 over D1161's 15,826), 38,015 of 59,888 lines (+6). The difference also counts the D7xx session's D816, merged in after D1161 was measured.
+## D818 — "Whenever a permanent you control enters tapped": Amulet of Vigor
+
+Most-played order: Amulet of Vigor (rank 1266). It is the corpus's one printing of the sentence.
+Tiller Engine prints the same prologue on a modal trigger and stays unread.
+
+**Engine.** The entry trigger gains `tapped?: true`, the mirror of D679's `untapped` (Mystic
+Sanctuary). It is asked of the arrival through the `subjectTapped` the engine already sets on an
+entry: a land that entered tapped and was then tapped or untapped by something else is still a
+tapped arrival.
+
+**Reader.** In `lineScriptFor`, "Whenever <a/an/another/one or more> … you control enters tapped,
+<effect>" is read as the same line without "tapped", and each trigger it makes takes `tapped`. That
+happens only when everything it makes is an entry trigger. "Untap it" in that sentence is the
+permanent that entered. The general "untap it" reader (D777) is a permanent's own trigger ("Whenever
+~ attacks, untap it") and would untap the Amulet, so this reader untaps the trigger's subject
+instead. No other card prints "… enters, untap it" about a board entry, so nothing else had that
+misreading.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- a land that enters tapped triggers the Amulet once and is untapped when the trigger resolves;
+- a Forest entering untapped triggers nothing, and without the Amulet the tapped land stays
+  tapped.
+
+Faults injected by script: 4 of 4 caught (no matcher, an inverted matcher, the flag not set, and
+the untap aimed at the Amulet).
+
+- engine tests: 6184, all passing (on b54095c)
+- Coverage: 15,810 to 15,811 of 31,900 cards with every line read, and 37,970 to 37,971 of 59,888 lines, against b54095c.

@@ -35416,6 +35416,34 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     `controller-lands` scope, the same grant table the creature lords use. Only an activated
     ability (a mana ability, in every printing that matters) is read.
   */
+  /*
+    "Whenever a permanent you control enters tapped, untap it" (D818): Amulet of Vigor. The line
+    without "tapped", read as the board-entry trigger it then is, with `tapped` on each entry
+    trigger. Only when every trigger it makes is an entry.
+  */
+  const tappedEntry = /^(whenever (?:a|an|another|one or more) .+? you control) enters tapped, (.+)$/i.exec(plain(line).trim());
+  if (tappedEntry !== null) {
+    const inner = lineScriptFor(`${tappedEntry[1]!} enters, ${tappedEntry[2]!}`, name);
+    const triggers = inner?.triggers ?? [];
+    const entries = (on: TriggerDef['on']): boolean => (Array.isArray(on) ? on : [on]).every((o) => o.kind === 'etb');
+    if (inner !== null && Object.keys(inner).every((key) => key === 'triggers') && triggers.length > 0
+      && triggers.every((t) => entries(t.on))) {
+      /*
+        "Untap it" here is the permanent that entered, not this card: the D777 reading of "untap
+        it" is a permanent's own trigger ("Whenever ~ attacks, untap it"), so it is replaced.
+      */
+      const untapsSubject = /^untap it\.?$/i.test(tappedEntry[2]!.trim());
+      return {
+        triggers: triggers.map((t) => ({
+          ...t,
+          on: Array.isArray(t.on) ? t.on.map((o) => ({ ...o, tapped: true as const })) : { ...t.on, tapped: true as const },
+          ...(untapsSubject
+            ? { effect: (c: EffectContext) => (c.subject === undefined ? c.state : tap(c.state, c.subject, false)) }
+            : {}),
+        })) as TriggerDef[],
+      };
+    }
+  }
   const landGrant = /^lands you control have "([^"]+)"\.?$/i.exec(plain(line).trim());
   if (landGrant !== null) {
     const granted = grantedAbilityFrom(landGrant[1]!, name);
