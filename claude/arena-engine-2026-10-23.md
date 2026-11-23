@@ -41221,3 +41221,40 @@ missed both of its new words).
 
 Coverage: 15,573 to 15,606 of 31,900 cards with every line read, and 37,628 to 37,667 of 59,888
 lines, against 45be74b.
+
+## D1154 — roll a d20, with its table
+
+The Forgotten Realms cards print a die roll on one line and its results on the lines under it:
+"Roll a d20." then "1—9 | …", "10—19 | …", "20 | …" (CR 706.2). Each printed line was read alone, so
+none of the 37 table cards was read. The table is now read as one:
+- **The group.** `dieTableFor` finds the roll line and claims the rows beneath it. It requires that
+  they cover every result from 1 to the die's size once, with no gap and no overlap.
+- **The marker.** The roll is replaced by a marker clause, "roll a die for table N", and the line
+  around it is read as usual: a spell's line, a trigger's "When ~ enters, …", an ability's
+  "{T}: …". A first marker was a control character, which the clause readers drop before any
+  reader sees it, so nothing read; the plain-words marker does.
+- **The rows.** Each row is read by `composeEffects`. A row that targets or asks a question is
+  refused: a table's targets depend on the result, and this engine chooses targets on the stack.
+- **The roll.** `rollDie` uses the seeded generator, and the log says "Nick rolls 14 on a d20".
+- **Line counts.** The printed lines are reported compiled together, or unread together.
+- **The table store.** Tables are kept by their own text, so compiling a card again does not grow
+  the store.
+
+Read whole now: 8 of the 61 die-roll cards (Chaos Channeler, Farideh's Fireball, Hoarding Ogre,
+Lightfoot Rogue, Nothic, Overwhelming Encounter, Recruitment Drive, Sylvan Shepherd). Not read:
+- rows that target;
+- "roll a d20. When you do …", and "… equal to the result";
+- "roll two d8 and choose one result".
+
+**Tests.** 3 engine tests:
+- A three-row d20 spell reads, with all four printed lines compiled.
+- A table with a gap stays unread, and a whole table on an enters trigger reads.
+- Across thirty seeds each roll gains the life of the row it lands in (1, 3 or 10), and the log
+  line says the number.
+
+Faults injected by hand: 2.
+- The row bounds off by one (caught).
+- The coverage check skipped (caught: the table with a gap reads).
+
+Coverage: 15,715 of 31,900 cards (+41 over D1153's 15,674), 37,832 of 59,888 lines (+73). The difference also counts the D7xx
+session's D809, merged in after D1153 was measured; D1154's own share is the 8 die-roll cards.
