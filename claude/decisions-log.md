@@ -58812,3 +58812,46 @@ own seat was added to the test after the first run missed a win that eliminated 
 
 Coverage: 15,612 to 15,620 of 31,900 cards with every line read, and 37,676 to 37,688 of 59,888
 lines, against 4aafb36.
+
+## D1156 — suspect
+
+Suspect (CR 701.60) is printed on 26 legal cards and was read on none. A suspected
+creature has menace and can't block for as long as it is on the battlefield. `CardInstance.suspected`
+holds it and `characteristicsOf` turns it into menace and `cantBlock`.
+
+Three printed forms:
+- **"Suspect target creature"** and "suspect up to one target creature".
+- **"Suspect it"** with no earlier target is the source (Barbed Servitor, Person of Interest), and
+  "suspect enchanted creature" is the Aura's host (Convenient Target, Incriminating Impetus).
+- **"Suspect it" after a target.** After a creature target the D530 borrow reads it. After a
+  graveyard card target (It Doesn't Add Up: "Return target creature card from your graveyard to the
+  battlefield. Suspect it.") it is read beside D723's counter: the returned card is suspected, and
+  a card that never arrived is not. The plain reading of "it" as the source is refused after a card
+  target: the spell would have suspected itself, a wrong card that the first version of this test
+  caught.
+
+**A fix to D1153.** `relocate` now clears `manifested` and `suspected` when a card leaves the
+battlefield. Before, a manifested card that died and came back face up still carried the flag, so
+it would have been offered a turn-up for its mana cost.
+
+Read whole now: 9 of the 26 (Barbed Servitor, Caught Red-Handed, Convenient Target, Incriminating
+Impetus, It Doesn't Add Up, J. Jonah Jameson, Person of Interest, Presumed Dead, Reasonable Doubt).
+Not read:
+- "if it's suspected" and "if it's not suspected" (Agrus Kos, Repeat Offender, Rubblebelt Braggart);
+- "suspected creature" as a filter (Deadly Complication, Rune-Brand Juggler);
+- "no longer suspected" (Absolving Lammasu, Eliminate the Impossible);
+- suspect counters (Investigator's Journal).
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- "Suspect it" on an arrival: the creature has menace and can't block.
+- Destroyed, it is no longer suspected.
+- "Suspect it" after a graveyard target suspects the returned creature, not the spell.
+- A manifested, suspected card moved to the graveyard has neither flag.
+
+Faults injected by hand: 3, all caught.
+- No menace and no can't-block.
+- No reset in `relocate`.
+- No graveyard-target reading: the card is then unread rather than misread.
+
+Coverage: 15,742 of 31,900 cards (+9 over D1155's 15,733), 37,871 of 59,888 lines (+13).
