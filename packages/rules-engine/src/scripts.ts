@@ -16796,7 +16796,17 @@ function grantedAbilityFrom(
  * grant readers read (D736): `has "Ward {2}"`. Ward is a triggered ability (CR 702.21a).
  */
 function wardAsQuoted(predicate: string): string {
-  return predicate.replace(/\b(has|have) ward (\{[^}]+\})$/i, (_m, verb: string, cost: string) => `${verb} "Ward ${cost}"`);
+  /*
+    And ward at the end of a keyword list (D813): "has lifelink and ward {2}", "have trample,
+    lifelink, and ward {2}". The list keeps its verb and the ward gets one of its own, `has
+    lifelink and has "Ward {2}"`, which is the shape both grant readers split on.
+  */
+  return predicate.replace(
+    /\b(has|have) (?:([a-z][a-z ,]*?),? and )?ward (\{[^}]+\})$/i,
+    (_m, verb: string, list: string | undefined, cost: string) => (list === undefined
+      ? `${verb} "Ward ${cost}"`
+      : `${verb} ${list} and ${verb} "Ward ${cost}"`),
+  );
 }
 
 /** `Equipped creature gets +2/+0 and has trample.` as the bonus, and whether it harms its host. */
@@ -16913,7 +16923,7 @@ function attachmentBonus(
     the `has` branch below because the quoted text contains commas and the keyword splitter would
     shred it; the docblock on that branch records that this is what used to refuse these cards.
   */
-  const quoted = /^has\s+(?:(.+?)\s+and\s+)?"([^"]+)"$/i.exec(tail);
+  const quoted = /^has\s+(?:(.+?)\s+and\s+(?:has\s+)?)?"([^"]+)"$/i.exec(tail);
   if (quoted !== null) {
     /*
       A trigger or an activated ability, asked in that order and refused if it is neither (D512).

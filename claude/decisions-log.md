@@ -58903,3 +58903,31 @@ Faults injected by hand: 2, both caught.
 - The branch always taking the first half.
 
 Coverage: 15,752 of 31,900 cards (+10 over D1156's 15,742), 37,885 of 59,888 lines (+14). The difference also counts the D7xx session's D811, merged in after D1156 was measured; D1157's own share is the 2 cards above.
+## D813 — Ward at the end of a keyword list: Sheltered by Ghosts
+
+Most-played order: Sheltered by Ghosts (rank 1206), and the Equipment and lords that print ward
+last in a list: Falcon's Wing Harness, Lavaspur Boots, Winged Boots, Super Strength, Giant Ankheg,
+One, Borg Evolved, and Shelob's "Other Spiders you control have deathtouch and ward {2}".
+
+D736 turned "has ward {N}" into the quoted ward trigger the grant readers know, but only when ward
+was the whole predicate. `wardAsQuoted` now also takes a keyword list in front of it ("has lifelink
+and ward {2}", "have trample, lifelink, and ward {2}"), keeps the list under its verb and gives the
+ward a verb of its own: `has lifelink and has "Ward {2}"`. The static grant reader already split on
+`and has "…"`. The attachment's quoted reader now accepts the second "has" too. Nothing new in the
+engine: the keywords go through `grantedKeywords` / `thresholdPredicate` and the ward through
+`grantedTriggers`, as before.
+
+Still unread: The Tarrasque ("… and ward {10} as long as it was cast": a condition about how it
+entered) and the "exactly one creature" and "during your turn" wrappers on Solitary Defiance and Yuna.
+
+**Tests.** 3 engine tests: the cards read; an Equipment's +1/+1, flying and ward {1} all reach the
+equipped creature, and an opponent's removal on it asks for {1}; an anthem's trample, lifelink and
+ward {2} reach our creature, where removal asks for {2}, and not the opponent's, where it resolves
+unasked. D736's tests pass unchanged.
+
+Faults injected by script: 4 of 4 caught, among them dropping the ward, dropping the list, and
+refusing the list. A fifth, reverting the size-and-grant regex, was missed. That showed the change
+was unneeded, so it was reverted.
+
+- engine tests: 6153, all passing (on 12d14a9)
+- Coverage: 15,748 to 15,755 of 31,900 cards with every line read, and 37,883 to 37,892 of 59,888 lines, against 12d14a9.

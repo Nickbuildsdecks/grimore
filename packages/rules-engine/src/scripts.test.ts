@@ -36263,6 +36263,65 @@ describe('"if it\'s (not) suspected", and "If …, A. Otherwise, B." (D1157)', (
   });
 });
 
+describe('ward at the end of a keyword list, Sheltered by Ghosts (D813)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Harness', 'Artifact — Equipment', 'Equipped creature gets +1/+1 and has flying and ward {1}.\nEquip {0}'),
+    R('Test Ward Banner', 'Enchantment', 'Creatures you control have trample, lifelink, and ward {2}.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Doom', 'Instant', 'Destroy target creature.'),
+  ];
+  const deck = customDeck({
+    id: 'd813', name: 'Ward lists',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (hands: Record<number, string[]>, battlefield: Record<number, string[]>) => advanceTo(arena({
+    decks: { 0: 'd813', 1: 'd813' }, deckSpecs: { d813: deck.deck }, hands, battlefield, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an Equipment's size, flying and ward {1} all reach the equipped creature", () => {
+    let s = table({ 1: ['Test Doom'] }, { 0: ['Test Harness', 'Test Bear'], 1: ['Forest', 'Forest'] });
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const harness = find(s, 0, 'battlefield', 'Test Harness');
+    const equip = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === harness)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: harness, abilityIndex: equip.abilityIndex ?? 0, targets: [{ kind: 'card', id: bear }] })));
+    const c = characteristicsOf(s, s.instances[bear]!);
+    expect(c.power).toBe(3);
+    expect(c.keywords.has('flying')).toBe(true);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: bear }] });
+    expect(s.stackOrder).toHaveLength(2);
+    s = drain(passBoth(s));
+    expect(s.pendingPayment?.seat).toBe(1);
+    expect(s.pendingPayment?.cost).toBe('{1}');
+  });
+
+  it("a lord's list gives trample, lifelink and ward {2} to ours and nothing to theirs", () => {
+    let s = table({ 1: ['Test Doom', 'Test Doom'] }, { 0: ['Test Ward Banner', 'Test Bear'], 1: ['Test Bear', 'Forest', 'Forest'] });
+    const ours = find(s, 0, 'battlefield', 'Test Bear');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const c = characteristicsOf(s, s.instances[ours]!);
+    expect(c.keywords.has('trample')).toBe(true);
+    expect(c.keywords.has('lifelink')).toBe(true);
+    expect(characteristicsOf(s, s.instances[theirs]!).keywords.size).toBe(0);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    const onOurs = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: ours }] });
+    expect(onOurs.stackOrder).toHaveLength(2);
+    const after = drain(passBoth(onOurs));
+    expect(after.pendingPayment?.cost).toBe('{2}');
+    const onTheirs = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Doom'), targets: [{ kind: 'card', id: theirs }] });
+    expect(onTheirs.stackOrder).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
