@@ -4374,6 +4374,8 @@ export interface CardScript {
       | 'artifacts-you-control' | 'all-artifacts' | 'all-enchantments' | 'other-enchantments'
       /** "(Other) permanents you control have indestructible" (D801): Avacyn, Privileged Position. */
       | 'permanents-you-control' | 'other-permanents-you-control'
+      /** "(Other) enchantments you control have shroud", "Other artifacts you control have …" (D819). */
+      | 'enchantments-you-control' | 'other-enchantments-you-control' | 'other-artifacts-you-control'
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
       | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean }
       /**

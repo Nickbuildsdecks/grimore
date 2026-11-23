@@ -36657,6 +36657,48 @@ describe('"whenever a permanent you control enters tapped", Amulet of Vigor (D81
   });
 });
 
+describe('"other enchantments / artifacts you control have …", Sterling Grove (D819)', () => {
+  const R = (name: string, type: string, text: string) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    R('Test Grove', 'Enchantment', 'Other enchantments you control have shroud.'),
+    R('Test Forge', 'Artifact', 'Other artifacts you control have indestructible.'),
+    R('Test Charm', 'Enchantment', ''),
+    R('Test Trinket', 'Artifact', ''),
+  ];
+  const deck = customDeck({
+    id: 'd819', name: 'Grove',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }],
+    data: ROWS as never[],
+  });
+  const s = advanceTo(arena({
+    decks: { 0: 'd819', 1: 'd819' }, deckSpecs: { d819: deck.deck },
+    battlefield: { 0: ['Test Grove', 'Test Forge', 'Test Charm', 'Test Trinket'], 1: ['Test Charm', 'Test Trinket'] },
+    turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const kw = (seat: 0 | 1, name: string) => characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!).keywords;
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our other enchantment has shroud; the Grove itself and the opponent\'s enchantment do not', () => {
+    expect(kw(0, 'Test Charm').has('shroud')).toBe(true);
+    expect(kw(0, 'Test Grove').has('shroud')).toBe(false);
+    expect(kw(1, 'Test Charm').has('shroud')).toBe(false);
+    // Nor does the Grove reach an artifact.
+    expect(kw(0, 'Test Trinket').has('shroud')).toBe(false);
+  });
+
+  it('our other artifact is indestructible; the source itself and the opponent\'s artifact are not', () => {
+    expect(kw(0, 'Test Trinket').has('indestructible')).toBe(true);
+    expect(kw(0, 'Test Forge').has('indestructible')).toBe(false);
+    expect(kw(1, 'Test Trinket').has('indestructible')).toBe(false);
+    expect(kw(0, 'Test Charm').has('indestructible')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

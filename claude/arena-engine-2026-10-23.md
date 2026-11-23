@@ -41689,3 +41689,35 @@ the untap aimed at the Amulet).
 
 - engine tests: 6184, all passing (on b54095c)
 - Coverage: 15,810 to 15,811 of 31,900 cards with every line read, and 37,970 to 37,971 of 59,888 lines, against b54095c.
+
+## D819 — "Other enchantments / artifacts you control have …": Sterling Grove
+
+Most-played order: Sterling Grove (rank 1254). The same reader covers "Other artifacts you control
+have …" (Inspirit, Flagship Vessel prints it under a station threshold, so that card stays
+unread for other reasons) and "Enchantments you control have …".
+
+**Engine.** Three static scopes join D801's `permanents-you-control` pair:
+- `enchantments-you-control`;
+- `other-enchantments-you-control`, which excludes the source;
+- `other-artifacts-you-control`.
+
+Each is answered in `effectApplies` off the live type line and the controller, like the rest.
+`automation.ts`'s static mapping passes them through. The older `other-enchantments` (Aura Flux's
+"Other enchantments have …") is everyone's enchantments, and stays as it was.
+
+**Reader.** D801's "(other )?(permanents|artifacts|lands) you control have <keywords>" also takes
+"enchantments", and "other" now also applies to artifacts and enchantments. Still only
+indestructible, hexproof and shroud.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- under a Grove our other enchantment has shroud, while the Grove itself, the opponent's
+  enchantment and our artifact do not;
+- under "Other artifacts you control have indestructible" our other artifact has it, while the
+  source, the opponent's artifact and our enchantment do not.
+
+Faults injected by script: 5 of 5 caught. They cover the source not excluded, any controller,
+any card type, the mapping dropping the scope, and "other artifacts" read as all artifacts.
+
+- engine tests: 6187, all passing (on 3661d19)
+- Coverage: 15,811 to 15,812 of 31,900 cards with every line read, and 37,971 to 37,973 of 59,888 lines, against 3661d19.

@@ -1561,6 +1561,9 @@ export interface ContinuousEffect {
     | { readonly kind: 'all-enchantments' } | { readonly kind: 'other-enchantments' }
     /** Every permanent its controller has, or every one but the source (D801): Avacyn, Angel of Hope. */
     | { readonly kind: 'permanents-you-control' } | { readonly kind: 'other-permanents-you-control' }
+    /** Its controller's enchantments or artifacts but the source (D819): Sterling Grove's shroud. */
+    | { readonly kind: 'enchantments-you-control' } | { readonly kind: 'other-enchantments-you-control' }
+    | { readonly kind: 'other-artifacts-you-control' }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2688,6 +2691,14 @@ function effectApplies(
       return instance.zone === 'battlefield' && instance.zoneSeat === effect.controller;
     case 'other-permanents-you-control':
       return instance.zone === 'battlefield' && instance.zoneSeat === effect.controller && instance.id !== effect.source;
+    case 'enchantments-you-control':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment') && instance.zoneSeat === effect.controller;
+    case 'other-enchantments-you-control':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment') && instance.zoneSeat === effect.controller
+        && instance.id !== effect.source;
+    case 'other-artifacts-you-control':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'artifact') && instance.zoneSeat === effect.controller
+        && instance.id !== effect.source;
     case 'opponent-creatures':
       return creature && instance.zoneSeat !== effect.controller;
     case 'other-controller-creatures':
