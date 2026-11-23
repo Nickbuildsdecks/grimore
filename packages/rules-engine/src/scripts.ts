@@ -16117,6 +16117,40 @@ function selfEffect(
     };
   }
 
+  /*
+    Suspect (D1156, CR 701.60): "suspect target creature", "suspect up to one target creature". The
+    creature is suspected — menace, and it can't block — until it leaves the battlefield. "It's no
+    longer suspected" is not read. "Suspect it" after a targeting clause borrows that target (D530).
+  */
+  const suspecting = /^suspect ((?:up to one )?target .+)$/i.exec(text);
+  if (suspecting !== null) {
+    const spec = targetSpecFrom(suspecting[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => cardTargets(c).reduce((st, id) => (st.instances[id]?.zone === 'battlefield'
+          ? withInstance(st, id, { suspected: true }) : st), c.state),
+      };
+    }
+  }
+  /*
+    "Suspect it" with no earlier target is the source itself (Barbed Servitor, Person of Interest),
+    and "suspect enchanted creature" is the Aura's host (Convenient Target), as `tapsHost` reads it.
+    After a target, `composeEffects` tries the borrowed reading of "it" first (D723).
+  */
+  const suspectsSelf = new RegExp(`^suspect (?:(it)|${self}|(enchanted|equipped) creature)$`, 'i').exec(text);
+  // After a card target "it" is that card, never the source: a spell suspecting itself is a wrong card.
+  if (suspectsSelf !== null && !(suspectsSelf[1] !== undefined && earlierCardTarget)) {
+    const host = suspectsSelf[2] !== undefined;
+    return {
+      effect: (c) => {
+        const id = host ? c.state.instances[c.source]?.attachedTo ?? undefined : c.source;
+        return id !== undefined && c.state.instances[id]?.zone === 'battlefield'
+          ? withInstance(c.state, id, { suspected: true }) : c.state;
+      },
+    };
+  }
+
   // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
   const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
   if (incubated !== null) {
@@ -30454,6 +30488,18 @@ function composeEffects(
     const onIt = pronounFirst && borrowed === null && oneObject
       ? /^put (a|an|one|two|three) (\+1\/\+1|-1\/-1|stun) counters? on it$/i.exec(clause.trim())
       : null;
+    // And "Suspect it" (D1156): It Doesn't Add Up's "Return target creature card from your graveyard
+    // to the battlefield. Suspect it." The returned card is suspected; one that never arrived is not.
+    if (pronounFirst && borrowed === null && oneObject && /^suspect it\.?$/i.test(clause.trim())) {
+      parts.push({
+        effect: (c) => {
+          const first = c.targets[0];
+          return first === undefined || first.kind !== 'card' || c.state.instances[first.id]?.zone !== 'battlefield'
+            ? c.state : withInstance(c.state, first.id, { suspected: true });
+        },
+      });
+      continue;
+    }
     if (onIt !== null) {
       const many = /^(a|an|one)$/i.test(onIt[1]!) ? 1 : onIt[1]!.toLowerCase() === 'two' ? 2 : 3;
       const kind = onIt[2]!.toLowerCase();

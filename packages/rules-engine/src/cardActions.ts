@@ -420,6 +420,9 @@ export function relocate(
     attachedTo: toZone === 'battlefield' ? inst.attachedTo : null,
     // And the player a Curse is attached to (D765).
     ...(toZone === 'battlefield' ? {} : { enchantedSeat: undefined }),
+    // And manifested (D1153) and suspected (D1156): designations of the object, which the next one
+    // does not have (CR 400.7). A manifested card that dies and comes back is not turnable for its cost.
+    ...(toZone === 'battlefield' ? {} : { manifested: undefined, suspected: undefined }),
     // And saddled (D776): a new object is not saddled.
     ...(inst.zone === toZone ? {} : { saddledTurn: undefined }),
     /*

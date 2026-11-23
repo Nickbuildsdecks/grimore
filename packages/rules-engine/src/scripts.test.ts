@@ -36126,6 +36126,64 @@ describe('"that player" on a board entry trigger (D811)', () => {
   });
 });
 
+describe('suspect, and zone changes that clear suspected and manifested (D1156)', () => {
+  const SERVITOR = { name: 'Test Servitor', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'When this creature enters, suspect it.' };
+  const RETURN = { name: 'Test Return', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Return target creature card from your graveyard to the battlefield. Suspect it.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [SERVITOR, RETURN, BEAR];
+  const deck = customDeck({
+    id: 'd1156', name: 'Suspect', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], graveyard: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1156', 1: 'd1156' }, deckSpecs: { d1156: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: graveyard }, battlefield: { 0: ['Swamp'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"suspect it" on an arrival: the creature has menace and can\'t block', () => {
+    let s = table(['Test Servitor']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Servitor') } as Action)), 30);
+    const id = find(s, 0, 'battlefield', 'Test Servitor');
+    expect(s.instances[id]!.suspected).toBe(true);
+    const ch = characteristicsOf(s, s.instances[id]!);
+    expect(ch.keywords.has('menace')).toBe(true);
+    expect(ch.cantBlock).toBe(true);
+  });
+
+  it('leaving the battlefield ends it', () => {
+    let s = table(['Test Servitor']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Servitor') } as Action)), 30);
+    const id = find(s, 0, 'battlefield', 'Test Servitor');
+    s = destroy(s, id);
+    expect(s.instances[id]!.zone).toBe('graveyard');
+    expect(s.instances[id]!.suspected).toBeUndefined();
+  });
+
+  it('"Suspect it" after a target suspects the card the spell returned, not the spell', () => {
+    let s = table(['Test Return'], ['Test Bear']);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Return'), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.suspected).toBe(true);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('menace')).toBe(true);
+    const spell = find(s, 0, 'graveyard', 'Test Return');
+    expect(s.instances[spell]!.suspected).toBeUndefined();
+  });
+
+  it('a manifested card that leaves the battlefield is no longer manifested', () => {
+    let s = table([], []);
+    const swamp = find(s, 0, 'battlefield', 'Swamp');
+    s = { ...s, instances: { ...s.instances, [swamp]: { ...s.instances[swamp]!, manifested: true, suspected: true } } };
+    s = relocate(s, s.instances[swamp]!, 'graveyard', 0, 'top');
+    expect(s.instances[swamp]!.manifested).toBeUndefined();
+    expect(s.instances[swamp]!.suspected).toBeUndefined();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

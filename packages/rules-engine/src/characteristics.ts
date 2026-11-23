@@ -3188,6 +3188,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     ...Object.entries(instance.counters).filter(([kind, n]) => n > 0 && isKeyword(kind)).map(([kind]) => kind.toLowerCase() as Keyword),
   ]);
   if (ringBearing) keywords.add('skulk');
+  // Suspected (D1156, CR 701.60): menace, and can't block below.
+  if (instance.suspected === true && instance.zone === 'battlefield') keywords.add('menace');
   let cantAttack = false;
   /*
     Printed combat statics, seeded exactly as printed landwalk and printed protection are below and
@@ -3382,6 +3384,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
   if (keywords.has('decayed')) cantBlock = true;
+  if (instance.suspected === true && instance.zone === 'battlefield') cantBlock = true;
 
 
   return {

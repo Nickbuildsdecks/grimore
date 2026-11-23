@@ -206,6 +206,11 @@ export interface CardInstance {
    * cost if it has one. Cleared as it turns face up.
    */
   readonly manifested?: true;
+  /**
+   * Suspected (D1156, CR 701.60): "it has menace and can't block for as long as it's suspected". A
+   * designation of the permanent, read by `characteristicsOf`; cleared as it leaves the battlefield.
+   */
+  readonly suspected?: true;
   /** Deliberately shown to the whole table, which beats a face-up card in a hidden zone. */
   readonly revealed: boolean;
   readonly counters: Readonly<Record<string, number>>;
