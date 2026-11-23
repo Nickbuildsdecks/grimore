@@ -58748,3 +58748,42 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,606 to 15,612 of 31,900 cards with every line read, and 37,667 to 37,676 of 59,888
 lines, against c4ee843.
+
+## D1155 — incubate
+
+Incubate N (CR 701.53a) is printed on 30 legal cards and was read on none: "Create an Incubator token
+with N +1/+1 counters on it and '{2}: Transform this artifact.' It transforms into a 0/0 Phyrexian
+artifact creature." Two pieces:
+- **The effect.** `incubate` makes the colorless Incubator artifact token and puts the counters on
+  it.
+- **The token's script.** `INCUBATOR` is hand-written, as Clue's is, and found by the token's name.
+  It is looked up in `scriptFor` beside the Ring, not listed in `ALL`, because no starter deck makes an
+  Incubator and the registry test requires each listed script to name something in the pool. Its one
+  ability, {2}, transforms it.
+
+A transforming permanent stays the same permanent with its counters (CR 712.18). So the transform
+is a permanent effect on the token itself: it becomes a creature and a Phyrexian, base 0/0, and the
+counters make it N/N. The ability is offered only while it is not a creature, which is the front
+face.
+
+Read whole now: 12 of the 30 (Compleated Huntmaster, Converter Beast, Eyes of Gitaxias, Gift of
+Compleation, Ichor Drinker, Infected Defector, Injector Crocodile, Marauding Dreadship, Merciless
+Repurposing, Phyrexian Awakening and two more). Not read:
+- "incubate X, where X is …";
+- "If they do, you incubate 2" after a counter-unless.
+
+**Tests.** 3 engine tests:
+- The test spell reads whole.
+- "Incubate 3" makes an Incubator artifact, not a creature, with three counters, and its transform
+  is offered.
+- Paying {2} makes it a 3/3 Phyrexian artifact creature, and the transform is not offered again
+  even with mana left.
+
+Faults injected by hand: 2.
+- No counters (caught).
+- The transform offered again (caught). It was missed the first time because the test spent the
+  only two lands on the transform, so no further offer was affordable either way; the test now has
+  four lands.
+
+Coverage: 15,733 of 31,900 cards (+18 over D1154's 15,715), 37,858 of 59,888 lines (+26). The difference also counts the D7xx
+session's D810, merged in after D1154 was measured; D1155's own share is the 12 incubate cards.
