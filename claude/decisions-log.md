@@ -59715,3 +59715,42 @@ Faults injected by script: 2 of 2 caught ("their" unread, and the not-hand filte
 
 - engine tests: 6212, all passing (on 07b50dd)
 - Coverage: 15,837 to 15,838 of 31,900 cards with every line read, and 38,013 to 38,014 of 59,888 lines, against 07b50dd.
+
+## D1168 — domain as a static count, and any line read without its ability word
+
+Domain cards (CR 207.2c's "Domain —" label) were 16 single-unread lines, for two reasons:
+- **The static count.** "~ gets +1/+1 for each basic land type among lands you control" is a static
+  size, read by `staticCountedSizeFromLine` through `staticCountOf`, whose vocabulary had no domain.
+  It is now a `StaticCountable`, `basic-land-types`: the distinct Plains, Island, Swamp, Mountain
+  and Forest subtypes among the controller's lands, off their printed type lines (D604's compromise,
+  as metalcraft's count is).
+- **The ability word.** Several readers never strip the label: the static counted size, the cost
+  reduction ("This spell costs {1} less to cast for each …") and the attachment bonus. So:
+  - `lineScriptFor` now reads a line whole and, failing that, once more without its ability word.
+    The label has no rules meaning, so the sentence after the dash is the whole ability.
+  - The retry skips activated abilities. A cost line under a label ("Threshold — {1}: …",
+    "Metalcraft — {T}: Add …", "Bloodrush — {R}, Discard this card: …") stays D623's and D1135's
+    to read: the label comes off only when the line restates its condition, and a mana line stays a
+    mana line. The first version retried those too, and the pregate's D623 and D1135 tests caught
+    it.
+  - The attachment reader finds and reads its static line without the label, and still claims the
+    printed line.
+
+Read whole now: Wayfaring Giant, Kavu Scout, Strength of Unity, Exotic Curse, Manaforce Mace,
+Leyline Binding, Stratadon and Yavimaya Sojourner, and any other line that failed only on its label.
+Not read: "all creatures get -1/-1 until end of turn for each …" and "target player discards a card
+for each …" (Planar Despair, Voices from the Void), which fail without the label too.
+
+**Tests.** 3 engine tests:
+- The test cards read whole, each under "Domain —".
+- The size counts basic land types, not lands: Plains and two Islands is +2/+2; Plains, Island and
+  Swamp is +3/+3.
+- The cost: three types take {3} off, so three lands cast a {4}{G} spell; three Forests cannot.
+
+Faults injected by hand: 3, all caught.
+- No retry without the ability word.
+- The count always 0.
+- Lands counted instead of their types.
+
+
+Coverage: 15,927 of 31,900 cards (+27 over D1167's 15,900), 38,158 of 59,888 lines (+40). The difference also counts the D7xx session's D824 to D826, merged in after D1167 was measured. Eight are the domain cards above; the split of the rest between the ability-word retry and D824 to D826 was not measured.
