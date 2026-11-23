@@ -40404,3 +40404,38 @@ missed a reader that took any keyword).
 
 Coverage: 15,301 to 15,303 of 31,900 cards with every line read, and 37,267 to 37,269 of 59,888
 lines, against cc2e646.
+
+## D1140 — X mana of any one color
+
+D669 read "Add three mana of any one color" as five runs, and D713 gave each run of Nykthos its own
+live count. "Add X mana of any one color, where X is ..." is those two together: five runs of one
+symbol, each made as many times as X counts as the ability resolves. X can be:
+- the source's own power or toughness ("~'s power", "this creature's power");
+- a kind of counter on the source ("the number of petal counters on ~");
+- "the number of" anything D662's "for each" count reads, after singularising the plural
+  ("enchantments you control", "Allies you control", "Elves on the battlefield");
+- "creature cards in your graveyard";
+- "the amount of life you gained this turn".
+
+It is still a mana ability: no stack, no window (CR 605.3a). Lotus Blossom's counters are read as the
+cost is paid, before the sacrifice takes it away.
+
+Read whole now (8): Accomplished Alchemist, Deathbloom Ritualist, Harabaz Druid, Heronblade Elite,
+Kami of Whispered Hopes, Lotus Blossom, Sanctum Weaver, Wirewood Channeler (with Mona Lisa, Science
+Geek's mana line). Not read:
+- Woodland Weavemaster and Séance Board, whose spending restrictions are not readable yet;
+- "other Gates", "the greatest toughness among other creatures", and commanders' mana value;
+- X set by the cost (Petalmane Baku, Springjack Pasture, Food Chain).
+
+**Tests.** 4 engine tests:
+- All three test cards read whole.
+- Three enchantments make three of the chosen colour, and only that colour.
+- Four petal counters make four, and the Blossom is in the graveyard after.
+- Two creature cards and an enchantment in the graveyard make two.
+
+Faults injected by hand: 2.
+- The graveyard counted without the creature filter (caught).
+- Every count fixed at 1 (caught: 3 tests).
+
+Coverage: 15,395 of 31,900 cards (+48 over D1139's 15,347), 37,372 of 59,888 lines (+56). The difference also counts the D7xx
+session's D794 and D795, merged in after D1139 was measured; D1140's own share is the 8 cards above.
