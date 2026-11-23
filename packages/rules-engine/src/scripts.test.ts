@@ -36536,6 +36536,69 @@ describe('"~ can\'t attack or block unless …" on the card itself, Topiary Stom
   });
 });
 
+describe('Dark Confidant compiled: the card put into the hand, and its mana value in life (D816)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Confidant', 'Creature — Human Wizard', 'At the beginning of your upkeep, reveal the top card of your library and put that card into your hand. You lose life equal to its mana value.', { power: '2', toughness: '1' }),
+    R('Test Three', 'Sorcery', 'Draw a card.', { mana_cost: '{2}{B}', cmc: 3 }),
+  ];
+  const deck = customDeck({
+    id: 'd816', name: 'Confidant',
+    entries: [{ name: 'Test Confidant', count: 1 }, { name: 'Test Three', count: 4 }, { name: 'Swamp', count: 55 }],
+    data: ROWS as never[],
+  });
+  /** Seat 0's next upkeep with the Confidant out and `top` (if given) on top of its library, trigger resolved. */
+  const upkeep = (prepare: (s: GameState) => GameState) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd816', 1: 'd816' }, deckSpecs: { d816: deck.deck },
+      battlefield: { 0: ['Test Confidant'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = nextTurn(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    s = prepare(s);
+    const before = { life: life(s, 0), hand: ids(s, 0, 'hand').length, drawn: s.cardsDrawnThisTurn['0'] ?? 0 };
+    s = advanceTo(s, 'upkeep');
+    s = drain(passBoth(s));
+    expect(s.step).toBe('upkeep');
+    return { s, before };
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a three-drop on top: it is in the hand, three life is gone, and it was not drawn', () => {
+    let three = '';
+    const { s, before } = upkeep((state) => {
+      three = find(state, 0, 'library', 'Test Three');
+      return putOnTopOfLibrary(state, three);
+    });
+    expect(s.instances[three]!.zone).toBe('hand');
+    expect(ids(s, 0, 'hand')).toHaveLength(before.hand + 1);
+    expect(life(s, 0)).toBe(before.life - 3);
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(before.drawn);
+  });
+
+  it('a land on top costs nothing', () => {
+    const { s, before } = upkeep((state) => putOnTopOfLibrary(state, find(state, 0, 'library', 'Swamp')));
+    expect(ids(s, 0, 'hand')).toHaveLength(before.hand + 1);
+    expect(life(s, 0)).toBe(before.life);
+  });
+
+  it('an empty library: nothing is put, nothing is lost, and nobody has lost the game yet', () => {
+    const { s, before } = upkeep((state) => {
+      let next = state;
+      for (const id of ids(state, 0, 'library')) next = apply(next, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
+      return next;
+    });
+    expect(ids(s, 0, 'hand')).toHaveLength(before.hand);
+    expect(life(s, 0)).toBe(before.life);
+    expect(s.seats[0]!.eliminated).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
