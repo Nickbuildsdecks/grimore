@@ -36126,6 +36126,33 @@ describe('"that player" on a board entry trigger (D811)', () => {
   });
 });
 
+describe('a keyword list with the Oxford comma and two protections, Akroma\'s Memorial (D812)', () => {
+  const MEMORIAL = { name: 'Test Memorial', type_line: 'Legendary Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Creatures you control have flying, first strike, vigilance, trample, haste, and protection from black and from red.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd812', name: 'Memorial',
+    entries: [{ name: 'Test Memorial', count: 1 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 55 }],
+    data: [MEMORIAL, BEAR] as never[],
+  });
+
+  it('reads', () => {
+    expect(compileCard(MEMORIAL as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("our creature has all five keywords and protection from black and red; the opponent's has none", () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd812', 1: 'd812' }, deckSpecs: { d812: deck.deck },
+      battlefield: { 0: ['Test Memorial', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const ours = characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Bear')]!);
+    expect([...ours.keywords].sort()).toEqual(expect.arrayContaining(['first strike', 'flying', 'haste', 'trample', 'vigilance']));
+    expect([...ours.protectionFrom].sort()).toEqual(['B', 'R']);
+    const theirs = characteristicsOf(s, s.instances[find(s, 1, 'battlefield', 'Test Bear')]!);
+    expect(theirs.keywords.size).toBe(0);
+    expect(theirs.protectionFrom).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
