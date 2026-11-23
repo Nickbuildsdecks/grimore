@@ -40329,3 +40329,56 @@ Faults injected by hand: 2.
 
 Coverage: 15,347 of 31,900 cards (+20 over D1138's 15,327), 37,316 of 59,888 lines (+26). The difference also counts the D7xx
 session's D791 to D793, merged in since D1138 was measured; D1139's own share is the 6 cards above.
+## D794 — "They" after a player trigger, everyone loots, a three-word cast list, the nontoken edict
+
+Most-played order: Sram, Senior Edificer (rank 445), Geier Reach Sanitarium (446), Sheoldred, the
+Apocalypse (462), Accursed Marauder (477), then Sheoldred's Edict's nontoken mode, Burning Inquiry's
+kin, Rug of Smothering, Liesa and the rest of the "they" printings.
+
+- **"Whenever an opponent draws a card, they lose 2 life."** The newer wording of "that player": on
+  a trigger about a player's action, "they <verb>" reads as "that player <verb>s", the same
+  referent (the acting player).
+- **"Each player draws a card, then discards a card."** The sentence joiner splits it with the
+  subject repeated, so the discard is everyone's: everyone draws, then everyone discards, each
+  choosing their own. "… at random" stays unread.
+- **"Whenever you cast an Aura, Equipment, or Vehicle spell"**: the cast descriptor's subtype list
+  takes the Oxford-comma list as well as "or".
+- **"Each player sacrifices a nontoken creature"**: the edict with "nontoken creature" and "nontoken
+  permanent"; a token is never offered.
+
+**Tests.** 6 engine tests: the cards read; Sheoldred costs the opponent 2 for their draw and its
+controller nothing; Geier Reach leaves both hands the same size with a card in each graveyard; all
+three subtypes reach Sram's trigger, an Equipment spell draws and a plain artifact does not; Accursed
+Marauder takes the opponent's Bear and never offers our Soldier token.
+
+Faults injected by script: 4 of 4 caught (the compiled-trigger check was added after the first run
+missed a list that dropped its first word).
+
+    engine tests: 6,019, all passing (on 863e756)
+
+Coverage: 15,263 to 15,277 of 31,900 cards with every line read, and 37,223 to 37,240 of 59,888
+lines, against 863e756.
+
+## D795 — "Gains protection from the color of your choice"
+
+Most-played order: Mother of Runes (rank 505), Alseid of Life's Bounty (2887), Gods Willing (3355),
+Shelter (3358), Benevolent Bodyguard (6046), Emerge Unscathed, Jareth, Cartel Aristocrat, Stave Off
+and the rest: 30 legal cards print the line, 23 now read fully and the line itself on 24.
+
+"<target> gains protection from the color of your choice until end of turn", for any target that
+points at a permanent ("target creature you control", "target creature or enchantment you
+control", "target creature"), and "~ gains …" on the permanent itself. The colour is a question
+asked as it resolves, after the target is fixed: a player answers with one of the five colours, and
+the bot names the colour it most has to fear, as an "As ~ enters, choose a color" protection card
+does (`enterChoiceDecision`, hostile). Protection is a pump that ends with the turn.
+
+**Tests.** 3 engine tests: the cards read; Mother of Runes offers all five colours, gives the
+targeted creature protection from the one chosen, and it is gone by the next turn; a spell (with a
+scry after it) does the same, and "~ gains …" protects the permanent itself.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,022, all passing (on d219fbb)
+
+Coverage: 15,277 to 15,301 of 31,900 cards with every line read, and 37,240 to 37,267 of 59,888
+lines, against d219fbb.

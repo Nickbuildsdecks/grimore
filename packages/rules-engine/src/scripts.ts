@@ -13717,7 +13717,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent)s?$/i.exec(text);
+  const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent|nontoken creature|nontoken permanent)s?$/i.exec(text);
   if (edictMany !== null) {
     const subject = edictMany[1]!.toLowerCase();
     const who = subject === 'each player' ? 'each-player' as const
@@ -13738,6 +13738,9 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
             const line = characteristicsOf(state, inst).typeLine;
             if (kind === 'permanent') return true;
             if (kind === 'nonland permanent') return !hasType(line, 'land');
+            // "A nontoken creature" (D794): Accursed Marauder, Balor; a token is not offered.
+            if (kind === 'nontoken permanent') return inst.isToken !== true;
+            if (kind === 'nontoken creature') return inst.isToken !== true && hasType(line, 'creature');
             return hasType(line, kind);
           },
         }],
@@ -18373,7 +18376,8 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
     && mixed.every((word) => SEARCHABLE_TYPES.includes(word) || /^[A-Z][A-Za-z'-]*$/.test(word))) {
     return { ofTypesOrSubtypes: mixed };
   }
-  const words = text.split(/ or /i);
+  // "or" alone, or a list with the Oxford comma (D794): "an Aura, Equipment, or Vehicle spell" (Sram).
+  const words = text.split(/,\s*(?:or\s+)?|\s+or\s+/i).map((word) => word.trim()).filter(Boolean);
   const colours = words.map((word) => CAST_COLOURS[word.toLowerCase() as keyof typeof CAST_COLOURS]);
   if (colours.every((colour) => colour !== undefined)) return { ofColours: colours as Color[] };
   // A subtype is capitalised where it is printed; nothing else in this position is.
@@ -21654,6 +21658,23 @@ function eventRelativeEffect(
     if (defending !== null) return defending;
   }
   if (aboutAPlayer) {
+    /*
+      "Whenever an opponent draws a card, **they** lose 2 life" (D794): Sheoldred, the Apocalypse and
+      the newer printings, which say "they" where older cards say "that player". The same referent,
+      with the verb agreeing.
+    */
+    const they = /^they (lose|gain|draw|discard|mill|sacrifice|reveal|create|exile|put|return|scry|surveil)\b(.*)$/i.exec(text.trim());
+    if (they !== null) {
+      const verb = they[1]!.toLowerCase();
+      const third = verb === 'scry' ? 'scries' : `${verb}s`;
+      const swapped = referentEffect(
+        `that player ${third}${they[2]!}`, 'that player', 'player',
+        (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
+        (inner) => readEffect(inner, name, null),
+        'acting-player',
+      );
+      if (swapped !== null) return swapped;
+    }
     const acted = referentEffect(
       text, 'that player', 'player',
       (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
@@ -27767,6 +27788,31 @@ function readEffect(
       effect: (c) => { const seat = firstPlayerTarget(c); return seat === null ? c.state : ban(c.state, [seat]); },
     };
   }
+  /*
+    "Target creature you control gains protection from the color of your choice until end of turn"
+    (D795): Mother of Runes, Gods Willing, Benevolent Bodyguard, Alseid of Life's Bounty ("target
+    creature or enchantment you control"), and "~ gains …" (Jareth, Cartel Aristocrat). The colour is
+    chosen as it resolves, after the target; the bot names the colour it most has to fear, as an
+    "As ~ enters, choose a color" protection card does (`enterChoiceDecision`).
+  */
+  const shielded = new RegExp(`^(.+?) gains protection from the color of your choice until end of turn$`, 'i').exec(clause.trim());
+  if (shielded !== null) {
+    const subject = shielded[1]!;
+    const self = new RegExp(`^${selfRef(name)}$`, 'i').test(subject);
+    const spec = self ? null : targetSpecFrom(subject, false);
+    if (self || (spec !== null && pointsAtAPermanent(spec))) {
+      return {
+        ...(spec === null ? {} : { targets: [{ ...spec, friendly: true }] }),
+        decisions: [enterChoiceDecision('color', 'hostile')],
+        effect: (c) => {
+          const id = self ? c.source : firstCardTarget(c);
+          const colour = COLOUR_WORDS[(chosenOption(c) ?? '').toLowerCase()];
+          if (id === null || colour === undefined || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+          return pump(c.state, [id], c.source, c.controller, { protectionFrom: [colour] });
+        },
+      };
+    }
+  }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
     const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
@@ -28442,6 +28488,12 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(mill (?:a card|\w+ cards))\.\s+(you may )?put (an? [^.]+?) from among (?:them|the milled cards|the cards milled this way) into your hand/gi, '$1 and $2put $3 from among them into your hand')
     // Kinship (D1072): the look, the reveal and its payoff are one ability's three sentences.
     .replace(/(?:you may )?look at the top card of your library\.\s+If it shares a creature type with [^,.]+, you may reveal it\.\s+If you do, ([^.]+)/gi, '\u0014$1')
+    /*
+      "Each player draws a card, then discards a card" (D794): Geier Reach Sanitarium. Split into two
+      sentences with the subject repeated, so the discard is everyone's and not the controller's:
+      everyone draws, then everyone discards, each choosing their own. "… at random" stays unread.
+    */
+    .replace(/\beach player draws (a card|two cards|three cards), then discards (a card|two cards|three cards)(?= *$|\.)/gi, 'each player draws $1. Each player discards $2')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
