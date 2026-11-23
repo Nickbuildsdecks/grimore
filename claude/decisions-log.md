@@ -57927,3 +57927,32 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,303 to 15,305 of 31,900 cards with every line read, and 37,269 to 37,271 of 59,888
 lines, against 3250026.
+
+## D1141 — target creature you control connives
+
+D971 read connive on the creature itself ("~ connives", "it connives"), as two clauses: the draw,
+then the discard that may put a +1/+1 counter on it (CR 701.50a). "Target creature you control
+connives" (and "Target Villain you control connives") is the same pair, with the discard's clause
+carrying the target. The counter goes on the target, if it is still on the battlefield, and the
+draw and discard are its controller's, who is the ability's controller because the target is a
+creature they control.
+
+Read whole now (3): Mob Lookout; Scorpion, Seething Striker; Villainous Hideout. Not read:
+- "up to one target creature you control connives" after a targeted clause (Unstable Experiment,
+  Mechanical Mobster, Trickster's Stratagem): two targeting parts where one asks a question, which
+  the composer refuses;
+- "connives X";
+- "Whenever a creature you control connives".
+
+**Tests.** 3 engine tests:
+- Mob Lookout's text reads whole.
+- With a Bear targeted, connive draws (hand of 3: the discard, the draw step's card and connive's
+  card), and a nonland discard puts the counter on the Bear, not on the Lookout.
+- A land discarded puts no counter on it.
+
+Faults injected by hand: 2.
+- The counter put on the source instead of the target (caught).
+- No draw before the discard (caught, by the hand size).
+
+Coverage: 15,402 of 31,900 cards (+7 over D1140's 15,395), 37,382 of 59,888 lines (+10). The difference also counts the D7xx
+session's D797, merged in after D1140 was measured.
