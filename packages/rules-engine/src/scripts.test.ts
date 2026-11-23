@@ -8036,6 +8036,8 @@ describe('deck coverage', () => {
       'trigger ring-tempted',
       // D1147: "If damage would be dealt to ~, …" (the Phantoms); no pool deck plays one.
       'script damageToSelf',
+      // D1164: "Whenever you complete a dungeon" (Varis); no pool deck plays one.
+      'trigger dungeon-completed',
     ]);
 
     const declared = [
@@ -37091,6 +37093,61 @@ describe('"whenever an opponent discards a creature / land / noncreature, nonlan
     const own = purge(0, 'Test Bear');
     expect(own.zombies).toBe(0);
     expect(own.black).toBe(0);
+  });
+});
+
+describe('"whenever you complete a dungeon" (D1164)', () => {
+  const RANGER = { name: 'Test Ranger', type_line: 'Creature — Elf Ranger', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever you complete a dungeon, create a 2/2 green Wolf creature token.' };
+  const CRAWLER = { name: 'Test Crawler', type_line: 'Creature — Zombie', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '1', oracle_text: 'Whenever you complete a dungeon, you may return Test Crawler from your graveyard to your hand.' };
+  const TORCH = { name: 'Test Torch', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Venture into the dungeon.' };
+  const ROWS = [RANGER, CRAWLER, TORCH];
+  const deck = customDeck({
+    id: 'd1164', name: 'Completions', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[],
+  });
+  const table = (seat: 0 | 1, graveyard: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1164', 1: 'd1164' }, deckSpecs: { d1164: deck.deck },
+    hands: { [seat]: ['Test Torch'] }, battlefield: { 0: ['Forest', 'Test Ranger'], 1: ['Forest'] }, graveyard: { 0: graveyard },
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 24 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      const p = s.pendingDecision;
+      if (p === null) { s = drain(passBoth(s)); continue; }
+      s = apply(s, { type: 'auto:decide', by: p.seat, cards: [], ...((p.options ?? []).length > 0 ? { option: p.options!.includes('Yes') ? 'Yes' : p.options![0] } : {}) } as Action);
+    }
+    return s;
+  };
+  // Seat \`seat\` on Lost Mine's Storeroom, then the Torch takes it into Temple of Dumathoin, the last room.
+  const complete = (seat: 0 | 1, graveyard: string[] = []) => {
+    let s = table(seat, graveyard);
+    const entered = ventureInto(s, seat, 'Lost Mine of Phandelver');
+    s = { ...entered, reflexive: [], dungeon: { ...entered.dungeon, [seat]: { ...entered.dungeon![String(seat)]!, room: 'Storeroom' } } };
+    if (seat === 1) s = { ...s, priority: 1 };
+    return settle(drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', 'Test Torch') } as Action)), 30));
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('completing a dungeon makes the Wolf', () => {
+    const s = complete(0);
+    expect(s.dungeonsCompleted?.['0']).toEqual(['Lost Mine of Phandelver']);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Wolf');
+  });
+
+  it('the trigger works from the graveyard: Test Crawler comes back to hand', () => {
+    const s = complete(0, ['Test Crawler']);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Crawler');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Crawler');
+  });
+
+  it("an opponent's completion is not yours", () => {
+    const s = complete(1);
+    expect(s.dungeonsCompleted?.['1']).toEqual(['Lost Mine of Phandelver']);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Wolf');
   });
 });
 

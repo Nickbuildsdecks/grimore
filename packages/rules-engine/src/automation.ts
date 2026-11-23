@@ -1493,6 +1493,9 @@ function triggerMatches(
     // "Whenever the Ring tempts you" (D1145): only the tempted seat's own permanents.
     case 'ring-tempted':
       return actorSeat === sourceSeat;
+    // "Whenever you complete a dungeon" (D1164): only the completing seat's own permanents.
+    case 'dungeon-completed':
+      return actorSeat === sourceSeat;
     // "Whenever you / an opponent / a player loses life" (D999): whose loss.
     case 'life-lost': {
       const by = want.by ?? 'you';
@@ -4887,6 +4890,12 @@ function settle(state: GameState, before: GameState): GameState {
     const key = String(seat.index);
     const times = (next.ring?.[key]?.tempted ?? 0) - (before.ring?.[key]?.tempted ?? 0);
     for (let i = 0; i < times; i++) next = raise(next, { kind: 'ring-tempted' }, seat.index);
+  }
+  // And each dungeon a seat completed (D1164): see \`completeDungeon\`.
+  for (const seat of next.seats) {
+    const key = String(seat.index);
+    const done = (next.dungeonsCompleted?.[key]?.length ?? 0) - (before.dungeonsCompleted?.[key]?.length ?? 0);
+    for (let i = 0; i < done; i++) next = raise(next, { kind: 'dungeon-completed' }, seat.index);
   }
   /*
     State triggers (D1004, CR 603.8), asked after everything else this pass raised: each permanent

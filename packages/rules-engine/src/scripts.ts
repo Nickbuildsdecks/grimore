@@ -20734,6 +20734,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever the Ring tempts you, (?<clause>.+)$/i,
     from: () => [{ kind: 'ring-tempted' as const }],
   },
+  // "Whenever you complete a dungeon" (D1164): Varis, Silverymoon Ranger; Sefris; Loot Dispute.
+  {
+    prologue: () => /^Whenever you complete a dungeon, (?<clause>.+)$/i,
+    from: () => [{ kind: 'dungeon-completed' as const }],
+  },
   // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
   {
     prologue: () => /^Whenever (?<by>you lose|an opponent loses|a player loses) life, (?<clause>.+)$/i,

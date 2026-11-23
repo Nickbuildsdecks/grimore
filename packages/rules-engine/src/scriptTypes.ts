@@ -1481,6 +1481,8 @@ export type TriggerEvent =
    * seat, read off `GameState.ring`. Only "you" is printed.
    */
   | { readonly kind: 'ring-tempted' }
+  /** "Whenever you complete a dungeon" (D1164, CR 309.7): raised once per completion, read off `GameState.dungeonsCompleted`. */
+  | { readonly kind: 'dungeon-completed' }
   /**
    * "Whenever you **discard** a card" — and "whenever you **cycle or discard** a card", which is
    * the same event (D567).
