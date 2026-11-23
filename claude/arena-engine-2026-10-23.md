@@ -41890,3 +41890,59 @@ any card type, the mapping dropping the scope, and "other artifacts" read as all
 
 - engine tests: 6187, all passing (on 3661d19)
 - Coverage: 15,811 to 15,812 of 31,900 cards with every line read, and 37,971 to 37,973 of 59,888 lines, against 3661d19.
+
+## D1163 — venture into the dungeon
+
+"Venture into the dungeon" (CR 701.49a) is printed on 38 legal cards and was read on none. D1160 built
+the dungeons, the venture and Undercity for the initiative. This increment adds the other three
+dungeons and the reader:
+
+- **The dungeons.** `DUNGEONS` gains Lost Mine of Phandelver (7 rooms), Dungeon of the Mad Mage (9)
+  and Tomb of Annihilation (5), each read room by room as Undercity is. The room text is written from
+  the printed cards, with the same TODO(scryfall-dungeons) as D1160.
+- **The reader.** A seat in no dungeon is asked which of the three; Undercity is not offered (CR
+  309.3). A seat in a dungeon, Undercity included, moves down in that one and is asked which room
+  when two are below. The bot takes the first dungeon and the first room.
+- **The rooms that needed more than the readers had.**
+  - Fungi Cavern and Twisted Caverns: D1161's "until your next turn".
+  - Veils of Fear and Sandfall Cell: D1162's punisher.
+  - Oubliette: "Discard a card and sacrifice an artifact, a creature, and a land" reads as its four
+    sentences.
+  - Runestone Caverns: "You may play them" with no deadline is a new `playFromExile.through`,
+    `while-exiled`, which nothing clears but the card leaving exile. "For as long as they remain
+    exiled" reads to it too.
+  - Mad Wizard's Lair: built by hand. The three cards are drawn before anything is asked and shown
+    to the table as `AutomationState.revealed`. The question is which of them, if any, to cast, a
+    land never offered. The cast is D708's free-cast offer on that card.
+- **"You've completed a dungeon"** and "you haven't completed Tomb of Annihilation" are a static
+  condition, `controller-completed-dungeon`, read off `dungeonsCompleted`.
+
+Read whole now: 19 of the 38 venture cards, plus Cloister Gargoyle and Nadaar, Selfless Paladin on
+the completed-dungeon condition. Not read: "whenever you complete a dungeon", "venture into the
+dungeon more than once each turn", and the cards' other unread lines.
+
+**A pin moved.** D583's `compile.test.ts` listed "You may play that card for as long as it remains
+exiled" among the shapes left unread, because then nothing could hold a permission without a
+deadline. It is now a positive test, with the bare "You may play them", that both read.
+
+**Tests.** 6 engine tests and the moved compile pin:
+- The test cards read whole.
+- The first venture asks which dungeon (Lost Mine of Phandelver) and enters Cave Entrance; the next
+  asks which room, and Mine Tunnels makes a Treasure.
+- Tomb of Annihilation can be chosen, and Trapped Entry costs each player a life.
+- Runestone Caverns exiles two cards playable while exiled, and the permission outlasts two turns.
+- Mad Wizard's Lair draws three and completes Dungeon of the Mad Mage; a creature with "as long as
+  you've completed a dungeon, gets +3/+0" gets it.
+- In Undercity, a venture into the dungeon moves down Undercity.
+
+Faults injected by hand: 6. Caught:
+- The dungeon choice ignored.
+- The Lair not completing the dungeon.
+- The condition always false.
+- Runestone Caverns' permission ending this turn.
+- `ventureInto` starting a new dungeon over one in progress.
+
+Survived, as designed: the reader's own in-dungeon check removed. `ventureInto` reads the dungeon in
+progress itself, so the two checks guard each other.
+
+Coverage: 15,855 of 31,900 cards (+23 over D1162's 15,832), 38,055 of 59,888 lines (+40). The difference also counts the D7xx session's D817 and D818, merged in after D1162 was measured.
