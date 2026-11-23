@@ -59855,3 +59855,49 @@ dropping it, the reader not excluding the first tribe, and the first half droppe
 
 - engine tests: 6218, all passing (on 19bc115)
 - Coverage: 15,840 to 15,842 of 31,900 cards with every line read, and 38,016 to 38,018 of 59,888 lines, against 19bc115.
+
+## D1170 — another player's count, blockers counted, and a rate aimed at one player
+
+Three gaps in the "for each" grammar (D520), each seen on a run of single-unread lines:
+- **A rate aimed at one player.** `countScaledEffect` read "you gain / you lose / each opponent
+  loses / draw N for each …" but not a targeted player. It now reads "target player / target
+  opponent loses N life for each …" and "… mills N cards for each …": Bishop of the Bloodstained,
+  Ishkanah's ability, Burden of Greed, Liliana, Death Mage's −7. Through the existing referent swap
+  the same clause reads as "that player loses …" after a combat hit (Emissary of Despair) and as
+  "defending player loses …" on an attack (Guiltfeeder).
+- **Another player's things.** `countOfThing` counted only the controller's board, graveyard and
+  hand. It now reads "<scope> they control" / "that player controls" and "cards in their graveyard /
+  hand" (with a card type) as the targeted player's, which is also the player a referent swap hands
+  the clause. "<scope> defending player controls" is the targeted player if there is one, else the
+  defender of the source's attack (`defendersOf`, D960): Coastline Marauders, Killmonger's shape.
+  The scope is anything `massScope` reads.
+- **Blockers.** "For each creature blocking it" (Elvish Berserker, Gang of Elk, General Marhault
+  Elsdragon), "… beyond the first" (Jungle Wurm, Johtull Wurm), and "for each creature it's
+  blocking" (Guardian of the Gateless). "It" is the creature the trigger is about, else the source.
+  Read off the combat as the trigger resolves.
+
+Still unread here: a discard "for each …" (the discard question's size is a fixed number today),
+"for each Blood token defending player controls" (tokens by subtype under another controller),
+Berserk Murlodont's "a Beast" subject, and the second sentences of Last Stand and Foul-Tongue Shriek.
+
+**Tests.** 7 engine tests:
+- The test cards read whole.
+- Blocked by two, it gets +2/+2.
+- Beyond the first: blocked by two, -1/-1; by one, nothing.
+- The defending player loses one life for each card in their graveyard, not the attacker's.
+- "Defending player controls" with no target: the lands of the player attacked.
+- A rate aimed at an opponent counts your creatures.
+- "They control" is the target's: three lands there, one here.
+
+The blocker tests order the blockers when the engine asks (CR 509.2 as this engine runs it): a 6/6
+blocked by two 0/5 walls waits for the attacker's damage order before the trigger resolves, a 2/2
+does not.
+
+Faults injected by hand: 5, all caught.
+- "Beyond the first" ignored.
+- "They control" counting every player's.
+- "Defending player" read as the controller (caught only once the Marauder test was added).
+- The aimed loss taken from the controller.
+- The blocker count fixed at one.
+
+Coverage: 16,032 of 31,900 cards (+51 over D1169's 15,981), 38,285 of 59,888 lines (+55). The difference also counts the D7xx session's D827 and D828, merged in after D1169 was measured.
