@@ -57981,3 +57981,45 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,305 to 15,328 of 31,900 cards with every line read, and 37,271 to 37,312 of 59,888
 lines, against c1b62c5.
+
+## D1142 — "Choose a creature type." spells
+
+D641 asked "As ~ enters, choose a creature type" for a permanent and kept the answer on it. A spell
+that opens "Choose a creature type." asks the same question as it resolves (CR 205.3m), and the
+rest of its text names "the chosen type" or "that type". That rest is read with the type written in:
+- "permanents you control of that type" becomes "Elfs you control";
+- "creatures that aren't of the chosen type" becomes "non-Elf creatures";
+- "creature cards of the chosen type" becomes "Elf creature cards";
+- "creatures you control of the chosen type" becomes "Elf creatures you control".
+
+The plural is the type and an "s". That isn't English, but every plural reader here singularises
+it back by dropping the "s" (D620), so "Elfs" and "Merfolks" read as Elf and Merfolk.
+
+The rest is read twice:
+- with a stand-in type when the card is compiled, which says whether it reads and which targets it
+  takes as it is cast;
+- with the chosen type as it resolves.
+
+The targets are the same in both, because only the type's words differ. A rest that asks a question
+of its own is refused: the type is already the spell's question. The bot names its own deck's
+tribe, as D641's friendly choice does.
+
+Read whole now (10): And They Shall Know No Fear, Coordinated Barrage, Distant Melody, Harmonized
+Crescendo, Kindred Dominance, Kindred Judgment, Luminescent Rain, Pack's Disdain, Raise the
+Palisade, Roar of the Crowd. Not read:
+- Crippling Fear ("Non-Elf creatures get -3/-3" opening a sentence is not read);
+- Bloodline Bidding (the mass return from a graveyard by type);
+- Pact of the Serpent, Peer Pressure, Tsabo's Decree, and the "other than Wall" type changers.
+
+**Tests.** 4 engine tests:
+- The three test spells read whole.
+- Naming Elf with two Elves and a Goblin draws two.
+- Naming Goblin destroys both sides' Elves and keeps both Goblins.
+- Naming Goblin with three Goblins and an Elf deals 3 to the target chosen as it was cast.
+
+Faults injected by hand: 2.
+- The stand-in type used as it resolves instead of the chosen one (caught: 2 tests).
+- "Creatures that aren't of the chosen type" read as the chosen type's creatures (caught).
+
+Coverage: 15,437 of 31,900 cards (+35 over D1141's 15,402), 37,436 of 59,888 lines (+54). The difference also counts the D7xx
+session's D798, merged in after D1141 was measured; D1142's own share is the 10 cards above.
