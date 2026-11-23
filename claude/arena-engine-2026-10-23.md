@@ -40439,3 +40439,25 @@ Faults injected by hand: 2.
 
 Coverage: 15,395 of 31,900 cards (+48 over D1139's 15,347), 37,372 of 59,888 lines (+56). The difference also counts the D7xx
 session's D794 and D795, merged in after D1139 was measured; D1140's own share is the 8 cards above.
+## D797 — Untap artifacts or creatures during each other player's untap step
+
+Most-played order: Unwinding Clock (rank 532), Drumbellower (1904).
+
+Seedborn Muse's "Untap all permanents you control during each other player's untap step" (D661) in
+its two narrower printings: "Untap all artifacts you control …" and "… creatures …".
+`CardScript.untapsDuringOthersUntap` is `true` for every permanent, or `'artifacts'` or
+`'creatures'`; every live one on a seat's battlefield is collected, so a Clock and a Drumbellower
+together untap both kinds, and anything not of a listed kind stays tapped. The step, the frozen
+permanents and the D1041 "may stay tapped" choice are unchanged.
+
+**Tests.** 3 engine tests: the cards read; in the opponent's untap step the Clock untaps our
+artifacts (itself included) and leaves our creature and land tapped; the Drumbellower untaps our
+creature and not our artifact, and with both, both kinds untap and the land does not. Seedborn
+Muse's own D661 tests pass unchanged.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,027, all passing (on 3250026)
+
+Coverage: 15,303 to 15,305 of 31,900 cards with every line read, and 37,269 to 37,271 of 59,888
+lines, against 3250026.

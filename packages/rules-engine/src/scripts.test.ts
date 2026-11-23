@@ -34628,6 +34628,50 @@ describe('X mana of any one color (D1140)', () => {
   });
 });
 
+describe("untap artifacts or creatures during each other player's untap step (D797)", () => {
+  const CLOCK = { name: 'Test Clock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Untap all artifacts you control during each other player's untap step." };
+  const DRUM = { name: 'Test Drum', type_line: 'Creature — Goblin', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '4', oracle_text: "Untap all creatures you control during each other player's untap step." };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd797', name: 'Clock',
+    entries: [CLOCK, DRUM, ROCK, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 52 }]),
+    data: [CLOCK, DRUM, ROCK, BEAR] as never[],
+  });
+  // Seat 1's turn is next: everything of ours tapped now, and their untap step is where it is asked.
+  const theirUntap = (mine: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd797', 1: 'd797' }, deckSpecs: { d797: deck.deck },
+      battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } } };
+    s = advanceTo(advanceTo(s, 'end'), 'upkeep');
+    expect(s.activeSeat).toBe(1);
+    return s;
+  };
+  const tapped = (s: GameState, name: string) => s.instances[find(s, 0, 'battlefield', name)]!.tapped === true;
+
+  it('reads', () => {
+    for (const card of [CLOCK, DRUM]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Unwinding Clock: our artifacts untap in their untap step, our creatures and lands do not', () => {
+    const s = theirUntap(['Test Clock', 'Test Rock', 'Test Bear', 'Forest']);
+    expect(tapped(s, 'Test Rock')).toBe(false);
+    expect(tapped(s, 'Test Clock')).toBe(false);
+    expect(tapped(s, 'Test Bear')).toBe(true);
+    expect(tapped(s, 'Forest')).toBe(true);
+  });
+
+  it('Drumbellower: our creatures; and with both, both kinds', () => {
+    const s = theirUntap(['Test Drum', 'Test Rock', 'Test Bear']);
+    expect(tapped(s, 'Test Bear')).toBe(false);
+    expect(tapped(s, 'Test Rock')).toBe(true);
+    const t = theirUntap(['Test Drum', 'Test Clock', 'Test Rock', 'Test Bear', 'Forest']);
+    expect([tapped(t, 'Test Bear'), tapped(t, 'Test Rock'), tapped(t, 'Forest')]).toEqual([false, false, true]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

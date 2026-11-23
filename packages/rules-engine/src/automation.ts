@@ -88,12 +88,16 @@ export const MAX_HAND_SIZE = 7;
  * "You have no maximum hand size" (D646) and still has its abilities.
  */
 /** Whether a seat controls a live "untap during each other player's untap step" permanent (D661). */
-function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): boolean {
-  return [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)].some((id) => {
+function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): readonly (true | 'artifacts' | 'creatures')[] {
+  // Every live one, since an Unwinding Clock and a Drumbellower together untap both kinds (D797).
+  const kinds: (true | 'artifacts' | 'creatures')[] = [];
+  for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
     const inst = state.instances[id];
-    return inst !== undefined && !isFaceDownPermanent(inst) && !allAbilitiesLost(state, inst)
-      && scriptForCard(state.cardDefs[inst.defKey])?.untapsDuringOthersUntap === true;
-  });
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+    const kind = scriptForCard(state.cardDefs[inst.defKey])?.untapsDuringOthersUntap;
+    if (kind !== undefined) kinds.push(kind);
+  }
+  return kinds;
 }
 
 /**
@@ -980,9 +984,16 @@ function onEnterStep(state: GameState, step: Step): GameState {
       next = untapAll(next, next.activeSeat, { keep });
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
       for (const seat of next.seats) {
-        if (seat.index !== next.activeSeat && !seat.eliminated && untapsDuringOthersUntap(next, seat.index)) {
-          next = untapAll(next, seat.index, { othersStep: true });
-        }
+        const kinds = seat.index === next.activeSeat || seat.eliminated ? [] : untapsDuringOthersUntap(next, seat.index);
+        if (kinds.length === 0) continue;
+        // The narrower kinds (D797): everything not of one of them is kept as it is.
+        const keep = kinds.includes(true) ? undefined : new Set(listAt(next, zoneKey(seat.index, 'battlefield')).filter((id) => {
+          const inst = next.instances[id];
+          if (inst === undefined) return true;
+          const ch = characteristicsOf(next, inst);
+          return !((kinds.includes('artifacts') && hasType(ch.typeLine, 'artifact')) || (kinds.includes('creatures') && ch.isCreature));
+        }));
+        next = untapAll(next, seat.index, { othersStep: true, ...(keep === undefined ? {} : { keep }) });
       }
       next = {
         ...next,

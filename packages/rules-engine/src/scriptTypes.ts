@@ -3209,10 +3209,11 @@ export interface CardScript {
   readonly noMaxHandSize?: true;
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
-   * Prophet of Kruphix's first line, Unwinding Clock's artifacts-only cousin not included). Asked in
-   * every other seat's untap step by `onEnterStep`, live, like `noMaxHandSize`.
+   * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,
+   * like `noMaxHandSize`. `'artifacts'` and `'creatures'` (D797) are the narrower printings:
+   * Unwinding Clock's "Untap all artifacts you control …" and Drumbellower's "… creatures …".
    */
-  readonly untapsDuringOthersUntap?: true;
+  readonly untapsDuringOthersUntap?: true | 'artifacts' | 'creatures';
   /**
    * "You may play an additional land on each of your turns" (1), "… two additional lands …" (2) —
    * D648, CR 305.2. Added live by `landDropsFor` while the permanent is on its controller's
