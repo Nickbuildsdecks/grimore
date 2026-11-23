@@ -3239,6 +3239,19 @@ export function createEmblem(state: GameState, seat: SeatIndex, text: string, fr
 }
 
 /**
+ * Incubate N (D1155, CR 701.53a): an Incubator token — a colorless artifact with "{2}: Transform this
+ * artifact." — with N +1/+1 counters on it. The transformed face is a 0/0 Phyrexian artifact
+ * creature (the `INCUBATOR` script), so the counters make it an N/N.
+ */
+export function incubate(state: GameState, seat: SeatIndex, n: number): GameState {
+  const made = addTokens(state, seat, normaliseDef({
+    name: 'Incubator', typeLine: 'Token Artifact — Incubator', oracleText: '{2}: Transform this artifact.',
+    manaCost: '', cmc: 0, colors: [],
+  } as CardDef), 1);
+  return made.created.reduce((next, id) => (n > 0 ? addCounters(next, id, '+1/+1', n) : next), made.state);
+}
+
+/**
  * Manifest (D1153, CR 701.40a): the top card of the seat's library is put onto the battlefield face
  * down as a 2/2 creature with no text, name, subtypes or mana cost, marked `manifested` so it can be
  * turned face up for its mana cost if it is a creature card (`turnUpCostOf`). Nothing with an empty

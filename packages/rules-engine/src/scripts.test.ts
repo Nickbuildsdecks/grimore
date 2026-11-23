@@ -36025,6 +36025,49 @@ describe('Wurmcoil Engine\'s two tokens, and Destiny Spinner\'s list of kinds (D
   });
 });
 
+describe('incubate (D1155)', () => {
+  const INCUBATION = { name: 'Test Incubation', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Incubate 3.' };
+  const deck = customDeck({
+    id: 'd1155', name: 'Incubate', entries: [{ name: 'Test Incubation', count: 4 }, { name: 'Swamp', count: 56 }], data: [INCUBATION] as never[],
+  });
+  const made = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1155', 1: 'd1155' }, deckSpecs: { d1155: deck.deck },
+      // Four Swamps, so mana is left after the transform and only the guard can stop a second one.
+      hands: { 0: ['Test Incubation'] }, battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Incubation') } as Action)), 30);
+    const token = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Incubator')!;
+    return { s, token };
+  };
+  const transformOffers = (s: GameState, token: string) => legalActions(s, 0).plays.filter((p) => p.kind === 'activate' && p.card === token);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(INCUBATION as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('makes an Incubator artifact with three counters, not yet a creature', () => {
+    const { s, token } = made();
+    expect(token).toBeDefined();
+    const ch = characteristicsOf(s, s.instances[token]!);
+    expect(ch.isCreature).toBe(false);
+    expect(hasType(ch.typeLine, 'artifact')).toBe(true);
+    expect(s.instances[token]!.counters['+1/+1']).toBe(3);
+    expect(transformOffers(s, token)).toHaveLength(1);
+  });
+
+  it('{2}: it transforms into a 3/3 Phyrexian artifact creature, and is not offered again', () => {
+    let { s, token } = made();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: token, abilityIndex: 0 } as Action)), 30);
+    const ch = characteristicsOf(s, s.instances[token]!);
+    expect(ch.isCreature).toBe(true);
+    expect(ch.typeLine.subtypes).toContain('Phyrexian');
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(transformOffers(s, token)).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

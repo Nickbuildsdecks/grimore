@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -5019,6 +5019,27 @@ const TREASURE: CardScript = {
  * engine change at all, because a sacrifice has been a payable activation cost since that card. A
  * run where the Clue is cashed and the Treasure is not is a mana-path fault and nothing else.
  */
+/**
+ * The Incubator token (D1155, CR 701.53a): "{2}: Transform this artifact." Its back face is a 0/0
+ * Phyrexian artifact creature. Transforming keeps the permanent and its counters (CR 712.18), so the
+ * transform is a permanent effect on the token itself — it becomes a creature, a Phyrexian, 0/0 —
+ * and the ability is offered only while it is not yet a creature, which is the front face.
+ */
+const INCUBATOR: CardScript = {
+  name: 'Incubator',
+  abilities: [{
+    cost: { mana: '{2}' },
+    description: '{2}: Transform this artifact. (It becomes a 0/0 Phyrexian artifact creature.)',
+    activateOnlyIf: (state, source) => {
+      const inst = state.instances[source];
+      return inst !== undefined && !characteristicsOf(state, inst).isCreature;
+    },
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
+      addTypes: ['Creature'], addSubtypes: ['Phyrexian'], setPower: 0, setToughness: 0, duration: 'permanent',
+    }),
+  }],
+};
+
 const CLUE: CardScript = {
   name: 'Clue',
   abilities: [{
@@ -11539,6 +11560,8 @@ export const scriptFor = (name: string | undefined): CardScript | undefined =>
     : name === DISGUISE_GRANT.card ? DISGUISED_FACE_DOWN
       // The Ring emblem (D1144): see `theRingScript`.
       : name === THE_RING ? theRingScript()
+        // The Incubator token (D1155), which no starter deck makes, so it is not in `ALL`.
+        : name === INCUBATOR.name ? INCUBATOR
         : CARD_SCRIPTS.get(name.trim().toLowerCase());
 
 export const scriptedCardNames = (): string[] => [...CARD_SCRIPTS.values()].map((s) => s.name).sort();
@@ -16092,6 +16115,14 @@ function selfEffect(
         return hit === undefined ? roll.state : hit.effect!.effect({ ...c, state: roll.state });
       },
     };
+  }
+
+  // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
+  const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
+  if (incubated !== null) {
+    const WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+    const n = WORDS[incubated[1]!.toLowerCase()] ?? Number(incubated[1]);
+    return { effect: (c) => incubate(c.state, c.controller, n) };
   }
 
   // Manifest (D1153, CR 701.40a): see `manifestTop`. "Manifest the top two cards" is that twice.
