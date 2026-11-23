@@ -58023,3 +58023,43 @@ Faults injected by hand: 2.
 
 Coverage: 15,437 of 31,900 cards (+35 over D1141's 15,402), 37,436 of 59,888 lines (+54). The difference also counts the D7xx
 session's D798, merged in after D1141 was measured; D1142's own share is the 10 cards above.
+
+## D1143 — decayed, and "You create"
+
+Decayed (CR 702.147a) is the Innistrad: Midnight Hunt Zombie token's keyword: "This creature can't
+block. When this creature attacks, sacrifice it at end of combat." It was in the list of keyword
+names (so a printed "Decayed" was a declaration) but not a keyword, so every "create a 2/2 black
+Zombie creature token with decayed" was refused by the token reader's read-back of its keywords.
+It is now a keyword, and both halves are the engine's:
+- can't block: `cantBlock`, set by the keyword where defender sets `cantAttack`;
+- the sacrifice: the end of combat step sacrifices every attacker that has decayed, before
+  combat is cleared (where myriad's tokens are exiled).
+
+The sacrifice reads the keyword at end of combat rather than as a trigger on attacking. That differs
+only for a decayed creature that lost its abilities mid-combat, which would stay.
+
+"You create …" after a clause about another player (No Way Out, Taste of Death, Rat Out) is now
+read as "Create …": the subject is the controller either way.
+
+Read whole now (26 by the measure below; these are the ones probed by hand): Falcon Abomination, Flip the Switch, Ghoulish Procession, Rotten Reunion (decayed),
+and Hornswoggle, No Way Out, Path to the World Tree, Rat Out, Send in the Pest, Supplant Form,
+Taste of Death, Volatile Fault ("You create"). Not read:
+- Diregraf Horde ("When you do" after the tokens);
+- Jadar ("creatures with decayed" as a filter);
+- Wilhelt ("if it didn't have decayed");
+- Hobbling Zombie ("a 2/2 black Zombie creature", printed without "token").
+
+**Tests.** 5 engine tests:
+- The token-maker reads whole, and its token has decayed.
+- The token can't block.
+- The token attacks, deals 2, and is gone after combat.
+- A decayed token that does not attack stays.
+- "Target opponent discards a card. You create a … token" makes the token for the caster, not the
+  opponent.
+
+Faults injected by hand: 3.
+- Decayed without the block restriction (caught).
+- No sacrifice at end of combat (caught).
+- "You create" not rewritten (caught).
+
+Coverage: 15,463 of 31,900 cards (+26 over D1142's 15,437), 37,472 of 59,888 lines (+36).
