@@ -35316,6 +35316,49 @@ describe('Danitha\'s list, Drannith Magistrate, Ranger-Captain of Eos (D803)', (
   });
 });
 
+describe('"Return all <kind> cards from your graveyard to …" (D804)', () => {
+  const RECLAIM = { name: 'Test Reclamation', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Return all land cards from your graveyard to the battlefield tapped.' };
+  const CHIMES = { name: 'Test Chimes', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{0}, {T}, Sacrifice Test Chimes: Return all creature cards from your graveyard to your hand.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const GROWTH = { name: 'Test Growth', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +1/+1 until end of turn.' };
+  const deck = customDeck({
+    id: 'd804', name: 'Reclaim',
+    entries: [RECLAIM, CHIMES, BEAR, GROWTH].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 52 }]),
+    data: [RECLAIM, CHIMES, BEAR, GROWTH] as never[],
+  });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd804', 1: 'd804' }, deckSpecs: { d804: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine },
+    graveyard: { 0: ['Forest', 'Forest', 'Test Bear', 'Test Growth'], 1: ['Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const names = (s: GameState, seat: SeatIndex, zone: 'graveyard' | 'hand' | 'battlefield') => ids(s, seat, zone).map((id) => s.cardDefs[s.instances[id]!.defKey]!.name);
+
+  it('reads', () => {
+    for (const card of [RECLAIM, CHIMES]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Splendid Reclamation: both our lands come back tapped; the Bear, the instant and the opponent's land stay", () => {
+    let s = table([], ['Test Reclamation']);
+    const lands = ids(s, 0, 'graveyard').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Forest');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Reclamation') })));
+    for (const id of lands) expect([s.instances[id]!.zone, s.instances[id]!.tapped]).toEqual(['battlefield', true]);
+    expect(names(s, 0, 'graveyard').sort()).toEqual(['Test Bear', 'Test Growth', 'Test Reclamation']);
+    expect(names(s, 1, 'graveyard')).toEqual(['Forest']);
+  });
+
+  it('to the hand: every creature card, nothing else', () => {
+    let s = table(['Test Chimes'], []);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Chimes'), abilityIndex: 0 })));
+    expect(names(s, 0, 'hand')).toContain('Test Bear');
+    expect(names(s, 0, 'graveyard').sort()).toEqual(['Forest', 'Forest', 'Test Chimes', 'Test Growth']);
+  });
+
+  it('an enchantment return to the battlefield stays unread (an Aura would need a host)', () => {
+    const replenish = compileCard({ ...RECLAIM, name: 'Test Replenish', oracle_text: 'Return all enchantment cards from your graveyard to the battlefield.' } as never);
+    expect(replenish.ok && replenish.unread.length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
