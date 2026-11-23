@@ -37181,6 +37181,47 @@ describe('annihilator granted by an Aura, Eldrazi Conscription (D829)', () => {
   });
 });
 
+describe('"each nonland permanent that\'s not historic", Desynchronization (D830)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Desync', 'Sorcery', "Return each nonland permanent that's not historic to its owner's hand."),
+    R('Test Purge', 'Sorcery', 'Destroy all historic permanents.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Hero', 'Legendary Creature — Human', '', { power: '2', toughness: '2' }),
+    R('Test Relic', 'Artifact', ''),
+    R('Test Charm', 'Enchantment', ''),
+  ];
+  const deck = customDeck({ id: 'd830', name: 'Historic', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd830', 1: 'd830' }, deckSpecs: { d830: deck.deck },
+      hands: { 0: [spell] },
+      battlefield: { 0: ['Test Bear', 'Test Hero', 'Test Relic', 'Test Charm', 'Island'], 1: ['Test Bear', 'Test Relic'] },
+      turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) })));
+    return (seat: 0 | 1) => namesIn(s, seat, 'battlefield').sort();
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('returns the Bear and the enchantment on both sides; the legend, the artifact and the land stay', () => {
+    const left = cast('Test Desync');
+    expect(left(0)).toEqual(['Island', 'Test Hero', 'Test Relic']);
+    expect(left(1)).toEqual(['Test Relic']);
+  });
+
+  it('"historic" the other way: the legend and the artifacts go, the rest stays', () => {
+    const left = cast('Test Purge');
+    expect(left(0)).toEqual(['Island', 'Test Bear', 'Test Charm']);
+    expect(left(1)).toEqual(['Test Bear']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
