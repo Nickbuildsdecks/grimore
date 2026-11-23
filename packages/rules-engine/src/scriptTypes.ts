@@ -3548,7 +3548,7 @@ export interface CardScript {
      * (`{0}` when there is none); this is the rest, paid on the kicked cast only, the way
      * `additionalCost` is paid on every cast. A sacrifice or a life payment.
      */
-    readonly additional?: Extract<NonNullable<CardScript['additionalCost']>, { readonly sacrifice: unknown } | { readonly life: number }>;
+    readonly additional?: Extract<NonNullable<CardScript['additionalCost']>, { readonly sacrifice: unknown } | { readonly life: number } | { readonly exileFromGraveyard: unknown }>;
   };
   /**
    * "If this was kicked, it enters with N +1/+1 counters on it [and with haste]" (D561).

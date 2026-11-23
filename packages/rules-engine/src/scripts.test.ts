@@ -36468,6 +36468,58 @@ describe('a bonus while the host is legendary, a colour or a creature type (D814
   });
 });
 
+describe('"you may collect evidence N" as an additional cost, and "if evidence was collected" (D1159)', () => {
+  const VERDICT = { name: 'Test Verdict', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'As an additional cost to cast this spell, you may collect evidence 4.\nEach opponent loses 1 life. If evidence was collected, instead each opponent loses 3 life.' };
+  const INSPECTOR = { name: 'Test Inspector', type_line: 'Creature — Elf Detective', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '3', oracle_text: 'As an additional cost to cast this spell, you may collect evidence 4.\nWhen this creature enters, if evidence was collected, you gain 3 life.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [VERDICT, INSPECTOR, BEAR];
+  const deck = customDeck({
+    id: 'd1159', name: 'Evidence kicker', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], graveyard: string[]) => advanceTo(arena({
+    decks: { 0: 'd1159', 1: 'd1159' }, deckSpecs: { d1159: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: graveyard }, battlefield: { 0: ['Swamp'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const casts = (s: GameState, name: string) => legalActions(s, 0).plays
+    .filter((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', name));
+  const cast = (s: GameState, name: string, kicked: boolean) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(kicked ? { kicked: true } : {}),
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the evidence cast is offered only when the graveyard totals 4 or more', () => {
+    expect(casts(table(['Test Verdict'], ['Test Bear', 'Test Bear']), 'Test Verdict').map((p) => p.kicked === true).sort())
+      .toEqual([false, true]);
+    expect(casts(table(['Test Verdict'], ['Test Bear']), 'Test Verdict').map((p) => p.kicked === true)).toEqual([false]);
+  });
+
+  it('a spell: collected, it exiles the cards and takes the bigger branch; not collected, neither', () => {
+    let s = cast(table(['Test Verdict'], ['Test Bear', 'Test Bear']), 'Test Verdict', true);
+    expect(life(s, 1)).toBe(17);
+    expect(ids(s, 0, 'exile')).toHaveLength(2);
+    s = cast(table(['Test Verdict'], ['Test Bear', 'Test Bear']), 'Test Verdict', false);
+    expect(life(s, 1)).toBe(19);
+    expect(ids(s, 0, 'exile')).toEqual([]);
+  });
+
+  it('a creature: "When this creature enters, if evidence was collected" fires only on the evidence cast', () => {
+    let s = cast(table(['Test Inspector'], ['Test Bear', 'Test Bear']), 'Test Inspector', true);
+    expect(life(s, 0)).toBe(23);
+    expect(ids(s, 0, 'exile')).toHaveLength(2);
+    s = cast(table(['Test Inspector'], ['Test Bear', 'Test Bear']), 'Test Inspector', false);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('asked for with too little in the graveyard, the evidence cast is refused', () => {
+    const s = table(['Test Verdict'], ['Test Bear']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Verdict'), kicked: true } as Action)).not.toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

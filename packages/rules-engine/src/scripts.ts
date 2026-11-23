@@ -18216,6 +18216,7 @@ export function wholeCardShapeFor(
     ?? doubleKickerShapeFor(def, lines)
     ?? kickerPermanentShapeFor(def, lines)
     ?? costKickerPermanentShapeFor(def, lines)
+    ?? evidenceKickerPermanentShapeFor(def, lines)
     ?? escapeShapeFor(def, lines);
 }
 
@@ -18233,6 +18234,23 @@ function costKickerPermanentShapeFor(def: CardDef, lines: readonly string[]): Wh
   return {
     fragment: { ...read.fragment, kicker: { ...kicker, description: cost.printed, additional: cost.extra } },
     claimed: read.claimed.map((line) => (line === `Kicker ${cost.mana}` ? lines[cost.at]! : line)),
+  };
+}
+
+/** The permanent's "you may collect evidence N" (D1159), read as `costKickerPermanentShapeFor` reads its kicker. */
+function evidenceKickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const cost = evidenceKickerDeclaration(lines, false);
+  if (cost === null) return null;
+  const read = kickerPermanentShapeFor(def, cost.rewritten);
+  const kicker = read?.fragment.kicker;
+  if (read === null || kicker === undefined || !read.claimed.includes('Kicker {0}')) return null;
+  return {
+    fragment: { ...read.fragment, kicker: { ...kicker, description: cost.printed, additional: cost.extra } },
+    claimed: read.claimed.map((line) => {
+      if (line === 'Kicker {0}') return lines[cost.at]!;
+      const i = cost.rewritten.indexOf(line);
+      return i >= 0 ? lines[i]! : line;
+    }),
   };
 }
 
@@ -35924,6 +35942,48 @@ function costKickerDeclaration(lines: readonly string[]): {
   return { at, printed, mana: parts[1] ?? '{0}', extra };
 }
 
+/**
+ * "As an additional cost to cast this spell, you may collect evidence N." (D1159, CR 701.59): an
+ * optional cost announced with the spell, which its text asks about as "if evidence was
+ * collected". Read on the kicker's machinery, as D1103's "Kicker—Pay 3 life" is: the declaration
+ * becomes a free kicker whose `additional` is D1158's graveyard cost, and "evidence was collected"
+ * becomes "it was kicked" for the kicker readers. Not a kicker for anything that watches kicked
+ * spells: the description is the printed sentence.
+ */
+function evidenceKickerDeclaration(lines: readonly string[], spell: boolean): {
+  readonly at: number; readonly printed: string; readonly rewritten: readonly string[];
+  readonly extra: NonNullable<NonNullable<CardScript['kicker']>['additional']>;
+} | null {
+  const bare = (line: string): string => plain(line).replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const at = lines.findIndex((line) => /^As an additional cost to cast this spell, you may collect evidence \d+\.?$/i.test(bare(line)));
+  if (at < 0) return null;
+  const printed = bare(lines[at]!).replace(/\.$/, '');
+  const total = Number(/(\d+)$/.exec(printed)![1]);
+  if (total < 1) return null;
+  const rewritten = lines.map((line, i) => (i === at ? 'Kicker {0}' : line
+    .replace(/\bevidence was collected\b/gi, spell ? 'this spell was kicked' : 'it was kicked')
+    .replace(/\bevidence wasn['\u2019]t collected\b/gi, spell ? "this spell wasn't kicked" : "it wasn't kicked")));
+  if (rewritten.every((line, i) => i === at || line === lines[i])) return null;
+  return {
+    at, printed, rewritten,
+    extra: { exileFromGraveyard: { count: 0, words: 'evidence', matches: () => true, totalManaValue: total } },
+  };
+}
+
+function evidenceKickerSpellFor(lines: readonly string[], name: string): SpellReading | null {
+  const cost = evidenceKickerDeclaration(lines, true);
+  if (cost === null) return null;
+  const rest = spellScriptFor(cost.rewritten, name);
+  if (rest.script === null || rest.unread.length > 0 || rest.script.kicker === undefined
+    || rest.script.kicker.second !== undefined || rest.script.kicker.multi === true
+    || rest.script.additionalCost !== undefined) return null;
+  return {
+    script: { ...rest.script, kicker: { ...rest.script.kicker, description: cost.printed, additional: cost.extra } },
+    compiled: [...lines],
+    unread: [],
+  };
+}
+
 function costKickerSpellFor(lines: readonly string[], name: string): SpellReading | null {
   const cost = costKickerDeclaration(lines);
   if (cost === null) return null;
@@ -35946,6 +36006,9 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   // A kicker paid in a sacrifice or in life (D1103), the same way.
   const costKicked = costKickerSpellFor(lines, name);
   if (costKicked !== null) return costKicked;
+  // And the optional "you may collect evidence N" (D1159), the same way.
+  const evidenced = evidenceKickerSpellFor(lines, name);
+  if (evidenced !== null) return evidenced;
   /*
     The kicker pair, before anything else, because the keyword loop below would split it: the
     declaration would land in `declared` as an unimplemented keyword and the resolution line would

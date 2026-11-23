@@ -1108,6 +1108,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       if (card !== undefined) next = relocate(next, card, 'exile', card.owner, 'bottom');
     }
   }
+  // And a kicker paid in graveyard cards (D1159): "you may collect evidence 6", on the kicked cast only.
+  if (kickerExtra !== undefined && 'exileFromGraveyard' in kickerExtra) {
+    const plan = graveyardCostPlan(next, action.by, kickerExtra.exileFromGraveyard, inst.id);
+    if (plan === null) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `the cards in your graveyard total too little to collect evidence for ${characteristics.name}`);
+    }
+    for (const id of plan) {
+      const card = next.instances[id];
+      if (card !== undefined) next = relocate(next, card, 'exile', card.owner, 'bottom');
+    }
+  }
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     sacrificedName = characteristicsOf(next, victim).name;

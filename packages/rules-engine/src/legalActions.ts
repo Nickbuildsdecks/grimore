@@ -2697,6 +2697,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         if (script?.additionalCost !== undefined) continue;
         if ('life' in extra) {
           if (!canPayLife(state, seat, extra.life)) continue;
+        } else if ('exileFromGraveyard' in extra) {
+          // "You may collect evidence N" as the optional cost (D1159): offered only when it can be paid.
+          if (graveyardCostPlan(state, seat, extra.exileFromGraveyard, id) === null) continue;
         } else {
           kickVictims = sacrificeOptions(state, seat, id, extra);
           if (kickVictims.length === 0) continue;
