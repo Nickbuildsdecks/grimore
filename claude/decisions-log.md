@@ -59258,3 +59258,40 @@ was renamed and both are caught.
 
 - engine tests: 6181, all passing (on 963849a)
 - Coverage: unchanged, 15,810 of 31,900 cards and 37,970 of 59,888 lines, against 963849a.
+
+## D1162 — a punisher, once
+
+"Each player loses 2 life unless they discard a card" (Veils of Fear's room) and its kin were
+unread: "each opponent loses 3 life unless they discard a card", "each player loses 4 life unless
+they sacrifice a nontoken creature", "target opponent loses 2 life unless that player sacrifices a
+creature", "… unless they sacrifice an artifact, a creature, or a land" (Sandfall Cell's room).
+D730's `punisherRounds` read only Torment of Hailfire's three-way form.
+
+`punisherOnce` asks each player it names, in turn order:
+1. to lose the life, or to do the other thing, which is offered only to a player who can;
+2. then, only of those who chose it, which card or which permanent.
+
+The choice is recorded as the second question is reached, in D730's `AutomationState.punisher`, so
+that question is empty for everyone else. A player with nothing to give is offered only the life,
+and a one-answer question is not asked at all. `sacrificeKinds` reads what may be sacrificed: "a",
+"an", "nontoken", and a list joined by commas and "or". The bot loses the life while it has more
+than 9, otherwise gives up its cheapest card or permanent.
+
+Read whole now: Bellowing Mauler, Hag of Ceaseless Torment, Nicol Bolas, the Deceiver and Painful
+Quandary. Two rooms of Tomb of Annihilation read too: Veils of Fear and Sandfall Cell. Three dungeon
+rooms remain unread before "venture into the dungeon" can be read: Oubliette, Runestone Caverns and
+Mad Wizard's Lair.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- One player discards, so the card goes and the life stays; the other refuses and loses 2.
+- A player with nothing to discard is not asked, and loses the life; the player who can is offered
+  both.
+- The sacrifice: a land goes instead of the life; a player with no permanent loses the life.
+
+Faults injected by hand: 3, all caught.
+- Every choice costing the life.
+- The other choice always offered.
+- A land not counted for "an artifact, a creature, or a land".
+
+Coverage: 15,832 of 31,900 cards (+6 over D1161's 15,826), 38,015 of 59,888 lines (+6). The difference also counts the D7xx session's D816, merged in after D1161 was measured.
