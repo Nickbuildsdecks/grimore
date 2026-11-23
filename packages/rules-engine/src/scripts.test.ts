@@ -37151,6 +37151,40 @@ describe('"whenever you complete a dungeon" (D1164)', () => {
   });
 });
 
+describe('"for each opponent" as a count, and "For each opponent, …" done once each (D1165)', () => {
+  const MUSTER = { name: 'Test Muster', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Create a 1/1 black Rat creature token for each opponent you have.' };
+  const PLAGUE = { name: 'Test Plague', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'For each opponent, you create a 1/1 black and green Pest creature token with "When this token dies, you gain 1 life."' };
+  const TITHE = { name: 'Test Tithe', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'You gain 2 life for each opponent.' };
+  const ROWS = [MUSTER, PLAGUE, TITHE];
+  const deck = customDeck({
+    id: 'd1165', name: 'Opponents', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[],
+  });
+  const pod = (hand: string) => advanceTo(arena({
+    format: 'pod', seats: 4, firstSeat: 0, turn: 2,
+    decks: { 0: 'd1165', 1: 'd1165', 2: 'd1165', 3: 'd1165' }, deckSpecs: { d1165: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: ['Swamp'] },
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 30);
+  const count = (s: GameState, token: string) => namesIn(s, 0, 'battlefield').filter((n) => n === token).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three opponents: three Rats, three Pests, six life', () => {
+    expect(count(cast(pod('Test Muster'), 'Test Muster'), 'Rat')).toBe(3);
+    expect(count(cast(pod('Test Plague'), 'Test Plague'), 'Pest')).toBe(3);
+    expect(life(cast(pod('Test Tithe'), 'Test Tithe'), 0)).toBe(46);
+  });
+
+  it('an opponent who has left the game is not counted', () => {
+    let s = pod('Test Muster');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 3 ? { ...seat, eliminated: true } : seat)) };
+    expect(count(cast(s, 'Test Muster'), 'Rat')).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

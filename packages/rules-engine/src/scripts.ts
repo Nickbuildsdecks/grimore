@@ -21348,6 +21348,13 @@ function countOfThing(
       : c.state.spellsCastThisTurnByKind?.[`${c.controller}:${kind}`] ?? 0);
   }
   if (/^(?:the number of )?spells? cast this turn$/i.test(text)) return (c) => c.state.spellsCastThisTurn;
+  /*
+    "For each opponent", "for each opponent you have", "the number of opponents you have" (D1165):
+    the seats still in the game other than the controller's, counted as the effect resolves.
+  */
+  if (/^(?:(?:the number of )?opponents?(?: you have)?)$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).length;
+  }
   if (new RegExp(`^(?:the number of )?times? (?:it|he|she|this spell|${self}) (?:was|were) kicked$`, 'i').test(text)) {
     return (c) => {
       const spell = c.resolving;
@@ -27818,6 +27825,28 @@ function readEffect(
   if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
     xAnnounced += 1;
     try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
+  }
+  /*
+    "For each opponent, you create a 1/1 black and green Pest creature token with …" (D1165): the
+    clause read without its prefix and done once per opponent. Only a clause that points at nothing,
+    asks nothing and does not name the opponent ("that player", "they"): a clause about each
+    opponent in turn is a different reading, which this one is not.
+  */
+  const eachOpponent = /^for each opponent, (?:you )?(.+)$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (eachOpponent !== null && !/\b(?:that player|that opponent|they|their|them|its controller)\b/i.test(eachOpponent[1]!)) {
+    const body = eachOpponent[1]!;
+    const inner = readEffect(body.charAt(0).toUpperCase() + body.slice(1), name, where);
+    if (inner !== null && (inner.targets ?? []).length === 0 && (inner.decisions ?? []).length === 0
+      && inner.beforeDecisions === undefined && inner.reflexive === undefined) {
+      const once = inner.immediate ?? inner.effect;
+      return {
+        effect: (c) => {
+          let state = c.state;
+          for (let i = opponentsOf(c.state, c.controller).length; i > 0; i--) state = once({ ...c, state });
+          return state;
+        },
+      };
+    }
   }
   /*
     **"Until your next turn"** (D1161, CR 611.2b): "target creature gets -4/-0 until your next turn",
