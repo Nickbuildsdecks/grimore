@@ -57640,3 +57640,27 @@ missed a list that dropped its first word).
 
 Coverage: 15,263 to 15,277 of 31,900 cards with every line read, and 37,223 to 37,240 of 59,888
 lines, against 863e756.
+
+## D795 — "Gains protection from the color of your choice"
+
+Most-played order: Mother of Runes (rank 505), Alseid of Life's Bounty (2887), Gods Willing (3355),
+Shelter (3358), Benevolent Bodyguard (6046), Emerge Unscathed, Jareth, Cartel Aristocrat, Stave Off
+and the rest: 30 legal cards print the line, 23 now read fully and the line itself on 24.
+
+"<target> gains protection from the color of your choice until end of turn", for any target that
+points at a permanent ("target creature you control", "target creature or enchantment you
+control", "target creature"), and "~ gains …" on the permanent itself. The colour is a question
+asked as it resolves, after the target is fixed: a player answers with one of the five colours, and
+the bot names the colour it most has to fear, as an "As ~ enters, choose a color" protection card
+does (`enterChoiceDecision`, hostile). Protection is a pump that ends with the turn.
+
+**Tests.** 3 engine tests: the cards read; Mother of Runes offers all five colours, gives the
+targeted creature protection from the one chosen, and it is gone by the next turn; a spell (with a
+scry after it) does the same, and "~ gains …" protects the permanent itself.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,022, all passing (on d219fbb)
+
+Coverage: 15,277 to 15,301 of 31,900 cards with every line read, and 37,240 to 37,267 of 59,888
+lines, against d219fbb.

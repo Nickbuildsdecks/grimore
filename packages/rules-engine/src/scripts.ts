@@ -27747,6 +27747,31 @@ function readEffect(
       effect: (c) => { const seat = firstPlayerTarget(c); return seat === null ? c.state : ban(c.state, [seat]); },
     };
   }
+  /*
+    "Target creature you control gains protection from the color of your choice until end of turn"
+    (D795): Mother of Runes, Gods Willing, Benevolent Bodyguard, Alseid of Life's Bounty ("target
+    creature or enchantment you control"), and "~ gains …" (Jareth, Cartel Aristocrat). The colour is
+    chosen as it resolves, after the target; the bot names the colour it most has to fear, as an
+    "As ~ enters, choose a color" protection card does (`enterChoiceDecision`).
+  */
+  const shielded = new RegExp(`^(.+?) gains protection from the color of your choice until end of turn$`, 'i').exec(clause.trim());
+  if (shielded !== null) {
+    const subject = shielded[1]!;
+    const self = new RegExp(`^${selfRef(name)}$`, 'i').test(subject);
+    const spec = self ? null : targetSpecFrom(subject, false);
+    if (self || (spec !== null && pointsAtAPermanent(spec))) {
+      return {
+        ...(spec === null ? {} : { targets: [{ ...spec, friendly: true }] }),
+        decisions: [enterChoiceDecision('color', 'hostile')],
+        effect: (c) => {
+          const id = self ? c.source : firstCardTarget(c);
+          const colour = COLOUR_WORDS[(chosenOption(c) ?? '').toLowerCase()];
+          if (id === null || colour === undefined || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+          return pump(c.state, [id], c.source, c.controller, { protectionFrom: [colour] });
+        },
+      };
+    }
+  }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
     const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;

@@ -34267,6 +34267,59 @@ describe('"they" after a player trigger, everyone loots, a three-word cast list,
   });
 });
 
+describe('"gains protection from the color of your choice" (D795)', () => {
+  const MOTHER = { name: 'Test Mother', type_line: 'Creature — Human Cleric', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{T}: Target creature you control gains protection from the color of your choice until end of turn.' };
+  const WILLING = { name: 'Test Willing', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Target creature you control gains protection from the color of your choice until end of turn. Scry 1.' };
+  const TITAN = { name: 'Test Titan', type_line: 'Creature — Cat Giant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '4', toughness: '7', oracle_text: '{W}: Test Titan gains protection from the color of your choice until end of turn.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd795', name: 'Runes',
+    entries: [MOTHER, WILLING, TITAN, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Plains', count: 52 }]),
+    data: [MOTHER, WILLING, TITAN, BEAR] as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd795', 1: 'd795' }, deckSpecs: { d795: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const protectedFrom = (s: GameState, id: string) => [...(characteristicsOf(s, s.instances[id]!).protectionFrom ?? [])];
+  const resolveChoosing = (s0: GameState, colour: string) => {
+    let s = s0;
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      if (s.pendingDecision !== null) {
+        const options = s.pendingDecision.options ?? [];
+        s = options.length > 0
+          ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [], option: options.find((o) => o.toLowerCase() === colour) ?? options[0]! } as Action)
+          : apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [] } as Action);
+      } else s = drain(passBoth(s));
+    }
+    return s;
+  };
+
+  it('reads', () => {
+    for (const card of [MOTHER, WILLING, TITAN]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Mother of Runes: the colour chosen, on the creature targeted, until end of turn', () => {
+    let s = table(['Test Mother', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Mother'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] }));
+    expect(s.pendingDecision?.options).toEqual(expect.arrayContaining(['white', 'blue', 'black', 'red', 'green']));
+    s = resolveChoosing(s, 'red');
+    expect(protectedFrom(s, bear)).toEqual(['R']);
+    expect(protectedFrom(nextTurn(s), bear)).toEqual([]);
+  });
+
+  it('a spell, and "~ gains …" on itself', () => {
+    let s = table(['Test Bear', 'Test Titan', 'Plains'], ['Test Willing']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = resolveChoosing(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Willing'), targets: [{ kind: 'card', id: bear }] }), 'black');
+    expect(protectedFrom(s, bear)).toEqual(['B']);
+    const titan = find(s, 0, 'battlefield', 'Test Titan');
+    s = resolveChoosing(apply(s, { type: 'auto:activate', by: 0, card: titan, abilityIndex: 0 }), 'blue');
+    expect(protectedFrom(s, titan)).toEqual(['U']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
