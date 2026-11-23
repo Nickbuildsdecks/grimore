@@ -1472,6 +1472,11 @@ export type TriggerEvent =
    */
   | { readonly kind: 'life-lost'; readonly by?: 'you' | 'opponent' | 'any'; readonly amount?: number }
   /**
+   * "Whenever the Ring tempts you" (D1145, CR 701.54a): raised once for each time the Ring tempts the
+   * seat, read off `GameState.ring`. Only "you" is printed.
+   */
+  | { readonly kind: 'ring-tempted' }
+  /**
    * "Whenever you **discard** a card" — and "whenever you **cycle or discard** a card", which is
    * the same event (D567).
    *

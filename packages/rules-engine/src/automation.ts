@@ -22,7 +22,7 @@
  * which kills something else) comes out right.
  */
 import {
-  allAbilitiesLost, characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
+  allAbilitiesLost, characteristicsOf, ringBearerOf, ringLevel, expireEffects, grantedTriggersOn, hasSubtype, hasType,
   isLegendary, parseTypeLine,
   type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
@@ -1097,6 +1097,22 @@ function onEnterStep(state: GameState, step: Step): GameState {
         });
         if (decaying.length > 0) next = sacrifice(next, decaying);
       }
+      /*
+        The Ring's third ability (D1145, CR 701.54a): "Whenever your Ring-bearer becomes blocked by a
+        creature, that creature's controller sacrifices it at end of combat." Done here, at the end
+        of combat it names, for every creature still blocking a seat's Ring-bearer once the Ring has
+        tempted that seat three times. The printed trigger fires at the block and schedules the
+        sacrifice; reading the blocks now gives the same sacrifice, and differs only for a Ring that
+        reached three during the combat, after the block.
+      */
+      for (const seat of next.seats) {
+        if (ringLevel(next, seat.index) < 3) continue;
+        const bearer = ringBearerOf(next, seat.index);
+        if (bearer === null) continue;
+        const blockers = next.combat.attacks.filter((a) => a.attacker === bearer).flatMap((a) => a.blockers)
+          .filter((id) => next.instances[id]?.zone === 'battlefield');
+        if (blockers.length > 0) next = sacrifice(next, blockers);
+      }
       for (const seat of next.seats) {
         for (const id of [...listAt(next, zoneKey(seat.index, 'battlefield'))]) {
           if ((next.instances[id]?.counters[MYRIAD] ?? 0) > 0) next = exileCard(next, id);
@@ -1471,6 +1487,9 @@ function triggerMatches(
       if (actorSeat === undefined) return false;
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
+    // "Whenever the Ring tempts you" (D1145): only the tempted seat's own permanents.
+    case 'ring-tempted':
+      return actorSeat === sourceSeat;
     // "Whenever you / an opponent / a player loses life" (D999): whose loss.
     case 'life-lost': {
       const by = want.by ?? 'you';
@@ -4837,6 +4856,12 @@ function settle(state: GameState, before: GameState): GameState {
     const key = String(seat.index);
     const lost = (next.lifeLostThisTurn?.[key] ?? 0) - (before.lifeLostThisTurn?.[key] ?? 0);
     if (lost > 0) next = raise(next, { kind: 'life-lost', amount: lost }, seat.index);
+  }
+  // And each time the Ring tempted a seat (D1145): see `temptWithRing`.
+  for (const seat of next.seats) {
+    const key = String(seat.index);
+    const times = (next.ring?.[key]?.tempted ?? 0) - (before.ring?.[key]?.tempted ?? 0);
+    for (let i = 0; i < times; i++) next = raise(next, { kind: 'ring-tempted' }, seat.index);
   }
   /*
     State triggers (D1004, CR 603.8), asked after everything else this pass raised: each permanent

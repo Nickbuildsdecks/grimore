@@ -8018,6 +8018,8 @@ describe('deck coverage', () => {
       'script exilesWithTimeCounters',
       // D1143: decayed (the Midnight Hunt Zombie tokens); no pool deck plays one.
       'keyword decayed',
+      // D1145: "Whenever the Ring tempts you" (Faramir, Gandalf); no pool deck plays one.
+      'trigger ring-tempted',
     ]);
 
     const declared = [
@@ -35080,6 +35082,68 @@ describe('"you may cast <kind> spells as though they had flash" (D800)', () => {
     expect(tryCast(green, 'Test Elk')).toBeNull();
     expect(tryCast(green, 'Test Imp')).toMatch(/main phase/);
     expect(tryCast(green, 'Test Study')).toMatch(/main phase/);
+  });
+});
+
+describe('"Whenever the Ring tempts you", and the Ring\'s third ability (D1145)', () => {
+  const GANDALF = { name: 'Test Gandalf, the Grey', type_line: 'Legendary Creature — Avatar Wizard', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '4', oracle_text: 'Whenever the Ring tempts you, if you chose a creature other than Test Gandalf, the Grey as your Ring-bearer, draw a card.' };
+  const HOBBIT = { name: 'Test Hobbit', type_line: 'Creature — Halfling', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When Test Hobbit enters, the Ring tempts you.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [GANDALF, HOBBIT, BEAR];
+  const deck = customDeck({
+    id: 'd1145', name: 'Ring 2', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 48 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1145', 1: 'd1145' }, deckSpecs: { d1145: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s0: GameState, pick?: string) => {
+    let s = s0;
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      if (s.pendingDecision !== null) {
+        const want = (s.pendingDecision.candidates ?? []).find((id) => pick === undefined || nameOf(s, id) === pick);
+        s = apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: want === undefined ? [] : [want] } as Action);
+      } else s = drain(passBoth(s), 30);
+    }
+    return s;
+  };
+  const tempted = (pick: string) => {
+    let s = table(['Test Hobbit'], ['Test Gandalf, the Grey', 'Test Bear']);
+    const hand = s.zones['0:hand']!.length;
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hobbit') } as Action), pick);
+    return { s, drew: s.zones['0:hand']!.length - (hand - 1) };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GANDALF as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws when another creature is chosen as Ring-bearer', () => {
+    const { s, drew } = tempted('Test Bear');
+    expect(ringBearerOf(s, 0)).toBe(find(s, 0, 'battlefield', 'Test Bear'));
+    expect(drew).toBe(1);
+  });
+
+  it('does not when it is chosen itself', () => {
+    const { s, drew } = tempted('Test Gandalf, the Grey');
+    expect(ringBearerOf(s, 0)).toBe(find(s, 0, 'battlefield', 'Test Gandalf, the Grey'));
+    expect(drew).toBe(0);
+  });
+
+  it('at level 3, a creature that blocks the Ring-bearer is sacrificed at end of combat; at level 2 it is not', () => {
+    for (const [level, gone] of [[2, false], [3, true]] as const) {
+      let s = table([], ['Test Bear'], ['Test Gandalf, the Grey']);
+      const bear = find(s, 0, 'battlefield', 'Test Bear');
+      const theirs = find(s, 1, 'battlefield', 'Test Gandalf, the Grey');
+      for (let i = 0; i < level; i++) s = temptWithRing(s, 0, bear);
+      s = drain(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] } as Action));
+      s = settle(s);
+      s = drain(apply(advanceTo(s, 'declare-blockers'), { type: 'auto:block', by: 1, blocks: [{ blocker: theirs, attacker: bear }] } as Action));
+      s = settle(advanceTo(s, 'postcombat-main'));
+      // The 1/4 blocker survives the 2/2's damage, so only the Ring's sacrifice can take it.
+      expect(s.instances[theirs]?.zone === 'battlefield').toBe(!gone);
+    }
   });
 });
 

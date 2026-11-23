@@ -11502,7 +11502,8 @@ export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
  * - four or more: "Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3
  *   life".
  * The first ability is a characteristic of the bearer (`characteristicsOf`). The third ("becomes
- * blocked by a creature, that creature's controller sacrifices it at end of combat") is not here yet.
+ * blocked by a creature, that creature's controller sacrifices it at end of combat") is the end of
+ * combat step's (D1145), in `onEnterStep`.
  * Each trigger is read off its printed sentence with "a creature you control" for "your Ring-bearer",
  * so it is the same trigger the line reader builds for that sentence, plus the condition. Built on
  * first use, because the line reader is further down this module.
@@ -20222,6 +20223,11 @@ const TRIGGER_SHAPES: readonly ({
         (matched.groups?.by ?? '').toLowerCase() as 'an opponent gains' | 'a player gains'];
       return by === undefined ? null : [{ kind: 'life-gained' as const, by }];
     },
+  },
+  // "Whenever the Ring tempts you" (D1145): Gandalf, Friend of the Shire; Faramir; Nazgûl.
+  {
+    prologue: () => /^Whenever the Ring tempts you, (?<clause>.+)$/i,
+    from: () => [{ kind: 'ring-tempted' as const }],
   },
   // "Whenever you / an opponent / a player loses life" (D999): Exquisite Blood.
   {
@@ -33991,6 +33997,10 @@ function interveningConditionFor(
   */
   const rows = interveningConditionRows(printed, name);
   if (rows !== null) return rows;
+  // "If you chose a creature other than ~ as your Ring-bearer" (D1145): Gandalf, Faramir, Galadriel.
+  if (new RegExp(`^you chose a creature other than ${selfRef(name)} as your Ring-bearer$`, 'i').test(plain(printed).trim())) {
+    return (c) => ringBearerOf(c.state, c.controller) !== c.source;
+  }
   /*
     "You don't control a(n) X" (D1027): Scourge of Numai's "you lose 2 life if you don't control an
     Ogre", the Oni's "… a Demon". The negation of the same condition with "control", so it reads
@@ -34460,8 +34470,18 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
     intervening-if lines print one.
   */
   const text = plain(withoutAbilityWord(line)).trim();
-  const clause = /^((?:When|Whenever|At the beginning of) [^,]+), if ([^,]+), (.+)$/i.exec(text);
-  if (clause === null) return null;
+  /*
+    A name with a comma in it (D1145): "Whenever the Ring tempts you, if you chose a creature other
+    than Gandalf, Friend of the Shire as your Ring-bearer, draw a card", and "When Tymna, the Weaver
+    enters, if …". The split below is on commas, so the card's own name is masked first and put back
+    in each part after.
+  */
+  const masked = name.includes(',') ? name.replace(/,/g, '\u0011') : null;
+  const unmask = (part: string): string => (masked === null ? part : part.split(masked).join(name));
+  const split = /^((?:When|Whenever|At the beginning of) [^,]+), if ([^,]+), (.+)$/i
+    .exec(masked === null ? text : text.split(name).join(masked));
+  if (split === null) return null;
+  const clause = [split[0], unmask(split[1]!), unmask(split[2]!), unmask(split[3]!)] as const;
   /*
     "At the beginning of each opponent's / each player's upkeep, if that player has two or fewer cards
     in hand, …" (D1017): Hellfire Mongrel, Lavaborn Muse, Paupers' Cage, Ghirapur Orrery. "That
