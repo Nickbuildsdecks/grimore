@@ -214,6 +214,17 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
       `characteristicsOf` sets `cantAttack` from it, so the static restated the card's own text; it
       is deleted, and the test that goes with it declares an attack and checks the refusal.
   */
+  /*
+    D1137: Ophidian compiles now ("you may draw a card. If you do, ~ assigns no combat damage this
+    turn"), and the rules agree. The hand-written trigger keeps its bot heuristic — `best` declines
+    the draw when the unblocked hit would be lethal — which the compiled "may" has no way to say.
+    The hand-written script is the one played, so nothing changes at the table.
+  */
+  Ophidian: {
+    why: 'the hand-written trigger carries a bot heuristic (decline the draw when the hit is lethal)',
+    keys: ['triggers'],
+    digest: '8dd9a954',
+  },
 };
   /*
     **Two more were here and are settled (D420).** `Flame Slash` wanted the `removesACreature` hint

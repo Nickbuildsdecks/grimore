@@ -16171,6 +16171,19 @@ function selfEffect(
     }
   }
 
+  /*
+    "~ assigns no combat damage this turn" (D1137): Floral Spuzzem's, Dwarven Vigilantes', Kukemssa
+    Pirates' "If you do, …" and Keeper of Tresserhorn's. Ophidian's hand-written pump (D578), read:
+    it stays attacking and deals no combat damage, for the rest of the turn.
+  */
+  const noDamage = new RegExp(`^(?:(${self})|it) assigns no combat damage this turn$`, 'i').exec(text);
+  if (noDamage !== null) {
+    const named = noDamage[1];
+    return {
+      effect: (c) => pump(c.state, [itMeans(named, c)], c.source, c.controller, { assignsNoCombatDamage: true }),
+    };
+  }
+
   // "~'s owner shuffles it into their library" (D684): the Hellions, Cerulean Sphinx, Lembas.
   const selfTucked = new RegExp(`^(?:(${self})'s|its) owner shuffles (?:it|${self}) into their library$`, 'i').exec(text);
   if (selfTucked !== null) {
@@ -21972,7 +21985,11 @@ function optionalEffect(
   */
   const sequence = ((): { prompt: string; read: ReadEffect } | null => {
     if (doneThen === null) return null;
-    const xText = doneThen[1]!.trim();
+    // The causative in X too (D1137): "you may have it deal 3 damage to target creature. If you do,
+    // ~ assigns no combat damage this turn" (Farrel's Zealot, the Laccoliths), read in the indicative.
+    const xPrinted = doneThen[1]!.trim();
+    const causedX = /^have (.+?) (deal|get|discard|lose|mill|gain|sacrifice|fight) (.+)$/i.exec(xPrinted);
+    const xText = causedX === null ? xPrinted : `${causedX[1]!} ${causedX[2]!}s ${causedX[3]!}`;
     const yText = doneThen[2]!.trim();
     const x = reader(xText);
     /*

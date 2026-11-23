@@ -34140,6 +34140,33 @@ describe('domain, formidable and cohort (D1136)', () => {
   });
 });
 
+describe('"~ assigns no combat damage this turn" (D1137)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Human', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '4', toughness: '4', oracle_text: text });
+  const KEEPER = C('Test Keeper', "Whenever Test Keeper attacks and isn't blocked, it assigns no combat damage this turn and defending player loses 2 life.");
+  const ZEALOT = C('Test Zealot', "Whenever Test Zealot attacks and isn't blocked, you may have it deal 3 damage to target creature. If you do, Test Zealot assigns no combat damage this turn.");
+  const ROWS = [KEEPER, ZEALOT];
+  const deck = customDeck({
+    id: 'd1137', name: 'Quiet', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 56 }], data: ROWS as never[],
+  });
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an unblocked Keeper deals no combat damage, and the player loses 2', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1137', 1: 'd1137' }, deckSpecs: { d1137: deck.deck },
+      battlefield: { 0: ['Test Keeper'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const keeper = find(s, 0, 'battlefield', 'Test Keeper');
+    const before = life(s, 1);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: keeper, defender: 1 }] } as Action);
+    s = drain(advanceTo(s, 'end-combat'), 30);
+    expect(life(s, 1)).toBe(before - 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
