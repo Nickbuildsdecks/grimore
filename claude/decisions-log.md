@@ -58227,3 +58227,28 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,478 to 15,483 of 31,900 cards with every line read, and 37,500 to 37,505 of 59,888
 lines, against b98a318.
+
+## D1146 — "Choose target creature." as a sentence of its own
+
+About two dozen spells open with "Choose target creature." or "Choose target creature you control."
+and say what happens to "that creature" or "it" in the sentences after. The opening sentence was not
+read, so none of them were. It is now a clause that names the target and does nothing else; the
+sentences after borrow the target as any later clause borrows an earlier one's (D530).
+
+Read whole now (4): Drown in Filth, Grave Strength, Nibelheim Aflame, Strength of Solidarity. The rest
+are refused by what follows the opening, not by the opening itself:
+- "When that creature dies this turn" (Fatal Fissure, Rushed Rebirth);
+- energy payments (Harnessed Lightning, Die Young);
+- copies of the chosen creature (Augmenter Pugilist, Nanogene Conversion).
+
+**Tests.** 3 engine tests:
+- Both test spells read whole.
+- The counters go on the chosen Bear, one for each creature card in the graveyard after the mill,
+  and none on the other Bear.
+- An opponent's 2/2 dies to the -1/-1s counted from the caster's graveyard.
+
+Faults injected by hand: 1.
+- The target fixed to "creature you control" (caught: the opponent's creature can't be chosen).
+
+Coverage: 15,513 of 31,900 cards (+18 over D1145's 15,495), 37,544 of 59,888 lines (+28). The difference also counts the D7xx
+session's D800, merged in after D1145 was measured; D1146's own share is the 4 cards above.
