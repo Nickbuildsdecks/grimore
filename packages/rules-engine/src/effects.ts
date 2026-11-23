@@ -3103,6 +3103,15 @@ export interface PumpOptions {
   readonly onlyWithKeyword?: Keyword;
   /** See `ContinuousEffect.onlyKind` (D735). */
   readonly onlyKind?: readonly CreatureKindWord[];
+  /** See `ContinuousEffect.onlySubtypes` / `onlyColours` (D814). */
+  readonly onlySubtypes?: readonly string[];
+  readonly onlyColours?: readonly Color[];
+  /**
+   * Further effects from the same source on the same scope, each with its own filters (D814): an
+   * attachment's "As long as enchanted creature is red, it gets +1/+1" beside its plain bonus.
+   * Pushed by `staticEffect` and by the Aura's attach, and by nothing that makes a temporary pump.
+   */
+  readonly alsoParts?: readonly PumpOptions[];
   readonly duration?: EffectDuration;
 }
 
@@ -3173,6 +3182,8 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
     ...(opts.onlyWithKeyword ? { onlyWithKeyword: opts.onlyWithKeyword } : {}),
     ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),
+    ...(opts.onlySubtypes !== undefined && opts.onlySubtypes.length > 0 ? { onlySubtypes: [...opts.onlySubtypes] } : {}),
+    ...(opts.onlyColours !== undefined && opts.onlyColours.length > 0 ? { onlyColours: [...opts.onlyColours] } : {}),
   };
 }
 
@@ -3555,7 +3566,9 @@ export function staticEffect(
   state: GameState, source: string, controller: SeatIndex,
   scope: ContinuousEffect['scope'], opts: PumpOptions,
 ): GameState {
-  return pushEffect(state, { source, controller, scope, ...modsFrom(opts), duration: 'permanent' });
+  let next = pushEffect(state, { source, controller, scope, ...modsFrom(opts), duration: 'permanent' });
+  for (const part of opts.alsoParts ?? []) next = staticEffect(next, source, controller, scope, part);
+  return next;
 }
 
 /**

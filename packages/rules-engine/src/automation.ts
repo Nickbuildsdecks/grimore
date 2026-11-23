@@ -52,6 +52,7 @@ import {
   spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
+  staticEffect,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -6867,7 +6868,10 @@ function addAuraEffect(
     duration: 'permanent', createdTurn: state.turn,
     ...modsFrom(script.aura.effect),
   };
-  return { ...state, autoSeq: seq, effects: [...state.effects, effect] };
+  let next: GameState = { ...state, autoSeq: seq, effects: [...state.effects, effect] };
+  // And its conditional parts (D814), each its own effect from the same Aura.
+  for (const part of script.aura.effect.alsoParts ?? []) next = staticEffect(next, auraId, controller, effect.scope, part);
+  return next;
 }
 
 /**

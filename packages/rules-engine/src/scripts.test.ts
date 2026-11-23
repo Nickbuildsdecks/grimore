@@ -36322,6 +36322,87 @@ describe('ward at the end of a keyword list, Sheltered by Ghosts (D813)', () => 
   });
 });
 
+describe('a bonus while the host is legendary, a colour or a creature type (D814)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Helm', 'Artifact — Equipment', 'Equipped creature gets +2/+2.\nAs long as equipped creature is legendary, it has hexproof.\nEquip {0}'),
+    R('Test Bracers', 'Artifact — Equipment', 'Equipped creature gets +1/+1.\nAs long as equipped creature is a Human or an Angel, it has vigilance.\nEquip {0}'),
+    R('Test Mattock', 'Artifact — Equipment', 'Equipped creature gets +1/+1.\nAs long as equipped creature is a Human, it gets an additional +1/+1.\nEquip {0}'),
+    R('Test Edge', 'Enchantment — Aura', 'Enchant creature\nAs long as enchanted creature is white, it gets +1/+2.\nAs long as enchanted creature is black, it gets +2/+1.'),
+    R('Test Lord', 'Legendary Creature — Human', '', { power: '2', toughness: '2', mana_cost: '{W}', colors: ['W'] }),
+    R('Test Angel', 'Creature — Angel', '', { power: '2', toughness: '2', mana_cost: '{B}', colors: ['B'] }),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2', mana_cost: '{G}', colors: ['G'] }),
+  ];
+  const deck = customDeck({
+    id: 'd814', name: 'Host conditions',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 39 }],
+    data: ROWS as never[],
+  });
+  const table = (hands: Record<number, string[]>, battlefield: Record<number, string[]>) => advanceTo(arena({
+    decks: { 0: 'd814', 1: 'd814' }, deckSpecs: { d814: deck.deck }, hands, battlefield, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const equip = (s: GameState, gear: string, host: string) => {
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === gear)!;
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: gear, abilityIndex: play.abilityIndex ?? 0, targets: [{ kind: 'card', id: host }] })));
+  };
+  const size = (s: GameState, id: string) => {
+    const c = characteristicsOf(s, s.instances[id]!);
+    return [c.power, c.toughness];
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('hexproof only on a legendary host, the size on any', () => {
+    let s = table({}, { 0: ['Test Helm', 'Test Lord', 'Test Bear'] });
+    const helm = find(s, 0, 'battlefield', 'Test Helm');
+    const lord = find(s, 0, 'battlefield', 'Test Lord');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = equip(s, helm, lord);
+    expect(size(s, lord)).toEqual([4, 4]);
+    expect(characteristicsOf(s, s.instances[lord]!).keywords.has('hexproof')).toBe(true);
+    s = equip(s, helm, bear);
+    expect(size(s, bear)).toEqual([4, 4]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('hexproof')).toBe(false);
+    // And it went with the Equipment: the legend is back to itself.
+    expect(size(s, lord)).toEqual([2, 2]);
+    expect(characteristicsOf(s, s.instances[lord]!).keywords.has('hexproof')).toBe(false);
+  });
+
+  it('either listed creature type will do, and another will not', () => {
+    let s = table({}, { 0: ['Test Bracers', 'Test Angel', 'Test Bear'] });
+    const bracers = find(s, 0, 'battlefield', 'Test Bracers');
+    const angel = find(s, 0, 'battlefield', 'Test Angel');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = equip(s, bracers, angel);
+    expect(characteristicsOf(s, s.instances[angel]!).keywords.has('vigilance')).toBe(true);
+    s = equip(s, bracers, bear);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('vigilance')).toBe(false);
+    expect(size(s, bear)).toEqual([3, 3]);
+  });
+
+  it('"an additional +1/+1" adds to the plain bonus on a Human', () => {
+    let s = table({}, { 0: ['Test Mattock', 'Test Lord'] });
+    s = equip(s, find(s, 0, 'battlefield', 'Test Mattock'), find(s, 0, 'battlefield', 'Test Lord'));
+    expect(size(s, find(s, 0, 'battlefield', 'Test Lord'))).toEqual([4, 4]);
+  });
+
+  it("an Aura's two colour lines: white gets one, black the other, green neither", () => {
+    const cases: [string, number[]][] = [['Test Lord', [3, 4]], ['Test Angel', [4, 3]], ['Test Bear', [2, 2]]];
+    for (const [name, expected] of cases) {
+      let s = table({ 0: ['Test Edge'] }, { 0: [name] });
+      const host = find(s, 0, 'battlefield', name);
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Edge'), targets: [{ kind: 'card', id: host }] })));
+      expect(s.instances[find(s, 0, 'battlefield', 'Test Edge')]!.attachedTo, name).toBe(host);
+      expect(size(s, host), name).toEqual(expected);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
