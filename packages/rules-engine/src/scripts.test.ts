@@ -34902,6 +34902,51 @@ describe('decayed Zombie tokens (D1143)', () => {
   });
 });
 
+describe('"Exile target card from a graveyard. If it was a creature card, …" (D799)', () => {
+  const OOZE = { name: 'Test Ooze', type_line: 'Creature — Ooze', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '{0}: Exile target card from a graveyard. If it was a creature card, put a +1/+1 counter on Test Ooze and you gain 1 life.' };
+  const SASH = { name: 'Test Sash', type_line: 'Artifact Creature — Equipment Spirit', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{0}: Exile target card from a graveyard. If it was a permanent card, put a +1/+1 counter on Test Sash.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const SHOCK = { name: 'Test Shock', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Shock deals 2 damage to any target.' };
+  const deck = customDeck({
+    id: 'd799', name: 'Ooze',
+    entries: [OOZE, SASH, BEAR, SHOCK].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 52 }]),
+    data: [OOZE, SASH, BEAR, SHOCK] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd799', 1: 'd799' }, deckSpecs: { d799: deck.deck },
+    battlefield: { 0: mine }, graveyard: { 1: ['Test Bear', 'Test Shock', 'Forest'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const use = (s: GameState, name: string, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0, targets: [{ kind: 'card', id: target }],
+  })));
+  const counters = (s: GameState, name: string) => s.instances[find(s, 0, 'battlefield', name)]!.counters['+1/+1'] ?? 0;
+
+  it('reads', () => {
+    for (const card of [OOZE, SASH]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Scavenging Ooze: a creature card grows it and gains a life; an instant is exiled and nothing else', () => {
+    let s = table(['Test Ooze']);
+    const bear = find(s, 1, 'graveyard', 'Test Bear');
+    const shock = find(s, 1, 'graveyard', 'Test Shock');
+    const before = life(s, 0);
+    s = use(s, 'Test Ooze', shock);
+    expect(s.instances[shock]!.zone).toBe('exile');
+    expect([counters(s, 'Test Ooze'), life(s, 0)]).toEqual([0, before]);
+    s = use(s, 'Test Ooze', bear);
+    expect(s.instances[bear]!.zone).toBe('exile');
+    expect([counters(s, 'Test Ooze'), life(s, 0)]).toEqual([1, before + 1]);
+  });
+
+  it('"a permanent card": a land counts, an instant does not', () => {
+    let s = table(['Test Sash']);
+    s = use(s, 'Test Sash', find(s, 1, 'graveyard', 'Test Shock'));
+    expect(counters(s, 'Test Sash')).toBe(0);
+    s = use(s, 'Test Sash', find(s, 1, 'graveyard', 'Forest'));
+    expect(counters(s, 'Test Sash')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
