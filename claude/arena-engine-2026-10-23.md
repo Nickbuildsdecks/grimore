@@ -40200,3 +40200,31 @@ Faults injected by hand: 2.
 - The causative rewrite removed (caught).
 
 Coverage: 15,319 of 31,900 cards (+13 over D1136's 15,306), 37,276 of 59,888 lines (+14).
+
+## D1138 — firebending, and mana kept until end of combat
+
+Firebending N (Avatar: The Last Airbender): "Whenever this creature attacks, add N {R}. This mana
+lasts until end of combat." It is read as the attack trigger it stands for, which needed one new
+fact: mana kept **until end of combat**.
+
+`GameState.keptManaCombat` sits beside D1034's `keptMana`. `emptyPools` keeps it through the combat
+steps and drops it as the end of combat step ends, then shrinks the record to what stayed. It is
+also cleared in the cleanup step with the turn's record. "Until end of combat, you don't lose this
+mana as steps and phases end" joins its "add" sentence the way D1034's does.
+
+Read whole now (9): Azula, On the Hunt; Fire Sages; Loyal Fire Sage; Tundra Tank; Uncle Iroh;
+Vindictive Warden; Zhao, Ruthless Admiral; Zuko, Exiled Prince, and one more. Not read:
+- "Firebending X, where X is …" (Firebending Student, Sun Warriors) waits on an "add an amount of
+  {R} equal to …" reader.
+- Avatar Roku's "add six {R}" waits on a number word in an add.
+
+**Tests.** 2 engine tests:
+- It reads whole.
+- An attacking Firebending 2 adds {R}{R}, still there in the end of combat step, and gone in the
+  second main phase.
+
+Faults injected by hand: 2.
+- The combat mana never lost (caught).
+- Never kept (caught).
+
+Coverage: 15,327 of 31,900 cards (+8 over D1137's 15,319), 37,290 of 59,888 lines (+14).
