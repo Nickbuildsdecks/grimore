@@ -309,6 +309,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | **Silence, Orim's Chant** | For the rest of the turn the barred player's spells are not offered, and the reason says **you can't cast spells this turn**. Next turn it is gone. |
 | **Mother of Runes, Gods Willing, Benevolent Bodyguard** | After you pick the creature, the table asks which colour as it resolves (white, blue, black, red or green), and the creature has protection from that colour until end of turn. |
 | **Leyline of Anticipation, Vedalken Orrery, Yeva** | The spells they name are offered whenever you hold priority, on anyone's turn and with things on the stack, as if they had flash. Only your own Leyline counts for you. |
+| **The Swords (Feast and Famine, Fire and Ice, and the rest)** | The equipped creature gets the bonus and protection from both colours, and the hit trigger does all of what it prints: Feast and Famine's discard and untap, Fire and Ice's 2 damage and card. |
 | **Tribute to Hunger: "Target opponent sacrifices a creature. You gain life equal to that creature's toughness"** | The toughness of the creature they chose to sacrifice, as it was just before. |
 | **Chastise, Sever Soul: "Destroy target creature. You gain life equal to its power"** | The creature's power as it last was, pumps included, even though it is gone by then; if it is still there, its power now. |
 | **"Put an oil counter on target artifact you control"** | The oil (or charge) counter goes on the permanent you choose, for the cards that count them. |

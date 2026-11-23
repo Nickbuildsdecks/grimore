@@ -58326,3 +58326,30 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,530 to 15,537 of 31,900 cards with every line read, and 37,564 to 37,574 of 59,888
 lines, against 0a222f2.
+
+## D805 — The Swords: protection from two colours, and a name with "and" in it
+
+Most-played order: Sword of Feast and Famine (rank 552), Sword of Hearth and Home's first line
+(923), Sword of Fire and Ice (1338), Sword of Truth and Justice (1711), Sword of Forge and Frontier
+(1883), Sword of Body and Mind (4417) and the rest of the cycle's first line.
+
+- **"Equipped creature gets +2/+2 and has protection from black and from green"**: an attachment
+  rider (D604) for protection from one colour or from two, so the size and the protection read
+  together. "From creatures", "from instants" and "from the chosen color" stay unread.
+- **"… that player discards a card and you untap all lands you control"**: in a conjoined clause,
+  "you" before a verb the readers take in the imperative (untap, create, exile, destroy, …) is the
+  same instruction without it.
+- **A card whose name has " and " in it**: "Sword of Fire and Ice deals 2 damage to any target and
+  you draw a card" was split inside the name. The conjunction splitter now sets the card's own name
+  aside before splitting, so the split falls at the sentence's "and".
+
+**Tests.** 3 engine tests: both Swords read; Feast and Famine gives +2/+2 and protection from black
+and green, and on a hit the opponent discards and our tapped lands untap; Fire and Ice gives
+protection from red and blue, and on a hit deals 2 more to the opponent and draws us a card.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,100, all passing (on db64a9a)
+
+Coverage: 15,537 to 15,548 of 31,900 cards with every line read, and 37,574 to 37,593 of 59,888
+lines, against db64a9a.
