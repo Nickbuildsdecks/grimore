@@ -59901,3 +59901,29 @@ Faults injected by hand: 5, all caught.
 - The blocker count fixed at one.
 
 Coverage: 16,032 of 31,900 cards (+51 over D1169's 15,981), 38,285 of 59,888 lines (+55). The difference also counts the D7xx session's D827 and D828, merged in after D1169 was measured.
+## D829 — Losheel's attacking artifact creatures, and annihilator granted by an Aura (Eldrazi Conscription)
+
+Most-played order: Eldrazi Conscription (rank 1595) and Losheel, Clockwork Scholar (rank 1607).
+
+**Losheel.** D821's "attacking creatures you control" takes "artifact" in front of "creatures".
+The static keeps the `controller-creatures` scope and the `onlyAttacking` filter and adds D735's
+`onlyKind: ['artifact']`.
+
+**Eldrazi Conscription.** An attachment's "has trample and annihilator 2" now reads annihilator as
+the quoted attack trigger it stands for (CR 702.86a: "Whenever this creature attacks, defending
+player sacrifices N permanents"), the way D736 reads "ward {N}". The existing size-and-grant reader
+then takes it, so the host gets the trigger through `grantedTriggers`. "Has menace, deathtouch,
+annihilator 1" (a comma list ending in annihilator) is not rewritten, and stays unread.
+
+**Tests.** 4 engine tests:
+- both cards read;
+- under Losheel, an attacking artifact creature blocked by a 3/3 lives and an attacking Bear does
+  not;
+- the Conscription's host is a 12/12 trampler, and when it attacks the defending player
+  sacrifices two of their three permanents.
+
+Faults injected by script: 3 of 3 caught (the artifact filter dropped, the annihilator rewrite
+off, and the count fixed at one).
+
+- engine tests: 6222, all passing (on 76a6c8a)
+- Coverage: 15,842 to 15,844 of 31,900 cards with every line read, and 38,018 to 38,020 of 59,888 lines, against 76a6c8a.
