@@ -37039,6 +37039,61 @@ describe('venture into the dungeon: the three dungeons, "while exiled", and a co
   });
 });
 
+describe('"whenever an opponent discards a creature / land / noncreature, nonland card", Waste Not (D820)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Waste', 'Enchantment', 'Whenever an opponent discards a creature card, create a 2/2 black Zombie creature token.\nWhenever an opponent discards a land card, add {B}{B}.\nWhenever an opponent discards a noncreature, nonland card, draw a card.'),
+    R('Test Purge', 'Sorcery', 'Target player discards a card.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.'),
+  ];
+  const deck = customDeck({ id: 'd820', name: 'Waste', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  /** Seat 0 has Waste Not out and makes `victim` discard its one card, `card`. */
+  const purge = (victim: 0 | 1, card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd820', 1: 'd820' }, deckSpecs: { d820: deck.deck },
+      hands: { 0: ['Test Purge', ...(victim === 0 ? [card] : [])], 1: victim === 1 ? [card] : [] },
+      battlefield: { 0: ['Test Waste'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // The draw step's card would be a second choice: keep only what the test dealt.
+    for (const id of ids(s, 0, 'hand').filter((id) => !['Test Purge', card].includes(nameOf(s, id)))) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library' });
+    }
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Purge'), targets: [{ kind: 'player', seat: victim }] } as Action);
+    const hand = ids(s, 0, 'hand').length;
+    for (let i = 0; i < 6 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    if (s.pendingDecision !== null) s = drain(apply(s, { type: 'auto:decide', by: victim, cards: s.pendingDecision.candidates.slice(0, 1) } as Action), 30);
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const zombies = ids(s, 0, 'battlefield').filter((id) => /zombie/i.test(nameOf(s, id))).length;
+    return { zombies, black: poolOf(s, 0).B ?? 0, drew: ids(s, 0, 'hand').length - hand };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature card: a Zombie, and nothing else', () => {
+    expect(purge(1, 'Test Bear')).toEqual({ zombies: 1, black: 0, drew: 0 });
+  });
+
+  it('a land card: {B}{B}, and nothing else', () => {
+    expect(purge(1, 'Swamp')).toEqual({ zombies: 0, black: 2, drew: 0 });
+  });
+
+  it('an instant: a card, and nothing else', () => {
+    expect(purge(1, 'Test Shock')).toEqual({ zombies: 0, black: 0, drew: 1 });
+  });
+
+  it('its controller discarding a creature card fires none of them', () => {
+    const own = purge(0, 'Test Bear');
+    expect(own.zombies).toBe(0);
+    expect(own.black).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

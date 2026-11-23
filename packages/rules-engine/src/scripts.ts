@@ -20268,6 +20268,25 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever an opponent discards a card, (.+)$/i,
     on: [{ kind: 'discards', by: 'opponent' }],
   },
+  /*
+    Which card (D820): "Whenever an opponent discards a creature card" (Waste Not), "a land card",
+    "a noncreature, nonland card". Card types only, all printed "non" or none.
+  */
+  {
+    prologue: () => /^Whenever (?<who>you|an opponent|a player) discards? an? (?<kind>(?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle)(?:, (?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle))*) card, (?<clause>.+)$/i,
+    from: (m) => {
+      const words = (m.groups?.kind ?? '').toLowerCase().split(/,\s*/);
+      const negated = words.every((w) => w.startsWith('non'));
+      if (!negated && words.length > 1) return [];
+      if (!negated && words.some((w) => w.startsWith('non'))) return [];
+      const who = (m.groups?.who ?? '').toLowerCase();
+      return [{
+        kind: 'discards' as const,
+        by: who === 'you' ? 'you' as const : who === 'an opponent' ? 'opponent' as const : 'any' as const,
+        ...(negated ? { notTypes: words.map((w) => w.slice(3)) } : { cardTypes: words }),
+      }];
+    },
+  },
   // "One or more cards" (D993): the batch, once per discard however many cards.
   {
     prologue: () => /^Whenever you discard one or more cards, (.+)$/i,

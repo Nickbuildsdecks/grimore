@@ -41946,3 +41946,36 @@ Survived, as designed: the reader's own in-dungeon check removed. `ventureInto` 
 progress itself, so the two checks guard each other.
 
 Coverage: 15,855 of 31,900 cards (+23 over D1162's 15,832), 38,055 of 59,888 lines (+40). The difference also counts the D7xx session's D817 and D818, merged in after D1162 was measured.
+## D820 — "Whenever an opponent discards a creature / land / noncreature, nonland card": Waste Not
+
+Most-played order: Waste Not (rank 1268), whose three lines are each a discard trigger about one
+kind of card. The same row reads Bone Miser, Surly Badgersaur and Wharf Infiltrator.
+
+**Engine.** The per-card `discards` event now carries `subjectTypes`: the discarded card's printed
+card types, lowercased and read as it is raised. The trigger gains `cardTypes` (any of them) and
+`notTypes` (none of them), and the matcher asks them only when a trigger has them, so every
+existing discard trigger means what it did. The batch event (D993) carries no types and is not
+asked.
+
+**Reader.** A trigger row "Whenever (you | an opponent | a player) discard(s) a(n) <kind> card,
+…". The kind is either one card type ("a creature card") or a list of card types each printed
+with "non" ("a noncreature, nonland card"). A list of positive types and mixed lists stay unread.
+"When you discard a land card" (Green Goblin) prints "When" and stays unread too.
+
+**Tests.** 5 engine tests (Waste Not's controller makes the opponent discard their one card):
+- the card reads;
+- a creature card makes one Zombie and nothing else;
+- a land adds {B}{B} and nothing else;
+- an instant draws a card and nothing else;
+- its own controller discarding a creature card fires none of them.
+
+And in compile.test, D567's pin "leaves a discard narrowed by card type unread" ("Whenever you
+discard a creature card, you gain 1 life") is retargeted, the way that table already records its
+others: the line now reads as `{ kind: 'discards', by: 'you', cardTypes: ['creature'] }`. The first
+gate caught it; the change is deliberate.
+
+Faults injected by script: 5 of 5 caught. They cover the positive filter, the negative filter,
+the types not raised, "non" read as the type itself, and whose discard ignored.
+
+- engine tests: 6192, all passing (on 2672538)
+- Coverage: 15,812 to 15,816 of 31,900 cards with every line read, and 37,973 to 37,985 of 59,888 lines, against 2672538.
