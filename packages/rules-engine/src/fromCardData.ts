@@ -832,6 +832,46 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
       ...(spendOnly === undefined ? {} : { spendOnly }),
     };
   }
+  /*
+    "An amount of {G} equal to ~'s power" (D1139): Viridian Joiner, Marwyn, Bighorner Rancher's
+    "this creature's power", "its power", "~'s toughness", and "the greatest power among creatures you
+    control". The source's live size as the mana is made, the same `per` count D713's devotion uses.
+  */
+  const measured = /^an amount of (\{[WUBRGC]\}) equal to (.+)$/i.exec(body);
+  if (measured !== null) {
+    const escape = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const short = shortName(name);
+    const self = `(?:${escape(name)}|${short === null ? '' : `${escape(short)}|`}this (?:artifact|creature|land|enchantment|permanent))`;
+    const phrase = measured[2]!.trim();
+    const own = new RegExp(`^(?:${self}['’]s|its) (power|toughness)$`, 'i').exec(phrase);
+    const greatest = /^the greatest power among creatures you control$/i.test(phrase);
+    const symbol = parseSymbolRun(measured[1]!);
+    if ((own !== null || greatest) && symbol !== null && symbol.length === 1) {
+      const which = own?.[1]?.toLowerCase();
+      const count: NonNullable<AbilityDef['producesTimes']> = own !== null
+        ? (state, source) => {
+          const inst = state.instances[source];
+          if (inst === undefined) return 0;
+          const ch = characteristicsOf(state, inst);
+          return Math.max(0, which === 'toughness' ? ch.toughness : ch.power);
+        }
+        : (state, _source, controller) => {
+          let best = 0;
+          for (const id of state.zones?.[zoneKey(controller, 'battlefield')] ?? []) {
+            const inst = state.instances[id];
+            if (inst === undefined) continue;
+            const ch = characteristicsOf(state, inst);
+            if (ch.isCreature) best = Math.max(best, ch.power);
+          }
+          return best;
+        };
+      return {
+        mode: 'sum', produces: symbol, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+        per: { count, phrase: `point of ${phrase}` },
+        ...(spendOnly === undefined ? {} : { spendOnly }),
+      };
+    }
+  }
   // A count (D662): one symbol "for each" thing, read off the board as the mana is made.
   const counted = /^(\{[WUBRGC]\}) for each (.+)$/i.exec(body);
   if (counted !== null) {

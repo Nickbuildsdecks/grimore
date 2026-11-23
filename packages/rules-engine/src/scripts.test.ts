@@ -34372,6 +34372,43 @@ describe('"lose <keywords> until end of turn" on a mass subject (D793)', () => {
   });
 });
 
+describe('mana equal to a power (D1139)', () => {
+  const C = (name: string, text: string, size: string) => ({ name, type_line: 'Creature — Elf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: size, toughness: size, oracle_text: text });
+  const JOINER = C('Test Joiner', "{T}: Add an amount of {G} equal to Test Joiner's power.", '1');
+  const RANCHER = C('Test Rancher', '{T}: Add an amount of {G} equal to the greatest power among creatures you control.', '1');
+  const BIG = C('Test Big', '', '4');
+  const GROWTH = { name: 'Test Growth', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +2/+2 until end of turn.' };
+  const ROWS = [JOINER, RANCHER, BIG, GROWTH];
+  const deck = customDeck({
+    id: 'd1139', name: 'Power mana', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1139', 1: 'd1139' }, deckSpecs: { d1139: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const green = (s: GameState) => (poolOf(s, 0) as Record<string, number>)['G'] ?? 0;
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [JOINER, RANCHER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('makes as much as its live power', () => {
+    let s = table(['Test Growth'], ['Forest', 'Test Joiner']);
+    const joiner = find(s, 0, 'battlefield', 'Test Joiner');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: joiner }] } as Action)), 30);
+    expect(power(s, joiner)).toBe(3);
+    s = apply(s, { type: 'auto:activate', by: 0, card: joiner, abilityIndex: 0 } as Action);
+    expect(green(s)).toBe(3);
+  });
+
+  it('"the greatest power among creatures you control"', () => {
+    let s = table([], ['Test Rancher', 'Test Big']);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Rancher'), abilityIndex: 0 } as Action);
+    expect(green(s)).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
