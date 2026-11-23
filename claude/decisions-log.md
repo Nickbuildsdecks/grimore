@@ -58312,3 +58312,32 @@ Faults injected by hand: 3.
 
 Coverage: 15,530 of 31,900 cards (+17 over D1146's 15,513), 37,563 of 59,888 lines (+19). The difference also counts the D7xx
 session's D801, merged in after D1146 was measured.
+
+## D1148 — "Whenever you attack while …"
+
+The Star Trek crew print "Whenever you attack while creatures you control have total power 8 or
+greater, …", and The Chief Warg prints "… while you control a creature with power 4 or greater".
+"Whenever you attack, if …" was read; "while" was not. The line is now read as that intervening
+"if", through the same reader and the same conditions (D1136's total power).
+
+The difference is accepted and recorded. The printed "while" is a trigger condition, asked only as
+the ability triggers (CR 603.2). An intervening "if" is asked again as it resolves (CR 603.4). The
+two differ only when the total drops below the threshold before the trigger resolves; then this
+does nothing where the card would still act.
+
+Read whole now (5): Hologram Janeway, Kirk, Commanding Officer, La'An Noonien-Singh, Security,
+Tactical Officer, Una Chin-Riley, Number One. Not read:
+- Worf ("double ~'s power");
+- The Chief Warg ("you draw a card and lose 1 life").
+
+**Tests.** 2 engine tests:
+- The test Officer reads whole.
+- Attacking beside a 6/6 (8 total) puts its counter on; beside a 3/3 (5 total) does not.
+
+Faults injected by hand: 1.
+- The condition swapped for one that always holds ("you control a creature"). Caught: the 5-power
+  attack got a counter. A first fault, which dropped the condition altogether, left the card unread
+  instead, so it did not test the condition; this one does.
+
+Coverage: 15,538 of 31,900 cards (+8 over D1147's 15,530), 37,571 of 59,888 lines (+8). The difference also counts the D7xx
+session's D802, merged in after D1147 was measured; D1148's own share is the 5 cards above.
