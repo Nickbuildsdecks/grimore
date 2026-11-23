@@ -6565,13 +6565,16 @@ const DARK_CONFIDANT: CardScript = {
   triggers: [{
     on: { kind: 'step', step: 'upkeep', of: 'you' },
     description: 'Reveal the top card of your library and put it into your hand. You lose life equal to its mana value',
+    /*
+      Put into the hand, not drawn (D817, CR 121.1): this used `draw`, so "whenever an opponent
+      draws a card" saw it and it counted toward the turn's draws, and with an empty library it was
+      a draw from an empty library. The same move the compiled reading makes (D816).
+    */
     effect: (c) => {
-      const before = listAt(c.state, zoneKey(c.controller, 'hand'));
-      const next = draw(c.state, c.controller, 1);
-      const after = listAt(next, zoneKey(c.controller, 'hand'));
-      const drawn = after.find((id) => !before.includes(id));
-      if (drawn === undefined) return next;
-      const cost = next.cardDefs[next.instances[drawn]!.defKey]?.cmc ?? 0;
+      const top = listAt(c.state, zoneKey(c.controller, 'library'))[0];
+      if (top === undefined) return c.state;
+      const cost = c.state.cardDefs[c.state.instances[top]!.defKey]?.cmc ?? 0;
+      const next = moveToHand(c.state, [top]);
       return cost === 0 ? next : loseLife(next, c.controller, cost);
     },
   }],
