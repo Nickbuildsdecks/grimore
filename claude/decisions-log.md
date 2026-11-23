@@ -58931,3 +58931,51 @@ was unneeded, so it was reverted.
 
 - engine tests: 6153, all passing (on 12d14a9)
 - Coverage: 15,748 to 15,755 of 31,900 cards with every line read, and 37,883 to 37,892 of 59,888 lines, against 12d14a9.
+
+## D1158 — collect evidence
+
+Collect evidence N (CR 701.59a) is printed on 25 legal cards and was read on none. To collect
+evidence N, a player exiles cards from their graveyard whose mana values total N or more.
+`evidencePlan` (effects.ts) picks the cards:
+- the biggest first, so the fewest leave;
+- cards with a flashback or escape of their own last, as D613's graveyard costs order them;
+- never the ability's own card.
+
+It returns `null` when the graveyard totals less, which is when evidence cannot be collected (CR
+701.59b). The player does not choose the cards, as with D613's graveyard costs.
+
+Two forms are read:
+- **As an ability cost**: "{T}, Collect evidence 3: …" (Forensic Researcher). It is a new
+  `totalManaValue` on D613's `AbilityCost.exileFromGraveyard`, so the existing offer check,
+  refusal and payment all apply. The ability is not offered when the graveyard totals less, and a
+  request is refused with "the cards in your graveyard total less than mana value 3". A mana
+  ability with this cost stays unread, as every other graveyard cost on a mana ability does
+  (Cryptex).
+- **As an effect**: `collectEvidence` exiles the plan, or leaves the board unchanged. So "you may
+  collect evidence 4. If you do, …" (Izoni) and "When you do, …" (Sample Collector) go through
+  `optionalEffect`, where an X that changed nothing did not happen. With too little in the
+  graveyard the yes does nothing and the rest does not follow.
+
+Read whole now: Forensic Researcher, Izoni, Center of the Web, Sample Collector. The cost also reads
+on Hedge Whisperer, Kylox's Voltstrider, Polygraph Orb and Tenth District Hero, which stay unread
+on their effects. Not read:
+- "As an additional cost to cast this spell, you may collect evidence N" with "if evidence was
+  collected" (8 cards; next, modelled on kicker);
+- "Whenever you collect evidence";
+- ward and bestow paid by collecting evidence;
+- collect evidence X.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- The cost exiles two 2-mana-value cards for 3 and leaves the third; the ability resolves.
+- A graveyard totalling 2: no offer, and the refusal names collect evidence 3.
+- "You may collect evidence 4. If you do, you gain 3 life": the yes exiles both cards and the life
+  follows.
+- With a graveyard totalling 2, nothing is exiled and no life is gained.
+
+Faults injected by hand: 3, all caught.
+- No total check.
+- The effect collecting nothing.
+- The cost not exiling.
+
+Coverage: 15,761 of 31,900 cards (+9 over D1157's 15,752), 37,901 of 59,888 lines (+16).
