@@ -872,6 +872,22 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
       };
     }
   }
+  /*
+    "X mana of any one color, where X is ..." (D1140): Sanctum Weaver, Heronblade Elite, Lotus
+    Blossom, Deathbloom Ritualist. Five runs, as the "three mana of any one color" lotuses (D669),
+    each counted live as the mana is made, as Nykthos's runs are (D713).
+  */
+  const xOfOne = /^X mana of any one colou?r,\s*where X is (.+)$/i.exec(body);
+  if (xOfOne !== null) {
+    const x = xManaCount(xOfOne[1]!.trim(), name);
+    if (x === null) return null;
+    return {
+      mode: 'runs', produces: [...COLOURS], runs: COLOURS.map((colour) => [colour]), cost, printed, damage,
+      ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }),
+      perRun: COLOURS.map(() => x),
+      ...(spendOnly === undefined ? {} : { spendOnly }),
+    };
+  }
   // A count (D662): one symbol "for each" thing, read off the board as the mana is made.
   const counted = /^(\{[WUBRGC]\}) for each (.+)$/i.exec(body);
   if (counted !== null) {
@@ -1099,6 +1115,63 @@ function manaCount(phrase: string, name: string): NonNullable<AbilityDef['produc
     }
     return n;
   };
+}
+
+/**
+ * What "where X is ..." counts on a mana line (D1140), with the phrase the description prints after
+ * "for each", or `null` for a phrase this does not read: the source's own power or toughness, a kind
+ * of counter on it, "the number of" anything `manaCount` reads (plural, so singularised first),
+ * creature cards in your graveyard, and the life you gained this turn.
+ */
+function xManaCount(
+  phrase: string,
+  name: string,
+): { readonly count: NonNullable<AbilityDef['producesTimes']>; readonly phrase: string } | null {
+  const escape = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const short = shortName(name);
+  const self = `(?:${escape(name)}|${short === null ? '' : `${escape(short)}|`}this (?:artifact|creature|land|enchantment|permanent))`;
+  const own = new RegExp(`^(?:${self}['’]s|its) (power|toughness)$`, 'i').exec(phrase);
+  if (own !== null) {
+    const which = own[1]!.toLowerCase();
+    return {
+      count: (state, source) => {
+        const inst = state.instances[source];
+        if (inst === undefined) return 0;
+        const ch = characteristicsOf(state, inst);
+        return Math.max(0, which === 'toughness' ? ch.toughness : ch.power);
+      },
+      phrase: `point of ${phrase}`,
+    };
+  }
+  if (/^the amount of life you gained this turn$/i.test(phrase)) {
+    return {
+      count: (state, _source, controller) => state.lifeGainedThisTurn?.[String(controller)] ?? 0,
+      phrase: 'life you gained this turn',
+    };
+  }
+  const numbered = /^the number of (.+)$/i.exec(phrase);
+  if (numbered === null) return null;
+  const thing = numbered[1]!;
+  const onSelf = new RegExp(`^([a-z]+|\\+1/\\+1) counters on ${self}$`, 'i').exec(thing);
+  if (onSelf !== null) {
+    const key = onSelf[1]!.toLowerCase();
+    return { count: (state, source) => state.instances[source]?.counters[key] ?? 0, phrase: `${key} counter on ${name}` };
+  }
+  if (/^creature cards in your graveyard$/i.test(thing)) {
+    return {
+      count: (state, _source, controller) => (state.zones?.[zoneKey(controller, 'graveyard')] ?? [])
+        .filter((id) => { const inst = state.instances[id]; return inst !== undefined && hasType(characteristicsOf(state, inst).typeLine, 'creature'); }).length,
+      phrase: 'creature card in your graveyard',
+    };
+  }
+  const plural = /^([A-Za-z'-]+) (you control|on the battlefield)$/.exec(thing);
+  if (plural === null) return null;
+  const word = plural[1]!;
+  const single = /ves$/.test(word) ? word.replace(/ves$/, 'f') : /ies$/.test(word) ? word.replace(/ies$/, 'y') : /s$/.test(word) ? word.replace(/s$/, '') : null;
+  if (single === null) return null;
+  const counted = `${single} ${plural[2]!}`;
+  const count = manaCount(counted, name);
+  return count === null ? null : { count, phrase: counted };
 }
 
 /** The one ability a sum line buys: one tap, several mana, exactly as the hand-written Sol Ring. */

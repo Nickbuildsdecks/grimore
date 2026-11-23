@@ -34583,6 +34583,51 @@ describe('"target permanent you control gains hexproof and indestructible" (D796
   });
 });
 
+describe('X mana of any one color (D1140)', () => {
+  const WEAVER = { name: 'Test Weaver', type_line: 'Enchantment Creature — Human Druid', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '1', toughness: '3', oracle_text: '{T}: Add X mana of any one color, where X is the number of enchantments you control.' };
+  const BLOSSOM = { name: 'Test Blossom', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', oracle_text: '{T}, Sacrifice Test Blossom: Add X mana of any one color, where X is the number of petal counters on Test Blossom.' };
+  const RITUALIST = { name: 'Test Ritualist', type_line: 'Creature — Elf Druid', mana_cost: '{1}{B}{G}', cmc: 3, colors: ['B', 'G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '{T}: Add X mana of any one color, where X is the number of creature cards in your graveyard.' };
+  const AURA = { name: 'Test Charm', type_line: 'Enchantment', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: '' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [WEAVER, BLOSSOM, RITUALIST, AURA, BEAR];
+  const deck = customDeck({
+    id: 'd1140', name: 'X of one', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[],
+  });
+  const table = (mine: readonly string[], graveyard: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1140', 1: 'd1140' }, deckSpecs: { d1140: deck.deck },
+    battlefield: { 0: [...mine] }, graveyard: { 0: [...graveyard] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const pool = (s: GameState) => poolOf(s, 0) as Record<string, number>;
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [WEAVER, BLOSSOM, RITUALIST]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('counts enchantments you control, itself included, in the colour chosen', () => {
+    let s = table(['Test Weaver', 'Test Charm', 'Test Charm']);
+    const weaver = find(s, 0, 'battlefield', 'Test Weaver');
+    s = apply(s, { type: 'auto:activate', by: 0, card: weaver, abilityIndex: 2 } as Action);
+    expect(pool(s)['B']).toBe(3);
+    expect(Object.values(pool(s)).reduce((a, b) => a + b, 0)).toBe(3);
+  });
+
+  it('counts petal counters on itself, read before it is sacrificed', () => {
+    let s = table(['Test Blossom']);
+    const blossom = find(s, 0, 'battlefield', 'Test Blossom');
+    s = { ...s, instances: { ...s.instances, [blossom]: { ...s.instances[blossom]!, counters: { ...s.instances[blossom]!.counters, petal: 4 } } } };
+    s = apply(s, { type: 'auto:activate', by: 0, card: blossom, abilityIndex: 4 } as Action);
+    expect(pool(s)['G']).toBe(4);
+    expect(find(s, 0, 'graveyard', 'Test Blossom')).toBeDefined();
+  });
+
+  it('counts creature cards in your graveyard, and nothing else there', () => {
+    let s = table(['Test Ritualist'], ['Test Bear', 'Test Bear', 'Test Charm']);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ritualist'), abilityIndex: 0 } as Action);
+    expect(Object.values(pool(s)).reduce((a, b) => a + b, 0)).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

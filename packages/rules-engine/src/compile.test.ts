@@ -8506,8 +8506,9 @@ describe('a mana ability that is a choice of colours', () => {
     const read = compileCard({
       name: 'Accomplished Alchemist', type_line: 'Creature — Elf Druid', mana_cost: '{3}{G}',
       cmc: 4, colors: ['G'], power: '2', toughness: '5', layout: 'normal',
+      // Its real second line is read since D1140; Arbor Adherent's "greatest toughness" is still not.
       oracle_text: '{T}: Add one mana of any color.\n{T}: Add X mana of any one color, where X is'
-        + ' the amount of life you gained this turn.',
+        + ' the greatest toughness among other creatures you control.',
     });
     expect(read.ok).toBe(true);
     expect(descriptions(read)).toEqual([
