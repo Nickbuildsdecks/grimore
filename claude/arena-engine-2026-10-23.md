@@ -40144,3 +40144,33 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,261 to 15,263 of 31,900 cards with every line read, and 37,220 to 37,223 of 59,888
 lines, against beb147f.
+
+## D794 — "They" after a player trigger, everyone loots, a three-word cast list, the nontoken edict
+
+Most-played order: Sram, Senior Edificer (rank 445), Geier Reach Sanitarium (446), Sheoldred, the
+Apocalypse (462), Accursed Marauder (477), then Sheoldred's Edict's nontoken mode, Burning Inquiry's
+kin, Rug of Smothering, Liesa and the rest of the "they" printings.
+
+- **"Whenever an opponent draws a card, they lose 2 life."** The newer wording of "that player": on
+  a trigger about a player's action, "they <verb>" reads as "that player <verb>s", the same
+  referent (the acting player).
+- **"Each player draws a card, then discards a card."** The sentence joiner splits it with the
+  subject repeated, so the discard is everyone's: everyone draws, then everyone discards, each
+  choosing their own. "… at random" stays unread.
+- **"Whenever you cast an Aura, Equipment, or Vehicle spell"**: the cast descriptor's subtype list
+  takes the Oxford-comma list as well as "or".
+- **"Each player sacrifices a nontoken creature"**: the edict with "nontoken creature" and "nontoken
+  permanent"; a token is never offered.
+
+**Tests.** 6 engine tests: the cards read; Sheoldred costs the opponent 2 for their draw and its
+controller nothing; Geier Reach leaves both hands the same size with a card in each graveyard; all
+three subtypes reach Sram's trigger, an Equipment spell draws and a plain artifact does not; Accursed
+Marauder takes the opponent's Bear and never offers our Soldier token.
+
+Faults injected by script: 4 of 4 caught (the compiled-trigger check was added after the first run
+missed a list that dropped its first word).
+
+    engine tests: 6,019, all passing (on 863e756)
+
+Coverage: 15,263 to 15,277 of 31,900 cards with every line read, and 37,223 to 37,240 of 59,888
+lines, against 863e756.

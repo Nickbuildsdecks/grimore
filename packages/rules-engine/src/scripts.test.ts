@@ -34184,6 +34184,89 @@ describe('"lose <keywords> until end of turn" on a mass subject (D793)', () => {
   });
 });
 
+describe('"they" after a player trigger, everyone loots, a three-word cast list, the nontoken edict (D794)', () => {
+  const APOC = { name: 'Test Apocalypse', type_line: 'Legendary Creature — Phyrexian Praetor', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '4', toughness: '5', oracle_text: 'Whenever an opponent draws a card, they lose 2 life.' };
+  const ASYLUM = { name: 'Test Asylum', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Each player draws a card, then discards a card.' };
+  const SMITH = { name: 'Test Edificer', type_line: 'Creature — Dwarf', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '2', oracle_text: 'Whenever you cast an Aura, Equipment, or Vehicle spell, draw a card.' };
+  const GEAR = { name: 'Test Gear', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equipped creature gets +1/+0.\nEquip {1}' };
+  const TRINKET = { name: 'Test Trinket', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' };
+  const MARAUDER = { name: 'Test Marauder', type_line: 'Creature — Zombie', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '2', oracle_text: 'When Test Marauder enters, each player sacrifices a nontoken creature.' };
+  const MUSTER = { name: 'Test Muster', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Create a 1/1 white Soldier creature token.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd794', name: 'They',
+    entries: [APOC, ASYLUM, SMITH, GEAR, TRINKET, MARAUDER, MUSTER, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Swamp', count: 44 }]),
+    data: [APOC, ASYLUM, SMITH, GEAR, TRINKET, MARAUDER, MUSTER, BEAR] as never[],
+  });
+  const table = (mine: string[], theirs: string[], hands: Record<number, string[]> = {}) => advanceTo(arena({
+    decks: { 0: 'd794', 1: 'd794' }, deckSpecs: { d794: deck.deck },
+    hands, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const answerAll = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 16 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: (s.pendingDecision.candidates ?? []).slice(0, s.pendingDecision.min ?? 1) } as Action)
+        : drain(passBoth(s));
+    }
+    return s;
+  };
+
+  it('reads', () => {
+    for (const card of [APOC, ASYLUM, SMITH, MARAUDER]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Sheoldred: the opponent loses 2 for their draw, and its controller nothing for theirs', () => {
+    let s = table(['Test Apocalypse'], []);
+    const [mine, theirs] = [life(s, 0), life(s, 1)];
+    s = advanceTo(nextTurn(s), 'draw');
+    expect(s.activeSeat).toBe(1);
+    s = answerAll(s);
+    for (let i = 0; i < 4 && s.step === 'draw'; i++) s = answerAll(passBoth(s));
+    expect(life(s, 1)).toBe(theirs - 2);
+    expect(life(s, 0)).toBe(mine);
+  });
+
+  it('Geier Reach Sanitarium: each player draws, then discards — hands the same size, a card in each graveyard', () => {
+    let s = table(['Test Asylum'], []);
+    const hands = [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length];
+    const yards = [ids(s, 0, 'graveyard').length, ids(s, 1, 'graveyard').length];
+    s = answerAll(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Asylum'), abilityIndex: 0 }));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual(hands);
+    expect([ids(s, 0, 'graveyard').length, ids(s, 1, 'graveyard').length]).toEqual([yards[0]! + 1, yards[1]! + 1]);
+  });
+
+  it('Sram: all three words of the list reach the trigger', () => {
+    const read = compileCard(SMITH as never);
+    const on = read.ok ? JSON.stringify((read.script as { triggers?: { on: unknown }[] }).triggers?.[0]?.on) : '';
+    for (const word of ['Aura', 'Equipment', 'Vehicle']) expect(on).toContain(word);
+  });
+
+  it('Sram: an Equipment spell draws, a plain artifact does not', () => {
+    let s = table(['Test Edificer'], [], { 0: ['Test Gear', 'Test Trinket'] });
+    const hand = ids(s, 0, 'hand').length;
+    s = answerAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Trinket') }));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+    s = answerAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gear') }));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 2 + 1);
+  });
+
+  it('Accursed Marauder: a nontoken creature each; a token is never offered', () => {
+    let s = table([], ['Test Bear'], { 0: ['Test Muster', 'Test Marauder'] });
+    s = answerAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Muster') }));
+    const token = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+    expect(token).toBeDefined();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Marauder') })));
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    // Our own question: the Marauder is our only nontoken creature, the Soldier is not offered.
+    const asked = s.pendingDecision;
+    if (asked !== null && asked.seat === 0) expect(asked.candidates).not.toContain(token);
+    s = answerAll(s);
+    expect(s.instances[token]!.zone).toBe('battlefield');
+    expect(ids(s, 1, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Bear')).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
