@@ -19028,7 +19028,8 @@ function castBound(printed: string, self: string): Partial<CastEvent> | null {
   // D616: the turn it is cast in, and where it is cast from.
   if (/^during an opponent's turn$/i.test(text)) return { duringOpponentsTurn: true };
   if (/^from your graveyard$/i.test(text)) return { fromZone: 'graveyard' };
-  if (/^from anywhere other than your hand$/i.test(text)) return { fromZone: 'not-hand' };
+  // "Their hand" (D826): an opponent's cast, Ghostly Pilferer.
+  if (/^from anywhere other than (?:your|their|his or her) hand$/i.test(text)) return { fromZone: 'not-hand' };
   // D1120: "from exile", and "with {X} in its mana cost".
   if (/^from exile$/i.test(text)) return { fromZone: 'exile' };
   if (/^with \{X\} in its mana cost$/i.test(text)) return { withX: true };
