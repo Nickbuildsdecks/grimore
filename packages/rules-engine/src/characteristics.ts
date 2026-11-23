@@ -2770,6 +2770,8 @@ export type StaticCountable =
   | { readonly kind: 'artifacts-you-control' }
   | { readonly kind: 'counters-on-self'; readonly counter: string }
   | { readonly kind: 'permanents-of-subtype'; readonly subtype: string }
+  /** Domain (D1168): the basic land types among the controller's lands, read off their printed type lines. */
+  | { readonly kind: 'basic-land-types' }
   /**
    * "for each enchantment you control", "… artifact and/or enchantment you control", "… land on the
    * battlefield" (D604): permanents with any of `types` on their printed type line, yours or
@@ -2858,6 +2860,17 @@ function staticCount(
         if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), wanted)) n += 1;
       }
       return n;
+    }
+    case 'basic-land-types': {
+      const found = new Set<string>();
+      for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst === undefined) continue;
+        const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+        if (!hasType(line, 'land')) continue;
+        for (const basic of ['plains', 'island', 'swamp', 'mountain', 'forest']) if (hasSubtype(line, basic)) found.add(basic);
+      }
+      return found.size;
     }
     default:
       return 0;

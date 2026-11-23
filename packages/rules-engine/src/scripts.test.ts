@@ -37567,6 +37567,39 @@ describe('"whenever an opponent casts a spell from anywhere other than their han
   });
 });
 
+describe('domain: a static count, and any line under an ability word (D1168)', () => {
+  const GIANT = { name: 'Test Giant', type_line: 'Creature — Giant', mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Domain — Test Giant gets +1/+1 for each basic land type among lands you control.' };
+  const WALKER = { name: 'Test Walker', type_line: 'Creature — Elf', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: 'Domain — This spell costs {1} less to cast for each basic land type among lands you control.' };
+  const UNITY = { name: 'Test Unity', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', oracle_text: 'Enchant creature\nDomain — Enchanted creature gets +1/+1 for each basic land type among lands you control.' };
+  const ROWS = [GIANT, WALKER, UNITY];
+  const deck = customDeck({
+    id: 'd1168', name: 'Domain', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 12 }, { name: 'Plains', count: 12 }, { name: 'Island', count: 12 }, { name: 'Swamp', count: 12 }], data: ROWS as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1168', 1: 'd1168' }, deckSpecs: { d1168: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the size counts basic land types, not lands: two Islands are one type', () => {
+    const two = table(['Test Giant', 'Plains', 'Island', 'Island']);
+    expect(power(two, find(two, 0, 'battlefield', 'Test Giant'))).toBe(3);
+    const three = table(['Test Giant', 'Plains', 'Island', 'Swamp']);
+    expect(power(three, find(three, 0, 'battlefield', 'Test Giant'))).toBe(4);
+  });
+
+  it('the cost: three basic land types take {3} off, so three lands cast a {4}{G} spell', () => {
+    const s = table(['Plains', 'Island', 'Forest'], ['Test Walker']);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Test Walker'))).toBe(true);
+    const short = table(['Forest', 'Forest', 'Forest'], ['Test Walker']);
+    expect(legalActions(short, 0).plays.some((p) => p.kind === 'cast' && p.card === find(short, 0, 'hand', 'Test Walker'))).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

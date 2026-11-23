@@ -17422,8 +17422,9 @@ export function attachmentScriptFor(
   const subject = isAura
     ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) enchanted creature\.?$)/i
     : /^(?:equipped creature|all creatures able to block equipped creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) equipped creature\.?$)/i;
-  const staticLine = lines.find((line) => subject.test(plain(line).trim()));
-  const plainRead = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
+  // Under an ability word too (D1168): "Domain — Enchanted creature gets +1/+1 for each …".
+  const staticLine = lines.find((line) => subject.test(withoutAbilityWord(plain(line)).trim()));
+  const plainRead = staticLine === undefined ? null : attachmentBonus(withoutAbilityWord(plain(staticLine)), def.name);
   /*
     And the host-conditional lines (D814), as further parts of the same bonus. Not beside a plain
     bonus line that did not read: the card would then claim a line it is not giving.
@@ -33080,6 +33081,8 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it|this creature)$`, 'i').test(text)) {
     return { kind: 'counters-on-self', counter: '+1/+1' };
   }
+  // Domain (D1168): "basic land type among lands you control".
+  if (/^basic land types? among lands you control$/i.test(text)) return { kind: 'basic-land-types' };
   const tribe = /^([A-Z][A-Za-z'-]*) you control$/.exec(text);
   if (tribe !== null) {
     const subtype = subtypeFromTribalPhrase(tribe[1]!, 'singular');
@@ -35675,7 +35678,27 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
   };
 }
 
+/**
+ * A line read whole, and failing that, read once more without its ability word (D1168): "Domain —
+ * ~ gets +1/+1 for each basic land type among lands you control", "Domain — This spell costs {1}
+ * less to cast for each …". An ability word has no rules meaning (CR 207.2c), so the sentence after
+ * the dash is the whole ability; some readers strip the label themselves, and this covers the rest.
+ */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  const whole = lineScriptForWhole(line, name);
+  if (whole !== null) return whole;
+  const bare = withoutAbilityWord(line);
+  if (bare === line || bare.trim() === '') return null;
+  /*
+    Not an activated ability: a cost line with a label in front ("Threshold — {1}: …", "Metalcraft —
+    {T}: Add …", "Bloodrush — {R}, Discard this card: …") is D623's and D1135's to read, where the
+    label comes off only when the line restates its condition, and a mana line stays a mana line.
+  */
+  if (/^[^"]*:/.test(bare)) return null;
+  return lineScriptForWhole(bare, name);
+}
+
+function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
   /*
     Firebending N (D1138): "Whenever this creature attacks, add N {R}. This mana lasts until end of
     combat." Read as the attack trigger it stands for, through the mana-keeping reader above. "X,
