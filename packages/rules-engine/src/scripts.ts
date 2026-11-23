@@ -16020,6 +16020,35 @@ function selfEffect(
   }
 
   /*
+    Goad (D1149, CR 701.38): "goad target creature", "goad target creature an opponent controls",
+    "goad up to one target creature", "goad each creature your opponents control". Until the
+    goading player's next turn, each goaded creature attacks each combat if able and attacks a
+    player other than the goading player if able — the two halves `goad` sets. A mass scope is
+    `massScope`'s, so "each creature target player controls" and the like stay unread.
+  */
+  const goading = /^goad (.+)$/i.exec(text);
+  if (goading !== null) {
+    const what = goading[1]!.trim();
+    const each = /^(?:each|all) (.+)$/i.exec(what);
+    if (each !== null) {
+      const scope = massScope(each[1]!);
+      if (scope !== null) {
+        return {
+          // Disrupt Decorum's hint: in a duel a mass goad only sends the creatures at the caster.
+          spellFlags: { goadsOpponents: true },
+          effect: (c) => goad(c.state, scope(c).filter((id) => {
+            const inst = c.state.instances[id];
+            return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+          }), c.source, c.controller),
+        };
+      }
+    } else if (/^(?:up to (?:one|two|three) )?target\b/i.test(what)) {
+      const spec = targetSpecFrom(what, false);
+      if (spec !== null) return { targets: [spec], effect: (c) => goad(c.state, cardTargets(c), c.source, c.controller) };
+    }
+  }
+
+  /*
     "Choose target creature." as a sentence of its own (D1146): Grave Strength, Predator's Rapport,
     Mandate of Abaddon. It names the target and does nothing else; the sentences after it say what
     happens to "that creature" or "it", and borrow this target the way they borrow any earlier

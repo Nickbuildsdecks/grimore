@@ -35452,6 +35452,49 @@ describe('"Return all <kind> cards from your graveyard to …" (D804)', () => {
   });
 });
 
+describe('goad (D1149)', () => {
+  const TAUNT = { name: 'Test Taunt', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Goad target creature. Draw a card.' };
+  const DECORUM = { name: 'Test Decorum', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Goad each creature your opponents control.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [TAUNT, DECORUM, BEAR];
+  const deck = customDeck({
+    id: 'd1149', name: 'Goad', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }], data: ROWS as never[],
+  });
+  const pod = (hand: readonly string[]) => advanceTo(arena({
+    format: 'pod', seats: 3, decks: { 0: 'd1149', 1: 'd1149', 2: 'd1149' }, deckSpecs: { d1149: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'], 2: ['Test Bear'] }, turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+  const goadedBy = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).goadedBy;
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [TAUNT, DECORUM]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('goads the target, draws, and the creature must attack someone other than the goader on its turn', () => {
+    let s = pod(['Test Taunt']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const hand = s.zones['0:hand']!.length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Taunt'), targets: [{ kind: 'card', id: theirs }] } as Action)), 30);
+    expect(goadedBy(s, theirs)).toEqual([0]);
+    expect(s.zones['0:hand']!.length).toBe(hand - 1 + 1);
+    expect(goadedBy(s, find(s, 2, 'battlefield', 'Test Bear'))).toEqual([]);
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    expect(s.activeSeat).toBe(1);
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [] } as Action)).toBeTruthy();
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: theirs, defender: 0 }] } as Action)).toBeTruthy();
+    expect(refusal(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: theirs, defender: 2 }] } as Action)).toBeNull();
+  });
+
+  it('a mass goad takes every opponent\'s creature and none of the caster\'s', () => {
+    let s = pod(['Test Decorum']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Decorum') } as Action)), 30);
+    expect(goadedBy(s, find(s, 1, 'battlefield', 'Test Bear'))).toEqual([0]);
+    expect(goadedBy(s, find(s, 2, 'battlefield', 'Test Bear'))).toEqual([0]);
+    expect(goadedBy(s, find(s, 0, 'battlefield', 'Test Bear'))).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
