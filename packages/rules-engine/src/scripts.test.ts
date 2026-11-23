@@ -35180,6 +35180,44 @@ describe('"other permanents you control have indestructible" (D801)', () => {
   });
 });
 
+describe('"Choose target creature." as its own sentence (D1146)', () => {
+  const STRENGTH = { name: 'Test Strength', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Choose target creature. Mill three cards, then put a +1/+1 counter on that creature for each creature card in your graveyard.' };
+  const FILTH = { name: 'Test Filth', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Choose target creature. Mill four cards, then that creature gets -1/-1 until end of turn for each land card in your graveyard.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [STRENGTH, FILTH, BEAR];
+  const deck = customDeck({
+    id: 'd1146', name: 'Choose target', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[], graveyard: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1146', 1: 'd1146' }, deckSpecs: { d1146: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, graveyard: { 0: [...graveyard] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const creaturesIn = (s: GameState) => (s.zones['0:graveyard'] ?? []).filter((id) => nameOf(s, id) === 'Test Bear').length;
+  const landsIn = (s: GameState) => (s.zones['0:graveyard'] ?? []).filter((id) => nameOf(s, id) === 'Forest').length;
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [STRENGTH, FILTH]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the counters go on the chosen creature, not another', () => {
+    let s = table(['Test Strength'], ['Test Bear', 'Test Bear'], [], ['Test Bear']);
+    const [chosen, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strength'), targets: [{ kind: 'card', id: chosen! }] } as Action)), 30);
+    expect(creaturesIn(s)).toBeGreaterThanOrEqual(1);
+    expect(s.instances[chosen!]!.counters['+1/+1'] ?? 0).toBe(creaturesIn(s));
+    expect(s.instances[other!]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it("an opponent's creature shrinks by the lands milled into the caster's graveyard", () => {
+    let s = table(['Test Filth'], [], ['Test Bear'], ['Forest', 'Forest']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Filth'), targets: [{ kind: 'card', id: theirs }] } as Action)), 30);
+    expect(landsIn(s)).toBeGreaterThanOrEqual(2);
+    expect(s.instances[theirs]?.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

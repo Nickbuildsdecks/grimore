@@ -16019,6 +16019,18 @@ function selfEffect(
     };
   }
 
+  /*
+    "Choose target creature." as a sentence of its own (D1146): Grave Strength, Predator's Rapport,
+    Mandate of Abaddon. It names the target and does nothing else; the sentences after it say what
+    happens to "that creature" or "it", and borrow this target the way they borrow any earlier
+    clause's (D530).
+  */
+  const chosenTarget = /^choose (target creature(?: you control)?)$/i.exec(text);
+  if (chosenTarget !== null) {
+    const spec = targetSpecFrom(chosenTarget[1]!, /you control$/i.test(chosenTarget[1]!));
+    if (spec !== null) return { targets: [spec], effect: (c) => c.state };
+  }
+
   // "The Ring tempts you" (D1144, CR 701.54a): see `temptWithRing`. The bearer is chosen as it
   // resolves, from the creatures you control then; the bot names its largest.
   if (/^the ring tempts you$/i.test(text)) {
