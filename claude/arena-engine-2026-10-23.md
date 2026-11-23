@@ -41389,3 +41389,21 @@ Faults injected by hand: 3, all caught.
 - No graveyard-target reading: the card is then unread rather than misread.
 
 Coverage: 15,742 of 31,900 cards (+9 over D1155's 15,733), 37,871 of 59,888 lines (+13).
+## D812 — A keyword list with the Oxford comma, and two protections: Akroma's Memorial
+
+Most-played order: Akroma's Memorial (rank 1211), and every anthem or self-static whose keyword list
+ends ", and <keyword>".
+
+The static predicate splitter (D513's `thresholdPredicate`, which the anthems share) split on commas
+and "and" but left ", and haste" as "and haste", which is not a keyword; it now takes the Oxford
+comma whole. And protection reads with or without "has" in front and takes a following "from red",
+the colours accumulating: "…, and protection from black and from red".
+
+**Tests.** 2 engine tests: the card reads; under the Memorial our creature has flying, first strike,
+vigilance, trample and haste and protection from black and red, and the opponent's has none of it.
+D513's tests pass unchanged.
+
+Faults injected by script: 2 of 2 caught.
+
+- engine tests: 6150, all passing (on 14cdec6)
+- Coverage: 15,742 to 15,748 of 31,900 cards with every line read, and 37,872 to 37,883 of 59,888 lines, against 14cdec6.

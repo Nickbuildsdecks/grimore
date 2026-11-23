@@ -32698,7 +32698,8 @@ function thresholdPredicate(predicate: string): PumpOptions | null {
     prints "gets +1/+1, is black, and has …" and Wayward Angel prints four parts. A trailing comma
     is left behind by the quote split in `thresholdEffect`, which the empty filter below drops.
   */
-  const parts = predicate.trim().split(/,\s*|\s+and\s+/).map((part) => part.trim())
+  // And the Oxford comma's ", and" (D812): "flying, first strike, vigilance, trample, and haste".
+  const parts = predicate.trim().split(/,\s*(?:and\s+)?|\s+and\s+/).map((part) => part.trim())
     .filter((part) => part !== '');
   if (parts.length === 0) return null;
   let out: PumpOptions = {};
@@ -32725,11 +32726,16 @@ function thresholdPredicate(predicate: string): PumpOptions | null {
       out = { ...out, setColors: [colour] };
       continue;
     }
-    const protection = /^has protection from (\w+)$/.exec(low);
+    /*
+      Protection, with or without "has" in front, and a following "from red" (D812): Akroma's
+      Memorial's "…, haste, and protection from black and from red", which the splitter hands over as
+      "protection from black" and "from red". The colours accumulate.
+    */
+    const protection = /^(?:has )?protection from (\w+)$/.exec(low) ?? (out.protectionFrom !== undefined ? /^from (\w+)$/.exec(low) : null);
     if (protection !== null) {
       const colour = COLOUR_WORDS[protection[1]!];
       if (colour === undefined) return null;
-      out = { ...out, protectionFrom: [colour] };
+      out = { ...out, protectionFrom: [...(out.protectionFrom ?? []), colour] };
       continue;
     }
     const has = /^has (.+)$/.exec(low);
