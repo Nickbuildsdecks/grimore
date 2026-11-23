@@ -1084,6 +1084,19 @@ function onEnterStep(state: GameState, step: Step): GameState {
         a Mind Control still goes, and a game state loaded out of Redis still knows which bodies
         were borrowed. See `MYRIAD`.
       */
+      /*
+        Decayed's second half (D1143, CR 702.147a): every attacker with decayed is sacrificed. The
+        printed trigger fires "when this creature attacks", so strictly a creature that lost decayed
+        after attacking would still go; this reads the keyword now, which differs only for a decayed
+        token that lost its abilities mid-combat.
+      */
+      {
+        const decaying = next.combat.attacks.map((a) => a.attacker).filter((id) => {
+          const inst = next.instances[id];
+          return inst?.zone === 'battlefield' && characteristicsOf(next, inst).keywords.has('decayed');
+        });
+        if (decaying.length > 0) next = sacrifice(next, decaying);
+      }
       for (const seat of next.seats) {
         for (const id of [...listAt(next, zoneKey(seat.index, 'battlefield'))]) {
           if ((next.instances[id]?.counters[MYRIAD] ?? 0) > 0) next = exileCard(next, id);

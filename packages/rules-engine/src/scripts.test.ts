@@ -8016,6 +8016,8 @@ describe('deck coverage', () => {
       'script cantAlone',
       // D1130: "Exile ~ with three time counters on it" (Arc Blade); no pool deck plays one.
       'script exilesWithTimeCounters',
+      // D1143: decayed (the Midnight Hunt Zombie tokens); no pool deck plays one.
+      'keyword decayed',
     ]);
 
     const declared = [
@@ -34824,6 +34826,79 @@ describe('"Choose a creature type." spells (D1142)', () => {
     const before = life(s, 1);
     s = resolveNaming(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Roar'), targets: [{ kind: 'player', seat: 1 }] } as Action), 'Goblin');
     expect(life(s, 1)).toBe(before - 3);
+  });
+});
+
+describe('decayed Zombie tokens (D1143)', () => {
+  const FALCON = { name: 'Test Falcon', type_line: 'Creature — Zombie Bird', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When Test Falcon enters, create a 2/2 black Zombie creature token with decayed.' };
+  const deck = customDeck({
+    id: 'd1143', name: 'Decayed', entries: [{ name: 'Test Falcon', count: 4 }, { name: 'Swamp', count: 56 }], data: [FALCON] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1143', 1: 'd1143' }, deckSpecs: { d1143: deck.deck },
+    hands: { 0: ['Test Falcon'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Test Falcon cast and its token made, the token here since an earlier turn so it may attack. */
+  const withZombie = () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Falcon') } as Action)), 30);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const zombie = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Zombie')!;
+    expect(zombie).toBeDefined();
+    s = { ...s, instances: { ...s.instances, [zombie]: { ...s.instances[zombie]!, enteredTurn: 0 } } };
+    return { s, zombie };
+  };
+
+  it('reads whole, and the token has decayed', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(FALCON as never)).toMatchObject({ ok: true, unread: [] });
+    const { s, zombie } = withZombie();
+    expect(characteristicsOf(s, s.instances[zombie]!).keywords.has('decayed')).toBe(true);
+  });
+
+  it("can't block", () => {
+    const { s, zombie } = withZombie();
+    expect(characteristicsOf(s, s.instances[zombie]!).cantBlock).toBe(true);
+  });
+
+  it('attacks, deals its damage, and is sacrificed at end of combat', () => {
+    let { s, zombie } = withZombie();
+    const before = life(s, 1);
+    s = drain(apply(advanceTo(s, 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: zombie, defender: 1 }],
+    } as Action));
+    s = advanceTo(s, 'postcombat-main');
+    expect(life(s, 1)).toBe(before - 2);
+    expect(s.instances[zombie]?.zone === 'battlefield').toBe(false);
+  });
+
+  it('"You create" after a clause about another player is the caster\'s token', () => {
+    const WAY = { name: 'Test Way Out', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target opponent discards a card. You create a 2/2 black Zombie creature token with decayed.' };
+    expect(compileCard(WAY as never)).toMatchObject({ ok: true, unread: [] });
+    const both = customDeck({ id: 'd1143b', name: 'Way', entries: [{ name: 'Test Way Out', count: 4 }, { name: 'Swamp', count: 56 }], data: [WAY] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1143b', 1: 'd1143b' }, deckSpecs: { d1143b: both.deck },
+      hands: { 0: ['Test Way Out'], 1: ['Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const theirs = s.zones['1:hand']!.length;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Way Out'), targets: [{ kind: 'player', seat: 1 }] } as Action);
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: (s.pendingDecision.candidates ?? []).slice(0, s.pendingDecision.min ?? 1) } as Action)
+        : drain(passBoth(s), 30);
+    }
+    expect(s.zones['1:hand']!.length).toBe(theirs - 1);
+    const zombie = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Zombie');
+    expect(zombie).toBeDefined();
+    expect(characteristicsOf(s, s.instances[zombie!]!).keywords.has('decayed')).toBe(true);
+    expect(ids(s, 1, 'battlefield').some((id) => nameOf(s, id) === 'Zombie')).toBe(false);
+  });
+
+  it('one that stays home stays', () => {
+    let { s, zombie } = withZombie();
+    s = drain(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action));
+    s = advanceTo(s, 'postcombat-main');
+    expect(s.instances[zombie]?.zone).toBe('battlefield');
   });
 });
 

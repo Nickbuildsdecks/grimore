@@ -29795,7 +29795,11 @@ function composeEffects(
     xAnnounced += 1;
     try { return composeEffects(printedClauses, name, where); } finally { xAnnounced -= 1; }
   }
-  const clauses = printedClauses.flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
+  // "You create a 2/2 black Zombie creature token" is "Create …" (D1143): the subject is the
+  // controller either way, and it is printed after a clause about another player (No Way Out).
+  const clauses = printedClauses
+    .map((clause) => clause.replace(/^(\s*)you create /i, (_m, lead: string) => `${lead}Create `))
+    .flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.

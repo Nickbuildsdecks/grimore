@@ -92,6 +92,13 @@ export const KEYWORDS = [
   */
   'phasing',
   /*
+    Decayed (CR 702.147a, D1143): "This creature can't block. When this creature attacks, sacrifice it
+    at end of combat." Both halves are the engine's: the first is `cantBlock` below, the second is
+    the end of combat step in `onEnterStep`, which sacrifices every attacker with decayed. Printed on
+    the Zombie tokens of Innistrad: Midnight Hunt and the cards that make them.
+  */
+  'decayed',
+  /*
     Wither (CR 702.78a), which is **infect's creature half and nothing else** (D504).
 
     "Damage this source would deal to a creature is dealt in the form of -1/-1 counters" is word for
@@ -3352,6 +3359,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const toughness = baseToughness + modToughness + plus - minus;
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
+  if (keywords.has('decayed')) cantBlock = true;
 
 
   return {
