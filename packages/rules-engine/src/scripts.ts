@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -16151,6 +16151,17 @@ function selfEffect(
     };
   }
 
+  /*
+    Collect evidence N as an effect (D1158): "you may collect evidence 4. If you do, …" and "When
+    you do, …" are read by \`optionalEffect\`, where an X that left the board unchanged did not
+    happen. So a graveyard that totals less than N exiles nothing and the rest does not follow.
+    The engine picks the cards, as it does for the cost (\`evidencePlan\`).
+  */
+  const evidence = /^collect evidence (\d+)$/i.exec(text);
+  if (evidence !== null && Number(evidence[1]) > 0) {
+    const total = Number(evidence[1]);
+    return { effect: (c) => collectEvidence(c.state, c.controller, total, c.source) };
+  }
   // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
   const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
   if (incubated !== null) {
@@ -31845,6 +31856,15 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       "Exile a creature card from your graveyard", "Exile two cards from your graveyard", "Exile an
       instant or sorcery card from your graveyard" (D613): see `AbilityCost.exileFromGraveyard`.
     */
+    // Collect evidence N (D1158): see `AbilityCost.exileFromGraveyard.totalManaValue`.
+    const evidence = /^Collect evidence (\d+)$/i.exec(component);
+    if (evidence !== null) {
+      if (exilesCards !== null) return null;
+      const total = Number(evidence[1]);
+      if (total < 1) return null;
+      exilesCards = { count: 0, words: 'evidence', matches: () => true, totalManaValue: total };
+      continue;
+    }
     const exiles = /^Exile (an?|another|one|two|three|four|five|six|seven)( other)? (?:(.+?) )?cards? from your graveyard$/i.exec(component);
     if (exiles !== null) {
       if (exilesCards !== null) return null;

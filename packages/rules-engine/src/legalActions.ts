@@ -22,7 +22,7 @@ import { emergeOptions, conspireOptions, casualtyOptions,
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { canPayLife, energyOf, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
+import { canPayLife, energyOf, evidencePlan, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost, reducedCostText,
   type ManaCost, type ManaPool, type ManaType,
@@ -1087,6 +1087,8 @@ export function graveyardCostPlan(
     if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
     else spare.push(id);
   }
+  // Collect evidence N (D1158): see `evidencePlan`.
+  if (cost.totalManaValue !== undefined) return evidencePlan(state, seat, cost.totalManaValue, source, (id) => useful.includes(id));
   const plan = [...spare, ...useful].slice(0, cost.count);
   return plan.length < cost.count ? null : plan;
 }

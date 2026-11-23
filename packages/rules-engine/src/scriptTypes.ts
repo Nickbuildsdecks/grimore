@@ -2716,6 +2716,11 @@ export interface AbilityCost {
     readonly count: number;
     readonly words: string;
     readonly matches: (typeLine: string) => boolean;
+    /**
+     * Collect evidence N (D1158, CR 701.59a): cards of any kind and any number whose mana values
+     * total N or more. `count` is 0 then; `graveyardCostPlan` picks the cards.
+     */
+    readonly totalManaValue?: number;
   };
   readonly crew?: number;
   /**

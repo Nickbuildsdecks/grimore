@@ -2223,6 +2223,9 @@ function activate(
     : graveyardCostPlan(state, action.by, ability.cost.exileFromGraveyard, inst.id);
   if (exiledForCost === null) {
     const want = ability.cost.exileFromGraveyard!;
+    if (want.totalManaValue !== undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `the cards in your graveyard total less than mana value ${want.totalManaValue}, so you can't collect evidence ${want.totalManaValue}`);
+    }
     throw new EngineError('RULE_NOT_APPLICABLE', `you have too few ${want.words === '' ? '' : `${want.words} `}cards in your graveyard to exile for that`);
   }
 

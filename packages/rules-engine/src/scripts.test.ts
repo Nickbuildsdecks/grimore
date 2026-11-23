@@ -36322,6 +36322,71 @@ describe('ward at the end of a keyword list, Sheltered by Ghosts (D813)', () => 
   });
 });
 
+describe('collect evidence, as a cost and as "you may … If you do" (D1158)', () => {
+  const RESEARCHER = { name: 'Test Researcher', type_line: 'Creature — Merfolk Detective', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', power: '1', toughness: '2', oracle_text: "{T}, Collect evidence 3: Tap target creature you don't control." };
+  const WITNESS = { name: 'Test Witness', type_line: 'Creature — Human Detective', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When this creature enters, you may collect evidence 4. If you do, you gain 3 life.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [RESEARCHER, WITNESS, BEAR];
+  const deck = customDeck({
+    id: 'd1158', name: 'Evidence', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[],
+  });
+  const table = (opts: { mine?: string[]; hand?: string[]; graveyard?: string[] }) => advanceTo(arena({
+    decks: { 0: 'd1158', 1: 'd1158' }, deckSpecs: { d1158: deck.deck },
+    hands: { 0: opts.hand ?? [] }, graveyard: { 0: opts.graveyard ?? [] },
+    battlefield: { 0: opts.mine ?? [], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settleYes = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [], option: 'Yes' } as Action)
+        : drain(passBoth(s));
+    }
+    return s;
+  };
+  const offers = (s: GameState, card: string) => legalActions(s, 0).plays.filter((p) => p.kind === 'activate' && p.card === card);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the cost exiles graveyard cards totalling 3 or more, and the ability resolves', () => {
+    let s = table({ mine: ['Test Researcher', 'Island'], graveyard: ['Test Bear', 'Test Bear', 'Test Bear'] });
+    const researcher = find(s, 0, 'battlefield', 'Test Researcher');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    expect(offers(s, researcher)).toHaveLength(1);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: researcher, abilityIndex: 0, targets: [{ kind: 'card', id: theirs }] } as Action)), 20);
+    expect(s.instances[theirs]!.tapped).toBe(true);
+    // Two Bears (2 + 2) are enough for 3; the third stays.
+    expect(ids(s, 0, 'exile')).toHaveLength(2);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(1);
+  });
+
+  it('a graveyard totalling less than 3 cannot pay it: no offer, and a refusal if asked', () => {
+    const s = table({ mine: ['Test Researcher', 'Island'], graveyard: ['Test Bear'] });
+    const researcher = find(s, 0, 'battlefield', 'Test Researcher');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    expect(offers(s, researcher)).toEqual([]);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: researcher, abilityIndex: 0, targets: [{ kind: 'card', id: theirs }] } as Action)).toMatch(/collect evidence 3/);
+  });
+
+  it('"you may collect evidence 4. If you do": the yes exiles and the life follows', () => {
+    let s = table({ hand: ['Test Witness'], graveyard: ['Test Bear', 'Test Bear'] });
+    s = settleYes(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Witness') } as Action)), 30));
+    expect(life(s, 0)).toBe(23);
+    expect(ids(s, 0, 'exile')).toHaveLength(2);
+  });
+
+  it('a graveyard totalling less than 4 collects nothing, and the life does not follow', () => {
+    let s = table({ hand: ['Test Witness'], graveyard: ['Test Bear'] });
+    s = settleYes(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Witness') } as Action)), 30));
+    expect(life(s, 0)).toBe(20);
+    expect(ids(s, 0, 'exile')).toEqual([]);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -3239,6 +3239,40 @@ export function createEmblem(state: GameState, seat: SeatIndex, text: string, fr
 }
 
 /**
+ * The cards collect evidence N exiles (D1158, CR 701.59a): cards in the seat's graveyard whose mana
+ * values total N or more, biggest first so the fewest leave, and any `later` says to keep (a
+ * flashback or an escape of its own) only after the rest. Never `exclude`, the ability's own card.
+ * `null` when the graveyard totals less, which is when evidence cannot be collected (CR 701.59b).
+ */
+export function evidencePlan(
+  state: GameState, seat: SeatIndex, total: number, exclude: string | undefined,
+  later: (id: string) => boolean = () => false,
+): readonly string[] | null {
+  const mv = (id: string): number => state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0;
+  const ids = listAt(state, zoneKey(seat, 'graveyard')).filter((id) => id !== exclude && mv(id) > 0);
+  const order = [...ids.filter((id) => !later(id)).sort((a, b) => mv(b) - mv(a)),
+    ...ids.filter(later).sort((a, b) => mv(b) - mv(a))];
+  const picked: string[] = [];
+  let sum = 0;
+  for (const id of order) {
+    if (sum >= total) break;
+    picked.push(id);
+    sum += mv(id);
+  }
+  return sum >= total ? picked : null;
+}
+
+/** Collect evidence N as an effect (D1158): the board unchanged when it cannot be done. */
+export function collectEvidence(state: GameState, seat: SeatIndex, total: number, exclude?: string): GameState {
+  const plan = evidencePlan(state, seat, total, exclude);
+  if (plan === null) return state;
+  return plan.reduce((st, id) => {
+    const card = st.instances[id];
+    return card === undefined || card.zone !== 'graveyard' ? st : relocate(st, card, 'exile', card.owner, 'bottom');
+  }, state);
+}
+
+/**
  * Incubate N (D1155, CR 701.53a): an Incubator token — a colorless artifact with "{2}: Transform this
  * artifact." — with N +1/+1 counters on it. The transformed face is a 0/0 Phyrexian artifact
  * creature (the `INCUBATOR` script), so the counters make it an N/N.
