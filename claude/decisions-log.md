@@ -59378,3 +59378,30 @@ Faults injected by script: 2 of 2 caught ("their" unread, and the not-hand filte
 
 - engine tests: 6212, all passing (on 07b50dd)
 - Coverage: 15,837 to 15,838 of 31,900 cards with every line read, and 38,013 to 38,014 of 59,888 lines, against 07b50dd.
+
+## D827 — Two mass phrasings: In Garruk's Wake and Urza's Ruinous Blast
+
+Most-played order: In Garruk's Wake (rank 1521) and Urza's Ruinous Blast (rank 1628). Both say
+in a longer form something the mass readers already read.
+
+**Reader.** Two `clausesOf` rewrites:
+- "Destroy/Exile all <A> <controller> and all <B> <controller>", with the same controller clause
+  both times, becomes "… all <A> and <B> <controller>". "Destroy all creatures and planeswalkers
+  you don't control" already read.
+- "All/each [nonland] permanent(s) that aren't/isn't/are not/is not legendary" becomes "all
+  nonlegendary [nonland] permanents", which `massScope`'s state words already know.
+
+"That's not historic" (Desynchronization) stays unread: "nonhistoric" is not a state word yet.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- In Garruk's Wake destroys the opponent's creature and planeswalker and leaves their artifact
+  and everything of ours;
+- the Blast exiles every nonlegendary nonland permanent on both sides and leaves legends and
+  lands.
+
+Faults injected by script: 4 of 4 caught. They cover each rewrite off, the second half of the
+compound dropped, and "aren't legendary" read as legendary.
+
+- engine tests: 6215, all passing (on 2f4fae8)
+- Coverage: 15,838 to 15,840 of 31,900 cards with every line read, and 38,014 to 38,016 of 59,888 lines, against 2f4fae8.

@@ -29051,6 +29051,11 @@ function clausesOf(line: string): readonly string[] {
       everyone draws, then everyone discards, each choosing their own. "… at random" stays unread.
     */
     .replace(/\beach player draws (a card|two cards|three cards), then discards (a card|two cards|three cards)(?= *$|\.)/gi, 'each player draws $1. Each player discards $2')
+    // "Destroy all creatures you don't control and all planeswalkers you don't control" (D827, In
+    // Garruk's Wake): the one controller clause said once, as "all creatures and planeswalkers …".
+    .replace(/\b(destroy|exile) all ([a-z ]+?) (you don't control|your opponents control|you control) and all ([a-z ]+?) \3\b/gi, '$1 all $2 and $4 $3')
+    // "All nonland permanents that aren't legendary" (D827, Urza's Ruinous Blast): "nonlegendary".
+    .replace(/\b(all|each) ((?:nonland )?permanents?) that (?:aren't|isn't|are not|is not) legendary\b/gi, '$1 nonlegendary $2')
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')

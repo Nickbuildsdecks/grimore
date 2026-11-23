@@ -37043,6 +37043,47 @@ describe('"whenever an opponent casts a spell from anywhere other than their han
   });
 });
 
+describe('two mass phrasings: In Garruk\'s Wake and Urza\'s Ruinous Blast (D827)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Wake', 'Sorcery', "Destroy all creatures you don't control and all planeswalkers you don't control."),
+    R('Test Blast', 'Sorcery', "Exile all nonland permanents that aren't legendary."),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Hero', 'Legendary Creature — Human', '', { power: '2', toughness: '2' }),
+    R('Test Walker', 'Legendary Planeswalker — Tester', '+1: You gain 1 life.', { loyalty: '3' }),
+    R('Test Relic', 'Artifact', ''),
+  ];
+  const deck = customDeck({ id: 'd827', name: 'Mass', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd827', 1: 'd827' }, deckSpecs: { d827: deck.deck },
+      hands: { 0: [spell] },
+      battlefield: { 0: ['Test Bear', 'Test Walker', 'Test Relic', 'Forest'], 1: ['Test Bear', 'Test Hero', 'Test Walker', 'Test Relic', 'Forest'] },
+      turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) })));
+    return (seat: 0 | 1) => namesIn(s, seat, 'battlefield').filter((n) => n !== 'Forest').sort();
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("In Garruk's Wake: their creatures and planeswalker die, their artifact and everything of ours stay", () => {
+    const left = cast('Test Wake');
+    expect(left(0)).toEqual(['Test Bear', 'Test Relic', 'Test Walker']);
+    expect(left(1)).toEqual(['Test Relic']);
+  });
+
+  it("Urza's Ruinous Blast: every nonlegendary nonland permanent goes, on both sides; legends and lands stay", () => {
+    const left = cast('Test Blast');
+    expect(left(0)).toEqual(['Test Walker']);
+    expect(left(1)).toEqual(['Test Hero', 'Test Walker']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
