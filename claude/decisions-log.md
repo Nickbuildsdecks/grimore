@@ -59260,3 +59260,23 @@ calls left unmarked.
 
 - engine tests: 6197, all passing (on a7c7c64)
 - Coverage: 15,816 to 15,818 of 31,900 cards with every line read, and 37,985 to 37,987 of 59,888 lines, against a7c7c64.
+
+## D822 — "For each land you control, create a Treasure token": Brass's Bounty
+
+Most-played order: Brass's Bounty (rank 1364). "Create a Treasure token for each land you control"
+already read. The card prints the count first.
+
+**Reader.** A `clausesOf` rewrite: a sentence "For each <thing>, create <tokens>" becomes "Create
+<tokens> for each <thing>", where the counted-token reader looks for the count. "For each of …"
+(target lists) is excluded, and whether <thing> is countable is still the counted reader's
+decision. So the rest of the corpus's 37 printings stay unread for their own reasons: copies of
+"that creature", "destroyed this way", dice and coin results, and second sentences about "those
+tokens".
+
+**Tests.** 2 engine tests: the card reads; with three lands of ours and two of theirs it makes
+three Treasures, all ours.
+
+Faults injected by script: 2 of 2 caught (the rewrite off, and the count dropped from it).
+
+- engine tests: 6199, all passing (on 64e9800)
+- Coverage: 15,818 to 15,821 of 31,900 cards with every line read, and 37,987 to 37,991 of 59,888 lines, against 64e9800.

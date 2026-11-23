@@ -36843,6 +36843,29 @@ describe('"prevent all [combat] damage that would be dealt to attacking creature
   });
 });
 
+describe('"For each land you control, create a Treasure token", Brass\'s Bounty (D822)', () => {
+  const BOUNTY = { name: 'Test Bounty', type_line: 'Sorcery', oracle_text: 'For each land you control, create a Treasure token.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' };
+  const deck = customDeck({
+    id: 'd822', name: 'Bounty', entries: [{ name: 'Test Bounty', count: 4 }, { name: 'Mountain', count: 56 }], data: [BOUNTY] as never[],
+  });
+
+  it('reads', () => {
+    expect(compileCard(BOUNTY as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three lands of ours, two of theirs: three Treasures, for us', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd822', 1: 'd822' }, deckSpecs: { d822: deck.deck },
+      hands: { 0: ['Test Bounty'] }, battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Mountain', 'Mountain'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bounty') })));
+    const treasures = (seat: 0 | 1) => ids(s, seat, 'battlefield').filter((id) => /treasure/i.test(nameOf(s, id))).length;
+    expect(treasures(0)).toBe(3);
+    expect(treasures(1)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

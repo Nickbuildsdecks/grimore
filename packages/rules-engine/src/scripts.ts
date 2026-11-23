@@ -28990,6 +28990,9 @@ function clausesOf(line: string): readonly string[] {
       everyone draws, then everyone discards, each choosing their own. "… at random" stays unread.
     */
     .replace(/\beach player draws (a card|two cards|three cards), then discards (a card|two cards|three cards)(?= *$|\.)/gi, 'each player draws $1. Each player discards $2')
+    // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
+    // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
+    .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')
     // Dark Confidant (D816): the life lost is for the card the first sentence put in the hand.
     .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You lose life equal to (?:its|that card's) mana value/gi, 'reveal the top card of your library and put it into your hand and lose life equal to its mana value')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
