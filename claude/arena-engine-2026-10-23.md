@@ -40136,3 +40136,36 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,235 to 15,249 of 31,900 cards with every line read, and 37,186 to 37,203 of 59,888
 lines, against dde7126.
+
+## D1136 — domain, formidable and cohort
+
+- **Domain's count**: "for each basic land type among lands you control", "the number of basic land
+  types among lands you control". Plains, Island, Swamp, Mountain and Forest, each counted once off
+  the lands' live subtypes, so a dual land counts twice. "Lands they control" is the targeted
+  player's (Allied Strategies).
+- **Formidable's condition**: "Activate only if creatures you control have total power 8 or
+  greater". The condition reader asks D1076's total-power count, so D623's label branch takes the
+  "Formidable —" off as it does threshold's.
+- **Cohort**: "Cohort — {T}, Tap an untapped Ally you control: …". The ability word names the cost
+  the remainder prints, so the label comes off when that cost is there.
+
+29 tail cards read whole, among them Atarka Beastbreaker, Dragon Whisperer, Circle of Elders,
+Dragon-Scarred Bear, Gaea's Might, Tribal Flames, Might of Alara, Evasive Action, Briar Hydra and
+Drana's Chosen.
+
+**Tests.** 4 engine tests:
+- All three read whole.
+- Domain counts each basic land type once: Forest, Forest and Island make +2/+2.
+- Formidable is offered only with total power 8 or greater.
+- Cohort taps itself and another Ally, and pays.
+
+Retargeted (the D516 way): two compile rows used formidable's condition as their unreadable board
+condition. They now use "three or more creatures with different powers".
+
+Faults injected by hand: 2.
+- Domain counting lands rather than types (caught).
+- The formidable threshold ignored (caught).
+
+Coverage: 15,306 of 31,900 cards (+71 over D1135's 15,235), 37,262 of 59,888 lines (+86). The difference also
+counts the D7xx session's D789 and D790, merged in since D1135 was measured; D1136's own share is
+about the 29 cards named above.
