@@ -42204,3 +42204,28 @@ Faults injected by hand: 2, both caught.
 - The list matching anything.
 
 Coverage: 15,900 of 31,900 cards (+15 over D1166's 15,885), 38,118 of 59,888 lines (+18). The difference also counts the D7xx session's D823, merged in after D1166 was measured.
+## D825 — "Double target creature's power [and toughness]": Bulk Up
+
+Most-played order: Bulk Up (rank 1378). The same reader covers Unleash Fury and the other
+"double target creature's power …" and "double the power … of target creature …" printings.
+
+**Reader.** In `readEffect`: "double target <creature>'s power[ and toughness] until end of turn",
+and "double the power[ and toughness] of target <creature> until end of turn". To double a
+creature's power is to give it +X/+0, where X is its power as the spell resolves (CR 701.10e),
+so the effect reads the target's live characteristics and pumps it by that much until end of
+turn, toughness too when the sentence says so. A negative power gets +0. "Double its power"
+(own abilities, six lines) stays unread: "its" can be the source or an earlier target, and
+nothing here tells which.
+
+**Tests.** 4 engine tests (a 3/2):
+- the cards read;
+- doubled power makes a 6/2 that is a 3/2 again next turn;
+- doubled power and toughness makes a 6/4;
+- +3/+3 first and then doubled makes a 12/5. The double reads the creature as it is, not as
+  printed.
+
+Faults injected by script: 4 of 4 caught. They cover printed values in place of current ones,
+toughness always or never doubled, and a permanent effect in place of until end of turn.
+
+- engine tests: 6209, all passing (on ea1f103)
+- Coverage: 15,829 to 15,837 of 31,900 cards with every line read, and 38,000 to 38,013 of 59,888 lines, against ea1f103.

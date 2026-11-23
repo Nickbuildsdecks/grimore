@@ -37489,6 +37489,49 @@ describe('graveyard targets: colours joined by "or", and "artifact, enchantment,
   });
 });
 
+describe('"double target creature\'s power [and toughness]", Bulk Up (D825)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Bulk', 'Instant', "Double target creature's power until end of turn."),
+    R('Test Swell', 'Instant', "Double target creature's power and toughness until end of turn."),
+    R('Test Growth', 'Instant', 'Target creature gets +3/+3 until end of turn.'),
+    R('Test Brute', 'Creature — Ogre', '', { power: '3', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd825', name: 'Double', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const run = (spells: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd825', 1: 'd825' }, deckSpecs: { d825: deck.deck },
+      hands: { 0: spells }, battlefield: { 0: ['Test Brute'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const brute = find(s, 0, 'battlefield', 'Test Brute');
+    for (const spell of spells) {
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: brute }] })));
+    }
+    const c = characteristicsOf(s, s.instances[brute]!);
+    return { size: [c.power, c.toughness], later: () => { const t = nextTurn(s); const d = characteristicsOf(t, t.instances[brute]!); return [d.power, d.toughness]; } };
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('power only: a 3/2 is a 6/2, and back to 3/2 next turn', () => {
+    const r = run(['Test Bulk']);
+    expect(r.size).toEqual([6, 2]);
+    expect(r.later()).toEqual([3, 2]);
+  });
+
+  it('power and toughness: a 3/2 is a 6/4', () => {
+    expect(run(['Test Swell']).size).toEqual([6, 4]);
+  });
+
+  it('doubles what it is now: +3/+3 first, then doubled, is a 12/5', () => {
+    expect(run(['Test Growth', 'Test Bulk']).size).toEqual([12, 5]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
