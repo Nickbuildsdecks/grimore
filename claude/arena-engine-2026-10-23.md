@@ -41728,3 +41728,43 @@ amount.
 
 - engine tests: 6180, all passing (on 5c4bad1)
 - Coverage: 15,806 to 15,810 of 31,900 cards with every line read, and 37,966 to 37,970 of 59,888 lines, against 5c4bad1.
+
+## D1161 — "until your next turn"
+
+"Until your next turn" (CR 611.2b) is on 195 legal cards with these shapes. On most of them it was
+the one thing unread: "target creature gets -4/-0 until your next turn", "until your next turn,
+creatures you control get +1/+0", "up to two target creatures can't attack or block until your next
+turn".
+
+`readEffect` now reads such a clause as the same clause with "until end of turn" ("this turn" for a
+"can't" restriction). Every continuous effect that reading makes and that would end with the turn
+lasts until its controller's next turn instead. That is `until-controllers-next-turn`, goad's
+duration since D623, which ends in that player's untap step. This applies only to a clause about
+what something is or may do ("gets", "gains", "has", "loses", "can't") and not to one about playing
+or casting. Those are the readings made of continuous effects; a permission or a delayed effect
+"until end of turn" is bounded some other way, and lengthening its continuous half would end the
+rest too soon.
+
+Also read now:
+- "target creature can't attack this turn";
+- "target creature can't attack or block this turn".
+
+They sit beside D528's "can't block this turn", aimed at somebody else's creature.
+
+Read whole now: 41 of the 195, among them Hag of Inner Weakness, Azorius Arrester, Lyev Skyknight,
+Martial Law, Inaction Injunction and Netter en-Dal. Some were read before through goad's and the
+life lock's own readers. Two rooms of the other dungeons now read: Fungi Cavern and Twisted
+Caverns.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- -4/-0 until your next turn holds through the opponent's turn and ends as yours begins.
+- "Can't attack until your next turn" stops the attack on the opponent's next turn, and not on the
+  one after yours.
+- "Can't attack this turn" is a can't-attack effect that ends with the turn.
+
+Faults injected by hand: 2, both caught.
+- The duration not lengthened.
+- "Can't attack" read as "can't block".
+
+Coverage: 15,826 of 31,900 cards (+33 over D1160's 15,793), 38,009 of 59,888 lines (+52). The difference also counts the D7xx session's D815, merged in after D1160 was measured.
