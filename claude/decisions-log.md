@@ -58655,3 +58655,35 @@ The existing morph tests (20) pass unchanged on the shared `turnUpCostOf`.
 
 Coverage: 15,674 of 31,900 cards (+14 over D1152's 15,660), 37,759 of 59,888 lines (+20). The difference also counts the D7xx
 session's D808, merged in after D1152 was measured; D1153's own share is the 9 manifest cards.
+## D809 — Nontoken and uncountered sweeps, plural-type team pumps, historic spells
+
+Most-played order: Hour of Reckoning (rank 1051), Lathliss, Dragon Queen's ability (1063), Jhoira's
+Familiar (1068), Damning Verdict (1110).
+
+- **"Destroy all nontoken creatures"** and **"… with no counters on them"**: "nontoken" is a state
+  word on the board scopes (D749) beside tapped and attacking, and "with no counters on them" a
+  trailing bound like D664's mana value, in both readers (`massScope` for "all", `boardScope` for
+  "each").
+- **"Dragons you control get +1/+0 until end of turn"**: a creature type in the plural as a team
+  pump's subject (Dragons, Elves, Wolves), checked against the creature-type list, so "lands you
+  control" is not one.
+- **"Historic spells you cast cost {1} less"**: "historic" (CR 700.6) as a spell kind: an artifact,
+  a legendary, or a Saga.
+
+D731's test had pinned "You may cast historic spells from the top of your library" as unread; with
+"historic" a spell kind it reads, correctly, and the test now lists it with the lines that read. The
+first gate run caught it.
+
+**Tests.** 6 engine tests: the cards read; Hour of Reckoning kills both sides' Bears and spares our
+Soldier token; Damning Verdict spares the creature with a counter; "each nontoken creature" skips
+the token and "each creature with no counters on it" skips the one that has one; Lathliss pumps our
+Dragon and not our Bear; Jhoira's Familiar takes {1} off a legendary and an artifact and nothing off
+a plain creature.
+
+Faults injected by script: 6 of 6 caught (the "each" scope's test was added after the first run
+missed both of its new words).
+
+    engine tests: 6,115, all passing (on 45be74b)
+
+Coverage: 15,573 to 15,606 of 31,900 cards with every line read, and 37,628 to 37,667 of 59,888
+lines, against 45be74b.

@@ -21488,12 +21488,13 @@ describe('spells cast from the top of the library, and Bolas\'s Citadel\'s life 
       'You may cast Angel spells and Human spells from the top of your library.',
       'You may cast Cleric, Rogue, Warrior, and Wizard spells from the top of your library.',
       'You may cast instant and sorcery spells from the top of your library.',
+      // "Historic" is a spell kind since D809 (an artifact, a legendary or a Saga), so this reads now.
+      'You may cast historic spells from the top of your library.',
     ]) expect(reads(text), text).toMatchObject({ ok: true, unread: [] });
     for (const text of [
       'You may cast spells with flash or flying from the top of your library.',
       'You may cast creature spells with power 4 or greater from the top of your library. If you cast a creature spell this way, it gains haste until end of turn.',
       'You may cast noncreature spells from the top of your library. If you cast a spell this way, you may cast it as though it had flash.',
-      'You may cast historic spells from the top of your library.',
     ]) { const read = reads(text); expect(read.ok && read.unread.length, text).toBe(1); }
   });
 
@@ -35843,6 +35844,89 @@ describe('manifest (D1153)', () => {
     const { s, top } = manifestWithTop('Forest');
     expect(s.instances[top]!.faceDown).toBe(true);
     expect(turnUps(s)).toEqual([]);
+  });
+});
+
+describe('nontoken and uncountered sweeps, plural-type team pumps, historic spells (D809)', () => {
+  const RECKONING = { name: 'Test Reckoning', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Destroy all nontoken creatures.' };
+  const VERDICT = { name: 'Test Verdict', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Destroy all creatures with no counters on them.' };
+  const ROAR = { name: 'Test Roar', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Dragons you control get +1/+0 until end of turn.' };
+  const FAMILIAR = { name: 'Test Familiar', type_line: 'Artifact Creature — Bird', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Historic spells you cast cost {1} less to cast.' };
+  const MUSTER = { name: 'Test Muster', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Create a 1/1 white Soldier creature token.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const DRAKE = { name: 'Test Drake', type_line: 'Creature — Dragon', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const LEGEND = { name: 'Test Legend', type_line: 'Legendary Creature — Human', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const RELIC = { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd809', name: 'Reckoning',
+    entries: [RECKONING, VERDICT, ROAR, FAMILIAR, MUSTER, BEAR, DRAKE, LEGEND, RELIC].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Plains', count: 42 }]),
+    data: [RECKONING, VERDICT, ROAR, FAMILIAR, MUSTER, BEAR, DRAKE, LEGEND, RELIC] as never[],
+  });
+  const table = (mine: string[], hand: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd809', 1: 'd809' }, deckSpecs: { d809: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+
+  it('reads', () => {
+    for (const card of [RECKONING, VERDICT, ROAR, FAMILIAR]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Hour of Reckoning: every nontoken creature dies, the token lives', () => {
+    let s = table(['Test Bear'], ['Test Muster', 'Test Reckoning'], ['Test Bear']);
+    s = cast(s, 'Test Muster');
+    const token = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+    s = cast(s, 'Test Reckoning');
+    expect(s.instances[token]!.zone).toBe('battlefield');
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear')).toHaveLength(0);
+    expect(ids(s, 1, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear')).toHaveLength(0);
+  });
+
+  it('Damning Verdict: a creature with a counter on it survives', () => {
+    let s = table(['Test Bear', 'Test Drake'], ['Test Verdict']);
+    const drake = find(s, 0, 'battlefield', 'Test Drake');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [drake]: { ...s.instances[drake]!, counters: { ...s.instances[drake]!.counters, '+1/+1': 1 } } } };
+    s = cast(s, 'Test Verdict');
+    expect([s.instances[drake]!.zone, s.instances[bear]!.zone]).toEqual(['battlefield', 'graveyard']);
+  });
+
+  it('the "each" scope reads both words too: a counter on each nontoken creature, on each creature with no counters', () => {
+    const BLESS = { name: 'Test Bless', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Put a +1/+1 counter on each nontoken creature you control.' };
+    const EVEN = { name: 'Test Even', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Put a +1/+1 counter on each creature you control with no counters on it.' };
+    const blessDeck = customDeck({
+      id: 'd809b', name: 'Bless',
+      entries: [{ name: 'Test Bless', count: 2 }, { name: 'Test Even', count: 2 }, { name: 'Test Muster', count: 2 }, { name: 'Test Bear', count: 2 }, { name: 'Plains', count: 52 }],
+      data: [BLESS, EVEN, MUSTER, BEAR] as never[],
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'd809b', 1: 'd809b' }, deckSpecs: { d809b: blessDeck.deck },
+      hands: { 0: ['Test Muster', 'Test Bless', 'Test Even'] }, battlefield: { 0: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = cast(s, 'Test Muster');
+    const token = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken === true)!;
+    const [first, second] = ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear');
+    s = cast(s, 'Test Bless');
+    expect(s.instances[token]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(s.instances[first!]!.counters['+1/+1']).toBe(1);
+    s = { ...s, instances: { ...s.instances, [second!]: { ...s.instances[second!]!, counters: {} } } };
+    s = cast(s, 'Test Even');
+    expect([s.instances[first!]!.counters['+1/+1'], s.instances[second!]!.counters['+1/+1'], s.instances[token]!.counters['+1/+1']]).toEqual([1, 1, 1]);
+  });
+
+  it('Lathliss: our Dragon gets +1/+0, our Bear does not', () => {
+    let s = table(['Test Drake', 'Test Bear'], ['Test Roar']);
+    s = cast(s, 'Test Roar');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Drake'))).toBe(3);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Bear'))).toBe(2);
+  });
+
+  it("Jhoira's Familiar: a legendary and an artifact cost {1} less, a plain creature does not", () => {
+    const s = table(['Test Familiar'], ['Test Legend', 'Test Relic', 'Test Bear']);
+    const def = (name: string) => s.cardDefs[s.instances[find(s, 0, 'hand', name)]!.defKey]!;
+    expect(costChangeFor(s, 0 as SeatIndex, def('Test Legend')).generic).toBe(-1);
+    expect(costChangeFor(s, 0 as SeatIndex, def('Test Relic')).generic).toBe(-1);
+    expect(costChangeFor(s, 0 as SeatIndex, def('Test Bear')).generic).toBe(0);
   });
 });
 
