@@ -58391,3 +58391,40 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,530 to 15,537 of 31,900 cards with every line read, and 37,564 to 37,574 of 59,888
 lines, against 0a222f2.
+
+## D1149 — goad
+
+Goad (CR 701.38) is printed on 83 legal cards, and the engine had the effect, `goad`, since
+Disrupt Decorum was hand-written. But the line reader read none of the printed forms except an
+Aura's "is goaded" (D736). It now reads:
+- "goad target creature" with any target phrase `targetSpecFrom` reads: "an opponent controls",
+  "defending player controls", "up to one target creature";
+- "goad each/all <scope>" through `massScope`: "each creature your opponents control", "all
+  creatures you don't control". This form carries Disrupt Decorum's bot hint (`goadsOpponents`):
+  in a duel a mass goad only sends the creatures at the caster.
+- "goad it" and "goad that creature" after a clause that targeted it, through the borrowed
+  referent (D530): "Tap target creature and goad it".
+
+Until the goading player's next turn, a goaded creature attacks each combat if able, and attacks a
+player other than the goader if able. These are the two halves `goad` sets, which combat already
+enforces.
+
+Read whole now: 13 of the 83 goad cards. The rest are short of something else:
+- "for each opponent, goad target creature that player controls";
+- "goad each creature that player controls" after a combat-damage trigger;
+- "goad them" after "up to three target creatures";
+- "goaded creatures" as a filter, and suspect.
+
+**Tests.** 3 engine tests, in a three-player pod:
+- Both test spells read whole.
+- "Goad target creature. Draw a card." goads the target for the caster only, draws, and on its
+  controller's turn the Bear must attack, may not attack the goader, and may attack the third
+  player.
+- A mass goad takes both opponents' creatures and not the caster's.
+
+Faults injected by hand: 2.
+- A goad that only forces the attack, without "a player other than the goader" (caught).
+- A mass goad that also takes the caster's own creatures (caught).
+
+Coverage: 15,565 of 31,900 cards (+27 over D1148's 15,538), 37,612 of 59,888 lines (+41). The difference also counts the D7xx
+session's D803 and D804, merged in after D1148 was measured; D1149's own share is the 13 goad cards.
