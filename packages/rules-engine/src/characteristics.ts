@@ -1802,6 +1802,12 @@ export interface ContinuousEffect {
   readonly onlySubtypes?: readonly string[];
   readonly onlyColours?: readonly Color[];
   /**
+   * And none of these subtypes (D828): Death Baron's "Skeletons you control and other Zombies you
+   * control" is two scopes, and the second leaves out what the first already reached, so a
+   * Zombie Skeleton gets the bonus once.
+   */
+  readonly notSubtypes?: readonly string[];
+  /**
    * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
    * entries in the *source card's* `grantedAbilities`.
    *
@@ -2662,6 +2668,7 @@ function effectApplies(
   }
   if (effect.onlyKind !== undefined && !isEveryKind(state, instance, creature, typeLine, effect.onlyKind)) return false;
   if (effect.onlySubtypes !== undefined && !effect.onlySubtypes.some((t) => hasSubtype(typeLine, t))) return false;
+  if (effect.notSubtypes !== undefined && effect.notSubtypes.some((t) => hasSubtype(typeLine, t))) return false;
   if (effect.onlyColours !== undefined) {
     const colours = layerFiveColours(state, instance, creature, typeLine);
     if (!effect.onlyColours.some((c) => colours.includes(c))) return false;

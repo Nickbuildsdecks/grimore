@@ -59405,3 +59405,34 @@ compound dropped, and "aren't legendary" read as legendary.
 
 - engine tests: 6215, all passing (on 2f4fae8)
 - Coverage: 15,838 to 15,840 of 31,900 cards with every line read, and 38,014 to 38,016 of 59,888 lines, against 2f4fae8.
+
+## D828 — A lord of two tribes: Death Baron
+
+Most-played order: Death Baron (rank 1652), with Caterwauling Boggart ("Goblins you control and
+Elementals you control have menace").
+
+**Reader.** At the top of `lineScriptFor`: "<[other] Tribe> you control and <[other] Tribe> you
+control <get/have …>" is read as two lines, each with the shared predicate. Each must come back
+as a single subtype-scoped static, or the line stays unread.
+
+**Engine.** Two static effects would give a creature of both tribes the bonus twice. A Zombie
+Skeleton under Death Baron would be a 4/4, and Death Baron is itself a Zombie Skeleton. The
+printed sentence is one effect. So `ContinuousEffect` gains `notSubtypes`, beside D814's
+`onlySubtypes`: none of these subtypes, read live after layer 4. The second static carries the
+first one's subtype in it, so the two scopes do not overlap.
+
+Death Baron is a Skeleton, so it gets its own bonus, once. "Other" belongs to the Zombies, and the
+Skeleton half has no "other".
+
+**Tests.** 3 engine tests:
+- the card reads;
+- under a Baron our Skeleton, our other Zombie and our Zombie Skeleton are each 3/3 with
+  deathtouch, the last one once and not twice;
+- the Baron (a Zombie Skeleton) is a 3/3 with deathtouch, while our Bear and the opponent's
+  Zombie are unchanged.
+
+Faults injected by script: 4 of 4 caught. They cover the engine filter unchecked, `modsFrom`
+dropping it, the reader not excluding the first tribe, and the first half dropped.
+
+- engine tests: 6218, all passing (on 19bc115)
+- Coverage: 15,840 to 15,842 of 31,900 cards with every line read, and 38,016 to 38,018 of 59,888 lines, against 19bc115.

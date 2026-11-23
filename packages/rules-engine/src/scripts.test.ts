@@ -37084,6 +37084,42 @@ describe('two mass phrasings: In Garruk\'s Wake and Urza\'s Ruinous Blast (D827)
   });
 });
 
+describe('a lord of two tribes, Death Baron (D828)', () => {
+  const C = (name: string, sub: string, text = '') => ({ name, type_line: `Creature — ${sub}`, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Baron', 'Zombie Skeleton', 'Skeletons you control and other Zombies you control get +1/+1 and have deathtouch.'),
+    C('Test Bones', 'Skeleton'),
+    C('Test Shambler', 'Zombie'),
+    C('Test Both', 'Zombie Skeleton'),
+    C('Test Bear', 'Bear'),
+  ];
+  const deck = customDeck({ id: 'd828', name: 'Baron', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[] });
+  const s = advanceTo(arena({
+    decks: { 0: 'd828', 1: 'd828' }, deckSpecs: { d828: deck.deck },
+    battlefield: { 0: ['Test Baron', 'Test Bones', 'Test Shambler', 'Test Both', 'Test Bear'], 1: ['Test Shambler'] }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const of = (seat: 0 | 1, name: string) => {
+    const c = characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!);
+    return [c.power, c.toughness, c.keywords.has('deathtouch')];
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each Skeleton and each other Zombie of ours is a 3/3 deathtoucher, a Zombie Skeleton only once', () => {
+    expect(of(0, 'Test Bones')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Shambler')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Both')).toEqual([3, 3, true]);
+  });
+
+  it('the Baron is a Skeleton, so it gets it too, once; a Bear and their Zombie do not', () => {
+    expect(of(0, 'Test Baron')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Bear')).toEqual([2, 2, false]);
+    expect(of(1, 'Test Shambler')).toEqual([2, 2, false]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
