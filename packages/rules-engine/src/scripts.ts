@@ -26704,12 +26704,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   // The quantifier is the shared one (D1024), so "one or two target creatures" and "two target creatures" read too.
   const blocking =
-    new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}?target [^.]+?) can'?t (be blocked|block) this turn$`, 'i').exec(text);
+    new RegExp(`^(${TARGET_QUANTIFIER_PREFIX}?target [^.]+?) can'?t (be blocked|block|attack|attack or block) this turn$`, 'i').exec(text);
   if (blocking !== null) {
-    const unblockable = blocking[2]!.toLowerCase() === 'be blocked';
+    const how = blocking[2]!.toLowerCase();
+    const unblockable = how === 'be blocked';
     const spec = targetSpecFrom(blocking[1]!, unblockable);
     if (spec !== null) {
-      const options = unblockable ? UNBLOCKABLE : CANNOT_BLOCK;
+      // "Can't attack" and "can't attack or block" (D1161), aimed at somebody else's creature as "can't block" is.
+      const options: PumpOptions = unblockable ? UNBLOCKABLE
+        : how === 'attack' ? { cantAttack: true }
+          : how === 'attack or block' ? { cantAttack: true, cantBlock: true } : CANNOT_BLOCK;
       return {
         targets: [unblockable ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, options),
@@ -27712,6 +27716,41 @@ function readEffect(
   if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
     xAnnounced += 1;
     try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
+  }
+  /*
+    **"Until your next turn"** (D1161, CR 611.2b): "target creature gets -4/-0 until your next turn",
+    "until your next turn, creatures you control get +1/+0". The same clause with "until end of turn"
+    is read, and every continuous effect it makes that would end with this turn lasts until its
+    controller's next turn instead (\`until-controllers-next-turn\`, goad's duration since D623).
+    Only for a clause about what something is or may do — "gets", "gains", "has", "loses", "can't" —
+    since those are the readings made of continuous effects; a permission or a delayed effect "until
+    end of turn" is bounded some other way and would end too soon.
+  */
+  const nextTurnShape = /^(?:until your next turn, (.+)|(.+) until your next turn)$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (nextTurnShape !== null) {
+    const body = (nextTurnShape[1] ?? nextTurnShape[2])!;
+    if (/\b(?:gets?|gains?|has|have|loses?|can['\u2019]t|cannot)\b/i.test(body) && !/\b(?:play|cast)\b/i.test(body)) {
+      // A restriction is printed "this turn" where a size is "until end of turn"; both end with the turn.
+      const restriction = nextTurnShape[1] === undefined && /\bcan['\u2019]t\b/i.test(body);
+      const inner = readEffect(nextTurnShape[1] !== undefined ? `until end of turn, ${body}`
+        : restriction ? `${body} this turn` : `${body} until end of turn`, name, where);
+      if (inner !== null) {
+        const lengthen = (fn: EffectFn): EffectFn => (c) => {
+          const before = new Set(c.state.effects.map((e) => e.id));
+          const after = fn(c);
+          return {
+            ...after,
+            effects: after.effects.map((e) => (!before.has(e.id) && e.duration === 'end-of-turn'
+              ? { ...e, duration: 'until-controllers-next-turn' as const } : e)),
+          };
+        };
+        return {
+          ...inner,
+          effect: lengthen(inner.effect),
+          ...(inner.immediate === undefined ? {} : { immediate: lengthen(inner.immediate) }),
+        };
+      }
+    }
   }
   /*
     "… sacrifices a creature of their choice" (D758): the current Oracle wording of every edict,

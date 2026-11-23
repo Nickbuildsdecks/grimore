@@ -36740,6 +36740,62 @@ describe('Dark Confidant compiled: the card put into the hand, and its mana valu
   });
 });
 
+describe('"until your next turn", and "can\'t attack this turn" (D1161)', () => {
+  const WEAKEN = { name: 'Test Weaken', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Target creature gets -4/-0 until your next turn.' };
+  const DETAIN = { name: 'Test Detain', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Target creature can't attack until your next turn." };
+  const HALT = { name: 'Test Halt', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Target creature can't attack this turn." };
+  const OGRE = { name: 'Test Ogre', type_line: 'Creature — Ogre', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '5', toughness: '5', oracle_text: '' };
+  const ROWS = [WEAKEN, DETAIN, HALT, OGRE];
+  const deck = customDeck({
+    id: 'd1161', name: 'Next turn', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 44 }], data: ROWS as never[],
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1161', 1: 'd1161' }, deckSpecs: { d1161: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Plains'], 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castAt = (s: GameState, name: string, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'card', id: target }],
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('-4/-0 until your next turn lasts through the opponent\'s turn and ends as yours begins', () => {
+    let s = table(['Test Weaken']);
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = castAt(s, 'Test Weaken', ogre);
+    expect(power(s, ogre)).toBe(1);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(power(s, ogre)).toBe(1);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(power(s, ogre)).toBe(5);
+  });
+
+  it('"can\'t attack until your next turn" stops the attack on the opponent\'s turn, and not on the one after', () => {
+    let s = table(['Test Detain']);
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = castAt(s, 'Test Detain', ogre);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(canAttack(s, ogre, 1)).not.toBeNull();
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(canAttack(s, ogre, 1)).toBeNull();
+  });
+
+  it('"can\'t attack this turn" ends with the turn', () => {
+    let s = table(['Test Halt']);
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = castAt(s, 'Test Halt', ogre);
+    expect(s.effects.some((e) => e.scope.kind === 'cards' && e.scope.ids.includes(ogre) && e.cantAttack === true)).toBe(true);
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(canAttack(s, ogre, 1)).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
