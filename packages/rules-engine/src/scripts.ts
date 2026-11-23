@@ -15167,6 +15167,13 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
       return atMost ? value <= limit : value >= limit;
     };
   }
+  // "With no counters on them" (D809): Damning Verdict. No counter of any kind.
+  const uncountered = /\s+with no counters on (?:them|it)$/i.exec(rest);
+  if (uncountered !== null) {
+    rest = rest.slice(0, uncountered.index);
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && Object.values(inst.counters).every((n) => (n ?? 0) <= 0);
+  }
   let who: 'you' | 'opponents' | 'any' = 'any';
   for (const [pattern, seatRule] of [
     [/\s+you control$/i, 'you'], [/\s+you don't control$/i, 'opponents'],
@@ -15190,12 +15197,14 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     return negated ? (line) => !base(line) : base;
   };
   // The state words (D749): "all tapped creatures", "each attacking creature", read live.
-  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped'];
+  // And "nontoken" (D809): Hour of Reckoning's "all nontoken creatures", a fact about the permanent.
+  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped', 'nontoken'];
   const states = rest.split(/\s+/).filter((word) => STATE_WORDS.includes(word.toLowerCase())).map((word) => word.toLowerCase());
   rest = rest.split(/\s+/).filter((word) => !STATE_WORDS.includes(word.toLowerCase())).join(' ');
   const inState = (state: GameState, id: string, tapped: boolean): boolean => states.every((word) => {
     if (word === 'tapped') return tapped;
     if (word === 'untapped') return !tapped;
+    if (word === 'nontoken') return state.instances[id]?.isToken !== true;
     if (word === 'attacking') return state.combat.attacks.some(({ attacker }) => attacker === id);
     return state.combat.attacks.some(({ blockers }) => blockers.includes(id));
   });
@@ -15224,6 +15233,9 @@ function boardScope(phrase: string): {
   readonly ids: (c: EffectContext) => readonly string[];
 } | null {
   let rest = plain(phrase).trim().replace(/\.$/, '');
+  // "With no counters on them" (D809), as `massScope` reads it.
+  const noCounters = /\s+with no counters on (?:them|it)$/i.test(rest);
+  if (noCounters) rest = rest.replace(/\s+with no counters on (?:them|it)$/i, '');
   /*
     The controller clause, read off the end. "You don't control" and "your opponents control" and
     "each opponent controls" are one set in a duel and the same set in a pod — every permanent whose
@@ -15275,7 +15287,8 @@ function boardScope(phrase: string): {
     "each attacking creature", "each blocking creature", "each untapped creature", "each tapped
     creature". Read live, as the effect resolves.
   */
-  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped'];
+  // And "nontoken" (D809): Hour of Reckoning's "all nontoken creatures", a fact about the permanent.
+  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped', 'nontoken'];
   const allWords = rest.trim().split(/\s+/).filter((word) => word !== '');
   const states = allWords.filter((word) => STATE_WORDS.includes(word.toLowerCase())).map((word) => word.toLowerCase());
   const words = allWords.filter((word) => !STATE_WORDS.includes(word.toLowerCase()));
@@ -15285,6 +15298,7 @@ function boardScope(phrase: string): {
   const inState = (c: EffectContext, id: string, tapped: boolean): boolean => states.every((word) => {
     if (word === 'tapped') return tapped;
     if (word === 'untapped') return !tapped;
+    if (word === 'nontoken') return c.state.instances[id]?.isToken !== true;
     if (word === 'attacking') return c.state.combat.attacks.some(({ attacker }) => attacker === id);
     return c.state.combat.attacks.some(({ blockers }) => blockers.includes(id));
   });
@@ -15294,6 +15308,7 @@ function boardScope(phrase: string): {
       const inst = c.state.instances[id];
       if (inst === undefined) return false;
       if (!inState(c, id, inst.tapped)) return false;
+      if (noCounters && Object.values(inst.counters).some((n) => (n ?? 0) > 0)) return false;
       if (other && id === c.source) return false;
       if (who === 'you' && inst.zoneSeat !== c.controller) return false;
       if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
@@ -15337,6 +15352,9 @@ const MASS_PUMP_SUBJECTS: string = [
   // get +3/+3" (Return of the Wildspeaker), "Elf creatures you control gain …". Checked against the
   // creature-type list in `massPumpSubject`, so "attacking creatures you control" is not a type.
   "(?:other )?(?:non-)?[a-z][a-z'-]* creatures you control",
+  // A creature type in the plural on its own (D809): "Dragons you control get +1/+0 until end of
+  // turn" (Lathliss), "Elves you control …". Checked against the creature-type list too.
+  "(?:other )?[a-z][a-z'-]*s you control",
 ].join('|');
 
 /**
@@ -15444,6 +15462,23 @@ function massPumpSubject(phrase: string): {
         holdForCombat: false,
       };
     default: {
+      const pluralType = /^(other )?([a-z][a-z'-]*s) you control$/i.exec(phrase.trim());
+      if (pluralType !== null && !/^creatures$/i.test(pluralType[2]!)) {
+        const printed = pluralType[2]!.toLowerCase();
+        const candidates = [printed.replace(/ves$/, 'f'), printed.replace(/ies$/, 'y'), printed.replace(/es$/, ''), printed.replace(/s$/, '')]
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+        const type = candidates.find((w) => isCreatureType(w));
+        if (type === undefined) return null;
+        const other = pluralType[1] !== undefined;
+        return {
+          ids: (c) => creaturesControlledBy(c.state, c.controller).filter((id) => {
+            if (other && id === c.source) return false;
+            const inst = c.state.instances[id];
+            return inst !== undefined && hasSubtype(characteristicsOf(c.state, inst).typeLine, type);
+          }),
+          holdForCombat: true,
+        };
+      }
       const typed = /^(other )?(non-)?([a-z][a-z'-]*) creatures you control$/i.exec(phrase.trim());
       if (typed === null) return null;
       const word = typed[3]!.charAt(0).toUpperCase() + typed[3]!.slice(1).toLowerCase();
@@ -32912,6 +32947,10 @@ function spellKindWord(word: string): ((card: CardDef) => boolean) | null {
     return (card) => hasType(parseTypeLine(card.typeLine), word);
   }
   if (word === 'legendary') return (card) => /\blegendary\b/i.test(card.typeLine ?? '');
+  // "Historic spells" (D809, CR 700.6): an artifact, a legendary or a Saga. Jhoira's Familiar.
+  if (word === 'historic') {
+    return (card) => { const line = parseTypeLine(card.typeLine); return hasType(line, 'artifact') || /\blegendary\b/i.test(card.typeLine ?? '') || hasSubtype(line, 'Saga'); };
+  }
   const subtype = word.charAt(0).toUpperCase() + word.slice(1);
   if (isCreatureType(word)) return (card) => cardHasSubtype(card, subtype);
   if (['Aura', 'Equipment', 'Vehicle', 'Lesson', 'Arcane'].includes(subtype)) return (card) => hasSubtype(parseTypeLine(card.typeLine), subtype);
