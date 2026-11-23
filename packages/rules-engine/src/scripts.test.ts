@@ -35317,6 +35317,36 @@ describe('"If damage would be dealt to ~, …" (D1147)', () => {
   });
 });
 
+describe('"Whenever you attack while creatures you control have total power N or greater" (D1148)', () => {
+  const OFFICER = { name: 'Test Officer', type_line: 'Creature — Human Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Whenever you attack while creatures you control have total power 8 or greater, put a +1/+1 counter on this creature.' };
+  const BIG = { name: 'Test Big', type_line: 'Creature — Beast', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '6', toughness: '6', oracle_text: '' };
+  const MID = { name: 'Test Mid', type_line: 'Creature — Beast', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' };
+  const ROWS = [OFFICER, BIG, MID];
+  const deck = customDeck({
+    id: 'd1148', name: 'Attack while', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Plains', count: 54 }], data: ROWS as never[],
+  });
+  const attackWith = (mine: readonly string[], attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1148', 1: 'd1148' }, deckSpecs: { d1148: deck.deck },
+      battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', attacker), defender: 1 }] } as Action));
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 30);
+    const officer = find(s, 0, 'battlefield', 'Test Officer');
+    return s.instances[officer]!.counters['+1/+1'] ?? 0;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(OFFICER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with 8 total power it triggers; with 5 it does not', () => {
+    expect(attackWith(['Test Officer', 'Test Big'], 'Test Big')).toBe(1);
+    expect(attackWith(['Test Officer', 'Test Mid'], 'Test Mid')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

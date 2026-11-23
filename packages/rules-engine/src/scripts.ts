@@ -34522,7 +34522,15 @@ function interveningIfFromLine(line: string, name: string): Partial<CardScript> 
     condition it names is spelled out in the clause that follows it. 176 of the unread
     intervening-if lines print one.
   */
-  const text = plain(withoutAbilityWord(line)).trim();
+  /*
+    "Whenever you attack while creatures you control have total power 8 or greater, …" (D1148): the
+    Star Trek crew, The Chief Warg's "while you control a creature with power 4 or greater". Read as
+    the intervening "if" it is closest to. The printed "while" is a trigger condition, asked only as
+    the ability triggers (CR 603.2), and an intervening "if" is asked again as it resolves (CR
+    603.4). The two differ only when the total drops below the threshold before the trigger
+    resolves, and then this does nothing where the card would still act.
+  */
+  const text = plain(withoutAbilityWord(line)).trim().replace(/^(Whenever you attack) while /i, '$1, if ');
   /*
     A name with a comma in it (D1145): "Whenever the Ring tempts you, if you chose a creature other
     than Gandalf, Friend of the Shire as your Ring-bearer, draw a card", and "When Tymna, the Weaver
