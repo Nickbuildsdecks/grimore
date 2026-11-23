@@ -17139,6 +17139,46 @@ const ARRIVES_ATTACHED: Readonly<Record<string, string>> = {
   'job select': 'create a 1/1 colorless Hero creature token',
 };
 
+/**
+ * "As long as enchanted creature is red, it gets +1/+1 and has haste" (D814): a bonus the
+ * attachment gives only while its host is something, read as further parts of the attachment's
+ * bonus, each with the host filter it needs. Legendary, tapped and untapped go through `onlyKind`,
+ * attacking through `onlyAttacking`, a colour through `onlyColours`, and "a Human" or "a Human or
+ * an Angel" through `onlySubtypes`. "An additional +1/+1" is the same size: the word only says the
+ * plain bonus still applies.
+ *
+ * Only a part that helps, and only a size or a keyword: a grant would need its own trigger table,
+ * and a harmful part (Ray of Frost) would mislead the bot's choice of host. A line that does not
+ * read is left out and stays flagged.
+ */
+function hostConditionalParts(
+  lines: readonly string[], host: 'enchanted' | 'equipped', name: string,
+): { parts: PumpOptions[]; lines: string[] } {
+  const parts: PumpOptions[] = [];
+  const claimed: string[] = [];
+  for (const line of lines) {
+    const m = new RegExp(`^as long as ${host} creature is (.+?), it (.+?)\\.?$`, 'i').exec(plain(line).trim());
+    if (m === null) continue;
+    const what = m[1]!.toLowerCase();
+    let filter: PumpOptions | null = null;
+    if (what === 'legendary' || what === 'tapped' || what === 'untapped') filter = { onlyKind: [what] };
+    else if (what === 'attacking') filter = { onlyAttacking: true };
+    else if (COLOUR_WORDS[what] !== undefined) filter = { onlyColours: [COLOUR_WORDS[what]!] };
+    else {
+      const kinds = /^an? ([a-z]+)(?: or an? ([a-z]+))?$/.exec(what);
+      const types = kinds === null ? [] : [kinds[1]!, kinds[2]].filter((t): t is string => t !== undefined)
+        .map((t) => t.charAt(0).toUpperCase() + t.slice(1));
+      if (types.length > 0 && types.every((t) => isCreatureType(t))) filter = { onlySubtypes: types };
+    }
+    if (filter === null) continue;
+    const read = attachmentBonus(`${host} creature ${m[2]!.replace(/^gets an additional /i, 'gets ')}`, name);
+    if (read === null || read.harmful || read.grantedTriggers !== undefined || read.grantedAbilities !== undefined) continue;
+    parts.push({ ...read.bonus, ...filter });
+    claimed.push(line);
+  }
+  return { parts, lines: claimed };
+}
+
 export function attachmentScriptFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
@@ -17157,7 +17197,22 @@ export function attachmentScriptFor(
     ? /^(?:enchanted (?:creature|land|artifact|enchantment|permanent)\b|all creatures able to block enchanted creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) enchanted creature\.?$)/i
     : /^(?:equipped creature|all creatures able to block equipped creature do so|prevent all (?:combat )?damage that would be dealt (?:to and dealt by|to|by) equipped creature\.?$)/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
-  const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
+  const plainRead = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
+  /*
+    And the host-conditional lines (D814), as further parts of the same bonus. Not beside a plain
+    bonus line that did not read: the card would then claim a line it is not giving.
+  */
+  const hostParts = staticLine !== undefined && plainRead === null
+    ? { parts: [], lines: [] }
+    : hostConditionalParts(lines, isAura ? 'enchanted' : 'equipped', def.name);
+  const read = hostParts.parts.length === 0
+    ? plainRead
+    : {
+      ...(plainRead ?? { harmful: false }),
+      bonus: { ...(plainRead?.bonus ?? {}), alsoParts: hostParts.parts },
+    };
+  /** The bonus lines read: the plain one, if any, and the conditional ones. */
+  const bonusLines = read === null ? [] : [...(staticLine === undefined ? [] : [staticLine]), ...hostParts.lines];
   /*
     A second bonus line, "Enchanted creature's controller may have it assign its combat damage as
     though it weren't blocked" (Indomitable Might, D772), beside "gets +3/+3": only the first bonus
@@ -17260,7 +17315,7 @@ export function attachmentScriptFor(
         },
         claimed: read === null || read.grantedTriggers !== undefined || read.grantedAbilities !== undefined
           ? [enchant[0]!, animateLine]
-          : [enchant[0]!, animateLine, staticLine!],
+          : [enchant[0]!, animateLine, ...bonusLines],
       };
     }
     const declared = enchant[0]!;
@@ -17403,7 +17458,7 @@ export function attachmentScriptFor(
         ...(read?.harmful === true || controlLine !== undefined ? { removesACreature: true as const } : {}),
       },
       // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
-      claimed: [declared, ...(read === null ? [] : [staticLine!]), ...(controlLine === undefined ? [] : [controlLine]),
+      claimed: [declared, ...bonusLines, ...(controlLine === undefined ? [] : [controlLine]),
         ...(freeLine === undefined ? [] : [freeLine])],
     };
   }
@@ -17587,7 +17642,7 @@ export function attachmentScriptFor(
         read === null
           ? 'attach it to a creature you control'
           : (() => {
-            const text = plain(staticLine!).trim().replace(/\.$/, '');
+            const text = plain(staticLine ?? hostParts.lines[0]!).trim().replace(/\.$/, '');
             return text.charAt(0).toLowerCase() + text.slice(1);
           })(),
         // A card whose only equip is typed (Excalibur) narrows its one equip ability (D1092).
@@ -17617,7 +17672,7 @@ export function attachmentScriptFor(
     */
     claimed: [
       equip.input,
-      ...(read === null ? [] : [staticLine!]),
+      ...bonusLines,
       // And the arrival line, which is now accounted for rather than recognised-and-ignored.
       ...(arrival === null ? [] : [arrival.line]),
     ],

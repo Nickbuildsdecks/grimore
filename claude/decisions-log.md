@@ -58979,3 +58979,41 @@ Faults injected by hand: 3, all caught.
 - The cost not exiling.
 
 Coverage: 15,761 of 31,900 cards (+9 over D1157's 15,752), 37,901 of 59,888 lines (+16).
+## D814 — A bonus while the host is legendary, a colour or a creature type: Champion's Helm
+
+Most-played order: Champion's Helm (rank 1219), and the attachments that print "As long as
+enchanted/equipped creature is X, it …", usually beside a plain bonus line: Butcher's Cleaver,
+Gimli's Axe, Hero's Heirloom, Bladed Bracers, Heavy Mattock, Silver-Inlaid Dagger, True-Faith Censer,
+Sharpened Pitchfork, Equestrian Skill, and the Shadowmoor and Eventide colour Auras (Edge of the
+Divinity, Clout of the Dominus, Runes of the Deus, Steel of the Godhead, Shield of the Oversoul and
+others). 18 of the 31 printings read in the probe; the rest of the corpus total below is the legal-card count.
+
+**Engine.** An attachment's one bonus became one effect on its host. A `PumpOptions` can now carry
+`alsoParts`: further effects from the same source on the same scope, each with its own filters.
+`staticEffect` (the Equipment's equip) and `addAuraEffect` push them. `removeEffectsFrom` already
+removes everything from a source, so they leave with the attachment. Two host filters join the
+D735/D941 ones on `ContinuousEffect`: `onlySubtypes` (any one of them) and `onlyColours` (any one,
+after layer 5). Legendary, tapped and untapped use `onlyKind`; attacking uses `onlyAttacking`.
+
+**Reader.** `hostConditionalParts` reads each "As long as <host> creature is <legendary | tapped |
+untapped | attacking | a colour | a Human[ or an Angel]>, it <predicate>" through `attachmentBonus`.
+"An additional +1/+1" is read as "+1/+1": the word only says the plain bonus still applies. It
+reads only parts that help and only a size or a keyword. Grants, harmful parts (Ray of Frost) and
+"has defender" / "has vigilance" / "is attacking alone" / "is face down" stay unread. Conditional
+lines are not taken beside a plain bonus line that did not read, so a card never claims a line
+it does not give.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- the Helm's +2/+2 reaches any host, and its hexproof only a legendary one. Re-equipping moves both;
+- "a Human or an Angel" covers an Angel and not a Bear;
+- "an additional +1/+1" makes a Human +2/+2;
+- an Aura's two colour lines give a white host one bonus, a black host the other, and a green
+  host neither.
+
+Faults injected by script: 10 of 10 caught. They cover both engine filters, the subtype
+disjunction, `modsFrom`, the Equipment and Aura paths that push the parts, and the reader's
+legendary, "additional", second-type and filter handling.
+
+- engine tests: 6166, all passing (on 1824f47)
+- Coverage: 15,766 to 15,772 of 31,900 cards with every line read, and 37,907 to 37,919 of 59,888 lines, against 1824f47.

@@ -1792,6 +1792,13 @@ export interface ContinuousEffect {
    */
   readonly onlyKind?: readonly CreatureKindWord[];
   /**
+   * And by the creature's subtypes and colours (D814): "As long as equipped creature is a Human or
+   * an Angel, it has vigilance", "As long as enchanted creature is red, it gets +1/+1". Any one
+   * listed subtype will do, and any one colour, read live after layers 4 and 5 like `onlyKind`.
+   */
+  readonly onlySubtypes?: readonly string[];
+  readonly onlyColours?: readonly Color[];
+  /**
    * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
    * entries in the *source card's* `grantedAbilities`.
    *
@@ -2645,6 +2652,11 @@ function effectApplies(
     }
   }
   if (effect.onlyKind !== undefined && !isEveryKind(state, instance, creature, typeLine, effect.onlyKind)) return false;
+  if (effect.onlySubtypes !== undefined && !effect.onlySubtypes.some((t) => hasSubtype(typeLine, t))) return false;
+  if (effect.onlyColours !== undefined) {
+    const colours = layerFiveColours(state, instance, creature, typeLine);
+    if (!effect.onlyColours.some((c) => colours.includes(c))) return false;
+  }
   switch (effect.scope.kind) {
     case 'cards':
       return effect.scope.ids.includes(instance.id);
