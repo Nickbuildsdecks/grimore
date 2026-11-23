@@ -41633,3 +41633,61 @@ equipped".
 
 - engine tests: 6176, all passing (on 9eb329f)
 - Coverage: 15,786 to 15,803 of 31,900 cards with every line read, and 37,939 to 37,961 of 59,888 lines, against 9eb329f.
+
+## D1160 — the initiative and Undercity
+
+"You take the initiative" (CR 722) is printed on 23 legal cards and was read on none. The engine
+had `GameState.initiative` as a tabletop marker only, with no dungeon behind it. Now:
+
+- **Dungeons** (CR 309). `DUNGEONS` holds each dungeon's rooms, top first, with each room's text and
+  the rooms below it. A dungeon card is made in the seat's command zone the way the Ring is (D1144),
+  and `GameState.dungeon` holds the seat's marker: the dungeon, the room, and the card.
+  `dungeonScript` gives the card one reflexive trigger per room, keyed by the room's name. Each
+  room's ability is read from its text by the ordinary clause readers, so it goes on the stack and
+  chooses its targets there (CR 309.4c).
+- **Venture** (CR 701.49). `ventureInto` moves the marker into the top room, or into the room chosen
+  below the current one, and queues that room's trigger. When two rooms are below, the player is
+  asked "Venture into which room?"; the bot takes the first. The bottom room completes the dungeon
+  once it has resolved: the card leaves the command zone and `dungeonsCompleted` records it (CR
+  309.7).
+- **The initiative.**
+  - `takeInitiative` sets the seat and moves The Initiative's card into that seat's command zone,
+    or makes it.
+  - The card's "At the beginning of your upkeep, venture into Undercity" is an ordinary step
+    trigger (CR 722.3).
+  - A creature that deals combat damage to the seat with the initiative takes it for its controller
+    (CR 722.4). That venture goes on the stack as the card's "taken" trigger, because it asks which
+    room.
+- **Undercity**'s nine rooms all read. Throne of the Dead Three is built on the dig reader, with
+  the three +1/+1 counters, hexproof until your next turn and the shuffle added after it. It reads
+  "Put a creature card from among them" as "You may put …", so a player may take none; that is the
+  one difference from the printed room.
+- The view carries each seat's dungeon and room.
+
+TODO(scryfall-dungeons): the room text is written from the printed card. Dungeons are not legal
+cards, the local corpus has none, and this environment's proxy refuses api.scryfall.com. Check the
+text against the Scryfall import.
+
+Read whole now: Aarakocra Sneak, Avenging Hunter, Feywild Caretaker, Goliath Paladin, Passageway
+Seer, Underdark Explorer. Not read:
+- "venture into the dungeon" and the other three dungeons (next);
+- "if you've completed a dungeon";
+- "whenever you complete a dungeon".
+
+**Tests.** 5 engine tests:
+- The test card reads whole.
+- Taking the initiative: the seat has it, The Initiative and Undercity are in its command zone, and
+  the marker is on Secret Entrance.
+- At the next upkeep the player chooses Lost Well over Forge and the marker moves there.
+- Combat damage to the seat with the initiative: the attacker's seat takes it, the card moves, and
+  that seat ventures into its own Undercity.
+- From Catacombs, a venture into Throne of the Dead Three completes Undercity: the card leaves and
+  the completion is counted.
+
+Faults injected by hand: 4, all caught.
+- No upkeep venture.
+- No steal on combat damage.
+- No completion.
+- The room choice ignored.
+
+Coverage: 15,793 of 31,900 cards (+23 over D1159's 15,770), 37,957 of 59,888 lines (+43). The difference also counts the D7xx session's D814, merged in after D1159 was measured; D1160's own share is the 6 initiative cards above, plus lines on cards that stay unread for other reasons.
