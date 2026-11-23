@@ -33221,11 +33221,17 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     Sing Se; "… have hexproof" (Privileged Position, Sigarda, Font of Blessings); and without "other".
     Keywords any permanent can have, on the scopes of the same names.
   */
-  const permanentsHave = /^(other )?permanents you control have ([a-z ,]+?)\.?$/i.exec(plain(line).trim());
+  const permanentsHave = /^(other )?(permanents|artifacts|lands) you control have ([a-z ,]+?)\.?$/i.exec(plain(line).trim());
   if (permanentsHave !== null) {
-    const keywords = grantedKeywords(permanentsHave[2]!);
-    if (keywords !== null && keywords.length > 0 && keywords.every((word) => word === 'indestructible' || word === 'hexproof' || word === 'shroud')) {
-      return { statics: [{ scope: permanentsHave[1] === undefined ? 'permanents-you-control' : 'other-permanents-you-control', effect: { keywords } }] };
+    const keywords = grantedKeywords(permanentsHave[3]!);
+    const kind = permanentsHave[2]!.toLowerCase();
+    const other = permanentsHave[1] !== undefined;
+    // "Artifacts you control have hexproof" (D806, Padeem) and "Lands you control have
+    // indestructible" on the scopes of the same names; "other" only for permanents.
+    const scope = kind === 'permanents' ? (other ? 'other-permanents-you-control' as const : 'permanents-you-control' as const)
+      : other ? null : kind === 'artifacts' ? 'artifacts-you-control' as const : 'controller-lands' as const;
+    if (scope !== null && keywords !== null && keywords.length > 0 && keywords.every((word) => word === 'indestructible' || word === 'hexproof' || word === 'shroud')) {
+      return { statics: [{ scope, effect: { keywords } }] };
     }
   }
   // Casting limits (D788): see `CardScript.castLimits`.
@@ -33356,7 +33362,9 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     D1089: the Backgrounds' "Commander creatures you own have "…"" (and "get +3/+3 and have …"):
     your commanders on the battlefield, whoever controls them. See the `commander-creatures` scope.
   */
-  const commanders = /^commander creatures you own (get|have) (.+)$/i.exec(text);
+  // And "Commander creatures you control get +2/+2 and have indestructible" (D806, Bastion Protector),
+  // on the same scope: your commanders. One stolen by an opponent is the edge this does not split.
+  const commanders = /^commander creatures you (?:own|control) (get|have) (.+)$/i.exec(text);
   /*
     D941: the opponents' side ("Creatures your opponents control get -1/-0", Curfew's kin), the
     attacking ones ("Attacking creatures you control get +1/+1"), and the countered ones ("Each
