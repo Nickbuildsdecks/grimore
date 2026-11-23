@@ -7947,7 +7947,7 @@ describe('deck coverage', () => {
       'script retrace',
       'trigger counters-put', 'trigger leaves-graveyard',
       'script noMaxHandSize',
-      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script castLimits', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
+      'script additionalLands', 'script additionalLandsEach', 'script opponentsEnterTapped', 'script castLimits', 'script flashFor', 'script landsFromGraveyard', 'script topRevealed', 'script landsFromTop',
       'script freeWithCommander',
       'script untapsDuringOthersUntap',
       'script shufflesIntoLibrary',
@@ -34944,6 +34944,59 @@ describe('"Exile target card from a graveyard. If it was a creature card, …" (
     expect(counters(s, 'Test Sash')).toBe(0);
     s = use(s, 'Test Sash', find(s, 1, 'graveyard', 'Forest'));
     expect(counters(s, 'Test Sash')).toBe(1);
+  });
+});
+
+describe('"you may cast <kind> spells as though they had flash" (D800)', () => {
+  const LEYLINE = { name: 'Test Leyline', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'You may cast spells as though they had flash.' };
+  const CALLER = { name: 'Test Caller', type_line: 'Creature — Otter', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'You may cast noncreature spells as though they had flash.' };
+  const HERALD = { name: 'Test Herald', type_line: 'Creature — Elf', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'You may cast green creature spells as though they had flash.' };
+  const RITUAL = { name: 'Test Study', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.' };
+  const ELK = { name: 'Test Elk', type_line: 'Creature — Elk', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const IMP = { name: 'Test Imp', type_line: 'Creature — Imp', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '1', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd800', name: 'Flash',
+    entries: [LEYLINE, CALLER, HERALD, RITUAL, ELK, IMP].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Island', count: 48 }]),
+    data: [LEYLINE, CALLER, HERALD, RITUAL, ELK, IMP] as never[],
+  });
+  // The opponent's main phase, with seat 0 holding priority: no time a sorcery could be cast.
+  const theirTurn = (mine: string[], hand: string[], theirs: string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd800', 1: 'd800' }, deckSpecs: { d800: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    expect(s.priority).toBe(0);
+    return s;
+  };
+  const tryCast = (s: GameState, name: string) => refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) });
+
+  it('reads', () => {
+    for (const card of [LEYLINE, CALLER, HERALD]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Leyline of Anticipation: a sorcery and a creature on the opponent\'s turn; without it, neither', () => {
+    const s = theirTurn(['Test Leyline'], ['Test Study', 'Test Imp']);
+    expect(tryCast(s, 'Test Study')).toBeNull();
+    expect(tryCast(s, 'Test Imp')).toBeNull();
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Study'))).toBe(true);
+    const bare = theirTurn([], ['Test Study']);
+    expect(tryCast(bare, 'Test Study')).toMatch(/main phase/);
+  });
+
+  it("only its controller's: the opponent's Leyline lets us cast nothing", () => {
+    expect(tryCast(theirTurn([], ['Test Study'], ['Test Leyline']), 'Test Study')).toMatch(/main phase/);
+  });
+
+  it('the narrower kinds: noncreature, and green creature', () => {
+    const noncreature = theirTurn(['Test Caller'], ['Test Study', 'Test Imp']);
+    expect(tryCast(noncreature, 'Test Study')).toBeNull();
+    expect(tryCast(noncreature, 'Test Imp')).toMatch(/main phase/);
+    const green = theirTurn(['Test Herald'], ['Test Elk', 'Test Imp', 'Test Study']);
+    expect(tryCast(green, 'Test Elk')).toBeNull();
+    expect(tryCast(green, 'Test Imp')).toMatch(/main phase/);
+    expect(tryCast(green, 'Test Study')).toMatch(/main phase/);
   });
 });
 
