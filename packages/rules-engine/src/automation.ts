@@ -1545,6 +1545,12 @@ function triggerMatches(
     case 'cycles': {
       // Per card or per batch (D993): each trigger hears only its own kind of discard event.
       if (want.kind === 'discards' && (want.batch === true) !== ((event as { batch?: true }).batch === true)) return false;
+      // Which card (D820): any of `cardTypes`, none of `notTypes`.
+      if (want.kind === 'discards' && (want.cardTypes !== undefined || want.notTypes !== undefined)) {
+        const types = (event as { subjectTypes?: readonly string[] }).subjectTypes ?? [];
+        if (want.cardTypes !== undefined && !want.cardTypes.some((t) => types.includes(t))) return false;
+        if (want.notTypes !== undefined && want.notTypes.some((t) => types.includes(t))) return false;
+      }
       if (want.kind === 'cycles' && want.self === true) return isSubject;
       const by = want.by ?? 'you';
       if (by === 'any') return true;
@@ -4499,7 +4505,10 @@ function settle(state: GameState, before: GameState): GameState {
     for (const id of thrown) {
       const owner = next.instances[id]?.owner;
       // With the card as its subject (D719): Necropotence's "exile that card from your graveyard".
-      if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner, id);
+      // And its card types (D820), for "discards a creature card".
+      const subjectTypes = parseTypeLine(next.cardDefs[next.instances[id]?.defKey ?? '']?.typeLine ?? '').types
+        .map((t) => t.toLowerCase());
+      if (owner !== undefined) next = raise(next, { kind: 'discards', subjectTypes }, owner, id);
     }
     // And one batch per player (D993), for "whenever you discard one or more cards".
     const discardedBy = new Map<SeatIndex, number>();

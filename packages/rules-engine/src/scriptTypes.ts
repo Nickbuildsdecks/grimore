@@ -1506,6 +1506,14 @@ export type TriggerEvent =
       readonly batch?: true;
       /** Set by the engine on a batch: how many cards, for "that many". */
       readonly amount?: number;
+      /**
+       * Which cards (D820, Waste Not): "discards a **creature** card" is any of `cardTypes`, and
+       * "a **noncreature, nonland** card" is none of `notTypes`. Card types, lowercased.
+       */
+      readonly cardTypes?: readonly string[];
+      readonly notTypes?: readonly string[];
+      /** Set by the engine on a per-card discard: the card's printed card types, lowercased. */
+      readonly subjectTypes?: readonly string[];
     }
   /**
    * "Whenever you **sacrifice** a permanent" — the act, not the death (D570).
