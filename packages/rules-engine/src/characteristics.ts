@@ -3132,7 +3132,17 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const layered = withAddedTypes(state, instance, printed, hasType(printed, 'creature'));
   // Changeling is part of the same layer, and `typeLine` is what every later layer's scope
   // is judged against — see `withChangeling` for why that sentence is the whole increment.
-  const typeLine = withChangeling(state, instance, layered, def);
+  const changed = withChangeling(state, instance, layered, def);
+  /*
+    The Ring's first ability (D1144, CR 701.54a): "Your Ring-bearer is legendary and can't be blocked
+    by creatures with greater power." The second half is skulk's rule word for word (CR 702.118a),
+    so the keyword is added below rather than a second copy of its blocking clause.
+  */
+  const ringBearing = instance.zone === 'battlefield' && ringLevel(state, instance.zoneSeat) >= 1
+    && ringBearerOf(state, instance.zoneSeat) === instance.id;
+  const typeLine = ringBearing && !changed.supertypes.includes('Legendary')
+    ? { ...changed, supertypes: [...changed.supertypes, 'Legendary'] }
+    : changed;
   const creature = hasType(typeLine, 'creature');
 
   // Layer 7b and 7c are collected separately, because the first replaces the base and the second
@@ -3166,6 +3176,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     */
     ...Object.entries(instance.counters).filter(([kind, n]) => n > 0 && isKeyword(kind)).map(([kind]) => kind.toLowerCase() as Keyword),
   ]);
+  if (ringBearing) keywords.add('skulk');
   let cantAttack = false;
   /*
     Printed combat statics, seeded exactly as printed landwalk and printed protection are below and
@@ -3517,6 +3528,26 @@ export interface GrantedTriggerRef {
  * A face-down permanent has no abilities at all (CR 707.2) and so can be handed none: an effect
  * pointed at one reaches a 2/2 with no text.
  */
+/** The emblem's name (D1144): every seat the Ring has tempted has one, in the command zone. */
+export const THE_RING = 'The Ring';
+
+/**
+ * A seat's Ring-bearer (D1144, CR 701.54c), or `null`: the creature it last chose, while that is
+ * still a creature on the battlefield under its control. One that left, or changed control, has
+ * stopped being the Ring-bearer, and choosing again is the only way to have one.
+ */
+export function ringBearerOf(state: GameState, seat: SeatIndex): string | null {
+  const bearer = state.ring?.[String(seat)]?.bearer ?? null;
+  if (bearer === null) return null;
+  const inst = state.instances[bearer];
+  return inst !== undefined && inst.zone === 'battlefield' && inst.zoneSeat === seat ? bearer : null;
+}
+
+/** How many of the Ring's four abilities a seat has (D1144): the times it was tempted, up to four. */
+export function ringLevel(state: GameState, seat: SeatIndex): number {
+  return Math.min(4, state.ring?.[String(seat)]?.tempted ?? 0);
+}
+
 export function grantedTriggersOn(
   state: GameState, instance: CardInstance,
 ): readonly GrantedTriggerRef[] {

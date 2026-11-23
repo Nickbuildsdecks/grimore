@@ -38,11 +38,11 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
-import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
+import { REGENERATION, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
 import { costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
 import { canAfford, reducedCostText, solveTap } from './mana.js';
-import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
+import { ringBearerOf, ringLevel, colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours, ownLandTypes, legendaryColours } from './fromCardData.js';
 import { scriptForCard, unreadLines } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
@@ -34944,6 +34944,89 @@ describe('"Exile target card from a graveyard. If it was a creature card, …" (
     expect(counters(s, 'Test Sash')).toBe(0);
     s = use(s, 'Test Sash', find(s, 1, 'graveyard', 'Forest'));
     expect(counters(s, 'Test Sash')).toBe(1);
+  });
+});
+
+describe('the Ring tempts you (D1144)', () => {
+  const HOBBIT = { name: 'Test Hobbit', type_line: 'Creature — Halfling', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When Test Hobbit enters, the Ring tempts you.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [HOBBIT, BEAR];
+  const deck = customDeck({
+    id: 'd1144', name: 'Ring', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1144', 1: 'd1144' }, deckSpecs: { d1144: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s0: GameState, pick?: string) => {
+    let s = s0;
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      if (s.pendingDecision !== null) {
+        const want = (s.pendingDecision.candidates ?? []).find((id) => pick === undefined || nameOf(s, id) === pick);
+        s = apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: want === undefined ? [] : [want] } as Action);
+      } else s = drain(passBoth(s), 30);
+    }
+    return s;
+  };
+  const swing = (s: GameState, attacker: string) => drain(apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }],
+  } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(HOBBIT as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('tempts once: the emblem, level 1, and the chosen creature is a legendary Ring-bearer with skulk', () => {
+    let s = table(['Test Hobbit'], ['Test Bear']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hobbit') } as Action), 'Test Bear');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(ringLevel(s, 0)).toBe(1);
+    expect(ringBearerOf(s, 0)).toBe(bear);
+    expect(ids(s, 0, 'command').map((id) => nameOf(s, id))).toContain('The Ring');
+    const ch = characteristicsOf(s, s.instances[bear]!);
+    expect(ch.typeLine.supertypes).toContain('Legendary');
+    expect(ch.keywords.has('skulk')).toBe(true);
+    const hobbit = find(s, 0, 'battlefield', 'Test Hobbit');
+    expect(characteristicsOf(s, s.instances[hobbit]!).keywords.has('skulk')).toBe(false);
+  });
+
+  it('a Ring-bearer that leaves is no longer one', () => {
+    let s = table([], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = temptWithRing(s, 0, bear);
+    expect(ringBearerOf(s, 0)).toBe(bear);
+    s = sacrifice(s, [bear]);
+    expect(ringBearerOf(s, 0)).toBeNull();
+    expect(ringLevel(s, 0)).toBe(1);
+  });
+
+  it('at level 2 the Ring-bearer loots when it attacks; at level 1 it does not', () => {
+    let one = table([], ['Test Bear']);
+    const bear1 = find(one, 0, 'battlefield', 'Test Bear');
+    one = temptWithRing(one, 0, bear1);
+    const yard1 = one.zones['0:graveyard']?.length ?? 0;
+    one = settle(swing(one, bear1));
+    expect(one.zones['0:graveyard']?.length ?? 0).toBe(yard1);
+
+    let s = table([], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = temptWithRing(temptWithRing(s, 0, bear), 0, bear);
+    const hand = s.zones['0:hand']!.length;
+    const yard = s.zones['0:graveyard']?.length ?? 0;
+    s = settle(swing(s, bear));
+    expect(s.zones['0:hand']!.length).toBe(hand);
+    expect(s.zones['0:graveyard']?.length ?? 0).toBe(yard + 1);
+  });
+
+  it('at level 4 its combat damage to a player costs each opponent 3 more', () => {
+    let s = table([], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    for (let i = 0; i < 4; i++) s = temptWithRing(s, 0, bear);
+    const before = life(s, 1);
+    s = settle(swing(s, bear));
+    s = settle(advanceTo(s, 'postcombat-main'));
+    expect(life(s, 1)).toBe(before - 2 - 3);
   });
 });
 

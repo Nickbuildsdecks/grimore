@@ -826,6 +826,13 @@ export interface AutomationState {
    */
   readonly extraTurns?: readonly SeatIndex[];
   /**
+   * The Ring (D1144, CR 701.54): per seat, how many times the Ring has tempted that player and which
+   * creature they chose as their Ring-bearer. A seat is absent until the Ring first tempts it. The
+   * bearer is only a Ring-bearer while it is on the battlefield under that seat's control (CR
+   * 701.54c); `ringBearerOf` checks that rather than anything clearing it.
+   */
+  readonly ring?: Readonly<Record<string, { readonly tempted: number; readonly bearer: string | null }>>;
+  /**
    * Whose regular turn the extra turns came after (D1132), so the order resumes after that seat
    * once they are taken: Time Warp aimed at the player across the table does not skip the one in
    * between. Set by the first extra turn taken, cleared when the order resumes.

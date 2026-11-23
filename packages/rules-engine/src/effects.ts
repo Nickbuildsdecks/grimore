@@ -15,7 +15,7 @@
  */
 import type { CardScript } from './scriptTypes.js';
 import {
-  allAbilitiesLost, characteristicsOf, countersAfterReplacement, effectReaches, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, THE_RING, countersAfterReplacement, effectReaches, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -3150,9 +3150,9 @@ export function pump(
  * `text`, read like a card's. Recorded as an arrival so `settle` installs its statics; it raises no
  * enters trigger, because it is not a permanent and did not enter the battlefield.
  */
-export function createEmblem(state: GameState, seat: SeatIndex, text: string, from: string): GameState {
+export function createEmblem(state: GameState, seat: SeatIndex, text: string, from: string, exactName?: string): GameState {
   const def = normaliseDef({
-    name: `${from} emblem`, typeLine: 'Emblem', oracleText: text, manaCost: '', cmc: 0, colors: [],
+    name: exactName ?? `${from} emblem`, typeLine: 'Emblem', oracleText: text, manaCost: '', cmc: 0, colors: [],
   } as CardDef);
   const key = defKeyFor(def);
   const seq = state.instanceSeq + 1;
@@ -3172,6 +3172,32 @@ export function createEmblem(state: GameState, seat: SeatIndex, text: string, fr
     instanceSeq: seq,
     entered: state.automated ? [...state.entered, id] : state.entered,
   }, { [command]: [...listAt(state, command), id] });
+}
+
+/** The Ring emblem's text (D1144, CR 701.54a): shown to the players; `THE_RING`'s script runs it. */
+const RING_TEXT = [
+  'Your Ring-bearer is legendary and can\'t be blocked by creatures with greater power.',
+  'Whenever your Ring-bearer attacks, draw a card, then discard a card.',
+  'Whenever your Ring-bearer becomes blocked by a creature, that creature\'s controller sacrifices it at end of combat.',
+  'Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3 life.',
+].join('\n');
+
+/**
+ * "The Ring tempts you" (D1144, CR 701.54a): the seat gets the Ring emblem if it has none, the Ring
+ * gains its next ability (four at most), and `bearer` — a creature the seat controls, or `null` when
+ * it controls none — becomes its Ring-bearer. Choosing the creature that already is one is allowed.
+ * Each tempting counts, Ring-bearer or not, which is what "the Ring has tempted you N times" reads.
+ */
+export function temptWithRing(state: GameState, seat: SeatIndex, bearer: string | null): GameState {
+  let next = state;
+  if (!emblemsOf(next, seat).some((id) => next.cardDefs[next.instances[id]?.defKey ?? '']?.name === THE_RING)) {
+    next = createEmblem(next, seat, RING_TEXT, THE_RING, THE_RING);
+  }
+  const was = next.ring?.[String(seat)];
+  return {
+    ...next,
+    ring: { ...(next.ring ?? {}), [String(seat)]: { tempted: (was?.tempted ?? 0) + 1, bearer } },
+  };
 }
 
 /** Every emblem a seat has (D734), in the order they were made. */

@@ -20,7 +20,7 @@
 import {
   cardHasSubtype, characteristicsOf, conditionHolds, devotionTo, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword, isPrintedAbilityLine,
   isLegendary,
-  parseTypeLine,
+  parseTypeLine, ringBearerOf, ringLevel, THE_RING,
   printedKeywords,
   type StaticCountable,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -11495,12 +11495,50 @@ export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
   ALL.map((script) => [script.name.trim().toLowerCase(), script]),
 );
 
+/**
+ * The Ring emblem's abilities (D1144, CR 701.54a), as triggers watching the seat's own creatures with
+ * a condition that the creature is that seat's Ring-bearer and the Ring has tempted it often enough:
+ * - two or more: "Whenever your Ring-bearer attacks, draw a card, then discard a card";
+ * - four or more: "Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3
+ *   life".
+ * The first ability is a characteristic of the bearer (`characteristicsOf`). The third ("becomes
+ * blocked by a creature, that creature's controller sacrifices it at end of combat") is not here yet.
+ * Each trigger is read off its printed sentence with "a creature you control" for "your Ring-bearer",
+ * so it is the same trigger the line reader builds for that sentence, plus the condition. Built on
+ * first use, because the line reader is further down this module.
+ */
+let ringScript: CardScript | undefined;
+function theRingScript(): CardScript {
+  if (ringScript !== undefined) return ringScript;
+  const ability = (sentence: string, level: number): TriggerDef[] => {
+    const read = lineScriptFor(sentence.replace('your Ring-bearer', 'a creature you control'), THE_RING);
+    const trigger = read?.triggers?.length === 1 ? read.triggers[0]! : undefined;
+    if (trigger === undefined) throw new Error(`The Ring: "${sentence}" does not read`);
+    return [{
+      ...trigger,
+      description: sentence,
+      condition: (c) => c.subject !== undefined && ringLevel(c.state, c.controller) >= level
+        && ringBearerOf(c.state, c.controller) === c.subject && (trigger.condition?.(c) ?? true),
+    }];
+  };
+  ringScript = {
+    name: THE_RING,
+    triggers: [
+      ...ability('Whenever your Ring-bearer attacks, draw a card, then discard a card.', 2),
+      ...ability('Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3 life.', 4),
+    ],
+  };
+  return ringScript;
+}
+
 /** The script for a card, or undefined when it is not automated. */
 export const scriptFor = (name: string | undefined): CardScript | undefined =>
   name === undefined ? undefined
     // A disguised face-down creature's ward (D598): see `DISGUISED_FACE_DOWN`.
     : name === DISGUISE_GRANT.card ? DISGUISED_FACE_DOWN
-      : CARD_SCRIPTS.get(name.trim().toLowerCase());
+      // The Ring emblem (D1144): see `theRingScript`.
+      : name === THE_RING ? theRingScript()
+        : CARD_SCRIPTS.get(name.trim().toLowerCase());
 
 export const scriptedCardNames = (): string[] => [...CARD_SCRIPTS.values()].map((s) => s.name).sort();
 
@@ -15977,6 +16015,21 @@ function selfEffect(
           ? withInstance(c.state, id, { prepared: true })
           : c.state;
       },
+    };
+  }
+
+  // "The Ring tempts you" (D1144, CR 701.54a): see `temptWithRing`. The bearer is chosen as it
+  // resolves, from the creatures you control then; the bot names its largest.
+  if (/^the ring tempts you$/i.test(text)) {
+    return {
+      decisions: [{
+        who: 'controller', from: 'battlefield', prompt: 'Choose your Ring-bearer', min: 1, max: 1,
+        filter: (state, id, chooser) => {
+          const inst = state.instances[id];
+          return inst !== undefined && inst.zoneSeat === chooser && characteristicsOf(state, inst).isCreature;
+        },
+      }],
+      effect: (c) => temptWithRing(c.state, c.controller, chosenCards(c)[0] ?? null),
     };
   }
 
