@@ -33138,6 +33138,18 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     }
     if (!unknown && tests.length > 0) return { flashFor: (spell) => tests.some((test) => test(spell)) };
   }
+  /*
+    "Other permanents you control have indestructible" (D801): Avacyn, Angel of Hope, The Walls of Ba
+    Sing Se; "… have hexproof" (Privileged Position, Sigarda, Font of Blessings); and without "other".
+    Keywords any permanent can have, on the scopes of the same names.
+  */
+  const permanentsHave = /^(other )?permanents you control have ([a-z ,]+?)\.?$/i.exec(plain(line).trim());
+  if (permanentsHave !== null) {
+    const keywords = grantedKeywords(permanentsHave[2]!);
+    if (keywords !== null && keywords.length > 0 && keywords.every((word) => word === 'indestructible' || word === 'hexproof' || word === 'shroud')) {
+      return { statics: [{ scope: permanentsHave[1] === undefined ? 'permanents-you-control' : 'other-permanents-you-control', effect: { keywords } }] };
+    }
+  }
   // Casting limits (D788): see `CardScript.castLimits`.
   const LIMITS: readonly (readonly [RegExp, readonly CastLimit[]])[] = [
     [/^each player can't cast more than one spell each turn$/i, ['each-one-spell']],

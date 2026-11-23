@@ -1559,6 +1559,8 @@ export interface ContinuousEffect {
      */
     | { readonly kind: 'artifacts-you-control' } | { readonly kind: 'all-artifacts' }
     | { readonly kind: 'all-enchantments' } | { readonly kind: 'other-enchantments' }
+    /** Every permanent its controller has, or every one but the source (D801): Avacyn, Angel of Hope. */
+    | { readonly kind: 'permanents-you-control' } | { readonly kind: 'other-permanents-you-control' }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2653,6 +2655,10 @@ function effectApplies(
       return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment');
     case 'other-enchantments':
       return instance.zone === 'battlefield' && hasType(typeLine, 'enchantment') && instance.id !== effect.source;
+    case 'permanents-you-control':
+      return instance.zone === 'battlefield' && instance.zoneSeat === effect.controller;
+    case 'other-permanents-you-control':
+      return instance.zone === 'battlefield' && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'opponent-creatures':
       return creature && instance.zoneSeat !== effect.controller;
     case 'other-controller-creatures':
