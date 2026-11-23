@@ -41551,3 +41551,41 @@ legendary, "additional", second-type and filter handling.
 
 - engine tests: 6166, all passing (on 1824f47)
 - Coverage: 15,766 to 15,772 of 31,900 cards with every line read, and 37,907 to 37,919 of 59,888 lines, against 1824f47.
+
+## D1159 — "you may collect evidence N" as an additional cost
+
+"As an additional cost to cast this spell, you may collect evidence N." is printed on 8 legal cards
+and was read on none. It is an optional cost announced with the spell, and the text asks about it
+as "if evidence was collected" (CR 701.59, 601.2b).
+
+It is read on the kicker's machinery, the way D1103's "Kicker—Pay 3 life" is:
+- The declaration becomes a free kicker whose `additional` is D1158's graveyard cost (`totalManaValue`).
+- "Evidence was collected" becomes "this spell was kicked" on a spell and "it was kicked" on a
+  permanent, so the kicker readers read the rest.
+- `kicker.additional` now also holds a graveyard cost. The kicked cast is offered only when
+  `graveyardCostPlan` finds enough, and the cards are exiled as the spell is cast.
+- The description is the printed sentence.
+
+Read whole now:
+- Extract a Confession: "If evidence was collected, instead each opponent sacrifices a creature
+  with the greatest power".
+- Vitu-Ghazi Inspector: "When ~ enters, if evidence was collected, put a +1/+1 counter on target
+  creature and you gain 2 life".
+
+Not read: the cards whose other half is unread, and Bite Down on Crime's "costs {2} less to cast if
+evidence was collected".
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- The evidence cast is offered beside the plain one with 4 in the graveyard, and not with 2.
+- A spell: collected, it exiles both cards and takes the bigger branch; not collected, neither.
+- A creature's "When this creature enters, if evidence was collected" fires only on the evidence
+  cast.
+- Asked for with too little in the graveyard, the evidence cast is refused.
+
+Faults injected by hand: 3, all caught.
+- The offer not checking the graveyard.
+- The cost not exiling.
+- "Evidence was collected" not rewritten: the cards are then unread.
+
+Coverage: 15,770 of 31,900 cards (+9 over D1158's 15,761), 37,914 of 59,888 lines (+13). The difference also counts the D7xx session's D813, merged in after D1158 was measured; D1159's own share is the 2 cards above.
