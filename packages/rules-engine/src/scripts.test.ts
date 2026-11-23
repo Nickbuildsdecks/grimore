@@ -35000,6 +35000,39 @@ describe('"you may cast <kind> spells as though they had flash" (D800)', () => {
   });
 });
 
+describe('"other permanents you control have indestructible" (D801)', () => {
+  const AVACYN = { name: 'Test Avacyn', type_line: 'Legendary Creature — Angel', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '8', toughness: '8', oracle_text: 'Flying, vigilance, indestructible\nOther permanents you control have indestructible.' };
+  const POSITION = { name: 'Test Position', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Other permanents you control have hexproof.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd801', name: 'Avacyn',
+    entries: [AVACYN, POSITION, ROCK, BEAR].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Plains', count: 56 }]),
+    data: [AVACYN, POSITION, ROCK, BEAR] as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd801', 1: 'd801' }, deckSpecs: { d801: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const has = (s: GameState, seat: SeatIndex, name: string, keyword: string) => [...characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!).keywords].includes(keyword as never);
+
+  it('reads', () => {
+    for (const card of [AVACYN, POSITION]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Avacyn: our creature, artifact and land are indestructible; the opponent's are not", () => {
+    const s = table(['Test Avacyn', 'Test Bear', 'Test Rock', 'Plains'], ['Test Bear']);
+    expect([has(s, 0, 'Test Bear', 'indestructible'), has(s, 0, 'Test Rock', 'indestructible'), has(s, 0, 'Plains', 'indestructible')]).toEqual([true, true, true]);
+    expect(has(s, 1, 'Test Bear', 'indestructible')).toBe(false);
+  });
+
+  it('"other": Privileged Position gives hexproof to the rest and not to itself', () => {
+    const s = table(['Test Position', 'Test Bear']);
+    expect(has(s, 0, 'Test Bear', 'hexproof')).toBe(true);
+    expect(has(s, 0, 'Test Position', 'hexproof')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

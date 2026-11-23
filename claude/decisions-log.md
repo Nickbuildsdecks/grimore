@@ -58115,3 +58115,24 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 15,466 to 15,478 of 31,900 cards with every line read, and 37,477 to 37,500 of 59,888
 lines, against 86306d0.
+
+## D801 — "Other permanents you control have indestructible"
+
+Most-played order: Avacyn, Angel of Hope (rank 727), The Walls of Ba Sing Se (1780), Privileged
+Position (3379), Sigarda, Font of Blessings (3389).
+
+Two static scopes, `permanents-you-control` and `other-permanents-you-control`: every permanent its
+controller has, creature or not, the second without the source. Read for the keywords any permanent
+can have (indestructible, hexproof, shroud); "other permanents you control have flying" and the
+like stay unread.
+
+**Tests.** 3 engine tests: the cards read; under Avacyn our creature, artifact and land are
+indestructible and the opponent's creature is not; Privileged Position gives hexproof to our
+creature and not to itself.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,074, all passing (on b98a318)
+
+Coverage: 15,478 to 15,483 of 31,900 cards with every line read, and 37,500 to 37,505 of 59,888
+lines, against b98a318.
