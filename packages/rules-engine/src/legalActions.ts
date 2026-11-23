@@ -50,6 +50,7 @@ const PLAY_FROM_EXILE_UNTIL: Readonly<Record<
   'your-next-end-step': 'until your next end step',
   plotted: 'plotted, without paying its mana cost',
   warped: 'warped, on a later turn',
+  'while-exiled': 'for as long as it remains exiled',
 };
 
 /** One thing a player could do, with everything the UI needs to offer it. */

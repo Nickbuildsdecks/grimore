@@ -397,7 +397,8 @@ export interface CardInstance {
     readonly grantedTurn: number;
     /** `plotted` (D922): no deadline; free, at sorcery speed, on a turn after `grantedTurn`. */
     // `warped` (D931): no deadline; for its printed cost, at its own timing, on a turn after `grantedTurn`.
-    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted' | 'warped';
+    // `while-exiled` (D1163): no deadline, "You may play them" (Runestone Caverns); ends when the card leaves exile.
+    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted' | 'warped' | 'while-exiled';
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the

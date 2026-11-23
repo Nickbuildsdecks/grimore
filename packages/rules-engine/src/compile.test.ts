@@ -18439,8 +18439,6 @@ describe('playing a card out of exile: what the reader takes and what it leaves 
       'Exile the top card of your library. Until end of combat on your next turn, you may play that card.'],
     ['a deadline at an upkeep',
       'Exile the top card of your library. Until the beginning of your next upkeep, you may play that card.'],
-    ['no deadline at all',
-      'Exile the top card of your library. You may play that card for as long as it remains exiled.'],
     ['a deadline that is another permanent',
       'Exile the top card of your library. You may play that card for as long as you control Probe Impulse.'],
     ['a deadline that is the next use',
@@ -18462,6 +18460,14 @@ describe('playing a card out of exile: what the reader takes and what it leaves 
   ])('leaves %s unread', (_what, text) => {
     const compiled = spell(text);
     expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([text]);
+  });
+
+  // "No deadline at all" was in the list above until D1163, which reads it as \`while-exiled\`.
+  it('reads no deadline at all, "for as long as it remains exiled" and the bare "You may play them" (D1163)', () => {
+    for (const text of [
+      'Exile the top card of your library. You may play that card for as long as it remains exiled.',
+      'Exile the top two cards of your library. You may play them.',
+    ]) expect(spell(text)).toMatchObject({ ok: true, unread: [] });
   });
 
   it('reads the pair as the effect of a trigger and of an activated ability', () => {

@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -11586,7 +11586,18 @@ function dungeonScript(name: string): CardScript {
   if (made !== undefined) return made;
   const triggers: TriggerDef[] = (DUNGEONS[name] ?? []).map((room) => {
     const throne = room.name === 'Throne of the Dead Three';
-    const text = throne
+    // Mad Wizard's Lair (D1163) is built by hand, below; Oubliette reads as its four sentences.
+    if (room.name === "Mad Wizard's Lair") {
+      const lair = madWizardsLair(name);
+      return {
+        on: { kind: 'reflexive', key: room.name }, description: `${room.name} — ${room.text}`,
+        beforeDecisions: lair.beforeDecisions, decisions: lair.decisions,
+        effect: (c) => completeDungeon(lair.effect(c), c.controller),
+      } as TriggerDef;
+    }
+    const text = room.name === 'Oubliette'
+      ? 'Discard a card. Sacrifice an artifact. Sacrifice a creature. Sacrifice a land.'
+      : throne
       ? 'Reveal the top ten cards of your library. You may put a creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.'
       : room.text;
     const read = composeEffects(clausesOf(text), name, null);
@@ -11616,6 +11627,44 @@ function dungeonScript(name: string): CardScript {
   const script: CardScript = { name, triggers };
   dungeonScripts.set(name, script);
   return script;
+}
+
+/**
+ * Mad Wizard's Lair (D1163): "Draw three cards and reveal them. You may cast one of them without
+ * paying its mana cost." The three are drawn before anything is asked and shown to the table as
+ * \`AutomationState.revealed\` (D728's reveal); the question is which of them, if any, to cast; the
+ * cast is the free-cast offer D708 makes, on that card. A land is never offered: it is played,
+ * not cast.
+ */
+function madWizardsLair(dungeon: string): Required<Pick<ReadEffect, 'decisions' | 'effect'>> & { beforeDecisions: NonNullable<ReadEffect['beforeDecisions']> } {
+  return {
+    beforeDecisions: (c) => {
+      const before = new Set(listAt(c.state, zoneKey(c.controller, 'hand')));
+      const after = draw(c.state, c.controller, 3);
+      const drawn = listAt(after, zoneKey(c.controller, 'hand')).filter((id) => !before.has(id));
+      return { ...after, revealed: drawn };
+    },
+    decisions: [{
+      who: 'controller', from: 'hand', prompt: 'Cast one of them without paying its mana cost', min: 0, max: 1,
+      filter: (state, id) => (state.revealed ?? []).includes(id)
+        && !hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land'),
+      pick: (state, _chooser, candidates) => {
+        const worth = (id: string) => costValue(parseManaCost(state.cardDefs[state.instances[id]?.defKey ?? '']?.manaCost));
+        const best = [...candidates].sort((a, b) => worth(b) - worth(a))[0];
+        return best === undefined ? [] : [best];
+      },
+    }],
+    effect: (c) => {
+      const state: GameState = { ...c.state, revealed: undefined };
+      const id = chosenCards(c)[0];
+      if (id === undefined || state.instances[id]?.zone !== 'hand') return state;
+      const cardName = state.cardDefs[state.instances[id]!.defKey]?.name ?? 'it';
+      return {
+        ...state,
+        pendingOfferedCast: { seat: c.controller, card: id, prompt: `${dungeon}: you may cast ${cardName} without paying its mana cost`, stays: true, source: c.source },
+      };
+    },
+  };
 }
 
 let initiativeScriptMade: CardScript | undefined;
@@ -16326,6 +16375,32 @@ function selfEffect(
     \`ventureInto\` and \`takeInitiative\`. Where the marker goes next is asked as the effect resolves,
     and only when there are two rooms to choose between.
   */
+  /*
+    "Venture into the dungeon" (D1163, CR 701.49a): a seat in no dungeon chooses one of the three
+    (Undercity is only for the initiative, CR 309.3) and enters its top room; a seat in a dungeon,
+    Undercity included, moves down in that one, choosing a room when two are below.
+  */
+  if (/^venture into the dungeon$/i.test(text)) {
+    return {
+      decisions: [
+        {
+          who: 'controller', prompt: 'Venture into which dungeon?', options: [...VENTURE_DUNGEONS],
+          askOnlyIf: (state, controller) => !inDungeon(state, controller),
+        } as ChoiceDecisionSpec,
+        {
+          who: 'controller', prompt: 'Venture into which room?', options: [],
+          optionsFor: (state, chooser) => (inDungeon(state, chooser) ? nextRooms(state, chooser, UNDERCITY) : []),
+          askOnlyIf: (state, controller) => inDungeon(state, controller) && nextRooms(state, controller, UNDERCITY).length > 1,
+        } as ChoiceDecisionSpec,
+      ],
+      effect: (c) => {
+        const dungeon = inDungeon(c.state, c.controller)
+          ? c.state.dungeon![String(c.controller)]!.name
+          : VENTURE_DUNGEONS.find((d) => d === chosenOption(c, 0)) ?? VENTURE_DUNGEONS[0]!;
+        return ventureInto(c.state, c.controller, dungeon, chosenOption(c, 1));
+      },
+    };
+  }
   if (/^venture into undercity$/i.test(text)) {
     return { decisions: [roomQuestion(UNDERCITY)], effect: (c) => ventureInto(c.state, c.controller, UNDERCITY, chosenOption(c)) };
   }
@@ -29414,6 +29489,9 @@ const IMPULSE_PLAY = [
   [/^you may play (?:that card|it|those cards|them|cards exiled this way) until the end of your next turn$/i, 'your-next-turn'],
   [/^until your next end step, you may play (?:that card|it|those cards|them|cards exiled this way)$/i, 'your-next-end-step'],
   [/^you may play (?:that card|it|those cards|them|cards exiled this way) until your next end step$/i, 'your-next-end-step'],
+  // No deadline (D1163): "You may play them" (Runestone Caverns), "… for as long as they remain exiled".
+  [/^you may play (?:that card|it|those cards|them|cards exiled this way)(?: for as long as (?:it|they|that card|those cards) remains? exiled)?$/i, 'while-exiled'],
+  [/^for as long as (?:it|they|that card|those cards) remains? exiled, you may play (?:that card|it|those cards|them)$/i, 'while-exiled'],
 ] as const;
 
 function impulseDraw(first: string, second: string | undefined): ReadEffect | null {
@@ -33511,6 +33589,13 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   // "If this creature isn't prepared" (D978).
   const prepared = new RegExp(`^${self} (is|isn't|is not) prepared$`, 'i').exec(text);
   if (prepared !== null) return { kind: 'source-prepared', prepared: prepared[1]!.toLowerCase() === 'is' };
+  // A completed dungeon (D1163): "you've completed a dungeon", "you haven't completed Tomb of Annihilation".
+  const completed = /^you(?:'ve| have)( not|n't)? completed (a dungeon|tomb of annihilation|lost mine of phandelver|dungeon of the mad mage|undercity)$/i.exec(text);
+  if (completed !== null) {
+    const named = /^a dungeon$/i.test(completed[2]!) ? undefined
+      : VENTURE_DUNGEONS.concat(UNDERCITY).find((d) => d.toLowerCase() === completed[2]!.toLowerCase());
+    return { kind: 'controller-completed-dungeon', ...(named === undefined ? {} : { name: named }), ...(completed[1] === undefined ? {} : { not: true as const }) };
+  }
   // Suspected (D1157): Rubblebelt Braggart's "if it's not suspected", Repeat Offender's "If ~ is suspected".
   const suspected = new RegExp(`^(?:${self} (is|isn't|is not)|it's( not)?) suspected$`, 'i').exec(text);
   if (suspected !== null) {

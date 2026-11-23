@@ -36956,6 +36956,89 @@ describe('"other enchantments / artifacts you control have …", Sterling Grove 
   });
 });
 
+describe('venture into the dungeon: the three dungeons, "while exiled", and a completed dungeon (D1163)', () => {
+  const DELVER = { name: 'Test Delver', type_line: 'Creature — Dwarf Rogue', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When this creature enters, venture into the dungeon.' };
+  const GARGOYLE = { name: 'Test Gargoyle', type_line: 'Artifact Creature — Gargoyle', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '0', toughness: '4', oracle_text: "As long as you've completed a dungeon, this creature gets +3/+0." };
+  const TORCH = { name: 'Test Torch', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Venture into the dungeon.' };
+  const ROWS = [DELVER, GARGOYLE, TORCH];
+  const deck = customDeck({
+    id: 'd1163', name: 'Dungeons', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: string[] = [], mine: string[] = ['Swamp']) => advanceTo(arena({
+    decks: { 0: 'd1163', 1: 'd1163' }, deckSpecs: { d1163: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // Every question answered: the first of \`picks\` that is offered, otherwise the first option or no cards.
+  const settle = (s0: GameState, picks: readonly string[] = []) => {
+    let s = s0;
+    for (let i = 0; i < 24 && (s.stackOrder.length > 0 || s.pendingDecision !== null || s.pendingOfferedCast != null); i++) {
+      if (s.pendingOfferedCast != null) { s = { ...s, pendingOfferedCast: null }; continue; }
+      const p = s.pendingDecision;
+      if (p === null) { s = drain(passBoth(s)); continue; }
+      const options = p.options ?? [];
+      const pick = options.find((o) => picks.includes(o));
+      s = apply(s, { type: 'auto:decide', by: p.seat, cards: [], ...(options.length > 0 ? { option: pick ?? options[0] } : {}) } as Action);
+    }
+    return s;
+  };
+  const castDelver = (s: GameState, picks: readonly string[]) => settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Delver') } as Action)), 30), picks);
+  const at = (s: GameState) => s.dungeon?.['0'];
+  // The marker put straight on a room, as a test's setup, without any room's ability.
+  const placed = (s: GameState, dungeon: string, room: string): GameState => {
+    const entered = ventureInto(s, 0, dungeon);
+    return { ...entered, reflexive: [], dungeon: { ...entered.dungeon, 0: { ...entered.dungeon!['0']!, room } } };
+  };
+  const torch = (s: GameState, picks: readonly string[] = []) => settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Torch') } as Action)), 30), picks);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the first venture asks which dungeon; the next asks which room, and the room does what it says', () => {
+    let s = castDelver(table(['Test Delver', 'Test Delver']), ['Lost Mine of Phandelver']);
+    expect(at(s)).toMatchObject({ name: 'Lost Mine of Phandelver', room: 'Cave Entrance' });
+    s = castDelver(s, ['Mine Tunnels']);
+    expect(at(s)?.room).toBe('Mine Tunnels');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Treasure');
+  });
+
+  it('Tomb of Annihilation is a choice too, and its entry costs each player a life', () => {
+    const s = castDelver(table(['Test Delver']), ['Tomb of Annihilation']);
+    expect(at(s)).toMatchObject({ name: 'Tomb of Annihilation', room: 'Trapped Entry' });
+    expect([life(s, 0), life(s, 1)]).toEqual([19, 19]);
+  });
+
+  it('Runestone Caverns: two cards exiled, playable for as long as they stay exiled', () => {
+    let s = placed(table(['Test Torch']), 'Dungeon of the Mad Mage', 'Lost Level');
+    s = torch(s, ['Runestone Caverns']);
+    expect(at(s)?.room).toBe('Runestone Caverns');
+    const exiled = ids(s, 0, 'exile').filter((id) => s.instances[id]?.playFromExile?.through === 'while-exiled');
+    expect(exiled).toHaveLength(2);
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(exiled.every((id) => s.instances[id]?.playFromExile?.through === 'while-exiled')).toBe(true);
+  });
+
+  it("Mad Wizard's Lair draws three and completes the dungeon, and a completed dungeon turns the Gargoyle on", () => {
+    let s = placed(table(['Test Torch'], ['Swamp', 'Test Gargoyle']), 'Dungeon of the Mad Mage', 'Deep Mines');
+    const gargoyle = find(s, 0, 'battlefield', 'Test Gargoyle');
+    expect(power(s, gargoyle)).toBe(0);
+    const hand = ids(s, 0, 'hand').length;
+    s = torch(s);
+    // The Torch left the hand and three cards came in.
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+    expect(at(s)).toBeUndefined();
+    expect(s.dungeonsCompleted?.['0']).toEqual(['Dungeon of the Mad Mage']);
+    expect(power(s, gargoyle)).toBe(3);
+  });
+
+  it('venture into the dungeon from inside Undercity moves down in Undercity', () => {
+    let s = placed(table(['Test Torch']), 'Undercity', 'Secret Entrance');
+    s = torch(s, ['Lost Well']);
+    expect(at(s)).toMatchObject({ name: 'Undercity', room: 'Lost Well' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

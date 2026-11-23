@@ -3384,14 +3384,47 @@ export interface DungeonRoom {
 }
 
 /**
- * The dungeons (D1160, CR 309.2), top room first. Only Undercity so far, which is the one the
- * initiative uses.
+ * The dungeons (D1160, D1163, CR 309.2), top room first: the three "venture into the dungeon"
+ * chooses from, and Undercity, which the initiative uses.
  *
  * TODO(scryfall-dungeons): the room text is written from the printed card, because dungeons are
  * not legal cards and the local corpus has none; check it against the Scryfall import when that
  * can reach api.scryfall.com.
  */
+export const LOST_MINE = 'Lost Mine of Phandelver';
+export const MAD_MAGE = 'Dungeon of the Mad Mage';
+export const TOMB = 'Tomb of Annihilation';
+/** The dungeons "venture into the dungeon" may start (CR 309.3); Undercity only through the initiative. */
+export const VENTURE_DUNGEONS: readonly string[] = [LOST_MINE, MAD_MAGE, TOMB];
+
 export const DUNGEONS: Readonly<Record<string, readonly DungeonRoom[]>> = {
+  [LOST_MINE]: [
+    { name: 'Cave Entrance', text: 'Scry 1.', exits: ['Goblin Lair', 'Mine Tunnels'] },
+    { name: 'Goblin Lair', text: 'Create a 1/1 red Goblin creature token.', exits: ['Storeroom', 'Dark Pool'] },
+    { name: 'Mine Tunnels', text: 'Create a Treasure token.', exits: ['Dark Pool', 'Fungi Cavern'] },
+    { name: 'Storeroom', text: 'Put a +1/+1 counter on target creature.', exits: ['Temple of Dumathoin'] },
+    { name: 'Dark Pool', text: 'Each opponent loses 1 life and you gain 1 life.', exits: ['Temple of Dumathoin'] },
+    { name: 'Fungi Cavern', text: 'Target creature gets -4/-0 until your next turn.', exits: ['Temple of Dumathoin'] },
+    { name: 'Temple of Dumathoin', text: 'Draw a card.', exits: [] },
+  ],
+  [MAD_MAGE]: [
+    { name: 'Yawning Portal', text: 'You gain 1 life.', exits: ['Dungeon Level'] },
+    { name: 'Dungeon Level', text: 'Scry 1.', exits: ['Goblin Bazaar', 'Twisted Caverns'] },
+    { name: 'Goblin Bazaar', text: 'Create a Treasure token.', exits: ['Lost Level'] },
+    { name: 'Twisted Caverns', text: "Target creature can't attack until your next turn.", exits: ['Lost Level'] },
+    { name: 'Lost Level', text: 'Scry 2.', exits: ['Runestone Caverns', "Muiral's Graveyard"] },
+    { name: 'Runestone Caverns', text: 'Exile the top two cards of your library. You may play them.', exits: ['Deep Mines'] },
+    { name: "Muiral's Graveyard", text: 'Create two 1/1 black Skeleton creature tokens.', exits: ['Deep Mines'] },
+    { name: 'Deep Mines', text: 'Scry 3.', exits: ["Mad Wizard's Lair"] },
+    { name: "Mad Wizard's Lair", text: 'Draw three cards and reveal them. You may cast one of them without paying its mana cost.', exits: [] },
+  ],
+  [TOMB]: [
+    { name: 'Trapped Entry', text: 'Each player loses 1 life.', exits: ['Veils of Fear', 'Oubliette'] },
+    { name: 'Veils of Fear', text: 'Each player loses 2 life unless they discard a card.', exits: ['Sandfall Cell'] },
+    { name: 'Sandfall Cell', text: 'Each player loses 2 life unless they sacrifice an artifact, a creature, or a land.', exits: ['Cradle of the Death God'] },
+    { name: 'Oubliette', text: 'Discard a card and sacrifice an artifact, a creature, and a land.', exits: ['Cradle of the Death God'] },
+    { name: 'Cradle of the Death God', text: 'Create a 4/4 black God Horror creature token with deathtouch.', exits: [] },
+  ],
   [UNDERCITY]: [
     { name: 'Secret Entrance', text: 'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.', exits: ['Forge', 'Lost Well'] },
     { name: 'Forge', text: 'Put two +1/+1 counters on target creature.', exits: ['Trap!', 'Arena'] },
@@ -3425,6 +3458,12 @@ export function nextRooms(state: GameState, seat: SeatIndex, dungeon: string): r
   }
   const top = DUNGEONS[dungeon]?.[0];
   return top === undefined ? [] : [top.name];
+}
+
+/** Whether the seat's marker is in a dungeon now (D1163). */
+export function inDungeon(state: GameState, seat: SeatIndex): boolean {
+  const at = state.dungeon?.[String(seat)];
+  return at !== undefined && state.instances[at.emblem]?.zone === 'command';
 }
 
 /**
