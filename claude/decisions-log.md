@@ -57586,3 +57586,27 @@ missed a count of everyone's spells).
 
 Coverage: 15,257 to 15,261 of 31,900 cards with every line read, and 37,216 to 37,220 of 59,888
 lines, against c0eab10.
+
+## D793 — "Lose <keywords> until end of turn" on a mass subject
+
+Most-played order: Shadowspear's activated ability (rank 307), then "Creatures your opponents
+control lose flying until end of turn" and its kin.
+
+"Permanents your opponents control lose hexproof and indestructible until end of turn" and the same
+for every mass subject the team grant reads ("creatures your opponents control", "all creatures",
+…): `removeKeywords` on the list frozen as it resolves (CR 611.2c), so a permanent arriving later
+keeps its keywords. "Permanents" is every permanent on the opponents' battlefields, creature or not.
+The static form the Archetypes print ("… lose flying and can't have or gain flying") is a different
+rule and stays unread.
+
+**Tests.** 3 engine tests: the cards read; Shadowspear's ability strips hexproof and indestructible
+from the opponent's creature and indestructible from their noncreature artifact, leaves its
+controller's own creature alone, and is over by the next turn; "creatures your opponents control
+lose flying" grounds theirs and not ours.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,013, all passing (on beb147f)
+
+Coverage: 15,261 to 15,263 of 31,900 cards with every line read, and 37,220 to 37,223 of 59,888
+lines, against beb147f.

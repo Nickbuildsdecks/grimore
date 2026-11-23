@@ -34139,6 +34139,51 @@ describe('"for each spell you\'ve cast this turn" (D792)', () => {
   });
 });
 
+describe('"lose <keywords> until end of turn" on a mass subject (D793)', () => {
+  const SPEAR = { name: 'Test Spear', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{1}: Permanents your opponents control lose hexproof and indestructible until end of turn.' };
+  const GALE = { name: 'Test Gale', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Creatures your opponents control lose flying until end of turn.' };
+  const WARD = { name: 'Test Warded', type_line: 'Creature — Wurm', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: 'Hexproof, indestructible' };
+  const STONE = { name: 'Test Stone', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Indestructible' };
+  const BIRD = { name: 'Test Bird', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' };
+  const deck = customDeck({
+    id: 'd793', name: 'Lose',
+    entries: [SPEAR, GALE, WARD, STONE, BIRD].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 50 }]),
+    data: [SPEAR, GALE, WARD, STONE, BIRD] as never[],
+  });
+  const table = (mine: string[], theirs: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd793', 1: 'd793' }, deckSpecs: { d793: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kw = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).keywords;
+
+  it('reads', () => {
+    for (const card of [SPEAR, GALE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Shadowspear: the opponent's permanents, creature or not, lose both until end of turn; ours keep them", () => {
+    let s = table(['Test Spear', 'Forest', 'Test Warded'], ['Test Warded', 'Test Stone']);
+    const theirs = find(s, 1, 'battlefield', 'Test Warded');
+    const stone = find(s, 1, 'battlefield', 'Test Stone');
+    const ours = find(s, 0, 'battlefield', 'Test Warded');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Spear'), abilityIndex: 0 })));
+    expect(kw(s, theirs).has('hexproof')).toBe(false);
+    expect(kw(s, theirs).has('indestructible')).toBe(false);
+    expect(kw(s, stone).has('indestructible')).toBe(false);
+    expect(kw(s, ours).has('hexproof')).toBe(true);
+    const next = nextTurn(s);
+    expect(kw(next, theirs).has('hexproof')).toBe(true);
+  });
+
+  it('creatures your opponents control lose flying: theirs, not ours', () => {
+    let s = table(['Test Bird'], ['Test Bird'], ['Test Gale']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bird');
+    const ours = find(s, 0, 'battlefield', 'Test Bird');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gale') })));
+    expect(kw(s, theirs).has('flying')).toBe(false);
+    expect(kw(s, ours).has('flying')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

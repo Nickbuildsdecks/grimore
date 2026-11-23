@@ -14318,6 +14318,28 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    The other direction (D793): "Permanents your opponents control lose hexproof and indestructible
+    until end of turn" (Shadowspear), "Creatures your opponents control lose flying until end of
+    turn". `removeKeywords` on the same frozen list (CR 611.2c), so a permanent arriving afterwards
+    keeps its keywords.
+  */
+  const theyLose = new RegExp(
+    `^(permanents your opponents control|${MASS_PUMP_SUBJECTS}) lose ([a-z][a-z', ]*?) until end of turn$`, 'i',
+  ).exec(text);
+  if (theyLose !== null) {
+    const words = grantedKeywordList(theyLose[2]!);
+    const permanents = /^permanents/i.test(theyLose[1]!);
+    const subject = permanents ? null : massPumpSubject(theyLose[1]!);
+    if (words !== null && (permanents || subject !== null)) {
+      return {
+        ...(subject?.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => pump(c.state, permanents
+          ? c.state.seats.filter((seat) => seat.index !== c.controller).flatMap((seat) => listAt(c.state, zoneKey(seat.index, 'battlefield')))
+          : subject!.ids(c), c.source, c.controller, { removeKeywords: words }),
+      };
+    }
+  }
   const teamGains = new RegExp(
     `^(${MASS_PUMP_SUBJECTS}) gain ([a-z][a-z', ]*?) until end of turn$`, 'i',
   ).exec(text);
