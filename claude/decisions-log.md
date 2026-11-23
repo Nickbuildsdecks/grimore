@@ -58454,3 +58454,39 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,537 to 15,548 of 31,900 cards with every line read, and 37,574 to 37,593 of 59,888
 lines, against db64a9a.
+
+## D1150 — amass
+
+Amass (CR 701.47a) is printed on 66 legal cards and was read on none. "Amass Orcs 2": if you control
+no Army creature, create a 0/0 black Orc Army creature token; then choose an Army creature you
+control and put two +1/+1 counters on it; if it isn't an Orc, it becomes an Orc in addition to its
+other types. War of the Spark's "Amass 2" is the same with Zombies.
+
+`amass` in effects does exactly that. The token's counters go on before anything checks its
+toughness, so the 0/0 never dies. Two choices are made for the player:
+- **Which Army.** With several Armies the largest is chosen; there is no question asked. A player
+  nearly always wants the biggest grown, and almost every board has one Army.
+- **The new type.** It is a permanent subtype effect sourced at the Army itself. A `permanent`
+  effect is removed when its source leaves (`removeEffectsFrom`), and the amass spell leaves the
+  stack at once. A first version sourced it at the spell, and the Orc type vanished as the spell
+  resolved; a test caught it.
+
+Read whole now: 32 of the 66 amass cards. The rest are short of:
+- "amass … X, where X is …";
+- "When you do" after the amass;
+- "the amassed Army";
+- other lines.
+
+**Tests.** 3 engine tests:
+- The three test spells read whole.
+- With no Army, "Amass Orcs 2" makes a 2/2 Orc Army, and "Amass Orcs 3" then grows the same Army
+  to 5/5 without a second token.
+- "Amass 2" makes a Zombie Army, and amassing Orcs onto it keeps it Zombie and makes it an Orc,
+  at 4/4.
+
+Faults injected by hand: 2.
+- A new Army made every time (caught: 2 tests).
+- One counter instead of N (caught: 2 tests).
+
+Coverage: 15,609 of 31,900 cards (+44 over D1149's 15,565), 37,681 of 59,888 lines (+69). The difference also counts the D7xx
+session's D805, merged in after D1149 was measured; D1150's own share is the 32 amass cards.
