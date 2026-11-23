@@ -58369,3 +58369,25 @@ missed a ban that reached creatures).
 
 Coverage: 15,522 to 15,530 of 31,900 cards with every line read, and 37,554 to 37,564 of 59,888
 lines, against cfbb5b0.
+
+## D804 — "Return all <kind> cards from your graveyard to …"
+
+Most-played order: Aftermath Analyst (rank 622), Splendid Reclamation (870), Lumra, Bellow of the
+Woods (1124, after its mill: "Then return …"), World Shaper (1553), Crystal Chimes and the rest.
+
+"Return all land / artifact / creature cards from your graveyard to the battlefield (tapped)", and to
+the hand for any kind ("all cards", "all enchantment cards"). Every matching card in the
+controller's own graveyard, by its printed type line, moved at once. To the battlefield only the
+kinds that need nothing to arrive: an Aura must be attached as it enters, so "all enchantment cards
+… to the battlefield" (Replenish, Resurgent Belief) and "all permanent cards" stay unread.
+
+**Tests.** 4 engine tests: the cards read; Splendid Reclamation returns both our lands tapped and
+leaves the creature card, the instant and the opponent's land; Crystal Chimes' kind returns the
+creature card to the hand and nothing else; the enchantment return to the battlefield stays unread.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,097, all passing (on 0a222f2)
+
+Coverage: 15,530 to 15,537 of 31,900 cards with every line read, and 37,564 to 37,574 of 59,888
+lines, against 0a222f2.

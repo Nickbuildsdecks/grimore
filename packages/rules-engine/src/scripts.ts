@@ -27933,6 +27933,35 @@ function readEffect(
       };
     }
   }
+  /*
+    "Return all land cards from your graveyard to the battlefield tapped" (D804): Splendid
+    Reclamation, Aftermath Analyst, World Shaper, Lumra; "… artifact cards …" (Wake the Past's first
+    sentence), "… creature cards …"; and to the hand, of any kind ("all cards", Praetor's Counsel;
+    "all enchantment cards", Crystal Chimes). All at once, as one move. To the battlefield only the
+    kinds that need nothing to arrive: an Aura must be attached to something as it enters, so
+    enchantment and permanent returns stay unread.
+  */
+  const massReturn = /^(?:then )?return all (land |artifact |creature |enchantment |permanent )?cards from your graveyard to (the battlefield( tapped)?|your hand)$/i.exec(clause.trim());
+  if (massReturn !== null) {
+    const kind = massReturn[1]?.trim().toLowerCase();
+    const toHand = /hand/i.test(massReturn[2]!);
+    if (toHand || kind === 'land' || kind === 'artifact' || kind === 'creature') {
+      const fits = (state: GameState, id: string): boolean => {
+        if (kind === undefined) return true;
+        const line = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+        if (kind === 'permanent') return ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'].some((t) => hasType(line, t));
+        return hasType(line, kind);
+      };
+      const tapped = massReturn[3] !== undefined;
+      return {
+        effect: (c) => {
+          const ids = listAt(c.state, zoneKey(c.controller, 'graveyard')).filter((id) => fits(c.state, id));
+          if (toHand) return moveToHand(c.state, ids);
+          return ids.reduce((state, id) => putOntoBattlefield(state, id, c.controller, { tapped }), c.state);
+        },
+      };
+    }
+  }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
     const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
