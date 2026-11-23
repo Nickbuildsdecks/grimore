@@ -34719,6 +34719,65 @@ describe('target creature you control connives (D1141)', () => {
   });
 });
 
+describe('"as long as ~ has N or more <kind> counters on it" (D798)', () => {
+  const ASCENSION = { name: 'Test Ascension', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Whenever a creature you control attacks, you may put a quest counter on Test Ascension.\nAs long as Test Ascension has seven or more quest counters on it, creatures you control get +5/+5.' };
+  const PELT = { name: 'Test Pelt', type_line: 'Creature — Elf Warrior', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'As long as Test Pelt has three or more +1/+1 counters on it, it has trample.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd798', name: 'Quest',
+    entries: [ASCENSION, PELT, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 54 }]),
+    data: [ASCENSION, PELT, BEAR] as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd798', 1: 'd798' }, deckSpecs: { d798: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const withCounters = (s: GameState, id: string, counter: string, n: number): GameState =>
+    engineSettle({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters: { ...s.instances[id]!.counters, [counter]: n } } } }, s);
+
+  it('reads', () => {
+    for (const card of [ASCENSION, PELT]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Beastmaster Ascension: +5/+5 at seven quest counters, nothing at six', () => {
+    const s = table(['Test Ascension', 'Test Bear']);
+    const ascension = find(s, 0, 'battlefield', 'Test Ascension');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const six = withCounters(s, ascension, 'quest', 6);
+    expect([power(six, bear), toughness(six, bear)]).toEqual([2, 2]);
+    const seven = withCounters(s, ascension, 'quest', 7);
+    expect([power(seven, bear), toughness(seven, bear)]).toEqual([7, 7]);
+  });
+
+  it('any static line under a condition: "creatures you control get +1/+1 as long as you control an artifact"', () => {
+    const BANNER = { name: 'Test Banner', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Creatures you control get +1/+1 as long as you control an artifact.' };
+    expect(compileCard(BANNER as never)).toMatchObject({ ok: true, unread: [] });
+    const relic = { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' };
+    const banners = customDeck({
+      id: 'd798b', name: 'Banner',
+      entries: [{ name: 'Test Banner', count: 2 }, { name: 'Test Relic', count: 2 }, { name: 'Test Bear', count: 2 }, { name: 'Forest', count: 54 }],
+      data: [BANNER, relic, BEAR] as never[],
+    });
+    const seat = (mine: string[]) => advanceTo(arena({
+      decks: { 0: 'd798b', 1: 'd798b' }, deckSpecs: { d798b: banners.deck },
+      battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const without = seat(['Test Banner', 'Test Bear']);
+    expect(power(without, find(without, 0, 'battlefield', 'Test Bear'))).toBe(2);
+    const withRelic = seat(['Test Banner', 'Test Bear', 'Test Relic']);
+    expect(power(withRelic, find(withRelic, 0, 'battlefield', 'Test Bear'))).toBe(3);
+  });
+
+  it('a creature that grows into a keyword: trample at three +1/+1 counters, not at two', () => {
+    const s = table(['Test Pelt']);
+    const pelt = find(s, 0, 'battlefield', 'Test Pelt');
+    const two = withCounters(s, pelt, '+1/+1', 2);
+    expect(characteristicsOf(two, two.instances[pelt]!).keywords.has('trample')).toBe(false);
+    const three = withCounters(s, pelt, '+1/+1', 3);
+    expect(characteristicsOf(three, three.instances[pelt]!).keywords.has('trample')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

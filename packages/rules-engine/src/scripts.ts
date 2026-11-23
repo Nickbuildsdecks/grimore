@@ -32443,6 +32443,26 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
     };
   }
 
+  /*
+    **Any static line under a condition** (D798): "As long as Beastmaster Ascension has seven or more
+    quest counters on it, creatures you control get +5/+5", "Creatures you control get +1/+1 as long
+    as you control an artifact". The rest is read as the line it would be on its own, and only when
+    that reading is nothing but static entries with no condition of their own; each entry then takes
+    this one, asked live like every other `while`.
+  */
+  const anyLead = /^as long as (.+?), (.+)$/i.exec(text);
+  const anyTrail = anyLead !== null ? null : /^(.+?) as long as (.+)$/i.exec(text);
+  if (anyLead !== null || anyTrail !== null) {
+    const condition = staticCondition(anyLead !== null ? anyLead[1]! : anyTrail![2]!, name);
+    const rest = (anyLead !== null ? anyLead[2]! : anyTrail![1]!).replace(/\.?$/, '.');
+    const inner = condition === null ? null : lineScriptFor(rest.charAt(0).toUpperCase() + rest.slice(1), name);
+    const onlyStatics = inner !== null && Object.keys(inner).every((key) => key === 'statics')
+      && (inner.statics ?? []).length > 0 && (inner.statics ?? []).every((entry) => entry.effect.while === undefined);
+    if (condition !== null && onlyStatics) {
+      return { statics: inner!.statics!.map((entry) => ({ ...entry, effect: { ...entry.effect, while: condition } })) };
+    }
+  }
+
   return null;
 }
 
@@ -32507,6 +32527,16 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 
   // "As long as you have the city's blessing" (D762).
   if (/^you have the city's blessing$/i.test(text)) return { kind: 'controller-citys-blessing' };
+  /*
+    "As long as ~ has seven or more quest counters on it" (D798): Beastmaster Ascension, Quest for the
+    Goblin Lord, and the creatures that grow into a keyword (Voice of the Blessed, Pelt Collector,
+    Angelic Cub). The permanent's own counters, as a level band reads them (`source-has-counter`).
+  */
+  const counted = new RegExp(`^(?:${self}|this (?:creature|enchantment|artifact|permanent)) has (\\S+) or more ([a-z0-9+/-]+) counters? on it$`, 'i').exec(text);
+  if (counted !== null) {
+    const atLeast = n(counted[1]!);
+    if (atLeast !== null && atLeast > 0) return { kind: 'source-has-counter', counter: counted[2]!.toLowerCase(), atLeast };
+  }
   const threshold = /^there are (\S+) or more (permanent )?cards in your graveyard$/i.exec(text);
   if (threshold !== null) {
     const atLeast = n(threshold[1]!);

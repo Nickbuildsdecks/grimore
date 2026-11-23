@@ -40490,3 +40490,28 @@ Faults injected by hand: 2.
 
 Coverage: 15,402 of 31,900 cards (+7 over D1140's 15,395), 37,382 of 59,888 lines (+10). The difference also counts the D7xx
 session's D797, merged in after D1140 was measured.
+## D798 — Counter thresholds, and any static line under a condition
+
+Most-played order: Beastmaster Ascension (rank 575), Voice of the Blessed (2932), Quest for the
+Goblin Lord (7672), Vadmir, Angelic Cub, and every conditional anthem the general form below reaches.
+
+- **"As long as ~ has seven or more quest counters on it"**: a `staticCondition`, read as the
+  permanent's own counters (`source-has-counter`, the level band's condition), for any counter name.
+  A creature that grows into a keyword ("… it has flying and vigilance") reads through D605's general
+  form as before.
+- **Any static line under a condition**: "As long as <condition>, <line>" and "<line> as long as
+  <condition>", where the line is anything that reads on its own as static entries only ("creatures
+  you control get +5/+5", "… get +1/+1"). Each entry takes the condition as its `while`, asked live.
+  A line that reads as anything else (a trigger, an ability), or whose entries already carry a
+  condition, is refused, so nothing is read with half its meaning.
+
+**Tests.** 4 engine tests: the cards read; Beastmaster Ascension gives +5/+5 at seven quest counters
+and nothing at six; a creature has trample at three +1/+1 counters and not at two; "creatures you
+control get +1/+1 as long as you control an artifact" pumps only with an artifact out.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,031, all passing (on c1b62c5)
+
+Coverage: 15,305 to 15,328 of 31,900 cards with every line read, and 37,271 to 37,312 of 59,888
+lines, against c1b62c5.
