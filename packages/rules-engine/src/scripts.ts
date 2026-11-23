@@ -24198,7 +24198,8 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     carrying a qualifier ("target tapped Goblin or Elf") stays unread rather than being read with the
     qualifier dropped. None is printed; the refusal is the honest default either way.
   */
-  const parts = body.split(/,\s*or\s+|\s+or\s+|,\s*/).map((part) => part.trim())
+  // And the plural's "and/or" (D807): "up to two target artifacts and/or enchantments" (Force of Vigor).
+  const parts = body.split(/,\s*(?:and\/)?or\s+|\s+(?:and\/)?or\s+|,\s*/).map((part) => part.trim())
     .filter((part) => part !== '');
   if (parts.length > 1) {
     /*
@@ -24214,7 +24215,9 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     const matches = parts.map((part) => {
       const words = part.split(/\s+/);
       if (!words.slice(0, -1).every(supertypeWord)) return null;
-      const tests = words.map((word) => permanentWordMatch(word));
+      // A plural noun ("artifacts", D807) is the singular's test; a subtype is matched as printed.
+      const tests = words.map((word, i) => permanentWordMatch(word)
+        ?? (i === words.length - 1 && /^[a-z]+s$/.test(word) ? permanentWordMatch(word.slice(0, -1)) : null));
       if (tests.some((test) => test === null)) return null;
       return (line: TypeLine) => tests.every((test) => test!(line));
     });
@@ -32892,6 +32895,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (hand !== null) {
     const atLeast = n(hand[1]!);
     return atLeast === null ? null : { kind: 'controller-hand', atLeast };
+  }
+  // "An opponent has 10 or less life" (D807): Bloodghast.
+  const theirLife = /^an opponent has (\S+) or less life$/i.exec(text);
+  if (theirLife !== null) {
+    const atMost = n(theirLife[1]!);
+    if (atMost !== null) return { kind: 'opponent-life-at-most', atMost };
   }
   const life = /^you have (\S+) or more life$/i.exec(text);
   if (life !== null) {

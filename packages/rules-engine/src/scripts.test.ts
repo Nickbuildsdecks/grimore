@@ -35675,6 +35675,49 @@ describe('populate (D1151)', () => {
   });
 });
 
+describe('"target artifacts and/or enchantments", and "as long as an opponent has 10 or less life" (D807)', () => {
+  const VIGOR = { name: 'Test Vigor', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Destroy up to two target artifacts and/or enchantments.' };
+  const GHAST = { name: 'Test Ghast', type_line: 'Creature — Vampire Spirit', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '1', oracle_text: "Test Ghast can't block.\nTest Ghast has haste as long as an opponent has 10 or less life." };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' };
+  const GLYPH = { name: 'Test Glyph', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: '' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd807', name: 'Vigor',
+    entries: [VIGOR, GHAST, ROCK, GLYPH, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 50 }]),
+    data: [VIGOR, GHAST, ROCK, GLYPH, BEAR] as never[],
+  });
+  const table = (mine: string[], hand: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd807', 1: 'd807' }, deckSpecs: { d807: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads', () => {
+    for (const card of [VIGOR, GHAST]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Force of Vigor: an artifact and an enchantment destroyed; a creature is not a legal target', () => {
+    let s = table([], ['Test Vigor'], ['Test Rock', 'Test Glyph', 'Test Bear']);
+    const [rock, glyph, bear] = ['Test Rock', 'Test Glyph', 'Test Bear'].map((n) => find(s, 1, 'battlefield', n));
+    const card = find(s, 0, 'hand', 'Test Vigor');
+    const offered = legalActions(s, 0).plays.find((p) => p.card === card)!.candidates.flat().map((t) => (t.kind === 'card' ? t.id : ''));
+    expect(offered).toEqual(expect.arrayContaining([rock, glyph]));
+    expect(offered).not.toContain(bear);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: rock! }, { kind: 'card', id: glyph! }] })));
+    expect([s.instances[rock!]!.zone, s.instances[glyph!]!.zone, s.instances[bear!]!.zone]).toEqual(['graveyard', 'graveyard', 'battlefield']);
+  });
+
+  it('Bloodghast: haste only while an opponent is at 10 life or less', () => {
+    const s = table(['Test Ghast'], []);
+    const ghast = find(s, 0, 'battlefield', 'Test Ghast');
+    const hasHaste = (t: GameState) => characteristicsOf(t, t.instances[ghast]!).keywords.has('haste');
+    expect(hasHaste(s)).toBe(false);
+    const low = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: 10 - life(s, 1) } as Action);
+    expect(hasHaste(low)).toBe(true);
+    const mine = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: 5 - life(s, 0) } as Action);
+    expect(hasHaste(mine)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
