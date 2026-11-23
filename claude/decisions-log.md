@@ -59620,3 +59620,26 @@ of the last-known power, keywords before the count refused, and the short name r
 
 - engine tests: 6202, all passing (on 85113d1)
 - Coverage: 15,821 to 15,828 of 31,900 cards with every line read, and 37,991 to 37,999 of 59,888 lines, against 85113d1.
+
+## D824 — "Each creature without a +1/+1 counter on it": Wave Goodbye
+
+Most-played order: Wave Goodbye (rank 1430). Eight lines in the corpus print "without a(n) <kind>
+counter on it/them".
+
+**Reader.** `massScope`, beside D809's "with no counters on them", reads "without a(n) <kind>
+counter(s) on it/them" as a filter: none of that one kind. A creature with a different counter (a
+-1/-1, a shield) is still in the set. A `boardScope` copy was written and then removed, because
+neither card's sentence goes through `boardScope` and its faults went uncaught. It can come back
+with a card that needs it.
+
+**Tests.** 3 engine tests (our Bear has a +1/+1 counter, our Elk a -1/-1 counter, their Bear
+none):
+- the cards read;
+- Wave Goodbye returns the Elk and their Bear and leaves our Bear;
+- "Destroy all creatures without a +1/+1 counter on them" destroys the same two.
+
+Faults injected by script: 2 of 2 caught on the reader that remains (any counter in place of the
+named one, and the filter ignored).
+
+- engine tests: 6205, all passing (on 2dbfbe7)
+- Coverage: 15,828 to 15,829 of 31,900 cards with every line read, and 37,999 to 38,000 of 59,888 lines, against 2dbfbe7.

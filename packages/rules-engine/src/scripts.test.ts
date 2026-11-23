@@ -37403,6 +37403,54 @@ describe('tokens counted by the dying creature\'s power, Elenda and Goldvein Hyd
   });
 });
 
+describe('"each creature without a +1/+1 counter on it", Wave Goodbye (D824)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Wave', 'Sorcery', "Return each creature without a +1/+1 counter on it to its owner's hand."),
+    R('Test Purge', 'Sorcery', 'Destroy all creatures without a +1/+1 counter on them.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Elk', 'Creature — Elk', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd824', name: 'Wave', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  /** Our Bear carries a +1/+1 counter and our Elk a -1/-1 counter; theirs carry none. */
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd824', 1: 'd824' }, deckSpecs: { d824: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Test Bear', 'Test Elk'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const ours = find(s, 0, 'battlefield', 'Test Bear');
+    const elk = find(s, 0, 'battlefield', 'Test Elk');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = { ...s, instances: {
+      ...s.instances,
+      [ours]: { ...s.instances[ours]!, counters: { '+1/+1': 1 } },
+      [elk]: { ...s.instances[elk]!, counters: { '-1/-1': 1 } },
+    } };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) })));
+    return { zone: (id: string) => s.instances[id]!.zone, ours, elk, theirs };
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Bear with a +1/+1 counter stays; the Elk with a different counter and their bare Bear go home', () => {
+    const { zone, ours, elk, theirs } = cast('Test Wave');
+    expect(zone(ours)).toBe('battlefield');
+    expect(zone(elk)).toBe('hand');
+    expect(zone(theirs)).toBe('hand');
+  });
+
+  it('the same filter on "all creatures … on them" in a destroy', () => {
+    const { zone, ours, elk, theirs } = cast('Test Purge');
+    expect(zone(ours)).toBe('battlefield');
+    expect(zone(elk)).toBe('graveyard');
+    expect(zone(theirs)).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

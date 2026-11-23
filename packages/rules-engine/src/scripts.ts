@@ -15339,6 +15339,14 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     const before = bound;
     bound = (state, inst) => (before === null || before(state, inst)) && Object.values(inst.counters).every((n) => (n ?? 0) <= 0);
   }
+  // "Without a +1/+1 counter on it" (D824): Wave Goodbye. None of that one kind.
+  const without = /\s+without an? (\S+) counters? on (?:them|it)$/i.exec(rest);
+  if (without !== null) {
+    rest = rest.slice(0, without.index);
+    const kind = without[1]!.toLowerCase();
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && (inst.counters[kind] ?? 0) <= 0;
+  }
   let who: 'you' | 'opponents' | 'any' = 'any';
   for (const [pattern, seatRule] of [
     [/\s+you control$/i, 'you'], [/\s+you don't control$/i, 'opponents'],
