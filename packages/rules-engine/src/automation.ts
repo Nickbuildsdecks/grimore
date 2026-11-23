@@ -712,15 +712,31 @@ function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): Game
  */
 const emptyPools = (state: GameState): GameState => {
   const kept = state.keptMana ?? {};
+  // Mana kept until end of combat (D1138) is lost as the end of combat step ends.
+  const combatKept = state.step === 'end-combat' ? {} : state.keptManaCombat ?? {};
   const pools: Record<string, ManaPool> = {};
-  for (const [seat, keep] of Object.entries(kept)) {
-    const pool = state.pools[seat] ?? ({} as ManaPool);
-    const stays = Object.fromEntries(Object.entries(keep)
-      .map(([type, n]) => [type, Math.min(n, (pool as Record<string, number>)[type] ?? 0)] as const)
-      .filter(([, n]) => n > 0)) as ManaPool;
-    if (Object.keys(stays).length > 0) pools[seat] = stays;
+  const turnLeft: Record<string, ManaPool> = {};
+  const combatLeft: Record<string, ManaPool> = {};
+  for (const seat of new Set([...Object.keys(kept), ...Object.keys(combatKept)])) {
+    const pool = (state.pools[seat] ?? {}) as Record<string, number>;
+    const turnKeep = (kept[seat] ?? {}) as Record<string, number>;
+    const combatKeep = (combatKept[seat] ?? {}) as Record<string, number>;
+    const stays: Record<string, number> = {};
+    const turnStays: Record<string, number> = {};
+    const combatStays: Record<string, number> = {};
+    for (const type of new Set([...Object.keys(turnKeep), ...Object.keys(combatKeep)])) {
+      const have = pool[type] ?? 0;
+      const fromCombat = Math.min(combatKeep[type] ?? 0, have);
+      const fromTurn = Math.min(turnKeep[type] ?? 0, have - fromCombat);
+      if (fromCombat > 0) combatStays[type] = fromCombat;
+      if (fromTurn > 0) turnStays[type] = fromTurn;
+      if (fromCombat + fromTurn > 0) stays[type] = fromCombat + fromTurn;
+    }
+    if (Object.keys(stays).length > 0) pools[seat] = stays as ManaPool;
+    if (Object.keys(turnStays).length > 0) turnLeft[seat] = turnStays as ManaPool;
+    if (Object.keys(combatStays).length > 0) combatLeft[seat] = combatStays as ManaPool;
   }
-  return { ...state, pools, keptMana: pools };
+  return { ...state, pools, keptMana: turnLeft, keptManaCombat: combatLeft };
 };
 
 /**
@@ -1243,6 +1259,7 @@ export function endTurnCleanup(state: GameState): GameState {
     manaSpentOnSpellsThisTurn: {},
     // And mana kept "until end of turn" (D1034), which ends here with the other until-end-of-turn effects.
     keptMana: {},
+    keptManaCombat: {},
     descendedThisTurn: {},
     // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is

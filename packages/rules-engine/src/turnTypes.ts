@@ -766,6 +766,12 @@ export interface AutomationState {
    */
   readonly keptMana?: Readonly<Record<string, ManaPool>>;
   /**
+   * The same, until end of combat (D1138): firebending's "This mana lasts until end of combat", Avatar
+   * Roku's "Until end of combat, you don't lose this mana". Kept through the combat steps and lost
+   * as the end of combat step ends; `emptyPools` reads it beside `keptMana`.
+   */
+  readonly keptManaCombat?: Readonly<Record<string, ManaPool>>;
+  /**
    * The cards a resolving ability just milled, by the source milling them (D1038): "Mill three cards.
    * You may put a land card from among them into your hand." Written as the mill happens, read by the
    * question that follows, and cleared when the effect finishes.

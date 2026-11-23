@@ -27843,7 +27843,8 @@ function readEffect(
     const n = countFrom(additional[1]!.toLowerCase() === 'an' ? 'a' : additional[1]!);
     if (n !== null && n > 0) return { effect: (c) => allowExtraLand(c.state, c.controller, n) };
   }
-  const keeping = /^(add .+) and keep it until end of turn$/i.exec(clause.trim());
+  // And until end of combat (D1138): firebending, Avatar Roku. See `GameState.keptManaCombat`.
+  const keeping = /^(add .+) and keep it until end of (turn|combat)$/i.exec(clause.trim());
   if (keeping !== null) {
     const added = readEffect(keeping[1]!, name, where);
     if (added !== null && added.beforeDecisions === undefined) {
@@ -27856,10 +27857,11 @@ function readEffect(
           const now = (after.pools[key] ?? {}) as Record<string, number>;
           const gained = Object.fromEntries(Object.keys(now)
             .map((type) => [type, (now[type] ?? 0) - (before[type] ?? 0)] as const).filter(([, n]) => n > 0));
-          const kept = (after.keptMana?.[key] ?? {}) as Record<string, number>;
+          const field = keeping[2]!.toLowerCase() === 'combat' ? 'keptManaCombat' as const : 'keptMana' as const;
+          const kept = (after[field]?.[key] ?? {}) as Record<string, number>;
           const merged = { ...kept };
           for (const [type, n] of Object.entries(gained)) merged[type] = (merged[type] ?? 0) + n;
-          return { ...after, keptMana: { ...(after.keptMana ?? {}), [key]: merged as ManaPool } };
+          return { ...after, [field]: { ...(after[field] ?? {}), [key]: merged as ManaPool } };
         },
       };
     }
@@ -28366,6 +28368,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), ((?:you may )?put it (?:into your hand|on the bottom of your library|into your graveyard))/gi, '$1\u0015$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
     .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
+    // And until end of combat (D1138): Avatar Roku.
+    .replace(/(add [^.;]+)\.\s+Until end of combat, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of combat')
     // And Insurrection's (D676): "They" are the creatures the first sentence took.
     .replace(/(gain control of them until end of turn)\.\s+They gain haste until end of turn/gi, '$1\u0005')
     // Fabled Passage (D685): "that land" is the one the search found, so the untap goes with it.
@@ -34108,6 +34112,20 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
 }
 
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  /*
+    Firebending N (D1138): "Whenever this creature attacks, add N {R}. This mana lasts until end of
+    combat." Read as the attack trigger it stands for, through the mana-keeping reader above. "X,
+    where X is …" adds that many, counted as the other "where X is" readers count it.
+  */
+  const firebending = /^firebending (\d+|X)(?:, where X is (.+?))?\.?$/i.exec(plain(line).trim());
+  if (firebending !== null) {
+    const n = firebending[1]!;
+    const amount = n.toUpperCase() === 'X'
+      ? (firebending[2] === undefined ? null : `an amount of {R} equal to ${firebending[2]}`)
+      : '{R}'.repeat(Number(n));
+    if (amount === null || amount === '') return null;
+    return lineScriptFor(`Whenever ${name} attacks, add ${amount}. Until end of combat, you don't lose this mana as steps and phases end.`, name);
+  }
   /*
     "Lands you control have "<ability>"" (D779): Chromatic Lantern, a granted ability on the
     `controller-lands` scope, the same grant table the creature lords use. Only an activated

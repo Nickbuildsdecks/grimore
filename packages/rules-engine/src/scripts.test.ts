@@ -34167,6 +34167,34 @@ describe('"~ assigns no combat damage this turn" (D1137)', () => {
   });
 });
 
+describe('firebending, and mana kept until end of combat (D1138)', () => {
+  const SAGE = { name: 'Test Sage', type_line: 'Creature — Human Monk', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Firebending 2' };
+  const deck = customDeck({
+    id: 'd1138', name: 'Fire', entries: [{ name: 'Test Sage', count: 4 }, { name: 'Mountain', count: 56 }], data: [SAGE] as never[],
+  });
+  const red = (s: GameState) => (poolOf(s, 0) as Record<string, number>)['R'] ?? 0;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SAGE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('adds {R}{R} as it attacks, kept through combat and lost after it', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1138', 1: 'd1138' }, deckSpecs: { d1138: deck.deck },
+      battlefield: { 0: ['Test Sage'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const sage = find(s, 0, 'battlefield', 'Test Sage');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: sage, defender: 1 }] } as Action), 30);
+    expect(red(s)).toBe(2);
+    s = drain(advanceTo(s, 'end-combat'), 30);
+    expect(s.step).toBe('end-combat');
+    expect(red(s)).toBe(2);
+    s = advanceTo(s, 'postcombat-main');
+    expect(red(s)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
