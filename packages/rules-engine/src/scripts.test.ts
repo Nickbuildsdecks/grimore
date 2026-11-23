@@ -37008,6 +37008,41 @@ describe('"double target creature\'s power [and toughness]", Bulk Up (D825)', ()
   });
 });
 
+describe('"whenever an opponent casts a spell from anywhere other than their hand", Ghostly Pilferer (D826)', () => {
+  const PILFERER = { name: 'Test Pilferer', type_line: 'Creature — Spirit Rogue', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '1', oracle_text: 'Whenever an opponent casts a spell from anywhere other than their hand, draw a card.' };
+  const RECALL = { name: 'Test Recall', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', oracle_text: 'Test Recall deals 1 damage to any target.\nFlashback {R}' };
+  const deck = customDeck({
+    id: 'd826', name: 'Pilferer', entries: [{ name: 'Test Pilferer', count: 2 }, { name: 'Test Recall', count: 4 }, { name: 'Mountain', count: 54 }], data: [PILFERER, RECALL] as never[],
+  });
+  /** `caster` casts Recall from hand, then again by flashback; seat 0 has the Pilferer. */
+  const run = (caster: 0 | 1) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd826', 1: 'd826' }, deckSpecs: { d826: deck.deck },
+      hands: { [caster]: ['Test Recall'] },
+      battlefield: { 0: ['Test Pilferer', 'Mountain', 'Mountain'], 1: ['Mountain', 'Mountain'] }, turn: 3, firstSeat: caster,
+    } as never), 'precombat-main');
+    const other = caster === 0 ? 1 : 0;
+    const hand = () => ids(s, 0, 'hand').length;
+    const start = hand() - (caster === 0 ? 1 : 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: caster, card: find(s, caster, 'hand', 'Test Recall'), targets: [{ kind: 'player', seat: other }] } as Action)), 20);
+    const afterHand = hand();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: caster, card: find(s, caster, 'graveyard', 'Test Recall'), flashback: true, targets: [{ kind: 'player', seat: other }] } as Action)), 20);
+    return { fromHand: afterHand - start, fromGraveyard: hand() - afterHand };
+  };
+
+  it('reads', () => {
+    expect(compileCard(PILFERER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the opponent's cast from hand draws nothing; their flashback draws a card", () => {
+    expect(run(1)).toEqual({ fromHand: 0, fromGraveyard: 1 });
+  });
+
+  it("its controller's own flashback draws nothing", () => {
+    expect(run(0).fromGraveyard).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

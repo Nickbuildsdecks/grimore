@@ -41892,3 +41892,23 @@ toughness always or never doubled, and a permanent effect in place of until end 
 
 - engine tests: 6209, all passing (on ea1f103)
 - Coverage: 15,829 to 15,837 of 31,900 cards with every line read, and 38,000 to 38,013 of 59,888 lines, against ea1f103.
+
+## D826 — "Whenever an opponent casts a spell from anywhere other than their hand": Ghostly Pilferer
+
+Most-played order: Ghostly Pilferer (rank 1428). D616's cast-zone filter `fromZone: 'not-hand'`
+already existed for "you cast a spell from anywhere other than your hand". The opponent's
+printing says "their hand", and that word was the only thing unread. The cast-descriptor reader
+now takes "your", "their" or "his or her". The filter is the same: the cast event's `castFrom`,
+which is not the hand for flashback, a commander from the command zone, or a card cast from
+exile.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- the opponent casting a flashback spell from their hand draws its controller nothing, and
+  casting it again by flashback draws a card;
+- its controller's own flashback draws nothing.
+
+Faults injected by script: 2 of 2 caught ("their" unread, and the not-hand filter ignored).
+
+- engine tests: 6212, all passing (on 07b50dd)
+- Coverage: 15,837 to 15,838 of 31,900 cards with every line read, and 38,013 to 38,014 of 59,888 lines, against 07b50dd.
