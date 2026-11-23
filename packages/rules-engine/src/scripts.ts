@@ -33109,6 +33109,32 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
     }
   }
 
+  /*
+    "~ can't attack or block unless you control seven or more lands" (D815): Topiary Stomper, and
+    the drawbacks printed the same way on the card itself. The restriction is a self static whose
+    condition is the printed one negated, asked live, so the creature can attack the moment the
+    seventh land arrives and stops if one leaves. The subject must be the card itself.
+  */
+  const unless = /^(.+?) can't (attack or block|attack|block) unless (.+?)\.?$/i.exec(text);
+  if (unless !== null) {
+    const subject = unless[1]!.toLowerCase();
+    const selves = [name.toLowerCase(), name.split(',')[0]!.toLowerCase(), 'this creature'];
+    const condition = selves.includes(subject) ? staticCondition(unless[3]!, name) : null;
+    if (condition !== null) {
+      const verb = unless[2]!.toLowerCase();
+      return {
+        statics: [{
+          scope: 'self',
+          effect: {
+            ...(verb === 'block' ? {} : { cantAttack: true }),
+            ...(verb === 'attack' ? {} : { cantBlock: true }),
+            while: { kind: 'not', of: condition },
+          },
+        }],
+      };
+    }
+  }
+
   return null;
 }
 
@@ -33212,13 +33238,19 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
     return { kind: 'source-suspected', suspected: !negated };
   }
   if (new RegExp(`^(?:${self} is|it's) attacking$`, 'i').test(text)) return { kind: 'source-attacking' };
-  if (new RegExp(`^${self} is equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
+  if (new RegExp(`^(?:${self} is|it's) equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
   if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
   const hand = /^you have (\S+) or more cards in hand$/i.exec(text);
   if (hand !== null) {
     const atLeast = n(hand[1]!);
     return atLeast === null ? null : { kind: 'controller-hand', atLeast };
+  }
+  // "You have one or fewer cards in hand" (D815): Hazoret the Fervent.
+  const fewer = /^you have (\S+) or fewer cards in hand$/i.exec(text);
+  if (fewer !== null) {
+    const atMost = n(fewer[1]!);
+    return atMost === null ? null : { kind: 'controller-hand', atMost };
   }
   // "An opponent has 10 or less life" (D807): Bloodghast.
   const theirLife = /^an opponent has (\S+) or less life$/i.exec(text);

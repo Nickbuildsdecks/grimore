@@ -12123,13 +12123,12 @@ describe('the threshold condition: a static that is on while your graveyard is b
     /*
       Refused for the **condition**, which is the half that keeps this reader from eating its
       neighbours. "If there are …" is a one-shot spell effect (Cleansing Meditation, Demoralize,
-      Cabal Ritual — 20-odd lines), "unless" is Deep-Sea Terror's attack restriction, and a
-      graveyard that is not yours is somebody else's count.
+      Cabal Ritual — 20-odd lines), and a graveyard that is not yours is somebody else's count.
+      Deep-Sea Terror's "unless" restriction was refused here too until D815 read it as the
+      restriction under the negated condition; see the test after this table.
     */
     ['a one-shot "if" instead of "as long as"', 'If there are seven or more cards in your graveyard,'
       + ' Probe Beast gets +1/+1.'],
-    ['an "unless" restriction', "Probe Beast can't attack unless there are seven or more cards in"
-      + ' your graveyard.'],
     ['somebody else\'s graveyard', 'Probe Beast gets +1/+1 as long as there are seven or more cards'
       + " in an opponent's graveyard."],
     ['a count of a kind of card', 'Probe Beast gets +1/+1 as long as there are seven or more creature'
@@ -12139,6 +12138,17 @@ describe('the threshold condition: a static that is on while your graveyard is b
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+
+  it('reads the "unless" restriction as the restriction while the graveyard is not big (D815)', () => {
+    const read = creature('Probe Beast', "Probe Beast can't attack unless there are seven or more cards in your graveyard.");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect(read.script?.statics).toEqual([{
+      scope: 'self',
+      effect: { cantAttack: true, while: { kind: 'not', of: { kind: 'controller-graveyard', atLeast: 7 } } },
+    }]);
   });
 
   it('finishes Krosan Beast, whose whole card is the one line', () => {

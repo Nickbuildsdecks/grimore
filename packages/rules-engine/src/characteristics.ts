@@ -2108,6 +2108,11 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-devotion'; readonly colours: readonly string[]; readonly atLeast?: number; readonly below?: number }
     /** "As long as you have the city's blessing" (D762): the controller's `Seat.citysBlessing`. */
     | { readonly kind: 'controller-citys-blessing' }
+    /**
+     * Any other condition, negated (D815): "~ can't attack or block unless you control seven or
+     * more lands" is the restriction while the board does **not** have them.
+     */
+    | { readonly kind: 'not'; readonly of: NonNullable<ContinuousEffect['while']> }
     /** "It's your turn" / "it's not your turn". */
     | { readonly kind: 'turn'; readonly yours: boolean }
     /**
@@ -2437,6 +2442,7 @@ export function conditionHolds(
 function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   const cond = effect.while;
   if (cond === undefined) return true;
+  if (cond.kind === 'not') return !conditionMet(state, { ...effect, while: cond.of });
   /*
     A condition about the effect's own source, which is the whole of monstrosity's second half.
 

@@ -36468,6 +36468,74 @@ describe('a bonus while the host is legendary, a colour or a creature type (D814
   });
 });
 
+describe('"~ can\'t attack or block unless …" on the card itself, Topiary Stomper (D815)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Stomper', 'Creature — Plant Dinosaur', "Vigilance\nTest Stomper can't attack or block unless you control seven or more lands.", { power: '4', toughness: '4' }),
+    R('Test Fervent', 'Creature — God', "Test Fervent can't attack unless you have one or fewer cards in hand.", { power: '5', toughness: '4' }),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Drone', 'Artifact Creature — Drone', "Test Drone can't attack or block unless it's equipped.", { power: '0', toughness: '3' }),
+    R('Test Spear', 'Artifact — Equipment', 'Equipped creature gets +1/+0.\nEquip {0}'),
+  ];
+  const deck = customDeck({
+    id: 'd815', name: 'Unless',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }],
+    data: ROWS as never[],
+  });
+  /** Main phase, seat 0's hand trimmed to exactly what the test gave (the draw step adds one). */
+  const main = (hands: Record<number, string[]>, battlefield: Record<number, string[]>) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd815', 1: 'd815' }, deckSpecs: { d815: deck.deck }, hands, battlefield, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const keep = hands[0]?.length ?? 0;
+    for (const id of ids(s, 0, 'hand').slice(keep)) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library' });
+    return s;
+  };
+  const forests = (n: number) => Array.from({ length: n }, () => 'Forest');
+  const of = (s: GameState, name: string) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [...ROWS.slice(0, 2), ROWS[3]!]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("\"unless it's equipped\": restricted bare, free once equipped", () => {
+    let s = main({}, { 0: ['Test Drone', 'Test Spear'] });
+    expect(of(s, 'Test Drone')).toMatchObject({ cantAttack: true, cantBlock: true });
+    const spear = find(s, 0, 'battlefield', 'Test Spear');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === spear)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: spear, abilityIndex: play.abilityIndex ?? 0, targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Drone') }] })));
+    expect(of(s, 'Test Drone')).toMatchObject({ cantAttack: false, cantBlock: false });
+  });
+
+  it('with six lands it can neither attack nor block; with seven it attacks', () => {
+    const six = main({}, { 0: ['Test Stomper', ...forests(6)] });
+    expect(of(six, 'Test Stomper')).toMatchObject({ cantAttack: true, cantBlock: true });
+    let seven = main({}, { 0: ['Test Stomper', ...forests(7)] });
+    expect(of(seven, 'Test Stomper')).toMatchObject({ cantAttack: false, cantBlock: false });
+    seven = advanceTo(seven, 'declare-attackers');
+    const stomper = find(seven, 0, 'battlefield', 'Test Stomper');
+    expect(refusal(seven, { type: 'auto:attack', by: 0, attackers: [{ attacker: stomper, defender: 1 }] })).toBeNull();
+  });
+
+  it('the seventh land arriving lifts it at once', () => {
+    let s = main({ 0: ['Forest'] }, { 0: ['Test Stomper', ...forests(6)] });
+    expect(of(s, 'Test Stomper').cantAttack).toBe(true);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    expect(of(s, 'Test Stomper').cantAttack).toBe(false);
+  });
+
+  it('a hand of two keeps the attack-only one home, a hand of one lets it go, and it may always block', () => {
+    const two = main({ 0: ['Test Bear', 'Test Bear'] }, { 0: ['Test Fervent'] });
+    expect(ids(two, 0, 'hand')).toHaveLength(2);
+    expect(of(two, 'Test Fervent')).toMatchObject({ cantAttack: true, cantBlock: false });
+    const one = main({ 0: ['Test Bear'] }, { 0: ['Test Fervent'] });
+    expect(of(one, 'Test Fervent').cantAttack).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
