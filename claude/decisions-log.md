@@ -57664,3 +57664,25 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,277 to 15,301 of 31,900 cards with every line read, and 37,240 to 37,267 of 59,888
 lines, against d219fbb.
+
+## D796 — "Target permanent you control gains hexproof and indestructible"
+
+Most-played order: Tamiyo's Safekeeping (rank 452), then the same mode on Defend the Rider and
+Vigorbloom Charm (their other modes are still unread).
+
+The targeted keyword grant took a creature target only, since "target land gains flying" means
+nothing. A target printed as a **permanent** is now read when every keyword is one any permanent can
+have: hexproof, indestructible, shroud. A creature-only keyword on it stays unread, and so does
+"target land gains shroud", which D1030 pins; the first gate run caught a version that read it.
+
+**Tests.** 2 engine tests: the card reads and "target permanent you control gains flying" does not;
+our artifact is a legal target and the opponent's is not, it gets hexproof and indestructible until
+end of turn, and the life is gained.
+
+Faults injected by script: 2 of 2 caught (the "gains flying" refusal was pinned after the first run
+missed a reader that took any keyword).
+
+    engine tests: 6,024, all passing (on cc2e646)
+
+Coverage: 15,301 to 15,303 of 31,900 cards with every line read, and 37,267 to 37,269 of 59,888
+lines, against cc2e646.

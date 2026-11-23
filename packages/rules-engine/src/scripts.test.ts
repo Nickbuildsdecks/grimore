@@ -34320,6 +34320,44 @@ describe('"gains protection from the color of your choice" (D795)', () => {
   });
 });
 
+describe('"target permanent you control gains hexproof and indestructible" (D796)', () => {
+  const SAFE = { name: 'Test Safekeeping', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target permanent you control gains hexproof and indestructible until end of turn. You gain 2 life.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const deck = customDeck({
+    id: 'd796', name: 'Safe',
+    entries: [{ name: 'Test Safekeeping', count: 2 }, { name: 'Test Rock', count: 2 }, { name: 'Forest', count: 56 }],
+    data: [SAFE, ROCK] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd796', 1: 'd796' }, deckSpecs: { d796: deck.deck },
+    hands: { 0: ['Test Safekeeping'] }, battlefield: { 0: ['Test Rock'], 1: ['Test Rock'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads, and a creature-only keyword on a permanent target stays unread', () => {
+    expect(compileCard(SAFE as never)).toMatchObject({ ok: true, unread: [] });
+    const flying = compileCard({ ...SAFE, name: 'Test Wings', oracle_text: 'Target permanent you control gains flying until end of turn.' } as never);
+    expect(flying.ok && flying.unread.length).toBe(1);
+  });
+
+  it('an artifact of ours gets both, until end of turn, and the life; an opponent\'s is not a legal target', () => {
+    let s = table();
+    const rock = find(s, 0, 'battlefield', 'Test Rock');
+    const theirs = find(s, 1, 'battlefield', 'Test Rock');
+    const card = find(s, 0, 'hand', 'Test Safekeeping');
+    const row = legalActions(s, 0).plays.find((p) => p.card === card)!;
+    const offered = row.candidates.flat().map((t) => (t.kind === 'card' ? t.id : ''));
+    expect(offered).toContain(rock);
+    expect(offered).not.toContain(theirs);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'card', id: rock }] })));
+    const kw = characteristicsOf(s, s.instances[rock]!).keywords;
+    expect(kw.has('hexproof') && kw.has('indestructible')).toBe(true);
+    expect(life(s, 0)).toBe(before + 2);
+    const later = nextTurn(s);
+    expect(characteristicsOf(later, later.instances[rock]!).keywords.has('hexproof')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
