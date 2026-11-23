@@ -41024,3 +41024,24 @@ Faults injected by hand: 2.
 
 Coverage: 15,609 of 31,900 cards (+44 over D1149's 15,565), 37,681 of 59,888 lines (+69). The difference also counts the D7xx
 session's D805, merged in after D1149 was measured; D1150's own share is the 32 amass cards.
+## D806 — "Artifacts you control have hexproof", "Commander creatures you control get +2/+2"
+
+Most-played order: Padeem, Consul of Innovation's first line (rank 886), Bastion Protector (933).
+
+- **"Artifacts you control have hexproof"** and "Lands you control have indestructible": D801's
+  reader on the `artifacts-you-control` and `controller-lands` scopes, for the keywords any
+  permanent can have.
+- **"Commander creatures you control get +2/+2 and have indestructible"**: the Backgrounds'
+  `commander-creatures` scope (D1089), which is "you own". The two differ only for a commander an
+  opponent has taken control of, which this does not split; noted rather than modelled.
+
+**Tests.** 3 engine tests: the cards read; under Padeem our artifact has hexproof and our creature and
+the opponent's artifact do not; under Bastion Protector our commander is a 4/4 with indestructible
+and another creature of ours is unchanged. D801's and D1089's tests pass unchanged.
+
+Faults injected by script: 2 of 2 caught.
+
+    engine tests: 6,103, all passing (on fac438d)
+
+Coverage: 15,548 to 15,554 of 31,900 cards with every line read, and 37,593 to 37,602 of 59,888
+lines, against fac438d.

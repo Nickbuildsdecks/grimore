@@ -35592,6 +35592,44 @@ describe('amass (D1150)', () => {
   });
 });
 
+describe('"Artifacts you control have hexproof", "Commander creatures you control get +2/+2 and have indestructible" (D806)', () => {
+  const PADEEM = { name: 'Test Padeem', type_line: 'Creature — Vedalken Artificer', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '4', oracle_text: 'Artifacts you control have hexproof.' };
+  const BASTION = { name: 'Test Bastion', type_line: 'Creature — Human Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '3', oracle_text: 'Commander creatures you control get +2/+2 and have indestructible.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd806', name: 'Padeem',
+    entries: [PADEEM, BASTION, ROCK, BEAR].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Plains', count: 52 }]),
+    data: [PADEEM, BASTION, ROCK, BEAR] as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd806', 1: 'd806' }, deckSpecs: { d806: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kw = (s: GameState, id: string) => [...characteristicsOf(s, s.instances[id]!).keywords];
+
+  it('reads', () => {
+    for (const card of [PADEEM, BASTION]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Padeem: our artifact has hexproof, our creature and the opponent's artifact do not", () => {
+    const s = table(['Test Padeem', 'Test Rock', 'Test Bear'], ['Test Rock']);
+    expect(kw(s, find(s, 0, 'battlefield', 'Test Rock'))).toContain('hexproof');
+    expect(kw(s, find(s, 0, 'battlefield', 'Test Bear'))).not.toContain('hexproof');
+    expect(kw(s, find(s, 1, 'battlefield', 'Test Rock'))).not.toContain('hexproof');
+  });
+
+  it('Bastion Protector: our commander gets +2/+2 and indestructible, another creature does not', () => {
+    const s0 = table(['Test Bastion', 'Test Bear', 'Test Bear']);
+    const [general, plain] = ids(s0, 0, 'battlefield').filter((id) => s0.cardDefs[s0.instances[id]!.defKey]!.name === 'Test Bear');
+    const s = engineSettle({ ...s0, instances: { ...s0.instances, [general!]: { ...s0.instances[general!]!, isCommander: true } } }, s0);
+    expect([power(s, general!), toughness(s, general!)]).toEqual([4, 4]);
+    expect(kw(s, general!)).toContain('indestructible');
+    expect([power(s, plain!), toughness(s, plain!)]).toEqual([2, 2]);
+    expect(kw(s, plain!)).not.toContain('indestructible');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
