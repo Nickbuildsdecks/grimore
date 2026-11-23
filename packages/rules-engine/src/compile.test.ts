@@ -14497,8 +14497,6 @@ describe('the graveyard clause family (D527)', () => {
   it.each([
     ['a rider the move does not carry',
       'Return target creature card from your graveyard to the battlefield with a finality counter on it.'],
-    ['a colour run this vocabulary does not read',
-      'Return target white or black creature card from your graveyard to the battlefield.'],
     ['a subtype nothing has, which would match nothing (#341)',
       'Exile target Blorp card from a graveyard.'],
     ['a plural, which reads the same as a singular and is refused for it',
@@ -14511,6 +14509,12 @@ describe('the graveyard clause family (D527)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+
+  // The colour run was in the list above until D1167, which reads colours joined by "or".
+  it('reads a colour run joined by "or" (D1167)', () => {
+    const read = sorcery('Return target white or black creature card from your graveyard to the battlefield.');
+    expect(read).toMatchObject({ ok: true, unread: [] });
   });
 
   it.each([

@@ -23695,6 +23695,35 @@ const permanentFilter = (
  * and matches nothing).
  */
 function graveyardTypeTest(words: string): ((line: TypeLine, def?: CardDef) => boolean) | null {
+  /*
+    **Colours joined by "or" in front** (D1167): "a blue or red creature card", "a white or black
+    card". The colour words are one test, any of them, ANDed with what follows them.
+  */
+  const colourOr = /^((?:white|blue|black|red|green)(?:,? (?:or|and\/or) (?:white|blue|black|red|green))+)(?: (.+))?$/i.exec(words.trim());
+  if (colourOr !== null) {
+    const colours = colourOr[1]!.toLowerCase().split(/,? (?:or|and\/or) /).map((w) => COLOUR_WORDS[w]);
+    if (colours.every((c) => c !== undefined)) {
+      const rest = colourOr[2] === undefined ? () => true : graveyardTypeTest(colourOr[2]);
+      if (rest === null) return null;
+      return (line, def) => colours.some((c) => (def?.colors ?? []).includes(c!)) && rest(line, def);
+    }
+  }
+  /*
+    **A comma list with "or"** (D1167): "artifact, enchantment, or legendary" is "artifact or
+    enchantment or legendary"; "legendary" in an or-list is one of the alternatives.
+  */
+  if (/,/.test(words) && /\bor\b/.test(words)) {
+    const parts = words.trim().split(/,\s*(?:or\s+)?|\s+or\s+/).map((p) => p.trim()).filter((p) => p !== '');
+    if (parts.length >= 2 && parts.every((p) => p.toLowerCase() === 'legendary' || GRAVEYARD_CARD_TYPES.includes(p.toLowerCase())
+      || (/^[A-Z][a-z'-]+$/.test(p) && (isCreatureType(p) || CARD_SUBTYPES_READ.includes(p))))) {
+      const tests = parts.map((p) => (p.toLowerCase() === 'legendary'
+        ? (line: TypeLine) => isLegendary(line)
+        : GRAVEYARD_CARD_TYPES.includes(p.toLowerCase())
+          ? (line: TypeLine) => hasType(line, p.toLowerCase())
+          : (line: TypeLine, def?: CardDef) => (def !== undefined ? cardHasSubtype(def, p) : hasSubtype(line, p))));
+      return (line, def) => tests.some((t) => t(line, def));
+    }
+  }
   const words_ = words;
   const text = words.trim().toLowerCase();
   /*

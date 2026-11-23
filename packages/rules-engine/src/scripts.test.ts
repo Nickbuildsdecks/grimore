@@ -37451,6 +37451,44 @@ describe('"each creature without a +1/+1 counter on it", Wave Goodbye (D824)', (
   });
 });
 
+describe('graveyard targets: colours joined by "or", and "artifact, enchantment, or legendary" (D1167)', () => {
+  const RECALL = { name: 'Test Recall', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Return target blue or red creature card from your graveyard to your hand.' };
+  const RELIC = { name: 'Test Relic', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Return target artifact, enchantment, or legendary card from your graveyard to your hand.' };
+  const DRAKE = { name: 'Test Drake', type_line: 'Creature — Drake', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const HERO = { name: 'Test Hero', type_line: 'Legendary Creature — Human', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [RECALL, RELIC, DRAKE, BEAR, HERO];
+  const deck = customDeck({
+    id: 'd1167', name: 'Recall', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }], data: ROWS as never[],
+  });
+  const table = (spell: string) => advanceTo(arena({
+    decks: { 0: 'd1167', 1: 'd1167' }, deckSpecs: { d1167: deck.deck },
+    hands: { 0: [spell] }, graveyard: { 0: ['Test Drake', 'Test Bear', 'Test Hero'] }, battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const aim = (s: GameState, spell: string, card: string) => ({
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: find(s, 0, 'graveyard', card) }],
+  } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"blue or red creature card": the blue creature returns; the green one cannot be targeted', () => {
+    const s = table('Test Recall');
+    expect(refusal(s, aim(s, 'Test Recall', 'Test Bear'))).not.toBeNull();
+    const t = drain(passBoth(apply(s, aim(s, 'Test Recall', 'Test Drake'))), 30);
+    expect(namesIn(t, 0, 'hand')).toContain('Test Drake');
+  });
+
+  it('"artifact, enchantment, or legendary card": the legendary creature returns; a plain creature cannot be targeted', () => {
+    const s = table('Test Relic');
+    expect(refusal(s, aim(s, 'Test Relic', 'Test Bear'))).not.toBeNull();
+    const t = drain(passBoth(apply(s, aim(s, 'Test Relic', 'Test Hero'))), 30);
+    expect(namesIn(t, 0, 'hand')).toContain('Test Hero');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
