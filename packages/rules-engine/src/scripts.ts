@@ -34583,6 +34583,13 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());
   if (taxed !== null) return { attackTax: Number(taxed[1]) };
+  // And "you or planeswalkers you control" (D802): Archon of Absolution, Baird, Sphere of Safety's X.
+  const walkersToo = /^creatures can't attack you or planeswalkers you control unless their controller pays \{(\d+|X)\} for each of those creatures(, where X is the number of enchantments you control)?\.?$/i.exec(plain(line).trim());
+  if (walkersToo !== null) {
+    const isX = walkersToo[1]!.toUpperCase() === 'X';
+    if (isX !== (walkersToo[2] !== undefined)) return null;
+    return { attackTax: isX ? 'enchantments' : Number(walkersToo[1]), attackTaxWalkers: true };
+  }
   // The Leylines (D778): see `CardScript.beginsInPlay`.
   if (new RegExp(`^if (?:${selfRef(name)}|this card) is in your opening hand, you may begin the game with it on the battlefield\\.?$`, 'i').test(plain(line).trim())) {
     return { beginsInPlay: true };

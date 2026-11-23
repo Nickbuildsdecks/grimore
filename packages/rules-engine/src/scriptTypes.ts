@@ -3118,8 +3118,17 @@ export interface CardScript {
    * that's attacking you" (D780): Propaganda, Ghostly Prison, Windborn Muse. N per creature attacking
    * this permanent's controller (not a planeswalker of theirs), paid by the attacking player as
    * attackers are declared (CR 508.1h). See `attackTaxFor`.
+   *
+   * `'enchantments'` (D802) is Sphere of Safety's {X}, "where X is the number of enchantments you
+   * control", counted as attackers are declared.
    */
-  readonly attackTax?: number;
+  readonly attackTax?: number | 'enchantments';
+  /**
+   * "… attack you **or planeswalkers you control** unless their controller pays {N} for each of those
+   * creatures" (D802): Archon of Absolution, Baird, Sphere of Safety. The tax reaches an attack on
+   * one of this permanent's controller's planeswalkers too.
+   */
+  readonly attackTaxWalkers?: true;
   /**
    * Mana added whenever a permanent this one watches is tapped for mana (D1088, CR 605.1b): Wild
    * Growth's "Whenever enchanted land is tapped for mana, its controller adds an additional {G}",

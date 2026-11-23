@@ -40,7 +40,7 @@ import {
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
 import { REGENERATION, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
-import { costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
+import { attackTaxFor, costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
 import { canAfford, reducedCostText, solveTap } from './mana.js';
 import { colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
 import { opponentLandColours, ownLandTypes, legendaryColours } from './fromCardData.js';
@@ -8001,7 +8001,7 @@ describe('deck coverage', () => {
       // D778: the Leylines' opening-hand rule; no pool deck plays one.
       'script beginsInPlay',
       // D780: the attack tax (Propaganda, Ghostly Prison); no pool deck plays one.
-      'script attackTax',
+      'script attackTax', 'script attackTaxWalkers',
       // D1088: mana added on a tap for mana (Wild Growth, Crypt Ghast); no pool deck plays one.
       'script tapManaExtra',
       // D1097: impending (the Duskmourn Overlords); no pool deck plays one.
@@ -35030,6 +35030,42 @@ describe('"other permanents you control have indestructible" (D801)', () => {
     const s = table(['Test Position', 'Test Bear']);
     expect(has(s, 0, 'Test Bear', 'hexproof')).toBe(true);
     expect(has(s, 0, 'Test Position', 'hexproof')).toBe(false);
+  });
+});
+
+describe('attack taxes on planeswalkers too, and Sphere of Safety\'s X (D802)', () => {
+  const ARCHON = { name: 'Test Archon', type_line: 'Creature — Archon', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '2', oracle_text: "Flying\nCreatures can't attack you or planeswalkers you control unless their controller pays {1} for each of those creatures." };
+  const SPHERE = { name: 'Test Sphere', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Creatures can't attack you or planeswalkers you control unless their controller pays {X} for each of those creatures, where X is the number of enchantments you control." };
+  const PRISON = { name: 'Test Prison', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you." };
+  const WALKER = { name: 'Test Walker', type_line: 'Legendary Planeswalker — Test', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', loyalty: '3', oracle_text: '+1: You gain 1 life.' };
+  const GLYPH = { name: 'Test Glyph', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd802', name: 'Taxes',
+    entries: [ARCHON, SPHERE, PRISON, WALKER, GLYPH].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Plains', count: 50 }]),
+    data: [ARCHON, SPHERE, PRISON, WALKER, GLYPH] as never[],
+  });
+  const table = (theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd802', 1: 'd802' }, deckSpecs: { d802: deck.deck },
+    battlefield: { 0: [], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads', () => {
+    for (const card of [ARCHON, SPHERE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Archon of Absolution: {1} an attacker at the player and at their planeswalker; Ghostly Prison: the player only', () => {
+    const s = table(['Test Archon', 'Test Walker']);
+    const walker = find(s, 1, 'battlefield', 'Test Walker');
+    expect(attackTaxFor(s, [{ defender: 1 }, { defender: 1 }])).toBe(2);
+    expect(attackTaxFor(s, [{ defender: 1, planeswalker: walker }])).toBe(1);
+    const t = table(['Test Prison', 'Test Walker']);
+    expect(attackTaxFor(t, [{ defender: 1 }])).toBe(2);
+    expect(attackTaxFor(t, [{ defender: 1, planeswalker: find(t, 1, 'battlefield', 'Test Walker') }])).toBe(0);
+  });
+
+  it('Sphere of Safety: X is the enchantments its controller has, itself included', () => {
+    expect(attackTaxFor(table(['Test Sphere']), [{ defender: 1 }])).toBe(1);
+    expect(attackTaxFor(table(['Test Sphere', 'Test Glyph', 'Test Glyph']), [{ defender: 1 }, { defender: 1 }])).toBe(6);
   });
 });
 

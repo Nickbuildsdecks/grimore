@@ -40670,3 +40670,27 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,478 to 15,483 of 31,900 cards with every line read, and 37,500 to 37,505 of 59,888
 lines, against b98a318.
+
+## D802 — Attack taxes on planeswalkers too, and Sphere of Safety's X
+
+Most-played order: Sphere of Safety (rank 697), then Archon of Absolution and Baird, Steward of
+Argive, which print the same wording.
+
+D780's attack tax read only Propaganda's printing, which taxes attacks on the player. The newer
+printing, "Creatures can't attack you or planeswalkers you control unless their controller pays {N}
+for each of those creatures", now reads too: `CardScript.attackTaxWalkers`, so an attack on one of
+that player's planeswalkers is taxed as well; Propaganda's still is not. Sphere of Safety's {X}
+"where X is the number of enchantments you control" is `attackTax: 'enchantments'`, counted as
+attackers are declared, the Sphere included. Norn's Annex's {W/P} stays unread.
+
+**Tests.** 3 engine tests: the cards read; under Archon of Absolution two attackers at the player
+cost 2 and one at their planeswalker costs 1, while Ghostly Prison taxes the player and not the
+planeswalker; Sphere of Safety alone costs 1 an attacker, and with two more enchantments 3, so two
+attackers cost 6. D780's own tests pass unchanged.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,077, all passing (on b4f8452)
+
+Coverage: 15,483 to 15,486 of 31,900 cards with every line read, and 37,505 to 37,508 of 59,888
+lines, against b4f8452.
