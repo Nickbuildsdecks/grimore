@@ -42090,3 +42090,39 @@ Faults injected by script: 2 of 2 caught (the rewrite off, and the count dropped
 
 - engine tests: 6199, all passing (on 64e9800)
 - Coverage: 15,818 to 15,821 of 31,900 cards with every line read, and 37,987 to 37,991 of 59,888 lines, against 64e9800.
+
+## D1166 — delayed sacrifice of the source or a target, and a token's keyword list
+
+"Sacrifice it at the beginning of the next end step" was read only after a clause that puts a
+creature onto the battlefield (D696's Kiki-Jiki and Sneak Attack rewrite). After anything else it
+was unread. The single-unread list holds 89 lines that end "at the beginning of the next end step",
+21 of them "sacrifice it" or "exile it".
+
+Two readers now schedule the same engine-known delayed ability that D696 does (`scheduleDelayed`
+with a `builtin`). It goes on the stack at the next end step and acts only on the object as it is
+now (CR 400.7):
+- **The source**: "sacrifice / exile / destroy ~ (or it, or this creature) at the beginning of the
+  next end step". It is refused after a card target, where "it" is that card, as D1156 refuses.
+- **A target**: "sacrifice / exile / destroy target … at the beginning of the next end step". Through
+  the pronoun borrow it also reads "Sacrifice it …" after an earlier target (D530).
+
+A token fix found alongside: "with trample, lifelink, and haste" was split into "trample",
+"lifelink" and "and haste". The Oxford comma is now part of the separator. Three lines in the list
+have the shape.
+
+Read whole now: Deathknell Kami, Krovikan Elementalist, Slave of Bolas and Hungry for More. Not
+read: the rest of the 89, which fail on other clauses (Chimeric Coils' "becomes an X/X", Dark Maze's
+defender line, Fatal Frenzy's "+X/+0, where X is its power").
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "Sacrifice it" with no target sacrifices the source at the next end step, not before.
+- After a target, "Sacrifice it" sacrifices the target and leaves the source.
+- The token has trample, lifelink and haste, and is gone after the next end step.
+
+Faults injected by hand: 3, all caught.
+- The source exiled instead of sacrificed.
+- No target reader: the card is then unread.
+- The old keyword split.
+
+Coverage: 15,885 of 31,900 cards (+19 over D1165's 15,866), 38,100 of 59,888 lines (+22). The difference also counts the D7xx session's D821 and D822, merged in after D1165 was measured.
