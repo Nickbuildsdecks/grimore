@@ -35630,6 +35630,51 @@ describe('"Artifacts you control have hexproof", "Commander creatures you contro
   });
 });
 
+describe('populate (D1151)', () => {
+  const RALLY = { name: 'Test Rally', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Create a 1/1 green Saproling creature token, then populate.' };
+  const ECHO = { name: 'Test Echo', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Populate.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [RALLY, ECHO, BEAR];
+  const deck = customDeck({
+    id: 'd1151', name: 'Populate', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1151', 1: 'd1151' }, deckSpecs: { d1151: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: (s.pendingDecision.candidates ?? []).slice(0, 1) } as Action)
+        : drain(passBoth(s), 30);
+    }
+    return s;
+  };
+  const named = (s: GameState, name: string) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [RALLY, ECHO]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the token made first is there to be copied: two Saprolings, both tokens', () => {
+    let s = table(['Test Rally']);
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rally') } as Action));
+    const saps = named(s, 'Saproling');
+    expect(saps).toHaveLength(2);
+    for (const id of saps) expect(s.instances[id]!.isToken).toBe(true);
+  });
+
+  it('a nontoken creature is not copied, so with no token nothing happens', () => {
+    let s = table(['Test Echo'], ['Test Bear']);
+    const before = ids(s, 0, 'battlefield').length;
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Echo') } as Action));
+    expect(ids(s, 0, 'battlefield').length).toBe(before);
+    expect(named(s, 'Test Bear')).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

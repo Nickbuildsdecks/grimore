@@ -16019,6 +16019,27 @@ function selfEffect(
     };
   }
 
+  /*
+    Populate (D1151, CR 701.36a): "Choose a creature token you control, then create a token that's a
+    copy of that creature token." Nothing happens with none. The copy is of the token's own
+    definition — its copiable values — so counters, damage and effects on it are not copied.
+  */
+  if (/^populate$/i.test(text)) {
+    return {
+      decisions: [{
+        who: 'controller', from: 'battlefield', prompt: 'Populate: choose a creature token you control', min: 1, max: 1,
+        filter: (state, id, chooser) => {
+          const inst = state.instances[id];
+          return inst !== undefined && inst.isToken && inst.zoneSeat === chooser && characteristicsOf(state, inst).isCreature;
+        },
+      }],
+      effect: (c) => {
+        const chosen = chosenCards(c)[0];
+        return chosen === undefined ? c.state : copyAsToken(c.state, c.controller, chosen);
+      },
+    };
+  }
+
   // Amass (D1150, CR 701.47a): see `amass`. "Amass Orcs 2", "amass Zombies 3", and the older "Amass 2".
   const amassed = /^amass(?: ([A-Z][a-z]+))? (\d+|one|two|three|four|five)$/.exec(text.replace(/^Amass/, 'amass'));
   if (amassed !== null) {
