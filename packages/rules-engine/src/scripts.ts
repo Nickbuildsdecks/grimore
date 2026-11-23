@@ -15980,6 +15980,26 @@ function selfEffect(
     };
   }
 
+  // Connive's second half on a target (D1141): the counter goes on the target, if it is still there.
+  if (text.startsWith(`${CONNIVE}@`)) {
+    const spec = targetSpecFrom(text.slice(CONNIVE.length + 1), true);
+    if (spec === null) return null;
+    return {
+      targets: [spec],
+      decisions: [{ who: 'controller', from: 'hand', prompt: 'Discard a card (connive)', min: 1, max: 1 }],
+      effect: (c) => {
+        const discarded = chosenCards(c);
+        let next = moveToGraveyard(c.state, discarded);
+        const nonland = discarded.some((id) => {
+          const inst = c.state.instances[id];
+          return inst !== undefined && !hasType(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), 'land');
+        });
+        const target = c.targets[0];
+        if (nonland && target?.kind === 'card' && next.instances[target.id]?.zone === 'battlefield') next = addCounters(next, target.id, '+1/+1', 1);
+        return next;
+      },
+    };
+  }
   // Connive's second half (D971); see `conniveClauses`. The creature is the event's for "it".
   if (text === CONNIVE || text === `${CONNIVE}:self`) {
     const named = text === CONNIVE ? undefined : name;
@@ -29644,7 +29664,11 @@ function tokenAbilityRider(clauses: readonly string[], name: string): ReadEffect
  */
 const CONNIVE = '\u000fconnive';
 function conniveClauses(clause: string, name: string): readonly string[] | null {
-  const read = new RegExp(`^(?:(${selfRef(name)})|it|he|she) connives$`, 'i').exec(clause.trim().replace(/\.$/, ''));
+  const text = clause.trim().replace(/\.$/, '');
+  // A target's (D1141): "target creature you control connives" (Mob Lookout, Villainous Hideout).
+  const aimed = /^[Tt](arget (?:[a-z]+ )?(?:creature|[A-Z][a-z]+) you control) connives$/.exec(text);
+  if (aimed !== null) return ['draw a card', `${CONNIVE}@t${aimed[1]!}`];
+  const read = new RegExp(`^(?:(${selfRef(name)})|it|he|she) connives$`, 'i').exec(text);
   if (read === null) return null;
   return ['draw a card', `${CONNIVE}${read[1] === undefined ? '' : ':self'}`];
 }

@@ -34672,6 +34672,53 @@ describe("untap artifacts or creatures during each other player's untap step (D7
   });
 });
 
+describe('target creature you control connives (D1141)', () => {
+  const LOOKOUT = { name: 'Test Lookout', type_line: 'Creature — Human Rogue', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When this creature enters, target creature you control connives.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [LOOKOUT, BEAR];
+  const deck = customDeck({
+    id: 'd1141', name: 'Connive', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1141', 1: 'd1141' }, deckSpecs: { d1141: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const counters = (s: GameState, id: string) => s.instances[id]!.counters['+1/+1'] ?? 0;
+  const enter = (discard: string) => {
+    let s = table(['Test Lookout', discard], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Lookout') } as Action));
+    expect(s.pendingChoice).not.toBeNull();
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }] } as Action);
+    for (let i = 0; i < 12 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return { s, bear };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LOOKOUT as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws, then a nonland discard puts the counter on the target', () => {
+    let { s, bear } = enter('Test Bear');
+    const handBefore = s.zones[`0:hand`]?.length ?? 0;
+    expect(handBefore).toBe(3); // the discard card, the draw step's card, and the card connive drew
+    expect(s.pendingDecision).not.toBeNull();
+    const pick = (s.pendingDecision!.candidates ?? []).find((id) => nameOf(s, id) === 'Test Bear')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 30);
+    expect(s.zones[`0:hand`]?.length ?? 0).toBe(handBefore - 1);
+    expect(counters(s, bear)).toBe(1);
+    expect(counters(s, find(s, 0, 'battlefield', 'Test Lookout'))).toBe(0);
+  });
+
+  it('a land discarded puts no counter on it', () => {
+    let { s, bear } = enter('Island');
+    const pick = (s.pendingDecision!.candidates ?? []).find((id) => nameOf(s, id) === 'Island')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 30);
+    expect(counters(s, bear)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
