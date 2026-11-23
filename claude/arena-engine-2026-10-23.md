@@ -41634,3 +41634,28 @@ amount.
 
 - engine tests: 6180, all passing (on 5c4bad1)
 - Coverage: 15,806 to 15,810 of 31,900 cards with every line read, and 37,966 to 37,970 of 59,888 lines, against 5c4bad1.
+
+## D817 — The hand-written Dark Confidant puts the card into the hand rather than drawing it
+
+D816 noted it: the hand-written `DARK_CONFIDANT` script, which `scriptForCard` prefers over the
+compiled reading, used `draw`. The card puts the revealed card into its owner's hand, which is
+not a draw (CR 121.1). As a draw:
+- an opponent's "whenever an opponent draws a card" (Orcish Bowmasters, Notion Thief) saw it;
+- it counted toward the turn's draws, which decides "the first card you draw each turn" and
+  miracle;
+- with an empty library it was a draw from an empty library.
+
+The effect is now the compiled one's move: the top card of the library, `moveToHand`, then life
+equal to its printed mana value. Ashen Rite, the built-in deck that runs two Confidants, plays it
+correctly now. No new reading, so no coverage change.
+
+**Tests.** 1 engine test beside the original "Dark Confidant charges you for the card it just
+drew", which passes unchanged: in Ashen Rite, the Confidant's upkeep puts the library's top card
+into the hand and leaves the turn's draw count where it was.
+
+Faults injected by script: 2 of 2 caught (a draw in place of the move, the bottom card in place of
+the top). The first run missed both because the new test's name did not contain the filter; it
+was renamed and both are caught.
+
+- engine tests: 6181, all passing (on 963849a)
+- Coverage: unchanged, 15,810 of 31,900 cards and 37,970 of 59,888 lines, against 963849a.

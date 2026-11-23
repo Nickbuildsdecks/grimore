@@ -6898,6 +6898,20 @@ describe('the painlands, and a cost that is not mana', () => {
     const cost = s.cardDefs[s.instances[drawn]!.defKey]?.cmc ?? 0;
     expect(life(s, 0)).toBe(20 - cost);
   });
+
+  it('Dark Confidant puts the card into the hand, not drawn: the top card, and no draw counted (D817)', () => {
+    let s = arena({
+      decks: { 0: 'ashen-rite', 1: 'tidal-mind' },
+      battlefield: { 0: ['Dark Confidant'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(nextTurn(s), 'upkeep');
+    const top = ids(s, 0, 'library')[0]!;
+    const drawn = s.cardsDrawnThisTurn['0'] ?? 0;
+    s = drain(passBoth(s));
+    expect(s.instances[top]!.zone).toBe('hand');
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(drawn);
+  });
 });
 
 describe('why a card cannot be played', () => {
