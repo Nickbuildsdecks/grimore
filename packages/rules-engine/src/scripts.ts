@@ -13960,13 +13960,15 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     hand-written ability skips them, and the draw is immediate rather than owed because a draw for
     somebody who is not the controller cannot be put on `drawsOwed` for them to take later.
   */
-  const roundTheTable = /^each player draws ([\w]+) cards?$/i.exec(text);
+  // And "Each opponent draws a card" (D808): the same, the controller left out.
+  const roundTheTable = /^each (player|opponent) draws ([\w]+) cards?$/i.exec(text);
   if (roundTheTable !== null) {
-    const n = countFrom(roundTheTable[1]!);
+    const n = countFrom(roundTheTable[2]!);
+    const others = roundTheTable[1]!.toLowerCase() === 'opponent';
     if (n !== null) {
       return {
         effect: (c) => c.state.seats.reduce(
-          (state, seat) => (seat.eliminated ? state : draw(state, seat.index, n)),
+          (state, seat) => (seat.eliminated || (others && seat.index === c.controller) ? state : draw(state, seat.index, n)),
           c.state,
         ),
       };
@@ -28046,6 +28048,10 @@ function readEffect(
       };
     }
   }
+  // "Each other player discards a card" (D808): every player but the controller, which is each opponent.
+  if (/^each other player (draws|discards|loses|gains|mills|sacrifices|creates|reveals)\b/i.test(clause.trim())) {
+    return readEffect(clause.trim().replace(/^each other player/i, 'each opponent'), name, where);
+  }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
     const many = extraDraw[2]!.toLowerCase() === 'an' ? 'a card' : `${extraDraw[2]!.toLowerCase()} cards`;
@@ -33302,6 +33308,13 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // Rhythm of the Wild (D711): see `CardScript.grantsRiot`.
   if (/^nontoken creatures you control have riot\.?$/i.test(plain(line).trim())) return { grantsRiot: true };
   // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
+  // "Untap this artifact during each other player's untap step" (D808): the permanent itself.
+  // The reader is not told the card's name, so the subject is anything that is not "all …" or a
+  // target: the card's name, "this artifact", "this creature".
+  const selfUntap = /^untap (.+?) during each other player's untap step\.?$/i.exec(plain(line).trim());
+  if (selfUntap !== null && !/^all\b|\btarget\b|\beach\b/i.test(selfUntap[1]!)) {
+    return { untapsDuringOthersUntap: 'self' };
+  }
   const othersUntap = /^untap all (permanents|artifacts|creatures) you control during each other player's untap step\.?$/i.exec(plain(line).trim());
   if (othersUntap !== null) {
     const kind = othersUntap[1]!.toLowerCase();

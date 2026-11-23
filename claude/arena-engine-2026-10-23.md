@@ -41129,3 +41129,26 @@ Faults injected by hand: 2.
 
 Coverage: 15,660 of 31,900 cards (+27 over D1151's 15,633), 37,739 of 59,888 lines (+31). The difference also counts the D7xx
 session's D807, merged in after D1151 was measured; D1152's own share is the 13 coin-flip cards.
+## D808 — Untapping itself in others' untap steps, "each other player", "each opponent draws"
+
+Most-played order: Bender's Waterskin (rank 492), Syphon Mind's first sentence (1043), Endbringer's
+untap (2413), Deadpool's draw, and the rest of the "each other player" printings.
+
+- **"Untap this artifact during each other player's untap step"**: D797's `untapsDuringOthersUntap`
+  with `'self'`, the permanent alone. The line reader is not told the card's name, so the subject
+  is anything that is not "all …", "each …" or a target.
+- **"Each other player <verb>s …"** reads as "each opponent", which it is: every player but the
+  controller.
+- **"Each opponent draws a card"** was not read at all; it is "each player draws" with the controller
+  left out.
+
+**Tests.** 3 engine tests: the cards read; in the opponent's untap step the Waterskin untaps and our
+other artifact stays tapped; "each other player discards" takes a card from the opponent and none
+from us beyond the spell, and "each opponent draws" gives the opponent a card and us none.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,109, all passing (on e86861a)
+
+Coverage: 15,568 to 15,573 of 31,900 cards with every line read, and 37,620 to 37,628 of 59,888
+lines, against e86861a.
