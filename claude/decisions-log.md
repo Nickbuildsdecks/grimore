@@ -57768,3 +57768,30 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,261 to 15,263 of 31,900 cards with every line read, and 37,220 to 37,223 of 59,888
 lines, against beb147f.
+
+## D1139 — mana equal to a power
+
+D713's "an amount of {G} equal to your devotion to green" was the mana-line parser's only "amount
+equal to". It now also reads the creature's own size and the team's largest:
+- "an amount of {G} equal to ~'s power" (Viridian Joiner, Marwyn), "this creature's power",
+  "its power", "~'s toughness";
+- "the greatest power among creatures you control" (Bighorner Rancher).
+
+Each is a `producesTimes` count on the mana ability (D662), read live as the mana is made, so a
+pumped creature makes more. It is still a mana ability: no stack, no window (CR 605.3a).
+
+Read whole now (6): Bighorner Rancher, Cradle Clearcutter, Marwyn, the Nurturer, Rainveil
+Rejuvenator, Topiary Lecturer, Viridian Joiner. Not read: the sacrificed creature's or artifact's
+mana value, which needs the cost's facts inside a mana ability.
+
+**Tests.** 3 engine tests:
+- Both read whole.
+- A 1/1 pumped to 3/3 makes {G}{G}{G}.
+- "The greatest power among creatures you control" makes 4 beside a 4/4.
+
+Faults injected by hand: 2.
+- A different size read (caught).
+- The greatest fixed at 1 (caught).
+
+Coverage: 15,347 of 31,900 cards (+20 over D1138's 15,327), 37,316 of 59,888 lines (+26). The difference also counts the D7xx
+session's D791 to D793, merged in since D1138 was measured; D1139's own share is the 6 cards above.
