@@ -36754,6 +36754,95 @@ describe('"whenever an opponent discards a creature / land / noncreature, nonlan
   });
 });
 
+describe('"prevent all [combat] damage that would be dealt to attacking creatures you control", Dolmen Gate and Iroas (D821)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Valor', 'Enchantment', 'Prevent all damage that would be dealt to attacking creatures you control.'),
+    card('Test Gate', 'Artifact', 'Prevent all combat damage that would be dealt to attacking creatures you control.'),
+    card('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.', { colors: ['R'] }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    card('Test Ogre', 'Creature — Ogre', '', { colors: ['R'], power: '3', toughness: '3' }),
+    card('Test Haven', 'Enchantment', 'Prevent all combat damage that would be dealt to creatures you control.'),
+  ];
+  const deck = customDeck({
+    id: 'd821', name: 'Attackers shielded',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (shield: string) => advanceTo(arena({
+    decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+    hands: { 0: ['Test Bolt'] }, battlefield: { 0: [shield, 'Test Bear'], 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bolt = (s: GameState, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: target }],
+  })));
+  /** The Bear attacks; the Ogre blocks it if `blocked`. */
+  const attack = (s0: GameState, bear: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    return apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+  };
+  const blockAndFinish = (s0: GameState, bear: string) => {
+    let s = advanceTo(s0, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Ogre'), attacker: bear }] });
+    return drain(advanceTo(s, 'postcombat-main'), 20);
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('all damage: a Bolt kills the Bear at home, and not while it attacks; blocked by an Ogre it lives', () => {
+    const home = table('Test Valor');
+    const homeBear = find(home, 0, 'battlefield', 'Test Bear');
+    expect(bolt(home, homeBear).instances[homeBear]!.zone).toBe('graveyard');
+    let s = table('Test Valor');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = bolt(attack(s, bear), bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    s = blockAndFinish(s, bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it('combat damage only: blocked by an Ogre it lives, and a Bolt while it attacks still kills it', () => {
+    let s = table('Test Gate');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = blockAndFinish(attack(s, bear), bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    let t = table('Test Gate');
+    const bear2 = find(t, 0, 'battlefield', 'Test Bear');
+    t = bolt(attack(t, bear2), bear2);
+    expect(t.instances[bear2]!.zone).toBe('graveyard');
+  });
+
+  it('and an attacker\'s damage to a blocker is combat damage too: a combat-only shield saves the blocker', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+      battlefield: { 0: ['Test Ogre'], 1: ['Test Haven', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: ogre, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bear, attacker: ogre }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it("the opponent's attacker is not shielded by our Gate", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+      battlefield: { 0: ['Test Gate', 'Test Ogre'], 1: ['Test Bear'] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: find(s, 0, 'battlefield', 'Test Ogre'), attacker: bear }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

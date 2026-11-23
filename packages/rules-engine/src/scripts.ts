@@ -33521,10 +33521,19 @@ function preventionStaticFromLine(line: string, name: string): Partial<CardScrip
     creatures: 'all-creatures',
   };
   const players = /^you and (.+)$/i.exec(subject);
-  const scope = scopes[(players?.[1] ?? subject).toLowerCase()];
-  if (scope === undefined) return null;
+  // "Attacking creatures you control" (D821): Dolmen Gate, Iroas — the D941 filter on the scope.
+  const attacking = /^attacking (creatures you control)$/i.exec(subject);
+  const scope = scopes[(players?.[1] ?? attacking?.[1] ?? subject).toLowerCase()];
+  if (scope === undefined || (attacking !== null && players !== null)) return null;
   return {
-    statics: [{ scope, effect: { ...flags, ...(players === null ? {} : { preventsDamageToPlayers: 'controller' as const }) } }],
+    statics: [{
+      scope,
+      effect: {
+        ...flags,
+        ...(players === null ? {} : { preventsDamageToPlayers: 'controller' as const }),
+        ...(attacking === null ? {} : { onlyAttacking: true as const }),
+      },
+    }],
   };
 }
 
