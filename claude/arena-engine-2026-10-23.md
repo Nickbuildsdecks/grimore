@@ -40672,3 +40672,28 @@ Faults injected by hand: 3.
 - A bearer that left still counted (caught).
 
 Coverage: 15,488 of 31,900 cards (+25 over D1143's 15,463), 37,503 of 59,888 lines (+31).
+## D800 — "You may cast <kind> spells as though they had flash"
+
+Most-played order: Valley Floodcaller's first line (rank 765), Leyline of Anticipation (767), High
+Fae Trickster (833), Sigarda's Aid's (844), Liberator's (1260), Shimmer Myr (1347), Vedalken Orrery
+(1480), Gandalf the White's (2713), Yeva (3280), Vivien's static (4045) and the rest: 23 legal cards.
+
+`CardScript.flashFor` is which of its controller's spells the permanent lets them cast at instant
+speed, as a test of the spell's characteristics; `flashGranted` asks every live one the seat
+controls, where a cast is offered and where it is made, beside the keyword and D727's per-card
+permission. The kinds are a list ("Aura and Equipment spells", "colorless spells and artifact
+spells"), each an optional colour, "legendary", "colorless" or "noncreature" before a card type or a
+capitalised subtype; any other word refuses the line ("spells from among cards you own" stays
+unread). An opponent's Leyline grants nothing to us.
+
+**Tests.** 4 engine tests: the cards read; with Leyline of Anticipation a sorcery and a creature are
+offered and accepted on the opponent's turn, and without it the sorcery is refused; the opponent's
+Leyline lets us cast nothing; "noncreature" allows the sorcery and not the creature, and "green
+creature" allows the green creature and neither the red one nor the sorcery.
+
+Faults injected by script: 5 of 5 caught.
+
+    engine tests: 6,071, all passing (on 86306d0)
+
+Coverage: 15,466 to 15,478 of 31,900 cards with every line read, and 37,477 to 37,500 of 59,888
+lines, against 86306d0.

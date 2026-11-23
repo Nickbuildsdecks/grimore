@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -411,7 +411,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     characteristics.typeLine.types.some((t) => t.toLowerCase() === 'instant') ||
     characteristics.keywords.has('flash') ||
     // "As though it had flash" (D727), which is a permission and not the keyword.
-    script?.castAsThoughFlash !== undefined;
+    script?.castAsThoughFlash !== undefined ||
+    // And a permanent of the caster's that grants it (D800): Leyline of Anticipation.
+    flashGranted(state, action.by, characteristics);
   /*
     An offered cast ignores the timing, because the thing offering it said when (CR 702.85a).
 

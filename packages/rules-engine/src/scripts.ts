@@ -33102,6 +33102,36 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const n = /^(an|one)$/i.test(everyone[1]!) ? 1 : countFrom(everyone[1]!);
     return n === null || n < 1 ? null : { additionalLandsEach: n };
   }
+  /*
+    "You may cast spells as though they had flash" (D800): see `CardScript.flashFor`. The kinds are a
+    list joined by "and" or "or", each an optional colour, "legendary", "colorless" or "noncreature"
+    before a card type or a capitalised subtype ("Aura and Equipment spells"); every word must read.
+  */
+  const flash = /^you may cast (.*?)spells as though they had flash$/i.exec(plain(line).trim().replace(/\.$/, ''));
+  if (flash !== null) {
+    const COLOURS: Readonly<Record<string, string>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+    const parts = flash[1]!.trim() === '' ? [''] : flash[1]!.trim().split(/\s+(?:and|or)\s+|,\s*(?:and\s+|or\s+)?/i);
+    type Spell = Parameters<NonNullable<CardScript['flashFor']>>[0];
+    const tests: ((spell: Spell) => boolean)[] = [];
+    let unknown = false;
+    for (const part of parts) {
+      // "colorless spells and artifact spells": the repeated noun is not a constraint.
+      const words = part.trim() === '' ? [] : part.trim().split(/\s+/).filter((word) => !/^spells?$/i.test(word));
+      const checks: ((spell: Spell) => boolean)[] = [];
+      for (const word of words) {
+        const lower = word.toLowerCase();
+        if (COLOURS[lower] !== undefined) checks.push((spell) => spell.colors.includes(COLOURS[lower]!));
+        else if (lower === 'colorless') checks.push((spell) => spell.colors.length === 0);
+        else if (lower === 'legendary') checks.push((spell) => spell.typeLine.supertypes.some((t) => t.toLowerCase() === 'legendary'));
+        else if (lower === 'noncreature') checks.push((spell) => !spell.typeLine.types.some((t) => t.toLowerCase() === 'creature'));
+        else if (SEARCHABLE_TYPES.includes(lower)) checks.push((spell) => spell.typeLine.types.some((t) => t.toLowerCase() === lower));
+        else if (/^[A-Z][a-z'-]+$/.test(word)) checks.push((spell) => spell.typeLine.subtypes.some((t) => t.toLowerCase() === lower));
+        else unknown = true;
+      }
+      tests.push((spell) => checks.every((check) => check(spell)));
+    }
+    if (!unknown && tests.length > 0) return { flashFor: (spell) => tests.some((test) => test(spell)) };
+  }
   // Casting limits (D788): see `CardScript.castLimits`.
   const LIMITS: readonly (readonly [RegExp, readonly CastLimit[]])[] = [
     [/^each player can't cast more than one spell each turn$/i, ['each-one-spell']],

@@ -849,6 +849,14 @@ function staticsOf(state: GameState, seat: SeatIndex): readonly CardScript[] {
 }
 
 /**
+ * Whether a permanent this seat controls lets it cast this spell as though it had flash (D800):
+ * Leyline of Anticipation and its narrower kin. See `CardScript.flashFor`.
+ */
+export function flashGranted(state: GameState, seat: SeatIndex, spell: Parameters<NonNullable<CardScript['flashFor']>>[0]): boolean {
+  return staticsOf(state, seat).some((script) => script.flashFor?.(spell) === true);
+}
+
+/**
  * How many lands this seat may play this turn (CR 305.2): one, plus what an effect handed it this
  * turn (`extraLands`), plus every "you may play an additional land on each of your turns" it
  * controls (D648) — read live, so an Azusa that dies takes her two drops with her.
@@ -1931,7 +1939,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
 
     const instantSpeed = ch.typeLine.types.some((t) => t.toLowerCase() === 'instant') || ch.keywords.has('flash')
       // "As though it had flash" (D727).
-      || scriptForCard(state.cardDefs[inst.defKey])?.castAsThoughFlash !== undefined;
+      || scriptForCard(state.cardDefs[inst.defKey])?.castAsThoughFlash !== undefined
+      // And a permanent that grants it (D800): Leyline of Anticipation.
+      || flashGranted(state, seat, ch);
     // An offered cast ignores the timing, because the ability offering it is what says when: cascade
     // casts its hit mid-resolution, with a spell on the stack underneath. See `castSpell`.
     if (!instantSpeed && !sorcerySpeed && !offered) {

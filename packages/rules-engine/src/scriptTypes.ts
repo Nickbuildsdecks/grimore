@@ -4137,6 +4137,15 @@ export interface CardScript {
    * becomes is sacrificed by an engine-known delayed ability at the next cleanup step.
    */
   readonly castAsThoughFlash?: 'sacrifice-at-cleanup';
+  /**
+   * "You may cast spells as though they had flash" (D800): Leyline of Anticipation, Vedalken Orrery,
+   * and the narrower printings ("noncreature spells", "creature spells", "artifact spells", "Aura and
+   * Equipment spells", "green creature spells", "colorless spells"). Which of its controller's spells
+   * it lets them cast at instant speed, asked of the spell's characteristics where a cast is offered
+   * and where it is made (`flashGranted`), while the permanent is on the battlefield with its
+   * abilities.
+   */
+  readonly flashFor?: (spell: { readonly typeLine: { readonly types: readonly string[]; readonly subtypes: readonly string[]; readonly supertypes: readonly string[] }; readonly colors: readonly string[] }) => boolean;
   readonly overload?: {
     /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
     readonly cost: string;
