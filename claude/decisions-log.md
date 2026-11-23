@@ -58275,3 +58275,32 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,483 to 15,486 of 31,900 cards with every line read, and 37,505 to 37,508 of 59,888
 lines, against b4f8452.
+
+## D803 — Danitha's list, Drannith Magistrate, Ranger-Captain of Eos
+
+Most-played order: Drannith Magistrate (rank 778), Danitha Capashen, Paragon (808), Ranger-Captain of
+Eos (815).
+
+- **"Aura and Equipment spells you cast cost {1} less to cast"**: the cost modifier reads a list of
+  spell kinds joined by "and", "or" and commas, any of which it applies to (the kinds `spellKindTest`
+  already reads).
+- **"Your opponents can't cast spells from anywhere other than their hands"**: a casting limit (D788),
+  `opponents-hand-only`, told whether the cast comes from the hand where it is offered and where it
+  is made. Flashback, a commander from the command zone and a card played from exile are all refused
+  for the opponents; its controller is free.
+- **"Your opponents can't cast noncreature spells this turn"**: `GameState.noncreatureBannedTurn`,
+  the turn number, beside D791's `castBannedTurn`.
+
+**Tests.** 4 engine tests: the cards read; Danitha takes {1} off an Aura and an Equipment and nothing
+off a plain artifact; under Drannith the opponent's flashback is refused and their cast from hand is
+not, and its controller's flashback is accepted; after Ranger-Captain's sacrifice in the opponent's
+main phase their instant is refused and their creature accepted, and two turns later the instant is
+accepted.
+
+Faults injected by script: 6 of 6 caught (the same-turn creature cast was added after the first run
+missed a ban that reached creatures).
+
+    engine tests: 6,093, all passing (on cfbb5b0)
+
+Coverage: 15,522 to 15,530 of 31,900 cards with every line read, and 37,554 to 37,564 of 59,888
+lines, against cfbb5b0.

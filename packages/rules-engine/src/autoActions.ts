@@ -426,7 +426,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} can only be cast in your main phase with an empty stack`);
   }
   // A permanent's casting limit (D788), asked where the cast is offered as well.
-  const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered);
+  const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered, inst.zone === 'hand');
   if (prohibited !== null) throw new EngineError('RULE_NOT_APPLICABLE', prohibited);
 
   const cost = parseManaCost(def?.manaCost);

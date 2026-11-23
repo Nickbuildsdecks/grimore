@@ -27887,6 +27887,18 @@ function readEffect(
     ...state,
     castBannedTurn: { ...(state.castBannedTurn ?? {}), ...Object.fromEntries(seats.map((seat) => [String(seat), state.turn])) },
   });
+  // Ranger-Captain of Eos (D803): see `GameState.noncreatureBannedTurn`.
+  if (/^your opponents can't cast noncreature spells this turn$/i.test(clause.trim())) {
+    return {
+      effect: (c) => ({
+        ...c.state,
+        noncreatureBannedTurn: {
+          ...(c.state.noncreatureBannedTurn ?? {}),
+          ...Object.fromEntries(c.state.seats.filter((s) => s.index !== c.controller && !s.eliminated).map((s) => [String(s.index), c.state.turn])),
+        },
+      }),
+    };
+  }
   if (/^your opponents can't cast spells this turn$/i.test(clause.trim())) {
     return { effect: (c) => ban(c.state, c.state.seats.filter((s) => s.index !== c.controller && !s.eliminated).map((s) => s.index)) };
   }
@@ -32899,7 +32911,11 @@ function costModifierFromLine(line: string, name: string): Partial<CardScript> |
   }
   const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
   if (m === null) return null;
-  const first = spellKindTest(m[1]!);
+  // A list of kinds (D803): "Aura and Equipment spells" (Danitha Capashen), "instant and sorcery spells".
+  const listed = m[1]!.trim() === '' ? [] : m[1]!.trim().split(/\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+/);
+  const kinds = listed.length > 1 ? listed.map((part) => spellKindTest(part)) : null;
+  if (kinds !== null && kinds.some((test) => test === null)) return null;
+  const first = kinds !== null ? (card: CardDef) => kinds.some((test) => test!(card)) : spellKindTest(m[1]!);
   const second = m[2] === undefined ? null : spellKindTest(m[2]);
   if (first === null || (m[2] !== undefined && second === null)) return null;
   const whose = m[3] === undefined ? 'everyone' as const : /opponents/i.test(m[3]) ? 'opponents' as const : 'controller' as const;
@@ -33170,6 +33186,7 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     [/^players can cast spells only during their own turns$/i, ['own-turn-only']],
     [/^each opponent can cast spells only any time they could cast a sorcery$/i, ['opponents-sorcery-speed']],
     [/^your opponents can't cast spells during your turn$/i, ['opponents-no-spells-your-turn']],
+    [/^your opponents can't cast spells from anywhere other than their hands$/i, ['opponents-hand-only']],
     [/^during your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments$/i,
       ['opponents-no-spells-your-turn', 'opponents-no-abilities-your-turn']],
   ];

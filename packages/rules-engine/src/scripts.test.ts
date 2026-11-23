@@ -35254,6 +35254,68 @@ describe('attack taxes on planeswalkers too, and Sphere of Safety\'s X (D802)', 
   });
 });
 
+describe('Danitha\'s list, Drannith Magistrate, Ranger-Captain of Eos (D803)', () => {
+  const DANITHA = { name: 'Test Danitha', type_line: 'Legendary Creature — Human Knight', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Aura and Equipment spells you cast cost {1} less to cast.' };
+  const DRANNITH = { name: 'Test Magistrate', type_line: 'Creature — Human Wizard', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '3', oracle_text: "Your opponents can't cast spells from anywhere other than their hands." };
+  const RANGER = { name: 'Test Ranger', type_line: 'Creature — Human Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '3', oracle_text: "Sacrifice Test Ranger: Your opponents can't cast noncreature spells this turn." };
+  const AURA = { name: 'Test Aura', type_line: 'Enchantment — Aura', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.' };
+  const GEAR = { name: 'Test Gear', type_line: 'Artifact — Equipment', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: 'Equipped creature gets +1/+0.\nEquip {1}' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const RECALL = { name: 'Test Recall', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Draw a card.\nFlashback {0}' };
+  const PUP = { name: 'Test Pup', type_line: 'Creature — Dog', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd803', name: 'Danitha',
+    entries: [DANITHA, DRANNITH, RANGER, AURA, GEAR, ROCK, RECALL, PUP].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Plains', count: 44 }]),
+    data: [DANITHA, DRANNITH, RANGER, AURA, GEAR, ROCK, RECALL, PUP] as never[],
+  });
+  const table = (mine: string[], hands: Record<number, string[]>, theirs: string[] = [], graveyard: Record<number, string[]> = {}) => advanceTo(arena({
+    decks: { 0: 'd803', 1: 'd803' }, deckSpecs: { d803: deck.deck },
+    hands, battlefield: { 0: mine, 1: theirs }, graveyard, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const defOf = (s: GameState, name: string) => s.cardDefs[s.instances[find(s, 0, 'hand', name)]!.defKey]!;
+
+  it('reads', () => {
+    for (const card of [DANITHA, DRANNITH, RANGER]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Danitha: an Aura and an Equipment cost {1} less, a plain artifact does not', () => {
+    const s = table(['Test Danitha'], { 0: ['Test Aura', 'Test Gear', 'Test Rock'] });
+    expect(costChangeFor(s, 0 as SeatIndex, defOf(s, 'Test Aura')).generic).toBe(-1);
+    expect(costChangeFor(s, 0 as SeatIndex, defOf(s, 'Test Gear')).generic).toBe(-1);
+    expect(costChangeFor(s, 0 as SeatIndex, defOf(s, 'Test Rock')).generic).toBe(0);
+  });
+
+  it("Drannith Magistrate: the opponent's flashback from the graveyard is refused, a cast from hand is not; its controller is free", () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd803', 1: 'd803' }, deckSpecs: { d803: deck.deck },
+      hands: { 1: ['Test Recall'] }, battlefield: { 0: ['Test Magistrate'] }, graveyard: { 0: ['Test Recall'], 1: ['Test Recall'] },
+      turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'graveyard', 'Test Recall'), flashback: true } as Action)).toMatch(/only from your hand/);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Recall') })).toBeNull();
+    const ours = apply(s, { type: 'auto:pass', by: 1 });
+    expect(refusal(ours, { type: 'auto:cast', by: 0, card: find(ours, 0, 'graveyard', 'Test Recall'), flashback: true } as Action)).toBeNull();
+  });
+
+  it('Ranger-Captain of Eos: the opponent casts no noncreature spell this turn, creatures still, and again next turn', () => {
+    // Activated in the opponent's own main phase, so their creature is castable once it resolves.
+    let s = advanceTo(arena({
+      decks: { 0: 'd803', 1: 'd803' }, deckSpecs: { d803: deck.deck },
+      hands: { 1: ['Test Recall', 'Test Pup'] }, battlefield: { 0: ['Test Ranger'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Ranger'), abilityIndex: 0 })));
+    expect(s.step).toBe('precombat-main');
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Recall') })).toMatch(/noncreature spells this turn/);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Pup') })).toBeNull();
+    const later = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(later.activeSeat).toBe(1);
+    expect(refusal(later, { type: 'auto:cast', by: 1, card: find(later, 1, 'hand', 'Test Recall') })).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
