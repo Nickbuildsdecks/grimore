@@ -59498,3 +59498,61 @@ Faults injected by hand: 3, all caught.
 - Eliminated seats counted.
 
 Coverage: 15,866 of 31,900 cards (+8 over D1164's 15,858), 38,078 of 59,888 lines (+18). The difference also counts the D7xx session's D820, merged in after D1164 was measured.
+## D821 — Prevention for attacking creatures you control (Dolmen Gate, Iroas), and combat damage between creatures counted as combat damage
+
+Most-played order: Dolmen Gate (rank 1348) and Iroas, God of Victory (rank 1446), the corpus's two
+printings of "Prevent all [combat] damage that would be dealt to attacking creatures you
+control".
+
+**Reader.** D752's `preventionStaticFromLine` takes "attacking creatures you control" as the
+`controller-creatures` scope with D941's `onlyAttacking` filter, read live. A creature is shielded
+exactly while it attacks. "You and attacking creatures …" is not printed and is refused.
+
+**An engine bug, found by Dolmen Gate's test.** `dealDamage` decides "is this combat damage?" for
+the combat-only prevention flag from `combatFrom`. `combat.ts` passes `combatFrom` only for damage
+to a player or a planeswalker, because that is what makes commander damage count. So damage between
+an attacker and its blockers was never combat damage to the prevention check. A combat-only
+shield on creatures ("Prevent all combat damage that would be dealt to creatures you control",
+D752's own family) let a blocker's damage straight through, and an attacker's damage to a blocker
+too.
+
+The fix: a separate `combat: true` option on `dealDamage`, set by the two creature-to-creature
+calls in combat (attacker to blocker, blocker to attacker) and read beside `combatFrom` by the
+prevention check. `combatFrom` keeps its one meaning, so commander damage is unchanged.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- under the all-damage shield, a Bolt kills our Bear at home but not while it attacks, and blocked
+  by a 3/3 it lives;
+- under Dolmen Gate (combat only), blocked by a 3/3 it lives, but a Bolt while it attacks still
+  kills it;
+- the opponent's attacker is not shielded by our Gate;
+- under a combat-only "creatures you control" shield, the opponent's blocker survives our 3/3
+  attacker. This one is the bug's other half.
+
+Faults injected by script: 5 of 5 caught. They cover the attacking filter dropped, the attacking
+subject unread, the `combat` option ignored by the prevention check, and each of the two combat
+calls left unmarked.
+
+- engine tests: 6197, all passing (on a7c7c64)
+- Coverage: 15,816 to 15,818 of 31,900 cards with every line read, and 37,985 to 37,987 of 59,888 lines, against a7c7c64.
+
+## D822 — "For each land you control, create a Treasure token": Brass's Bounty
+
+Most-played order: Brass's Bounty (rank 1364). "Create a Treasure token for each land you control"
+already read. The card prints the count first.
+
+**Reader.** A `clausesOf` rewrite: a sentence "For each <thing>, create <tokens>" becomes "Create
+<tokens> for each <thing>", where the counted-token reader looks for the count. "For each of …"
+(target lists) is excluded, and whether <thing> is countable is still the counted reader's
+decision. So the rest of the corpus's 37 printings stay unread for their own reasons: copies of
+"that creature", "destroyed this way", dice and coin results, and second sentences about "those
+tokens".
+
+**Tests.** 2 engine tests: the card reads; with three lands of ours and two of theirs it makes
+three Treasures, all ours.
+
+Faults injected by script: 2 of 2 caught (the rewrite off, and the count dropped from it).
+
+- engine tests: 6199, all passing (on 64e9800)
+- Coverage: 15,818 to 15,821 of 31,900 cards with every line read, and 37,987 to 37,991 of 59,888 lines, against 64e9800.

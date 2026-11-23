@@ -37185,6 +37185,118 @@ describe('"for each opponent" as a count, and "For each opponent, …" done once
   });
 });
 
+describe('"prevent all [combat] damage that would be dealt to attacking creatures you control", Dolmen Gate and Iroas (D821)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Valor', 'Enchantment', 'Prevent all damage that would be dealt to attacking creatures you control.'),
+    card('Test Gate', 'Artifact', 'Prevent all combat damage that would be dealt to attacking creatures you control.'),
+    card('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.', { colors: ['R'] }),
+    card('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    card('Test Ogre', 'Creature — Ogre', '', { colors: ['R'], power: '3', toughness: '3' }),
+    card('Test Haven', 'Enchantment', 'Prevent all combat damage that would be dealt to creatures you control.'),
+  ];
+  const deck = customDeck({
+    id: 'd821', name: 'Attackers shielded',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (shield: string) => advanceTo(arena({
+    decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+    hands: { 0: ['Test Bolt'] }, battlefield: { 0: [shield, 'Test Bear'], 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const bolt = (s: GameState, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: target }],
+  })));
+  /** The Bear attacks; the Ogre blocks it if `blocked`. */
+  const attack = (s0: GameState, bear: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    return apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+  };
+  const blockAndFinish = (s0: GameState, bear: string) => {
+    let s = advanceTo(s0, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Ogre'), attacker: bear }] });
+    return drain(advanceTo(s, 'postcombat-main'), 20);
+  };
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('all damage: a Bolt kills the Bear at home, and not while it attacks; blocked by an Ogre it lives', () => {
+    const home = table('Test Valor');
+    const homeBear = find(home, 0, 'battlefield', 'Test Bear');
+    expect(bolt(home, homeBear).instances[homeBear]!.zone).toBe('graveyard');
+    let s = table('Test Valor');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = bolt(attack(s, bear), bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    s = blockAndFinish(s, bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it('combat damage only: blocked by an Ogre it lives, and a Bolt while it attacks still kills it', () => {
+    let s = table('Test Gate');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = blockAndFinish(attack(s, bear), bear);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    let t = table('Test Gate');
+    const bear2 = find(t, 0, 'battlefield', 'Test Bear');
+    t = bolt(attack(t, bear2), bear2);
+    expect(t.instances[bear2]!.zone).toBe('graveyard');
+  });
+
+  it('and an attacker\'s damage to a blocker is combat damage too: a combat-only shield saves the blocker', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+      battlefield: { 0: ['Test Ogre'], 1: ['Test Haven', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: ogre, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bear, attacker: ogre }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+  });
+
+  it("the opponent's attacker is not shielded by our Gate", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd821', 1: 'd821' }, deckSpecs: { d821: deck.deck },
+      battlefield: { 0: ['Test Gate', 'Test Ogre'], 1: ['Test Bear'] }, turn: 3, firstSeat: 1,
+    }), 'declare-attackers');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bear, defender: 0 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: find(s, 0, 'battlefield', 'Test Ogre'), attacker: bear }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+  });
+});
+
+describe('"For each land you control, create a Treasure token", Brass\'s Bounty (D822)', () => {
+  const BOUNTY = { name: 'Test Bounty', type_line: 'Sorcery', oracle_text: 'For each land you control, create a Treasure token.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' };
+  const deck = customDeck({
+    id: 'd822', name: 'Bounty', entries: [{ name: 'Test Bounty', count: 4 }, { name: 'Mountain', count: 56 }], data: [BOUNTY] as never[],
+  });
+
+  it('reads', () => {
+    expect(compileCard(BOUNTY as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three lands of ours, two of theirs: three Treasures, for us', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd822', 1: 'd822' }, deckSpecs: { d822: deck.deck },
+      hands: { 0: ['Test Bounty'] }, battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'], 1: ['Mountain', 'Mountain'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bounty') })));
+    const treasures = (seat: 0 | 1) => ids(s, seat, 'battlefield').filter((id) => /treasure/i.test(nameOf(s, id))).length;
+    expect(treasures(0)).toBe(3);
+    expect(treasures(1)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

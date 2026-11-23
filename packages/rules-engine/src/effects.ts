@@ -443,6 +443,13 @@ export function dealDamage(
      */
     readonly combatFrom?: string;
     /**
+     * Combat damage to a creature (D821): `combatFrom` is only passed for damage to a player or a
+     * planeswalker, because it is what makes commander damage count, so damage between an attacker
+     * and its blockers says it is combat damage with this instead. Asked by the combat-only
+     * prevention flag, which until now never saw a blocker's damage as combat damage.
+     */
+    readonly combat?: true;
+    /**
      * What is dealing the damage: a permanent, or a spell on the stack whose id is its own card.
      *
      * **Required, and required on purpose.** Protection from a colour (CR 702.16) is a fact about
@@ -484,7 +491,7 @@ export function dealDamage(
   // And a player with protection from everything (D718): damage to them is prevented.
   if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
   // And "prevent all damage that would be dealt to / by …" this turn (D738).
-  if (damagePrevented(next, target, opts.source, opts.combatFrom !== undefined)) return next;
+  if (damagePrevented(next, target, opts.source, opts.combatFrom !== undefined || opts.combat === true)) return next;
   // A shield counter (D1033, CR 122.1c): the damage is replaced by removing one.
   if (target.kind === 'card') {
     const shielded = spendShieldCounter(next, target.id);

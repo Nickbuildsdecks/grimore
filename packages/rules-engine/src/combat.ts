@@ -911,7 +911,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
           const lethal = deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
           const assigned = Math.min(remaining, lethal);
           next = dealDamage(next, { kind: 'card', id: blockerId }, assigned, {
-            controller, source: attack.attacker,
+            controller, source: attack.attacker, combat: true,
           });
           remaining -= assigned;
         }
@@ -938,6 +938,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
       next = dealDamage(next, { kind: 'card', id: attack.attacker }, share, {
         controller: blocker.inst.zoneSeat,
         source: blockerId,
+        combat: true,
       });
     }
   }
