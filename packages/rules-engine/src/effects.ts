@@ -1350,6 +1350,10 @@ function protectedFromCounters(state: GameState, object: StackObject): boolean {
     const rule = scriptForCard(state.cardDefs[inst.defKey])?.spellsCantBeCountered;
     if (rule === undefined || allAbilitiesLost(state, inst)) return false;
     if (rule.whose === 'you' && seat.index !== object.controller) return false;
+    if (rule.types !== undefined) {
+      const line = parseTypeLine(state.cardDefs[object.cardKey]?.typeLine);
+      return rule.types.some((type) => hasType(line, type));
+    }
     return rule.kind === undefined || (rule.kind === 'creature') === creature;
   }));
 }
@@ -2745,7 +2749,21 @@ export function addTokens(
   state: GameState, seat: SeatIndex, card: CardDef, count = 1, keyOverride?: string,
 ): { readonly state: GameState; readonly created: readonly string[] } {
   const def = normaliseDef(card);
-  const key = keyOverride ?? defKeyFor(def);
+  /*
+    Two tokens can share a name and differ (D810): Wurmcoil Engine makes a "Phyrexian Wurm" with
+    deathtouch and a "Phyrexian Wurm" with lifelink. Keyed by name alone the second arrived as the
+    first, so a name already holding a different definition gets a key of its own; an identical one
+    (every Treasure) keeps sharing.
+  */
+  const named = keyOverride ?? defKeyFor(def);
+  const existing = state.cardDefs[named];
+  const sameDef = (a: CardDef, b: CardDef): boolean => JSON.stringify(a) === JSON.stringify(b);
+  let key = named;
+  if (keyOverride === undefined && existing !== undefined && !sameDef(existing, def)) {
+    let n = 2;
+    while (state.cardDefs[`${named}#${n}`] !== undefined && !sameDef(state.cardDefs[`${named}#${n}`]!, def)) n += 1;
+    key = `${named}#${n}`;
+  }
   const cardDefs = { ...state.cardDefs, [key]: state.cardDefs[key] ?? def };
   const instances = { ...state.instances };
   let seq = state.instanceSeq;

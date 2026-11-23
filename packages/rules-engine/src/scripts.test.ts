@@ -35975,6 +35975,56 @@ describe('roll a d20, with its table (D1154)', () => {
   });
 });
 
+describe('Wurmcoil Engine\'s two tokens, and Destiny Spinner\'s list of kinds (D810)', () => {
+  const WURMCOIL = { name: 'Test Wurmcoil', type_line: 'Artifact Creature — Phyrexian Wurm', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '6', toughness: '6', oracle_text: 'Deathtouch, lifelink\nWhen Test Wurmcoil dies, create a 3/3 colorless Phyrexian Wurm artifact creature token with deathtouch and a 3/3 colorless Phyrexian Wurm artifact creature token with lifelink.' };
+  const SPINNER = { name: 'Test Spinner', type_line: 'Enchantment Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '3', oracle_text: "Creature and enchantment spells you control can't be countered." };
+  const COUNTER = { name: 'Test Counter', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Counter target spell.' };
+  const GLYPH = { name: 'Test Glyph', type_line: 'Enchantment', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: '' };
+  const RELIC = { name: 'Test Relic', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '' };
+  const SLAY = { name: 'Test Slay', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const deck = customDeck({
+    id: 'd810', name: 'Wurmcoil',
+    entries: [WURMCOIL, SPINNER, COUNTER, GLYPH, RELIC, SLAY].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Forest', count: 48 }]),
+    data: [WURMCOIL, SPINNER, COUNTER, GLYPH, RELIC, SLAY] as never[],
+  });
+  const fight = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd810', 1: 'd810' }, deckSpecs: { d810: deck.deck },
+      hands: { 0: [spell], 1: ['Test Counter'] }, battlefield: { 0: ['Test Spinner'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', spell);
+    s = apply(s, { type: 'auto:cast', by: 0, card });
+    const target = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Counter'), targets: [{ kind: 'card', id: target }] } as Action);
+    while (s.stackOrder.length > 0) s = passBoth(s);
+    return s.instances[card]!.zone;
+  };
+
+  it('reads', () => {
+    for (const card of [WURMCOIL, SPINNER]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Wurmcoil Engine: two 3/3 Wurms when it dies, one with deathtouch and one with lifelink', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd810', 1: 'd810' }, deckSpecs: { d810: deck.deck },
+      hands: { 0: ['Test Slay'] }, battlefield: { 0: ['Test Wurmcoil'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Slay'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Wurmcoil') }] })));
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    const tokens = ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken === true);
+    expect(tokens).toHaveLength(2);
+    const kws = tokens.map((id) => [...characteristicsOf(s, s.instances[id]!).keywords].sort().join(',')).sort();
+    expect(kws).toEqual(['deathtouch', 'lifelink']);
+    for (const id of tokens) expect([power(s, id), toughness(s, id)]).toEqual([3, 3]);
+  });
+
+  it('Destiny Spinner: an enchantment spell resolves through a counter, an artifact spell does not', () => {
+    expect(fight('Test Glyph')).toBe('battlefield');
+    expect(fight('Test Relic')).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

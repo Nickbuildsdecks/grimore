@@ -27247,7 +27247,10 @@ function conjoinedEffect(
     .filter((part) => part !== '')
     // "… and you untap all lands you control" (D805, Sword of Feast and Famine): the second half's
     // "you" before a verb the readers take in the imperative is the same instruction without it.
-    .map((part, i) => (i === 0 ? part : part.replace(/^you (untap|tap|create|exile|destroy|return|sacrifice|search|put|investigate|proliferate)\b/i, '$1')));
+    .map((part, i) => (i === 0 ? part : part.replace(/^you (untap|tap|create|exile|destroy|return|sacrifice|search|put|investigate|proliferate)\b/i, '$1')))
+    // "Create a 3/3 … token with deathtouch and a 3/3 … token with lifelink" (D810, Wurmcoil Engine):
+    // a later part that is only the next token takes the verb back.
+    .map((part, i, all) => (i > 0 && /^create\b/i.test(all[0]!) && /^(a|an|one|two|three|\d+) .*\btokens?\b/i.test(part) ? `create ${part}` : part));
   if (parts.length < 2) return null;
   return composeEffects(parts, name, where);
 }
@@ -33278,6 +33281,12 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     return { statics: [{ scope, effect: { addSubtypes } }] };
   }
   // "Creature spells you control can't be countered" (D688): see `CardScript.spellsCantBeCountered`.
+  // A list of card types (D810): "Creature and enchantment spells you control can't be countered".
+  const typedUncounterable = /^((?:artifact|creature|enchantment|instant|sorcery|planeswalker)(?:,? (?:and |or )?(?:artifact|creature|enchantment|instant|sorcery|planeswalker))+) spells( you control)? can't be countered\.?$/i.exec(plain(line).trim());
+  if (typedUncounterable !== null) {
+    const types = typedUncounterable[1]!.toLowerCase().split(/,?\s+(?:and\s+|or\s+)?|,\s*/).filter((word) => word !== '' && word !== 'and' && word !== 'or');
+    return { spellsCantBeCountered: { whose: typedUncounterable[2] === undefined ? 'all' : 'you', types } };
+  }
   const uncounterable = /^(creature |noncreature )?spells( you control)? can't be countered\.?$/i.exec(plain(line).trim());
   if (uncounterable !== null) {
     const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;

@@ -4060,6 +4060,8 @@ export interface CardScript {
   readonly spellsCantBeCountered?: {
     readonly whose: 'you' | 'all';
     readonly kind?: 'creature' | 'noncreature';
+    /** "Creature and enchantment spells you control can't be countered" (D810, Destiny Spinner): any of these card types. */
+    readonly types?: readonly string[];
   };
   /**
    * "Nontoken creatures you control have riot" (D711): Rhythm of the Wild. While the permanent is on

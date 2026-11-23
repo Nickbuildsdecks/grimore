@@ -41258,3 +41258,27 @@ Faults injected by hand: 2.
 
 Coverage: 15,715 of 31,900 cards (+41 over D1153's 15,674), 37,832 of 59,888 lines (+73). The difference also counts the D7xx
 session's D809, merged in after D1153 was measured; D1154's own share is the 8 die-roll cards.
+## D810 — Wurmcoil Engine's two tokens, Destiny Spinner's kinds, and a token-name collision
+
+Most-played order: Destiny Spinner's first line (rank 1061), Wurmcoil Engine (1082).
+
+- **"Create a 3/3 … Wurm … token with deathtouch and a 3/3 … Wurm … token with lifelink"**: in a
+  conjoined clause, a later part that is only the next token ("a 3/3 … token …") takes the
+  "create" back.
+- **A token engine fix the test found.** Token definitions were keyed by name alone, so the second
+  "Phyrexian Wurm" arrived as the first: both had deathtouch. `addTokens` now gives a name that
+  already holds a different definition a key of its own (`name#2`); an identical definition, every
+  Treasure, keeps sharing one.
+- **"Creature and enchantment spells you control can't be countered"**: D688's
+  `spellsCantBeCountered` with a list of card types, any of which it protects.
+
+**Tests.** 3 engine tests: the cards read; Wurmcoil Engine dying leaves two 3/3 tokens, one with
+deathtouch and one with lifelink; under Destiny Spinner an enchantment spell resolves through a
+counter and an artifact spell does not. D688's own tests pass unchanged.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,118, all passing (on c4ee843)
+
+Coverage: 15,606 to 15,612 of 31,900 cards with every line read, and 37,667 to 37,676 of 59,888
+lines, against c4ee843.
