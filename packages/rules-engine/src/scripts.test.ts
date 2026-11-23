@@ -36211,6 +36211,58 @@ describe('a keyword list with the Oxford comma and two protections, Akroma\'s Me
   });
 });
 
+describe('"if it\'s (not) suspected", and "If …, A. Otherwise, B." (D1157)', () => {
+  const OFFENDER = { name: 'Test Offender', type_line: 'Creature — Human Rogue', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2', oracle_text: '{2}{B}: If Test Offender is suspected, put a +1/+1 counter on it. Otherwise, suspect it.' };
+  const BRAGGART = { name: 'Test Braggart', type_line: 'Creature — Minotaur', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '5', toughness: '5', oracle_text: "Whenever Test Braggart attacks, if it's not suspected, you may suspect it." };
+  const ROWS = [OFFENDER, BRAGGART];
+  const deck = customDeck({
+    id: 'd1157', name: 'Suspected', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1157', 1: 'd1157' }, deckSpecs: { d1157: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settleYes = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [], option: 'Yes' } as Action)
+        : drain(passBoth(s));
+    }
+    return s;
+  };
+  const swing = (s: GameState) => apply(advanceTo(s, 'declare-attackers'), {
+    type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Braggart'), defender: 1 }],
+  } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Otherwise, suspect it; once suspected, the same ability puts a counter on it instead', () => {
+    let s = table(['Test Offender', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    const id = find(s, 0, 'battlefield', 'Test Offender');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[id]!.suspected).toBe(true);
+    expect(s.instances[id]!.counters['+1/+1'] ?? 0).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[id]!.suspected).toBe(true);
+    expect(s.instances[id]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('an attack trigger "if it\'s not suspected" suspects it, and does not trigger once it is', () => {
+    let s = table(['Test Braggart', 'Swamp']);
+    const id = find(s, 0, 'battlefield', 'Test Braggart');
+    s = settleYes(swing(s));
+    expect(s.instances[id]!.suspected).toBe(true);
+    let t = table(['Test Braggart', 'Swamp']);
+    t = { ...t, instances: { ...t.instances, [id]: { ...t.instances[id]!, suspected: true } } };
+    t = swing(t);
+    expect(t.stackOrder).toEqual([]);
+    expect(t.pendingDecision).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

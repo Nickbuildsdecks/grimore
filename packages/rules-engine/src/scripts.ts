@@ -30140,6 +30140,36 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
 }
 
 /**
+ * "If <condition>, A. Otherwise, B." (D1157): Repeat Offender's "If ~ is suspected, put a +1/+1
+ * counter on it. Otherwise, suspect it." The condition is anything an intervening-if can ask
+ * (`interveningConditionFor`), checked as the ability resolves; then one branch runs. Refused, as
+ * `coinFlipGroup` is, when the branches cannot be one plan: both target, either asks a question, or
+ * anything follows.
+ */
+function ifOtherwiseGroup(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  const trimmed = clauses.map((c) => c.trim().replace(/\.$/, ''));
+  if (trimmed.length !== 2) return null;
+  const masked = name.replace(/,/g, '\u0011');
+  const first = /^if ([^,]+), (.+)$/i.exec(trimmed[0]!.split(name).join(masked));
+  const otherwise = /^otherwise, (.+)$/i.exec(trimmed[1]!);
+  if (first === null || otherwise === null) return null;
+  const unmask = (t: string): string => t.split(masked).join(name);
+  const holds = interveningConditionFor(unmask(first[1]!), name);
+  if (holds === null) return null;
+  const yes = composeEffects([unmask(first[2]!)], name, where);
+  const no = composeEffects([otherwise[1]!], name, where);
+  if (yes === null || no === null) return null;
+  const parts = [yes, no];
+  if (parts.some((p) => (p.decisions ?? []).length > 0 || p.reflexive !== undefined)) return null;
+  const targeted = parts.filter((p) => (p.targets ?? []).length > 0);
+  if (targeted.length > 1) return null;
+  return {
+    ...(targeted.length === 1 ? { targets: targeted[0]!.targets } : {}),
+    effect: (c) => (holds(c) ? yes : no).effect(c),
+  };
+}
+
+/**
  * "Flip a coin. If you win the flip, X. [If you lose the flip, Y.]" (D1152, CR 705): Mogg Assassin,
  * Fiery Gambit's simpler cousins, Goblin Archaeologist. Each branch is read by `composeEffects` on
  * its own. The flip is made as the ability resolves, then the branch for the result runs. Refused
@@ -30250,6 +30280,9 @@ function composeEffects(
   // "Flip a coin. If you win the flip, …" (D1152): see `coinFlipGroup`.
   const flipped = coinFlipGroup(clauses, name, where);
   if (flipped !== null) return flipped;
+  // "If …, A. Otherwise, B." (D1157): see `ifOtherwiseGroup`.
+  const branched = ifOtherwiseGroup(clauses, name, where);
+  if (branched !== null) return branched;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;
@@ -33087,6 +33120,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   // "If this creature isn't prepared" (D978).
   const prepared = new RegExp(`^${self} (is|isn't|is not) prepared$`, 'i').exec(text);
   if (prepared !== null) return { kind: 'source-prepared', prepared: prepared[1]!.toLowerCase() === 'is' };
+  // Suspected (D1157): Rubblebelt Braggart's "if it's not suspected", Repeat Offender's "If ~ is suspected".
+  const suspected = new RegExp(`^(?:${self} (is|isn't|is not)|it's( not)?) suspected$`, 'i').exec(text);
+  if (suspected !== null) {
+    const negated = (suspected[1] !== undefined && suspected[1].toLowerCase() !== 'is') || suspected[2] !== undefined;
+    return { kind: 'source-suspected', suspected: !negated };
+  }
   if (new RegExp(`^(?:${self} is|it's) attacking$`, 'i').test(text)) return { kind: 'source-attacking' };
   if (new RegExp(`^${self} is equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };

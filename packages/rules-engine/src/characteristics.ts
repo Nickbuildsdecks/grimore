@@ -2079,6 +2079,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'source-tapped'; readonly tapped: boolean }
     /** "If this creature is / isn't prepared" (D978): `CardInstance.prepared`. */
     | { readonly kind: 'source-prepared'; readonly prepared: boolean }
+    /** "If ~ is suspected", "if it's not suspected" (D1157): `CardInstance.suspected`. */
+    | { readonly kind: 'source-suspected'; readonly suspected: boolean }
     /** "As long as it's attacking". */
     | { readonly kind: 'source-attacking' }
     /** "As long as ~ is enchanted": Auras attached to the source. */
@@ -2486,6 +2488,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'source-tapped') {
     const source = state.instances[effect.source];
     return source !== undefined && source.zone === 'battlefield' && source.tapped === cond.tapped;
+  }
+  if (cond.kind === 'source-suspected') {
+    const source = state.instances[effect.source];
+    return source !== undefined && source.zone === 'battlefield' && (source.suspected === true) === cond.suspected;
   }
   if (cond.kind === 'source-prepared') {
     const source = state.instances[effect.source];
