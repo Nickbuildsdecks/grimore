@@ -800,6 +800,8 @@ function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readon
  * `offered` is a cast an effect makes mid-resolution (cascade), which no timing limit reaches.
  */
 export function castProhibition(state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean): string | null {
+  // Silence and Orim's Chant (D791): barred for the rest of this turn.
+  if (state.castBannedTurn?.[String(seat)] === state.turn) return "you can't cast spells this turn";
   const cast = state.spellsCastThisTurnBy[String(seat)] ?? 0;
   const noncreature = state.spellsCastThisTurnByKind?.[`${seat}:noncreature`] ?? 0;
   for (const { limit, from, name } of castLimitsInPlay(state)) {

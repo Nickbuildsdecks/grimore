@@ -40069,3 +40069,31 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,235 to 15,249 of 31,900 cards with every line read, and 37,186 to 37,203 of 59,888
 lines, against dde7126.
+
+## D791 — "Becomes the target of a spell", and "can't cast spells this turn"
+
+Most-played order: Goldspan Dragon's first line (rank 359), Silence (392), Orim's Chant's first
+sentence (1671), Tectonic Giant's trigger (3181), Mandate of Peace's middle line (7624), Stormchaser
+Drake (9151), Fblthp's and Departed Deckhand's and Reality Smasher's triggers, and their kin.
+
+- **"Whenever ~ becomes the target of a spell, …"**, with "… a spell an opponent controls" and "… a
+  spell you control": the targeted event (ward's, D461) with `spellOnly`, which it already carried
+  for the enchanted-creature form (D998). An ability aimed at it does nothing.
+- **"Whenever ~ attacks or becomes the target of a spell, …"** (Goldspan Dragon, Tectonic Giant):
+  the two events on one ability.
+- **"Your opponents can't cast spells this turn"** and **"Target player can't cast spells this
+  turn"**: `GameState.castBannedTurn`, the turn number each seat is barred in, so there is nothing to
+  reset. `castProhibition` (D788) asks it where a cast is offered and where it is made.
+
+**Tests.** 6 engine tests: the cards read; Goldspan makes a Treasure for a spell aimed at it and none
+for an ability, and one when it attacks; the opponent-only trigger ignores its controller's own spell
+and fires for the opponent's; after Silence the opponent's spell is refused this turn and accepted on
+their own turn, while its caster's own spell is accepted; Orim's Chant bars the targeted player and not its caster.
+
+Faults injected by script: 7 of 7 caught (the caster's own spell after Silence was added after the
+first run missed a ban that reached the caster too).
+
+    engine tests: 6,006, all passing (on 218ada9)
+
+Coverage: 15,249 to 15,257 of 31,900 cards with every line read, and 37,203 to 37,216 of 59,888
+lines, against 218ada9.

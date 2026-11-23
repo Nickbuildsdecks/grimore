@@ -34007,6 +34007,82 @@ describe('a rider with keywords, "you and target opponent each", two or more att
   });
 });
 
+describe('"becomes the target of a spell", and "can\'t cast spells this turn" (D791)', () => {
+  const DRAGON = { name: 'Test Goldspan', type_line: 'Creature — Dragon', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '4', toughness: '4', oracle_text: 'Haste\nWhenever Test Goldspan attacks or becomes the target of a spell, create a Treasure token.' };
+  const SMASHER = { name: 'Test Smasher', type_line: 'Creature — Eldrazi', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '5', toughness: '5', oracle_text: 'Whenever Test Smasher becomes the target of a spell an opponent controls, you gain 3 life.' };
+  const GROWTH = { name: 'Test Growth', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +1/+1 until end of turn.' };
+  const POKER = { name: 'Test Poker', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Target creature gets +1/+0 until end of turn.' };
+  const SILENCE = { name: 'Test Silence', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Your opponents can't cast spells this turn." };
+  const CHANT = { name: 'Test Chant', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: "Target player can't cast spells this turn." };
+  const deck = customDeck({
+    id: 'd791', name: 'Target',
+    entries: [DRAGON, SMASHER, POKER].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Test Growth', count: 4 }, { name: 'Test Silence', count: 2 }, { name: 'Test Chant', count: 2 }, { name: 'Plains', count: 49 }]),
+    data: [DRAGON, SMASHER, GROWTH, POKER, SILENCE, CHANT] as never[],
+  });
+  const table = (mine: string[], hands: Record<number, string[]>, theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd791', 1: 'd791' }, deckSpecs: { d791: deck.deck },
+    hands, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const treasures = (s: GameState, seat: SeatIndex) => ids(s, seat, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Treasure').length;
+  const resolveAll = (s0: GameState) => { let s = s0; for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s)); return s; };
+
+  it('reads', () => {
+    for (const card of [DRAGON, SMASHER, SILENCE, CHANT]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Goldspan Dragon: a Treasure for a spell aimed at it, none for an ability', () => {
+    let s = table(['Test Goldspan', 'Test Poker'], { 0: ['Test Growth'] });
+    const dragon = find(s, 0, 'battlefield', 'Test Goldspan');
+    s = resolveAll(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Poker'), abilityIndex: 0, targets: [{ kind: 'card', id: dragon }] }));
+    expect(treasures(s, 0)).toBe(0);
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: dragon }] }));
+    expect(treasures(s, 0)).toBe(1);
+  });
+
+  it('Goldspan Dragon: a Treasure when it attacks', () => {
+    let s = table(['Test Goldspan'], {});
+    const dragon = find(s, 0, 'battlefield', 'Test Goldspan');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: dragon, defender: 1 }] } as Action);
+    s = resolveAll(s);
+    expect(treasures(s, 0)).toBe(1);
+  });
+
+  it("an opponent's spell only: its controller's own does nothing", () => {
+    let s = table(['Test Smasher'], { 0: ['Test Growth'], 1: ['Test Growth'] });
+    const smasher = find(s, 0, 'battlefield', 'Test Smasher');
+    const before = life(s, 0);
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: smasher }] }));
+    expect(life(s, 0)).toBe(before);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: smasher }] }));
+    expect(life(s, 0)).toBe(before + 3);
+  });
+
+  it("Silence: the opponent can't cast this turn, and can on their own", () => {
+    let s = table([], { 0: ['Test Silence', 'Test Growth'], 1: ['Test Growth'] }, ['Test Smasher']);
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Silence') }));
+    // Its caster is not one of their own opponents.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Smasher') }] })).toBeNull();
+    const held = apply(s, { type: 'auto:pass', by: 0 });
+    const growth = find(held, 1, 'hand', 'Test Growth');
+    const smasher = find(held, 1, 'battlefield', 'Test Smasher');
+    expect(refusal(held, { type: 'auto:cast', by: 1, card: growth, targets: [{ kind: 'card', id: smasher }] })).toMatch(/can't cast spells this turn/);
+    const later = advanceTo(advanceTo(s, 'end'), 'precombat-main');
+    expect(later.activeSeat).toBe(1);
+    expect(refusal(later, { type: 'auto:cast', by: 1, card: growth, targets: [{ kind: 'card', id: smasher }] })).toBeNull();
+  });
+
+  it("Orim's Chant: the targeted player only", () => {
+    let s = table([], { 0: ['Test Chant', 'Test Growth'], 1: ['Test Growth'] }, ['Test Smasher']);
+    s = resolveAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chant'), targets: [{ kind: 'player', seat: 1 }] }));
+    const smasher = find(s, 1, 'battlefield', 'Test Smasher');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: smasher }] })).toBeNull();
+    const held = apply(s, { type: 'auto:pass', by: 0 });
+    expect(refusal(held, { type: 'auto:cast', by: 1, card: find(held, 1, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: smasher }] })).toMatch(/can't cast spells this turn/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
