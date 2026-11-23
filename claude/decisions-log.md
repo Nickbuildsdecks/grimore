@@ -58618,3 +58618,40 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,568 to 15,573 of 31,900 cards with every line read, and 37,620 to 37,628 of 59,888
 lines, against e86861a.
+
+## D1153 — manifest
+
+Manifest (CR 701.40) is printed on 54 legal cards and was read on none. The engine already played
+face-down creatures for morph: a 2/2 with no name, text or mana cost, and a special action to turn
+it face up. Manifest is that, put onto the battlefield from the top of the library instead of
+cast:
+- **The effect.** `manifestTop` moves the top card face down onto the battlefield and marks it
+  `manifested`.
+- **Turning up.** `turnUpCostOf` is now the one answer to "what does turning this face up cost",
+  for the offer and the action alike:
+  - a morph or megamorph cost, as before;
+  - for a manifested creature card, its mana cost (CR 701.40b).
+  A manifested land or other noncreature card has no cost and stays a 2/2. The flag is cleared as
+  it turns up.
+- **The reader.** "Manifest the top card of your library", and "the top two / three cards".
+
+Read whole now: 9 of the 54, among them Mastery of the Unseen, Qarsi High Priest, Soul Summons,
+Sultai Emissary and Wildcall. Not read:
+- "manifest dread" (look at two, manifest one);
+- "manifest the top card of target player's library";
+- "manifest X cards", and riders after the manifest.
+
+**Tests.** 3 engine tests:
+- The test spell reads whole.
+- With a 4/4 Bear on top, it arrives face down as a 2/2, the only turn-up offered is its own, and
+  turning it up pays {1}{G} and makes it the named 4/4.
+- With a Forest on top, it stays face down and nothing offers to turn it up.
+
+Faults injected by hand: 2.
+- Any manifested card turnable (caught: the Forest is offered).
+- The manifest mark never set (caught: the Bear is not offered).
+
+The existing morph tests (20) pass unchanged on the shared `turnUpCostOf`.
+
+Coverage: 15,674 of 31,900 cards (+14 over D1152's 15,660), 37,759 of 59,888 lines (+20). The difference also counts the D7xx
+session's D808, merged in after D1152 was measured; D1153's own share is the 9 manifest cards.
