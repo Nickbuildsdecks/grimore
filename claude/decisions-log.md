@@ -58375,3 +58375,25 @@ Faults injected by script: 2 of 2 caught.
 
 Coverage: 15,548 to 15,554 of 31,900 cards with every line read, and 37,593 to 37,602 of 59,888
 lines, against fac438d.
+
+## D807 — "Target artifacts and/or enchantments", and an opponent's life as a condition
+
+Most-played order: Angel of the Ruins (rank 985), Bloodghast (991), Force of Vigor (1018), Wear Down
+and the rest of the 33 legal cards that target "X and/or Y" in the plural.
+
+- **"Destroy up to two target artifacts and/or enchantments"**: the target disjunction (D486) splits
+  on "and/or" as well as "or", and a plural part ("artifacts") is read as its singular. The X
+  count and "any number of" forms stay unread.
+- **"As long as an opponent has 10 or less life"**: a static condition (`opponent-life-at-most`),
+  true while any opponent still in the game is at or below the number. Bloodghast now reads whole.
+
+**Tests.** 3 engine tests: the cards read; Force of Vigor offers the opponent's artifact and
+enchantment and not their creature, and destroys both; Bloodghast has haste only once the opponent is
+at 10, and not when its own controller is.
+
+Faults injected by script: 3 of 3 caught.
+
+    engine tests: 6,106, all passing (on 038736e)
+
+Coverage: 15,554 to 15,568 of 31,900 cards with every line read, and 37,602 to 37,620 of 59,888
+lines, against 038736e.

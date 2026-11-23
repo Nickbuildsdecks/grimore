@@ -2089,6 +2089,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
     /** "You have N or more life". */
     | { readonly kind: 'controller-life'; readonly atLeast: number }
+    /** "As long as an opponent has 10 or less life" (D807): Bloodghast, Blood Baron of Vizkopa. */
+    | { readonly kind: 'opponent-life-at-most'; readonly atMost: number }
     /**
      * "As long as your devotion to red is less than five" (D657): mana symbols of these colours in
      * the **printed** mana costs of the controller's permanents (CR 700.5), which is what makes it
@@ -2515,6 +2517,9 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   }
   if (cond.kind === 'controller-life') {
     return (state.seats[effect.controller]?.life ?? 0) >= cond.atLeast;
+  }
+  if (cond.kind === 'opponent-life-at-most') {
+    return state.seats.some((seat) => seat.index !== effect.controller && !seat.eliminated && seat.life <= cond.atMost);
   }
   if (cond.kind === 'turn') {
     return (state.activeSeat === effect.controller) === cond.yours;
