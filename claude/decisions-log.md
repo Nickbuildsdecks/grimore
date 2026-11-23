@@ -58787,3 +58787,28 @@ Faults injected by hand: 2.
 
 Coverage: 15,733 of 31,900 cards (+18 over D1154's 15,715), 37,858 of 59,888 lines (+26). The difference also counts the D7xx
 session's D810, merged in after D1154 was measured; D1155's own share is the 12 incubate cards.
+## D811 — "That player" on a board entry trigger, and "you win the game"
+
+Most-played order: Suture Priest (rank 1142), Revel in Riches (1182), Felidar Sovereign (1618),
+Test of Endurance, and the other "you win the game" printings whose condition already reads.
+
+- **"Whenever a creature an opponent controls enters, you may have that player lose 1 life"**: a
+  board entry trigger that ties what entered to an opponent ("a creature an opponent controls")
+  now passes "that player" as its controller (the entry event's actor), as a death trigger does
+  since D654. "Whenever another creature enters, that player …" names nobody and stays unread, as
+  two compile tests pin; the first gate run caught a version that read it. A self entry is not one
+  either.
+- **"You win the game"** (CR 104.2a): every opponent still in the game loses it, by D690's
+  `loseTheGame`. Laboratory Maniac's replacement and Thassa's Oracle's count are still unread.
+
+**Tests.** 3 engine tests: Suture Priest reads; the opponent's creature entering costs that player
+1 life, and ours costs nobody; Felidar Sovereign at 40 life in our upkeep eliminates the opponent and
+not us, and at 39 nobody.
+
+Faults injected by script: 3 of 4 caught; the miss (a self entry allowed) is an equivalent fault, since no card prints it. (The winner's
+own seat was added to the test after the first run missed a win that eliminated everyone.)
+
+    engine tests: 6,121, all passing (on 4aafb36)
+
+Coverage: 15,612 to 15,620 of 31,900 cards with every line read, and 37,676 to 37,688 of 59,888
+lines, against 4aafb36.

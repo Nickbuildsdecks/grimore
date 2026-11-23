@@ -36068,6 +36068,64 @@ describe('incubate (D1155)', () => {
   });
 });
 
+describe('"that player" on a board entry trigger (D811)', () => {
+  const PRIEST = { name: 'Test Priest', type_line: 'Creature — Cleric', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Whenever a creature an opponent controls enters, you may have that player lose 1 life.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd811', name: 'Priest',
+    entries: [{ name: 'Test Priest', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Plains', count: 54 }],
+    data: [PRIEST, BEAR] as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd811', 1: 'd811' }, deckSpecs: { d811: deck.deck },
+    hands: { 0: ['Test Bear'], 1: ['Test Bear'] }, battlefield: { 0: ['Test Priest'] }, turn: 3, firstSeat: 1,
+  }), 'precombat-main');
+  const settleYes = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [], option: 'Yes' } as Action)
+        : drain(passBoth(s));
+    }
+    return s;
+  };
+
+  it('reads', () => {
+    expect(compileCard(PRIEST as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"you win the game": Felidar Sovereign at 40 life eliminates the opponent, at 39 nothing happens', () => {
+    const SOVEREIGN = { name: 'Test Sovereign', type_line: 'Creature — Cat Beast', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '4', toughness: '6', oracle_text: 'At the beginning of your upkeep, if you have 40 or more life, you win the game.' };
+    expect(compileCard(SOVEREIGN as never)).toMatchObject({ ok: true, unread: [] });
+    const sovereigns = customDeck({ id: 'd811b', name: 'Sovereign', entries: [{ name: 'Test Sovereign', count: 2 }, { name: 'Plains', count: 58 }], data: [SOVEREIGN] as never[] });
+    const atUpkeep = (lifeTotal: number) => {
+      let s = advanceTo(arena({
+        decks: { 0: 'd811b', 1: 'd811b' }, deckSpecs: { d811b: sovereigns.deck },
+        battlefield: { 0: ['Test Sovereign'] }, turn: 3, firstSeat: 1,
+      }), 'precombat-main');
+      s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: lifeTotal - life(s, 0) } as Action);
+      s = advanceTo(nextTurn(s), 'upkeep');
+      for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+      return s;
+    };
+    const won = atUpkeep(40);
+    expect([won.seats[0]!.eliminated, won.seats[1]!.eliminated]).toEqual([false, true]);
+    expect(atUpkeep(39).seats[1]!.eliminated).toBe(false);
+  });
+
+  it("Suture Priest: the opponent's creature costs its controller 1 life; ours costs nobody", () => {
+    let s = table();
+    expect(s.activeSeat).toBe(1);
+    const [mine, theirs] = [life(s, 0), life(s, 1)];
+    s = settleYes(drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bear') }))));
+    expect([life(s, 0), life(s, 1)]).toEqual([mine, theirs - 1]);
+    let t = advanceTo(nextTurn(s), 'precombat-main');
+    expect(t.activeSeat).toBe(0);
+    t = settleYes(drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Bear') }))));
+    expect([life(t, 0), life(t, 1)]).toEqual([mine, theirs - 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

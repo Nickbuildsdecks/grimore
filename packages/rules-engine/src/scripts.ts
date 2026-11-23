@@ -21713,7 +21713,12 @@ function eventRelativeEffect(
     death (`who: 'self'`), whose "that player" means nothing printed.
   */
   const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind)
-    || (one.kind === 'dies' && one.who !== undefined && one.who !== 'self'));
+    || (one.kind === 'dies' && one.who !== undefined && one.who !== 'self')
+    // And a board entry the sentence ties to an opponent (D811): "Whenever a creature an opponent
+    // controls enters, that player loses 1 life" (Suture Priest). The entry event's actor is the
+    // controller of what entered. "Whenever another creature enters, that player …" names nobody
+    // and stays unread, as the compile tests pin.
+    || (one.kind === 'etb' && one.who !== undefined && one.who !== 'self' && (one as { of?: string }).of === 'opponent'));
 
   /*
     **And the other half of the same gate: the events that pass the player who was HIT** (D530).
@@ -28144,6 +28149,16 @@ function readEffect(
   // "Each other player discards a card" (D808): every player but the controller, which is each opponent.
   if (/^each other player (draws|discards|loses|gains|mills|sacrifices|creates|reveals)\b/i.test(clause.trim())) {
     return readEffect(clause.trim().replace(/^each other player/i, 'each opponent'), name, where);
+  }
+  /*
+    "You win the game" (D811, CR 104.2a): every opponent still in the game loses it. Revel in Riches'
+    upkeep, Felidar Sovereign's, Approach of the Second Sun's second cast.
+  */
+  if (/^you win the game$/i.test(clause.trim())) {
+    return {
+      effect: (c) => c.state.seats.reduce(
+        (state, seat) => (seat.index === c.controller || seat.eliminated ? state : loseTheGame(state, seat.index)), c.state),
+    };
   }
   const extraDraw = /^(that player|target player|you|each player) draws? (an|two|three) additional cards?$/i.exec(clause.trim());
   if (extraDraw !== null) {
