@@ -59445,3 +59445,27 @@ the types not raised, "non" read as the type itself, and whose discard ignored.
 
 - engine tests: 6192, all passing (on 2672538)
 - Coverage: 15,812 to 15,816 of 31,900 cards with every line read, and 37,973 to 37,985 of 59,888 lines, against 2672538.
+
+## D1164 — "whenever you complete a dungeon"
+
+"Whenever you complete a dungeon" (CR 309.7) is printed on 4 legal cards. It is now a trigger event,
+`dungeon-completed`. `settle` raises it once for each dungeon a seat completed since the last pass,
+read off `GameState.dungeonsCompleted`, as D1145 raises "the Ring tempts you". It matches only the
+completing seat's own cards. Dungeon Crawler's "you may return ~ from your graveyard to your hand"
+works from the graveyard, as other self-returning triggers do.
+
+Read whole now: Varis, Silverymoon Ranger and Dungeon Crawler. Not read: Sefris of the Hidden Ways
+and Loot Dispute, both on other lines. The event is added to the deck-coverage exemptions, as no
+pool deck plays a card with it.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- Completing Lost Mine of Phandelver (Storeroom into Temple of Dumathoin) makes the Wolf.
+- The trigger works from the graveyard: Test Crawler comes back to hand.
+- An opponent's completion makes no Wolf for you.
+
+Faults injected by hand: 2, both caught.
+- The trigger matching any seat's completion.
+- The event never raised.
+
+Coverage: 15,858 of 31,900 cards (+3 over D1163's 15,855), 38,060 of 59,888 lines (+5). The difference also counts the D7xx session's D819, merged in after D1163 was measured.
