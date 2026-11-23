@@ -40809,3 +40809,40 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,483 to 15,486 of 31,900 cards with every line read, and 37,505 to 37,508 of 59,888
 lines, against b4f8452.
+
+## D1147 — "If damage would be dealt to ~, …"
+
+Seventeen legal cards replace damage dealt to themselves (CR 615), and none was read. Now
+`CardScript.damageToSelf` holds the replacement, and `dealDamage` applies it to each damage event
+on its own, right after a shield counter, before anything is marked. Five shapes:
+- "prevent that damage. Remove a +1/+1 counter from ~" (seven Phantoms): one counter per event, so
+  three blockers cost three counters, and none to remove still prevents;
+- "… while it has a +1/+1 counter on it, prevent that damage and remove a +1/+1 counter from it"
+  (Oathsworn Knight, Undergrowth Champion): with no counter, the damage is dealt as normal;
+- "… and remove that many +1/+1 counters" (Ugin's Conjurant);
+- "put that many +1/+1 counters on it instead" (Phytohydra);
+- "prevent that damage. Put a -1/-1 counter on ~ for each 1 damage prevented this way" (Phyrexian
+  Hydra).
+
+Read whole now (12): Oathsworn Knight, Phantom Centaur, Phantom Flock, Phantom Nantuko, Phantom
+Nishoba, Phantom Nomad, Phantom Tiger, Phantom Wurm, Phyrexian Hydra, Phytohydra, Ugin's Conjurant,
+Undergrowth Champion. Not read:
+- Magma Pummeler, Bloatfly Swarm and Sekki (a rider after the removal);
+- Phyrexian Vindicator (a reflexive damage trigger);
+- Dralnu ("sacrifice that many permanents instead").
+
+**Tests.** 5 engine tests:
+- All four test cards read whole.
+- A Phantom with three counters hit for 5, then for 1, has one counter left, no damage marked, and
+  is still there.
+- A Knight with one counter loses it and takes no damage; with none it takes the 3.
+- The Conjurant with five counters hit for 3 keeps two.
+- Phytohydra hit for 4 gets four counters and no damage, and is a 5/5.
+
+Faults injected by hand: 3.
+- "While it has a counter" ignored (caught).
+- "That many" removing one (caught).
+- The damage dealt as well as replaced (caught: 3 tests).
+
+Coverage: 15,530 of 31,900 cards (+17 over D1146's 15,513), 37,563 of 59,888 lines (+19). The difference also counts the D7xx
+session's D801, merged in after D1146 was measured.
