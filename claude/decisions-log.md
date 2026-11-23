@@ -57635,3 +57635,34 @@ Faults injected by hand: 2.
 Coverage: 15,306 of 31,900 cards (+71 over D1135's 15,235), 37,262 of 59,888 lines (+86). The difference also
 counts the D7xx session's D789 and D790, merged in since D1135 was measured; D1136's own share is
 about the 29 cards named above.
+
+## D1137 — "~ assigns no combat damage this turn", and the causative before "If you do"
+
+Two small readers that finish an old family (Fallen Empires, Ice Age, Homelands):
+
+- "~ assigns no combat damage this turn" and "it assigns …" as a clause. This is Ophidian's
+  hand-written pump (D578), read: the creature stays attacking and deals no combat damage for the
+  rest of the turn. It completes D1063's "you may destroy target artifact defending player
+  controls. If you do, ~ assigns no combat damage this turn" (Floral Spuzzem, Kukemssa Pirates,
+  Goblin Vandal) and Keeper of Tresserhorn's line.
+- The causative (D574/D957) inside "you may X. If you do, Y": "you may have it deal 3 damage to
+  target creature. If you do, …" (Farrel's Zealot, Dwarven Vigilantes, the four Laccoliths). X is
+  read in the indicative.
+
+Read whole now (11 compiled; Ophidian has a hand-written script): Dwarven Vigilantes, Farrel's
+Zealot, Floral Spuzzem, Goblin Vandal, Keeper of Tresserhorn, Kukemssa Pirates, Laccolith Grunt,
+Laccolith Titan, Laccolith Warrior, Laccolith Whelp, Orcish Squatters.
+
+Ophidian's compiled reading now exists and agrees on the rules. It differs from the hand-written
+script only in that script's bot heuristic: decline the draw when the hit would be lethal. It is
+recorded in `compiled-vs-written.test.ts`'s DISAGREE table, with the reason.
+
+**Tests.** 2 engine tests:
+- Both shapes read whole.
+- An unblocked 4-power Keeper deals no combat damage, and the defending player loses exactly 2.
+
+Faults injected by hand: 2.
+- The pump dropped (caught).
+- The causative rewrite removed (caught).
+
+Coverage: 15,319 of 31,900 cards (+13 over D1136's 15,306), 37,276 of 59,888 lines (+14).
