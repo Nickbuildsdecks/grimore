@@ -88,14 +88,15 @@ export const MAX_HAND_SIZE = 7;
  * "You have no maximum hand size" (D646) and still has its abilities.
  */
 /** Whether a seat controls a live "untap during each other player's untap step" permanent (D661). */
-function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): readonly (true | 'artifacts' | 'creatures')[] {
+function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): readonly (true | 'artifacts' | 'creatures' | string)[] {
   // Every live one, since an Unwinding Clock and a Drumbellower together untap both kinds (D797).
-  const kinds: (true | 'artifacts' | 'creatures')[] = [];
+  // A permanent that untaps only itself (D808) is listed by its id.
+  const kinds: (true | 'artifacts' | 'creatures' | string)[] = [];
   for (const id of [...listAt(state, zoneKey(seat, 'battlefield')), ...emblemsOf(state, seat)]) {
     const inst = state.instances[id];
     if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
     const kind = scriptForCard(state.cardDefs[inst.defKey])?.untapsDuringOthersUntap;
-    if (kind !== undefined) kinds.push(kind);
+    if (kind !== undefined) kinds.push(kind === 'self' ? id : kind);
   }
   return kinds;
 }
@@ -991,7 +992,8 @@ function onEnterStep(state: GameState, step: Step): GameState {
           const inst = next.instances[id];
           if (inst === undefined) return true;
           const ch = characteristicsOf(next, inst);
-          return !((kinds.includes('artifacts') && hasType(ch.typeLine, 'artifact')) || (kinds.includes('creatures') && ch.isCreature));
+          return !((kinds.includes('artifacts') && hasType(ch.typeLine, 'artifact')) || (kinds.includes('creatures') && ch.isCreature)
+            || kinds.includes(id));
         }));
         next = untapAll(next, seat.index, { othersStep: true, ...(keep === undefined ? {} : { keep }) });
       }

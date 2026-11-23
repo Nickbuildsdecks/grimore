@@ -35495,6 +35495,54 @@ describe('"target artifacts and/or enchantments", and "as long as an opponent ha
   });
 });
 
+describe('untap itself in others\' untap steps, "each other player", "each opponent draws" (D808)', () => {
+  const SKIN = { name: 'Test Waterskin', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: "Untap this artifact during each other player's untap step.\n{T}: Add {C}." };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const SYPHON = { name: 'Test Syphon', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each other player discards a card.' };
+  const GIFT = { name: 'Test Gift', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Each opponent draws a card.' };
+  const deck = customDeck({
+    id: 'd808', name: 'Skin',
+    entries: [SKIN, ROCK, SYPHON, GIFT].map((c) => ({ name: c.name, count: 2 })).concat([{ name: 'Island', count: 52 }]),
+    data: [SKIN, ROCK, SYPHON, GIFT] as never[],
+  });
+  const table = (mine: string[], hands: Record<number, string[]> = {}) => advanceTo(arena({
+    decks: { 0: 'd808', 1: 'd808' }, deckSpecs: { d808: deck.deck },
+    hands, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const answerAll = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      s = s.pendingDecision !== null
+        ? apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: (s.pendingDecision.candidates ?? []).slice(0, s.pendingDecision.min ?? 1) } as Action)
+        : drain(passBoth(s));
+    }
+    return s;
+  };
+
+  it('reads', () => {
+    for (const card of [SKIN, SYPHON, GIFT]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Bender's Waterskin: untaps itself in the opponent's untap step, and nothing else of ours", () => {
+    let s = table(['Test Waterskin', 'Test Rock']);
+    for (const id of ids(s, 0, 'battlefield')) s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } } };
+    s = advanceTo(advanceTo(s, 'end'), 'upkeep');
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Waterskin')]!.tapped).toBe(false);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Rock')]!.tapped).toBe(true);
+  });
+
+  it('"each other player discards" is the opponent, not us; "each opponent draws" the same', () => {
+    let s = table([], { 0: ['Test Syphon', 'Test Gift', 'Island'], 1: ['Island', 'Island'] });
+    const mine = ids(s, 0, 'hand').length;
+    const theirs = ids(s, 1, 'hand').length;
+    s = answerAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Syphon') }));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine - 1, theirs - 1]);
+    s = answerAll(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gift') }));
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine - 2, theirs]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

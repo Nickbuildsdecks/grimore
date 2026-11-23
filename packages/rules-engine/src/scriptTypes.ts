@@ -3228,8 +3228,10 @@ export interface CardScript {
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,
    * like `noMaxHandSize`. `'artifacts'` and `'creatures'` (D797) are the narrower printings:
    * Unwinding Clock's "Untap all artifacts you control …" and Drumbellower's "… creatures …".
+   * `'self'` (D808): "Untap this artifact during each other player's untap step" (Bender's
+   * Waterskin, Endbringer), the permanent alone.
    */
-  readonly untapsDuringOthersUntap?: true | 'artifacts' | 'creatures';
+  readonly untapsDuringOthersUntap?: true | 'artifacts' | 'creatures' | 'self';
   /**
    * "You may play an additional land on each of your turns" (1), "… two additional lands …" (2) —
    * D648, CR 305.2. Added live by `landDropsFor` while the permanent is on its controller's
