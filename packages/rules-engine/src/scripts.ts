@@ -29673,6 +29673,74 @@ function conniveClauses(clause: string, name: string): readonly string[] | null 
   return ['draw a card', `${CONNIVE}${read[1] === undefined ? '' : ':self'}`];
 }
 
+/**
+ * The rest of a "Choose a creature type." spell with the chosen type written in (D1142): "permanents
+ * you control of that type" becomes "Elfs you control", "creatures that aren't of the chosen type"
+ * "non-Elf creatures", "creature cards of the chosen type" "Elf creature cards". The plural is the
+ * type and an "s", which is not English but is what every plural reader here singularises back
+ * (D620: a trailing "s" is dropped), so "Merfolks" and "Elfs" read as Merfolk and Elf. `null` when
+ * no clause names the chosen type, so a spell whose choice does nothing is not read as one.
+ */
+function withChosenType(clauses: readonly string[], type: string): readonly string[] | null {
+  const ref = '(?:the chosen|that) type';
+  const kind = (word: string): string => {
+    const lower = word.toLowerCase();
+    const named = lower.startsWith('permanent')
+      ? `${type}${lower.endsWith('s') ? 's' : ''}`
+      : `${type} ${lower}`;
+    return named;
+  };
+  let named = false;
+  const out = clauses.map((clause) => {
+    const next = clause
+      .replace(new RegExp(`\\b(creatures) that aren't of ${ref}`, 'gi'), () => `non-${type} creatures`)
+      .replace(new RegExp(`\\b(creature cards?) of ${ref}`, 'gi'), (_m, w: string) => `${type} ${w.toLowerCase()}`)
+      .replace(new RegExp(`\\b(permanents?|creatures?) you control of ${ref}`, 'gi'), (_m, w: string) => `${kind(w)} you control`)
+      .replace(new RegExp(`\\b(permanents?|creatures?) of ${ref} you control`, 'gi'), (_m, w: string) => `${kind(w)} you control`);
+    if (next !== clause) named = true;
+    return next;
+  });
+  if (!named || out.some((clause) => new RegExp(ref, 'i').test(clause))) return null;
+  return out;
+}
+
+/**
+ * "Choose a creature type." as a spell's first sentence (D1142, CR 205.3m): Kindred Dominance,
+ * Distant Melody, Roar of the Crowd, Raise the Palisade. The type is asked as the spell resolves,
+ * as an "As ~ enters, choose a creature type" permanent asks it (D641), and the bot names its own
+ * deck's tribe. The rest is read twice: once with a stand-in type, which says whether it reads at
+ * all and which targets it takes as it is cast, and again with the type chosen, as it resolves —
+ * the same targets in the same places, because only the type's own words differ. A rest that asks
+ * a question of its own is refused, because the type is already the spell's one question.
+ */
+function chosenTypeSpell(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length < 2 || !/^choose a creature type\.?$/i.test(clauses[0]!.trim())) return null;
+  const rest = clauses.slice(1);
+  const standIn = withChosenType(rest, 'Elf');
+  if (standIn === null) return null;
+  const probe = composeEffects(standIn, name, where);
+  if (probe === null || (probe.decisions ?? []).length > 0 || probe.reflexive !== undefined) return null;
+  const read = new Map<string, ReadEffect | null>();
+  const readFor = (type: string): ReadEffect | null => {
+    if (!read.has(type)) {
+      const text = withChosenType(rest, type);
+      read.set(type, text === null ? null : composeEffects(text, name, where));
+    }
+    return read.get(type) ?? null;
+  };
+  return {
+    ...(probe.targets === undefined ? {} : { targets: probe.targets }),
+    ...(probe.spellFlags === undefined ? {} : { spellFlags: probe.spellFlags }),
+    decisions: [enterChoiceDecision('creature-type', 'friendly')],
+    effect: (c) => {
+      const type = chosenOption(c);
+      if (type === undefined || type === null || !isCreatureType(type)) return c.state;
+      const now = readFor(type);
+      return now === null ? c.state : now.effect({ ...c, decisions: c.decisions.slice(1) });
+    },
+  };
+}
+
 function splitDamageClauses(clause: string): readonly string[] {
   const text = clause.trim().replace(/\.$/, '');
   const each = /^(.+?) deals (\w+) damage to each of (two|three) targets$/i.exec(text);
@@ -29743,6 +29811,9 @@ function composeEffects(
   // And Twincast's two sentences (D755): see `copyTargetSpell`.
   const copied = copyTargetSpell(clauses);
   if (copied !== null) return copied;
+  // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
+  const typed = chosenTypeSpell(clauses, name, where);
+  if (typed !== null) return typed;
   /*
     **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
 

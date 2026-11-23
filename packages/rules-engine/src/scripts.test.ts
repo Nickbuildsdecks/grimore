@@ -34778,6 +34778,55 @@ describe('"as long as ~ has N or more <kind> counters on it" (D798)', () => {
   });
 });
 
+describe('"Choose a creature type." spells (D1142)', () => {
+  const MELODY = { name: 'Test Melody', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Choose a creature type. Draw a card for each permanent you control of that type.' };
+  const DOMINANCE = { name: 'Test Dominance', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: "Choose a creature type. Destroy all creatures that aren't of the chosen type." };
+  const ROAR = { name: 'Test Roar', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Choose a creature type. Test Roar deals damage to any target equal to the number of permanents you control of the chosen type.' };
+  const ELF = { name: 'Test Elf', type_line: 'Creature — Elf', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const GOBLIN = { name: 'Test Goblin', type_line: 'Creature — Goblin', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' };
+  const ROWS = [MELODY, DOMINANCE, ROAR, ELF, GOBLIN];
+  const deck = customDeck({
+    id: 'd1142', name: 'Chosen type', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1142', 1: 'd1142' }, deckSpecs: { d1142: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const resolveNaming = (s0: GameState, type: string) => {
+    let s = passBoth(s0);
+    expect(s.pendingDecision?.prompt).toBe('Choose a creature type');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: type } as Action), 30);
+    return s;
+  };
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [MELODY, DOMINANCE, ROAR]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws one for each permanent of the named type, and none for the others', () => {
+    let s = table(['Test Melody'], ['Test Elf', 'Test Elf', 'Test Goblin']);
+    const hand = s.zones['0:hand']!.length;
+    s = resolveNaming(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Melody') } as Action), 'Elf');
+    expect(s.zones['0:hand']!.length).toBe(hand - 1 + 2);
+  });
+
+  it('destroys every creature not of the named type, on both sides', () => {
+    let s = table(['Test Dominance'], ['Test Elf', 'Test Goblin'], ['Test Elf', 'Test Goblin']);
+    s = resolveNaming(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dominance') } as Action), 'Goblin');
+    for (const seat of [0, 1] as SeatIndex[]) {
+      expect(ids(s, seat, 'battlefield').map((id) => nameOf(s, id)).filter((n) => n.startsWith('Test'))).toEqual(['Test Goblin']);
+    }
+  });
+
+  it('keeps its target, and counts as it resolves', () => {
+    let s = table(['Test Roar'], ['Test Goblin', 'Test Goblin', 'Test Goblin', 'Test Elf']);
+    const before = life(s, 1);
+    s = resolveNaming(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Roar'), targets: [{ kind: 'player', seat: 1 }] } as Action), 'Goblin');
+    expect(life(s, 1)).toBe(before - 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
