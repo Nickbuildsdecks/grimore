@@ -3113,6 +3113,8 @@ export interface PumpOptions {
   /** See `ContinuousEffect.onlySubtypes` / `onlyColours` (D814). */
   readonly onlySubtypes?: readonly string[];
   readonly onlyColours?: readonly Color[];
+  /** See `ContinuousEffect.notSubtypes` (D828). */
+  readonly notSubtypes?: readonly string[];
   /**
    * Further effects from the same source on the same scope, each with its own filters (D814): an
    * attachment's "As long as enchanted creature is red, it gets +1/+1" beside its plain bonus.
@@ -3191,6 +3193,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),
     ...(opts.onlySubtypes !== undefined && opts.onlySubtypes.length > 0 ? { onlySubtypes: [...opts.onlySubtypes] } : {}),
     ...(opts.onlyColours !== undefined && opts.onlyColours.length > 0 ? { onlyColours: [...opts.onlyColours] } : {}),
+    ...(opts.notSubtypes !== undefined && opts.notSubtypes.length > 0 ? { notSubtypes: [...opts.notSubtypes] } : {}),
   };
 }
 

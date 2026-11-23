@@ -59798,3 +59798,60 @@ Faults injected by hand: 6, all caught.
 - A kindless counter test always true.
 
 Coverage: 15,981 of 31,900 cards (+54 over D1168's 15,927), 38,230 of 59,888 lines (+72).
+## D827 — Two mass phrasings: In Garruk's Wake and Urza's Ruinous Blast
+
+Most-played order: In Garruk's Wake (rank 1521) and Urza's Ruinous Blast (rank 1628). Both say
+in a longer form something the mass readers already read.
+
+**Reader.** Two `clausesOf` rewrites:
+- "Destroy/Exile all <A> <controller> and all <B> <controller>", with the same controller clause
+  both times, becomes "… all <A> and <B> <controller>". "Destroy all creatures and planeswalkers
+  you don't control" already read.
+- "All/each [nonland] permanent(s) that aren't/isn't/are not/is not legendary" becomes "all
+  nonlegendary [nonland] permanents", which `massScope`'s state words already know.
+
+"That's not historic" (Desynchronization) stays unread: "nonhistoric" is not a state word yet.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- In Garruk's Wake destroys the opponent's creature and planeswalker and leaves their artifact
+  and everything of ours;
+- the Blast exiles every nonlegendary nonland permanent on both sides and leaves legends and
+  lands.
+
+Faults injected by script: 4 of 4 caught. They cover each rewrite off, the second half of the
+compound dropped, and "aren't legendary" read as legendary.
+
+- engine tests: 6215, all passing (on 2f4fae8)
+- Coverage: 15,838 to 15,840 of 31,900 cards with every line read, and 38,014 to 38,016 of 59,888 lines, against 2f4fae8.
+
+## D828 — A lord of two tribes: Death Baron
+
+Most-played order: Death Baron (rank 1652), with Caterwauling Boggart ("Goblins you control and
+Elementals you control have menace").
+
+**Reader.** At the top of `lineScriptFor`: "<[other] Tribe> you control and <[other] Tribe> you
+control <get/have …>" is read as two lines, each with the shared predicate. Each must come back
+as a single subtype-scoped static, or the line stays unread.
+
+**Engine.** Two static effects would give a creature of both tribes the bonus twice. A Zombie
+Skeleton under Death Baron would be a 4/4, and Death Baron is itself a Zombie Skeleton. The
+printed sentence is one effect. So `ContinuousEffect` gains `notSubtypes`, beside D814's
+`onlySubtypes`: none of these subtypes, read live after layer 4. The second static carries the
+first one's subtype in it, so the two scopes do not overlap.
+
+Death Baron is a Skeleton, so it gets its own bonus, once. "Other" belongs to the Zombies, and the
+Skeleton half has no "other".
+
+**Tests.** 3 engine tests:
+- the card reads;
+- under a Baron our Skeleton, our other Zombie and our Zombie Skeleton are each 3/3 with
+  deathtouch, the last one once and not twice;
+- the Baron (a Zombie Skeleton) is a 3/3 with deathtouch, while our Bear and the opponent's
+  Zombie are unchanged.
+
+Faults injected by script: 4 of 4 caught. They cover the engine filter unchecked, `modsFrom`
+dropping it, the reader not excluding the first tribe, and the first half dropped.
+
+- engine tests: 6218, all passing (on 19bc115)
+- Coverage: 15,840 to 15,842 of 31,900 cards with every line read, and 38,016 to 38,018 of 59,888 lines, against 19bc115.

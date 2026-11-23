@@ -29470,6 +29470,11 @@ function clausesOf(line: string): readonly string[] {
       everyone draws, then everyone discards, each choosing their own. "… at random" stays unread.
     */
     .replace(/\beach player draws (a card|two cards|three cards), then discards (a card|two cards|three cards)(?= *$|\.)/gi, 'each player draws $1. Each player discards $2')
+    // "Destroy all creatures you don't control and all planeswalkers you don't control" (D827, In
+    // Garruk's Wake): the one controller clause said once, as "all creatures and planeswalkers …".
+    .replace(/\b(destroy|exile) all ([a-z ]+?) (you don't control|your opponents control|you control) and all ([a-z ]+?) \3\b/gi, '$1 all $2 and $4 $3')
+    // "All nonland permanents that aren't legendary" (D827, Urza's Ruinous Blast): "nonlegendary".
+    .replace(/\b(all|each) ((?:nonland )?permanents?) that (?:aren't|isn't|are not|is not) legendary\b/gi, '$1 nonlegendary $2')
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')
@@ -35774,6 +35779,24 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
+  /*
+    Two tribes in one lord (D828): "Skeletons you control and other Zombies you control get +1/+1
+    and have deathtouch" (Death Baron), "Goblins you control and Elementals you control have
+    menace". Each half is read as its own line, and the second leaves out the first's subtype, so
+    a creature of both tribes gets the bonus once (it is one effect).
+  */
+  const twoTribes = /^((?:other )?[A-Z][a-z]+ you control) and ((?:other )?[A-Z][a-z]+ you control) ((?:get|have) .+)$/.exec(plain(line).trim());
+  if (twoTribes !== null) {
+    const first = lineScriptFor(`${twoTribes[1]!} ${twoTribes[3]!}`, name);
+    const second = lineScriptFor(`${twoTribes[2]!.charAt(0).toUpperCase()}${twoTribes[2]!.slice(1)} ${twoTribes[3]!}`, name);
+    const onlyStatic = (read: Partial<CardScript> | null) => read !== null && Object.keys(read).every((key) => key === 'statics')
+      && read.statics?.length === 1 && typeof read.statics[0]!.scope === 'object' && 'subtype' in read.statics[0]!.scope;
+    if (onlyStatic(first) && onlyStatic(second)) {
+      const firstType = (first!.statics![0]!.scope as { subtype: string }).subtype;
+      const entry = second!.statics![0]!;
+      return { statics: [first!.statics![0]!, { ...entry, effect: { ...entry.effect, notSubtypes: [firstType] } }] };
+    }
+  }
   /*
     Firebending N (D1138): "Whenever this creature attacks, add N {R}. This mana lasts until end of
     combat." Read as the attack trigger it stands for, through the mana-keeping reader above. "X,

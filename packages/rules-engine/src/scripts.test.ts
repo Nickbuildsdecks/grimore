@@ -37672,6 +37672,83 @@ describe('a colour, a keyword or a counter on a mass scope (D1169)', () => {
   });
 });
 
+describe('two mass phrasings: In Garruk\'s Wake and Urza\'s Ruinous Blast (D827)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Wake', 'Sorcery', "Destroy all creatures you don't control and all planeswalkers you don't control."),
+    R('Test Blast', 'Sorcery', "Exile all nonland permanents that aren't legendary."),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Hero', 'Legendary Creature — Human', '', { power: '2', toughness: '2' }),
+    R('Test Walker', 'Legendary Planeswalker — Tester', '+1: You gain 1 life.', { loyalty: '3' }),
+    R('Test Relic', 'Artifact', ''),
+  ];
+  const deck = customDeck({ id: 'd827', name: 'Mass', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd827', 1: 'd827' }, deckSpecs: { d827: deck.deck },
+      hands: { 0: [spell] },
+      battlefield: { 0: ['Test Bear', 'Test Walker', 'Test Relic', 'Forest'], 1: ['Test Bear', 'Test Hero', 'Test Walker', 'Test Relic', 'Forest'] },
+      turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) })));
+    return (seat: 0 | 1) => namesIn(s, seat, 'battlefield').filter((n) => n !== 'Forest').sort();
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("In Garruk's Wake: their creatures and planeswalker die, their artifact and everything of ours stay", () => {
+    const left = cast('Test Wake');
+    expect(left(0)).toEqual(['Test Bear', 'Test Relic', 'Test Walker']);
+    expect(left(1)).toEqual(['Test Relic']);
+  });
+
+  it("Urza's Ruinous Blast: every nonlegendary nonland permanent goes, on both sides; legends and lands stay", () => {
+    const left = cast('Test Blast');
+    expect(left(0)).toEqual(['Test Walker']);
+    expect(left(1)).toEqual(['Test Hero', 'Test Walker']);
+  });
+});
+
+describe('a lord of two tribes, Death Baron (D828)', () => {
+  const C = (name: string, sub: string, text = '') => ({ name, type_line: `Creature — ${sub}`, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Baron', 'Zombie Skeleton', 'Skeletons you control and other Zombies you control get +1/+1 and have deathtouch.'),
+    C('Test Bones', 'Skeleton'),
+    C('Test Shambler', 'Zombie'),
+    C('Test Both', 'Zombie Skeleton'),
+    C('Test Bear', 'Bear'),
+  ];
+  const deck = customDeck({ id: 'd828', name: 'Baron', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Swamp', count: 50 }], data: ROWS as never[] });
+  const s = advanceTo(arena({
+    decks: { 0: 'd828', 1: 'd828' }, deckSpecs: { d828: deck.deck },
+    battlefield: { 0: ['Test Baron', 'Test Bones', 'Test Shambler', 'Test Both', 'Test Bear'], 1: ['Test Shambler'] }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const of = (seat: 0 | 1, name: string) => {
+    const c = characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!);
+    return [c.power, c.toughness, c.keywords.has('deathtouch')];
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each Skeleton and each other Zombie of ours is a 3/3 deathtoucher, a Zombie Skeleton only once', () => {
+    expect(of(0, 'Test Bones')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Shambler')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Both')).toEqual([3, 3, true]);
+  });
+
+  it('the Baron is a Skeleton, so it gets it too, once; a Bear and their Zombie do not', () => {
+    expect(of(0, 'Test Baron')).toEqual([3, 3, true]);
+    expect(of(0, 'Test Bear')).toEqual([2, 2, false]);
+    expect(of(1, 'Test Shambler')).toEqual([2, 2, false]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
