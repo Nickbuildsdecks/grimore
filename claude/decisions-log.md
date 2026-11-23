@@ -58561,3 +58561,37 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,554 to 15,568 of 31,900 cards with every line read, and 37,602 to 37,620 of 59,888
 lines, against 038736e.
+
+## D1152 — flip a coin
+
+"Flip a coin. If you win the flip, X. [If you lose the flip, Y.]" (CR 705) is printed on 66 legal
+cards and was read on none. Three pieces:
+- **The flip.** `flipCoin` uses the game's seeded generator, as every shuffle does, so a replay
+  flips the same. Each flip is recorded in `GameState.coinFlips`.
+- **The log.** The action's log line reads the new flips off that record: "Nick wins a coin flip"
+  sits beside what the flip did. A coin flip is the one random event a player has to see the
+  result of to follow the game.
+- **The reader.** `coinFlipGroup` reads the sentences as one group. Each branch goes through
+  `composeEffects` on its own. A branch's targets are chosen as the ability is put on the stack, and
+  the losing branch does nothing with them. It is refused when both branches target, when either
+  asks a question, or when anything follows the branches.
+
+Not done: flips a player may choose the outcome of (Krark's Thumb) and "flip until you lose".
+
+Read whole now: 13 of the 66, among them Boompile, Goblin Archaeologist, Frenetic Efreet, Orcish
+Captain, Skyclaw Thrash, Stitch in Time and Winter Sky. The rest have riders this group refuses:
+- "and you decide whether to flip again";
+- "for each flip you win";
+- the "next time that source would deal damage" replacements.
+
+**Tests.** 2 engine tests:
+- The test spell reads whole.
+- Across twenty seeds the flip is both won and lost. Each time the life change is that branch's
+  (+5 or -2), the flip is recorded for the caster, and the log line says the result.
+
+Faults injected by hand: 2.
+- The branches swapped (caught).
+- Every flip won (caught).
+
+Coverage: 15,660 of 31,900 cards (+27 over D1151's 15,633), 37,739 of 59,888 lines (+31). The difference also counts the D7xx
+session's D807, merged in after D1151 was measured; D1152's own share is the 13 coin-flip cards.
