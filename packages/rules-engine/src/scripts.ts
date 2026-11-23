@@ -16905,6 +16905,17 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
     const keywords = grantedKeywords(loses[1]!);
     if (keywords !== null) return { bonus: { removeKeywords: keywords }, harmful: true };
   }
+  /*
+    "Has protection from black and from green" (D805): the Swords of X and Y, and "has protection from
+    red" on its own. Colours only; "from creatures", "from instants" and "from the chosen color"
+    stay unread.
+  */
+  const shielded = /^has protection from (white|blue|black|red|green)(?:,? and from (white|blue|black|red|green))?$/i.exec(rider);
+  if (shielded !== null) {
+    const colours = [shielded[1]!, shielded[2]].filter((w): w is string => w !== undefined)
+      .map((w) => COLOUR_WORDS[w.toLowerCase()]!);
+    return { bonus: { protectionFrom: colours }, harmful: false };
+  }
   const walk = /^has (plains|island|swamp|mountain|forest)walk$/i.exec(rider);
   if (walk !== null) {
     const land = walk[1]!.charAt(0).toUpperCase() + walk[1]!.slice(1).toLowerCase();
@@ -27130,8 +27141,18 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
 function conjoinedEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
-  const parts = clause.trim().split(/\s+and\s+/i).map((part) => part.trim())
-    .filter((part) => part !== '');
+  /*
+    A card whose own name has " and " in it (D805): "Sword of Fire and Ice deals 2 damage to any target
+    and you draw a card". The name is set aside before the split and put back in each part, so the
+    split is at the sentence's "and", not the name's.
+  */
+  const shield = '\u0010';
+  const named = name.includes(' and ') ? clause.split(name).join(shield) : clause;
+  const parts = named.trim().split(/\s+and\s+/i).map((part) => part.split(shield).join(name).trim())
+    .filter((part) => part !== '')
+    // "… and you untap all lands you control" (D805, Sword of Feast and Famine): the second half's
+    // "you" before a verb the readers take in the imperative is the same instruction without it.
+    .map((part, i) => (i === 0 ? part : part.replace(/^you (untap|tap|create|exile|destroy|return|sacrifice|search|put|investigate|proliferate)\b/i, '$1')));
   if (parts.length < 2) return null;
   return composeEffects(parts, name, where);
 }

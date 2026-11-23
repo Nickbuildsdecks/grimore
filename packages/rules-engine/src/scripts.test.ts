@@ -35495,6 +35495,61 @@ describe('goad (D1149)', () => {
   });
 });
 
+describe('the Swords: protection from two colours, and "~ and ~" names in their triggers (D805)', () => {
+  const FEAST = { name: 'Sword of Feast and Famine', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equipped creature gets +2/+2 and has protection from black and from green.\nWhenever equipped creature deals combat damage to a player, that player discards a card and you untap all lands you control.\nEquip {0}' };
+  const FIRE = { name: 'Sword of Fire and Ice', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', oracle_text: 'Equipped creature gets +2/+2 and has protection from red and from blue.\nWhenever equipped creature deals combat damage to a player, Sword of Fire and Ice deals 2 damage to any target and you draw a card.\nEquip {0}' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const deck = customDeck({
+    id: 'd805', name: 'Swords',
+    entries: [FEAST, FIRE, BEAR].map((c) => ({ name: c.name, count: 1 })).concat([{ name: 'Forest', count: 57 }]),
+    data: [FEAST, FIRE, BEAR] as never[],
+  });
+  const equipped = (sword: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd805', 1: 'd805' }, deckSpecs: { d805: deck.deck },
+      hands: { 1: ['Forest', 'Forest'] }, battlefield: { 0: [sword, 'Test Bear', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const row = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', sword))!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: row.card, abilityIndex: row.abilityIndex!, targets: [{ kind: 'card', id: bear }] })));
+    return { s, bear };
+  };
+  const hit = (s0: GameState, bear: string) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    for (let i = 0; i < 12 && s.step !== 'end' && s.step !== 'postcombat-main'; i++) {
+      if (s.pendingChoice != null) s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
+      else if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: (s.pendingDecision.candidates ?? []).slice(0, s.pendingDecision.min ?? 1) } as Action);
+      else s = passBoth(s);
+    }
+    return s;
+  };
+
+  it('reads', () => {
+    for (const card of [FEAST, FIRE]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Feast and Famine: +2/+2 and protection from black and green; on a hit the player discards and our lands untap', () => {
+    let { s, bear } = equipped('Sword of Feast and Famine');
+    expect([power(s, bear), toughness(s, bear)]).toEqual([4, 4]);
+    expect([...characteristicsOf(s, s.instances[bear]!).protectionFrom].sort()).toEqual(['B', 'G']);
+    s = tapAllLands(s, 0);
+    const hand = ids(s, 1, 'hand').length;
+    s = hit(s, bear);
+    expect(ids(s, 1, 'hand').length).toBe(hand - 1);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Forest').every((id) => s.instances[id]!.tapped !== true)).toBe(true);
+  });
+
+  it('Fire and Ice: its own name is not split on "and" — 2 damage to the player and a card', () => {
+    let { s, bear } = equipped('Sword of Fire and Ice');
+    expect([...characteristicsOf(s, s.instances[bear]!).protectionFrom].sort()).toEqual(['R', 'U']);
+    const [theirs, hand] = [life(s, 1), ids(s, 0, 'hand').length];
+    s = hit(s, bear);
+    expect(life(s, 1)).toBe(theirs - 4 - 2);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
