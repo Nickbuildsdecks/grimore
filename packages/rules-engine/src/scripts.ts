@@ -27723,6 +27723,23 @@ function readEffect(
     it resolves, from the tapped lands of whoever controls the effect. The rules allow any land;
     an opponent's is never worth untapping, so the prompt offers yours.
   */
+  /*
+    Dark Confidant (D816): "Reveal the top card of your library and put that card into your hand.
+    You lose life equal to its mana value." Joined into one clause by `clausesOf`. The card is put
+    into the hand, not drawn (CR 121.1): nothing that counts draws sees it, and an empty library
+    is not a draw from one, so it costs nothing and loses nothing.
+  */
+  if (/^reveal the top card of your library and put it into your hand and lose life equal to its mana value$/i.test(clause.trim())) {
+    return {
+      effect: (c) => {
+        const top = listAt(c.state, zoneKey(c.controller, 'library'))[0];
+        if (top === undefined) return c.state;
+        const cost = c.state.cardDefs[c.state.instances[top]!.defKey]?.cmc ?? 0;
+        const next = moveToHand(c.state, [top]);
+        return cost === 0 ? next : loseLife(next, c.controller, cost);
+      },
+    };
+  }
   const untapLands = /^untap up to (one|two|three|four|five|\d+) lands$/i.exec(clause.trim());
   if (untapLands !== null) {
     const n = countFrom(untapLands[1]!);
@@ -29074,6 +29091,8 @@ function clausesOf(line: string): readonly string[] {
       everyone draws, then everyone discards, each choosing their own. "… at random" stays unread.
     */
     .replace(/\beach player draws (a card|two cards|three cards), then discards (a card|two cards|three cards)(?= *$|\.)/gi, 'each player draws $1. Each player discards $2')
+    // Dark Confidant (D816): the life lost is for the card the first sentence put in the hand.
+    .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You lose life equal to (?:its|that card's) mana value/gi, 'reveal the top card of your library and put it into your hand and lose life equal to its mana value')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."

@@ -41691,3 +41691,40 @@ Faults injected by hand: 4, all caught.
 - The room choice ignored.
 
 Coverage: 15,793 of 31,900 cards (+23 over D1159's 15,770), 37,957 of 59,888 lines (+43). The difference also counts the D7xx session's D814, merged in after D1159 was measured; D1160's own share is the 6 initiative cards above, plus lines on cards that stay unread for other reasons.
+## D816 — Dark Confidant compiled: the card put into the hand, and its mana value in life
+
+Most-played order: Dark Confidant (rank 1225), with Dark Tutelage, Darkstar Augur and Pain Seer,
+which print the same two sentences.
+
+Dark Confidant has had a hand-written script since the first pool, and that script used `draw`.
+The card says "reveal the top card of your library and put that card into your hand", which is
+not a draw (CR 121.1). So the hand-written Confidant was seen by "whenever an opponent draws a
+card" and counted toward the turn's draws, and the printed card is not. The compiled reading now
+covers all four printings. The hand-written script still wins in play (`scriptForCard` prefers it),
+so the Confidant in the pool keeps drawing until that script is corrected; that is the next
+increment (D817).
+
+**Reader.** `clausesOf` joins the two sentences into one clause ("… put it into your hand and lose
+life equal to its mana value"), since the second is about the card the first moved. `readEffect`
+reads that clause: take the top card of the controller's library, move it to the hand with
+`moveToHand`, and lose life equal to its printed mana value (`cmc`, the same in every zone, CR
+202.3). An empty library puts nothing and costs nothing; it is not a draw from an empty library,
+so it does not lose the game.
+
+Still unread: Ad Nauseam's "You may repeat this process any number of times", and Sorin the
+Mirthless's "you may reveal that card … If you do".
+
+**Tests.** 4 engine tests:
+- the card reads;
+- with a three-mana card on top, the upkeep puts it into the hand, takes three life, and does not
+  count as a draw;
+- a land on top costs nothing;
+- with an empty library nothing is put, nothing is lost, and the seat has not lost the game.
+
+Faults injected by script: 5 of 5 caught. They cover the joiner, a draw in place of the move (the
+first version of the test read `drew`, which is cleared when announced, and missed it; it now
+reads `cardsDrawnThisTurn`), no life loss, the bottom card instead of the top, and a fixed
+amount.
+
+- engine tests: 6180, all passing (on 5c4bad1)
+- Coverage: 15,806 to 15,810 of 31,900 cards with every line read, and 37,966 to 37,970 of 59,888 lines, against 5c4bad1.
