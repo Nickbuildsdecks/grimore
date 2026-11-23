@@ -23126,6 +23126,19 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
   const whose = matched[3]!.toLowerCase();
   const scope: 'yours' | 'any' | 'opponents' = whose === 'your' ? 'yours'
     : whose === 'a' ? 'any' : 'opponents';
+  /*
+    A bare "target card in a graveyard" (D799): any card in any graveyard, which `satisfies` already
+    asks of every `graveyard-*` kind, so no filter — the shape the hand-written Scavenging Ooze has
+    always had, and the two readings agree (compiled-vs-written).
+  */
+  if (scope === 'any' && matched[2]!.trim() === '') {
+    return {
+      kind: 'graveyard-card',
+      ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
+      ...(quantifier.optional === true ? { optional: true } : {}),
+      ...(quantifier.min === undefined ? {} : { min: quantifier.min }),
+    };
+  }
   return {
     kind: 'graveyard-card',
     filter: (state, candidate, controller) => {
@@ -29460,6 +29473,47 @@ const NO_REGENERATION = /^(?:it|they|that creature|those creatures) can['’]t b
  * until end of turn on the creature, which is a continuous effect this engine has no field for.
  * Reading those two as though the flag covered them would be a wrong card (D362).
  */
+/**
+ * "Exile target card from a graveyard. If it was a creature card, put a +1/+1 counter on ~ and you
+ * gain 1 life." (D799): Scavenging Ooze, Lion Sash ("a permanent card"), General's Enforcer. The
+ * exile, then the rest only if the exiled card was of that kind, asked of the card as it was (its
+ * printed type line, which a card in a graveyard has). The exile must have happened: a target gone
+ * from the graveyard before it resolves leaves the rest undone.
+ */
+function exiledKindRider(
+  clauses: readonly string[], name: string, where: SubjectZone | null,
+): ReadEffect | null {
+  if (clauses.length !== 2) return null;
+  const exile = plain(clauses[0]!).trim().replace(/\.\s*$/, '');
+  if (!/^exile target (?:\w+ )?card from a graveyard$/i.test(exile)) return null;
+  const kind = /^if it was an? (creature|permanent|land|artifact|enchantment|instant|sorcery|noncreature|nonland) card, (.+)$/i
+    .exec(plain(clauses[1]!).trim().replace(/\.\s*$/, ''));
+  if (kind === null) return null;
+  const first = readEffect(exile, name, where);
+  const then = composeEffects(clausesOf(kind[2]!), name, where);
+  if (first === null || then === null || first.decisions !== undefined || then.decisions !== undefined
+    || then.targets !== undefined || then.beforeDecisions !== undefined) return null;
+  const word = kind[1]!.toLowerCase();
+  const fits = (typeLine: string): boolean => {
+    const line = parseTypeLine(typeLine);
+    if (word === 'permanent') return ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'].some((t) => hasType(line, t));
+    if (word === 'noncreature') return !hasType(line, 'creature');
+    if (word === 'nonland') return !hasType(line, 'land');
+    return hasType(line, word);
+  };
+  return {
+    ...(first.targets === undefined ? {} : { targets: first.targets }),
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      const was = id === null ? undefined : c.state.instances[id];
+      const typeLine = was === undefined ? '' : c.state.cardDefs[was.defKey]?.typeLine ?? '';
+      const after = first.effect(c);
+      const exiled = id !== null && after.instances[id]?.zone === 'exile' && was?.zone !== 'exile';
+      return exiled && fits(typeLine) ? then.effect({ ...c, state: after }) : after;
+    },
+  };
+}
+
 function noRegenerationRider(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -29664,6 +29718,9 @@ function composeEffects(
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.
   const rider = noRegenerationRider(clauses, name, where);
   if (rider !== null) return rider;
+  // Scavenging Ooze (D799): see `exiledKindRider`.
+  const exiledKind = exiledKindRider(clauses, name, where);
+  if (exiledKind !== null) return exiledKind;
   // The same shape on the counter family (D545): "If that spell is countered this way, exile it
   // instead of putting it into its owner's graveyard."
   const exiled = counterExileRider(clauses, name, where);

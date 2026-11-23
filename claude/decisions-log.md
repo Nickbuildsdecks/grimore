@@ -57735,3 +57735,30 @@ Faults injected by script: 3 of 3 caught.
 
 Coverage: 15,305 to 15,328 of 31,900 cards with every line read, and 37,271 to 37,312 of 59,888
 lines, against c1b62c5.
+
+## D799 — "Exile target card from a graveyard. If it was a creature card, …"
+
+Most-played order: Scavenging Ooze (rank 1606), Lion Sash (1857, "a permanent card"), General's
+Enforcer's ability (3524), and the rest of the graveyard-hate abilities with a follow-up.
+
+A two-sentence rider read before the clause loop (`exiledKindRider`): the exile, then the rest only
+if the card exiled was of the named kind (creature, permanent, land, artifact, enchantment, instant,
+sorcery, noncreature, nonland), asked of the card's printed type line. The exile must have happened:
+a target that left the graveyard before resolution leaves the rest undone.
+
+Scavenging Ooze also has a hand-written script, and the first gate run found the compiled reading
+differed from it (compiled-vs-written): the compiled target spec for a bare "target card in a
+graveyard" carried a filter that accepts every card, where the hand-written one has none. That
+filter now stays off for the bare phrase, since `satisfies` already asks the zone of every
+`graveyard-*` kind, and the two agree with no new row in the disagreement table.
+
+**Tests.** 3 engine tests: the cards read; Scavenging Ooze exiling an instant gets nothing, exiling
+a creature card gets the counter and the life; Lion Sash's "permanent card" counts a land and not an
+instant.
+
+Faults injected by script: 4 of 4 caught.
+
+    engine tests: 6,034, all passing (on c66337d)
+
+Coverage: 15,328 to 15,330 of 31,900 cards with every line read, and 37,312 to 37,315 of 59,888
+lines, against c66337d.
