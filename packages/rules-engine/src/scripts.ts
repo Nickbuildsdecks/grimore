@@ -32750,8 +32750,10 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // Rhythm of the Wild (D711): see `CardScript.grantsRiot`.
   if (/^nontoken creatures you control have riot\.?$/i.test(plain(line).trim())) return { grantsRiot: true };
   // Seedborn Muse (D661): see `CardScript.untapsDuringOthersUntap`.
-  if (/^untap all permanents you control during each other player's untap step\.?$/i.test(plain(line).trim())) {
-    return { untapsDuringOthersUntap: true };
+  const othersUntap = /^untap all (permanents|artifacts|creatures) you control during each other player's untap step\.?$/i.exec(plain(line).trim());
+  if (othersUntap !== null) {
+    const kind = othersUntap[1]!.toLowerCase();
+    return { untapsDuringOthersUntap: kind === 'permanents' ? true : kind as 'artifacts' | 'creatures' };
   }
   // "You may play an additional land / two additional lands on each of your turns." (D648)
   const extra = /^you may play (an|one|two|three) additional lands? on each of your turns\.?$/i.exec(plain(line).trim());
