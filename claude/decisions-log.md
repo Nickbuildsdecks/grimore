@@ -59754,3 +59754,47 @@ Faults injected by hand: 3, all caught.
 
 
 Coverage: 15,927 of 31,900 cards (+27 over D1167's 15,900), 38,158 of 59,888 lines (+40). The difference also counts the D7xx session's D824 to D826, merged in after D1167 was measured. Eight are the domain cards above; the split of the rest between the ability-word retry and D824 to D826 was not measured.
+
+## D1169 — a colour, a keyword or a counter on a mass scope
+
+`massScope` reads the scope of "Destroy all …", "Tap all …", "Return all …", "each …" and the
+board counts ("draw a card for each …"). It knew types, subtypes, supertypes, the state words, a
+size bound and "with no counters". It now also reads:
+- **A colour word** as the permanent's live colours, not its type line: "Destroy all green
+  creatures" (Perish), "nonblack creatures", "colorless", "multicolored" and "monocolored". A colour
+  alone is not a scope: "all green" without a type word stays unread.
+- **"With <keyword>"**, the creature's live keywords: "Destroy all creatures with flying"
+  (Whirlwind), "for each creature you control with flying" (Aven Gagglemaster, Aerial Assault).
+  Only a single keyword the engine knows; "with flying and vigilance" stays unread.
+- **"With a +1/+1 counter on it" / "with +1/+1 counters on them"**, a counter of that kind
+  (Armorcraft Judge, Avatar of the Resolute), and "with a counter on them" with no kind named, any
+  counter at all. An article is never read as a counter kind.
+
+The mass pump ("… get +N/+N / gain <keyword> until end of turn") had its own subject list. Its
+subjects now fall back to `massScope` for any creature scope with a colour or a "with" filter:
+"Creatures you control with flying get +1/+1", "All creatures with flying get -1/-1", "Nonblack
+creatures get -1/-1". Creatures only: every id is checked to be a creature. The sentence's capital
+is lowered first, because `massScope` reads a capitalised word as a subtype.
+
+The compile pin "a count qualified past the vocabulary" was "… with a +1/+1 counter on it"; it is
+now "… with flying and vigilance", which is still refused. D600's refusal row "Destroy all white
+permanents" (caught by the pregate) is now "Destroy all white": a colour alone is still not a scope.
+
+**Tests.** 7 engine tests:
+- The test cards read whole.
+- A colour: green creatures die on both sides, the white flier stays.
+- Colorless: the artifact creature dies, the coloured ones stay.
+- A keyword: only the flier dies.
+- A keyword on a pump: the flier grows, the bear does not.
+- A counter as a count: one card for each creature with a +1/+1 counter.
+- A counter with no kind named: only the creature with an oil counter dies.
+
+Faults injected by hand: 6, all caught.
+- The colour test inverted.
+- The counter test accepting zero.
+- The keyword test always true.
+- The sentence capital left on.
+- Colorless accepting any colour count.
+- A kindless counter test always true.
+
+Coverage: 15,981 of 31,900 cards (+54 over D1168's 15,927), 38,230 of 59,888 lines (+72).
