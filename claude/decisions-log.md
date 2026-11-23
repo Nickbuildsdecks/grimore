@@ -58089,3 +58089,52 @@ Faults injected by script: 4 of 4 caught.
 
 Coverage: 15,328 to 15,330 of 31,900 cards with every line read, and 37,312 to 37,315 of 59,888
 lines, against c66337d.
+
+## D1144 — the Ring tempts you
+
+"The Ring tempts you" (CR 701.54) is printed on 53 legal cards and was read on none. Now:
+- **State.** `GameState.ring` holds, per seat, how many times the Ring has tempted that player and
+  which creature they chose as Ring-bearer.
+- **Ring-bearer.** `ringBearerOf` returns the chosen creature only while it is on the battlefield
+  under that seat's control (CR 701.54c). One that leaves or changes control stops being the
+  Ring-bearer without anything clearing it.
+- **The emblem.** The first temptation gives the seat an emblem named The Ring in its command zone
+  (CR 701.54a). Its printed text is the four abilities; its script is hand-written
+  (`theRingScript`).
+- **The clause.** "The Ring tempts you" asks the controller to choose a creature they control as
+  it resolves, then calls `temptWithRing`.
+
+The Ring's abilities by level:
+1. "Your Ring-bearer is legendary and can't be blocked by creatures with greater power." This is a
+   characteristic of the bearer: Legendary joins its supertypes, and the blocking half is skulk's
+   rule word for word (CR 702.118a), so the bearer gets skulk.
+2. "Whenever your Ring-bearer attacks, draw a card, then discard a card."
+4. "Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3 life."
+
+Abilities 2 and 4 are triggers on the emblem. Each is read by the line reader from its sentence,
+with "a creature you control" for "your Ring-bearer", plus a condition: the creature is the seat's
+bearer and the Ring has tempted the seat often enough. Ability 3 (the blocker is sacrificed at end
+of combat) is not done yet; D1145 adds it.
+
+Read whole now include Bilbo, Retired Burglar, Enraged Huorn, Fiery Inscription, Claim the Precious,
+Birthday Escape and Bombadil's Song. Not read yet:
+- "Whenever the Ring tempts you" (7 cards);
+- "your Ring-bearer" on cards (12 cards);
+- "Whenever you choose a creature as your Ring-bearer" (Call of the Ring).
+
+**Tests.** 5 engine tests:
+- The test Hobbit reads whole.
+- One temptation choosing a Bear: level 1, the emblem in the command zone, and the Bear is a
+  legendary Ring-bearer with skulk, while the Hobbit is not.
+- A Ring-bearer that is sacrificed is no longer one, and the level stays.
+- At level 1 an attack does not loot (nothing reaches the graveyard); at level 2 it loots (hand
+  size the same, one more card in the graveyard).
+- At level 4 an unblocked 2/2 Ring-bearer costs the opponent 5.
+
+Faults injected by hand: 3.
+- The level check dropped. This was caught only after the level-1 check was changed from hand size
+  (which a loot leaves unchanged) to the graveyard.
+- No skulk (caught).
+- A bearer that left still counted (caught).
+
+Coverage: 15,488 of 31,900 cards (+25 over D1143's 15,463), 37,503 of 59,888 lines (+31).
