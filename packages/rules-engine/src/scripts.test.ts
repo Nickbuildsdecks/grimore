@@ -36810,6 +36810,66 @@ describe('"until your next turn", and "can\'t attack this turn" (D1161)', () => 
   });
 });
 
+describe('a punisher once: "loses N life unless they discard a card / sacrifice …" (D1162)', () => {
+  const VEILS = { name: 'Test Veils', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each player loses 2 life unless they discard a card.' };
+  const SANDFALL = { name: 'Test Sandfall', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each player loses 2 life unless they sacrifice an artifact, a creature, or a land.' };
+  const ROWS = [VEILS, SANDFALL];
+  const deck = customDeck({
+    id: 'd1162', name: 'Punisher', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], theirHand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1162', 1: 'd1162' }, deckSpecs: { d1162: deck.deck },
+    hands: { 0: hand, 1: theirHand }, battlefield: { 0: ['Swamp'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // Seat 0 takes the other thing (and its first candidate); seat 1 loses the life. Records what seat 1 was offered.
+  const play = (s0: GameState, name: string) => {
+    let s = drain(passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', name) } as Action)), 30);
+    const offered: Record<number, readonly string[]> = {};
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      const p = s.pendingDecision;
+      if (p === null) { s = drain(passBoth(s)); continue; }
+      if ((p.options ?? []).length > 0) {
+        offered[p.seat] = p.options!;
+        const other = p.options!.find((o) => !o.startsWith('Lose'));
+        s = apply(s, { type: 'auto:decide', by: p.seat, cards: [], option: p.seat === 0 && other !== undefined ? other : p.options![0] } as Action);
+      } else {
+        s = apply(s, { type: 'auto:decide', by: p.seat, cards: p.candidates.slice(0, 1) } as Action);
+      }
+    }
+    return { s, offered };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each player chooses: a discard costs the card, the refusal costs the life', () => {
+    const before = table(['Test Veils', 'Swamp'], ['Swamp']);
+    const { s } = play(before, 'Test Veils');
+    expect(life(s, 0)).toBe(20);
+    // The spell and one card leave the hand; the card is in the graveyard beside the spell.
+    expect(ids(s, 0, 'hand')).toHaveLength(ids(before, 0, 'hand').length - 2);
+    expect(namesIn(s, 0, 'graveyard').sort()).toEqual(['Swamp', 'Test Veils']);
+    expect(life(s, 1)).toBe(18);
+    expect(ids(s, 1, 'hand')).toHaveLength(1);
+  });
+
+  it('a player with nothing to discard is not asked, and loses the life', () => {
+    const { s, offered } = play(table(['Test Veils', 'Swamp'], []), 'Test Veils');
+    expect(offered[1]).toBeUndefined();
+    expect(offered[0]).toEqual(['Lose 2 life', 'Discard a card']);
+    expect(life(s, 1)).toBe(18);
+  });
+
+  it('the sacrifice: a land goes for the life, and a player with no permanent loses the life', () => {
+    const { s } = play(table(['Test Sandfall'], []), 'Test Sandfall');
+    expect(life(s, 0)).toBe(20);
+    expect(ids(s, 0, 'battlefield')).toEqual([]);
+    expect(life(s, 1)).toBe(18);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
