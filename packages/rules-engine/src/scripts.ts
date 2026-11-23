@@ -21424,6 +21424,11 @@ function tokenEffect(
    * Answers the seats; none means nobody, which is a target that has gone.
    */
   recipients?: (c: EffectContext) => readonly SeatIndex[],
+  /**
+   * The count, when the caller has already read it (D823): "create X … tokens, where X is its
+   * power" on a death trigger, measured off the event's creature. The clause then prints X.
+   */
+  countOverride?: (c: EffectContext) => number,
 ): ReadEffect | null {
   /*
     The count's tail is taken off **before** the token itself is read, because `with (.+)` is greedy
@@ -21456,9 +21461,10 @@ function tokenEffect(
   const flat = clause.trim().replace(/\.$/, '');
   const announced = /^(.*?),\s*where X is (.+)$/i.exec(flat);
   const perThing = announced !== null ? null : /^(.*?) for each (.+)$/i.exec(flat);
-  const counted = announced !== null
+  if (countOverride !== undefined && (announced !== null || perThing !== null)) return null;
+  const counted = countOverride ?? (announced !== null
     ? boardCount(announced[2]!, name)
-    : perThing !== null ? forEachCount(perThing[2]!, name) : null;
+    : perThing !== null ? forEachCount(perThing[2]!, name) : null);
   if ((announced !== null || perThing !== null) && counted === null) return null;
   const untappedBody = announced?.[1] ?? perThing?.[1] ?? flat;
   // "Create a tapped Powerstone token", "two tapped 2/2 black Zombie creature tokens" (D740). Not
@@ -21492,7 +21498,7 @@ function tokenEffect(
   */
   if (counted !== null) {
     const word = made.printed.toLowerCase();
-    const expected = announced !== null ? ['x'] : ['a', 'an', 'one'];
+    const expected = announced !== null || countOverride !== undefined ? ['x'] : ['a', 'an', 'one'];
     if (!expected.includes(word)) return null;
   }
 
@@ -21912,6 +21918,26 @@ function eventRelativeEffect(
           immediate: (c) => draw(c.state, c.controller, measure(c)),
         }
         : { effect: (c) => gainLife(c.state, c.controller, measure(c)) };
+    }
+    /*
+      And tokens counted the same way (D823): "When Elenda dies, create X 1/1 white Vampire creature
+      tokens with lifelink, where X is Elenda's power", "When Goldvein Hydra dies, create a number of
+      tapped Treasure tokens equal to its power". The token is read by `tokenEffect` with the count
+      handed to it.
+    */
+    const measuredTokens = new RegExp(
+      `^create (?:a number of|X) (.+? tokens?(?: with [^,]+?)?)(?: ${MEASURE}|, where X is (?:its|that creature's|${selfRef(name)}'s) (power|toughness))$`, 'i',
+    ).exec(text);
+    if (measuredTokens !== null) {
+      const which = (measuredTokens[2] ?? measuredTokens[3])!.toLowerCase() as 'power' | 'toughness';
+      const measure = (c: EffectContext): number => {
+        const inst = c.subject === undefined ? undefined : c.state.instances[c.subject];
+        return Math.max(0, inst !== undefined && inst.zone === 'battlefield'
+          ? characteristicsOf(c.state, inst)[which]
+          : c.subjectStats?.[which] ?? 0);
+      };
+      const read = tokenEffect(`create X ${measuredTokens[1]!}`, name, undefined, undefined, measure);
+      if (read !== null) return read;
     }
   }
 
