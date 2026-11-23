@@ -20686,6 +20686,30 @@ function countOfThing(
       return c.state.instances[c.source]?.counters[KICKED] ?? 0;
     };
   }
+  /*
+    Domain (D1136): "for each basic land type among lands you control", "the number of basic land
+    types among lands you control" — Plains, Island, Swamp, Mountain and Forest, counted once each
+    off the lands' live subtypes, so a dual counts twice and a Prismatic Omen's lands count all
+    five. "Lands they control" is the targeted player's (Allied Strategies), else the controller's.
+  */
+  const domain = /^basic land types? among lands (you|they) control$/i.exec(text);
+  if (domain !== null) {
+    const theirs = domain[1]!.toLowerCase() === 'they';
+    return (c) => {
+      const seat = theirs ? firstPlayerTarget(c) ?? c.controller : c.controller;
+      const seen = new Set<string>();
+      for (const id of listAt(c.state, zoneKey(seat, 'battlefield'))) {
+        const inst = c.state.instances[id];
+        if (inst === undefined) continue;
+        const ch = characteristicsOf(c.state, inst);
+        if (!ch.isLand) continue;
+        for (const basic of ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest']) {
+          if (hasSubtype(ch.typeLine, basic)) seen.add(basic);
+        }
+      }
+      return seen.size;
+    };
+  }
   // "for each creature destroyed this way", "the number of permanents destroyed this way" (D682).
   const destroyed = /^(creature|permanent|artifact|enchantment|planeswalker|land)s? destroyed this way$/i.exec(text);
   if (destroyed !== null) {
@@ -30643,6 +30667,18 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     the ability used from there (`fromGraveyard`, with `exileSelf`), so it can never be offered from
     the battlefield.
   */
+  /*
+    Cohort (D1136): "Cohort — {T}, Tap an untapped Ally you control: …". The ability word names the
+    cost, which the remainder prints, so it comes off when that cost is there.
+  */
+  const cohort = /^Cohort\s*[—–]\s*(.+)$/i.exec(text);
+  if (cohort !== null) {
+    if (!/tap an untapped ally you control/i.test(cohort[1]!)) return null;
+    const inner = abilityFromLine(cohort[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (abilities.length === 0) return null;
+    return { ...inner, abilities: abilities.map((ability) => ({ ...ability, description: text })) };
+  }
   const renewed = /^Renew\s*[—–]\s*(.+)$/i.exec(text);
   if (renewed !== null) {
     const inner = abilityFromLine(renewed[1]!, name);
@@ -33532,6 +33568,16 @@ function interveningConditionFor(
     Ogre", the Oni's "… a Demon". The negation of the same condition with "control", so it reads
     exactly what "if you control an Ogre" reads, and nothing else.
   */
+  /*
+    Formidable's condition (D1136): "creatures you control have total power 8 or greater" (Atarka
+    Beastbreaker, Dragon Whisperer, Circle of Elders), off D1076's total-power reader.
+  */
+  const formidable = /^creatures you control have total power (\d+) or greater$/i.exec(plain(printed).trim());
+  if (formidable !== null) {
+    const total = totalAmong('the total power of creatures you control')!;
+    const least = Number(formidable[1]);
+    return (c) => total(c) >= least;
+  }
   const lacking = /^you don't control (an? .+)$/i.exec(plain(printed).trim());
   if (lacking !== null) {
     const holds = interveningConditionFor(`you control ${lacking[1]!}`, name);

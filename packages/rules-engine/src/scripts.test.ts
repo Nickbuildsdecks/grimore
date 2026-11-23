@@ -34093,6 +34093,53 @@ describe('a rider with keywords, "you and target opponent each", two or more att
   });
 });
 
+describe('domain, formidable and cohort (D1136)', () => {
+  const C = (name: string, text: string, type = 'Creature — Human', size = '1') => ({ name, type_line: type, mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: size, toughness: size, oracle_text: text });
+  const MIGHT = { name: 'Test Might', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Target creature gets +1/+1 until end of turn for each basic land type among lands you control.' };
+  const BREAKER = C('Test Breaker', 'Formidable — {G}: Test Breaker gets +4/+4 until end of turn. Activate only if creatures you control have total power 8 or greater.');
+  const GIANT = C('Test Giant', '', 'Creature — Giant', '7');
+  const CHOSEN = C('Test Chosen', 'Cohort — {T}, Tap an untapped Ally you control: You gain 2 life.', 'Creature — Vampire Ally');
+  const ALLY = C('Test Ally', '', 'Creature — Human Ally');
+  const ROWS = [MIGHT, BREAKER, GIANT, CHOSEN, ALLY];
+  const deck = customDeck({
+    id: 'd1136', name: 'Words', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 25 }, { name: 'Island', count: 25 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1136', 1: 'd1136' }, deckSpecs: { d1136: deck.deck },
+    hands: { 0: [...hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, id: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === id);
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [MIGHT, BREAKER, CHOSEN]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('domain counts each basic land type once', () => {
+    const s = table(['Test Might'], ['Forest', 'Forest', 'Island', 'Test Ally']);
+    const ally = find(s, 0, 'battlefield', 'Test Ally');
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Might'), targets: [{ kind: 'card', id: ally }] } as Action)), 30);
+    expect(power(after, ally)).toBe(3);
+  });
+
+  it('formidable is offered only with total power 8 or greater', () => {
+    const weak = table([], ['Forest', 'Test Breaker']);
+    expect(offered(weak, find(weak, 0, 'battlefield', 'Test Breaker'))).toBe(false);
+    const strong = table([], ['Forest', 'Test Breaker', 'Test Giant']);
+    expect(offered(strong, find(strong, 0, 'battlefield', 'Test Breaker'))).toBe(true);
+  });
+
+  it('cohort taps itself and another Ally', () => {
+    let s = table([], ['Test Chosen', 'Test Ally']);
+    const chosen = find(s, 0, 'battlefield', 'Test Chosen');
+    expect(offered(s, chosen)).toBe(true);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: chosen, abilityIndex: 0 } as Action)), 30);
+    expect(life(s, 0)).toBe(before + 2);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Ally')]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
