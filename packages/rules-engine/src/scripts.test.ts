@@ -36613,6 +36613,50 @@ describe('Dark Confidant compiled: the card put into the hand, and its mana valu
   });
 });
 
+describe('"whenever a permanent you control enters tapped", Amulet of Vigor (D818)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Amulet', 'Artifact', 'Whenever a permanent you control enters tapped, untap it.'),
+    R('Test Tapland', 'Land', 'Test Tapland enters tapped.\n{T}: Add {G}.'),
+  ];
+  const deck = customDeck({
+    id: 'd818', name: 'Amulet',
+    entries: [{ name: 'Test Amulet', count: 1 }, { name: 'Test Tapland', count: 4 }, { name: 'Forest', count: 55 }],
+    data: ROWS as never[],
+  });
+  const table = (battlefield: Record<number, string[]>) => advanceTo(arena({
+    decks: { 0: 'd818', 1: 'd818' }, deckSpecs: { d818: deck.deck },
+    hands: { 0: ['Test Tapland', 'Forest'] }, battlefield, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land that enters tapped is untapped by the trigger', () => {
+    let s = table({ 0: ['Test Amulet'] });
+    const land = find(s, 0, 'hand', 'Test Tapland');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land });
+    expect(s.instances[land]!.tapped).toBe(true);
+    expect(s.stackOrder).toHaveLength(1);
+    s = drain(passBoth(s));
+    expect(s.instances[land]!.zone).toBe('battlefield');
+    expect(s.instances[land]!.tapped).toBe(false);
+  });
+
+  it('a land that enters untapped triggers nothing, and without the Amulet the tapped land stays tapped', () => {
+    let s = table({ 0: ['Test Amulet'] });
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') });
+    expect(s.stackOrder).toHaveLength(0);
+    let bare = table({});
+    const land = find(bare, 0, 'hand', 'Test Tapland');
+    bare = drain(passBoth(apply(bare, { type: 'auto:playLand', by: 0, card: land })));
+    expect(bare.instances[land]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

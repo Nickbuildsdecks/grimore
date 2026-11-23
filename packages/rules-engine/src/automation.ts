@@ -1803,6 +1803,8 @@ function triggerMatches(
       if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
       // "Enters untapped" (D679), asked of the arrival itself.
       if (want.kind === 'etb' && want.untapped === true && (event as { subjectTapped?: boolean }).subjectTapped !== false) return false;
+      // And "enters tapped" (D818), the same fact the other way round.
+      if (want.kind === 'etb' && want.tapped === true && (event as { subjectTapped?: boolean }).subjectTapped !== true) return false;
       // And of a death (D1113): a colour, colorless, legendary, a token.
       if (want.kind === 'dies' && event.kind === 'dies') {
         if (want.colour !== undefined && !(event.subjectColours ?? []).includes(want.colour)) return false;

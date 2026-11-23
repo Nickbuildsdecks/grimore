@@ -265,6 +265,11 @@ export type TriggerEvent =
        * response does not undo it. Answered from `subjectTapped`, which the engine sets.
        */
       readonly untapped?: true;
+      /**
+       * And its mirror (D818): "Whenever a permanent you control enters **tapped**, untap it"
+       * (Amulet of Vigor). Asked of the arrival, as `untapped` is.
+       */
+      readonly tapped?: true;
       /** Set by the engine when it raises an entry: whether the subject arrived tapped. */
       readonly subjectTapped?: boolean;
       /**
