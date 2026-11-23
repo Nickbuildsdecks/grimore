@@ -16304,6 +16304,41 @@ function selfEffect(
     const total = Number(evidence[1]);
     return { effect: (c) => collectEvidence(c.state, c.controller, total, c.source) };
   }
+  /*
+    A delayed sacrifice, exile or destruction of the source or of a target (D1166): "Sacrifice ~ at
+    the beginning of the next end step" (Chimeric Coils, Deathknell Kami), "Exile it …" (Dark Maze),
+    and, through the pronoun borrow, "Sacrifice it …" after a target (Krovikan Elementalist). The
+    engine-known delayed ability D696 schedules for a creature put onto the battlefield, on the
+    stack at the next end step, acting only on the object as it is now (CR 400.7). After a card
+    target "it" is that card, never the source.
+  */
+  const delayedSelf = new RegExp(`^(sacrifice|exile|destroy) (?:(it)|${self}|this (?:creature|artifact|permanent|enchantment)) at the beginning of (the|your) next end step$`, 'i').exec(text);
+  if (delayedSelf !== null && !(delayedSelf[2] !== undefined && earlierCardTarget)) {
+    const verb = delayedSelf[1]!.toLowerCase() as 'sacrifice' | 'exile' | 'destroy';
+    const of = delayedSelf[3]!.toLowerCase() === 'your' ? 'you' as const : 'any' as const;
+    return {
+      effect: (c) => (c.state.instances[c.source]?.zone !== 'battlefield' ? c.state : scheduleDelayed(c.state, {
+        source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of,
+        subject: c.source, builtin: verb, description: `${verb} ${name}`,
+      })),
+    };
+  }
+  const delayedTarget = /^(sacrifice|exile|destroy) ((?:up to one )?target .+?) at the beginning of (the|your) next end step$/i.exec(text);
+  if (delayedTarget !== null) {
+    const spec = targetSpecFrom(delayedTarget[2]!, false);
+    if (spec !== null) {
+      const verb = delayedTarget[1]!.toLowerCase() as 'sacrifice' | 'exile' | 'destroy';
+      const of = delayedTarget[3]!.toLowerCase() === 'your' ? 'you' as const : 'any' as const;
+      return {
+        targets: [spec],
+        effect: (c) => cardTargets(c).reduce((state, id) => (state.instances[id]?.zone !== 'battlefield' ? state : scheduleDelayed(state, {
+          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end', of,
+          subject: id, builtin: verb, description: `${verb} ${state.cardDefs[state.instances[id]!.defKey]?.name ?? 'it'}`,
+        })), c.state),
+      };
+    }
+  }
+
   // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
   const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
   if (incubated !== null) {
@@ -21233,7 +21268,8 @@ function tokenFrom(
 
   const named = made[5] === undefined
     ? []
-    : made[5].trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/).map((k) => k.trim())
+    // The Oxford comma too (D1166): "with trample, lifelink, and haste" is three keywords, not "and haste".
+    : made[5].trim().replace(/\.$/, '').split(/,\s*(?:and\s+)?|\s+and\s+/).map((k) => k.trim())
       .filter((k) => k !== '');
   const oracleText = named.length === 0
     ? ''

@@ -37297,6 +37297,61 @@ describe('"For each land you control, create a Treasure token", Brass\'s Bounty 
   });
 });
 
+describe('delayed sacrifice of the source or a target, and a token\'s Oxford-comma keywords (D1166)', () => {
+  const KAMI = { name: 'Test Kami', type_line: 'Creature — Spirit', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{0}: Test Kami gets +1/+1 until end of turn. Sacrifice it at the beginning of the next end step.' };
+  const SHAMAN = { name: 'Test Shaman', type_line: 'Creature — Human Shaman', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '1', toughness: '1', oracle_text: '{0}: Target creature you control gains flying until end of turn. Sacrifice it at the beginning of the next end step.' };
+  const HUNGER = { name: 'Test Hunger', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Create a 3/1 black and red Vampire creature token with trample, lifelink, and haste. Sacrifice it at the beginning of the next end step.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const ROWS = [KAMI, SHAMAN, HUNGER, BEAR];
+  const deck = customDeck({
+    id: 'd1166', name: 'Next end step', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }], data: ROWS as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1166', 1: 'd1166' }, deckSpecs: { d1166: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Swamp', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // To the end step, with the delayed abilities resolved.
+  const toEnd = (s0: GameState) => {
+    let s = advanceTo(s0, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    return drain(passBoth(advanceTo(s, 'end')), 30);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"Sacrifice it" with no target is the source, at the next end step', () => {
+    let s = table(['Test Kami']);
+    const kami = find(s, 0, 'battlefield', 'Test Kami');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: kami, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[kami]!.zone).toBe('battlefield');
+    s = toEnd(s);
+    expect(s.instances[kami]!.zone).toBe('graveyard');
+  });
+
+  it('"Sacrifice it" after a target is the target, not the source', () => {
+    let s = table(['Test Shaman', 'Test Bear']);
+    const shaman = find(s, 0, 'battlefield', 'Test Shaman');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: shaman, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 20);
+    s = toEnd(s);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(s.instances[shaman]!.zone).toBe('battlefield');
+  });
+
+  it('the token has all three keywords, and is sacrificed at the next end step', () => {
+    let s = table([], ['Test Hunger']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Hunger') } as Action)), 30);
+    const token = find(s, 0, 'battlefield', 'Vampire');
+    const kw = characteristicsOf(s, s.instances[token]!).keywords;
+    expect(['trample', 'lifelink', 'haste'].every((k) => kw.has(k as never))).toBe(true);
+    s = toEnd(s);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Vampire');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
