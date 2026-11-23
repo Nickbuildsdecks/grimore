@@ -37120,6 +37120,67 @@ describe('a lord of two tribes, Death Baron (D828)', () => {
   });
 });
 
+describe('"prevent all combat damage that would be dealt to attacking artifact creatures you control", Losheel (D829)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Scholar', 'Artifact', 'Prevent all combat damage that would be dealt to attacking artifact creatures you control.'),
+    card('Test Golem', 'Artifact Creature — Golem', '', { power: '2', toughness: '2' }),
+    card('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    card('Test Ogre', 'Creature — Ogre', '', { power: '3', toughness: '3' }),
+  ];
+  const deck = customDeck({ id: 'd829', name: 'Scholar', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  /** `attacker` attacks alone and the Ogre blocks it; is it alive after combat? */
+  const survives = (attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd829', 1: 'd829' }, deckSpecs: { d829: deck.deck },
+      battlefield: { 0: ['Test Scholar', attacker], 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const id = find(s, 0, 'battlefield', attacker);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Ogre'), attacker: id }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    return s.instances[id]!.zone === 'battlefield';
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an attacking artifact creature blocked by a 3/3 lives; an attacking Bear does not', () => {
+    expect(survives('Test Golem')).toBe(true);
+    expect(survives('Test Bear')).toBe(false);
+  });
+});
+
+describe('annihilator granted by an Aura, Eldrazi Conscription (D829)', () => {
+  const CONSCRIPTION = { name: 'Test Conscription', type_line: 'Tribal Enchantment — Eldrazi Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +10/+10 and has trample and annihilator 2.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' };
+  const deck = customDeck({ id: 'd829b', name: 'Conscription', entries: [{ name: 'Test Conscription', count: 2 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 54 }], data: [CONSCRIPTION, BEAR] as never[] });
+
+  it('reads', () => {
+    expect(compileCard(CONSCRIPTION as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the host is a 12/12 trampler, and when it attacks the defender sacrifices two permanents', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd829b', 1: 'd829b' }, deckSpecs: { d829b: deck.deck },
+      hands: { 0: ['Test Conscription'] }, battlefield: { 0: ['Test Bear'], 1: ['Forest', 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Conscription'), targets: [{ kind: 'card', id: bear }] })));
+    const c = characteristicsOf(s, s.instances[bear]!);
+    expect([c.power, c.toughness, c.keywords.has('trample')]).toEqual([12, 12, true]);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    for (let i = 0; i < 8 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    if (s.pendingDecision !== null) {
+      s = drain(apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: s.pendingDecision.candidates.slice(0, 2) } as Action), 20);
+    }
+    expect(ids(s, 1, 'battlefield')).toHaveLength(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

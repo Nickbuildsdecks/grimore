@@ -16871,7 +16871,15 @@ function attachmentBonus(
   const matched = /^(?:equipped|enchanted) (?:creature|land|artifact|enchantment|permanent) (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   // "Has ward {2}" is the ward trigger granted (D736): the quoted form the grant readers know.
-  const tail = wardAsQuoted(matched[1]!.trim());
+  /*
+    "Has trample and annihilator 2" (D829, Eldrazi Conscription): annihilator granted as the quoted
+    attack trigger it stands for (CR 702.86a), the way ward is (D736).
+  */
+  const annihilating = (text: string): string => text.replace(
+    /\b(has |and )annihilator (\d+)$/i,
+    (_m, lead: string, n: string) => `${lead}"Whenever this creature attacks, defending player sacrifices ${n === '1' ? 'a permanent' : `${n} permanents`}."`,
+  );
+  const tail = annihilating(wardAsQuoted(matched[1]!.trim()));
   const host = /^(enchanted|equipped)/i.exec(plain(line).trim())![1]!;
 
   /*
@@ -33591,8 +33599,9 @@ function preventionStaticFromLine(line: string, name: string): Partial<CardScrip
   };
   const players = /^you and (.+)$/i.exec(subject);
   // "Attacking creatures you control" (D821): Dolmen Gate, Iroas — the D941 filter on the scope.
-  const attacking = /^attacking (creatures you control)$/i.exec(subject);
-  const scope = scopes[(players?.[1] ?? attacking?.[1] ?? subject).toLowerCase()];
+  // And "attacking artifact creatures you control" (D829, Losheel): D735's kind filter beside it.
+  const attacking = /^attacking (artifact )?(creatures you control)$/i.exec(subject);
+  const scope = scopes[(players?.[1] ?? attacking?.[2] ?? subject).toLowerCase()];
   if (scope === undefined || (attacking !== null && players !== null)) return null;
   return {
     statics: [{
@@ -33601,6 +33610,7 @@ function preventionStaticFromLine(line: string, name: string): Partial<CardScrip
         ...flags,
         ...(players === null ? {} : { preventsDamageToPlayers: 'controller' as const }),
         ...(attacking === null ? {} : { onlyAttacking: true as const }),
+        ...(attacking?.[1] === undefined ? {} : { onlyKind: ['artifact' as const] }),
       },
     }],
   };
