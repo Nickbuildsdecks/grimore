@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -16017,6 +16017,16 @@ function selfEffect(
           : c.state;
       },
     };
+  }
+
+  // Amass (D1150, CR 701.47a): see `amass`. "Amass Orcs 2", "amass Zombies 3", and the older "Amass 2".
+  const amassed = /^amass(?: ([A-Z][a-z]+))? (\d+|one|two|three|four|five)$/.exec(text.replace(/^Amass/, 'amass'));
+  if (amassed !== null) {
+    const WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+    const n = WORDS[amassed[2]!] ?? Number(amassed[2]);
+    const plural = amassed[1] ?? 'Zombies';
+    const subtype = /ves$/.test(plural) ? plural.replace(/ves$/, 'f') : plural.replace(/s$/, '');
+    if (isCreatureType(subtype)) return { effect: (c) => amass(c.state, c.controller, subtype, n) };
   }
 
   /*

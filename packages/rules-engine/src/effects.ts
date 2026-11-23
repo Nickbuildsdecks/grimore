@@ -3201,6 +3201,40 @@ export function createEmblem(state: GameState, seat: SeatIndex, text: string, fr
   }, { [command]: [...listAt(state, command), id] });
 }
 
+/**
+ * Amass (D1150, CR 701.47a): "Amass Orcs 2" — if the seat controls no Army creature, it creates a
+ * 0/0 black Orc Army creature token; then it chooses an Army creature it controls, puts that many
+ * +1/+1 counters on it, and if it isn't an Orc it becomes one in addition to its other types. The
+ * older "Amass 2" is Zombies (War of the Spark). With several Armies the largest is chosen, which is
+ * the one a player nearly always wants grown; there is no question asked.
+ */
+export function amass(state: GameState, seat: SeatIndex, subtype: string, n: number): GameState {
+  const armies = (st: GameState): string[] => listAt(st, zoneKey(seat, 'battlefield')).filter((id) => {
+    const inst = st.instances[id];
+    if (inst === undefined) return false;
+    const ch = characteristicsOf(st, inst);
+    return ch.isCreature && ch.typeLine.subtypes.includes('Army');
+  });
+  let next = state;
+  if (armies(next).length === 0) {
+    next = createToken(next, seat, normaliseDef({
+      name: `${subtype} Army`, typeLine: `Token Creature — ${subtype} Army`, oracleText: '', manaCost: '', cmc: 0,
+      colors: ['B'], power: '0', toughness: '0',
+    } as CardDef));
+  }
+  const after = next;
+  const power = (id: string): number => characteristicsOf(after, after.instances[id]!).power;
+  const chosen = [...armies(after)].sort((a, b) => power(b) - power(a))[0];
+  if (chosen === undefined) return next;
+  next = addCounters(next, chosen, '+1/+1', n);
+  if (!characteristicsOf(next, next.instances[chosen]!).typeLine.subtypes.includes(subtype)) {
+    // Sourced at the Army itself: a `permanent` effect is removed when its source leaves
+    // (`removeEffectsFrom`), and the amass spell leaves the stack at once.
+    next = pump(next, [chosen], chosen, seat, { addSubtypes: [subtype], duration: 'permanent' });
+  }
+  return next;
+}
+
 /** The Ring emblem's text (D1144, CR 701.54a): shown to the players; `THE_RING`'s script runs it. */
 const RING_TEXT = [
   'Your Ring-bearer is legendary and can\'t be blocked by creatures with greater power.',

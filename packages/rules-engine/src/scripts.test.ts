@@ -35550,6 +35550,48 @@ describe('the Swords: protection from two colours, and "~ and ~" names in their 
   });
 });
 
+describe('amass (D1150)', () => {
+  const ORCS = { name: 'Test Orc Caller', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Amass Orcs 2.' };
+  const MORE = { name: 'Test Orc Muster', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Amass Orcs 3. Draw a card.' };
+  const OLD = { name: 'Test Dreadhorde', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Amass 2.' };
+  const ROWS = [ORCS, MORE, OLD];
+  const deck = customDeck({
+    id: 'd1150', name: 'Amass', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[],
+  });
+  const table = (hand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1150', 1: 'd1150' }, deckSpecs: { d1150: deck.deck },
+    hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action)), 30);
+  const armies = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => characteristicsOf(s, s.instances[id]!).typeLine.subtypes.includes('Army'));
+
+  it('reads all three whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with no Army, makes a 0/0 Orc Army and grows it; a second amass grows the same one', () => {
+    let s = cast(table(['Test Orc Caller', 'Test Orc Muster']), 'Test Orc Caller');
+    expect(armies(s)).toHaveLength(1);
+    const army = armies(s)[0]!;
+    expect(characteristicsOf(s, s.instances[army]!).typeLine.subtypes).toEqual(expect.arrayContaining(['Orc', 'Army']));
+    expect(power(s, army)).toBe(2);
+    s = cast(s, 'Test Orc Muster');
+    expect(armies(s)).toEqual([army]);
+    expect(power(s, army)).toBe(5);
+  });
+
+  it('"Amass 2" is Zombies, and amassing Orcs onto it makes it an Orc as well', () => {
+    let s = cast(table(['Test Dreadhorde', 'Test Orc Caller']), 'Test Dreadhorde');
+    const army = armies(s)[0]!;
+    expect(characteristicsOf(s, s.instances[army]!).typeLine.subtypes).toEqual(expect.arrayContaining(['Zombie', 'Army']));
+    s = cast(s, 'Test Orc Caller');
+    expect(armies(s)).toEqual([army]);
+    expect(characteristicsOf(s, s.instances[army]!).typeLine.subtypes).toEqual(expect.arrayContaining(['Zombie', 'Orc', 'Army']));
+    expect(power(s, army)).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
