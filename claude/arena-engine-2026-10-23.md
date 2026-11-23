@@ -41589,3 +41589,47 @@ Faults injected by hand: 3, all caught.
 - "Evidence was collected" not rewritten: the cards are then unread.
 
 Coverage: 15,770 of 31,900 cards (+9 over D1158's 15,761), 37,914 of 59,888 lines (+13). The difference also counts the D7xx session's D813, merged in after D1158 was measured; D1159's own share is the 2 cards above.
+## D815 — "~ can't attack or block unless <condition>": Topiary Stomper
+
+Most-played order: Topiary Stomper (rank 1208), and the drawbacks printed the same way on the
+card itself, wherever the condition is one the static reader already knows: "unless you control
+seven or more lands", "unless you control another artifact", "unless there are N or more cards in
+your graveyard", "unless you control another Giant", "unless it's equipped" (Training Drone) and
+others. 14 cards in the probe, among them Bast, Panther Goddess, Gorilla Pack, Felhide Brawler,
+Mindless Null and Slumbering Dragon.
+
+**Engine.** `ContinuousEffect.while` gains `{ kind: 'not', of }`: any other condition, negated,
+asked in `conditionMet` like the rest. That is the whole engine change: the restriction is a
+self static (`cantAttack` / `cantBlock`) whose condition is the printed one negated, asked live.
+The creature can attack the moment the seventh land arrives, and stops if one leaves.
+
+**Reader.** In `conditionalStaticFromLine`, after the D798 general wrapper: "<self> can't (attack
+or block | attack | block) unless <condition>". The subject must be the card's name, its short
+name or "this creature". The condition goes through `staticCondition`, which also learns "you
+have N or fewer cards in hand" (Hazoret the Fervent's line; the card still has an unread
+activated ability) and "it's equipped".
+
+Not read, as before: conditions about combat ("unless a creature with greater power also
+attacks"), payments and sacrifices as attack costs, "defending player is the monarch / poisoned",
+"more creatures than defending player", and "another creature with power 4 or greater" (Rhonas,
+which needs a power filter on `board-has`).
+
+**Tests.** 5 engine tests:
+- the cards read;
+- with six lands the Stomper can neither attack nor block, and with seven it can and an attack
+  is accepted;
+- the seventh land played in the main phase lifts the restriction at once;
+- a creature whose condition is "one or fewer cards in hand" is held home by a hand of two and
+  freed by a hand of one, and its blocking is never restricted;
+- "unless it's equipped" restricts the Drone bare and frees it once equipped.
+
+And in compile.test, D502's pin "leaves a line unread: an 'unless' restriction" (Deep-Sea Terror's
+line) moved from the unread table to a positive test: the line reads as `cantAttack` under
+`{ kind: 'not', of: controller-graveyard 7 }`. The first gate caught it; the move is deliberate.
+
+Faults injected by script: 7 of 7 caught. They cover the negation in the engine and in the
+reader, each half of "attack or block", "or fewer" read wrongly or not at all, and "it's
+equipped".
+
+- engine tests: 6176, all passing (on 9eb329f)
+- Coverage: 15,786 to 15,803 of 31,900 cards with every line read, and 37,939 to 37,961 of 59,888 lines, against 9eb329f.
