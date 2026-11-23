@@ -41407,3 +41407,33 @@ Faults injected by script: 2 of 2 caught.
 
 - engine tests: 6150, all passing (on 14cdec6)
 - Coverage: 15,742 to 15,748 of 31,900 cards with every line read, and 37,872 to 37,883 of 59,888 lines, against 14cdec6.
+
+## D1157 — "if it's suspected", and "If …, A. Otherwise, B."
+
+Two pieces:
+- **The condition.** "If ~ is suspected", "if it's suspected", "if ~ isn't suspected" and "if it's not
+  suspected" are a new static condition, `source-suspected`, beside D978's `source-prepared`. Any
+  reader that asks a static condition can ask it: intervening-if triggers, "as long as" statics, and
+  the branch below.
+- **"If <condition>, A. Otherwise, B."** `ifOtherwiseGroup` reads the two sentences as one effect.
+  The condition is anything `interveningConditionFor` reads. It is checked as the ability resolves,
+  and then one branch runs. It is refused when both branches target, when either asks a question, or
+  when anything follows. Comma names are masked before the split, as in D1145.
+
+Read whole now: Rubblebelt Braggart ("Whenever ~ attacks, if it's not suspected, you may suspect
+it") and Repeat Offender ("{2}{B}: If ~ is suspected, put a +1/+1 counter on it. Otherwise, suspect
+it."). So 11 of the 26 legal suspect cards read whole. The other 6 legal "If …, A. Otherwise, B."
+lines ask conditions or effects that are not read (day and night, seek, "has toughness 5 or
+greater").
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- The first activation suspects the creature and adds no counter; the second adds a counter.
+- The attack trigger suspects it; once it is suspected, the attack puts nothing on the stack and
+  asks nothing.
+
+Faults injected by hand: 2, both caught.
+- The condition inverted.
+- The branch always taking the first half.
+
+Coverage: 15,752 of 31,900 cards (+10 over D1156's 15,742), 37,885 of 59,888 lines (+14). The difference also counts the D7xx session's D811, merged in after D1156 was measured; D1157's own share is the 2 cards above.
