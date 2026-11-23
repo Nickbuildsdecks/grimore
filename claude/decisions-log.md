@@ -58163,3 +58163,47 @@ Faults injected by script: 5 of 5 caught.
 
 Coverage: 15,466 to 15,478 of 31,900 cards with every line read, and 37,477 to 37,500 of 59,888
 lines, against 86306d0.
+
+## D1145 — "Whenever the Ring tempts you", the third ability, and comma names before an "if"
+
+Three pieces, finishing what D1144 started and fixing a reader gap it exposed.
+
+**The event.** `ring-tempted` is raised once for each time the Ring tempted a seat, read in
+`settle` off the difference in `GameState.ring` (the way life lost is read off its record). "Whenever
+the Ring tempts you" is the trigger for it, matching only the tempted seat's own permanents.
+"If you chose a creature other than ~ as your Ring-bearer" is an intervening condition (CR 603.4):
+the seat's Ring-bearer is not the source.
+
+**The Ring's third ability** (CR 701.54a): "Whenever your Ring-bearer becomes blocked by a
+creature, that creature's controller sacrifices it at end of combat." It is done at the end of
+combat step, beside decayed's sacrifice (D1143): every creature still blocking a seat's Ring-bearer,
+once the Ring has tempted that seat three times, is sacrificed. The printed trigger fires at the
+block and schedules the sacrifice. Reading the blocks at end of combat gives the same sacrifice,
+and differs only for a Ring that reached three during the combat, after the block.
+
+**Comma names before an "if".** The intervening-if trigger reader splits "When …, if …, …" on
+commas, so a card whose own name has a comma failed whenever its name was in the prologue or the
+condition: "When Tymna, the Weaver enters, if …", and "if you chose a creature other than Gandalf,
+Friend of the Shire as your Ring-bearer". The name is now masked before the split and put back in
+each part.
+
+Read whole now include Faramir, Field Commander and Dúnedain Rangers. Others are one line short:
+- Gandalf, Friend of the Shire: its flash grant, which is the D7xx session's D800;
+- Nazgûl: the deck-construction line;
+- Aragorn: the counter choice.
+
+**Tests.** 4 engine tests, on a test Gandalf named with a comma:
+- Its "Whenever the Ring tempts you, if you chose a creature other than ~ …, draw a card" reads
+  whole.
+- Choosing another creature as Ring-bearer draws.
+- Choosing itself does not.
+- At level 3 a 1/4 that blocks the Ring-bearer, and survives its damage, is sacrificed at end of
+  combat; at level 2 it stays.
+
+Faults injected by hand: 4.
+- The event never raised (caught).
+- The condition always true (caught).
+- The third ability never reached (caught).
+- The name mask off (caught: 2 tests).
+
+Coverage: 15,495 of 31,900 cards (+7 over D1144's 15,488), 37,516 of 59,888 lines (+13).
