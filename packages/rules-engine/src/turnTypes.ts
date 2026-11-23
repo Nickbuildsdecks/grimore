@@ -833,6 +833,13 @@ export interface AutomationState {
    */
   readonly ring?: Readonly<Record<string, { readonly tempted: number; readonly bearer: string | null }>>;
   /**
+   * Each seat's venture marker (D1160, CR 309.4): the dungeon it is in, the room the marker is on,
+   * and the dungeon's card in that seat's command zone. Absent when the seat is in no dungeon.
+   */
+  readonly dungeon?: Readonly<Record<string, { readonly name: string; readonly room: string; readonly emblem: string }>>;
+  /** The dungeons each seat has completed (D1160, CR 309.7), oldest first, for "if you've completed a dungeon". */
+  readonly dungeonsCompleted?: Readonly<Record<string, readonly string[]>>;
+  /**
    * Coin flips (D1152, CR 705), most recent last, kept to the last few: who flipped and whether they
    * won. The log reads the new ones off it after each action, so a player sees "Nick wins a coin
    * flip" beside what the flip did.

@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -11553,6 +11553,93 @@ function theRingScript(): CardScript {
   return ringScript;
 }
 
+/**
+ * The question a venture asks (D1160): which of the next rooms. Asked only when there are two; the
+ * bot takes the first.
+ */
+function roomQuestion(dungeon: string): ChoiceDecisionSpec {
+  return {
+    who: 'controller',
+    prompt: 'Venture into which room?',
+    options: [],
+    optionsFor: (state, chooser) => nextRooms(state, chooser, dungeon),
+    askOnlyIf: (state, controller) => nextRooms(state, controller, dungeon).length > 1,
+  };
+}
+
+const dungeonScripts = new Map<string, CardScript>();
+/**
+ * A dungeon card's script (D1160): one reflexive trigger per room, keyed by the room's name, which
+ * `ventureInto` queues. Each room's ability is read by the ordinary clause readers from its text,
+ * so a room that points at something chooses its target as the trigger goes on the stack. The
+ * bottom room completes the dungeon once it has resolved (CR 309.7, 704.5t).
+ *
+ * Throne of the Dead Three is the one room built by hand around the dig reader: "Put a creature card
+ * from among them" is read as "You may put …", so a player may take none. Its three +1/+1 counters,
+ * hexproof until your next turn and the shuffle are added after the dig.
+ */
+function dungeonScript(name: string): CardScript {
+  const made = dungeonScripts.get(name);
+  if (made !== undefined) return made;
+  const triggers: TriggerDef[] = (DUNGEONS[name] ?? []).map((room) => {
+    const throne = room.name === 'Throne of the Dead Three';
+    const text = throne
+      ? 'Reveal the top ten cards of your library. You may put a creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.'
+      : room.text;
+    const read = composeEffects(clausesOf(text), name, null);
+    if (read === null) throw new Error(`${name}: the room "${room.name}" does not read`);
+    const base = read.effect;
+    const roomEffect: EffectFn = throne
+      ? (c) => {
+        const after = base(c);
+        const arrived = chosenCards(c).filter((id) => after.instances[id]?.zone === 'battlefield');
+        let next = after;
+        for (const id of arrived) {
+          next = addCounters(next, id, '+1/+1', 3);
+          next = pump(next, [id], id, c.controller, { keywords: ['hexproof'], duration: 'until-controllers-next-turn' });
+        }
+        return shuffleLibrary(next, c.controller);
+      }
+      : base;
+    const bottom = room.exits.length === 0;
+    return {
+      on: { kind: 'reflexive', key: room.name },
+      description: `${room.name} — ${room.text}`,
+      ...(read.targets === undefined ? {} : { targets: read.targets }),
+      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      effect: bottom ? (c) => completeDungeon(roomEffect(c), c.controller) : roomEffect,
+    };
+  });
+  const script: CardScript = { name, triggers };
+  dungeonScripts.set(name, script);
+  return script;
+}
+
+let initiativeScriptMade: CardScript | undefined;
+/**
+ * The Initiative's card (D1160, CR 722.3): "At the beginning of your upkeep, venture into
+ * Undercity", and the venture that comes with taking it in combat, which automation queues as the
+ * reflexive "taken" when a creature deals combat damage to the seat that has it (CR 722.4).
+ */
+function initiativeScript(): CardScript {
+  if (initiativeScriptMade !== undefined) return initiativeScriptMade;
+  const upkeep = lineScriptFor(INITIATIVE_TEXT, THE_INITIATIVE)?.triggers ?? [];
+  if (upkeep.length !== 1) throw new Error('The Initiative: the upkeep venture does not read');
+  initiativeScriptMade = {
+    name: THE_INITIATIVE,
+    triggers: [
+      upkeep[0]!,
+      {
+        on: { kind: 'reflexive', key: 'taken' },
+        description: 'You take the initiative: venture into Undercity.',
+        decisions: [roomQuestion(UNDERCITY)],
+        effect: (c) => ventureInto(c.state, c.controller, UNDERCITY, chosenOption(c)),
+      },
+    ],
+  };
+  return initiativeScriptMade;
+}
+
 /** The script for a card, or undefined when it is not automated. */
 export const scriptFor = (name: string | undefined): CardScript | undefined =>
   name === undefined ? undefined
@@ -11560,6 +11647,9 @@ export const scriptFor = (name: string | undefined): CardScript | undefined =>
     : name === DISGUISE_GRANT.card ? DISGUISED_FACE_DOWN
       // The Ring emblem (D1144): see `theRingScript`.
       : name === THE_RING ? theRingScript()
+        // The dungeons and The Initiative (D1160): see \`dungeonScript\` and \`initiativeScript\`.
+        : DUNGEONS[name] !== undefined ? dungeonScript(name)
+        : name === THE_INITIATIVE ? initiativeScript()
         // The Incubator token (D1155), which no starter deck makes, so it is not in `ALL`.
         : name === INCUBATOR.name ? INCUBATOR
         : CARD_SCRIPTS.get(name.trim().toLowerCase());
@@ -16226,6 +16316,21 @@ function selfEffect(
   if (chosenTarget !== null) {
     const spec = targetSpecFrom(chosenTarget[1]!, /you control$/i.test(chosenTarget[1]!));
     if (spec !== null) return { targets: [spec], effect: (c) => c.state };
+  }
+
+  /*
+    "Venture into Undercity" and "you take the initiative" (D1160, CR 701.49, 722.2): see
+    \`ventureInto\` and \`takeInitiative\`. Where the marker goes next is asked as the effect resolves,
+    and only when there are two rooms to choose between.
+  */
+  if (/^venture into undercity$/i.test(text)) {
+    return { decisions: [roomQuestion(UNDERCITY)], effect: (c) => ventureInto(c.state, c.controller, UNDERCITY, chosenOption(c)) };
+  }
+  if (/^(?:you )?take the initiative$/i.test(text)) {
+    return {
+      decisions: [roomQuestion(UNDERCITY)],
+      effect: (c) => ventureInto(takeInitiative(c.state, c.controller), c.controller, UNDERCITY, chosenOption(c)),
+    };
   }
 
   // "The Ring tempts you" (D1144, CR 701.54a): see `temptWithRing`. The bearer is chosen as it

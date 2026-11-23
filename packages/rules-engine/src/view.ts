@@ -276,6 +276,11 @@ export interface GameView {
   readonly monarch: SeatIndex | null;
   readonly initiative: SeatIndex | null;
   /**
+   * Each seat's venture marker (D1160): the dungeon and the room it is on. Optional, as older
+   * views have none; a seat in no dungeon is absent.
+   */
+  readonly dungeon?: Readonly<Record<string, { readonly name: string; readonly room: string }>>;
+  /**
    * Day, night, or neither (CR 726, D593). Optional because a view packed by an older server has
    * none, which a client reads as neither — the honest answer for a game with no daybound card.
    */
@@ -797,6 +802,9 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     activeSeat: state.activeSeat,
     monarch: state.monarch,
     initiative: state.initiative,
+    ...(state.dungeon === undefined ? {} : {
+      dungeon: Object.fromEntries(Object.entries(state.dungeon).map(([seat, at]) => [seat, { name: at.name, room: at.room }])),
+    }),
     dayNight: state.dayNight ?? null,
     started: state.started,
     finished: state.finished,

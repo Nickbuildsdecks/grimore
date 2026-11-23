@@ -52,7 +52,7 @@ import {
   spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
-  staticEffect,
+  staticEffect, takeInitiative, initiativeCard,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -4315,6 +4315,17 @@ function settle(state: GameState, before: GameState): GameState {
       if (planeswalker !== true && next.monarch !== null && defender === next.monarch && taker !== undefined
         && taker !== next.monarch && next.seats[taker]?.eliminated === false) {
         next = { ...next, monarch: taker };
+      }
+      /*
+        And the initiative (D1160, CR 722.4): the same hit takes it, and taking it is a venture into
+        Undercity. That venture asks which room, so it goes on the stack as The Initiative's own
+        "taken" trigger rather than happening here.
+      */
+      if (planeswalker !== true && next.initiative !== null && defender === next.initiative && taker !== undefined
+        && taker !== next.initiative && next.seats[taker]?.eliminated === false) {
+        next = takeInitiative(next, taker);
+        const card = initiativeCard(next);
+        if (card !== undefined) next = { ...next, reflexive: [...(next.reflexive ?? []), { source: card, key: 'taken', controller: taker }] };
       }
       next = raise(
         next, {

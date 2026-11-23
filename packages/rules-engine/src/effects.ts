@@ -3371,6 +3371,125 @@ export function temptWithRing(state: GameState, seat: SeatIndex, bearer: string 
   };
 }
 
+/** The Initiative's card (D1160, CR 722): held in the command zone of the seat that has it. */
+export const THE_INITIATIVE = 'The Initiative';
+export const INITIATIVE_TEXT = 'At the beginning of your upkeep, venture into Undercity.';
+export const UNDERCITY = 'Undercity';
+
+/** One room of a dungeon (CR 309.4): its name, its room ability's text, and the rooms below it. */
+export interface DungeonRoom {
+  readonly name: string;
+  readonly text: string;
+  readonly exits: readonly string[];
+}
+
+/**
+ * The dungeons (D1160, CR 309.2), top room first. Only Undercity so far, which is the one the
+ * initiative uses.
+ *
+ * TODO(scryfall-dungeons): the room text is written from the printed card, because dungeons are
+ * not legal cards and the local corpus has none; check it against the Scryfall import when that
+ * can reach api.scryfall.com.
+ */
+export const DUNGEONS: Readonly<Record<string, readonly DungeonRoom[]>> = {
+  [UNDERCITY]: [
+    { name: 'Secret Entrance', text: 'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.', exits: ['Forge', 'Lost Well'] },
+    { name: 'Forge', text: 'Put two +1/+1 counters on target creature.', exits: ['Trap!', 'Arena'] },
+    { name: 'Lost Well', text: 'Scry 2.', exits: ['Arena', 'Stash'] },
+    { name: 'Trap!', text: 'Target player loses 5 life.', exits: ['Archives', 'Catacombs'] },
+    { name: 'Arena', text: 'Goad target creature.', exits: ['Archives', 'Catacombs'] },
+    { name: 'Stash', text: 'Create a Treasure token.', exits: ['Archives', 'Catacombs'] },
+    { name: 'Archives', text: 'Draw a card.', exits: ['Throne of the Dead Three'] },
+    { name: 'Catacombs', text: 'Create a 4/1 black Skeleton creature token with menace.', exits: ['Throne of the Dead Three'] },
+    {
+      name: 'Throne of the Dead Three',
+      text: 'Reveal the top ten cards of your library. Put a creature card from among them onto the battlefield with three +1/+1 counters on it. It gains hexproof until your next turn. Then shuffle.',
+      exits: [],
+    },
+  ],
+};
+
+/** A dungeon card's printed text: its rooms, one to a line. */
+const dungeonText = (name: string): string => (DUNGEONS[name] ?? [])
+  .map((room) => `${room.name} — ${room.text}`).join('\n');
+
+/**
+ * The rooms a venture can move a seat's marker to (CR 309.5): the exits of the room it is on, or the
+ * top room of `dungeon` when the seat is in no dungeon. Into Undercity while already in another
+ * dungeon is a move in that one (CR 701.49c), so the dungeon in progress is the one read.
+ */
+export function nextRooms(state: GameState, seat: SeatIndex, dungeon: string): readonly string[] {
+  const at = state.dungeon?.[String(seat)];
+  if (at !== undefined && state.instances[at.emblem]?.zone === 'command') {
+    return DUNGEONS[at.name]?.find((room) => room.name === at.room)?.exits ?? [];
+  }
+  const top = DUNGEONS[dungeon]?.[0];
+  return top === undefined ? [] : [top.name];
+}
+
+/**
+ * Venture (D1160, CR 701.49): the marker moves to `choice` if it is one of `nextRooms`, otherwise to
+ * the first of them, and that room's ability triggers (CR 309.4c). The trigger is the dungeon
+ * card's reflexive one keyed by the room, so it goes on the stack and chooses its targets there.
+ * A seat in no dungeon puts `dungeon` into its command zone first. A marker already on the bottom
+ * room goes nowhere: that dungeon is completed as its last room resolves.
+ */
+export function ventureInto(state: GameState, seat: SeatIndex, dungeon: string, choice?: string | null): GameState {
+  const rooms = nextRooms(state, seat, dungeon);
+  if (rooms.length === 0) return state;
+  const room = choice !== undefined && choice !== null && rooms.includes(choice) ? choice : rooms[0]!;
+  let next = state;
+  let at = next.dungeon?.[String(seat)];
+  if (at === undefined || next.instances[at.emblem]?.zone !== 'command') {
+    next = createEmblem(next, seat, dungeonText(dungeon), dungeon, dungeon);
+    at = { name: dungeon, room, emblem: `e${seat}_${next.instanceSeq}` };
+  }
+  return {
+    ...next,
+    dungeon: { ...(next.dungeon ?? {}), [String(seat)]: { ...at, room } },
+    reflexive: [...(next.reflexive ?? []), { source: at.emblem, key: room, controller: seat }],
+  };
+}
+
+/** The dungeon is completed (CR 309.7): its card leaves the command zone and the count goes up. */
+export function completeDungeon(state: GameState, seat: SeatIndex): GameState {
+  const at = state.dungeon?.[String(seat)];
+  if (at === undefined) return state;
+  const command = zoneKey(seat, 'command');
+  const { [String(seat)]: _gone, ...rest } = state.dungeon ?? {};
+  return withZones({
+    ...state,
+    dungeon: rest,
+    dungeonsCompleted: {
+      ...(state.dungeonsCompleted ?? {}),
+      [String(seat)]: [...(state.dungeonsCompleted?.[String(seat)] ?? []), at.name],
+    },
+  }, { [command]: listAt(state, command).filter((id) => id !== at.emblem) });
+}
+
+/**
+ * Taking the initiative (D1160, CR 722.2): the seat has it, and The Initiative's card moves to that
+ * seat's command zone, or is made there. The venture that comes with it is the caller's, so a
+ * question about which room can be asked.
+ */
+export function takeInitiative(state: GameState, seat: SeatIndex): GameState {
+  const card = Object.values(state.instances).find((inst) => inst.zone === 'command'
+    && state.cardDefs[inst.defKey]?.name === THE_INITIATIVE);
+  let next: GameState = { ...state, initiative: seat };
+  if (card === undefined) return createEmblem(next, seat, INITIATIVE_TEXT, THE_INITIATIVE, THE_INITIATIVE);
+  if (card.zoneSeat === seat) return next;
+  const from = zoneKey(card.zoneSeat, 'command');
+  const to = zoneKey(seat, 'command');
+  next = withZones(next, { [from]: listAt(next, from).filter((id) => id !== card.id), [to]: [...listAt(next, to), card.id] });
+  return { ...next, instances: { ...next.instances, [card.id]: { ...card, owner: seat, zoneSeat: seat } } };
+}
+
+/** The Initiative's card, wherever it is (D1160). */
+export function initiativeCard(state: GameState): string | undefined {
+  return Object.values(state.instances).find((inst) => inst.zone === 'command'
+    && state.cardDefs[inst.defKey]?.name === THE_INITIATIVE)?.id;
+}
+
 /** Every emblem a seat has (D734), in the order they were made. */
 export function emblemsOf(state: GameState, seat: SeatIndex): readonly string[] {
   return listAt(state, zoneKey(seat, 'command')).filter((id) => state.instances[id]?.emblem === true);

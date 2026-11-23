@@ -30,7 +30,7 @@ import {
   preventDamage,
   pump, pumpAll, pumpTeam, gainControl, regenerate, scriptFor,
   scriptedCardNames,
-  staticEffect, timesCost, transformPermanent, unpackView, viewFor,
+  staticEffect, timesCost, transformPermanent, unpackView, viewFor, ventureInto,
   type ContinuousEffect, type PumpOptions,
 } from './index.js';
 import {
@@ -36585,6 +36585,95 @@ describe('"~ can\'t attack or block unless …" on the card itself, Topiary Stom
     expect(of(two, 'Test Fervent')).toMatchObject({ cantAttack: true, cantBlock: false });
     const one = main({ 0: ['Test Bear'] }, { 0: ['Test Fervent'] });
     expect(of(one, 'Test Fervent').cantAttack).toBe(false);
+  });
+});
+
+describe('the initiative and Undercity (D1160)', () => {
+  const GUIDE = { name: 'Test Guide', type_line: 'Creature — Human Ranger', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'When this creature enters, you take the initiative.' };
+  const RAIDER = { name: 'Test Raider', type_line: 'Creature — Orc', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' };
+  const ROWS = [GUIDE, RAIDER];
+  const deck = customDeck({
+    id: 'd1160', name: 'Initiative', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const table = (theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1160', 1: 'd1160' }, deckSpecs: { d1160: deck.deck },
+    hands: { 0: ['Test Guide'] }, battlefield: { 0: ['Forest'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  // Every question answered: the named room when one is offered, otherwise the first option or no cards.
+  const settle = (s0: GameState, room?: string) => {
+    let s = s0;
+    for (let i = 0; i < 20 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      const p = s.pendingDecision;
+      if (p === null) { s = drain(passBoth(s)); continue; }
+      const options = p.options ?? [];
+      s = apply(s, {
+        type: 'auto:decide', by: p.seat, cards: [],
+        ...(options.length > 0 ? { option: room !== undefined && options.includes(room) ? room : options[0] } : {}),
+      } as Action);
+    }
+    return s;
+  };
+  // Passes priority to \`step\` on \`turn\`, answering every question on the way as \`settle\` does.
+  const walk = (s0: GameState, turn: number, step: GameState['step'], room?: string) => {
+    let s = s0;
+    for (let i = 0; i < 200 && !(s.turn === turn && s.step === step); i++) {
+      const p = s.pendingDecision;
+      if (p !== null) { s = settle(s, room); continue; }
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) s = apply(s, (owed.kind === 'attackers' ? { type: 'auto:attack', by: seat, attackers: [] } : { type: 'auto:block', by: seat, blocks: [] }) as Action);
+        continue;
+      }
+      s = apply(s, { type: 'auto:pass', by: s.priority! } as Action);
+    }
+    return s;
+  };
+  const roomOf = (s: GameState, seat: number) => s.dungeon?.[String(seat)]?.room;
+  const commandNames = (s: GameState, seat: number) => (s.zones[`${seat}:command`] ?? []).map((id) => nameOf(s, id));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GUIDE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('taking the initiative: the seat has it, The Initiative and Undercity are in its command zone, and the marker is on Secret Entrance', () => {
+    let s = table();
+    s = settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Guide') } as Action)), 30));
+    expect(s.initiative).toBe(0);
+    expect(commandNames(s, 0)).toEqual(expect.arrayContaining(['The Initiative', 'Undercity']));
+    expect(roomOf(s, 0)).toBe('Secret Entrance');
+  });
+
+  it('at the beginning of your upkeep you venture again, and choose between the two rooms below', () => {
+    let s = table();
+    s = settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Guide') } as Action)), 30));
+    s = walk(nextTurn(s), 5, 'precombat-main', 'Lost Well');
+    expect(s.activeSeat).toBe(0);
+    expect(roomOf(s, 0)).toBe('Lost Well');
+  });
+
+  it('combat damage to the seat with the initiative takes it, and the taker ventures into Undercity', () => {
+    let s = table(['Test Raider']);
+    s = settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Guide') } as Action)), 30));
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: find(s, 1, 'battlefield', 'Test Raider'), defender: 0 }] } as Action);
+    s = walk(s, 4, 'end');
+    expect(s.initiative).toBe(1);
+    expect(commandNames(s, 1)).toContain('The Initiative');
+    expect(commandNames(s, 0)).not.toContain('The Initiative');
+    expect(roomOf(s, 1)).toBe('Secret Entrance');
+    expect(roomOf(s, 0)).toBe('Secret Entrance');
+  });
+
+  it('the last room completes the dungeon: Undercity leaves the command zone and is counted', () => {
+    let s = table();
+    s = settle(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Guide') } as Action)), 30));
+    s = { ...s, dungeon: { ...s.dungeon, 0: { ...s.dungeon!['0']!, room: 'Catacombs' } } };
+    s = settle(drain(passBoth({ ...ventureInto(s, 0, 'Undercity'), automated: true }), 30));
+    expect(roomOf(s, 0)).toBeUndefined();
+    expect(s.dungeonsCompleted?.['0']).toEqual(['Undercity']);
+    expect(commandNames(s, 0)).not.toContain('Undercity');
   });
 });
 
