@@ -26683,7 +26683,11 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     const words = grantedKeywordList(granted[3]!);
     const aimed = targetSpecFrom(granted[1]!, true);
     // A creature only: "target land gains shroud" is not a creature's keyword. (A plural target prints "gain".)
-    const spec = aimed !== null && aimed.kind === 'creature' ? aimed : null;
+    // Or a target printed as a **permanent**, for the keywords any permanent can have (D796): "Target
+    // permanent you control gains hexproof and indestructible until end of turn" (Tamiyo's
+    // Safekeeping). "Target land gains shroud" stays unread, as D1030 pins.
+    const anyPermanent = words !== null && words.every((word) => word === 'hexproof' || word === 'indestructible' || word === 'shroud');
+    const spec = aimed !== null && (aimed.kind === 'creature' || (aimed.kind === 'permanent' && anyPermanent && /\bpermanent\b/i.test(granted[1]!))) ? aimed : null;
     const becomes = granted[2] === undefined
       ? undefined
       : TOKEN_COLOURS[granted[2].toLowerCase()] ?? null;
