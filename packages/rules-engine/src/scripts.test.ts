@@ -37600,6 +37600,78 @@ describe('domain: a static count, and any line under an ability word (D1168)', (
   });
 });
 
+describe('a colour, a keyword or a counter on a mass scope (D1169)', () => {
+  const BIRD = { name: 'Test Bird', type_line: 'Creature — Bird', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: 'Flying' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const GOLEM = { name: 'Test Golem', type_line: 'Artifact Creature — Golem', mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal', power: '2', toughness: '2', oracle_text: '' };
+  const BLIGHT = { name: 'Test Blight', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'Destroy all green creatures.' };
+  const GALE = { name: 'Test Gale', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Destroy all creatures with flying.' };
+  const RALLY = { name: 'Test Rally', type_line: 'Instant', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Creatures you control with flying get +1/+1 until end of turn.' };
+  const SAGE = { name: 'Test Sage', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal', oracle_text: 'Draw a card for each creature you control with a +1/+1 counter on it.' };
+  const WITHER = { name: 'Test Wither', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal', oracle_text: 'Destroy all colorless creatures.' };
+  const PURGE = { name: 'Test Purge', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'Destroy all creatures with a counter on them.' };
+  const ROWS = [BIRD, BEAR, GOLEM, BLIGHT, GALE, RALLY, SAGE, WITHER, PURGE];
+  const deck = customDeck({
+    id: 'd1169', name: 'Scopes', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 14 }, { name: 'Plains', count: 14 }], data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'd1169', 1: 'd1169' }, deckSpecs: { d1169: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Forest', 'Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const cast = (s: GameState, name: string): GameState => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })));
+  const onField = (s: GameState, seat: 0 | 1, name: string): number =>
+    ids(s, seat, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === name).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a colour: green creatures die on both sides, the white flier stays', () => {
+    const s = cast(table(['Test Blight'], ['Test Bear', 'Test Bird'], ['Test Bear']), 'Test Blight');
+    expect([onField(s, 0, 'Test Bear'), onField(s, 1, 'Test Bear'), onField(s, 0, 'Test Bird')]).toEqual([0, 0, 1]);
+  });
+
+  it('colorless: the artifact creature dies, the coloured ones stay', () => {
+    const s = cast(table(['Test Wither'], ['Test Golem', 'Test Bear']), 'Test Wither');
+    expect([onField(s, 0, 'Test Golem'), onField(s, 0, 'Test Bear')]).toEqual([0, 1]);
+  });
+
+  it('a keyword: only the flier dies', () => {
+    const s = cast(table(['Test Gale'], ['Test Bear', 'Test Bird']), 'Test Gale');
+    expect([onField(s, 0, 'Test Bear'), onField(s, 0, 'Test Bird')]).toEqual([1, 0]);
+  });
+
+  it('a keyword on a pump: the flier grows, the bear does not', () => {
+    const before = table(['Test Rally'], ['Test Bear', 'Test Bird']);
+    const s = cast(before, 'Test Rally');
+    const bird = find(s, 0, 'battlefield', 'Test Bird');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect([power(s, bird), toughness(s, bird)]).toEqual([2, 2]);
+    expect([power(s, bear), toughness(s, bear)]).toEqual([2, 2]);
+  });
+
+  it('a counter as a count: one card for each creature with a +1/+1 counter', () => {
+    let s = table(['Test Sage'], ['Test Bear', 'Test Bird', 'Test Golem']);
+    for (const name of ['Test Bear', 'Test Golem']) {
+      const id = find(s, 0, 'battlefield', name);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters: { '+1/+1': 1 } } } };
+    }
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Sage');
+    // The Sage left the hand, two cards came in.
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('a counter of no named kind: any counter at all, and "a" is not a kind', () => {
+    let s = table(['Test Purge'], ['Test Bear', 'Test Bird', 'Test Golem']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, counters: { oil: 1 } } } };
+    s = cast(s, 'Test Purge');
+    expect([onField(s, 0, 'Test Bear'), onField(s, 0, 'Test Bird'), onField(s, 0, 'Test Golem')]).toEqual([0, 1, 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -71853,7 +71925,9 @@ describe('mass effects over a scope, and overload from its rewrite (D600)', () =
   });
 
   it('refuses a scope it cannot test rather than widening it', () => {
-    const read = compileCard({ ...GEDDON, oracle_text: 'Destroy all white permanents.' } as never);
+    // "Destroy all white permanents" was this row until D1169 read colours; a colour alone is
+    // still not a scope.
+    const read = compileCard({ ...GEDDON, oracle_text: 'Destroy all white.' } as never);
     expect(read.ok && read.unread.length).toBe(1);
   });
 });

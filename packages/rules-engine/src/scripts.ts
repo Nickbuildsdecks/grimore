@@ -15347,6 +15347,29 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     const before = bound;
     bound = (state, inst) => (before === null || before(state, inst)) && (inst.counters[kind] ?? 0) <= 0;
   }
+  /*
+    D1169: "with a +1/+1 counter on it" / "with +1/+1 counters on them" (Armorcraft Judge's
+    count, Inspiring Call), and "with flying" (Hurricane's cousins, "Destroy all creatures with
+    flying"). A counter of that one kind, or the live keyword. Read before the controller clause,
+    because the printed order is "creatures you control with flying".
+  */
+  // With no kind named ("with a counter on it"), any counter at all. An article is never a kind.
+  const withCounter = /\s+with (?:(?:an?|one or more) )?(?:([+-]\d+\/[+-]\d+|[a-z]+) )?counters? on (?:them|it)$/i.exec(rest);
+  if (withCounter !== null && !['no', 'a', 'an', 'one', 'more'].includes((withCounter[1] ?? '').toLowerCase())) {
+    rest = rest.slice(0, withCounter.index);
+    const kind = withCounter[1]?.toLowerCase();
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && (kind === undefined
+      ? Object.values(inst.counters).some((n) => (n ?? 0) > 0)
+      : (inst.counters[kind] ?? 0) > 0);
+  }
+  const withKeyword = /\s+with ([a-z]+(?: [a-z]+)?)$/i.exec(rest);
+  if (withKeyword !== null && isKeyword(withKeyword[1]!.toLowerCase())) {
+    rest = rest.slice(0, withKeyword.index);
+    const keyword = withKeyword[1]!.toLowerCase() as Keyword;
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && characteristicsOf(state, inst).keywords.has(keyword);
+  }
   let who: 'you' | 'opponents' | 'any' = 'any';
   for (const [pattern, seatRule] of [
     [/\s+you control$/i, 'you'], [/\s+you don't control$/i, 'opponents'],
@@ -15361,13 +15384,28 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
   if (other) rest = rest.replace(/^other\s+/i, '');
   const singular = (word: string): string => (/ves$/.test(word) ? word.replace(/ves$/, 'f')
     : /ies$/.test(word) ? word.replace(/ies$/, 'y') : word.replace(/s$/, ''));
-  const wordTest = (raw: string): ((line: TypeLine) => boolean) | null => {
+  /*
+    D1169: a colour word is a fact about the permanent's live colours, not its type line: "Destroy
+    all green creatures", "nonblack creatures", "colorless creatures", "multicolored permanents".
+  */
+  type Looked = { readonly line: TypeLine; readonly colors: readonly Color[] };
+  const colourTest = (word: string): ((seen: Looked) => boolean) | null => {
+    const lower = word.toLowerCase();
+    const colour = COLOUR_WORDS[lower];
+    if (colour !== undefined) return (seen) => seen.colors.includes(colour);
+    if (lower === 'colorless') return (seen) => seen.colors.length === 0;
+    if (lower === 'multicolored') return (seen) => seen.colors.length > 1;
+    if (lower === 'monocolored') return (seen) => seen.colors.length === 1;
+    return null;
+  };
+  const wordTest = (raw: string): ((seen: Looked) => boolean) | null => {
     const negated = /^non-?/i.test(raw);
     const word = negated ? raw.replace(/^non-?/i, '') : raw;
-    const base = /^permanents?$/i.test(word) ? () => true
+    const typed = /^permanents?$/i.test(word) ? () => true
       : permanentWordMatch(word) ?? permanentWordMatch(singular(word));
+    const base: ((seen: Looked) => boolean) | null = typed !== null ? (seen) => typed(seen.line) : colourTest(word);
     if (base === null) return null;
-    return negated ? (line) => !base(line) : base;
+    return negated ? (seen) => !base(seen) : base;
   };
   // The state words (D749): "all tapped creatures", "each attacking creature", read live.
   // And "nontoken" (D809): Hour of Reckoning's "all nontoken creatures", a fact about the permanent.
@@ -15383,11 +15421,14 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
   });
   const alternatives = rest.split(/,\s*(?:and\s+|or\s+)?|\s+and\s+/).map((part) => part.trim()).filter(Boolean);
   if (alternatives.length === 0) return null;
-  const tests: ((line: TypeLine) => boolean)[] = [];
+  const tests: ((seen: Looked) => boolean)[] = [];
   for (const alternative of alternatives) {
-    const parts = alternative.split(/\s+/).map(wordTest);
+    const words = alternative.split(/\s+/);
+    const parts = words.map(wordTest);
     if (parts.length === 0 || parts.some((part) => part === null)) return null;
-    tests.push((line) => parts.every((part) => part!(line)));
+    // A colour alone is not a scope ("all green" is a type word short); a type word must be there.
+    if (words.every((word) => colourTest(word.replace(/^non-?/i, '')) !== null)) return null;
+    tests.push((seen) => parts.every((part) => part!(seen)));
   }
   return (c) => battlefield(c.state, (id) => {
     const inst = c.state.instances[id];
@@ -15397,8 +15438,8 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
     if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
     if (bound !== null && !bound(c.state, inst)) return false;
     if (!inState(c.state, id, inst.tapped)) return false;
-    const { typeLine } = characteristicsOf(c.state, inst);
-    return tests.some((test) => test(typeLine));
+    const { typeLine, colors } = characteristicsOf(c.state, inst);
+    return tests.some((test) => test({ line: typeLine, colors }));
   });
 }
 
@@ -15528,6 +15569,11 @@ const MASS_PUMP_SUBJECTS: string = [
   // A creature type in the plural on its own (D809): "Dragons you control get +1/+0 until end of
   // turn" (Lathliss), "Elves you control …". Checked against the creature-type list too.
   "(?:other )?[a-z][a-z'-]*s you control",
+  // D1169: a colour, or a "with" filter, on any creature scope, read by `massScope`: "Nonblack
+  // creatures get -1/-1", "Creatures you control with flying get +1/+1", "All creatures with flying
+  // get -1/-1", "Creatures you control with +1/+1 counters on them gain trample".
+  "(?:all |other )?(?:non-?)?(?:white|blue|black|red|green|colorless|multicolored|monocolored) creatures(?: you control| your opponents control| you don't control)?",
+  "(?:all |other )?creatures(?: you control| your opponents control| you don't control)? with [a-z0-9+/ -]+?",
 ].join('|');
 
 /**
@@ -15579,11 +15625,40 @@ const PUMP_KINDS: Readonly<Record<string, (ch: ReturnType<typeof characteristics
   green: (ch) => ch.colors.includes('G'),
 };
 
-function massPumpSubject(phrase: string): {
+type MassPumpSubject = {
   readonly ids: (c: EffectContext) => readonly string[];
   readonly targets?: readonly TargetSpec[];
   readonly holdForCombat: boolean;
-} | null {
+};
+
+/*
+  D1169: any other creature scope `massScope` reads — "creatures you control with flying",
+  "creatures you control with +1/+1 counters on them", "all creatures with flying", "nonblack
+  creatures". Creatures only: the phrase has to name them, and every id is checked to be one,
+  because a pump on a land is not what any of these prints. Held for combat when the set is the
+  caster's own, as the named scopes above are.
+*/
+function massPumpSubject(phrase: string): MassPumpSubject | null {
+  const named = massPumpSubjectNamed(phrase);
+  if (named !== null) return named;
+  // The sentence's capital is not a subtype: `massScope` reads a capitalised word as one.
+  const sentence = phrase.trim().replace(/^all\s+/i, '');
+  const first = sentence.split(/\s+/)[0]!;
+  const trimmed = /^[A-Z]/.test(first) && !isCreatureType(first) && !isCreatureType(first.replace(/s$/, ''))
+    ? first.charAt(0).toLowerCase() + sentence.slice(1) : sentence;
+  if (!/\bcreatures?\b/i.test(trimmed) || /\btarget\b/i.test(trimmed)) return null;
+  const scope = massScope(trimmed);
+  if (scope === null) return null;
+  return {
+    ids: (c) => scope(c).filter((id) => {
+      const inst = c.state.instances[id];
+      return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+    }),
+    holdForCombat: /\byou control\b/i.test(trimmed) && !/\bdon't\b/i.test(trimmed),
+  };
+}
+
+function massPumpSubjectNamed(phrase: string): MassPumpSubject | null {
   const everyCreature = (c: EffectContext): readonly string[] =>
     c.state.seats.flatMap((seat) => creaturesControlledBy(c.state, seat.index));
   switch (phrase.trim().toLowerCase()) {

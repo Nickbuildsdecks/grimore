@@ -13910,8 +13910,9 @@ describe('a quantity read off the board (D520)', () => {
   it.each([
     // "each Bird on the battlefield" was this row until D601 taught the count every `massScope` scope.
     ['a countable nothing can count', 'Draw a card for each color among permanents you control.'],
+    // "… with a +1/+1 counter on it" was this row until D1169 taught `massScope` counters and keywords.
     ['a count qualified past the vocabulary',
-      'Draw a card for each creature you control with a +1/+1 counter on it.'],
+      'Draw a card for each creature you control with flying and vigilance.'],
     ['a quantity that is not a count of the board at all',
       'You gain X life, where X is the amount of life you gained this turn.'],
     ['a verb this table has no row for', 'Scry 1 for each card in your hand.'],
