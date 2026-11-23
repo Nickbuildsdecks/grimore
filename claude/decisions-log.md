@@ -59469,3 +59469,32 @@ Faults injected by hand: 2, both caught.
 - The event never raised.
 
 Coverage: 15,858 of 31,900 cards (+3 over D1163's 15,855), 38,060 of 59,888 lines (+5). The difference also counts the D7xx session's D819, merged in after D1163 was measured.
+
+## D1165 — "for each opponent"
+
+"For each opponent" was not a count any reader knew: "create a 1/1 black Rat creature token for each
+opponent you have", "draw a card for each opponent", "you gain 2 life for each opponent". It is now
+one in `countOfThing`: the seats still in the game other than the controller's, counted as the
+effect resolves. So every reader that takes a "for each" count takes it, as they take "for each
+creature you control".
+
+The prefix form, "For each opponent, you create a 1/1 black and green Pest creature token with
+'When this token dies, you gain 1 life.'", is the clause read without its prefix and done once per
+opponent. It applies only to a clause that targets nothing, asks nothing and does not name the
+opponent. A clause about each opponent in turn ("that player", "they") is a different reading and
+stays unread, as do the per-opponent targets ("for each opponent, return up to one target nonland
+permanent that player controls").
+
+Read whole now: Darksteel Splicer, Eccentric Pestfinder, Inspired Sphinx and Big Apple, 3 a.m.
+
+**Tests.** 3 engine tests, in a four-player pod:
+- The test cards read whole.
+- Three opponents: three Rats, three Pests, six life.
+- An opponent who has left the game is not counted: two Rats.
+
+Faults injected by hand: 3, all caught.
+- The count always 1.
+- The prefix form done once.
+- Eliminated seats counted.
+
+Coverage: 15,866 of 31,900 cards (+8 over D1164's 15,858), 38,078 of 59,888 lines (+18). The difference also counts the D7xx session's D820, merged in after D1164 was measured.
