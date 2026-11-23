@@ -200,6 +200,12 @@ export interface CardInstance {
   readonly tapped: boolean;
   /** Face-down cards are visible to their controller and to nobody else. */
   readonly faceDown: boolean;
+  /**
+   * Put onto the battlefield face down by manifest (D1153, CR 701.40a): a 2/2 with no abilities that
+   * may be turned face up for its mana cost if it is a creature card (CR 701.40b), or for its morph
+   * cost if it has one. Cleared as it turns face up.
+   */
+  readonly manifested?: true;
   /** Deliberately shown to the whole table, which beats a face-up card in a hidden zone. */
   readonly revealed: boolean;
   readonly counters: Readonly<Record<string, number>>;

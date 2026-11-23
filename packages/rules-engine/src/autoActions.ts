@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1693,10 +1693,13 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
   // `scriptFor` by name rather than `scriptOf` by id, which would be undefined: the whole point of
   // `scriptOf` is that a face-down permanent has no abilities, and this is the one place that has
   // to read the card underneath anyway.
-  const script = scriptForCard(def);
-  if (script?.morph === undefined) {
+  // Its morph cost, or a manifested creature card's mana cost (D1153): see `turnUpCostOf`.
+  const turnUp = turnUpCostOf(state, inst);
+  if (turnUp === null) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no morph cost to pay');
   }
+  const script = { morph: turnUp };
+  const cardScript = scriptForCard(def);
   /*
     The cost, in two halves because a morph cost is not always mana (CR 702.37a lets a card print
     whatever it likes). The life half is checked before anything is spent and refused at exactly
@@ -1710,7 +1713,7 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
     }
   }
   const paid = payFrom(state, action.by, script.morph.cost.mana, 0, 0);
-  let next = withInstance(paid.state, inst.id, { faceDown: false });
+  let next = withInstance(paid.state, inst.id, { faceDown: false, manifested: undefined });
   if (script.morph.cost.life !== undefined) {
     next = loseLife(next, action.by, script.morph.cost.life);
   }
@@ -1734,8 +1737,8 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
     already, which is what keeps a permanent that was turned face up, face down and face up again
     from handing out its anthem twice.
   */
-  if (!next.effects.some((effect) => effect.source === inst.id)) {
-    next = applyStatics(next, inst.id, inst.zoneSeat, script);
+  if (cardScript !== undefined && !next.effects.some((effect) => effect.source === inst.id)) {
+    next = applyStatics(next, inst.id, inst.zoneSeat, cardScript);
   }
   /*
     `settle` rather than a bare return, because turning a permanent face up changes the board in

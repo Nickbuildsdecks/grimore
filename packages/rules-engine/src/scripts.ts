@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -16040,6 +16040,13 @@ function selfEffect(
         return chosen === undefined ? c.state : copyAsToken(c.state, c.controller, chosen);
       },
     };
+  }
+
+  // Manifest (D1153, CR 701.40a): see `manifestTop`. "Manifest the top two cards" is that twice.
+  const manifested = /^manifest the top (card|two cards|three cards) of your library$/i.exec(text);
+  if (manifested !== null) {
+    const n = { card: 1, 'two cards': 2, 'three cards': 3 }[manifested[1]!.toLowerCase() as 'card' | 'two cards' | 'three cards'];
+    return { effect: (c) => Array.from({ length: n }).reduce<GameState>((st) => manifestTop(st, c.controller), c.state) };
   }
 
   // Amass (D1150, CR 701.47a): see `amass`. "Amass Orcs 2", "amass Zombies 3", and the older "Amass 2".

@@ -35801,6 +35801,51 @@ describe('untap itself in others\' untap steps, "each other player", "each oppon
   });
 });
 
+describe('manifest (D1153)', () => {
+  const SUMMONS = { name: 'Test Summons', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: 'Manifest the top card of your library.' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '4', toughness: '4', oracle_text: '' };
+  const ROWS = [SUMMONS, BEAR];
+  const deck = customDeck({
+    id: 'd1153', name: 'Manifest', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const manifestWithTop = (topName: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1153', 1: 'd1153' }, deckSpecs: { d1153: deck.deck },
+      hands: { 0: ['Test Summons'] }, battlefield: { 0: ['Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const top = find(s, 0, 'library', topName);
+    s = putOnTopOfLibrary(s, top);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Summons') } as Action)), 30);
+    return { s, top };
+  };
+  const turnUps = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.kind === 'turnUp');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SUMMONS as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the top card arrives face down as a 2/2, and a creature card turns up for its mana cost', () => {
+    let { s, top } = manifestWithTop('Test Bear');
+    const inst = s.instances[top]!;
+    expect(inst.zone).toBe('battlefield');
+    expect(inst.faceDown).toBe(true);
+    const ch = characteristicsOf(s, inst);
+    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    expect(turnUps(s).map((p) => p.card)).toEqual([top]);
+    s = apply(s, { type: 'auto:turnUp', by: 0, card: top } as Action);
+    expect(s.instances[top]!.faceDown).toBe(false);
+    expect(nameOf(s, top)).toBe('Test Bear');
+    expect(power(s, top)).toBe(4);
+  });
+
+  it('a manifested land stays face down: nothing offers to turn it up', () => {
+    const { s, top } = manifestWithTop('Forest');
+    expect(s.instances[top]!.faceDown).toBe(true);
+    expect(turnUps(s)).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

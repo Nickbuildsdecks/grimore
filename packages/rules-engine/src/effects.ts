@@ -3213,6 +3213,21 @@ export function createEmblem(state: GameState, seat: SeatIndex, text: string, fr
 }
 
 /**
+ * Manifest (D1153, CR 701.40a): the top card of the seat's library is put onto the battlefield face
+ * down as a 2/2 creature with no text, name, subtypes or mana cost, marked `manifested` so it can be
+ * turned face up for its mana cost if it is a creature card (`turnUpCostOf`). Nothing with an empty
+ * library.
+ */
+export function manifestTop(state: GameState, seat: SeatIndex): GameState {
+  const top = listAt(state, zoneKey(seat, 'library'))[0];
+  const inst = top === undefined ? undefined : state.instances[top];
+  if (inst === undefined) return state;
+  let next = withInstance(state, inst.id, { faceDown: true });
+  next = relocate(next, next.instances[inst.id]!, 'battlefield', seat, 'bottom');
+  return withInstance(next, inst.id, { faceDown: true, manifested: true, tapped: false });
+}
+
+/**
  * Amass (D1150, CR 701.47a): "Amass Orcs 2" — if the seat controls no Army creature, it creates a
  * 0/0 black Orc Army creature token; then it chooses an Army creature it controls, puts that many
  * +1/+1 counters on it, and if it isn't an Orc it becomes one in addition to its other types. The

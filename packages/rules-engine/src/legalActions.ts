@@ -3089,8 +3089,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     const inst = state.instances[id];
     if (inst === undefined || !inst.faceDown) continue;
     const def = state.cardDefs[inst.defKey];
-    const morph = scriptForCard(def)?.morph;
-    if (morph === undefined) continue;
+    const morph = turnUpCostOf(state, inst);
+    if (morph === null) continue;
     const mana = morph.cost.mana ?? '';
     const cost = parseManaCost(mana);
     if (cost.unsupported !== undefined) continue;
@@ -3104,7 +3104,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       a cost you may choose to pay.
     */
     if (morph.cost.life !== undefined && !canPayLife(state, seat, morph.cost.life)) continue;
-    const word = morph.mega === true ? 'megamorph' : 'morph';
+    const word = morph.word;
     out.push({
       kind: 'turnUp', card: id, name: def?.name ?? 'that card',
       description: `Turn ${def?.name ?? 'it'} face up (${word} ${morphCostText(morph.cost)})`,
@@ -3442,3 +3442,23 @@ function blockOptions(state: GameState, seat: SeatIndex): BlockOption[] {
 }
 
 export { MAIN_STEPS };
+
+/**
+ * What turning this face-down permanent face up costs (D1153), or `null` when it cannot be: its morph
+ * or megamorph cost (CR 702.37b), or, for a card put onto the battlefield by manifest that is a
+ * creature card, its mana cost (CR 701.40b). A manifested card that is not a creature card stays face
+ * down unless it has morph.
+ */
+export function turnUpCostOf(
+  state: GameState, inst: CardInstance,
+): { readonly cost: { readonly mana?: string; readonly life?: number }; readonly mega?: true; readonly word: string } | null {
+  const def = state.cardDefs[inst.defKey];
+  const morph = scriptForCard(def)?.morph;
+  if (morph !== undefined) {
+    return { cost: morph.cost, ...(morph.mega === true ? { mega: true as const } : {}), word: morph.mega === true ? 'megamorph' : 'morph' };
+  }
+  if (inst.manifested === true && def !== undefined && hasType(parseTypeLine(def.typeLine), 'creature')) {
+    return { cost: { mana: def.manaCost ?? '' }, word: 'manifested, its mana cost' };
+  }
+  return null;
+}
