@@ -1344,6 +1344,8 @@ export interface AutomationState {
    * Asked by `castProhibition`.
    */
   readonly castBannedTurn?: Readonly<Record<string, number>>;
+  /** "Can't cast noncreature spells this turn" (D803): Ranger-Captain of Eos. As `castBannedTurn`. */
+  readonly noncreatureBannedTurn?: Readonly<Record<string, number>>;
   /**
    * `spellsCastThisTurnBy` as it stood when the **previous** turn ended (D592).
    *
