@@ -8020,6 +8020,8 @@ describe('deck coverage', () => {
       'keyword decayed',
       // D1145: "Whenever the Ring tempts you" (Faramir, Gandalf); no pool deck plays one.
       'trigger ring-tempted',
+      // D1147: "If damage would be dealt to ~, …" (the Phantoms); no pool deck plays one.
+      'script damageToSelf',
     ]);
 
     const declared = [
@@ -35251,6 +35253,67 @@ describe('attack taxes on planeswalkers too, and Sphere of Safety\'s X (D802)', 
   it('Sphere of Safety: X is the enchantments its controller has, itself included', () => {
     expect(attackTaxFor(table(['Test Sphere']), [{ defender: 1 }])).toBe(1);
     expect(attackTaxFor(table(['Test Sphere', 'Test Glyph', 'Test Glyph']), [{ defender: 1 }, { defender: 1 }])).toBe(6);
+  });
+});
+
+describe('"If damage would be dealt to ~, …" (D1147)', () => {
+  const C = (name: string, text: string, size = '0') => ({ name, type_line: 'Creature — Spirit', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: size, toughness: size, oracle_text: text });
+  const PHANTOM = C('Test Phantom', 'If damage would be dealt to Test Phantom, prevent that damage. Remove a +1/+1 counter from Test Phantom.', '1');
+  const KNIGHT = C('Test Knight', 'If damage would be dealt to Test Knight while it has a +1/+1 counter on it, prevent that damage and remove a +1/+1 counter from it.', '1');
+  const CONJURANT = C('Test Conjurant', 'If damage would be dealt to Test Conjurant while it has a +1/+1 counter on it, prevent that damage and remove that many +1/+1 counters from Test Conjurant.', '1');
+  const HYDRA = C('Test Phytohydra', 'If damage would be dealt to Test Phytohydra, put that many +1/+1 counters on it instead.', '1');
+  const ROWS = [PHANTOM, KNIGHT, CONJURANT, HYDRA];
+  const deck = customDeck({
+    id: 'd1147', name: 'Damage to self', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 52 }], data: ROWS as never[],
+  });
+  const withCounters = (name: string, n: number) => {
+    const s0 = advanceTo(arena({
+      decks: { 0: 'd1147', 1: 'd1147' }, deckSpecs: { d1147: deck.deck },
+      battlefield: { 0: [name], 1: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s0, 0, 'battlefield', name);
+    const source = find(s0, 1, 'battlefield', 'Forest');
+    const s = { ...s0, instances: { ...s0.instances, [id]: { ...s0.instances[id]!, counters: { ...s0.instances[id]!.counters, '+1/+1': n } } } };
+    return { s, id, hit: (st: GameState, amount: number) => drain(dealDamage(st, { kind: 'card', id }, amount, { controller: 1, source })) };
+  };
+  const plusOf = (s: GameState, id: string) => s.instances[id]?.counters['+1/+1'] ?? 0;
+
+  it('reads all four whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Phantom loses one counter for each damage event, and no damage is marked', () => {
+    const { s: s0, id, hit } = withCounters('Test Phantom', 3);
+    let s = hit(s0, 5);
+    expect(plusOf(s, id)).toBe(2);
+    expect(s.instances[id]!.damage).toBe(0);
+    s = hit(s, 1);
+    expect(plusOf(s, id)).toBe(1);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+  });
+
+  it('"while it has a +1/+1 counter": with none, the damage is dealt', () => {
+    const shielded = withCounters('Test Knight', 1);
+    const after = shielded.hit(shielded.s, 3);
+    expect(plusOf(after, shielded.id)).toBe(0);
+    expect(after.instances[shielded.id]!.zone).toBe('battlefield');
+    expect(after.instances[shielded.id]!.damage).toBe(0);
+    const bare = withCounters('Test Knight', 0);
+    expect(bare.hit(bare.s, 3).instances[bare.id]!.damage).toBe(3);
+  });
+
+  it('"remove that many" removes as many as the damage', () => {
+    const { s, id, hit } = withCounters('Test Conjurant', 5);
+    expect(plusOf(hit(s, 3), id)).toBe(2);
+  });
+
+  it('Phytohydra grows by the damage instead', () => {
+    const { s, id, hit } = withCounters('Test Phytohydra', 0);
+    const after = hit(s, 4);
+    expect(plusOf(after, id)).toBe(4);
+    expect(after.instances[id]!.damage).toBe(0);
+    expect(power(after, id)).toBe(5);
   });
 });
 

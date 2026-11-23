@@ -490,6 +490,11 @@ export function dealDamage(
     const shielded = spendShieldCounter(next, target.id);
     if (shielded !== null) return shielded;
   }
+  // "If damage would be dealt to ~, prevent that damage. Remove a +1/+1 counter from ~" (D1147).
+  if (target.kind === 'card') {
+    const replaced = replaceDamageToSelf(next, target.id, amount);
+    if (replaced !== null) return replaced;
+  }
   /*
     Then prevention shields take what they can (CR 615.1), also before anything is marked.
 
@@ -1301,6 +1306,28 @@ function damagePrevented(state: GameState, target: Target, source: string | null
       && effectReaches(state, effect, from)) return true;
     return false;
   });
+}
+
+/**
+ * A permanent's own replacement of damage dealt to it (D1147, `CardScript.damageToSelf`), or `null`
+ * when it has none, or has one that applies only while it has a +1/+1 counter and it has none. The
+ * damage is not dealt; what happens instead is the counter change. Removing a counter it does not
+ * have removes none, and the damage is still prevented (the Phantoms' printed order).
+ */
+function replaceDamageToSelf(state: GameState, id: string, amount: number): GameState | null {
+  if (scriptLookup === null) return null;
+  const inst = state.instances[id];
+  if (inst === undefined || inst.zone !== 'battlefield' || inst.faceDown || allAbilitiesLost(state, inst)) return null;
+  const rule = scriptLookup(state.cardDefs[inst.defKey])?.damageToSelf;
+  if (rule === undefined) return null;
+  const plus = inst.counters['+1/+1'] ?? 0;
+  if (rule.whileCounter === true && plus <= 0) return null;
+  switch (rule.then) {
+    case 'remove-one': return plus > 0 ? addCounters(state, id, '+1/+1', -1) : state;
+    case 'remove-amount': return plus > 0 ? addCounters(state, id, '+1/+1', -Math.min(plus, amount)) : state;
+    case 'add-plus': return addCounters(state, id, '+1/+1', amount);
+    case 'add-minus': return addCounters(state, id, '-1/-1', amount);
+  }
 }
 
 function damageToYouPrevented(state: GameState, seat: SeatIndex): boolean {

@@ -4099,6 +4099,21 @@ export interface CardScript {
    */
   readonly preventsDamageToYou?: true;
   /**
+   * "If damage would be dealt to ~, …" (D1147, CR 615): a replacement of damage dealt to this
+   * permanent, applied in `dealDamage` to each damage event on its own.
+   * - `whileCounter`: only "while it has a +1/+1 counter on it" (Oathsworn Knight, Ugin's Conjurant);
+   *   otherwise the damage is dealt as normal.
+   * - `then`: what happens instead of the damage.
+   *   - `remove-one`: prevent it and remove a +1/+1 counter (the Phantoms, Undergrowth Champion).
+   *   - `remove-amount`: prevent it and remove that many (Ugin's Conjurant).
+   *   - `add-plus`: put that many +1/+1 counters on it instead (Phytohydra).
+   *   - `add-minus`: prevent it and put that many -1/-1 counters on it (Phyrexian Hydra).
+   */
+  readonly damageToSelf?: {
+    readonly whileCounter?: true;
+    readonly then: 'remove-one' | 'remove-amount' | 'add-plus' | 'add-minus';
+  };
+  /**
    * "Exile ~." as an instant's or sorcery's last sentence (D733, Teferi's Protection): it goes to
    * exile rather than the graveyard as it resolves. Not as it is countered.
    */

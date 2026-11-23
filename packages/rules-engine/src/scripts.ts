@@ -32992,6 +32992,35 @@ function preventionStaticFromLine(line: string, name: string): Partial<CardScrip
   };
 }
 
+/**
+ * "If damage would be dealt to ~, …" (D1147): see `CardScript.damageToSelf`. Five printed shapes:
+ * - "If damage would be dealt to ~, prevent that damage. Remove a +1/+1 counter from ~." (the
+ *   Phantoms);
+ * - "If damage would be dealt to ~ while it has a +1/+1 counter on it, prevent that damage and
+ *   remove a +1/+1 counter from it" (Oathsworn Knight, Undergrowth Champion);
+ * - "… and remove that many +1/+1 counters from it" (Ugin's Conjurant);
+ * - "If damage would be dealt to ~, put that many +1/+1 counters on it instead." (Phytohydra);
+ * - "If damage would be dealt to ~, prevent that damage. Put a -1/-1 counter on ~ for each 1 damage
+ *   prevented this way." (Phyrexian Hydra).
+ */
+function damageToSelfFromLine(line: string, name: string): Partial<CardScript> | null {
+  const self = selfRef(name);
+  const it = `(?:${self}|it)`;
+  const text = plain(line).trim().replace(/\.$/, '');
+  const head = new RegExp(`^If damage would be dealt to ${self}( while it has a \\+1/\\+1 counter on it)?, (.+)$`, 'i').exec(text);
+  if (head === null) return null;
+  const whileCounter = head[1] !== undefined ? { whileCounter: true as const } : {};
+  const rest = head[2]!;
+  const one = new RegExp(`^prevent that damage(?:\\. | and )remove a \\+1/\\+1 counter from ${it}$`, 'i');
+  const many = new RegExp(`^prevent that damage(?:\\. | and )remove that many \\+1/\\+1 counters from ${it}$`, 'i');
+  const plus = new RegExp(`^put that many \\+1/\\+1 counters on ${it} instead$`, 'i');
+  const minus = new RegExp(`^prevent that damage\\. Put a -1/-1 counter on ${it} for each 1 damage prevented this way$`, 'i');
+  const then = one.test(rest) ? 'remove-one' as const : many.test(rest) ? 'remove-amount' as const
+    : plus.test(rest) && head[1] === undefined ? 'add-plus' as const
+      : minus.test(rest) && head[1] === undefined ? 'add-minus' as const : null;
+  return then === null ? null : { damageToSelf: { ...whileCounter, then } };
+}
+
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
@@ -34697,6 +34726,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? chooseAsEntersFromLine(line, name)
     ?? chosenSelfStaticFromLine(line, name)
     ?? staticFromLine(line)
+    ?? damageToSelfFromLine(line, name)
     ?? preventionStaticFromLine(line, name)
     ?? costModifierFromLine(line, name)
     ?? cantAloneFromLine(line, name)
