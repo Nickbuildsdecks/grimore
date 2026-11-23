@@ -1904,6 +1904,17 @@ export function shuffleLibrary(state: GameState, seat: SeatIndex): GameState {
   return { ...state, autoSeq: seq, zones: { ...state.zones, [key]: shuffled(listAt(state, key), rng) } };
 }
 
+/**
+ * "Flip a coin" (D1152, CR 705.1): heads or tails off the game's seeded generator, as a shuffle is.
+ * Nothing chooses a side, so the flip is won or lost with even odds and recorded in `coinFlips`.
+ */
+export function flipCoin(state: GameState, seat: SeatIndex): { readonly state: GameState; readonly won: boolean } {
+  const seq = state.autoSeq + 1;
+  const won = mulberry32(actionSeed(state.rngSeed, state.stateVersion + seq))() < 0.5;
+  const flips = [...(state.coinFlips ?? []), { seat, won }].slice(-20);
+  return { state: { ...state, autoSeq: seq, coinFlips: flips }, won };
+}
+
 export function discardAtRandom(state: GameState, seat: SeatIndex, count: number): GameState {
   let next = state;
   for (let i = 0; i < Math.max(0, count); i++) {

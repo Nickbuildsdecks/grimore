@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -29991,6 +29991,37 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
   };
 }
 
+/**
+ * "Flip a coin. If you win the flip, X. [If you lose the flip, Y.]" (D1152, CR 705): Mogg Assassin,
+ * Fiery Gambit's simpler cousins, Goblin Archaeologist. Each branch is read by `composeEffects` on
+ * its own. The flip is made as the ability resolves, then the branch for the result runs. Refused
+ * when the branches cannot be one plan: both target, either asks a question, or anything follows.
+ * A branch's targets are the whole ability's, chosen as it is put on the stack; the losing branch
+ * does nothing with them.
+ */
+function coinFlipGroup(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  const trimmed = clauses.map((c) => c.trim().replace(/\.$/, ''));
+  if (trimmed.length < 2 || trimmed.length > 3 || !/^flip a coin$/i.test(trimmed[0]!)) return null;
+  const win = /^if you win the flip, (.+)$/i.exec(trimmed[1]!);
+  const lose = trimmed.length === 3 ? /^if you lose the flip, (.+)$/i.exec(trimmed[2]!) : null;
+  if (win === null || (trimmed.length === 3 && lose === null)) return null;
+  const won = composeEffects([win[1]!], name, where);
+  const lost = lose === null ? null : composeEffects([lose[1]!], name, where);
+  if (won === null || (lose !== null && lost === null)) return null;
+  const parts = [won, ...(lost === null ? [] : [lost])];
+  if (parts.some((p) => (p.decisions ?? []).length > 0 || p.reflexive !== undefined)) return null;
+  const targeted = parts.filter((p) => (p.targets ?? []).length > 0);
+  if (targeted.length > 1) return null;
+  return {
+    ...(targeted.length === 1 ? { targets: targeted[0]!.targets } : {}),
+    effect: (c) => {
+      const flip = flipCoin(c.state, c.controller);
+      const branch = flip.won ? won : lost;
+      return branch === null ? flip.state : branch.effect({ ...c, state: flip.state });
+    },
+  };
+}
+
 function splitDamageClauses(clause: string): readonly string[] {
   const text = clause.trim().replace(/\.$/, '');
   const each = /^(.+?) deals (\w+) damage to each of (two|three) targets$/i.exec(text);
@@ -30068,6 +30099,9 @@ function composeEffects(
   // And Twincast's two sentences (D755): see `copyTargetSpell`.
   const copied = copyTargetSpell(clauses);
   if (copied !== null) return copied;
+  // "Flip a coin. If you win the flip, …" (D1152): see `coinFlipGroup`.
+  const flipped = coinFlipGroup(clauses, name, where);
+  if (flipped !== null) return flipped;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;

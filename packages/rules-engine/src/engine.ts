@@ -697,6 +697,15 @@ function consequences(before: GameState, after: GameState): string[] {
     const name = after.cardDefs[was.defKey]?.name ?? before.cardDefs[was.defKey]?.name ?? 'a permanent';
     notes.push(zone === 'exile' ? `${name} is exiled` : `${name} dies`);
   }
+  // And each coin flipped (D1152): new entries at the end of `coinFlips`.
+  const flipsBefore = before.coinFlips ?? [];
+  const flipsAfter = after.coinFlips ?? [];
+  const newFlips = flipsAfter.length >= flipsBefore.length && flipsAfter.length < 20
+    ? flipsAfter.slice(flipsBefore.length)
+    : flipsAfter.filter((f) => !flipsBefore.includes(f));
+  for (const flip of newFlips) {
+    notes.push(`${after.seats[flip.seat]?.name ?? 'A player'} ${flip.won ? 'wins' : 'loses'} a coin flip`);
+  }
   if (notes.length <= MAX_NOTES) return notes;
   return [...notes.slice(0, MAX_NOTES), `and ${notes.length - MAX_NOTES} more`];
 }

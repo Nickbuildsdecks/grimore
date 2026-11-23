@@ -833,6 +833,12 @@ export interface AutomationState {
    */
   readonly ring?: Readonly<Record<string, { readonly tempted: number; readonly bearer: string | null }>>;
   /**
+   * Coin flips (D1152, CR 705), most recent last, kept to the last few: who flipped and whether they
+   * won. The log reads the new ones off it after each action, so a player sees "Nick wins a coin
+   * flip" beside what the flip did.
+   */
+  readonly coinFlips?: readonly { readonly seat: SeatIndex; readonly won: boolean }[];
+  /**
    * Whose regular turn the extra turns came after (D1132), so the order resumes after that seat
    * once they are taken: Time Warp aimed at the player across the table does not skip the one in
    * between. Set by the first extra turn taken, cleared when the order resumes.

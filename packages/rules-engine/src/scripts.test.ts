@@ -35718,6 +35718,41 @@ describe('"target artifacts and/or enchantments", and "as long as an opponent ha
   });
 });
 
+describe('flip a coin (D1152)', () => {
+  const GAMBLE = { name: 'Test Gamble', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Flip a coin. If you win the flip, you gain 5 life. If you lose the flip, you lose 2 life.' };
+  const deck = customDeck({
+    id: 'd1152', name: 'Coin', entries: [{ name: 'Test Gamble', count: 4 }, { name: 'Mountain', count: 56 }], data: [GAMBLE] as never[],
+  });
+  const play = (seed: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1152', 1: 'd1152' }, deckSpecs: { d1152: deck.deck },
+      hands: { 0: ['Test Gamble'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, rngSeed: seed };
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gamble') } as Action)), 30);
+    return { s, delta: life(s, 0) - before };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(GAMBLE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('wins and loses across seeds, and each result runs its own branch and is logged', () => {
+    const seen = new Set<boolean>();
+    for (let seed = 1; seed <= 20; seed++) {
+      const { s, delta } = play(seed);
+      const flip = s.coinFlips?.at(-1);
+      expect(flip?.seat).toBe(0);
+      seen.add(flip!.won);
+      expect(delta).toBe(flip!.won ? 5 : -2);
+      expect(s.log.some((e) => e.message.includes(flip!.won ? 'wins a coin flip' : 'loses a coin flip'))).toBe(true);
+    }
+    expect([...seen].sort()).toEqual([false, true]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
