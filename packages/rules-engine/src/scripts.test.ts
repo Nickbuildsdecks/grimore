@@ -37749,6 +37749,92 @@ describe('a lord of two tribes, Death Baron (D828)', () => {
   });
 });
 
+describe('another player\'s count, blockers counted, and a rate aimed at one player (D1170)', () => {
+  const ROWS = [
+    { name: 'Test Berserker', type_line: 'Creature — Elf', oracle_text: 'Whenever Test Berserker becomes blocked, it gets +1/+1 until end of turn for each creature blocking it.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: 'Whenever Test Wurm becomes blocked, it gets -1/-1 until end of turn for each creature blocking it beyond the first.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+    { name: 'Test Raider', type_line: 'Creature — Zombie', oracle_text: 'Whenever Test Raider attacks, defending player loses 1 life for each card in their graveyard.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '5' },
+    { name: 'Test Marauder', type_line: 'Creature — Pirate', oracle_text: 'Whenever Test Marauder attacks, it gets +1/+0 until end of turn for each land defending player controls.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bishop', type_line: 'Sorcery', oracle_text: 'Target opponent loses 1 life for each creature you control.', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal' },
+    { name: 'Test Greed', type_line: 'Sorcery', oracle_text: 'Target player loses 1 life for each land they control.', mana_cost: '{1}', cmc: 1, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1170', name: 'Counts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 42 }],
+    data: ROWS as never[],
+  });
+  const at = (mine: string[], theirs: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1170', 1: 'd1170' }, deckSpecs: { d1170: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const attack = (s0: GameState, name: string): GameState => {
+    const s = advanceTo(s0, 'declare-attackers');
+    return drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', name), defender: 1 }] }), 10);
+  };
+  const blockWithWalls = (s0: GameState, name: string): GameState => {
+    const s = advanceTo(attack(s0, name), 'declare-blockers');
+    const attacker = find(s, 0, 'battlefield', name);
+    const walls = ids(s, 1, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Wall');
+    let blocked = drain(apply(s, { type: 'auto:block', by: 1, blocks: walls.map((blocker) => ({ blocker, attacker })) }), 20);
+    // Two blockers: the attacker orders them (CR 509.2) when the order matters, before anything resolves.
+    if (walls.length > 1 && blocked.priority === null && !blocked.combat.damageOrdered) blocked = drain(apply(blocked, { type: 'auto:order', by: 0, orders: [{ attacker, blockers: walls }] }), 20);
+    for (let i = 0; i < 4 && blocked.stackOrder.length > 0; i++) blocked = passBoth(blocked);
+    return blocked;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('blocked by two, it gets +2/+2', () => {
+    const s = blockWithWalls(at(['Test Berserker'], ['Test Wall', 'Test Wall']), 'Test Berserker');
+    const elf = find(s, 0, 'battlefield', 'Test Berserker');
+    expect([power(s, elf), toughness(s, elf)]).toEqual([4, 4]);
+  });
+
+  it('beyond the first: blocked by two, -1/-1; by one, nothing', () => {
+    const two = blockWithWalls(at(['Test Wurm'], ['Test Wall', 'Test Wall']), 'Test Wurm');
+    const wurm = find(two, 0, 'battlefield', 'Test Wurm');
+    expect([power(two, wurm), toughness(two, wurm)]).toEqual([5, 5]);
+    const one = blockWithWalls(at(['Test Wurm'], ['Test Wall']), 'Test Wurm');
+    const alone = find(one, 0, 'battlefield', 'Test Wurm');
+    expect([power(one, alone), toughness(one, alone)]).toEqual([6, 6]);
+  });
+
+  it("the defending player loses one for each card in their graveyard, not the attacker's", () => {
+    let s = at(['Test Raider'], []);
+    for (const id of ids(s, 1, 'library').slice(0, 3)) s = apply(s, { type: 'card:move', by: 1, card: id, toZone: 'graveyard' });
+    for (const id of ids(s, 0, 'library').slice(0, 5)) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    const before = life(s, 1);
+    s = attack(s, 'Test Raider');
+    expect(life(s, 1)).toBe(before - 3);
+  });
+
+  it('"defending player controls" with no target: the lands of the player attacked', () => {
+    let s = at(['Test Marauder', 'Swamp'], ['Swamp', 'Swamp', 'Swamp']);
+    s = attack(s, 'Test Marauder');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(power(s, find(s, 0, 'battlefield', 'Test Marauder'))).toBe(4);
+  });
+
+  it('a rate aimed at an opponent counts your creatures', () => {
+    let s = at(['Swamp', 'Test Wall', 'Test Wall'], ['Swamp'], ['Test Bishop']);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bishop'), targets: [{ kind: 'player', seat: 1 }] })));
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('"they control" is the target\'s: three lands there, one here', () => {
+    let s = at(['Swamp'], ['Swamp', 'Swamp', 'Swamp'], ['Test Greed']);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Greed'), targets: [{ kind: 'player', seat: 1 }] })));
+    expect(life(s, 1)).toBe(before - 3);
+    expect(life(s, 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

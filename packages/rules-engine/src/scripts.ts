@@ -13400,6 +13400,30 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     inside a resolution is taken at the right moment, and the immediate form is what a cost or a
     replacement needs.
   */
+  /*
+    D1170: the same rate aimed at one player. "Target opponent loses 1 life for each Vampire you
+    control" (Bishop of the Bloodstained, Ishkanah), "target player loses 1 life for each tapped
+    artifact they control" (Burden of Greed), "target player mills a card for each …", and through
+    the referent swap "that player / defending player loses 1 life for each card in their
+    graveyard" (Guiltfeeder, Emissary of Despair). "They" and "their" in the count are that player.
+  */
+  const aimed = /^(target player|target opponent) (loses ([\w]+) life|mills ([\w]+) cards?)$/i.exec(body);
+  if (aimed !== null) {
+    const amount = amountFrom(aimed[3] ?? aimed[4]!);
+    const spec = targetSpecFrom(aimed[1]!, false);
+    const milling = aimed[4] !== undefined;
+    if (amount !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          if (seat === null) return c.state;
+          return milling ? mill(c.state, seat, amount(c)) : loseLife(c.state, seat, amount(c));
+        },
+      };
+    }
+  }
+
   const drawn = /^(?:you )?draw ([\w]+) cards?$/i.exec(body);
   if (drawn !== null) {
     const amount = amountFrom(drawn[1]!);
@@ -21640,6 +21664,58 @@ function countOfThing(
     already had a reading keeps it; `massScope` refuses any word it cannot classify, so this widens
     the vocabulary without widening a set.
   */
+  /*
+    D1170: another player's things. "They control", "that player controls", "in their graveyard",
+    "in their hand" are the targeted player's, which is also the player a referent swap hands the
+    clause ("that player", "defending player"). "Defending player controls" on its own is the
+    defender of the source's attack (`defendersOf`), as a target phrase reads it (D960).
+  */
+  const relative = /^(.+?) (they control|that player controls|defending player controls|in their graveyard|in their hand|in that player's graveyard|in that player's hand|in defending player's graveyard|in defending player's hand)$/i.exec(text);
+  if (relative !== null) {
+    const where = relative[2]!.toLowerCase();
+    const seatOf = (c: EffectContext): number | null => (/defending/.test(where)
+      ? firstPlayerTarget(c) ?? defendersOf(c.state, c.controller, c.source)[0] ?? null
+      : firstPlayerTarget(c));
+    if (/control/.test(where)) {
+      const among = massScope(relative[1]!);
+      if (among === null) return null;
+      return (c) => {
+        const seat = seatOf(c);
+        return seat === null ? 0 : among(c).filter((id) => c.state.instances[id]?.zoneSeat === seat).length;
+      };
+    }
+    const cards = /^(?:(land|artifact|enchantment|instant|sorcery|planeswalker|creature) )?cards?$/i.exec(relative[1]!);
+    if (cards === null) return null;
+    const type = cards[1]?.toLowerCase();
+    const zone = /graveyard/.test(where) ? 'graveyard' : 'hand';
+    return (c) => {
+      const seat = seatOf(c);
+      if (seat === null) return 0;
+      return listAt(c.state, zoneKey(seat as SeatIndex, zone)).filter((id) => type === undefined
+        || hasType(parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine), type)).length;
+    };
+  }
+  /*
+    D1170: "for each creature blocking it" (Elvish Berserker, Gang of Elk, General Marhault
+    Elsdragon, Berserk Murlodont), "… beyond the first" (Jungle Wurm, Johtull Wurm), and "for each
+    creature it's blocking" (Guardian of the Gateless). "It" is the creature the trigger is about,
+    else the source; the blockers are read off the combat as the clause resolves.
+  */
+  const blockingIt = new RegExp(`^creatures? blocking (?:it|${self})( beyond the first)?$`, 'i').exec(text);
+  if (blockingIt !== null) {
+    const beyond = blockingIt[1] !== undefined;
+    return (c) => {
+      const who = c.subject ?? c.source;
+      const n = c.state.combat.attacks.find((a) => a.attacker === who)?.blockers.length ?? 0;
+      return beyond ? Math.max(0, n - 1) : n;
+    };
+  }
+  if (new RegExp(`^creatures? (?:it's|${self} is) blocking$`, 'i').test(text)) {
+    return (c) => {
+      const who = c.subject ?? c.source;
+      return c.state.combat.attacks.filter((a) => a.blockers.includes(who)).length;
+    };
+  }
   const scope = massScope(text);
   if (scope !== null) return (c) => scope(c).length;
   return null;
