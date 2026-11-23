@@ -27673,6 +27673,32 @@ function readEffect(
       },
     };
   }
+  /*
+    "Double target creature's power [and toughness] until end of turn" (D825, Bulk Up), and "Double
+    the power [and toughness] of target creature …". The creature gets +X/+0 (or +X/+X) where X
+    is its power (and toughness) as the spell resolves (CR 701.10e). A negative power is not
+    doubled further down: it gets +0.
+  */
+  const doubled = /^double (?:(target [^']+?)'s (power(?: and toughness)?)|the (power(?: and toughness)?) of (target .+?)) until end of turn$/i.exec(clause.trim());
+  if (doubled !== null) {
+    const spec = targetSpecFrom((doubled[1] ?? doubled[4])!, true);
+    const both = / and toughness$/i.test((doubled[2] ?? doubled[3])!);
+    if (spec !== null && spec.kind === 'creature') {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          const inst = id === null ? undefined : c.state.instances[id];
+          if (id === null || inst === undefined || inst.zone !== 'battlefield') return c.state;
+          const now = characteristicsOf(c.state, inst);
+          return pump(c.state, [id], c.source, c.controller, {
+            power: Math.max(0, now.power),
+            ...(both ? { toughness: Math.max(0, now.toughness) } : {}),
+          });
+        },
+      };
+    }
+  }
   const untapLands = /^untap up to (one|two|three|four|five|\d+) lands$/i.exec(clause.trim());
   if (untapLands !== null) {
     const n = countFrom(untapLands[1]!);
