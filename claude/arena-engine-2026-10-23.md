@@ -42177,3 +42177,30 @@ named one, and the filter ignored).
 
 - engine tests: 6205, all passing (on 2dbfbe7)
 - Coverage: 15,828 to 15,829 of 31,900 cards with every line read, and 37,999 to 38,000 of 59,888 lines, against 2dbfbe7.
+
+## D1167 — graveyard card filters: colours joined by "or", and a comma list with "legendary"
+
+`graveyardTypeTest` reads what kind of card a graveyard target, a search or a dig may take. Every
+graveyard clause family asks it. It refused two printed shapes:
+- **Colours joined by "or" in front of the type**: "target blue or red creature card", "a white or
+  black creature card". The colours are now one test, any of them, ANDed with what follows.
+- **A comma list with "or" that includes "legendary"**: "target artifact, enchantment, or legendary
+  card". Each part is an alternative: a card type, a real subtype, or "legendary".
+
+Still refused: the "with …" suffixes after "card" ("with infect", "with power 2 or less"). Each
+caller reads those itself, and they are a change across several readers.
+
+**A pin moved.** D527's `compile.test.ts` listed "Return target white or black creature card from your
+graveyard to the battlefield" as a colour run the vocabulary did not read. It is now a positive test.
+
+**Tests.** 3 engine tests and the moved compile pin:
+- The test cards read whole.
+- "Blue or red creature card": the blue creature returns; the green one is refused as a target.
+- "Artifact, enchantment, or legendary card": the legendary creature returns; a plain creature is
+  refused.
+
+Faults injected by hand: 2, both caught.
+- The colours ignored.
+- The list matching anything.
+
+Coverage: 15,900 of 31,900 cards (+15 over D1166's 15,885), 38,118 of 59,888 lines (+18). The difference also counts the D7xx session's D823, merged in after D1166 was measured.
