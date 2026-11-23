@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -16073,6 +16073,23 @@ function selfEffect(
       effect: (c) => {
         const chosen = chosenCards(c)[0];
         return chosen === undefined ? c.state : copyAsToken(c.state, c.controller, chosen);
+      },
+    };
+  }
+
+  // A die-roll table (D1154): see `dieTableFor`.
+  const table = /^roll a die for table (\d+)\.?$/i.exec(text);
+  if (table !== null) {
+    const rows = DIE_TABLES.get(Number(table[1]));
+    if (rows === undefined) return null;
+    const read = rows.rows.map((row) => ({ ...row, effect: composeEffects(clausesOf(row.text), name, where) }));
+    if (read.some((row) => row.effect === null || (row.effect.targets ?? []).length > 0
+      || (row.effect.decisions ?? []).length > 0 || row.effect.reflexive !== undefined)) return null;
+    return {
+      effect: (c) => {
+        const roll = rollDie(c.state, c.controller, rows.sides);
+        const hit = read.find((row) => roll.result >= row.low && roll.result <= row.high);
+        return hit === undefined ? roll.state : hit.effect!.effect({ ...c, state: roll.state });
       },
     };
   }
@@ -35071,6 +35088,47 @@ export interface SpellReading {
  * "choose one"; a bullet that does not read, or reads with a reflexive trigger, refuses the whole
  * group, as one unreadable mode refuses a modal spell.
  */
+/**
+ * The die-roll tables (D1154, CR 706.2): "Roll a d20." on one line and the results under it, one per
+ * line — "1—9 | Create a Treasure token.", "10—19 | …", "20 | …" — the Forgotten Realms cards. The
+ * roll line and its rows are read as one: the roll becomes a marker clause ("roll a die for table N") whose
+ * rows wait here, and the line around it — a spell's, a trigger's, an ability's — is read as it would
+ * be. Each row is read on its own by `composeEffects`; a row that targets or asks a question is
+ * refused, because the targets of a table's result are chosen as the result is known and this
+ * engine chooses them on the stack. The rows must cover every result, with no gap and no overlap.
+ */
+const DIE_TABLES = new Map<number, { readonly sides: number; readonly rows: readonly { readonly low: number; readonly high: number; readonly text: string }[] }>();
+let dieTableSeq = 0;
+const DIE_TABLE_IDS = new Map<string, number>();
+export function dieTableFor(
+  lines: readonly string[],
+): { readonly synthetic: string; readonly roll: string; readonly claimed: readonly string[] } | null {
+  const at = lines.findIndex((line) => /\broll a d(\d+)\.?$/i.test(plain(line).trim()));
+  if (at < 0) return null;
+  const sides = Number(/\broll a d(\d+)\.?$/i.exec(plain(lines[at]!).trim())![1]);
+  const rows: { low: number; high: number; text: string }[] = [];
+  const claimed = [lines[at]!];
+  for (let i = at + 1; i < lines.length; i++) {
+    const row = /^(\d+)(?:\s*[—–-]\s*(\d+))?\s*\|\s*(.+)$/.exec(plain(lines[i]!).trim());
+    if (row === null) break;
+    rows.push({ low: Number(row[1]), high: Number(row[2] ?? row[1]), text: row[3]! });
+    claimed.push(lines[i]!);
+  }
+  if (rows.length < 2) return null;
+  // Every result from 1 to the die's size, once.
+  let next = 1;
+  for (const row of rows) { if (row.low !== next || row.high < row.low) return null; next = row.high + 1; }
+  if (next !== sides + 1) return null;
+  // Keyed by the table's own text, so compiling the same card again reuses its entry rather than
+  // growing the map for as long as the process runs.
+  const key = `${sides}|${rows.map((r) => `${r.low}-${r.high}:${r.text}`).join('|')}`;
+  const known = DIE_TABLE_IDS.get(key);
+  const id = known ?? ++dieTableSeq;
+  if (known === undefined) { DIE_TABLE_IDS.set(key, id); DIE_TABLES.set(id, { sides, rows }); }
+  const roll = plain(lines[at]!).trim();
+  return { synthetic: roll.replace(/\b([Rr])oll a d\d+\.?$/, (_m, r: string) => `${r}oll a die for table ${id}.`), roll: lines[at]!, claimed };
+}
+
 export function modalTriggerFor(
   lines: readonly string[], name: string,
 ): { readonly fragment: Partial<CardScript>; readonly claimed: readonly string[] } | null {

@@ -838,6 +838,8 @@ export interface AutomationState {
    * flip" beside what the flip did.
    */
   readonly coinFlips?: readonly { readonly seat: SeatIndex; readonly won: boolean }[];
+  /** Die rolls (D1154, CR 706), most recent last, kept to the last few, for the log as `coinFlips` is. */
+  readonly dieRolls?: readonly { readonly seat: SeatIndex; readonly sides: number; readonly result: number }[];
   /**
    * Whose regular turn the extra turns came after (D1132), so the order resumes after that seat
    * once they are taken: Time Warp aimed at the player across the table does not skip the one in

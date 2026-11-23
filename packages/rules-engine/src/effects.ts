@@ -1915,6 +1915,14 @@ export function flipCoin(state: GameState, seat: SeatIndex): { readonly state: G
   return { state: { ...state, autoSeq: seq, coinFlips: flips }, won };
 }
 
+/** "Roll a d20" (D1154, CR 706.1): 1 to `sides`, off the game's seeded generator, recorded in `dieRolls`. */
+export function rollDie(state: GameState, seat: SeatIndex, sides: number): { readonly state: GameState; readonly result: number } {
+  const seq = state.autoSeq + 1;
+  const result = 1 + Math.floor(mulberry32(actionSeed(state.rngSeed, state.stateVersion + seq))() * sides);
+  const rolls = [...(state.dieRolls ?? []), { seat, sides, result }].slice(-20);
+  return { state: { ...state, autoSeq: seq, dieRolls: rolls }, result };
+}
+
 export function discardAtRandom(state: GameState, seat: SeatIndex, count: number): GameState {
   let next = state;
   for (let i = 0; i < Math.max(0, count); i++) {

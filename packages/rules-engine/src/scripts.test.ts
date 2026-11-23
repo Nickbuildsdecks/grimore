@@ -35930,6 +35930,51 @@ describe('nontoken and uncountered sweeps, plural-type team pumps, historic spel
   });
 });
 
+describe('roll a d20, with its table (D1154)', () => {
+  const TABLE = { name: 'Test Table', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Roll a d20.\n1—9 | You gain 1 life.\n10—19 | You gain 3 life.\n20 | You gain 10 life.' };
+  const deck = customDeck({
+    id: 'd1154', name: 'Dice', entries: [{ name: 'Test Table', count: 4 }, { name: 'Plains', count: 56 }], data: [TABLE] as never[],
+  });
+  const play = (seed: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1154', 1: 'd1154' }, deckSpecs: { d1154: deck.deck },
+      hands: { 0: ['Test Table'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, rngSeed: seed };
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Table') } as Action)), 30);
+    return { s, gained: life(s, 0) - before };
+  };
+
+  it('reads all four lines as one', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(TABLE as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.compiled).toHaveLength(4);
+  });
+
+  it('a table with a gap, or one on an enters trigger with a bad row, stays unread; a whole one on a trigger reads', () => {
+    const gap = compileCard({ ...TABLE, name: 'Test Gap', oracle_text: 'Roll a d20.\n1—9 | You gain 1 life.\n11—20 | You gain 3 life.' } as never);
+    expect(gap.ok && gap.unread.length).toBeGreaterThan(0);
+    const creature = { name: 'Test Roller', type_line: 'Creature — Human', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' };
+    expect(compileCard({ ...creature, oracle_text: 'When Test Roller enters, roll a d20.\n1—9 | You gain 1 life.\n10—20 | Draw a card.' } as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each roll runs the row it lands in, and the log says the roll', () => {
+    const rows = new Set<number>();
+    for (let seed = 1; seed <= 30; seed++) {
+      const { s, gained } = play(seed);
+      const roll = s.dieRolls?.at(-1);
+      expect(roll?.sides).toBe(20);
+      const want = roll!.result === 20 ? 10 : roll!.result >= 10 ? 3 : 1;
+      expect(gained).toBe(want);
+      rows.add(want);
+      expect(s.log.some((e) => e.message.includes(`rolls ${roll!.result} on a d20`))).toBe(true);
+    }
+    expect(rows.has(1) && rows.has(3)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

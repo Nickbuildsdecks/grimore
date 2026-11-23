@@ -48,7 +48,7 @@ import {
 } from './fromCardData.js';
 import {
   championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
-  manaSpentScryTrigger, modalTriggerFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
+  manaSpentScryTrigger, modalTriggerFor, dieTableFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_COLOR, CHOSEN_TYPE, KICKED, copyAsToken, pump } from './effects.js';
@@ -821,7 +821,16 @@ function compileSingle(row: CardDataRow): Compilation {
     with nothing flagged for anybody to notice.
   */
   if (hasType(typeLine, 'instant') || hasType(typeLine, 'sorcery')) {
-    const spell = spellScriptFor(lines, def.name);
+    /*
+      A die-roll table (D1154): the roll line and its rows become one line for the spell reader, and
+      that line's fate is reported as the printed lines' — all compiled, or all unread.
+    */
+    const table = dieTableFor(lines);
+    const spellLines = table === null ? lines
+      : lines.filter((line) => !table.claimed.includes(line) || line === table.roll).map((line) => (line === table.roll ? table.synthetic : line));
+    const read = spellScriptFor(spellLines, def.name);
+    const back = (list: readonly string[]): string[] => list.flatMap((line) => (table !== null && line === table.synthetic ? [...table.claimed] : [line]));
+    const spell = table === null ? read : { ...read, compiled: back(read.compiled), unread: back(read.unread) };
     return {
       ok: true,
       def,
@@ -911,6 +920,14 @@ function compileSingle(row: CardDataRow): Compilation {
     for (const line of levelled.claimed) claimed.add(line);
     compiled.push(...levelled.claimed);
     firstBand = -1;
+  }
+
+  // A die-roll table (D1154), read as one line before the lines are offered one by one: see `dieTableFor`.
+  const dieTable = firstBand >= 0 ? null : dieTableFor(lines.filter((line) => !claimed.has(line)));
+  const dieRead = dieTable === null ? null : lineScriptFor(dieTable.synthetic, def.name);
+  if (dieTable !== null && dieRead !== null && merge(built, dieRead) === 'merged') {
+    for (const line of dieTable.claimed) claimed.add(line);
+    compiled.push(...dieTable.claimed);
   }
 
   // A modal trigger and its bullets (D757), read as one group before the lines are offered one by one.

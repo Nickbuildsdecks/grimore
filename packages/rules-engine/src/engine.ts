@@ -697,6 +697,11 @@ function consequences(before: GameState, after: GameState): string[] {
     const name = after.cardDefs[was.defKey]?.name ?? before.cardDefs[was.defKey]?.name ?? 'a permanent';
     notes.push(zone === 'exile' ? `${name} is exiled` : `${name} dies`);
   }
+  // And each die rolled (D1154), the same way.
+  const rollsBefore = before.dieRolls ?? [];
+  for (const roll of (after.dieRolls ?? []).filter((r) => !rollsBefore.includes(r))) {
+    notes.push(`${after.seats[roll.seat]?.name ?? 'A player'} rolls ${roll.result} on a d${roll.sides}`);
+  }
   // And each coin flipped (D1152): new entries at the end of `coinFlips`.
   const flipsBefore = before.coinFlips ?? [];
   const flipsAfter = after.coinFlips ?? [];
