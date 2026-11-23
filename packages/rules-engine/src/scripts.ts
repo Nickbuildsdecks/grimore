@@ -33972,7 +33972,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     Sing Se; "… have hexproof" (Privileged Position, Sigarda, Font of Blessings); and without "other".
     Keywords any permanent can have, on the scopes of the same names.
   */
-  const permanentsHave = /^(other )?(permanents|artifacts|lands) you control have ([a-z ,]+?)\.?$/i.exec(plain(line).trim());
+  // And enchantments, and "other" artifacts and enchantments (D819): Sterling Grove.
+  const permanentsHave = /^(other )?(permanents|artifacts|lands|enchantments) you control have ([a-z ,]+?)\.?$/i.exec(plain(line).trim());
   if (permanentsHave !== null) {
     const keywords = grantedKeywords(permanentsHave[3]!);
     const kind = permanentsHave[2]!.toLowerCase();
@@ -33980,7 +33981,9 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     // "Artifacts you control have hexproof" (D806, Padeem) and "Lands you control have
     // indestructible" on the scopes of the same names; "other" only for permanents.
     const scope = kind === 'permanents' ? (other ? 'other-permanents-you-control' as const : 'permanents-you-control' as const)
-      : other ? null : kind === 'artifacts' ? 'artifacts-you-control' as const : 'controller-lands' as const;
+      : kind === 'enchantments' ? (other ? 'other-enchantments-you-control' as const : 'enchantments-you-control' as const)
+      : kind === 'artifacts' ? (other ? 'other-artifacts-you-control' as const : 'artifacts-you-control' as const)
+      : other ? null : 'controller-lands' as const;
     if (scope !== null && keywords !== null && keywords.length > 0 && keywords.every((word) => word === 'indestructible' || word === 'hexproof' || word === 'shroud')) {
       return { statics: [{ scope, effect: { keywords } }] };
     }
