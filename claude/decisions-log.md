@@ -61565,3 +61565,30 @@ entry refused, and the reader off).
 
 - engine tests: 6444, all passing (on 94287f0)
 - Coverage: 16,567 to 16,571 of 31,900 cards with every line read, and 38,984 to 38,991 of 59,888 lines, against 94287f0.
+
+## D1216 — targets "from a single graveyard"
+
+"Exile up to two target cards from a single graveyard" (Rapid Decay, Decompose, Scarab Feast,
+Arashin Sunshield, Carrion Beetles). "From graveyards" already read; "a single graveyard" adds that
+every target the spell takes has the same owner. A new target-spec flag, `sameOwner`, is checked
+across the chosen targets in `checkTargets` (the only place that sees them together), so one card
+from each of two graveyards is refused. The bot's two target pickers take the rest from the first
+pick's graveyard.
+
+Read whole now (11): Arashin Sunshield, Carrion Beetles, Decompose, Digsite Conservator, Famished
+Ghoul, Feral Deathgorger, Griffnaut Tracker, Rag Dealer, Rapid Decay, Scarab Feast, Shred Memory.
+
+D745's test that pinned "from a single graveyard" as unread now asserts it reads, with the flag.
+
+**Tests.** 3 engine tests:
+- The test card reads whole, and its spec says one graveyard.
+- Two from the opponent's graveyard are exiled; one from each graveyard is refused.
+- The bot, with one card in the opponent's graveyard and two in its own, never mixes the two.
+
+Faults injected by hand: 2, both caught.
+- The one-graveyard check removed from `checkTargets`.
+- The bot's same-owner filter removed (caught once the graveyards were uneven).
+
+The coverage below includes the other session's D839, merged in before this was measured.
+
+Coverage: 16,648 of 31,900 cards (+17 over D1215's 16,631), 39,109 of 59,888 lines (+27).
