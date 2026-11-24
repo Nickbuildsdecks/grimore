@@ -42679,3 +42679,30 @@ Faults injected by hand: 2, all caught.
 - A bare "tokens" read as creature tokens only.
 
 Coverage: 16,113 of 31,900 cards (+11 over D1174's 16,102), 38,415 of 59,888 lines (+21).
+
+## D1176 — a counter on each permanent of any scope
+
+"Put a +1/+1 (or -1/-1) counter on each …" read its scope with `boardScope` (D453), which knows
+types, subtypes, supertypes, "other", the controller clause and the state words. It now falls back
+to `massScope` for anything else, which since D1169 and D1175 reads colours, keywords, counters
+and tokens, and splits a comma list before it classifies a word: "each creature token you
+control", "each creature you control with flying", "each white creature you control", "each
+nonblack creature", "each Pest, Bat, Insect, Snake, and Spider you control" (Blech, Loafing Pest).
+The set is frozen before the first counter lands, as before.
+
+Four of D453's refusal rows (caught by running compile.test.ts) now read, and each reading is the
+printed one: a subtype list is a union, "with lifelink" is the keyword, "white" is the colour. They
+move to the reads list. The punctuation-guard row ("each Pest, Bat you control") reads as a union
+of two subtypes, because `massScope` splits at the comma first; the test now pins that no word
+reaches a subtype test with its comma on. Still refused: "with modular" placed before "you
+control", "that convoked it", "named …", "and/or", "each of those creatures", a second clause.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "Each green creature you control": your Bear, not your Bird, not their Bear.
+- A list of subtypes is a union: "each Bird and Bat you control", not the Bear.
+- "Each nonblack creature": both sides, the black Bat spared.
+
+Faults injected by hand: 1, caught: the fallback puts no counters.
+
+Coverage: 16,122 of 31,900 cards (+9 over D1175's 16,113), 38,424 of 59,888 lines (+9).
