@@ -28779,6 +28779,27 @@ function readEffect(
     const read = readEffect(`${eachOne[1]!}${eachOne[1] === '' ? subject.charAt(0).toUpperCase() + subject.slice(1) : subject} ${verb} ${rest}`, name, where);
     if (read !== null) return read;
   }
+  /*
+    "~ gets +1/+0 until end of turn and can't be blocked this turn" (D1214): Elusive Spellfist,
+    Cunning Survivor, Taigam's Strike, Distortion Strike. Two sentences in one, read as the two:
+    the pump, then the same creature unblockable ("that creature" after a target, so the target is
+    chosen once).
+  */
+  const pumpUnblocked = /^(.+?) gets ([+-]\d+\/[+-]\d+) until end of turn and can'?t be blocked this turn$/i
+    .exec(clause.trim().replace(/\.$/, ''));
+  if (pumpUnblocked !== null) {
+    const subject = pumpUnblocked[1]!;
+    const aimed = /\btarget\b/i.test(subject);
+    const read = composeEffects(clausesOf(
+      `${subject} gets ${pumpUnblocked[2]!} until end of turn. `
+      + `${aimed ? 'That creature' : subject.charAt(0).toUpperCase() + subject.slice(1)} can't be blocked this turn.`,
+    ), name, where);
+    // A target made unblockable is aimed at an attacker of yours, as the one-sentence reader's is.
+    if (read !== null) {
+      return read.targets === undefined ? read
+        : { ...read, targets: read.targets.map((spec) => ({ ...spec, friendly: true, helpsInCombat: true })) };
+    }
+  }
   // "You draw a card and lose 1 life" (D1208): the "you" said once, read as "… and you lose 1 life".
   const drawAndLose = /^you draw (.+?) and lose (\w+) life$/i.exec(clause.trim().replace(/\.$/, ''));
   if (drawAndLose !== null) return readEffect(`You draw ${drawAndLose[1]!} and you lose ${drawAndLose[2]!} life`, name, where);

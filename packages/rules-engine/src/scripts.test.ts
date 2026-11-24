@@ -40352,6 +40352,46 @@ describe('"double the number of +1/+1 counters on …", Kalonian Hydra (D836)', 
   });
 });
 
+describe('"gets +N/+N until end of turn and can\'t be blocked this turn" (D1214)', () => {
+  const ROWS = [
+    { name: 'Test Strike', type_line: 'Instant', oracle_text: "Target creature gets +2/+0 until end of turn and can't be blocked this turn.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Spellfist', type_line: 'Creature — Human Monk', oracle_text: "Whenever you cast a noncreature spell, Test Spellfist gets +1/+0 until end of turn and can't be blocked this turn.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '3' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1214', name: 'Unblocked',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1214', 1: 'd1214' }, deckSpecs: { d1214: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const unblockable = (s: GameState, id: string): boolean => characteristicsOf(s, s.instances[id]!).cantBeBlocked === true;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a target: +2/+0 and unblockable, one target chosen', () => {
+    let s = table(['Test Strike'], ['Test Cub']);
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strike'), targets: [{ kind: 'card', id: cub }] } as Action)), 30);
+    expect([power(s, cub), toughness(s, cub)]).toEqual([4, 2]);
+    expect(unblockable(s, cub)).toBe(true);
+  });
+
+  it('itself, on a trigger: +1/+0 and unblockable; the other creature is not', () => {
+    let s = table(['Test Strike'], ['Test Spellfist', 'Test Cub']);
+    const fist = find(s, 0, 'battlefield', 'Test Spellfist');
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strike'), targets: [{ kind: 'card', id: cub }] } as Action)), 30);
+    expect([power(s, fist), toughness(s, fist)]).toEqual([2, 3]);
+    expect(unblockable(s, fist)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
