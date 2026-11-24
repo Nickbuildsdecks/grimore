@@ -60452,3 +60452,33 @@ Faults injected by hand: 2, all caught.
 - The rider scheduled at the end step instead.
 
 Coverage: 16,259 of 31,900 cards (+4 over D1183's 16,255), 38,590 of 59,888 lines (+7).
+
+## D1185 — sacrifice triggers: "X or Y", "nontoken", a land, a creature type
+
+"Whenever you sacrifice a …" (D570) read creature, artifact, token, permanent and the token
+subtypes (Clue, Food, Treasure and the rest). It now also reads:
+- **"A land"**: a new `what`, matched off the event's card types.
+- **"A nontoken creature / permanent"**: `nontoken` on the `sacrifices` event.
+- **A creature type**: "another Eldrazi", "a Goblin", as a subtype filter.
+- **Two kinds joined by "or"**: "another creature or artifact", "an artifact or creature", "a
+  Clue or Food". One event with any of them (`whatAny`, or the subtype list), so an artifact
+  creature fires it once, not twice. Types with types and subtypes with subtypes; a mix refuses.
+
+Three of D570's refusal rows (caught by running compile.test.ts) now read, each the printed reading,
+and one more ("a nontoken creature") reads. Those rows are replaced by "an enchantment", which the
+event still has no answer for; "a creature token" (two filters on one noun) and a batch still
+refuse.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "An artifact or creature": an artifact creature draws once, not twice; a plain artifact draws; a
+  land draws nothing.
+- "A land": the Swamp draws, the Golem does not.
+- "A nontoken permanent": the Golem draws, a Treasure token does not.
+
+Faults injected by hand: 3, all caught.
+- The land filter ignored.
+- The nontoken filter ignored.
+- "Any of" read as "all of" (caught once the plain artifact was added).
+
+Coverage: 16,265 of 31,900 cards (+6 over D1184's 16,259), 38,604 of 59,888 lines (+14).
