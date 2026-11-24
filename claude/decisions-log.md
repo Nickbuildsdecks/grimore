@@ -60874,3 +60874,43 @@ Faults injected by hand: 2, all caught.
 - The amount read 2 short.
 
 Coverage: 16,385 of 31,900 cards (+6 over D1197's 16,379), 38,746 of 59,888 lines (+7).
+
+## D1199 — colours among a scope, differently named, and the highest mana value among any scope
+
+Three measures, each over any scope `massScope` reads:
+- **"The number of colors among permanents you control"**, and "for each color among …" (both
+  grammars, so it is in `countOfThing`): the colours of everything in the scope, each colour once.
+  Colorless is not a colour, so lands and colorless artifacts add none.
+- **"The number of differently named lands you control"** and "for each differently named …":
+  each name once.
+- **"The greatest / highest power, toughness or mana value among …"** beyond creatures:
+  "the highest mana value among permanents you control", "… among artifacts you control".
+  "Highest" is read as "greatest" in the five where-X and "equal to" lists too. Power and toughness
+  skip a noncreature in the scope; mana value counts it.
+
+Two compile pins used these phrases as their examples of "a count the engine cannot make" (D511's
+Idolized row and D520's "a countable nothing can count"). They now use "the amount of damage dealt
+to you this turn" and "for each card type among cards in your graveyard", which the engine does not
+count.
+
+Read whole now (22 of the 97 such lines in the unread list): Accelerated Mutation, All-Fates
+Scroll, Audience with Trostani, Boon of Boseiju, Christine Chapel, Combat Medic, Elemental Spectacle, Excalbian
+Gamemaster, Explosive Prodigy, Fungal Colossus, Glister Bairn, Kithkeeper, Luminollusk, One with
+the Machine, Pummeler for Hire, Pyreswipe Hawk, Rush of Knowledge, Shimmercreep, Shinestriker,
+Sunderflock, Torrent of Fire, Traverse Eternity.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- "The number of colors among permanents you control": a red creature and a white-blue one are
+  three colours; lands add none.
+- "For each color among …": the same three as a rate.
+- "For each differently named land": two Mountains and a Plains are two names.
+- "The highest mana value among permanents you control": 3 from a creature, 5 once a colorless
+  artifact costing 5 is added.
+
+Faults injected by hand: 3, all caught.
+- One colour too many.
+- Every land counted, not every name.
+- A noncreature's mana value skipped.
+
+Coverage: 16,410 of 31,900 cards (+25 over D1198's 16,385), 38,781 of 59,888 lines (+35).
