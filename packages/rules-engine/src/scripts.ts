@@ -31575,6 +31575,27 @@ function composeEffects(
     if (later !== null) { parts.push(later); at++; continue; }
     // And the dig, which is two or three sentences that are one question (D584).
     const dug = digGroup(rest, at, name) ?? revealKeepGroup(rest, at);
+    /*
+      "If you didn't put a card into your hand this way, you gain 4 life." (D1192): Blossom Prancer,
+      Rosecot Knight, the dig's consolation. Asked of the dig's own answer, after it: no card chosen,
+      the consolation happens. Only an effect with no question or target of its own.
+    */
+    const consolation = dug === null ? null
+      : /^if you (?:didn't|don't) put a card into your hand this way, (.+)$/i.exec((rest[at + dug.consumed] ?? '').trim().replace(/\.$/, ''));
+    const otherwise = consolation === null ? null : readEffect(consolation[1]!, name, where);
+    if (dug !== null && otherwise !== null && otherwise.targets === undefined && otherwise.decisions === undefined
+      && otherwise.beforeDecisions === undefined) {
+      const { appliesNothing: _nothing, ...read } = dug.read;
+      parts.push({
+        ...read,
+        effect: (c) => {
+          const after = dug.read.effect(c);
+          return chosenCards(c).length === 0 ? otherwise.effect({ ...c, state: after }) : after;
+        },
+      });
+      at += dug.consumed;
+      continue;
+    }
     if (dug !== null) { parts.push(dug.read); at += dug.consumed - 1; continue; }
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**

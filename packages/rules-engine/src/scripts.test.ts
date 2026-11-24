@@ -39181,6 +39181,43 @@ describe('a dying creature\'s counters: moved on, or counted (D1191)', () => {
   });
 });
 
+describe('the dig\'s consolation: "if you didn\'t put a card into your hand this way" (D1192)', () => {
+  const PRANCER = { name: 'Test Prancer', type_line: 'Creature — Spirit', oracle_text: "When Test Prancer enters, look at the top four cards of your library. You may reveal a land card from among them and put it into your hand. Put the rest on the bottom of your library in a random order. If you didn't put a card into your hand this way, you gain 4 life.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' };
+  const cast = (deckId: string, entries: { name: string; count: number }[], pick: boolean): GameState => {
+    const built = customDeck({ id: deckId, name: deckId, entries, data: [PRANCER, BEAR] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: deckId, 1: deckId }, deckSpecs: { [deckId]: built.deck },
+      hands: { 0: ['Test Prancer'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Prancer') });
+    for (let i = 0; i < 8; i++) {
+      if (s.pendingDecision !== null) {
+        const lands = s.pendingDecision.candidates.filter((id) => s.cardDefs[s.instances[id]!.defKey]!.typeLine.includes('Land'));
+        s = apply(s, { type: 'auto:decide', by: 0, cards: pick ? lands.slice(0, 1) : [] } as Action);
+        continue;
+      }
+      if (s.stackOrder.length === 0) break;
+      s = passBoth(s);
+    }
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(PRANCER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('no land among the four: nothing taken, four life', () => {
+    const s = cast('d1192a', [{ name: 'Test Prancer', count: 4 }, { name: 'Test Bear', count: 56 }], false);
+    expect(life(s, 0)).toBe(24);
+  });
+
+  it('a land taken: no life', () => {
+    const s = cast('d1192b', [{ name: 'Test Prancer', count: 4 }, { name: 'Forest', count: 56 }], true);
+    expect(life(s, 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
