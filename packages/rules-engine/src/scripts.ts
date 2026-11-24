@@ -29032,6 +29032,33 @@ function readEffect(
       return { effect: (c) => more(c.state, c.source) };
     }
   }
+  /*
+    "Attach it / that Equipment to target creature you control" on another Equipment's entry (D839,
+    Sigarda's Aid, Hammer of Nazahn): the Equipment the event is about, onto the target, with that
+    Equipment's own equip bonus, read from its script (`scriptOfCard`, compiled or hand-written).
+    Its own arrival ("When this Equipment enters, attach it …") is read with the whole card in
+    `attachmentScriptFor`; this is the case where "it" is somebody else's card. Not an Equipment, or
+    one whose bonus nobody can read, attaches nothing rather than nothing-with-a-badge.
+  */
+  if (where === 'battlefield' && /^attach (?:it|that equipment) to target creature you control$/i.test(clause.trim())) {
+    const spec = targetSpecFrom('target creature you control', true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const gear = c.subject;
+          const host = firstCardTarget(c);
+          if (gear === undefined || host === null) return c.state;
+          const inst = c.state.instances[gear];
+          if (inst === undefined || inst.zone !== 'battlefield') return c.state;
+          const def = c.state.cardDefs[inst.defKey];
+          if (!hasSubtype(parseTypeLine(def?.typeLine), 'equipment')) return c.state;
+          const bonus = scriptOfCard(def)?.equipBonus;
+          return bonus === undefined ? c.state : equipTo(c.state, gear, host, c.controller, bonus);
+        },
+      };
+    }
+  }
   const doubledAll = /^double the (power and toughness|power|toughness) of each (other )?creature you control until end of turn$/i.exec(clause.trim());
   if (doubledAll !== null) {
     const which = doubledAll[1]!.toLowerCase();

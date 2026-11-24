@@ -21450,9 +21450,30 @@ describe('an Equipment that attaches as it enters, then acts on that creature (D
   it('reads whole', () => {
     expect(deck.unknown).toEqual([]);
     for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
-    // A follow-up with a target of its own would be handed the host creature, so it stays unread.
-    const own = compileCard({ ...ROWS[0], name: 'Test Wrecker', oracle_text: 'When this Equipment enters, attach it to target creature you control. Destroy target artifact.\nEquipped creature gets +1/+0.\nEquip {2}' } as never);
-    expect(own.ok && own.unread.length).toBeGreaterThan(0);
+    // Retargeted by D839: a follow-up with a target of its own reads now, through the trigger's
+    // own composition rather than this whole-card path; see the test below for what it does.
+  });
+
+  it('a follow-up with a target of its own: attached to the first target, and the second destroyed (D839)', () => {
+    const W = { ...ROWS[0], name: 'Test Wrecker', oracle_text: 'When this Equipment enters, attach it to target creature you control. Destroy target artifact.\nEquipped creature gets +1/+0.\nEquip {2}' };
+    const A = { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' };
+    expect(compileCard(W as never)).toMatchObject({ ok: true, unread: [] });
+    const wd = customDeck({ id: 'd972w', name: 'Wrecker', entries: [{ name: 'Test Wrecker', count: 3 }, { name: 'Test Bear', count: 3 }, { name: 'Test Relic', count: 3 }, { name: 'Plains', count: 51 }], data: [W, ROWS[2], A] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd972w', 1: 'd972w' }, deckSpecs: { d972w: wd.deck }, hands: { 0: ['Test Wrecker'] },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Relic'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const relic = find(s, 1, 'battlefield', 'Test Relic');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wrecker') } as Action), 30);
+    for (let i = 0; i < 10 && (s.stackOrder.length > 0 || s.pendingChoice !== null); i++) {
+      s = s.pendingChoice !== null
+        ? drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bear }, { kind: 'card', id: relic }] }), 30)
+        : drain(passBoth(s), 30);
+    }
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Wrecker')]!.attachedTo).toBe(bear);
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(3);
+    expect(s.instances[relic]!.zone).toBe('graveyard');
   });
 
   it('attached, with its bonus, and first strike on that creature only', () => {
@@ -40507,6 +40528,54 @@ describe('a graveyard (and a hand) shuffled into the library (D1215)', () => {
     expect(ids(s, 1, 'graveyard')).toHaveLength(0);
     expect(ids(s, 1, 'library')).toHaveLength(library + 3);
     expect(ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) !== 'Test Reminisce')).toHaveLength(3);
+  });
+});
+
+describe('attaching an Equipment as it enters, Sigarda\'s Aid and Hammer of Nazahn (D839)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Aid', 'Enchantment', 'Whenever an Equipment you control enters, you may attach it to target creature you control.'),
+    R('Test Hammer', 'Legendary Artifact — Equipment', 'Whenever Test Hammer or another Equipment you control enters, you may attach that Equipment to target creature you control.\nEquipped creature gets +2/+0 and has indestructible.\nEquip {4}'),
+    R('Test Blade', 'Artifact — Equipment', 'Equipped creature gets +1/+1.\nEquip {3}'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd839', name: 'Attach', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  /** Cast `gear` with `watcher` out and a Bear; answer yes and aim at the Bear. */
+  const enter = (watcher: string[], gear: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd839', 1: 'd839' }, deckSpecs: { d839: deck.deck },
+      hands: { 0: [gear] }, battlefield: { 0: [...watcher, 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', gear) });
+    for (let i = 0; i < 12; i++) {
+      if (s.pendingDecision !== null) {
+        const d = s.pendingDecision;
+        s = apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.includes(bear) ? [bear] : [], ...(d.options?.includes('Yes') ? { option: 'Yes' } : {}) } as Action);
+        continue;
+      }
+      if (s.stackOrder.length === 0) break;
+      s = drain(passBoth(s));
+    }
+    const c = characteristicsOf(s, s.instances[bear]!);
+    return { size: [c.power, c.toughness], indestructible: c.keywords.has('indestructible'), host: s.instances[find(s, 0, 'battlefield', gear)]!.attachedTo };
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("Sigarda's Aid: an Equipment entering is attached for free, with its own bonus", () => {
+    const r = enter(['Test Aid'], 'Test Blade');
+    expect(r.size).toEqual([3, 3]);
+  });
+
+  it('Hammer of Nazahn: its own entry attaches the Hammer, bonus and all', () => {
+    const r = enter([], 'Test Hammer');
+    expect(r.size).toEqual([4, 2]);
+    expect(r.indestructible).toBe(true);
   });
 });
 
