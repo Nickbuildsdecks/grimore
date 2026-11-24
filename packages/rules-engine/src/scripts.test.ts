@@ -40170,6 +40170,73 @@ describe('damage that can\'t be prevented, and players who can\'t gain life (D12
   });
 });
 
+describe('a counted size and keywords on an attachment, Ethereal Armor (D833)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Armor', 'Enchantment — Aura', 'Enchant creature\nEnchanted creature gets +1/+1 for each enchantment you control and has first strike.'),
+    R('Test Charm', 'Enchantment', ''),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd833', name: 'Armor', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }], data: ROWS as never[] });
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with two other enchantments of ours (and one of theirs) the Bear is a 5/5 first striker, and grows with the next', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd833', 1: 'd833' }, deckSpecs: { d833: deck.deck },
+      hands: { 0: ['Test Armor'] }, battlefield: { 0: ['Test Bear', 'Test Charm', 'Test Charm'], 1: ['Test Charm'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Armor'), targets: [{ kind: 'card', id: bear }] })));
+    let c = characteristicsOf(s, s.instances[bear]!);
+    expect([c.power, c.toughness, c.keywords.has('first strike')]).toEqual([5, 5, true]);
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Test Charm'), toZone: 'graveyard' });
+    c = characteristicsOf(s, s.instances[bear]!);
+    expect([c.power, c.toughness]).toEqual([4, 4]);
+  });
+});
+
+describe('"double the power [and toughness] of each creature you control", Zopandrel (D834)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Trouble', 'Instant', 'Double the power and toughness of each creature you control until end of turn.'),
+    R('Test Fury', 'Instant', 'Double the power of each creature you control until end of turn.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Brute', 'Creature — Ogre', '', { power: '3', toughness: '1' }),
+  ];
+  const deck = customDeck({ id: 'd834', name: 'Double all', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd834', 1: 'd834' }, deckSpecs: { d834: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Test Bear', 'Test Brute'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) })));
+    const size = (seat: 0 | 1, name: string) => { const c = characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!); return [c.power, c.toughness]; };
+    return size;
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('power and toughness: a 2/2 is 4/4 and a 3/1 is 6/2; theirs is untouched', () => {
+    const size = cast('Test Trouble');
+    expect(size(0, 'Test Bear')).toEqual([4, 4]);
+    expect(size(0, 'Test Brute')).toEqual([6, 2]);
+    expect(size(1, 'Test Bear')).toEqual([2, 2]);
+  });
+
+  it('power only: a 3/1 is a 6/1', () => {
+    expect(cast('Test Fury')(0, 'Test Brute')).toEqual([6, 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
