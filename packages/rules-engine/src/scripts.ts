@@ -15290,6 +15290,11 @@ function permanentWordMatch(word: string): ((line: TypeLine) => boolean) | null 
     const without = lower.slice(3);
     return (line) => !line.supertypes.some((type) => type.toLowerCase() === without);
   }
+  // "Historic" (D830, CR 700.6): an artifact, a legendary or a Saga. "Nonhistoric" is the "non"
+  // reading of this word, as the mass reader's negation already does for every word here.
+  if (lower === 'historic') {
+    return (line) => hasType(line, 'artifact') || isLegendary(line) || hasSubtype(line, 'saga');
+  }
   return null;
 }
 
@@ -29606,6 +29611,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/\b(destroy|exile) all ([a-z ]+?) (you don't control|your opponents control|you control) and all ([a-z ]+?) \3\b/gi, '$1 all $2 and $4 $3')
     // "All nonland permanents that aren't legendary" (D827, Urza's Ruinous Blast): "nonlegendary".
     .replace(/\b(all|each) ((?:nonland )?permanents?) that (?:aren't|isn't|are not|is not) legendary\b/gi, '$1 nonlegendary $2')
+    // And "that's not historic" (D830, Desynchronization): "nonhistoric".
+    .replace(/\b(all|each) ((?:nonland )?permanents?) that(?:'s not| is not| isn't| are not| aren't) historic\b/gi, '$1 nonhistoric $2')
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')

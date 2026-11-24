@@ -59974,3 +59974,25 @@ The first draft took the spell only from `answering`, so a counterspell would ha
 was found by probing Spell Swindle before any test was written; the last fault above is that draft.
 
 Coverage: 16,052 of 31,900 cards (+20 over D1170's 16,032), 38,308 of 59,888 lines (+23). The difference also counts the D7xx session's D829, merged in after D1170 was measured.
+## D830 — "Historic" as a scope word: Desynchronization
+
+Most-played order: Desynchronization (rank 1614).
+
+**Reader.** The scope-word classifier `massScope` uses (D781's supertypes, card types and
+subtypes) learns "historic" (CR 700.6): an artifact, a legendary permanent or a Saga, read off
+the printed type line. "Nonhistoric" needed no branch of its own: the mass reader's "non" already
+negates any word it knows. A first version had one, and a fault that broke it went uncaught, so it
+was removed. A `clausesOf` rewrite turns "all/each [nonland] permanent(s) that's not / is not /
+isn't / are not / aren't historic" into "all nonhistoric …", as D827 does for "aren't legendary".
+
+**Tests.** 3 engine tests:
+- the cards read;
+- Desynchronization returns the Bear and the enchantment on both sides and leaves the legend,
+  the artifacts and the land;
+- "Destroy all historic permanents" takes the legend and the artifacts and leaves the rest.
+
+Faults injected by script: 3 of 3 caught on the code that remains (artifacts dropped from
+historic, legends dropped, and the rewrite off).
+
+- engine tests: 6225, all passing (on 342e819)
+- Coverage: 15,844 to 15,846 of 31,900 cards with every line read, and 38,020 to 38,022 of 59,888 lines, against 342e819.
