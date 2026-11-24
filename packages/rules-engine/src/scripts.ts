@@ -31637,6 +31637,68 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
 }
 
 /**
+ * The rest of a "Choose a color." spell with the colour written in (D1206): "creatures of the
+ * chosen color" becomes "red creatures", "protection from the chosen color" "protection from red",
+ * "one mana of that color" "{R}" (refused by the caller for now: see `chosenColorSpell`). `null`
+ * when nothing named the colour, or a mention is left that no rewrite covered.
+ */
+function withChosenColour(rest: readonly string[], colour: string): readonly string[] | null {
+  const symbol = ({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' } as Record<string, string>)[colour];
+  if (symbol === undefined) return null;
+  const ref = '(?:the chosen colou?r|that colou?r)';
+  let named = false;
+  const out = rest.map((clause) => {
+    const next = clause
+      .replace(new RegExp(`\\b(creatures?|permanents?|spells?|cards?) of ${ref}`, 'gi'), (_m, w: string) => `${colour} ${w.toLowerCase()}`)
+      .replace(new RegExp(`\\bprotection from ${ref}`, 'gi'), `protection from ${colour}`)
+      .replace(new RegExp(`\\bone mana of ${ref}`, 'gi'), `{${symbol}}`);
+    if (next !== clause) named = true;
+    return next;
+  });
+  if (!named || out.some((clause) => new RegExp(ref, 'i').test(clause))) return null;
+  return out;
+}
+
+/**
+ * "Choose a color." as a spell's first sentence (D1206): "Choose a color. Creatures you control gain
+ * protection from the chosen color until end of turn", "Choose a color. ~ deals X damage to each
+ * creature of the chosen color". The colour is asked as the spell resolves and the rest read with
+ * it, as `chosenTypeSpell` does for a creature type: once with a stand-in colour for whether it
+ * reads and what it targets, again with the colour chosen. The bot names the colour it most fears
+ * for protection and damage, its own deck's colour otherwise.
+ */
+function chosenColorSpell(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  if (clauses.length < 2 || !/^choose a colou?r\.?$/i.test(clauses[0]!.trim())) return null;
+  const rest = clauses.slice(1);
+  // Not mana (Astral Cornucopia): a mana ability never uses the stack (CR 605.3), and this would.
+  if (rest.some((clause) => /^add\b/i.test(clause.trim()))) return null;
+  const standIn = withChosenColour(rest, 'red');
+  if (standIn === null) return null;
+  const probe = composeEffects(standIn, name, where);
+  if (probe === null || (probe.decisions ?? []).length > 0 || probe.reflexive !== undefined) return null;
+  const read = new Map<string, ReadEffect | null>();
+  const readFor = (colour: string): ReadEffect | null => {
+    if (!read.has(colour)) {
+      const text = withChosenColour(rest, colour);
+      read.set(colour, text === null ? null : composeEffects(text, name, where));
+    }
+    return read.get(colour) ?? null;
+  };
+  const hostile = /\b(?:protection|damage|destroy|exile|sacrifice|-\d+\/-\d+)\b/i.test(rest.join(' '));
+  return {
+    ...(probe.targets === undefined ? {} : { targets: probe.targets }),
+    ...(probe.spellFlags === undefined ? {} : { spellFlags: probe.spellFlags }),
+    decisions: [enterChoiceDecision('color', hostile ? 'hostile' : 'friendly')],
+    effect: (c) => {
+      const colour = (chosenOption(c) ?? '').toLowerCase();
+      if (COLOUR_WORDS[colour] === undefined) return c.state;
+      const now = readFor(colour);
+      return now === null ? c.state : now.effect({ ...c, decisions: c.decisions.slice(1) });
+    },
+  };
+}
+
+/**
  * "If <condition>, A. Otherwise, B." (D1157): Repeat Offender's "If ~ is suspected, put a +1/+1
  * counter on it. Otherwise, suspect it." The condition is anything an intervening-if can ask
  * (`interveningConditionFor`), checked as the ability resolves; then one branch runs. Refused, as
@@ -31870,6 +31932,9 @@ function composeEffects(
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;
+  // "Choose a color." and what follows of that colour (D1206): see `chosenColorSpell`.
+  const coloured = chosenColorSpell(clauses, name, where);
+  if (coloured !== null) return coloured;
   /*
     **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
 

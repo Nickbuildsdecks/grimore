@@ -39838,6 +39838,51 @@ describe('a grant of protection from a colour (D1205)', () => {
   });
 });
 
+describe('"Choose a color." spells (D1206)', () => {
+  const ROWS = [
+    { name: 'Test Prism Ward', type_line: 'Instant', oracle_text: 'Choose a color. Creatures you control gain protection from the chosen color until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Wave', type_line: 'Sorcery', oracle_text: 'Choose a color. Test Wave deals 3 damage to each creature of the chosen color.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Ember', type_line: 'Creature — Elemental', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1206', name: 'Chosen colour',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1206', 1: 'd1206' }, deckSpecs: { d1206: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castNaming = (s0: GameState, card: string, colour: string): GameState => {
+    let s = passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', card) } as Action));
+    expect(s.pendingDecision?.prompt).toBe('Choose a color');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: colour } as Action), 30);
+    return s;
+  };
+
+  it('reads whole, and leaves a mana ability that chooses a colour unread (it would use the stack)', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const lens = compileCard({ name: 'Test Lens', type_line: 'Artifact', oracle_text: '{T}: Choose a color. Add one mana of that color.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' } as never);
+    expect(lens.ok && lens.unread.length).toBe(1);
+  });
+
+  it('"protection from the chosen color": the colour named, on each of your creatures', () => {
+    const s = castNaming(table('Test Prism Ward', ['Test Cub', 'Test Ember']), 'Test Prism Ward', 'black');
+    for (const id of ids(s, 0, 'battlefield').filter((i) => nameOf(s, i).startsWith('Test'))) {
+      expect(characteristicsOf(s, s.instances[id]!).protectionFrom).toEqual(['B']);
+    }
+  });
+
+  it('"each creature of the chosen color": red ones die on both sides, green ones live', () => {
+    const s = castNaming(table('Test Wave', ['Test Ember', 'Test Cub'], ['Test Ember', 'Test Cub']), 'Test Wave', 'red');
+    for (const seat of [0, 1] as SeatIndex[]) {
+      expect(ids(s, seat, 'battlefield').map((id) => nameOf(s, id)).filter((n) => n.startsWith('Test'))).toEqual(['Test Cub']);
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
