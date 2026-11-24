@@ -1621,9 +1621,15 @@ function triggerMatches(
     */
     case 'combat-damage-dealt': {
       const by = want.by ?? 'you';
-      if (by === 'you') return actorSeat === sourceSeat;
-      if (by === 'opponent') return actorSeat !== sourceSeat;
-      return true;
+      if (by === 'you' && actorSeat !== sourceSeat) return false;
+      if (by === 'opponent' && actorSeat === sourceSeat) return false;
+      // A kind on the creatures (D1201): at least one creature in the hit is of it.
+      if (want.ofTypes === undefined && want.ofSubtypes === undefined && want.nontoken === undefined) return true;
+      const hitters = (event as Extract<TriggerEvent, { kind: 'combat-damage-dealt' }>).hitters ?? [];
+      return hitters.some((h) => (want.ofTypes ?? []).every((t) => h.types.includes(t))
+        && (want.ofSubtypes === undefined
+          || want.ofSubtypes.some((s) => h.subtypes.some((x) => x.toLowerCase() === s.toLowerCase())))
+        && (want.nontoken !== true || !h.token));
     }
     /*
       A draw, with the same three-way `by` a cast has.
@@ -4385,16 +4391,22 @@ function settle(state: GameState, before: GameState): GameState {
       The key is a string because that is what a `Set` can hold; the seats are read back off the
       entry rather than parsed out of it.
     */
-    const hits = new Map<string, { readonly by: SeatIndex; readonly defender: SeatIndex }>();
+    type Hitter = { readonly types: readonly string[]; readonly subtypes: readonly string[]; readonly token: boolean };
+    const hits = new Map<string, { readonly by: SeatIndex; readonly defender: SeatIndex; readonly hitters: readonly Hitter[] }>();
     for (const { creature, defender, planeswalker } of connected) {
       // "Deal combat damage to a player": a planeswalker hit is not one (D961).
       if (planeswalker === true) continue;
-      const by = next.instances[creature]?.zoneSeat;
-      if (by === undefined) continue;
-      hits.set(`${by}:${defender}`, { by, defender });
+      const inst = next.instances[creature];
+      const by = inst?.zoneSeat;
+      if (inst === undefined || by === undefined) continue;
+      // Each creature in the hit as it dealt the damage (D1201), for a watcher with a kind on it.
+      const line = characteristicsOf(next, inst).typeLine;
+      const hitter: Hitter = { types: line.types.map((t) => t.toLowerCase()), subtypes: line.subtypes, token: inst.isToken === true };
+      const key = `${by}:${defender}`;
+      hits.set(key, { by, defender, hitters: [...(hits.get(key)?.hitters ?? []), hitter] });
     }
-    for (const { by, defender } of hits.values()) {
-      next = raise(next, { kind: 'combat-damage-dealt', defender }, by);
+    for (const { by, defender, hitters } of hits.values()) {
+      next = raise(next, { kind: 'combat-damage-dealt', defender, hitters }, by);
     }
     /*
       And damage of every kind, to whatever it landed on (D566) — after the combat events above,

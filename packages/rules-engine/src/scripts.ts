@@ -18911,6 +18911,27 @@ function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | n
  * above this one and is left to it. A lower-case word that is not one of those — "modified",
  * "nontoken", a colour — refuses the line rather than widening the trigger (D362).
  */
+/**
+ * "Whenever one or more <kind> you control deal combat damage to a player" (D1201): the batched hit,
+ * once per damaged player, with a kind at least one of the creatures in it must be. "Nontoken
+ * creatures", "artifact creatures" (or enchantment, land), "Ninja creatures", and a creature type in
+ * the plural: "Dragons", "Faeries", "Elves" (-ves is -f; otherwise the s goes, and a word that is not
+ * then a creature type is refused, as `countOfThing`'s plural is).
+ */
+function batchedHitTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
+  const what = (matched.groups?.what ?? '').trim();
+  const base = { kind: 'combat-damage-dealt' as const, by: 'you' as const };
+  if (what === 'nontoken creatures') return [{ ...base, nontoken: true as const }];
+  const typed = /^(artifact|enchantment|land) creatures$/.exec(what);
+  if (typed !== null) return [{ ...base, ofTypes: [typed[1]!, 'creature'] }];
+  const tribe = /^([A-Z][A-Za-z'-]*) creatures$/.exec(what);
+  if (tribe !== null) return isCreatureType(tribe[1]!) ? [{ ...base, ofSubtypes: [tribe[1]!] }] : null;
+  const plural = /^([A-Z][A-Za-z'-]*)s$/.exec(what);
+  if (plural === null) return null;
+  const singular = /ve$/.test(plural[1]!) ? `${plural[1]!.slice(0, -2)}f` : plural[1]!;
+  return isCreatureType(singular) ? [{ ...base, ofSubtypes: [singular] }] : null;
+}
+
 function combatSubjectTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
   const groups = matched.groups ?? {};
   const what = (groups.what ?? '').trim();
@@ -20846,6 +20867,12 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () =>
       /^Whenever one or more creatures you control deal combat damage to a player, (.+)$/i,
     on: [{ kind: 'combat-damage-dealt', by: 'you' }],
+  },
+  // And with a kind on the creatures (D1201): "one or more artifact creatures / Dragons / nontoken
+  // creatures you control". See `batchedHitTrigger`.
+  {
+    prologue: () => /^Whenever one or more (?<what>[A-Za-z'-]+(?: creatures)?) you control deal combat damage to a player, (?<clause>.+)$/,
+    from: batchedHitTrigger,
   },
   /*
     "Whenever **you** attack" — the declaration, once per combat (D442).

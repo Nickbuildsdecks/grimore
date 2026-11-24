@@ -1070,6 +1070,18 @@ export type TriggerEvent =
        * use, so there is one way an ability learns which player its event was about.
        */
       readonly defender?: SeatIndex;
+      /**
+       * What the creatures in the hit must be (D1201), for "one or more **artifact creatures** /
+       * **Dragons** / **nontoken creatures** you control": at least one creature in the hit has
+       * every type in `ofTypes`, one of `ofSubtypes`, and is not a token when `nontoken` is set.
+       */
+      readonly ofTypes?: readonly string[];
+      readonly ofSubtypes?: readonly string[];
+      readonly nontoken?: true;
+      /** Set by the engine (D1201): each creature in the hit, as it dealt the damage. */
+      readonly hitters?: readonly {
+        readonly types: readonly string[]; readonly subtypes: readonly string[]; readonly token: boolean;
+      }[];
     }
   | {
       readonly kind: 'spell-cast';

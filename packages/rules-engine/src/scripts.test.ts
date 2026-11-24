@@ -39620,6 +39620,57 @@ describe('"each [other] creature [you control] gets …" as the plural it is (D1
   });
 });
 
+describe('"whenever one or more <kind> you control deal combat damage to a player" (D1201)', () => {
+  const ROWS = [
+    { name: 'Test Foundry', type_line: 'Enchantment', oracle_text: 'Whenever one or more artifact creatures you control deal combat damage to a player, draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Roost', type_line: 'Enchantment', oracle_text: 'Whenever one or more Dragons you control deal combat damage to a player, you gain 3 life.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Drake', type_line: 'Creature — Dragon', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Pup', type_line: 'Creature — Dog', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1201', name: 'One or more',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const swing = (mine: string[], attackers: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1201', 1: 'd1201' }, deckSpecs: { d1201: deck.deck },
+      battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const used = new Set<string>();
+    const picks = attackers.map((name) => {
+      const id = ids(s, 0, 'battlefield').find((i) => nameOf(s, i) === name && !used.has(i))!;
+      used.add(id);
+      return { attacker: id, defender: 1 as const };
+    });
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: picks });
+    return { s: drain(advanceTo(s, 'postcombat-main'), 30), hand };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two artifact creatures and a Dog connect: one card, once for the hit', () => {
+    const { s, hand } = swing(['Test Foundry', 'Test Golem', 'Test Golem', 'Test Pup'], ['Test Golem', 'Test Golem', 'Test Pup']);
+    expect(life(s, 1)).toBe(17);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('no artifact creature in the hit: no card', () => {
+    const { s, hand } = swing(['Test Foundry', 'Test Golem', 'Test Pup'], ['Test Pup']);
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+
+  it('"Dragons" in the plural: a Dragon in the hit gains 3, a Dog alone gains nothing', () => {
+    expect(life(swing(['Test Roost', 'Test Drake', 'Test Pup'], ['Test Drake', 'Test Pup']).s, 0)).toBe(23);
+    expect(life(swing(['Test Roost', 'Test Drake', 'Test Pup'], ['Test Pup']).s, 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
