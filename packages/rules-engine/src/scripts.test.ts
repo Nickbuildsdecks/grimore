@@ -38506,6 +38506,75 @@ describe('a trailing "unless" over a condition (D1180)', () => {
   });
 });
 
+describe('more conditions: coven, a full party, two kinds, a Desert anywhere, another big creature (D1181)', () => {
+  const spell = (name: string, cond: string) => ({ name, type_line: 'Sorcery', oracle_text: `Draw a card if ${cond}.`, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' });
+  const body = (name: string, type: string, p: string, extra: Record<string, unknown> = {}) => ({ name, type_line: type, oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: p, toughness: '3', ...extra });
+  const ROWS = [
+    spell('Test Coven', 'you control three or more creatures with different powers'),
+    spell('Test Party', 'you have a full party'),
+    spell('Test Both', 'you control an artifact and an enchantment'),
+    spell('Test Either', 'you control an artifact or enchantment'),
+    spell('Test Dunes', 'you control a Desert or there is a Desert card in your graveyard'),
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: 'When Test Ogre enters, draw a card if you control another creature with power 4 or greater.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '5', toughness: '5' },
+    body('Test One', 'Creature — Human Cleric', '1'), body('Test Two', 'Creature — Human Rogue', '2'), body('Test Three', 'Creature — Human Warrior', '3'),
+    body('Test Wizard', 'Creature — Human Wizard', '1'), body('Test Giant', 'Creature — Giant', '4'),
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Charm', type_line: 'Enchantment', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Desert', type_line: 'Land — Desert', oracle_text: '', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1181', name: 'Conditions',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 18 }],
+    data: ROWS as never[],
+  });
+  const at = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1181', 1: 'd1181' }, deckSpecs: { d1181: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** How many cards the spell (or the creature's trigger) drew: hand after, less hand before, plus the card cast. */
+  const drew = (card: string, mine: string[], setup: (s: GameState) => GameState = (s) => s): number => {
+    let s = setup(at([card], mine));
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(s, 20);
+    return ids(s, 0, 'hand').length - hand + 1;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 6)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('coven: powers 1, 2 and 3 draw; 1, 1 and 3 do not', () => {
+    expect(drew('Test Coven', ['Test One', 'Test Two', 'Test Three'])).toBe(1);
+    expect(drew('Test Coven', ['Test One', 'Test Wizard', 'Test Three'])).toBe(0);
+  });
+
+  it('a full party: Cleric, Rogue, Warrior and Wizard draw; without the Wizard, not', () => {
+    expect(drew('Test Party', ['Test One', 'Test Two', 'Test Three', 'Test Wizard'])).toBe(1);
+    expect(drew('Test Party', ['Test One', 'Test Two', 'Test Three'])).toBe(0);
+  });
+
+  it('"an artifact and an enchantment" needs both; "an artifact or enchantment" either', () => {
+    expect(drew('Test Both', ['Test Relic'])).toBe(0);
+    expect(drew('Test Both', ['Test Relic', 'Test Charm'])).toBe(1);
+    expect(drew('Test Either', ['Test Charm'])).toBe(1);
+    expect(drew('Test Either', ['Test One'])).toBe(0);
+  });
+
+  it('a Desert on the battlefield or in the graveyard', () => {
+    expect(drew('Test Dunes', [])).toBe(0);
+    expect(drew('Test Dunes', ['Test Desert'])).toBe(1);
+    expect(drew('Test Dunes', [], (s) => apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Test Desert'), toZone: 'graveyard' }))).toBe(1);
+  });
+
+  it('"another creature with power 4 or greater": the 5/5 itself does not count, a Giant does', () => {
+    expect(drew('Test Ogre', [])).toBe(0);
+    expect(drew('Test Ogre', ['Test Giant'])).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -35591,6 +35591,46 @@ function interveningConditionFor(
     const least = Number(formidable[1]);
     return (c) => total(c) >= least;
   }
+  /*
+    D1181: five more conditions, each common on single-unread lines.
+    - Coven: "you control three or more creatures with different powers", the distinct live powers
+      among your creatures.
+    - "You have a full party" (CR 700.8): a Cleric, a Rogue, a Warrior and a Wizard (`partySize`).
+    - "You control another creature with power 4 or greater": the source left out.
+    - Two "you control" conditions joined by "and" or "or": "an artifact and an enchantment", "an
+      artifact or enchantment" (the article is shared), each half read by this same function.
+    - "You control a Desert or there is a Desert card in your graveyard".
+  */
+  const flat = plain(printed).trim();
+  const coven = /^you control (\w+) or more creatures with different powers$/i.exec(flat);
+  if (coven !== null) {
+    const least = countFrom(coven[1]!);
+    if (least === null) return null;
+    return (c) => new Set(creaturesControlledBy(c.state, c.controller)
+      .map((id) => characteristicsOf(c.state, c.state.instances[id]!).power)).size >= least;
+  }
+  if (/^you have a full party$/i.test(flat)) return (c) => partySize(c.state, c.controller) >= 4;
+  const anotherBig = /^you control another creature with power (\d+) or greater$/i.exec(flat);
+  if (anotherBig !== null) {
+    const least = Number(anotherBig[1]);
+    return (c) => creaturesControlledBy(c.state, c.controller)
+      .some((id) => id !== c.source && characteristicsOf(c.state, c.state.instances[id]!).power >= least);
+  }
+  const inGraveyardToo = /^you control (an? ([A-Z][A-Za-z'-]*)) or there is an? ([A-Z][A-Za-z'-]*) card in your graveyard$/.exec(flat);
+  if (inGraveyardToo !== null && inGraveyardToo[2] === inGraveyardToo[3]) {
+    const onBoard = interveningConditionFor(`you control ${inGraveyardToo[1]!}`, name);
+    const subtype = inGraveyardToo[3]!.toLowerCase();
+    if (onBoard === null) return null;
+    return (c) => onBoard(c) || listAt(c.state, zoneKey(c.controller, 'graveyard'))
+      .some((id) => hasSubtype(parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine), subtype));
+  }
+  const joined = /^you control (an? )([a-z]+) (and|or) (an? )?([a-z]+)$/i.exec(flat);
+  if (joined !== null) {
+    const first = interveningConditionFor(`you control ${joined[1]!}${joined[2]!}`, name);
+    const second = interveningConditionFor(`you control ${joined[4] ?? (/^[aeiou]/i.test(joined[5]!) ? 'an ' : 'a ')}${joined[5]!}`, name);
+    if (first === null || second === null) return null;
+    return joined[3]!.toLowerCase() === 'and' ? (c) => first(c) && second(c) : (c) => first(c) || second(c);
+  }
   const lacking = /^you don't control (an? .+)$/i.exec(plain(printed).trim());
   if (lacking !== null) {
     const holds = interveningConditionFor(`you control ${lacking[1]!}`, name);

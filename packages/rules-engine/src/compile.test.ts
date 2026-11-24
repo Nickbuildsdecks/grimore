@@ -12741,8 +12741,8 @@ describe('"Activate only once each turn" (D508)', () => {
       D623 reads "Activate only if <condition>" through the trigger's condition reader, so the
       board condition here is now one that reader does not know.
     */
-    // Retargeted by D1136: formidable's "total power 8 or greater" reads now; a board condition still unread.
-    ['a board condition', 'Activate only if you control three or more creatures with different powers.'],
+    // Retargeted by D1136 (formidable reads) and D1181 (coven reads): a comparison of artifacts is still unread.
+    ['a board condition', 'Activate only if an opponent controls more artifacts than you.'],
   ])('refuses the whole line for a restriction it cannot read: %s', (_label, tail) => {
     const read = once(`{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. ${tail as string}`);
     expect(read.ok).toBe(true);
@@ -12846,8 +12846,8 @@ describe('"Activate only during …", the three timing clauses (D509)', () => {
   });
 
   it.each([
-    // Retargeted by D1136: formidable's "total power 8 or greater" reads now; a board condition still unread.
-    ['a board condition', 'Activate only if you control three or more creatures with different powers.'],
+    // Retargeted by D1136 (formidable reads) and D1181 (coven reads): a comparison of artifacts is still unread.
+    ['a board condition', 'Activate only if an opponent controls more artifacts than you.'],
     ['an opponent\'s turn', 'Activate only during an opponent\'s turn.'],
     ['a narrower combat window', 'Activate only during combat after blockers are declared.'],
   ])('still refuses the whole line for a clause it cannot read: %s', (_label, tail) => {
@@ -18082,8 +18082,7 @@ describe('an intervening-if in a trigger (D563)', () => {
     ['a condition that needs a filter',
       'When this creature enters, if you control a creature with protection from red, draw a card.'],
     // "If you control another Wizard" reads since D737: the condition is asked with the trigger's source.
-    ['a choice of two things',
-      'When this creature enters, if you control an artifact or enchantment, draw a card.'],
+    // "If you control an artifact or enchantment" (a choice of two things) reads since D1181.
     ['a number it does not print',
       'When this creature enters, if you control X or more lands, draw a card.'],
     ['an irregular plural, which would count a subtype nothing has',
@@ -18147,8 +18146,7 @@ describe('the second condition vocabulary, and the ability word in front of it (
   });
 
   it.each([
-    ['coven, which counts distinct powers',
-      'Coven — At the beginning of your end step, if you control three or more creatures with different powers, draw a card.'],
+    // Coven ("three or more creatures with different powers") reads since D1181; see its tests.
     // "an opponent controls more lands than you" reads since D622; artifacts are not compared yet.
     ['a comparison between two players it does not count',
       'When Mardu Hordechief enters, if an opponent controls more artifacts than you, draw a card.'],
