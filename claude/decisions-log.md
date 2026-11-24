@@ -60291,3 +60291,42 @@ Faults injected by hand: 2, all caught.
 - The condition inverted.
 
 Coverage: 16,168 of 31,900 cards (+7 over D1179's 16,161), 38,482 of 59,888 lines (+9).
+
+## D1181 — more conditions: coven, a full party, two kinds, a Desert anywhere, another big creature
+
+Five conditions common on single-unread lines join `interveningConditionFor`, so a leading "if", a
+trailing "if" (D1026) and a trailing "unless" (D1180) all read them:
+- **Coven:** "you control three or more creatures with different powers", the distinct live powers
+  among your creatures.
+- **"You have a full party"** (CR 700.8): `partySize` at four.
+- **"You control another creature with power 4 or greater":** the source left out.
+- **Two kinds joined:** "you control an artifact and an enchantment" (both), "an artifact or
+  enchantment" (either; the article is shared), "a Wizard or a Cleric". Each half is read by the
+  same function.
+- **"You control a Desert or there is a Desert card in your graveyard."**
+
+Read whole now (24), among others: Candlegrove Witch, Candlelit Cavalry, Dawnhart Mentor, Duelcraft
+Trainer, Kami of Terrible Secrets, Naomi, Pillar of Order, Sand Strangler, Desert's Hold,
+Unquenchable Thirst, Wall of Forgotten Pharaohs, Sigarda, Champion of Light, Squad Commander.
+
+Four compile pins were refusals of shapes this now reads (caught by the pregate): D563's "a
+choice of two things" and D564's coven row are removed, each pointing at the D1181 tests, and
+D508's and D509's "a board condition" rows now use "an opponent controls more artifacts than you",
+which is still unread.
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- Coven: powers 1, 2 and 3 draw; 1, 1 and 3 do not.
+- A full party: a Cleric, Rogue, Warrior and Wizard draw; without the Wizard, no draw.
+- "An artifact and an enchantment" needs both; "an artifact or enchantment" either.
+- A Desert on the battlefield or in the graveyard; neither, no draw.
+- "Another creature with power 4 or greater": the 5/5 itself does not count, a Giant does.
+
+Faults injected by hand: 5, all caught.
+- Coven counting creatures, not powers.
+- A party of three counted as full.
+- "And" read as "or".
+- "Another" counting the source.
+- The graveyard half ignored.
+
+Coverage: 16,193 of 31,900 cards (+25 over D1180's 16,168), 38,510 of 59,888 lines (+28).
