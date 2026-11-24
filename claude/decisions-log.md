@@ -60202,3 +60202,36 @@ Faults injected by hand: 3, all caught.
 - The token flag ignored on `permanents-of-subtype`.
 
 Coverage: 16,123 of 31,900 cards (+1 over D1176's 16,122), 38,425 of 59,888 lines (+1).
+
+## D1178 — an anthem with a count
+
+`staticCountedSizeFromLine` read "~ gets +N/+N for each …" (a size on the permanent itself) and
+nothing with a team in front of it. It now also reads the same count on an anthem:
+"Creatures you control get +1/+1 for each Gate you control", "Other creatures you control …",
+"Creature tokens you control …", "Other Elf creatures you control …", "Other Dwarves you control
+…". The scope is the one the plain anthems use (`controller-creatures`, `controller-tokens`, a
+subtype with `other`), the effect is `sizePerCount` as on the self size, and the count is the
+source's: `staticCount` is handed the static's source and controller, so every creature gets the
+same bonus.
+
+`staticCountOf` also reads a named counter on the permanent itself: "for each unity counter on ~",
+"… blessing counter on ~". An article is never a kind ("a counter on ~" is any kind, still unread).
+
+Read whole now: Call for Unity, Boon of the Spirit Realm, Joraga Warcaller, Thorin, King of Durin's
+Folk. Still unread: a count with a second predicate ("… and have vigilance", Hold the Gates),
+"each counter on ~" of any kind (Kyler), "Equipment attached to ~" and commander-cast counts.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "Other Elf creatures … for each +1/+1 counter on ~": two counters make the Elf +2/+2. The Bear,
+  and the Warcaller itself, are not other Elves.
+- "For each unity counter on ~": the counters on the enchantment, for every creature you control
+  and none of theirs.
+- "For each artifact you control": two Relics give +2/+0.
+
+Faults injected by hand: 3, all caught.
+- The subtype scope dropped to every creature you control.
+- The named counter read as +1/+1.
+- "Creatures you control" read as every creature.
+
+Coverage: 16,138 of 31,900 cards (+15 over D1177's 16,123), 38,447 of 59,888 lines (+22).
