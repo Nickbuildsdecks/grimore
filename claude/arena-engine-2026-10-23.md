@@ -42886,3 +42886,47 @@ Faults injected by script: 2 of 2 caught (the name dropped, and the name left in
 
 - engine tests: 6327, all passing (on dc59991)
 - Coverage: 16,169 to 16,194 of 31,900 cards with every line read, and 38,484 to 38,515 of 59,888 lines, against dc59991.
+
+## D1182 — "for as long as ~ remains tapped" on any continuous effect
+
+D1040 read the duration on a control change. About 33 single-unread legal lines print it on
+something else: a pump ("Target creature gets +1/+1 for as long as ~ remains tapped", Tawnos's
+Weaponry, the Couriers, Thran Weaponry), or a freeze ("Tap target land. It doesn't untap during its
+controller's untap step for as long as ~ remains tapped", Mana Leech, Rust Tick, Sand Squid, Amber
+Prison). Also "for as long as you control ~" (Dungeon Geists).
+
+- **The reader.** The clause is read as it would be until end of turn (or "has" as "gains", or with
+  no duration), and every effect it makes becomes `permanent` with `lastsWhile`, the same terms
+  D1040's `controlWhile` holds: the source on the battlefield, still tapped, or still yours.
+- **The engine.** The settle drops an effect whose `lastsWhile` fails, with nothing to send home.
+  It does not come back if the terms hold again. D1041's "you may choose not to untap ~" now also
+  keeps a permanent tapped while it holds such an effect.
+- **The freeze.** "Tap target X. It doesn't untap during its controller's untap step for as long
+  as …" is joined into one clause and read as the tap and a `doesntUntap` effect on that permanent.
+  The join happens only when the target phrase reads, so a reader that splits the clause again
+  cannot loop (the first draft did, on Entrancing Lyre).
+
+Read whole now (22 of the 33), among others: Tawnos's Weaponry, Thran Weaponry, Ashnod's Battle
+Gear, Endoskeleton, Spirit Shield, the five Couriers, Hisoka's Guard, Mana Leech, Mole Worms,
+Rust Tick, Phyrexian Gremlins, Sand Squid, Amber Prison, Deserter's Quarters, Thalakos Dreamsower,
+Dungeon Geists. D538's pin "refuses Dungeon Geists" (caught by running compile.test.ts) now reads,
+and the reading is the printed one. Still unread: Vedalken Shackles and Old Man of the Sea (a
+control change with a power condition), Giant Oyster, Immovable Rod, Kill Switch, The Pandorica.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- The pump lasts past the turn while the artifact stays tapped, and ends when it untaps.
+- "For as long as you control ~": the Bear stays tapped while the Geists is here and untaps at its
+  next untap step once the Geists is gone.
+- The land stays tapped through its untap step while the Leech is tapped.
+
+Faults injected by hand: 3, all caught.
+- The effect left ending at end of turn.
+- The settle never dropping a lapsed effect.
+- The freeze left off (only the tap).
+
+The Geists test also passes with the second fault, because an effect whose source has left the
+battlefield is removed by the existing source cleanup; the "you control" terms are what end it
+when control changes instead, which no test here covers.
+
+Coverage: 16,244 of 31,900 cards (+51 over D1181's 16,193), 38,568 of 59,888 lines (+58). The difference also counts the D7xx session's D832, merged in after D1181 was measured.
