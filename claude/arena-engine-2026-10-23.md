@@ -43713,3 +43713,27 @@ Faults injected by hand: 3, all caught.
 - The life loss dropped.
 
 Coverage: 16,529 of 31,900 cards (+38 over D1207's 16,491), 38,932 of 59,888 lines (+50).
+
+## D1209 — mana in any combination of colours
+
+"{T}: Add two mana in any combination of colors" (Terrarion, Relic of Sauron, Smokebraider's
+restricted mana) and "… of {R} and/or {G}" (Flamebraider's long form). Every multiset of that size
+from the colours named is one answer, the same `runs` mode the filter lands use (D665): RR, RG and
+GG for "{R} and/or {G}", the fifteen pairs for "two of colors". The mana solver and the player pick
+among them the same way. Two and three mana only: five of five colours would be 126 answers for the
+solver to weigh, so Cascading Cataracts stays unread, and the compile pin that refused "two in any
+combination" moved to five.
+
+Read whole now (5): Flamebraider, Hermitic Herbalist, Relic of Sauron, Smokebraider, Terrarion.
+Most other lines with the phrase are unread for an X count, storage counters, or a cost clause.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Of {R} and/or {G}": three answers (RR, RG, GG), and tapping for RG adds one of each.
+- "Of colors": fifteen answers of two mana each, from WU to GG.
+
+Faults injected by hand: 2, all caught.
+- Ordered pairs instead of multisets (RG and GR both offered).
+- The named colours ignored (all five offered).
+
+Coverage: 16,534 of 31,900 cards (+5 over D1208's 16,529), 38,941 of 59,888 lines (+9).
