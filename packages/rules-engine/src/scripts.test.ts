@@ -39516,6 +39516,60 @@ describe('"the amount of life you gained this turn" (D1198)', () => {
   });
 });
 
+describe('colours among a scope, differently named, and the highest mana value among any scope (D1199)', () => {
+  const ROWS = [
+    { name: 'Test Spectrum', type_line: 'Sorcery', oracle_text: 'You gain X life, where X is the number of colors among permanents you control.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Prism', type_line: 'Sorcery', oracle_text: 'Draw a card for each color among permanents you control.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Census', type_line: 'Sorcery', oracle_text: 'Draw a card for each differently named land you control.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Apex', type_line: 'Sorcery', oracle_text: 'You gain X life, where X is the highest mana value among permanents you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Ember', type_line: 'Creature — Elemental', oracle_text: '', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Duo', type_line: 'Creature — Bird', oracle_text: '', mana_cost: '{1}{W}{U}', cmc: 3, colors: ['W', 'U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{5}', cmc: 5, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1199', name: 'Among',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 20 }, { name: 'Plains', count: 12 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1199', 1: 'd1199' }, deckSpecs: { d1199: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+  } as Action)), 30);
+  const BOARD = ['Test Ember', 'Test Duo', 'Mountain', 'Mountain', 'Plains'];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"the number of colors among permanents you control": red, white and blue are three; lands add none', () => {
+    const s = cast(table('Test Spectrum', BOARD), 'Test Spectrum');
+    expect(life(s, 0)).toBe(23);
+  });
+
+  it('"for each color among …": the same count as a rate', () => {
+    let s = table('Test Prism', BOARD);
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Prism');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+  });
+
+  it('"for each differently named land": two Mountains and a Plains are two names', () => {
+    let s = table('Test Census', BOARD);
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Census');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('"the highest mana value among permanents you control": a noncreature counts', () => {
+    expect(life(cast(table('Test Apex', BOARD), 'Test Apex'), 0)).toBe(23);
+    expect(life(cast(table('Test Apex', [...BOARD, 'Test Relic']), 'Test Apex'), 0)).toBe(25);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

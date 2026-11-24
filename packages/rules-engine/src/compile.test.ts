@@ -13063,9 +13063,10 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
     // Power Fist's "that many" reads since D903, which carries the damage forward.
     ['Withercrown: an "unless" clause on a step trigger',
       'At the beginning of your upkeep, you lose 1 life unless you sacrifice this creature.'],
-    // Idolized's own count ("nonland permanents you control") reads since D601; the colour count does not.
+    // Idolized's own count ("nonland permanents you control") reads since D601, and its colour count
+    // since D1199, so the row is a quantity the engine does not keep.
     ['Idolized: a bonus whose X is a count of the board',
-      'Whenever this creature attacks alone, it gets +X/+X until end of turn, where X is the number of colors among permanents you control.'],
+      'Whenever this creature attacks alone, it gets +X/+X until end of turn, where X is the amount of damage dealt to you this turn.'],
   ])('refuses the whole line when the quoted text does not read: %s', (_why, inner) => {
     /*
       **This is where the real bottleneck turned out to be, and the measurement corrected my own
@@ -13918,7 +13919,8 @@ describe('a quantity read off the board (D520)', () => {
 
   it.each([
     // "each Bird on the battlefield" was this row until D601 taught the count every `massScope` scope.
-    ['a countable nothing can count', 'Draw a card for each color among permanents you control.'],
+    // "… for each color among permanents you control" was this row until D1199.
+    ['a countable nothing can count', 'Draw a card for each card type among cards in your graveyard.'],
     // "… with a +1/+1 counter on it" was this row until D1169 taught `massScope` counters and keywords.
     ['a count qualified past the vocabulary',
       'Draw a card for each creature you control with flying and vigilance.'],
