@@ -60980,3 +60980,26 @@ Faults injected by hand: 3, all caught.
 - The plural's singular cut one letter short.
 
 Coverage: 16,453 of 31,900 cards (+6 over D1200's 16,447), 38,838 of 59,888 lines (+9).
+
+## D1202 — "If …, this spell costs {N} less to cast"
+
+The condition in front: "If you have 3 or less life, this spell costs {6} less to cast" (Avatar of
+Hope), "If an opponent controls seven or more lands, …" (Avatar of Fury). The same sentence as
+"This spell costs {6} less to cast if you have 3 or less life", which has read since D578, so
+`selfCostChangeFromLine` reads the first as the second. A condition with a comma in it is not
+taken apart.
+
+Read whole now (4): Avatar of Fury, Avatar of Hope, Avatar of Might, Avatar of Will. Still unread
+in the shape, for their conditions: Avatar of Woe (creature cards in all graveyards), Shadow of
+Mortality (below your starting life total), Unforgiving Overtake (not the starting player).
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- At 20 life no change; at 3 life {6} less.
+- An opponent with six lands: no change; with seven: {6} less.
+
+Faults injected by hand: 2, all caught.
+- The leading form not read.
+- The condition replaced by another.
+
+Coverage: 16,457 of 31,900 cards (+4 over D1201's 16,453), 38,842 of 59,888 lines (+4).
