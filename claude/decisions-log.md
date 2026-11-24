@@ -60542,3 +60542,46 @@ Faults injected by hand: 3, all caught.
 - "That player" not bound to the player who played it.
 
 Coverage: 16,274 of 31,900 cards (+5 over D1186's 16,269), 38,614 of 59,888 lines (+6).
+
+## D1188 — nine more "as long as" conditions
+
+`staticCondition` turns "as long as …" into data (`PumpOptions['while']`), since the state is
+serialised and a closure would not survive. Nine common conditions had no row:
+- **New kinds:** "you've drawn two or more cards this turn" (`controller-drew`, off
+  `cardsDrawnThisTurn`), "you're the monarch" (`controller-monarch`), "you have more cards in hand
+  than each opponent" (`controller-most-cards-in-hand`), "~ entered this turn"
+  (`source-entered-this-turn`, off the instance's `enteredTurn`).
+- **Graveyards:** "there are N or more creature cards in your graveyard" (`controller-graveyard`
+  with `creatures`, printed type lines), and "an opponent has N or more cards in their graveyard"
+  (`whose: 'an-opponent'`).
+- **The board:** "you control a token" (`board-has` with `token`), "you control another
+  multicolored permanent" (`multicolored`: two or more printed colours), "you control exactly one
+  creature" (`atMost` beside `atLeast`).
+
+Every one answers without a live characteristic, as the union requires (it is asked inside
+`characteristicsOf`).
+
+Read whole now (28 of the 40 lines that print these), among others: the Alara blades (Bant
+Sureblade, Esper Stormblade, Grixis Grimblade, Jund Hackblade, Naya Hushblade), Jace's Phantasm,
+Thieves' Guild Enforcer, Dawnglade Regent, Keldon Strike Team, Spinehorn Minotaur, Secretkeeper,
+Gnarled Sage, Messenger Hawk, Okina Nightwatch.
+
+D502's pin "a count of a kind of card" (caught by running compile.test.ts) used creature cards,
+which read now; it uses instant cards instead, still unread.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- Cards drawn this turn (one, then two), the monarch (theirs, then yours), the bigger hand.
+- Their graveyard at seven and eight; two creature cards in yours, artifacts not counted.
+- Entered this turn or the turn before; a token; exactly one creature; another multicolored
+  permanent.
+
+Faults injected by hand: 6, all caught.
+- The monarch read as anybody being the monarch.
+- "An opponent's graveyard" read as yours.
+- The token filter ignored.
+- "Exactly" read as "at least".
+- The multicolored filter ignored.
+- "Entered this turn" ignored.
+
+Coverage: 16,309 of 31,900 cards (+35 over D1187's 16,274), 38,652 of 59,888 lines (+38).
