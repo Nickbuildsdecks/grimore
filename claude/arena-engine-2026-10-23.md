@@ -42960,3 +42960,29 @@ Faults injected by hand: 2, all caught.
 - The tokens left untapped.
 
 Coverage: 16,255 of 31,900 cards (+11 over D1182's 16,244), 38,583 of 59,888 lines (+15).
+
+## D1184 — "a nontoken creature you control attacks", and a token gone at end of combat
+
+Two follow-ons to D1183:
+- **The trigger.** "Whenever a nontoken creature you control attacks" (Militia's Pride, Mardu
+  Ascendancy) did not read: the `attacks` event had no token filter. It now has `nontoken`, the
+  filter `dies` and `etb` have, and the declaration writes `subjectIsToken` on each attack event.
+- **The rider.** "… token that's tapped and attacking. Exile that token at end of combat." (and
+  "Sacrifice that token / those tokens / it at end of combat") is joined by `clausesOf` to the
+  sentence that made the token, as D696's end-step rider is, and schedules the same engine-known
+  delayed ability at the end of combat step instead of the end step.
+
+Read whole now: Militia's Pride, Mardu Ascendancy, and three more attacking-token cards with the
+end-of-combat rider.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- A nontoken attacker draws, a token attacker does not; the token that joins the attack does not
+  fire the trigger either.
+- The Spirit token is exiled at end of combat.
+
+Faults injected by hand: 2, all caught.
+- The nontoken filter ignored on `attacks`.
+- The rider scheduled at the end step instead.
+
+Coverage: 16,259 of 31,900 cards (+4 over D1183's 16,255), 38,590 of 59,888 lines (+7).
