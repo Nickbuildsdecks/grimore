@@ -60172,3 +60172,33 @@ control", "that convoked it", "named …", "and/or", "each of those creatures", 
 Faults injected by hand: 1, caught: the fallback puts no counters.
 
 Coverage: 16,122 of 31,900 cards (+9 over D1175's 16,113), 38,424 of 59,888 lines (+9).
+
+## D1177 — tokens in a static count
+
+A static size "~ gets +1/+1 for each … you control" counts through `staticCountOf`, which may not
+read live characteristics (`ContinuousEffect.sizePerCount`: a size that reads sizes recurses). It
+read printed types and subtypes but not tokens. Whether a permanent is a token is a fact about the
+object, not a characteristic, so it is as safe to read there as a printed type line. Now:
+- "for each token you control": a new `StaticCountable`, `tokens-you-control`;
+- "for each artifact token you control" (and enchantment or land, with "and/or"): `permanents-of-type`
+  with `token`;
+- "for each Officer token you control": `permanents-of-subtype` with `token`.
+
+"Creature token" stays refused, for D523's reason (whether a permanent is a creature now is what a
+printed line cannot say).
+
+Read whole now: Academy Instructor. Still unread: the same count on an anthem ("Other Dwarves you
+control get +1/+0 for each artifact token you control", Thorin), which is the anthem reader's.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "Each token": the Soldier and the Treasure, not the nontoken Golem.
+- "Each artifact token": the Treasure only; the Golem is an artifact but not a token.
+- "Each Soldier token": the Soldier token only; the Golem Soldier is not a token.
+
+Faults injected by hand: 3, all caught.
+- `tokens-you-control` counting every permanent.
+- The token flag ignored on `permanents-of-type`.
+- The token flag ignored on `permanents-of-subtype`.
+
+Coverage: 16,123 of 31,900 cards (+1 over D1176's 16,122), 38,425 of 59,888 lines (+1).
