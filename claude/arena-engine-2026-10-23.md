@@ -43119,3 +43119,31 @@ Faults injected by hand: 6, all caught.
 - "Entered this turn" ignored.
 
 Coverage: 16,309 of 31,900 cards (+35 over D1187's 16,274), 38,652 of 59,888 lines (+38).
+
+## D1189 — "This effect doesn't remove ~": the Ward Auras
+
+White Ward and its cycle print "Enchanted creature has protection from white. This effect doesn't
+remove White Ward." Protection from white makes every white Aura on the creature an illegal
+attachment (CR 702.16d), the Ward included, which is why the second sentence exists: this
+effect's protection does not remove its own source.
+
+- **The reader.** `attachmentBonus` reads the protection sentence as before and marks the effect
+  `protectionSparesSource`.
+- **The engine.** `characteristicsOf` records which sources' protection spares them
+  (`protectionSpares`) and the protection from everything else (`protectionUnspared`: the printed
+  card and every other effect). The CR 704.5m attachment check (`isLegalAttachment`) asks a sparing
+  source only against that, so the Ward stays on while another white Aura falls off, and
+  protection from white given by anything else still removes the Ward.
+
+Read whole now: White Ward, Blue Ward, Black Ward, Red Ward, Green Ward. Still unread: the "chosen
+color" Wards (Cho-Manno's Blessing, Ward of Lights, Pentarch Ward, Flickering Ward), since an
+Aura's protection from a chosen colour is not read yet, and Spectra Ward, Tattoo Ward and Pledge
+of Loyalty, whose protection is not a single colour.
+
+**Tests.** 2 engine tests:
+- The test card reads whole.
+- The Ward stays on its own protection; another white Aura on the same creature falls off.
+
+Faults injected by hand: 1, caught: the source never spared.
+
+Coverage: 16,314 of 31,900 cards (+5 over D1188's 16,309), 38,657 of 59,888 lines (+5).
