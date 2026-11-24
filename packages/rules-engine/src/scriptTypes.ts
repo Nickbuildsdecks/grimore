@@ -552,6 +552,12 @@ export type TriggerEvent =
   | {
       readonly kind: 'attacks';
       /**
+       * "Whenever a **nontoken** creature you control attacks" (D1184, Militia's Pride): `dies`' and
+       * `etb`'s filter on the attacker. The engine writes `subjectIsToken` on the event.
+       */
+      readonly nontoken?: boolean;
+      readonly subjectIsToken?: boolean;
+      /**
        * Whose attack it watches, exactly as `etb` and `dies`: `self` — the default, and what every
        * script written before this meant — is this permanent attacking, `another` is any other
        * creature, `any` is both.

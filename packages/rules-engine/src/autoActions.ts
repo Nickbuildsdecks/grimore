@@ -2897,6 +2897,8 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
         stronger: attacks.some((other) => powerOf(other.attacker) > powerOf(attack.attacker)),
         opponentsAttacked,
         subjectSeat: action.by,
+        // Whether the attacker is a token (D1184), for "a nontoken creature you control attacks".
+        subjectIsToken: next.instances[attack.attacker]?.isToken === true,
         // "Attacks alone": one creature in the whole declaration (CR 702.90b). Read here because
         // this is the only place that knows — by the time an exalted trigger resolves, a second
         // attacker could have been removed from combat and the board would say the same thing

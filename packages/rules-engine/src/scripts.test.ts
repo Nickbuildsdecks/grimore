@@ -38750,6 +38750,57 @@ describe('tokens that enter tapped and attacking (D1183)', () => {
   });
 });
 
+describe('"a nontoken creature you control attacks", and a token gone at end of combat (D1184)', () => {
+  const ROWS = [
+    { name: 'Test Pride', type_line: 'Enchantment', oracle_text: 'Whenever a nontoken creature you control attacks, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Geist', type_line: 'Creature — Spirit', oracle_text: "Whenever Test Geist attacks, create a 1/1 white Spirit creature token that's tapped and attacking. Exile that token at end of combat.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a 1/1 white Soldier creature token.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1184', name: 'Nontoken attacks',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1184', 1: 'd1184' }, deckSpecs: { d1184: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a nontoken attacker draws, a token attacker does not', () => {
+    let s = table(['Test Pride', 'Test Geist'], ['Test Spawner']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spawner') })), 20);
+    // A token that has been here since the turn began can attack: move it in by hand last turn's way.
+    const soldier = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!;
+    s = { ...s, instances: { ...s.instances, [soldier]: { ...s.instances[soldier]!, enteredTurn: 0 } } };
+    s = advanceTo(s, 'declare-attackers');
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [
+      { attacker: find(s, 0, 'battlefield', 'Test Geist'), defender: 1 },
+      { attacker: soldier, defender: 1 },
+    ] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(s, 10);
+    // One card, for the Geist; nothing for the Soldier token, or for the Spirit token joining.
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('the Spirit token is exiled at end of combat', () => {
+    let s = advanceTo(table(['Test Geist']), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Geist'), defender: 1 }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(s, 10);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken)).toHaveLength(1);
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken)).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

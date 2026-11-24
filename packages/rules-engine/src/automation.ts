@@ -1764,7 +1764,7 @@ function triggerMatches(
       // Whose graveyard (D1014): a death is raised for the seat whose graveyard the card went to.
       if (want.kind === 'dies' && want.owner !== undefined
         && (e.subjectOwner === undefined || (want.owner === 'you') !== (e.subjectOwner === sourceSeat))) return false;
-      if ((want.kind === 'dies' || want.kind === 'etb') && want.nontoken === true
+      if ((want.kind === 'dies' || want.kind === 'etb' || want.kind === 'attacks') && want.nontoken === true
         && e.subjectIsToken === true) return false;
       // And its opposite on the entry (D706): "whenever you create a token".
       if (want.kind === 'etb' && (want as { token?: true }).token === true && e.subjectIsToken !== true) return false;

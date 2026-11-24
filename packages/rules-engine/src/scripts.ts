@@ -20608,6 +20608,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
   },
+  // "Whenever a nontoken creature you control attacks" (D1184): Militia's Pride, Myrel's Kithkin.
+  {
+    prologue: () => /^Whenever a nontoken creature you control attacks, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'any', of: 'you', nontoken: true }],
+  },
   // "Whenever a creature you control with <filter> attacks" (D1008): \`boardFilter\`'s filters on the attacker.
   {
     prologue: () => /^Whenever a creature you control(?<filter> with [^,]+?) attacks, (?<clause>.+)$/i,
@@ -29474,7 +29479,8 @@ function readEffect(
     and an engine-known delayed ability (`DelayedTrigger.builtin`) that sacrifices or exiles it at
     the next end step, on the stack like any other trigger.
   */
-  const rider = /^(.+); (with haste, )?(sacrifice|exile) at the beginning of (the|your) next end step$/i.exec(clause.trim());
+  // And "at end of combat" (D1184): "Exile that token at end of combat" after an attacking token.
+  const rider = /^(.+); (with haste, )?(sacrifice|exile) (?:at the beginning of (the|your) next end step|(at end of combat))$/i.exec(clause.trim());
   if (rider !== null) {
     const inner = readEffect(rider[1]!, name, where);
     if (inner === null) return null;
@@ -29489,9 +29495,9 @@ function readEffect(
       if (hasty && arrived.length > 0) next = pump(next, arrived, c.source, c.controller, { keywords: ['haste'] });
       for (const id of arrived) {
         next = scheduleDelayed(next, {
-          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end',
+          source: c.source, controller: c.controller, abilityIndex: -1, step: rider[5] !== undefined ? 'end-combat' : 'end',
           // "Your next end step" (D1131) waits for the controller's own.
-          of: rider[4]!.toLowerCase() === 'your' ? 'you' : 'any',
+          of: (rider[4] ?? '').toLowerCase() === 'your' ? 'you' : 'any',
           subject: id, builtin: verb,
           description: `${verb} ${next.cardDefs[next.instances[id]?.defKey ?? '']?.name ?? 'it'}`,
         });
@@ -29919,6 +29925,10 @@ function clausesOf(line: string): readonly string[] {
     // step", the controller's own.
     .replace(/((?:create|put|return)[^.;]*?)\.\s+(?:(?:it|they|that creature|those creatures|the creature|the token|the tokens|that token|those tokens) gains? haste(?: until end of turn)?\.\s+)?(sacrifice|exile) (?:it|them|that token|those tokens|that creature|those creatures|the creature|the token|the tokens) at the beginning of (the|your) next end step/gi,
       (_m, first: string, verb: string, whose: string) => `${first}; ${/gains? haste/i.test(_m) ? 'with haste, ' : ''}${verb.toLowerCase()} at the beginning of ${whose.toLowerCase()} next end step`)
+    // And the same rider at end of combat (D1184): "… token that's tapped and attacking. Exile that
+    // token at end of combat."
+    .replace(/((?:create|put)[^.;]*?)\.\s+(sacrifice|exile) (?:it|them|that token|those tokens|the token|the tokens) at end of combat/gi,
+      (_m, first: string, verb: string) => `${first}; ${verb.toLowerCase()} at end of combat`)
     // Snapcaster Mage (D694): the second sentence says what the flashback costs, which is the one
     // thing `flashbackGrantedTurn` already means.
     .replace(/(gains flashback until end of turn)\.\s+The flashback cost is equal to its mana cost/gi, '$1')
