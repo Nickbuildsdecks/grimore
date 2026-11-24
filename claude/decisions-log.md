@@ -60262,3 +60262,32 @@ Overload, Hour of Promise, Mayael's Aria, Recoil, Survival Cache, Undercity Upri
 Faults injected by hand: 1, caught: the "Then" left on.
 
 Coverage: 16,161 of 31,900 cards (+23 over D1178's 16,138), 38,473 of 59,888 lines (+26).
+
+## D1180 — a trailing "unless" over a condition
+
+"Draw two cards. Then discard a card unless you attacked this turn." (Chart a Course) did not read.
+`readEffect` now reads "<clause> unless <condition>" as the negation of D1026's trailing "if", over
+the same condition vocabulary (`interveningConditionFor`): "unless you attacked this turn",
+"unless you control an artifact", "unless this enchantment has three or more quest counters on it"
+(Anthropological Mission). Only a condition about the game reads; "unless you pay", "unless they
+discard" and the other choices start with a player and a verb, have their own readers, and are
+excluded.
+
+Unlike the "if" form, this one takes a clause that asks a question, because here the question is
+the clause: the discard is asked only when the condition fails, through the decision's
+`askOnlyIf`, checked as the clause resolves. The effect is guarded by the same condition.
+
+Read whole now: Chart a Course, Anthropological Mission. Still unread: conditions the vocabulary
+lacks ("there are three or more Lesson cards in your graveyard", Chakra Meditation) and "unless you
+discard an artifact card" (Alpharael), which is a choice.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- No attack this turn: two cards, then the discard is asked.
+- After an attack: two cards, and nobody is asked to discard.
+
+Faults injected by hand: 2, all caught.
+- The discard always asked.
+- The condition inverted.
+
+Coverage: 16,168 of 31,900 cards (+7 over D1179's 16,161), 38,482 of 59,888 lines (+9).
