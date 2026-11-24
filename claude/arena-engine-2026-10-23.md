@@ -43737,3 +43737,25 @@ Faults injected by hand: 2, all caught.
 - The named colours ignored (all five offered).
 
 Coverage: 16,534 of 31,900 cards (+5 over D1208's 16,529), 38,941 of 59,888 lines (+9).
+
+## D1210 — a cast trigger that copies at a price
+
+"Whenever you cast an instant or sorcery spell, you may pay {1}. If you do, copy that spell. You
+may choose new targets for the copy." (Riku of Two Reflections, Mirari). D755's cast-trigger copy
+read "copy it" and "you may copy that spell"; the price is now a third form. The mana is paid on
+the answer that copies (`payIfChosen`, as Chain Lightning's is), so declining costs nothing and an
+answer that cannot be paid falls back to declining.
+
+Read whole now (2): Mirari, Riku of Two Reflections. The others in the shape print a different
+price (tap three creatures, sacrifice an artifact), a hybrid symbol, or a filter on the spell.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- Paid: one Island is tapped for the {1}, and the copy deals 3 more.
+- Declined: no copy and nothing spent.
+
+Faults injected by hand: 2, all caught.
+- The price not charged.
+- The copy made whatever was answered.
+
+Coverage: 16,536 of 31,900 cards (+2 over D1209's 16,534), 38,944 of 59,888 lines (+3).
