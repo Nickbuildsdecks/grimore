@@ -43807,3 +43807,59 @@ stash pop conflicted there, both sides were kept, and the diff adds lines only.
 
 - engine tests: 6429, all passing (on a171093, D833 and D834 gated together)
 - Coverage, both together: 16,537 to 16,547 of 31,900 cards with every line read, and 38,946 to 38,958 of 59,888 lines, against a171093. The first measure read 16,502, because it ran on a build from before the fast-forward; the measure script now rebuilds first.
+
+## D835 — "When you play another land": City of Traitors
+
+Most-played order: City of Traitors (rank 1137), the corpus's one printing.
+
+**Engine.** The `land-played` event (D1187) now carries the land as its subject. `raise` copies
+the subject onto it, as it does for an entry or a discard, and the trigger gains `other`: not when
+the watcher is the land that was played. So the City's own play does not sacrifice it, and the
+next land does.
+
+**Reader.** D1187's "Whenever you/an opponent/a player play(s) a land" also takes "When" and
+"another land".
+
+**Tests.** 4 engine tests:
+- the card reads;
+- playing the City itself leaves it;
+- playing a Forest with the City out sacrifices it;
+- an opponent's land does not.
+D1187's tests pass unchanged.
+
+Faults injected by script: 3 of 3 caught (`other` ignored by the matcher, the land not passed as
+the subject, and "another" unread).
+
+- engine tests: 6436, all passing (on a9f8fce, D835 and D836 gated together)
+- Coverage, both together: 16,547 to 16,561 of 31,900 cards with every line read, and 38,958 to 38,978 of 59,888 lines, against a9f8fce.
+
+## D836 — "Double the number of +1/+1 counters on …": Kalonian Hydra
+
+Most-played order: Kalonian Hydra (rank 1150), with Mossborn Hydra, Bristly Bill and Ornery
+Tumblewagg.
+
+**Reader.** In `readEffect`: "double the number of +1/+1 counters on (each creature you control |
+target creature [you control] | this creature | <self>)". To double them is to put that many more
+(CR 122.7), so the effect goes through `addCounters`, and anything that changes how many counters
+are put applies. "On it" (nine lines) and "on that creature" (five) stay unread: which creature
+"it" is depends on the sentence before.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- "each creature you control" turns our 2 counters into 4, leaves our creature with none at none,
+  and leaves the opponent's 3;
+- "target creature" aimed at the opponent's creature turns 3 into 6.
+
+Faults injected by script: 2 of 2 caught (one counter added in place of doubling, and the
+opponent's creatures included).
+
+**Two test tables moved, as they say to.** The first gate failed twice, both on purpose:
+- compile.test's `PARTLY_READ_CARD` was Dragonsguard Elite, a pool card with one unread line, and
+  that line was "double the number of +1/+1 counters on ~". Its docblock asks whoever reads the
+  line to move it, as D447, D528, D641 and D712 did, so it moved to Chalice of the Void.
+- compiled-vs-written now lists Dragonsguard Elite in DISAGREE: the compiled ability does what
+  the hand-written one does, but the hand-written one keeps its `buysNothingIf` bot hint. The
+  hand-written script is the one played.
+
+- engine tests: 6436, all passing (on a9f8fce, D835 and D836 gated together)
+- Coverage, both together: 16,547 to 16,561 of 31,900 cards with every line read, and 38,958 to 38,978 of 59,888 lines, against a9f8fce.
