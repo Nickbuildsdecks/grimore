@@ -43951,3 +43951,33 @@ opponent's creatures included).
 
 - engine tests: 6436, all passing (on a9f8fce, D835 and D836 gated together)
 - Coverage, both together: 16,547 to 16,561 of 31,900 cards with every line read, and 38,958 to 38,978 of 59,888 lines, against a9f8fce.
+
+## D1214 — "gets +N/+N until end of turn and can't be blocked this turn"
+
+Elusive Spellfist, Cunning Survivor, Taigam's Strike, Distortion Strike: two sentences in one,
+read as the two. The pump, then the same creature can't be blocked this turn: "~ can't be blocked
+this turn" when the subject is the card itself, "that creature can't be blocked this turn" after a
+target, so the target is chosen once. Both halves already read on their own.
+
+Read whole now (14): Ant-Man, Reformed Rogue; Brotherhood Spy; Cunning Survivor; Distortion
+Strike; Elusive Spellfist; Glassdust Hulk; Incursion Specialist; Merfolk Cave-Diver; Nimrodel
+Watcher; Otter-Penguin; Seafloor Stalker; Taigam's Strike; TVA Bureaucrat; Vectis Agents.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- A target: +2/+0 and unblockable, with one target chosen.
+- Itself on a trigger: +1/+0 and unblockable, and the creature the spell targeted is not made
+  unblockable.
+
+The pregate's compiled-against-written check caught one difference on the first run: Distortion
+Strike's hand-written target is aimed at an attacker of yours (`friendly`, `helpsInCombat`), as the
+one-sentence "can't be blocked" reader's is, and the composed reading had only the pump's spec. The
+composed target now carries both, and the two readings agree.
+
+Faults injected by hand: 2, all caught.
+- The second half aimed at a new target instead of "that creature".
+- The reading switched off.
+
+The coverage below includes the other session's D835 and D836, merged in before this was measured.
+
+Coverage: 16,611 of 31,900 cards (+30 over D1213's 16,581), 39,048 of 59,888 lines (+41).
