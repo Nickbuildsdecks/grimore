@@ -43759,3 +43759,30 @@ Faults injected by hand: 2, all caught.
 - The copy made whatever was answered.
 
 Coverage: 16,536 of 31,900 cards (+2 over D1209's 16,534), 38,944 of 59,888 lines (+3).
+
+## D1211 — switching power and toughness
+
+"Switch target creature's power and toughness until end of turn" (About Face, Transmutation, the
+Thaumaturgists), "Switch ~'s power and toughness until end of turn" (Aquamoeba, Windreaver, Crag
+Puca), "switch its power and toughness" on Valakut Fireboar's attack, and Mannichi's "each
+creature's". The engine had no way to say it: a new continuous-effect flag,
+`switchPowerToughness`, is applied in layer 7d (CR 613.4d), after every other change to power and
+toughness, counters and pumps included, whatever order they arrived in. Two switches cancel, so the
+count's parity decides.
+
+Read whole now (17): About Face, Aeromoeba, Aquamoeba, Calcite Snapper, Crag Puca, Crookclaw
+Transmuter, Dwarven Thaumaturgist, Fluxcharger, Mannichi, the Fevered Dream, Merfolk Thaumaturgist,
+Myr Quadropod, Phantasmal Fiend, Transmutation, Turtleshell Changeling, Valakut Fireboar,
+Wandering Fumarole, Windreaver.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- A 0/3 switched is a 3/0, and dies.
+- After counters: a 1/4 with a +1/+1 counter is 2/5, switched 5/2, and switched twice 2/5 again.
+- After a pump, whatever order: a 1/4 switched and then given +2/+0 is 4/3, not 6/1.
+
+Faults injected by hand: 2, all caught.
+- Any number of switches swapping (two not cancelling).
+- The switch applied to the base before the pumps (caught once a test had an uneven pump).
+
+Coverage: 16,556 of 31,900 cards (+20 over D1210's 16,536), 38,970 of 59,888 lines (+26).
