@@ -60845,3 +60845,32 @@ Faults injected by hand: 3, all caught.
 - The measure replaced by a different count.
 
 Coverage: 16,379 of 31,900 cards (+16 over D1196's 16,363), 38,739 of 59,888 lines (+24).
+
+## D1198 — "the amount of life you gained this turn"
+
+A measure, in `boardCount` and the five where-X / "equal to" lists: Fortifying Draught's "+X/+X …
+where X is the amount of life you gained this turn", Defiling Daemogoth, Midnight Snack, Nightmare's
+Thirst, Gumdrop Poisoner, Blossoming Bogbeast. The engine has kept the amount per seat since "if
+you gained life this turn" (`lifeGainedThisTurn`), so it is read from there; "you" is the controller
+of what is resolving. Life gained earlier in the same resolution counts, so "You gain 2 life.
+Target creature gets -X/-X …" includes the 2 (in order, as printed).
+
+The D520 compile pin "a quantity that is not a count of the board at all" used this very phrase as
+its example; it now uses "the amount of damage dealt to you this turn", which the engine does not
+keep.
+
+Read whole now (6 of the 19 such lines): Blossoming Bogbeast, Defiling Daemogoth, Fortifying
+Draught, Gumdrop Poisoner, Midnight Snack, Nightmare's Thirst. The rest are unread for other parts
+of their text (mills X for each opponent, mass -X/-X, cost reduction, "pay X life").
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- 3 life gained earlier and 2 by the spell itself make -5/-5, which kills a 4/4 that either alone
+  would not.
+- None gained is no life lost; 3 gained is 3 lost.
+
+Faults injected by hand: 2, all caught.
+- The opponent's life gained read instead of yours.
+- The amount read 2 short.
+
+Coverage: 16,385 of 31,900 cards (+6 over D1197's 16,379), 38,746 of 59,888 lines (+7).
