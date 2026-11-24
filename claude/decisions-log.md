@@ -60739,3 +60739,45 @@ Faults injected by hand: 2, all caught.
 - Every card counted, whatever its name (caught once a card of another name was in the graveyard).
 
 Coverage: 16,354 of 31,900 cards (+9 over D1193's 16,345), 38,705 of 59,888 lines (+9).
+
+## D1195 — a discard of a count: "a card for each", "X cards", "cards equal to"
+
+A discard whose size is a count, not a number printed on the card: "Target player discards a card
+for each Swamp you control" (Mind Sludge), "Target opponent discards a card for each Shrine you
+control" (Honden of Night's Reach), "Target player discards X cards, where X is one plus the number
+of cards named ~ in all graveyards" (Mind Burst), and "Target player discards X cards" with the X
+paid. The discarding player still chooses, as in every discard that does not say "at random", and
+the count is clamped to the hand.
+
+The engine change underneath: a question the card works out as it is asked (`DecisionSpecOf`, a
+function since cumulative upkeep) now also gets the resolution's own context: its controller,
+targets and X (`askingContext` in `automation.ts`). Until now it saw only the board and the
+source, so it could not know the X paid or whose Swamps to count. The two compiler wrappers that
+put a "you may" or an "unless" around a computed question pass the context through.
+
+"Each player/opponent discards …" reads only over a count that does not name the player
+discarding ("for each card in their hand" would be a different count for each of them).
+
+Read whole now (8 of the 26 such lines in the unread list): Mind Sludge, Mind Burst, Arcane Omens,
+Enthrall, Honden of Night's Reach, Voices from the Void, Bloodhusk Ritualist, and Rakdos's Return
+(its "that player or that planeswalker's controller" is D1058's rewrite).
+Still unread: "that player discards that many cards" after a hit (Dreamstealer, Needle Specter),
+counts of things that died or were devoured this turn (Ashen-Skin Zubera, Tar Fiend), and the
+draw-then-discard-that-many chains (Laquatus's Creativity, Horrid Shadowspinner, Varina).
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- "A card for each Mountain you control": three Mountains, a question of three cards to the
+  player targeted.
+- "X cards": the X paid (2) is the size of the question.
+- "Each opponent discards X cards, where X is …": four Mountains, four cards.
+- "That player or that planeswalker's controller discards X cards": the player dealt the damage
+  discards.
+- A count larger than the hand takes the whole hand without asking.
+
+Faults injected by hand: 3, all caught.
+- The count fixed at one.
+- The engine not passing the context (the count reads nought).
+- The X read one high.
+
+Coverage: 16,361 of 31,900 cards (+7 over D1194's 16,354), 38,713 of 59,888 lines (+8).
