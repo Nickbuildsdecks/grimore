@@ -38054,6 +38054,85 @@ describe('an X/X token, where X is a measure (D1172)', () => {
   });
 });
 
+describe('sacrifice "X or Y", a token, a Vehicle (D1173)', () => {
+  const ROWS = [
+    { name: 'Test Lurker', type_line: 'Creature — Horror', oracle_text: 'When Test Lurker enters, you may sacrifice another creature or artifact. If you do, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Sheriff', type_line: 'Creature — Halfling', oracle_text: 'When Test Sheriff enters, you may sacrifice a token. If you do, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Edict', type_line: 'Sorcery', oracle_text: 'Target player sacrifices a nontoken creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a 1/1 white Soldier creature token.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Wagon', type_line: 'Artifact — Vehicle', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Hauler', type_line: 'Creature — Human', oracle_text: 'When Test Hauler enters, you may sacrifice another creature or Vehicle. If you do, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1173', name: 'Sacrifices',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 42 }],
+    data: ROWS as never[],
+  });
+  const at = (mine: string[], theirs: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1173', 1: 'd1173' }, deckSpecs: { d1173: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, extra: Record<string, unknown> = {}): GameState =>
+    passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra } as Action));
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 3), ROWS[7]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"another creature or artifact": the Golem and the Relic are offered, the Swamp and the Lurker are not', () => {
+    let s = cast(at(['Swamp', 'Test Golem', 'Test Relic'], [], ['Test Lurker']), 'Test Lurker');
+    for (let i = 0; i < 3 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    // "You may": yes first, then which.
+    expect(s.pendingDecision!.options).toEqual(['Yes', 'No']);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action);
+    expect(s.pendingDecision!.candidates.map((id) => named(s, id)).sort()).toEqual(['Test Golem', 'Test Relic']);
+    const relic = find(s, 0, 'battlefield', 'Test Relic');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [relic] } as Action), 40);
+    expect(s.instances[relic]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('"another creature or Vehicle": the Vehicle and the Golem, not the plain artifact', () => {
+    let s = cast(at(['Swamp', 'Test Golem', 'Test Relic', 'Test Wagon'], [], ['Test Hauler']), 'Test Hauler');
+    for (let i = 0; i < 3 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action);
+    expect(s.pendingDecision!.candidates.map((id) => named(s, id)).sort()).toEqual(['Test Golem', 'Test Wagon']);
+  });
+
+  it('"a token": only the token is offered', () => {
+    let s = drain(cast(at(['Swamp', 'Test Golem'], [], ['Test Spawner', 'Test Sheriff']), 'Test Spawner'), 20);
+    s = cast(s, 'Test Sheriff');
+    for (let i = 0; i < 3 && s.pendingDecision === null && s.stackOrder.length > 0; i++) s = passBoth(s);
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action);
+    // One candidate, so the choice makes itself, if it is asked at all.
+    if (s.pendingDecision !== null) {
+      expect(s.pendingDecision.candidates.map((id) => named(s, id))).toEqual(['Soldier']);
+      s = apply(s, { type: 'auto:decide', by: 0, cards: [...s.pendingDecision.candidates] } as Action);
+    }
+    s = drain(s, 40);
+    expect(ids(s, 0, 'battlefield').map((id) => named(s, id)).sort()).toEqual(['Swamp', 'Test Golem', 'Test Sheriff']);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('"a nontoken creature": the token stays, the Golem goes', () => {
+    let s = at([], ['Test Golem'], ['Test Edict']);
+    // A token on their side: their Soldier, made by hand.
+    const spawned = drain(cast(at([], ['Test Golem'], ['Test Spawner']), 'Test Spawner'), 20);
+    const soldier = ids(spawned, 0, 'battlefield').find((id) => spawned.instances[id]!.isToken)!;
+    s = { ...s, instances: { ...s.instances, [soldier]: { ...spawned.instances[soldier]!, owner: 1, zoneSeat: 1 } },
+      cardDefs: { ...s.cardDefs, [spawned.instances[soldier]!.defKey]: spawned.cardDefs[spawned.instances[soldier]!.defKey]! } };
+    s = apply(s, { type: 'card:move', by: 1, card: soldier, toZone: 'battlefield' });
+    s = drain(cast(s, 'Test Edict', { targets: [{ kind: 'player', seat: 1 }] }), 40);
+    expect(ids(s, 1, 'battlefield').map((id) => named(s, id))).toEqual(['Soldier']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -54306,8 +54385,9 @@ describe('a sacrifice the controller chooses (D471)', () => {
     // A basic land type and a "non-<Subtype>" read since D741, off the printed capitals.
     expect(refused('sacrifice a Forest')).toEqual([]);
     expect(refused('sacrifice a non-Zombie creature')).toEqual([]);
-    // A creature type as the noun, and a keyword filter, still refuse.
-    expect(refused('sacrifice a Goblin')).toHaveLength(1);
+    // A subtype as the noun reads since D1173, off the printed capital ("a Goblin", "a Vehicle";
+    // the D1173 tests pin that only that subtype is offered). A keyword filter still refuses.
+    expect(refused('sacrifice a Goblin')).toEqual([]);
     expect(refused('sacrifice a creature with flying')).toHaveLength(1);
     // And the shapes it does read, so the refusal above is narrow rather than a reader that is off.
     expect(refused('sacrifice a creature')).toEqual([]);

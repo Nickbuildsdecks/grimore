@@ -13051,6 +13051,25 @@ const BOUNCE_COUNTS: Readonly<Record<string, {
 const permanentDescribed = (
   phrase: string,
 ): ((state: GameState, id: string) => boolean) | null => {
+  /*
+    D1173: a disjunction of whole descriptions, "another creature or artifact", "a creature or land",
+    "an artifact or creature", "a creature or Vehicle", "a creature, artifact, or enchantment". Read
+    only when every part is a description of its own; otherwise the "or" is the colour list's ("a red
+    or green creature"), which the reader below takes as one description.
+  */
+  const parts = phrase.trim().split(/,\s*(?:or\s+)?|\s+or\s+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const each = parts.map((part) => permanentDescribedOne(part));
+    if (each.every((test) => test !== null)) {
+      return (state, id) => each.some((test) => test!(state, id));
+    }
+  }
+  return permanentDescribedOne(phrase);
+};
+
+const permanentDescribedOne = (
+  phrase: string,
+): ((state: GameState, id: string) => boolean) | null => {
   const printedWords = phrase.trim().split(/\s+/).filter((word) => word.toLowerCase() !== 'or');
   const words = printedWords.map((word) => word.toLowerCase());
   // A basic land type as the noun (D741): "an untapped Island", "two Forests", "a Swamp".
@@ -13062,6 +13081,22 @@ const permanentDescribed = (
   if (basicNoun !== undefined) {
     words.pop();
     words.push('land');
+  }
+  // D1173: "a token", "a creature token", "an artifact token": the noun is the token, and a
+  // permanent type before it is the type.
+  let token: boolean | undefined;
+  if (/^tokens?$/.test(words[words.length - 1] ?? '')) {
+    token = true;
+    words.pop();
+    printedWords.pop();
+    if (words.length === 0 || !PERMANENT_TYPES.includes(words[words.length - 1]!)) words.push('permanent');
+  }
+  // D1173: a capitalised subtype as the noun, "a Vehicle", "an Equipment", "a Food".
+  const subtypeNoun = basicNoun === undefined && /^[A-Z][a-z'-]*$/.test(printedWords[printedWords.length - 1] ?? '')
+    ? printedWords[printedWords.length - 1]! : undefined;
+  if (subtypeNoun !== undefined) {
+    words.pop();
+    words.push('permanent');
   }
   const noun = (words.pop() ?? '').replace(/s$/, '');
   /*
@@ -13080,6 +13115,7 @@ const permanentDescribed = (
   const notSubtypes: string[] = [];
   for (const [i, word] of words.entries()) {
     if (word === 'nonland') { nonland = true; continue; }
+    if (word === 'nontoken') { token = false; continue; }
     if (word === 'untapped' || word === 'tapped') { tapped = word === 'tapped'; continue; }
     if (word === 'basic' || word === 'nonbasic') { basic = word === 'basic'; continue; }
     const notSub = /^non-([A-Z][A-Za-z'-]*)$/.exec(printedWords[i] ?? '');
@@ -13095,6 +13131,8 @@ const permanentDescribed = (
     if (type !== null && !hasType(live.typeLine, type)) return false;
     if (nonland && hasType(live.typeLine, 'land')) return false;
     if (basicNoun !== undefined && !hasSubtype(live.typeLine, basicNoun)) return false;
+    if (subtypeNoun !== undefined && !hasSubtype(live.typeLine, subtypeNoun.toLowerCase())) return false;
+    if (token !== undefined && (inst.isToken === true) !== token) return false;
     if (tapped !== undefined && inst.tapped !== tapped) return false;
     if (basic !== undefined && live.typeLine.supertypes.some((t) => t.toLowerCase() === 'basic') !== basic) return false;
     if (notSubtypes.some((sub) => hasSubtype(live.typeLine, sub))) return false;
