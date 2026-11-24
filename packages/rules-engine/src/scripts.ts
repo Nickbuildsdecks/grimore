@@ -28489,7 +28489,13 @@ function conjoinedEffect(
     .map((part, i) => (i === 0 ? part : part.replace(/^you (untap|tap|create|exile|destroy|return|sacrifice|search|put|investigate|proliferate)\b/i, '$1')))
     // "Create a 3/3 … token with deathtouch and a 3/3 … token with lifelink" (D810, Wurmcoil Engine):
     // a later part that is only the next token takes the verb back.
-    .map((part, i, all) => (i > 0 && /^create\b/i.test(all[0]!) && /^(a|an|one|two|three|\d+) .*\btokens?\b/i.test(part) ? `create ${part}` : part));
+    .map((part, i, all) => (i > 0 && /^create\b/i.test(all[0]!) && /^(a|an|one|two|three|\d+) .*\btokens?\b/i.test(part) ? `create ${part}` : part))
+    /*
+      "Put a +1/+1 counter on ~ and it can't be blocked this turn" (D838, Kappa Cannoneer): "it" is
+      the card the first part named, not the trigger's subject, which on "whenever an artifact you
+      control enters" is the artifact. So the name is carried into the later part.
+    */
+    .map((part, i, all) => (i > 0 && new RegExp(`\\bon (?:${selfRef(name)})$`, 'i').test(all[0]!) ? part.replace(/^it\b/i, name) : part));
   if (parts.length < 2) return null;
   return composeEffects(parts, name, where);
 }

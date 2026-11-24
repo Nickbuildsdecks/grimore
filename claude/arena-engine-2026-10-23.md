@@ -43893,3 +43893,28 @@ Faults injected by script: 4 of 4 caught (the flag not set, the death not narrow
 
 - engine tests: 6438, all passing (on d581153)
 - Coverage: 16,561 to 16,566 of 31,900 cards with every line read, and 38,978 to 38,983 of 59,888 lines, against d581153.
+
+## D838 — "Put a +1/+1 counter on ~ and it …": the "it" is the card (Kappa Cannoneer)
+
+Most-played order: Kappa Cannoneer (rank 888), with Infernal Pet.
+
+"Whenever an artifact you control enters, put a +1/+1 counter on Kappa Cannoneer and it can't be
+blocked this turn." The second half did not read, and the shape had a worse problem beside it. On
+a trigger about another permanent, a bare "it" is read as the event's subject (the docblock above
+`selfEffect` explains why: Armory of Iroas's "put a +1/+1 counter on it" is the equipped creature).
+So "… on ~ and it gains flying" would have given the entering artifact flying, not the card. In
+this sentence "it" is the card the first half named.
+
+**Reader.** In `conjoinedEffect`, when the first part ends "on <the card's name>", a later part
+that begins with "it" has the name put in its place. "It can't be blocked this turn" then reads as
+the card's own restriction.
+
+**Tests.** 2 engine tests:
+- both cards read;
+- an artifact creature entering puts a counter on the Cannoneer, which also can't be blocked, and
+  on a second watcher, which also gains flying. The artifact gets neither.
+
+Faults injected by script: 1 of 1 caught (the name not carried into "it").
+
+- engine tests: 6440, all passing (on f2b4851)
+- Coverage: 16,566 to 16,567 of 31,900 cards with every line read, and 38,983 to 38,984 of 59,888 lines, against f2b4851. Infernal Pet already read before, with "it" resolved through the cast event, whose subject is unset, so it was not counted twice.

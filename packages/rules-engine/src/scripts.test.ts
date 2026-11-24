@@ -40231,6 +40231,37 @@ describe('"When ~ dies, if it was a creature, return it … It\'s an enchantment
   });
 });
 
+describe('"put a +1/+1 counter on ~ and it …": "it" is the card, Kappa Cannoneer (D838)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Kappa', 'Artifact Creature — Turtle Warrior', "Whenever an artifact you control enters, put a +1/+1 counter on Test Kappa and it can't be blocked this turn.", { power: '4', toughness: '4' }),
+    R('Test Flier', 'Creature — Imp', 'Whenever an artifact you control enters, put a +1/+1 counter on Test Flier and it gains flying until end of turn.', { power: '1', toughness: '1' }),
+    R('Test Golem', 'Artifact Creature — Golem', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd838', name: 'Kappa', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }], data: ROWS as never[] });
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an artifact entering: the counter and the rider go on the card, not on the artifact', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd838', 1: 'd838' }, deckSpecs: { d838: deck.deck },
+      hands: { 0: ['Test Golem'] }, battlefield: { 0: ['Test Kappa', 'Test Flier'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Golem') });
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    const of = (name: string) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', name)]!);
+    expect(of('Test Kappa')).toMatchObject({ power: 5, cantBeBlocked: true });
+    expect(of('Test Flier').power).toBe(2);
+    expect(of('Test Flier').keywords.has('flying')).toBe(true);
+    expect(of('Test Golem').keywords.has('flying')).toBe(false);
+    expect(of('Test Golem').cantBeBlocked).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
