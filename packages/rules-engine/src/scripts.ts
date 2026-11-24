@@ -15502,10 +15502,15 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
   };
   // The state words (D749): "all tapped creatures", "each attacking creature", read live.
   // And "nontoken" (D809): Hour of Reckoning's "all nontoken creatures", a fact about the permanent.
-  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped', 'nontoken'];
-  const states = rest.split(/\s+/).filter((word) => STATE_WORDS.includes(word.toLowerCase())).map((word) => word.toLowerCase());
+  // And "token" (D1175): "creature tokens you control", "all Skeleton tokens", "each token you
+  // control", the noun "token" with a type before it or none ("tokens" alone is every token).
+  const STATE_WORDS = ['attacking', 'blocking', 'untapped', 'tapped', 'nontoken', 'token', 'tokens'];
+  const states = rest.split(/\s+/).filter((word) => STATE_WORDS.includes(word.toLowerCase()))
+    .map((word) => (word.toLowerCase() === 'tokens' ? 'token' : word.toLowerCase()));
   rest = rest.split(/\s+/).filter((word) => !STATE_WORDS.includes(word.toLowerCase())).join(' ');
+  if (states.includes('token') && rest.trim() === '') rest = 'permanents';
   const inState = (state: GameState, id: string, tapped: boolean): boolean => states.every((word) => {
+    if (word === 'token') return state.instances[id]?.isToken === true;
     if (word === 'tapped') return tapped;
     if (word === 'untapped') return !tapped;
     if (word === 'nontoken') return state.instances[id]?.isToken !== true;
@@ -15667,6 +15672,8 @@ const MASS_PUMP_SUBJECTS: string = [
   // get -1/-1", "Creatures you control with +1/+1 counters on them gain trample".
   "(?:all |other )?(?:non-?)?(?:white|blue|black|red|green|colorless|multicolored|monocolored) creatures(?: you control| your opponents control| you don't control)?",
   "(?:all |other )?creatures(?: you control| your opponents control| you don't control)? with [a-z0-9+/ -]+?",
+  // D1175: "Creature tokens you control get +1/+1 until end of turn", read by `massScope`.
+  "(?:all |other )?creature tokens(?: you control| your opponents control| you don't control)?",
 ].join('|');
 
 /**

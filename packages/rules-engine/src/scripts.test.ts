@@ -38221,6 +38221,56 @@ describe('an edict of any description (D1174)', () => {
   });
 });
 
+describe('tokens in a scope (D1175)', () => {
+  const ROWS = [
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a 1/1 white Soldier creature token. Create a Treasure token.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Cull', type_line: 'Sorcery', oracle_text: 'Destroy all creature tokens.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Census', type_line: 'Sorcery', oracle_text: 'Draw a card for each token you control.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Rally', type_line: 'Sorcery', oracle_text: 'Creature tokens you control get +1/+1 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1175', name: 'Tokens',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 45 }],
+    data: ROWS as never[],
+  });
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  /** Seat 0 with a Golem, a Soldier token and a Treasure token, and a card in hand. */
+  const table = (card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1175', 1: 'd1175' }, deckSpecs: { d1175: deck.deck },
+      hands: { 0: ['Test Spawner', card] }, battlefield: { 0: ['Test Golem'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spawner') })), 20);
+    return s;
+  };
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"all creature tokens": the Soldier dies; the Golem and the Treasure stay', () => {
+    const s = cast(table('Test Cull'), 'Test Cull');
+    expect(ids(s, 0, 'battlefield').map((id) => named(s, id)).sort()).toEqual(['Test Golem', 'Treasure']);
+  });
+
+  it('"each token you control": two, the Treasure counted with the Soldier', () => {
+    const before = table('Test Census');
+    const hand = ids(before, 0, 'hand').length;
+    const s = cast(before, 'Test Census');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('"creature tokens you control get +1/+1": the Soldier, not the Golem', () => {
+    const s = cast(table('Test Rally'), 'Test Rally');
+    const soldier = find(s, 0, 'battlefield', 'Soldier');
+    const golem = find(s, 0, 'battlefield', 'Test Golem');
+    expect([power(s, soldier), power(s, golem)]).toEqual([2, 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
