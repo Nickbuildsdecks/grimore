@@ -31222,8 +31222,15 @@ function composeEffects(
   }
   // "You create a 2/2 black Zombie creature token" is "Create …" (D1143): the subject is the
   // controller either way, and it is printed after a clause about another player (No Way Out).
+  /*
+    And "Then" at the head of a sentence (D1179): "Put a +1/+1 counter on ~. Then draw a card." The
+    sentences of a group already happen in order (CR 608.2c), so "then" says nothing a reader needs.
+    One reader needs the word itself, Chain Lightning's "then that player … may pay", and keeps it.
+  */
   const clauses = printedClauses
     .map((clause) => clause.replace(/^(\s*)you create /i, (_m, lead: string) => `${lead}Create `))
+    .map((clause) => (/^\s*then that player or that permanent's controller may pay\b/i.test(clause)
+      ? clause : clause.replace(/^(\s*)then,?\s+/i, '$1')))
     .flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would

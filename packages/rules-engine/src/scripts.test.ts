@@ -38420,6 +38420,52 @@ describe('an anthem with a count (D1178)', () => {
   });
 });
 
+describe('a sentence that starts with "Then" (D1179)', () => {
+  const ROWS = [
+    { name: 'Test Pyremaw', type_line: 'Creature — Dragon', oracle_text: 'Whenever you cast an instant or sorcery spell, put a +1/+1 counter on Test Pyremaw. Then Test Pyremaw deals damage equal to its power to target opponent.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Study', type_line: 'Sorcery', oracle_text: 'You gain 2 life. Then draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Cache', type_line: 'Sorcery', oracle_text: 'You gain 2 life. Then if you have more life than an opponent, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1179', name: 'Then',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1179', 1: 'd1179' }, deckSpecs: { d1179: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('in order: the counter first, then damage equal to the new power', () => {
+    let s = table(['Test Study'], ['Test Pyremaw']);
+    const before = life(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Study') });
+    // The trigger asks for its opponent; there is one.
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(s, 20);
+    expect(life(s, 1)).toBe(before - 3);
+  });
+
+  it('both sentences of a spell happen: two life and a card', () => {
+    let s = table(['Test Study'], []);
+    const [lifeBefore, hand] = [life(s, 0), ids(s, 0, 'hand').length];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Study') })), 20);
+    expect([life(s, 0), ids(s, 0, 'hand').length]).toEqual([lifeBefore + 2, hand - 1 + 1]);
+  });
+
+  it('"Then if …" is the condition, checked after the first sentence: 22 against 20 draws', () => {
+    let s = table(['Test Cache'], []);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Cache') })), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
