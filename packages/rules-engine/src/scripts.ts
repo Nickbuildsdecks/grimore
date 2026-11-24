@@ -15516,6 +15516,14 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
       ? Object.values(inst.counters).some((n) => (n ?? 0) > 0)
       : (inst.counters[kind] ?? 0) > 0);
   }
+  // And its negation (D1208): "creatures without flying" (Seismic Stomp, Hurricane's opposite).
+  const withoutKeyword = /\s+without ([a-z]+(?: [a-z]+)?)$/i.exec(rest);
+  if (withoutKeyword !== null && isKeyword(withoutKeyword[1]!.toLowerCase())) {
+    rest = rest.slice(0, withoutKeyword.index);
+    const keyword = withoutKeyword[1]!.toLowerCase() as Keyword;
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && !characteristicsOf(state, inst).keywords.has(keyword);
+  }
   const withKeyword = /\s+with ([a-z]+(?: [a-z]+)?)$/i.exec(rest);
   if (withKeyword !== null && isKeyword(withKeyword[1]!.toLowerCase())) {
     rest = rest.slice(0, withKeyword.index);
@@ -27621,6 +27629,23 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    The same over a group (D1208): "Creatures without flying can't block this turn" (Seismic Stomp),
+    "Creatures your opponents control can't block this turn", "Creatures with power 2 or less can't
+    block this turn". Any creature scope the mass pump reads, as it stands when this resolves.
+  */
+  const groupBlocking = /^(.+?) can'?t (be blocked|block|attack|attack or block) this turn$/i.exec(text);
+  if (groupBlocking !== null && !/\btarget\b/i.test(groupBlocking[1]!) && /\bcreatures\b/i.test(groupBlocking[1]!)) {
+    const subject = massPumpSubject(groupBlocking[1]!);
+    const how = groupBlocking[2]!.toLowerCase();
+    if (subject !== null && subject.targets === undefined) {
+      const options: PumpOptions = how === 'be blocked' ? UNBLOCKABLE
+        : how === 'attack' ? { cantAttack: true }
+          : how === 'attack or block' ? { cantAttack: true, cantBlock: true } : CANNOT_BLOCK;
+      return { effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, options) };
+    }
+  }
+
+  /*
     **The blocking requirements, until end of turn** (D913, CR 509.1c): "target creature blocks ~
     this turn if able" (an ability of the attacker that names it), "target creature blocks this turn
     if able", "target creature must be blocked this turn if able" and "all creatures able to block
@@ -28644,6 +28669,9 @@ function readEffect(
     const read = readEffect(`${eachOne[1]!}${eachOne[1] === '' ? subject.charAt(0).toUpperCase() + subject.slice(1) : subject} ${verb} ${rest}`, name, where);
     if (read !== null) return read;
   }
+  // "You draw a card and lose 1 life" (D1208): the "you" said once, read as "… and you lose 1 life".
+  const drawAndLose = /^you draw (.+?) and lose (\w+) life$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (drawAndLose !== null) return readEffect(`You draw ${drawAndLose[1]!} and you lose ${drawAndLose[2]!} life`, name, where);
   const aNumberOf = /^(?:you )?create a number of (.+?) equal to (.+)$/i.exec(clause.trim().replace(/\.$/, ''));
   if (aNumberOf !== null && !/\bX\b/.test(clause)) {
     return readEffect(`Create X ${aNumberOf[1]!}, where X is ${aNumberOf[2]!}`, name, where);

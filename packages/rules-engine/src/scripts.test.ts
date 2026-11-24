@@ -39931,6 +39931,46 @@ describe('a return from the graveyard on another card\'s death (D1207)', () => {
   });
 });
 
+describe('a group that can\'t block this turn, and "you draw a card and lose 1 life" (D1208)', () => {
+  const ROWS = [
+    { name: 'Test Stomp', type_line: 'Sorcery', oracle_text: "Creatures without flying can't block this turn.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Pact', type_line: 'Sorcery', oracle_text: 'You draw a card and lose 1 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bird', type_line: 'Creature — Bird', oracle_text: 'Flying', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1208', name: 'No blocks',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1208', 1: 'd1208' }, deckSpecs: { d1208: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"creatures without flying can\'t block this turn": the Bear can\'t, the Bird still can', () => {
+    const s = cast(table('Test Stomp', ['Test Cub', 'Test Bird']), 'Test Stomp');
+    expect(characteristicsOf(s, s.instances[find(s, 1, 'battlefield', 'Test Cub')]!).cantBlock).toBe(true);
+    expect(characteristicsOf(s, s.instances[find(s, 1, 'battlefield', 'Test Bird')]!).cantBlock ?? false).toBe(false);
+  });
+
+  it('"you draw a card and lose 1 life": both', () => {
+    let s = table('Test Pact');
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Pact');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 1);
+    expect(life(s, 0)).toBe(19);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

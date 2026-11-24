@@ -14676,7 +14676,8 @@ describe('four clauses naming mechanics the engine already had (D528)', () => {
 
   it.each([
     ['"it", whose referent no clause reader is handed', "It can't be blocked this turn."],
-    ['an untargeted board scope', "Creatures without flying can't block this turn."],
+    // "Creatures without flying can't block this turn" was this row until D1208 read a group's scope.
+    ['an untargeted board scope with a price', "Creatures can't block this turn unless their controller sacrifices a land."],
     // D625 reads "with power 2 or less"; an or across two bounds is still refused.
     ['a power-or-toughness clause in the target phrase',
       "Target creature with power or toughness 2 or less can't be blocked this turn."],
