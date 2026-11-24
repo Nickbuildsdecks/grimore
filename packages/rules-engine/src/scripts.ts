@@ -14786,6 +14786,41 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       },
     };
   }
+  /*
+    A graveyard, or a hand and a graveyard, shuffled into the library (D1215): Timetwister and Echo
+    of Eons ("Each player shuffles their hand and graveyard into their library, then draws seven
+    cards"), Reminisce and Thran Foundry ("Target player shuffles their graveyard into their
+    library"), Feldon's Cane ("Shuffle your graveyard into your library"), Mnemonic Nexus. Every
+    card goes to its owner's library, then the library is shuffled, then the draws (in seat order,
+    as the wheel's are).
+  */
+  const reshuffled = /^(each player|target player|target opponent|you)? ?shuffles? (?:their|your) (hand and )?graveyard into (?:their|your) library(?:, then draws? (\w+) cards)?$/i.exec(text);
+  if (reshuffled !== null) {
+    const who = (reshuffled[1] ?? 'you').toLowerCase();
+    const withHand = reshuffled[2] !== undefined;
+    const n = reshuffled[3] === undefined ? 0 : countFrom(reshuffled[3]);
+    const spec = who.startsWith('target') ? targetSpecFrom(who, false) : null;
+    if (n !== null && (spec !== null || !who.startsWith('target'))) {
+      const reshuffle = (state: GameState, seat: SeatIndex): GameState => {
+        const cards = [...(withHand ? listAt(state, zoneKey(seat, 'hand')) : []), ...listAt(state, zoneKey(seat, 'graveyard'))];
+        const moved = cards.reduce((next, id) => putOnBottomOfLibrary(next, id), state);
+        return shuffleLibrary(moved, seat);
+      };
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        effect: (c) => {
+          const seats = who === 'each player'
+            ? c.state.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index)
+            : spec !== null ? (() => { const seat = firstPlayerTarget(c); return seat === null ? [] : [seat]; })()
+              : [c.controller];
+          let next = c.state;
+          for (const seat of seats) next = reshuffle(next, seat);
+          if (n > 0) for (const seat of seats) next = draw(next, seat, n);
+          return next;
+        },
+      };
+    }
+  }
   const wheel = /^each player discards their hand(?:, then draws ([\w]+) cards)?$/i.exec(text);
   if (wheel !== null) {
     const n = wheel[1] === undefined ? 0 : countFrom(wheel[1]);
@@ -30481,6 +30516,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/,\s+then shuffle and put (?:that|the) card on top/gi, '\u0001')
     .replace(/,\s+then put them back in any order/gi, '\u0002')
     .replace(/(each player discards their hand),\s+then draws/gi, '$1\u0003')
+    // And the Timetwister sentence (D1215): "… shuffles their hand and graveyard into their library, then draws seven cards".
+    .replace(/(shuffles? (?:their|your) (?:hand and )?graveyard into (?:their|your) library),\s+then draws?/gi, (_m, head: string) => `${head}\u0003`)
     // Living Death (D677): three steps, one sentence, every "they" the same seat.
     .replace(/(each player exiles all creature cards from their graveyard),\s+then (sacrifices all creatures they control),\s+then (puts all cards they exiled this way onto the battlefield)/gi, '$1\u0006$2\u0006$3')
     // And Gray Merchant's second sentence (D656), which is about the first one's result.

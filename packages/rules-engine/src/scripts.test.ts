@@ -40461,6 +40461,55 @@ describe('"put a +1/+1 counter on ~ and it …": "it" is the card, Kappa Cannone
   });
 });
 
+describe('a graveyard (and a hand) shuffled into the library (D1215)', () => {
+  const ROWS = [
+    { name: 'Test Twister', type_line: 'Sorcery', oracle_text: 'Each player shuffles their hand and graveyard into their library, then draws seven cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Reminisce', type_line: 'Sorcery', oracle_text: 'Target player shuffles their graveyard into their library.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1215', name: 'Reshuffle',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1215', 1: 'd1215' }, deckSpecs: { d1215: deck.deck },
+      hands: { 0: hand }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const seat of [0, 1] as const) {
+      for (const id of ids(s, seat, 'library').slice(0, 3)) s = apply(s, { type: 'card:move', by: seat, card: id, toZone: 'graveyard' } as Action);
+    }
+    return s;
+  };
+  const total = (s: GameState, seat: 0 | 1): number => ['library', 'hand', 'graveyard'].reduce((n, zone) => n + ids(s, seat, zone as never).length, 0);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"each player shuffles their hand and graveyard into their library, then draws seven": empty graveyards, seven cards each', () => {
+    let s = table(['Test Twister']);
+    const before = [total(s, 0), total(s, 1)];
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Twister') } as Action)), 30);
+    for (const seat of [0, 1] as const) {
+      expect(ids(s, seat, 'hand')).toHaveLength(7);
+      expect(ids(s, seat, 'graveyard').filter((id) => nameOf(s, id) !== 'Test Twister')).toHaveLength(0);
+    }
+    // Nothing lost: the Twister itself is in its owner's graveyard, every other card in a library or hand.
+    expect([total(s, 0), total(s, 1)]).toEqual(before);
+  });
+
+  it('"target player shuffles their graveyard into their library": only theirs', () => {
+    let s = table(['Test Reminisce']);
+    const library = ids(s, 1, 'library').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Reminisce'), targets: [{ kind: 'player', seat: 1 }] } as Action)), 30);
+    expect(ids(s, 1, 'graveyard')).toHaveLength(0);
+    expect(ids(s, 1, 'library')).toHaveLength(library + 3);
+    expect(ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) !== 'Test Reminisce')).toHaveLength(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
