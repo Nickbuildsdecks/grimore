@@ -42626,3 +42626,29 @@ the damage dealt, and one opponent's worth gained).
 
 - engine tests: 6228, all passing (on 2a4f236; the first gate run was lost to a container restart and re-run)
 - Coverage: 15,846 to 15,848 of 31,900 cards with every line read, and 38,022 to 38,024 of 59,888 lines, against 2a4f236.
+
+## D1174 — an edict of any description
+
+"Each player / each opponent / defending player sacrifices a …" read a fixed list of kinds:
+creature, permanent, artifact, land, enchantment, nonland permanent and the nontoken pair. Any
+other description stayed unread. It now falls back to `permanentDescribed`, which since D1173
+reads disjunctions, tokens and subtypes: "each opponent sacrifices a creature token", "each
+opponent sacrifices an artifact or creature", "… a creature or planeswalker", "… an untapped
+creature", "each player sacrifices a Goblin". One each, each player choosing from their own, as the
+fixed kinds do. A description with "with", "that", "they control", "of their choice", "unless" or
+"for each" is left to its own readers.
+
+Read whole now, among others: Anowon, the Ruin Sage; Demon's Disciple; Mire in Misery; Pyretic
+Prankster; Tribute to the Wild. Still unread: keyword filters ("a creature with flying") and the
+greatest-power edicts that name another shape.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "A creature token": the Soldier goes, the Golem stays.
+- "An artifact or creature": the Relic is the only one, so it goes; the Swamp stays.
+
+Faults injected by hand: 2, all caught.
+- The description ignored (anything offered).
+- Nothing sacrificed.
+
+Coverage: 16,102 of 31,900 cards (+11 over D1173's 16,091), 38,394 of 59,888 lines (+24). The difference also counts the D7xx session's D831, merged in after D1173 was measured.
