@@ -39472,6 +39472,50 @@ describe('"create a number of … tokens equal to …", and "~\'s power" (D1197)
   });
 });
 
+describe('"the amount of life you gained this turn" (D1198)', () => {
+  const ROWS = [
+    { name: 'Test Pulse', type_line: 'Sorcery', oracle_text: 'You gain 2 life. Target creature gets -X/-X until end of turn, where X is the amount of life you gained this turn.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Snack', type_line: 'Instant', oracle_text: 'Target opponent loses X life, where X is the amount of life you gained this turn.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Tonic', type_line: 'Instant', oracle_text: 'You gain 3 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '4', toughness: '4' },
+  ];
+  const deck = customDeck({
+    id: 'd1198', name: 'Life gained',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1198', 1: 'd1198' }, deckSpecs: { d1198: deck.deck },
+    hands: { 0: hand }, battlefield: { 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: unknown[]): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the life gained earlier this turn and by the spell itself both count: 3 then 2 is -5/-5, which kills a 4/4 that either alone would not', () => {
+    let s = table(['Test Tonic', 'Test Pulse'], ['Test Ogre']);
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = cast(s, 'Test Tonic');
+    s = cast(s, 'Test Pulse', [{ kind: 'card', id: ogre }]);
+    expect(s.instances[ogre]?.zone).toBe('graveyard');
+  });
+
+  it('only this turn, and only yours: none gained is no life lost', () => {
+    let s = table(['Test Snack']);
+    s = cast(s, 'Test Snack', [{ kind: 'player', seat: 1 }]);
+    expect(life(s, 1)).toBe(20);
+    let t = table(['Test Tonic', 'Test Snack']);
+    t = cast(t, 'Test Tonic');
+    t = cast(t, 'Test Snack', [{ kind: 'player', seat: 1 }]);
+    expect(life(t, 1)).toBe(17);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

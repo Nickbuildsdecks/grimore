@@ -13922,8 +13922,9 @@ describe('a quantity read off the board (D520)', () => {
     // "… with a +1/+1 counter on it" was this row until D1169 taught `massScope` counters and keywords.
     ['a count qualified past the vocabulary',
       'Draw a card for each creature you control with flying and vigilance.'],
+    // "… the amount of life you gained this turn" was this row until D1198 read it.
     ['a quantity that is not a count of the board at all',
-      'You gain X life, where X is the amount of life you gained this turn.'],
+      'You gain X life, where X is the amount of damage dealt to you this turn.'],
     ['a verb this table has no row for', 'Scry 1 for each card in your hand.'],
     ['generic mana, which a pool cannot hold', 'Add {2} for each creature you control.'],
     ['a where-X tail whose body does not say X',
