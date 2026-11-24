@@ -21313,6 +21313,20 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
     gain life equal to that creature's toughness" (Tribute to Hunger, Consuming Vapors). The last
     card chosen, as it last was.
   */
+  /*
+    "~'s power" / "~'s toughness" (D1197): the source's own size. Live while it is on the
+    battlefield (Jacked Rabbit's attack); once it has left, as it last was, from the size the event
+    recorded as it happened (Termagant Swarm's death, CR 608.2h). Never below 0 as a count.
+  */
+  const ownSize = new RegExp(`^${selfRef(name)}'s (power|toughness)$`, 'i').exec(plain(phrase).trim().replace(/\.$/, ''));
+  if (ownSize !== null) {
+    const which = ownSize[1]!.toLowerCase() as 'power' | 'toughness';
+    return (c) => {
+      const inst = c.state.instances[c.source];
+      if (inst !== undefined && inst.zone === 'battlefield') return Math.max(0, characteristicsOf(c.state, inst)[which]);
+      return Math.max(0, c.subjectStats?.[which] ?? 0);
+    };
+  }
   const picked = !earlierCardTarget && earlierChosenPermanent
     ? /^that creature's (power|toughness)$/i.exec(plain(phrase).trim().replace(/\.$/, ''))
     : null;
@@ -28470,6 +28484,17 @@ function readEffect(
   if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
     xAnnounced += 1;
     try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
+  }
+  /*
+    "Create a number of 1/1 white Soldier creature tokens equal to your devotion to white" (D1197):
+    the same sentence as "Create X 1/1 white Soldier creature tokens, where X is your devotion to
+    white", which reads (D1172 and before), so it is read as that. Evangel of Heliod, Master of
+    Waves, Chittering Witch, Goblin Gathering, Jacked Rabbit. Not where the clause has an X of its
+    own, which would be two different numbers.
+  */
+  const aNumberOf = /^(?:you )?create a number of (.+?) equal to (.+)$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (aNumberOf !== null && !/\bX\b/.test(clause)) {
+    return readEffect(`Create X ${aNumberOf[1]!}, where X is ${aNumberOf[2]!}`, name, where);
   }
   /*
     "For each opponent, you create a 1/1 black and green Pest creature token with …" (D1165): the

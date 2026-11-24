@@ -39418,6 +39418,60 @@ describe('"that player discards that many cards", and a counted question about "
   });
 });
 
+describe('"create a number of … tokens equal to …", and "~\'s power" (D1197)', () => {
+  const ROWS = [
+    { name: 'Test Evangel', type_line: 'Creature — Human Cleric', oracle_text: 'When Test Evangel enters, create a number of 1/1 white Soldier creature tokens equal to the number of Mountains you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '1' },
+    { name: 'Test Gathering', type_line: 'Sorcery', oracle_text: 'Create a number of 1/1 red Goblin creature tokens equal to two plus the number of Mountains you control.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Rabbit', type_line: 'Creature — Rabbit', oracle_text: 'Whenever Test Rabbit attacks, create a number of 1/1 white Rabbit creature tokens equal to Test Rabbit\'s power.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Swarm', type_line: 'Creature — Tyranid', oracle_text: 'When Test Swarm dies, create a number of 1/1 green Tyranid creature tokens equal to Test Swarm\'s power.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1197', name: 'A number of',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], step: Step = 'precombat-main') => advanceTo(arena({
+    decks: { 0: 'd1197', 1: 'd1197' }, deckSpecs: { d1197: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), step);
+  const tokens = (s: GameState, word: string): number => ids(s, 0, 'battlefield')
+    .filter((id) => s.instances[id]!.isToken === true && (s.cardDefs[s.instances[id]!.defKey]?.typeLine ?? '').includes(word)).length;
+  const MOUNTAINS = ['Mountain', 'Mountain', 'Mountain'];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an enters trigger: three Mountains, three Soldiers', () => {
+    let s = table(['Test Evangel'], MOUNTAINS);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Evangel') })), 30);
+    expect(tokens(s, 'Soldier')).toBe(3);
+  });
+
+  it('"equal to two plus the number of …": five Goblins', () => {
+    let s = table(['Test Gathering'], MOUNTAINS);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Gathering') })), 30);
+    expect(tokens(s, 'Goblin')).toBe(5);
+  });
+
+  it('"equal to ~\'s power" as it attacks: three Rabbits', () => {
+    let s = table([], ['Test Rabbit'], 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Rabbit'), defender: 1 }] });
+    s = drain(s, 30);
+    expect(tokens(s, 'Rabbit')).toBe(3);
+  });
+
+  it('"equal to ~\'s power" once it has died: its power as it last was', () => {
+    let s = table(['Test Bolt'], ['Test Swarm']);
+    const swarm = find(s, 0, 'battlefield', 'Test Swarm');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: swarm }] } as Action)), 30);
+    expect(s.instances[swarm]?.zone).toBe('graveyard');
+    expect(tokens(s, 'Tyranid')).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
