@@ -38466,6 +38466,46 @@ describe('a sentence that starts with "Then" (D1179)', () => {
   });
 });
 
+describe('a trailing "unless" over a condition (D1180)', () => {
+  const ROWS = [
+    { name: 'Test Course', type_line: 'Sorcery', oracle_text: 'Draw two cards. Then discard a card unless you attacked this turn.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Raider', type_line: 'Creature — Pirate', oracle_text: 'Haste', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1180', name: 'Unless',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1180', 1: 'd1180' }, deckSpecs: { d1180: deck.deck },
+    hands: { 0: ['Test Course'] }, battlefield: { 0: ['Test Raider'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState) => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Course') }));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('no attack this turn: two cards, then the discard is asked', () => {
+    const before = table();
+    const hand = ids(before, 0, 'hand').length;
+    const s = cast(before);
+    expect(s.pendingDecision).not.toBeNull();
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+
+  it('after an attack: two cards, and nobody is asked to discard', () => {
+    let s = advanceTo(table(), 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Raider'), defender: 1 }] }), 10);
+    s = advanceTo(s, 'postcombat-main');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(cast(s), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

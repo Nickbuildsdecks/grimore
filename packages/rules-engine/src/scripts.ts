@@ -28924,6 +28924,45 @@ function readEffect(
     }
   }
   /*
+    **A trailing "unless"** (D1180): "Then discard a card unless you attacked this turn" (Chart a
+    Course), "… unless there are three or more Lesson cards in your graveyard" (Chakra Meditation),
+    "… unless this enchantment has three or more quest counters on it" (Anthropological Mission).
+    The negation of a trailing "if", over the same condition vocabulary, so only a condition about
+    the game reads here; "unless you pay", "unless they discard" and the other choices have their
+    own readers and are never conditions. Unlike the "if" form it takes a clause that asks a
+    question, because the question is the discard itself: it is asked only when the condition fails
+    (`askOnlyIf`), checked as the clause resolves.
+  */
+  const unlessHolds = /^(.+?) unless (.+)$/i.exec(clause.trim());
+  if (unlessHolds !== null && !/^if\b/i.test(clause.trim())
+    && !/^(?:you|they|that player|its controller|an opponent|any player|each player|target player)\s+(?:pay|pays|discard|discards|sacrifice|sacrifices|put|puts|return|returns|exile|exiles|reveal|reveals|tap|taps|remove|removes|have|has)\b/i.test(unlessHolds[2]!.trim())) {
+    const holds = interveningConditionFor(unlessHolds[2]!.trim(), name);
+    const then = holds === null ? null : readEffect(unlessHolds[1]!.trim(), name, where);
+    if (holds !== null && then !== null && then.beforeDecisions === undefined && (then.targets ?? []).length === 0) {
+      const bare = (state: GameState, controller: SeatIndex, source: string): EffectContext => ({
+        state, source, controller, targets: [], x: 0, decisions: [], kicked: false,
+      });
+      const fails = (state: GameState, controller: SeatIndex, source: string): boolean => !holds(bare(state, controller, source));
+      const decisions = (then.decisions ?? []).map((spec) => {
+        const withAsk = (one: DecisionSpec): DecisionSpec => {
+          const own = (one as { askOnlyIf?: (state: GameState, controller: SeatIndex, source: string) => boolean }).askOnlyIf;
+          return {
+            ...one,
+            askOnlyIf: (state: GameState, controller: SeatIndex, source: string) => fails(state, controller, source)
+              && (own === undefined || own(state, controller, source)),
+          } as DecisionSpec;
+        };
+        return typeof spec === 'function'
+          ? ((state: GameState, source: string) => withAsk((spec as (st: GameState, src: string) => DecisionSpec)(state, source)))
+          : withAsk(spec as DecisionSpec);
+      });
+      return {
+        ...guardedBy(then, (c) => !holds(c)),
+        ...(decisions.length === 0 ? {} : { decisions: decisions as ReadEffect['decisions'] }),
+      };
+    }
+  }
+  /*
     **A pick from what was just milled** (D1038): "Mill three cards. You may put a land card from among
     them into your hand" (Ainok Wayfarer), "… a permanent card from among the cards milled this way"
     (Cache Grab), "… an artifact, creature, or land card from among the milled cards" (Dredger's
