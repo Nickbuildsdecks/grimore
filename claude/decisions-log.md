@@ -60781,3 +60781,35 @@ Faults injected by hand: 3, all caught.
 - The X read one high.
 
 Coverage: 16,361 of 31,900 cards (+7 over D1194's 16,354), 38,713 of 59,888 lines (+8).
+
+## D1196 — "that player discards that many cards", and a fix for counted questions about "that player"
+
+"Whenever ~ deals combat damage to a player, that player discards that many cards" (Dreamstealer,
+Needle Specter). The player hit chooses the cards; the count is the damage dealt, read as the
+question is asked from the context D1195 hands a computed question (`eventAmount`).
+
+**A fix found on the way.** "That player …" is read by rewriting it as "target player …", reading
+that, and re-aiming the result at the player the event was about (`referentEffect`, D530). The
+re-aim looked only at questions that are plain objects. A question the card works out as it is
+asked (a function) went through untouched, still aimed at a target nobody had chosen, so it asked
+nobody and the clause did nothing. Since D1195 such questions exist for "discards a card for each
+…", so "that player discards a card for each Island you control" would have resolved silently. Now
+the function is wrapped: what it returns is re-aimed, and the context it reads has the referent in
+place of the target. On a clause about a creature it is refused, since what it would ask cannot be
+known when the card is read.
+
+Read whole now: Dreamstealer, Needle Specter. Whispering Specter needs "you may sacrifice it. If you
+do, …" around the same clause, and stays unread.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- Three combat damage: the player hit is asked to discard three cards, and does.
+- "That player discards a card for each Island you control": asked of the player hit, counting the
+  attacker's controller's Islands.
+
+Faults injected by hand: 3, all caught.
+- A computed question not re-aimed (the old behaviour).
+- The count fixed at one.
+- The question asked of the controller instead of the player hit.
+
+Coverage: 16,363 of 31,900 cards (+2 over D1195's 16,361), 38,715 of 59,888 lines (+2).
