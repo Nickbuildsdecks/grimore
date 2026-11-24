@@ -60914,3 +60914,40 @@ Faults injected by hand: 3, all caught.
 - A noncreature's mana value skipped.
 
 Coverage: 16,410 of 31,900 cards (+25 over D1198's 16,385), 38,781 of 59,888 lines (+35).
+
+## D1200 — "each [other] creature [you control] gets …" as the plural it is
+
+"Each creature gets -2/-2 until end of turn", "each other creature you control gets +1/+1 and gains
+trample until end of turn", "Until end of turn, each creature you control gets +2/+2 and gains
+trample": the singular of the plural sentence the mass pump reads. `readEffect` now reads it as that
+plural ("all creatures get …", "other creatures you control get … and gain …"), with the verbs
+made plural too. The mass pump's subject list gains any other creature scope `massScope` reads
+("all other creatures", "all untapped creatures"), and `massPumpSubject` still refuses what it
+cannot read.
+
+Not where the rest of the sentence says "it" or "its" ("+1/+1 for each of its colors", "if it has
+flying", "unless it's tapped"): that is each creature in turn, and the plural has no such word. The
+same point needed a guard in D1180's trailing "unless": it took "unless it's tapped" off "Each
+creature you control gets +1/+1 until end of turn" and read "it" as the source, which before this
+increment was harmless because the body never read. Now a condition about "it" after a body about
+"each …" is refused there too.
+
+Read whole now (15): Avacyn and Griselbrand, Demon of Dark Schemes, Festercreep, Harvester of
+Misery, Kodama of the South Tree, Moonveil Dragon, Phalanx Tactics, Renegade Warlord, Shefet
+Archfiend, Smogsteed Rider, The Meathook Massacre, Thundercloud Elemental, Waterspout Weavers, Wild
+Beastmaster, Zhang He, Wei General.
+
+**Tests.** 3 engine tests:
+- The test cards read whole, and "each creature you control gets +1/+1 until end of turn unless
+  it's tapped" is refused.
+- "Each creature gets -2/-2": the 2/2s on both sides die and the 3/3 is 1/1.
+- "Each other creature you control gets +1/+1 and gains trample": your other creature is 3/3 with
+  trample, the source and the opponent's creature are unchanged.
+
+Faults injected by hand: 4, all caught.
+- "Other" dropped from the subject.
+- The "it" guard removed (caught once the refused sentence was one that would otherwise read).
+- "You control" dropped from the subject.
+- The D1180 guard removed.
+
+Coverage: 16,447 of 31,900 cards (+37 over D1199's 16,410), 38,829 of 59,888 lines (+48).
