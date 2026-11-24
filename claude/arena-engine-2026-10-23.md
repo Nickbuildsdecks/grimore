@@ -43567,3 +43567,31 @@ Faults injected by hand: 3, all caught.
 - The referent guard removed.
 
 Coverage: 16,471 of 31,900 cards (+14 over D1202's 16,457), 38,859 of 59,888 lines (+17).
+
+## D1204 — "A. If …, B instead." where B refers back to A's target
+
+D1203 refused a B that says "it" or "that creature", since read on its own it would name something
+else. When A has exactly one target and B has exactly one such pronoun, the pronoun now becomes A's
+target phrase: "Put a +1/+1 counter on target creature. If …, put two +1/+1 counters on it instead"
+reads B as "put two +1/+1 counters on target creature", and "Target creature gets +2/+2 until end
+of turn. If …, that creature gets +4/+4 until end of turn instead" likewise. The check D1203 already
+makes, that both halves aim the same way, is what keeps the substitution honest: a B aimed at a
+different kind of target ("target creature you control") is refused.
+
+D1203's refusal test moved to a B whose "it" has nothing in A to be ("Draw a card. If …, put a
++1/+1 counter on it instead").
+
+Read whole now (6): For the Family, Galvanize, Huatli's Spurring, Tezzeret's Simulacrum, The
+Destined White Mage, You're Not Alone.
+
+**Tests.** 3 engine tests (and D1203's refusal moved):
+- The test cards read whole, and a B aimed at a different kind of target than A is refused.
+- "Put two +1/+1 counters on it instead": one counter on the target without a Wizard, two with one.
+- "That creature gets +4/+4 instead": +2/+2 without a Wizard, +4/+4 with one, never both.
+
+Faults injected by hand: 3, all caught.
+- The substitution removed.
+- A pronoun with no target in A read on its own.
+- The same-target check removed (caught once a test named a B aimed elsewhere).
+
+Coverage: 16,477 of 31,900 cards (+6 over D1203's 16,471), 38,866 of 59,888 lines (+7).
