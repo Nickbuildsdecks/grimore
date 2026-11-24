@@ -37222,6 +37222,48 @@ describe('"each nonland permanent that\'s not historic", Desynchronization (D830
   });
 });
 
+describe('"deals N damage to each opponent. You gain life equal to the damage dealt this way" (D831)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Syphon', 'Sorcery', 'Test Syphon deals 2 damage to each other player. You gain life equal to the damage dealt this way.'),
+    R('Test Bloodsucker', 'Creature — Vampire', 'At the beginning of your upkeep, Test Bloodsucker deals 1 damage to each opponent. You gain life equal to the damage dealt this way.', { power: '1', toughness: '1' }),
+    R('Test Chasm', 'Land', 'Prevent all damage that would be dealt to you.'),
+  ];
+  const deck = customDeck({ id: 'd831', name: 'Drain', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('in a pod of three: each opponent loses 2, and we gain 4; with one opponent shielded, 2', () => {
+    const run = (shielded: boolean) => {
+      let s = advanceTo(arena({
+        seats: 3, format: 'pod',
+        decks: { 0: 'd831', 1: 'd831', 2: 'd831' }, deckSpecs: { d831: deck.deck },
+        hands: { 0: ['Test Syphon'] }, battlefield: shielded ? { 2: ['Test Chasm'] } : {}, turn: 3, firstSeat: 0,
+      } as never), 'precombat-main');
+      const before = [life(s, 0), life(s, 1), life(s, 2)];
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Syphon') })));
+      return [life(s, 0) - before[0]!, life(s, 1) - before[1]!, life(s, 2) - before[2]!];
+    };
+    expect(run(false)).toEqual([4, -2, -2]);
+    expect(run(true)).toEqual([2, -2, 0]);
+  });
+
+  it("the Bloodsucker's upkeep drains one", () => {
+    let s = arena({
+      decks: { 0: 'd831', 1: 'd831' }, deckSpecs: { d831: deck.deck },
+      battlefield: { 0: ['Test Bloodsucker'] }, turn: 3, firstSeat: 1,
+    } as never);
+    s = advanceTo(nextTurn(s), 'upkeep');
+    const before = [life(s, 0), life(s, 1)];
+    s = drain(passBoth(s));
+    expect([life(s, 0) - before[0]!, life(s, 1) - before[1]!]).toEqual([1, -1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
