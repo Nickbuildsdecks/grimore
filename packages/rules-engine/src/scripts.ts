@@ -22547,12 +22547,25 @@ function referentEffect(
     alone" — the compose-time caller borrows a target that really is on the stack object, so
     `decisionPlan` already resolves the word correctly and rewriting it would break it.
   */
-  const decisions = (read.decisions ?? []).map(
-    (spec) => ('who' in spec && spec.who === 'target-player' && asks !== 'target-player'
-      ? { ...spec, who: asks }
-      : spec),
-  ) as readonly DecisionSpecOf[];
-  if (kind !== 'player' && decisions.some((spec) => 'who' in spec && spec.who === 'target-player')) {
+  const reaim = (spec: DecisionSpec): DecisionSpec => ('who' in spec && spec.who === 'target-player' && asks !== 'target-player'
+    ? { ...spec, who: asks } as DecisionSpec
+    : spec);
+  /*
+    A question the card works out as it is asked (D1196) is re-aimed the same way, by wrapping it:
+    what it returns is re-aimed, and the context it reads has the referent in place of the target it
+    was written against, as the effect's does. Before D1196 such a question went through untouched,
+    still aimed at a target nobody chose, and asked nobody. On a clause about a creature it is
+    refused: what it would ask cannot be known here.
+  */
+  if (kind !== 'player' && (read.decisions ?? []).some((spec) => typeof spec === 'function')) return null;
+  const decisions = (read.decisions ?? []).map((spec): DecisionSpecOf => (typeof spec === 'function'
+    ? (state: GameState, source: string, at?: EffectContext) => {
+      const object = at === undefined ? null : supply({ ...at, state });
+      return reaim(spec(state, source, at === undefined ? undefined
+        : { ...at, state, targets: object === null ? [] : [object] }));
+    }
+    : reaim(spec)));
+  if (kind !== 'player' && decisions.some((spec) => typeof spec !== 'function' && 'who' in spec && spec.who === 'target-player')) {
     return null;
   }
   const aimed = (fn: EffectFn): EffectFn => (c) => {
@@ -29086,6 +29099,20 @@ function readEffect(
     // "That player loses that much life" (D1028): the player the damage hit.
     if (/^that player loses \u000e much life$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : loseLife(c.state, seat, n(c)); } };
+    }
+    /*
+      "That player discards that many cards" (D1196): Dreamstealer, Needle Specter. The player hit
+      chooses, and the count is the damage, read as the question is asked (the context's
+      `eventAmount`, D1195).
+    */
+    if (/^that player discards \u000e many cards$/i.test(text)) {
+      return {
+        decisions: [(state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+          const many = at === undefined ? 0 : Math.max(0, at.eventAmount ?? 0);
+          return { who: 'hit-player', from: 'hand', prompt: `Discard ${many} card${many === 1 ? '' : 's'}`, min: many, max: many };
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
     }
     if (/^that player mills \u000e many cards$/i.test(text)) {
       return { effect: (c) => { const seat = hit(c); return seat === undefined ? c.state : mill(c.state, seat, n(c)); } };

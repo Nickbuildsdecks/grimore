@@ -39369,6 +39369,55 @@ describe('a discard of a count: "a card for each", "X cards" (D1195)', () => {
   });
 });
 
+describe('"that player discards that many cards", and a counted question about "that player" (D1196)', () => {
+  const ROWS = [
+    { name: 'Test Stealer', type_line: 'Creature — Specter', oracle_text: 'Whenever Test Stealer deals combat damage to a player, that player discards that many cards.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '1' },
+    { name: 'Test Haunt', type_line: 'Creature — Specter', oracle_text: 'Whenever Test Haunt deals combat damage to a player, that player discards a card for each Island you control.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1196', name: 'That many discards',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 40 }],
+    data: ROWS as never[],
+  });
+  const swing = (attackerName: string, islands: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1196', 1: 'd1196' }, deckSpecs: { d1196: deck.deck },
+      hands: { 1: Array.from({ length: 5 }, () => 'Island') },
+      battlefield: { 0: [attackerName, ...Array.from({ length: islands }, () => 'Island')] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const attacker = find(s, 0, 'battlefield', attackerName);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] });
+    // To the damage step, and the trigger resolved up to its question.
+    return drain(advanceTo(s, 'combat-damage'), 30);
+  };
+  const answer = (s: GameState): GameState => {
+    const n = s.pendingDecision?.max ?? 0;
+    return drain(apply(s, { type: 'auto:decide', by: 1, cards: [...(s.pendingDecision?.candidates ?? []).slice(0, n)] } as Action), 30);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('three damage: the player hit discards three cards of their choice', () => {
+    let s = swing('Test Stealer', 0);
+    expect(s.seats[1]!.life).toBe(17);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.prompt).toBe('Discard 3 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(2);
+  });
+
+  it('"that player discards a card for each Island you control": asked of the player hit, counting your Islands', () => {
+    let s = swing('Test Haunt', 2);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.prompt).toBe('Discard 2 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
