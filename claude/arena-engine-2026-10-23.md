@@ -43870,3 +43870,29 @@ stash pop conflicted there, both sides were kept, and the diff adds lines only.
 
 - engine tests: 6429, all passing (on a171093, D833 and D834 gated together)
 - Coverage, both together: 16,537 to 16,547 of 31,900 cards with every line read, and 38,946 to 38,958 of 59,888 lines, against a171093. The first measure read 16,502, because it ran on a build from before the fast-forward; the measure script now rebuilds first.
+
+## D1213 — "whenever another Elf enters", "a Human creature dies", anybody's
+
+A creature type with nobody's side named: "Whenever another Elf enters" (Elvish Vanguard),
+"Whenever a Beast enters" (Wirewood Savage, Totem Speaker), "Whenever another Human creature dies"
+(Village Cannibals). D479 read the tribe only with "you control"; with no side named it is
+anybody's, as "a creature dies" with no side named already is (D565). The word must be a creature
+type.
+
+Read whole now (4): Elvish Vanguard, Totem Speaker, Village Cannibals, Wirewood Savage. The Kindred
+Equipment of the shape ("Whenever a Rogue creature enters, you may attach ~ to it": Cloak and
+Dagger, Obsidian Battle-Axe, Veteran's Armaments) wait on the attach, which belongs to the
+Equipment reader that knows the bonus.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- An opponent's Elf entering puts a counter on the Vanguard; their Bear does not.
+- Another Human creature dying (the opponent's) puts a counter on the Cannibals; a Bear does not.
+
+Faults injected by hand: 2, all caught.
+- The tribe read as yours only.
+- The tribe dropped from the death.
+
+The coverage below includes the other session's D833 and D834, merged in before this was measured.
+
+Coverage: 16,581 of 31,900 cards (+15 over D1212's 16,566), 39,007 of 59,888 lines (+19).
