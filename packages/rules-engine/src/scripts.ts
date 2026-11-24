@@ -14837,6 +14837,9 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
   // A token: the one family whose characteristics are entirely in the sentence. See `tokenEffect`.
+  // Tapped and attacking (D1183): see `attackingTokenEffect`.
+  const attackingTokens = attackingTokenEffect(text, name);
+  if (attackingTokens !== null) return attackingTokens;
   const token = tokenEffect(text, name);
   if (token !== null) return token;
   /*
@@ -21970,6 +21973,58 @@ function namedTokenFrom(body: string): { token: CardDef; printed: string } | nul
   const token = NAMED_TOKENS[made[2]!];
   if (token === undefined) return null;
   return { token, printed: made[1]! };
+}
+
+/**
+ * Tokens that enter tapped and attacking (D1183, CR 508.4): "create a 1/1 white Soldier creature
+ * token tapped and attacking", "… token that's tapped and attacking", "create two tapped and
+ * attacking 1/1 …". Each new token joins the combat against the player (or planeswalker) the
+ * creature the ability is about is attacking: the trigger's subject (Militia's Pride, "whenever a
+ * nontoken creature you control attacks"), else the source. With neither attacking, the first
+ * opponent. It was never declared as an attacker, so "whenever … attacks" does not see it.
+ */
+function attackingTokenEffect(clause: string, name: string): ReadEffect | null {
+  const flat = clause.trim().replace(/\\.$/, '');
+  const shapes = [
+    /^(create .+? tokens?) (?:that's |that are )?tapped and attacking$/i,
+    /^(create (?:an?|one|two|three|four|five|x|\\d+)) tapped and attacking (.+)$/i,
+  ];
+  let plainClause: string | null = null;
+  const after = shapes[0]!.exec(flat);
+  if (after !== null) plainClause = after[1]!;
+  const before = after === null ? shapes[1]!.exec(flat) : null;
+  if (before !== null) plainClause = `${before[1]!} ${before[2]!}`;
+  if (plainClause === null) return null;
+  const made = tokenEffect(plainClause, name);
+  if (made === null || made.targets !== undefined || made.decisions !== undefined) return null;
+  const join = (fn: EffectFn): EffectFn => (c) => {
+    const had = new Set(Object.keys(c.state.instances));
+    let next = fn(c);
+    const aboutAttack = next.combat.attacks.find((a) => a.attacker === (c.subject ?? c.source))
+      ?? next.combat.attacks.find((a) => a.attacker === c.source);
+    const defender = aboutAttack?.defender ?? opponentsOf(next, c.controller)[0];
+    if (defender === undefined) return next;
+    for (const id of Object.keys(next.instances)) {
+      const inst = next.instances[id];
+      if (had.has(id) || inst === undefined || inst.zone !== 'battlefield' || inst.isToken !== true) continue;
+      next = withInstance(next, id, { tapped: true });
+      if (!characteristicsOf(next, next.instances[id]!).isCreature) continue;
+      next = {
+        ...next,
+        combat: {
+          ...next.combat,
+          attacks: [...next.combat.attacks, {
+            attacker: id, defender,
+            ...(aboutAttack?.planeswalker === undefined ? {} : { planeswalker: aboutAttack.planeswalker }),
+            blockers: [],
+            ...(next.instances[id]!.objectSeq === undefined ? {} : { attackerSeq: next.instances[id]!.objectSeq }),
+          }],
+        },
+      };
+    }
+    return next;
+  };
+  return { ...made, effect: join(made.effect), ...(made.immediate === undefined ? {} : { immediate: join(made.immediate) }) };
 }
 
 function tokenEffect(

@@ -38702,6 +38702,54 @@ describe('"for as long as ~ remains tapped" on any continuous effect (D1182)', (
   });
 });
 
+describe('tokens that enter tapped and attacking (D1183)', () => {
+  const ROWS = [
+    { name: 'Test Hero', type_line: 'Creature — Human Soldier', oracle_text: 'Whenever Test Hero attacks, create two 1/1 white Soldier creature tokens that are tapped and attacking.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '3', toughness: '4' },
+    { name: 'Test Pride', type_line: 'Enchantment', oracle_text: "Whenever a creature you control attacks, create a 1/1 white Kithkin Soldier creature token that's tapped and attacking.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1183', name: 'Attacking tokens',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const attackWith = (mine: string[], attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1183', 1: 'd1183' }, deckSpecs: { d1183: deck.deck },
+      battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', attacker), defender: 1 }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return drain(s, 10);
+  };
+  const tokens = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two Soldiers, tapped, in the attack against the same player, and their damage lands', () => {
+    let s = attackWith(['Test Hero'], 'Test Hero');
+    const made = tokens(s);
+    expect(made).toHaveLength(2);
+    for (const id of made) {
+      expect(s.instances[id]!.tapped).toBe(true);
+      expect(s.combat.attacks.find((a) => a.attacker === id)?.defender).toBe(1);
+    }
+    const before = life(s, 1);
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(life(s, 1)).toBe(before - 3 - 2);
+  });
+
+  it('on another permanent\'s trigger, the token attacks alongside the creature the trigger is about', () => {
+    const s = attackWith(['Test Pride', 'Test Bear'], 'Test Bear');
+    const made = tokens(s);
+    expect(made).toHaveLength(1);
+    expect(s.combat.attacks.map((a) => a.attacker)).toContain(made[0]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
