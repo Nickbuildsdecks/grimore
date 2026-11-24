@@ -61384,3 +61384,37 @@ Faults injected by script: 1 of 1 caught (the name not carried into "it").
 
 - engine tests: 6440, all passing (on f2b4851)
 - Coverage: 16,566 to 16,567 of 31,900 cards with every line read, and 38,983 to 38,984 of 59,888 lines, against f2b4851. Infernal Pet already read before, with "it" resolved through the cast event, whose subject is unset, so it was not counted twice.
+
+## D839 — Attaching an Equipment as it enters: Sigarda's Aid, Hammer of Nazahn
+
+Most-played order: Hammer of Nazahn (rank 721) and Sigarda's Aid (rank 844).
+
+An Equipment's own "When this Equipment enters, attach it to target creature you control" was
+already read, in `attachmentScriptFor`, where the card's bonus line is at hand. These two attach a
+**different** Equipment, the one the entry event is about, and its bonus is printed on that card.
+
+**Reader.** On a battlefield trigger, "[you may] attach it / that Equipment to target creature you
+control" targets a creature you control and attaches the event's subject. Only if it is an
+Equipment on the battlefield, and with that Equipment's own `equipBonus`, read from its script
+through `scriptOfCard` (compiled or hand-written, as `derive.ts` injects it). An Equipment whose
+bonus nothing reads is not attached: that would be an Equipment that gives nothing with no badge
+to say so. Hammer of Nazahn's own entry ("Hammer of Nazahn or another Equipment") attaches the
+Hammer itself.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- with Sigarda's Aid out, an Equipment cast for free attaches to our Bear with its +1/+1;
+- the Hammer's own entry attaches it, making the Bear a 4/2 with indestructible.
+
+**D972's pin, retargeted.** The first gate failed on one test: D972 pinned "When this Equipment
+enters, attach it to target creature you control. Destroy target artifact." as unread, because its
+whole-card path would have handed the second target the host creature. The line now reads through
+the trigger's own composition instead. A test run showed the reading is right: the Equipment
+attaches to the first target with its bonus, and the second target is destroyed. So the pin is now
+a positive test of exactly that.
+
+Faults injected by script: 3 of 3 caught (the Equipment's bonus not carried, the Hammer's own
+entry refused, and the reader off).
+
+- engine tests: 6444, all passing (on 94287f0)
+- Coverage: 16,567 to 16,571 of 31,900 cards with every line read, and 38,984 to 38,991 of 59,888 lines, against 94287f0.
