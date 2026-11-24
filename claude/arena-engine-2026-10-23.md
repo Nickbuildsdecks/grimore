@@ -42825,3 +42825,26 @@ Faults injected by hand: 2, all caught.
 - The condition inverted.
 
 Coverage: 16,168 of 31,900 cards (+7 over D1179's 16,161), 38,482 of 59,888 lines (+9).
+
+## D832 — A token with a name of its own: Kher Keep
+
+Most-played order: Kher Keep (rank 1582). 62 corpus lines create "a … creature token named <Name>"
+(Kobolds of Kher Keep, Cadet, Sky Cadet, Ajani's Pridemate, Wood…). The reading now covers the
+named line on 26 cards. The rest are unread for other reasons: modes, quoted abilities after the
+name, "a number of", dice and coins.
+
+**Reader.** `tokenFrom` takes " named <Capitalised Name>" off the end of the clause before
+reading the rest. The name is printed last, after any keywords. The token's `name` is then that
+name instead of its subtype, and its type line, colour, size and keywords are read as before. Two
+tokens with one name and different definitions are already kept apart by D810's `name#n` key.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- the Keep's ability makes a 0/1 red Kobold named Kobolds of Kher Keep;
+- "two 1/1 white Soldier creature tokens with flying named Sky Cadet" makes two flying Soldiers
+  by that name.
+
+Faults injected by script: 2 of 2 caught (the name dropped, and the name left in the clause).
+
+- engine tests: 6327, all passing (on dc59991)
+- Coverage: 16,169 to 16,194 of 31,900 cards with every line read, and 38,484 to 38,515 of 59,888 lines, against dc59991.

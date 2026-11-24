@@ -38506,6 +38506,41 @@ describe('a trailing "unless" over a condition (D1180)', () => {
   });
 });
 
+describe('a token with a name of its own, Kher Keep (D832)', () => {
+  const KEEP = { name: 'Test Keep', type_line: 'Legendary Land', oracle_text: '{T}: Add {C}.\n{1}{R}, {T}: Create a 0/1 red Kobold creature token named Kobolds of Kher Keep.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' };
+  const CALL = { name: 'Test Call', type_line: 'Sorcery', oracle_text: 'Create two 1/1 white Soldier creature tokens with flying named Sky Cadet.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' };
+  const deck = customDeck({ id: 'd832', name: 'Named', entries: [{ name: 'Test Keep', count: 1 }, { name: 'Test Call', count: 4 }, { name: 'Mountain', count: 55 }], data: [KEEP, CALL] as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd832', 1: 'd832' }, deckSpecs: { d832: deck.deck },
+    hands: { 0: ['Test Call'] }, battlefield: { 0: ['Test Keep', 'Mountain', 'Mountain'] }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+
+  it('reads them', () => {
+    for (const r of [KEEP, CALL]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Keep makes a 0/1 red Kobold called Kobolds of Kher Keep', () => {
+    let s = table();
+    const keep = find(s, 0, 'battlefield', 'Test Keep');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === keep && p.abilityIndex === 1)
+      ?? legalActions(s, 0).plays.filter((p) => p.kind === 'activate' && p.card === keep).at(-1)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: keep, abilityIndex: play.abilityIndex ?? 1 })));
+    const kobold = find(s, 0, 'battlefield', 'Kobolds of Kher Keep');
+    const c = characteristicsOf(s, s.instances[kobold]!);
+    expect([c.power, c.toughness]).toEqual([0, 1]);
+    expect(c.typeLine.subtypes).toContain('Kobold');
+    expect(c.colors).toEqual(['R']);
+  });
+
+  it('a keyword before the name: two flying 1/1 Soldiers called Sky Cadet', () => {
+    let s = table();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Call') })));
+    const cadets = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Sky Cadet');
+    expect(cadets).toHaveLength(2);
+    expect(characteristicsOf(s, s.instances[cadets[0]!]!).keywords.has('flying')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

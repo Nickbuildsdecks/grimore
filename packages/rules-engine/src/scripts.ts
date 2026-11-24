@@ -21472,8 +21472,14 @@ function forEachCount(phrase: string, name: string): ((c: EffectContext) => numb
 function tokenFrom(
   body: string, granted?: string,
 ): { token: CardDef; printed: string } | null {
+  /*
+    "… creature token named Kobolds of Kher Keep" (D832): the token's own name, printed last, after
+    any keywords. Taken off the end first; the token is then named it rather than its subtype.
+  */
+  const namedAs = / named ([A-Z][\w' ,-]*?)\.?$/.exec(body.trim());
+  const unnamed = namedAs === null ? body.trim() : body.trim().slice(0, namedAs.index);
   const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
-    .exec(body.trim());
+    .exec(unnamed);
   if (made === null) return null;
   /*
     The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",
@@ -21549,7 +21555,7 @@ function tokenFrom(
   if (readBack !== named.length) return null;
 
   const token: CardDef = {
-    name: subtype,
+    name: namedAs?.[1] ?? subtype,
     typeLine: `Token ${isArtifact ? 'Artifact ' : ''}${isEnchantment ? 'Enchantment ' : ''}Creature — ${subtype}`,
     manaCost: '',
     cmc: 0,
