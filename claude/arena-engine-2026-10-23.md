@@ -42461,3 +42461,50 @@ off, and the count fixed at one).
 
 - engine tests: 6222, all passing (on 76a6c8a)
 - Coverage: 15,842 to 15,844 of 31,900 cards with every line read, and 38,018 to 38,020 of 59,888 lines, against 76a6c8a.
+
+## D1171 — that spell's mana value, and the mana spent to cast it
+
+About 60 legal lines measure "that spell": a cast trigger's spell ("Whenever you cast a noncreature
+spell, … where X is that spell's mana value") or a counterspell's target ("Counter target spell.
+Create X Treasure tokens, where X is that spell's mana value"). None read.
+
+- **The measures.** `SPELL_MEASURE`: "that spell's mana value", "the mana value of that spell" and
+  "the amount of mana spent to cast that spell". It rides on `SACRIFICED_MEASURE` (D586), so every
+  "equal to …" and "where X is …" reader that takes one takes the other, and `boardCount` reads it
+  through `spellMeasure` first.
+- **Which spell.** The one a cast trigger answers (`EffectContext.answering`, the channel the copy
+  and counter-on-cast readers use), else the spell this effect targets.
+- **Mana value** counts X as chosen (CR 202.3e, `manaValueOnStack`). **Mana spent** is new engine
+  state: the cast records `manaSpent` on the stack object beside `coloursSpent`.
+- **A spell already countered.** "Counter target spell. Create X …" measures a spell the first
+  sentence took off the stack. `counterSpell` now records the spell's mana value and mana spent as
+  it leaves (`GameState.counteredSpellsThisTurn`, cleared each turn), and the measure reads that
+  when the spell is gone. A spell that left the stack any other way measures 0; nothing printed
+  needs that yet.
+
+Read whole now, among others: Bounteous Kirin, Cloudhoof Kirin, Erratic Cyclops, Manaplasm, Jamie
+McCrimmon, Livaan, Aberrant Manawurm, Uncover the Moon-Letters, Dancing from Dark to Dawn, Kaervek
+the Merciless, Keeper of Secrets, The Frightful Four, Spell Swindle, Overwhelming Intellect, Access
+Denied, Imp's Mischief. Still unread: incubate X, X/X tokens with a where-X, "with that spell's
+mana value" as a filter (Celestial Kirin, Skyfire Kirin), and a countered spell's X/X Ooze.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- The mana value of a {2}{U} spell: three life.
+- X counts on the stack: {X}{U} for X=3 is mana value four.
+- The mana spent: four for X=3, read off the spell as cast.
+- A countered spell is measured as it was countered: X=3 still counts, and the countered spell's
+  own effect never happens.
+
+Faults injected by hand: 6, all caught.
+- Mana spent always 0.
+- Mana value read off the printed card (X as 0).
+- Mana spent not recorded at the cast.
+- No `spellMeasure` in `boardCount`.
+- The countered record written as zeros.
+- Only the answered spell looked at, not the target.
+
+The first draft took the spell only from `answering`, so a counterspell would have measured 0. It
+was found by probing Spell Swindle before any test was written; the last fault above is that draft.
+
+Coverage: 16,052 of 31,900 cards (+20 over D1170's 16,032), 38,308 of 59,888 lines (+23). The difference also counts the D7xx session's D829, merged in after D1170 was measured.
