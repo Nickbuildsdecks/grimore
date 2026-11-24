@@ -60235,3 +60235,30 @@ Faults injected by hand: 3, all caught.
 - "Creatures you control" read as every creature.
 
 Coverage: 16,138 of 31,900 cards (+15 over D1177's 16,123), 38,447 of 59,888 lines (+22).
+
+## D1179 — a sentence that starts with "Then"
+
+"Put a +1/+1 counter on ~. Then draw a card." did not read: no clause reader takes a leading
+"Then", and 450 single-unread legal lines contain ". Then ". The sentences of a group already
+happen in the printed order (CR 608.2c), so the word says nothing a reader needs: `composeEffects`
+now drops a leading "Then" (or "Then,") from each sentence before reading it. "Then if …" becomes
+"If …", the condition checked when that sentence's turn comes, after the sentences before it.
+
+One reader needs the word: Chain Lightning's "then that player or that permanent's controller may
+pay …" keeps it.
+
+Read whole now (25 of the 450, the rest failing on something else in the same line): Aligned
+Heart, Altar of Shadows, Assemble the Legion, Become the Avalanche, Brilliant Spectrum, Caldera
+Pyremaw, Calming Verse, Cantankerous Captain, Carrion Cruiser, Deadly Embrace, Experimental
+Overload, Hour of Promise, Mayael's Aria, Recoil, Survival Cache, Undercity Uprising, and others.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- In order: the counter first, then damage equal to the new power (3, not 2).
+- Both sentences of a spell happen: two life and a card.
+- "Then if …" is checked after the first sentence: at 20 life against 20, gaining 2 first makes the
+  draw happen.
+
+Faults injected by hand: 1, caught: the "Then" left on.
+
+Coverage: 16,161 of 31,900 cards (+23 over D1178's 16,138), 38,473 of 59,888 lines (+26).
