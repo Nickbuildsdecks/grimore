@@ -1962,6 +1962,11 @@ export interface ContinuousEffect {
   readonly setPower?: number;
   readonly setToughness?: number;
   /**
+   * "Switch its power and toughness" (D1211): layer 7d (CR 613.4d), after every other change to
+   * power and toughness, counters included. Two switches cancel, so the count's parity decides.
+   */
+  readonly switchPowerToughness?: true;
+  /**
    * "Loses all abilities": layer 6 (CR 613.1f), and the one layer where timestamps are the rule
    * rather than a tie-break.
    *
@@ -3301,6 +3306,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let definedPower: number | null = null;
   let definedToughness: number | null = null;
   let setPower: number | null = null;
+  // Layer 7d switches (D1211): an odd number of them swaps the two.
+  let switches = 0;
   let setToughness: number | null = null;
   let modPower = 0;
   let modToughness = 0;
@@ -3461,6 +3468,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       }
     }
     if (effect.setPower !== undefined) setPower = effect.setPower;
+    if (effect.switchPowerToughness === true) switches += 1;
     if (effect.setToughness !== undefined) setToughness = effect.setToughness;
     modPower += effect.power ?? 0;
     modToughness += effect.toughness ?? 0;
@@ -3527,8 +3535,12 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const base = setPower ?? band?.power ?? definedPower ?? instance.prototype?.power ?? numeric(def?.power);
   const baseToughness = setToughness ?? band?.toughness ?? definedToughness ?? instance.prototype?.toughness ?? numeric(def?.toughness);
-  const power = base + modPower + plus - minus;
-  const toughness = baseToughness + modToughness + plus - minus;
+  const summedPower = base + modPower + plus - minus;
+  const summedToughness = baseToughness + modToughness + plus - minus;
+  // Layer 7d (CR 613.4d): switched after everything else, counters included (D1211).
+  const switched = switches % 2 === 1;
+  const power = switched ? summedToughness : summedPower;
+  const toughness = switched ? summedPower : summedToughness;
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
   if (keywords.has('decayed')) cantBlock = true;

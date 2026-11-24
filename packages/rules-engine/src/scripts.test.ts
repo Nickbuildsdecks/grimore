@@ -40057,6 +40057,56 @@ describe('a cast trigger that copies at a price (D1210)', () => {
   });
 });
 
+describe('switching power and toughness (D1211)', () => {
+  const ROWS = [
+    { name: 'Test Face', type_line: 'Instant', oracle_text: "Switch target creature's power and toughness until end of turn.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Moeba', type_line: 'Creature — Elemental', oracle_text: "{0}: Switch Test Moeba's power and toughness until end of turn.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '4' },
+    { name: 'Test Wall', type_line: 'Creature — Wall', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '0', toughness: '3' },
+    { name: 'Test Strength', type_line: 'Instant', oracle_text: 'Target creature gets +2/+0 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1211', name: 'Switch',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1211', 1: 'd1211' }, deckSpecs: { d1211: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const size = (s: GameState, id: string): number[] => [power(s, id), toughness(s, id)];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 0/3 switched is a 3/0, and dies', () => {
+    let s = table(['Test Face'], ['Test Wall']);
+    const wall = find(s, 0, 'battlefield', 'Test Wall');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Face'), targets: [{ kind: 'card', id: wall }] } as Action)), 30);
+    expect(s.instances[wall]?.zone).toBe('graveyard');
+  });
+
+  it('after counters (layer 7d): a 1/4 with a +1/+1 counter is a 2/5, switched 5/2; switched twice it is 2/5 again', () => {
+    let s = table([], ['Test Moeba']);
+    const moeba = find(s, 0, 'battlefield', 'Test Moeba');
+    s = { ...s, instances: { ...s.instances, [moeba]: { ...s.instances[moeba]!, counters: { ...s.instances[moeba]!.counters, '+1/+1': 1 } } } };
+    expect(size(s, moeba)).toEqual([2, 5]);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: moeba, abilityIndex: 0 })), 30);
+    expect(size(s, moeba)).toEqual([5, 2]);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: moeba, abilityIndex: 0 })), 30);
+    expect(size(s, moeba)).toEqual([2, 5]);
+  });
+
+  it('after a pump, whatever order they came in: a 1/4 given +2/+0 is 3/4, switched 4/3 (not 6/1)', () => {
+    let s = table(['Test Strength'], ['Test Moeba']);
+    const moeba = find(s, 0, 'battlefield', 'Test Moeba');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: moeba, abilityIndex: 0 })), 30);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Strength'), targets: [{ kind: 'card', id: moeba }] } as Action)), 30);
+    expect(size(s, moeba)).toEqual([4, 3]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

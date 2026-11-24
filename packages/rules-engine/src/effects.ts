@@ -3074,6 +3074,8 @@ export interface PumpOptions {
   readonly protectionFromChosen?: true;
   /** See `ContinuousEffect.setPower` — layer 7b, "becomes 1/1" rather than "gets +1/+1". */
   readonly setPower?: number;
+  /** See `ContinuousEffect.switchPowerToughness` (D1211) — layer 7d. */
+  readonly switchPowerToughness?: true;
   readonly setToughness?: number;
   /** See `ContinuousEffect.losesAllAbilities` — layer 6. */
   readonly losesAllAbilities?: boolean;
@@ -3187,6 +3189,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.protectionFromChosen ? { protectionFromChosen: true as const } : {}),
     ...(opts.setPower === undefined ? {} : { setPower: opts.setPower }),
     ...(opts.setToughness === undefined ? {} : { setToughness: opts.setToughness }),
+    ...(opts.switchPowerToughness ? { switchPowerToughness: true as const } : {}),
     ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),
     ...(opts.addTypes ? { addTypes: opts.addTypes } : {}),
     ...(opts.removeTypes ? { removeTypes: opts.removeTypes } : {}),

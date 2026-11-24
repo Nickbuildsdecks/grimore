@@ -15230,6 +15230,39 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "Switch target creature's power and toughness until end of turn" (D1211): About Face,
+    Transmutation, the Thaumaturgists; "Switch ~'s power and toughness" on Aquamoeba, Windreaver and
+    Crag Puca; "switch its power and toughness" on Valakut Fireboar's attack; "each creature's" on
+    Mannichi. Layer 7d, after every other change (`ContinuousEffect.switchPowerToughness`).
+  */
+  const switchedPT = new RegExp(`^switch (${selfRef(name)}'s|its|(?:up to one )?target [^']+?'s|each creature's) power and toughness until end of turn$`, 'i').exec(text);
+  if (switchedPT !== null) {
+    const who = switchedPT[1]!;
+    const opts: PumpOptions = { switchPowerToughness: true };
+    if (/^each creature's$/i.test(who)) {
+      return {
+        effect: (c) => pump(c.state, c.state.seats.flatMap((seat) => creaturesControlledBy(c.state, seat.index)), c.source, c.controller, opts),
+      };
+    }
+    if (/target /i.test(who)) {
+      const spec = targetSpecFrom(who.replace(/'s$/i, ''), false);
+      if (spec !== null && spec.kind === 'creature') {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const id = firstCardTarget(c);
+            return id === null ? c.state : pump(c.state, [id], c.source, c.controller, opts);
+          },
+        };
+      }
+    } else {
+      return {
+        effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield'
+          ? pump(c.state, [c.source], c.source, c.controller, opts) : c.state),
+      };
+    }
+  }
   const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
   if (roundDiscard !== null) {
     const n = countFrom(roundDiscard[2]!);
