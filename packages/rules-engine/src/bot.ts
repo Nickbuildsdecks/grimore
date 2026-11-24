@@ -377,9 +377,14 @@ function chooseTargets(
     // the moment a card with `count: 2` existed.
     // `botTakes` where the count is only a ceiling: see `TargetSpec.botTakes`.
     const want = spec.botTakes ?? Math.max(1, spec.count ?? 1);
+    const firstHere = chosen.length;
     for (let taken = 0; taken < want; taken++) {
+      // "From a single graveyard" (D1216): after the first, only cards with its owner.
+      const anchor = spec.sameOwner === true && taken > 0 ? chosen[firstHere] : undefined;
+      const anchorOwner = anchor?.kind === 'card' ? state.instances[anchor.id]?.owner : undefined;
       const candidates = (play.candidates[i] ?? []).filter(
-        (t) => !used.has(targetKey(t)),
+        (t) => !used.has(targetKey(t))
+          && (anchorOwner === undefined || (t.kind === 'card' && state.instances[t.id]?.owner === anchorOwner)),
       );
       const base = spec.friendly === true
         ? (t: Target): number => friendlyRank(state, t, foes)
@@ -3072,7 +3077,12 @@ function aimPending(
       .filter((t) => !used.has(targetKey(t)))
       .filter((t) => !(blinks && spec.optional === true && blinkDestroysMine(state, t, foes)))
       .sort((a, b) => score(b) - score(a));
-    for (const pick of ranked.slice(0, want)) {
+    // "From a single graveyard" (D1216): the rest from the first one's owner.
+    const firstOwner = ranked[0]?.kind === 'card' ? state.instances[ranked[0].id]?.owner : undefined;
+    const pool = spec.sameOwner === true
+      ? ranked.filter((t) => t.kind === 'card' && state.instances[t.id]?.owner === firstOwner)
+      : ranked;
+    for (const pick of pool.slice(0, want)) {
       used.add(targetKey(pick));
       chosen.push(pick);
     }

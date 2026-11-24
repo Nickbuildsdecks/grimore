@@ -19202,6 +19202,7 @@ describe('"You control enchanted creature" (D938)', () => {
       battlefield: { 0: ['Island', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
     }), 'precombat-main');
     const action = botAction(s, 0) as { type: string; card?: string; targets?: Target[] };
+    console.log('BOTACT', JSON.stringify(action));
     expect(action.type).toBe('auto:cast');
     const target = action.targets?.[0];
     expect(target?.kind === 'card' ? s.instances[target.id]!.zoneSeat : null).toBe(1);
@@ -23570,11 +23571,12 @@ describe('"exile up to N target cards from graveyards" (D745)', () => {
     type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: targets.map((id) => ({ kind: 'card' as const, id })),
   })));
 
-  it('reads them, and leaves "from a single graveyard" unread', () => {
+  it('reads them, and "from a single graveyard" with its one-graveyard rule (D1216, which moved this row)', () => {
     expect(deck.unknown).toEqual([]);
     for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
     const single = compileCard(I('Test Line', 'Exile up to two target cards from a single graveyard.') as never);
-    expect(single.ok && single.unread.length).toBe(1);
+    expect(single).toMatchObject({ ok: true, unread: [] });
+    expect(single.ok && single.script?.targets?.[0]?.sameOwner).toBe(true);
   });
 
   it('up to one: with a target it is exiled, and with none the spell still resolves', () => {
@@ -40576,6 +40578,59 @@ describe('attaching an Equipment as it enters, Sigarda\'s Aid and Hammer of Naza
     const r = enter([], 'Test Hammer');
     expect(r.size).toEqual([4, 2]);
     expect(r.indestructible).toBe(true);
+  });
+});
+
+describe('targets "from a single graveyard" (D1216)', () => {
+  const ROWS = [
+    { name: 'Test Cleanse', type_line: 'Sorcery', oracle_text: 'Exile up to two target cards from a single graveyard.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1216', name: 'One graveyard',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (theirs = 2) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1216', 1: 'd1216' }, deckSpecs: { d1216: deck.deck },
+      hands: { 0: ['Test Cleanse'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    for (const [seat, n] of [[0, 2], [1, theirs]] as const) {
+      for (const id of ids(s, seat, 'library').slice(0, n)) s = apply(s, { type: 'card:move', by: seat, card: id, toZone: 'graveyard' } as Action);
+    }
+    return s;
+  };
+
+  it('reads whole, and the spec says one graveyard', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROWS[0] as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.targets?.[0]?.sameOwner).toBe(true);
+  });
+
+  it('two from one graveyard are exiled; one from each is refused', () => {
+    let s = table();
+    const theirs = ids(s, 1, 'graveyard');
+    const mine = ids(s, 0, 'graveyard');
+    const cleanse = find(s, 0, 'hand', 'Test Cleanse');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: cleanse, targets: [{ kind: 'card', id: theirs[0]! }, { kind: 'card', id: mine[0]! }] } as Action)).not.toBeNull();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: cleanse, targets: theirs.map((id) => ({ kind: 'card', id })) } as Action)), 30);
+    expect(ids(s, 1, 'graveyard')).toHaveLength(0);
+    expect(ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) !== 'Test Cleanse')).toHaveLength(2);
+  });
+
+  it('the bot never mixes graveyards: with one card in theirs and two in mine, its picks share an owner', () => {
+    let s = table(1);
+    let action = botAction(s, 0) as { type: string; card?: string; targets?: Target[] };
+    // A land first, if it has one to play.
+    for (let i = 0; i < 3 && action.type === 'auto:playLand'; i++) {
+      s = apply(s, action as Action);
+      action = botAction(s, 0) as { type: string; card?: string; targets?: Target[] };
+    }
+    expect(action.type).toBe('auto:cast');
+    expect(action.card).toBe(find(s, 0, 'hand', 'Test Cleanse'));
+    const owners = new Set((action.targets ?? []).map((t) => (t.kind === 'card' ? s.instances[t.id]!.owner : -1)));
+    expect(owners.size).toBe(1);
   });
 });
 

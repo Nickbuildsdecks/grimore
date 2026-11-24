@@ -78,6 +78,13 @@ export interface TargetSpec {
     state: GameState, candidate: Target, controller: SeatIndex, source?: string,
   ) => boolean;
   /**
+   * "Up to two target cards **from a single graveyard**" (D1216): every target this spec takes has
+   * the same owner, so they come from one graveyard. Checked across the chosen targets in
+   * `checkTargets`, which is the only place that sees them together; the bot picks the rest from
+   * the first one's graveyard.
+   */
+  readonly sameOwner?: true;
+  /**
    * Advice to the bot: what this points at is being **helped**, not hit.
    *
    * Not a restriction, and deliberately not one. "Prevent the next 3 damage that would be dealt to

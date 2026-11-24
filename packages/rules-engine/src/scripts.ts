@@ -28854,6 +28854,17 @@ function readEffect(
         : { ...read, targets: read.targets.map((spec) => ({ ...spec, friendly: true, helpsInCombat: true })) };
     }
   }
+  /*
+    "Exile up to two target cards from a single graveyard" (D1216): Scavenging Ooze's cousins,
+    Cling to Dust's, the graveyard-hate creatures. "From graveyards" (already read), with every
+    target from the one graveyard (`TargetSpec.sameOwner`).
+  */
+  const singleYard = /\bfrom a single graveyard\b/i;
+  if (singleYard.test(clause)) {
+    const read = readEffect(clause.replace(singleYard, 'from graveyards'), name, where);
+    if (read === null || read.targets === undefined) return null;
+    return { ...read, targets: read.targets.map((spec) => ((spec.count ?? 1) > 1 ? { ...spec, sameOwner: true as const } : spec)) };
+  }
   // "You draw a card and lose 1 life" (D1208): the "you" said once, read as "… and you lose 1 life".
   const drawAndLose = /^you draw (.+?) and lose (\w+) life$/i.exec(clause.trim().replace(/\.$/, ''));
   if (drawAndLose !== null) return readEffect(`You draw ${drawAndLose[1]!} and you lose ${drawAndLose[2]!} life`, name, where);

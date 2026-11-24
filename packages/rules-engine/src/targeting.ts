@@ -298,6 +298,11 @@ export function checkTargets(
       taken.push(candidate);
       index += 1;
     }
+    // "From a single graveyard" (D1216): one owner for all of them.
+    if (spec.sameOwner === true) {
+      const owners = new Set(taken.map((t) => (t.kind === 'card' ? state.instances[t.id]?.owner : undefined)));
+      if (owners.size > 1) return { ok: false, reason: `${spec.description} must all be from a single graveyard` };
+    }
     if (taken.length < want) {
       // "Up to" lets you choose fewer, including none; a required target does not; and "one or
       // two" lets you choose fewer, down to its minimum (D1024).
