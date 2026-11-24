@@ -61003,3 +61003,33 @@ Faults injected by hand: 2, all caught.
 - The condition replaced by another.
 
 Coverage: 16,457 of 31,900 cards (+4 over D1201's 16,453), 38,842 of 59,888 lines (+4).
+
+## D1203 — "A. If …, B instead."
+
+Court of Ire's "~ deals 2 damage to any target. If you're the monarch, it deals 7 damage instead",
+Frost Bite's "… If you control three or more snow permanents, it deals 3 damage instead", Court of
+Grace's tokens, Scute Swarm's copy. The condition is anything an intervening-if can ask, checked as
+the ability resolves; B runs in place of A when it holds, A otherwise (`insteadGroup`, beside
+D1157's "If …, A. Otherwise, B.").
+
+B is read on its own, or, when it is "it deals N damage" after A's "~ deals M damage to …", as A
+with the new number at the same target. A B that refers back ("put two +1/+1 counters on it
+instead", "that creature gets …") is refused: read on its own it would name something else. Not a
+replacement effect ("if … would …, … instead"), which is a different family, and not a kicker,
+which has its own readers. Refused when either half asks a question.
+
+Read whole now (12): Andúril, Narsil Reforged; Court of Grace; Court of Ire; Frost Bite;
+Gangrenous Zombies; Jace's Triumph; Life Goes On; Scute Swarm; Secrets of the Golden City;
+Tezzeret, Artifice Master; The Destined Warrior; Zimone, Quandrix Prodigy.
+
+**Tests.** 3 engine tests:
+- The test cards read whole, and a B that refers back to A's target is refused.
+- "It deals 4 damage instead": 2 damage without a Wizard, 4 with one, at the same target.
+- "Draw two cards instead": one card without a Wizard, two with one, never three.
+
+Faults injected by hand: 3, all caught.
+- The halves swapped.
+- The damage substitution removed.
+- The referent guard removed.
+
+Coverage: 16,471 of 31,900 cards (+14 over D1202's 16,457), 38,859 of 59,888 lines (+17).
