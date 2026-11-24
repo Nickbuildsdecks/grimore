@@ -37995,6 +37995,65 @@ describe('"each nonland permanent that\'s not historic", Desynchronization (D830
   });
 });
 
+describe('an X/X token, where X is a measure (D1172)', () => {
+  const ROWS = [
+    { name: 'Test Slime', type_line: 'Sorcery', oracle_text: 'Create an X/X green Ooze creature token, where X is the greatest power among creatures you control.', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal' },
+    { name: 'Test Seed', type_line: 'Sorcery', oracle_text: 'Create an X/X green Elemental creature token with trample, where X is the number of creature cards in your graveyard.', mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal' },
+    { name: 'Test Genesis', type_line: 'Instant', oracle_text: "Counter target spell. Create an X/X green Ooze creature token, where X is that spell's mana value.", mana_cost: '{1}', cmc: 1, colors: ['G'], layout: 'normal' },
+    { name: 'Test Surge', type_line: 'Sorcery', oracle_text: 'You gain X life.', mana_cost: '{X}{G}', cmc: 1, colors: ['G'], layout: 'normal' },
+    { name: 'Test Brute', type_line: 'Creature — Beast', oracle_text: '', mana_cost: '{4}', cmc: 4, colors: ['G'], layout: 'normal', power: '5', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd1172', name: 'Tokens',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const at = (mine: string[], hand: string[]) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'd1172', 1: 'd1172' }, deckSpecs: { d1172: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), 0);
+  const tokenSize = (s: GameState, name: string): number[][] => ids(s, 0, 'battlefield')
+    .filter((id) => s.instances[id]!.isToken && s.cardDefs[s.instances[id]!.defKey]!.name === name)
+    .map((id) => [power(s, id), toughness(s, id)]);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the greatest power: a 5/3 on the board makes a 5/5 Ooze', () => {
+    let s = at(['Forest', 'Test Brute'], ['Test Slime']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Slime') })));
+    expect(tokenSize(s, 'Ooze')).toEqual([[5, 5]]);
+  });
+
+  it('a graveyard count, and the keyword: two creature cards make a 2/2 with trample', () => {
+    let s = at(['Forest'], ['Test Seed']);
+    for (const id of ids(s, 0, 'library').filter((i) => s.cardDefs[s.instances[i]!.defKey]!.name === 'Test Brute').slice(0, 2)) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    }
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seed') })));
+    expect(tokenSize(s, 'Elemental')).toEqual([[2, 2]]);
+    const token = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!;
+    expect(characteristicsOf(s, s.instances[token]!).keywords.has('trample')).toBe(true);
+  });
+
+  it('X of 0: no 0/0 is left on the battlefield', () => {
+    let s = at(['Forest'], ['Test Seed']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seed') })));
+    expect(tokenSize(s, 'Elemental')).toEqual([]);
+  });
+
+  it("the countered spell's mana value: X=3 on a {X}{G} spell makes a 4/4", () => {
+    let s = at(['Forest', 'Forest', 'Forest', 'Forest', 'Forest'], ['Test Surge', 'Test Genesis']);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Surge'), x: 3 });
+    const surge = find(s, 0, 'stack', 'Test Surge');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Genesis'), targets: [{ kind: 'card', id: surge }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(tokenSize(s, 'Ooze')).toEqual([[4, 4]]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

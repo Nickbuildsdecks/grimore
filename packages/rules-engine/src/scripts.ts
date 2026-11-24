@@ -21944,6 +21944,30 @@ function tokenEffect(
     a named one carries none of them and is looked up. Either way what comes back is a definition
     and the printed count word, which is all the rest of this function reads.
   */
+  /*
+    D1172: an X/X token, where X is a measure: "Create an X/X green Ooze creature token, where X is
+    the greatest power among creatures you control" (Miming Slime, Tumbleweed Rising), "… where X is
+    the number of creature cards in your graveyard" (Seed Guardian), "… where X is the amount of mana
+    spent to cast that spell" (Manaform Hellkite). One token, its power and toughness the measure as
+    the clause resolves; the definition is the 0/0 the rest of the sentence describes. X of 0 still
+    makes the token, which then dies to the state-based check (CR 704.5f), as printed.
+  */
+  const sizedByX = announced !== null && countOverride === undefined
+    ? /^create (?:an?|one) X\/X (.+)$/i.exec(body.trim()) : null;
+  if (sizedByX !== null) {
+    const zero = tokenFrom(`create a 0/0 ${sizedByX[1]!}`, granted);
+    if (zero === null || counted === null) return null;
+    const seats = recipients ?? ((c: EffectContext) => [c.controller]);
+    return {
+      effect: (c) => {
+        const n = String(Math.max(0, counted(c)));
+        const token: CardDef = { ...zero.token, power: n, toughness: n };
+        return seats(c).reduce((state, seat) => (tappedMade === null
+          ? createToken(state, seat, token, 1)
+          : createTappedTokens(state, seat, token, 1)), c.state);
+      },
+    };
+  }
   const made = tokenFrom(body.trim(), granted) ?? (granted === undefined
     ? namedTokenFrom(body.trim())
     /*
