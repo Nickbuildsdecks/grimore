@@ -31672,6 +31672,20 @@ function insteadGroup(clauses: readonly string[], name: string, where: SubjectZo
   let textB: string | null = null;
   if (moreDamage !== null && baseDamage !== null) textB = `${baseDamage[1]!}${moreDamage[1]!}${baseDamage[3]!}`;
   else if (!/\b(?:it|its|that (?:creature|player|permanent|card|spell)|those|they|them)\b/i.test(printedB)) textB = printedB;
+  else {
+    /*
+      B refers back to A's one target (D1204): "Put a +1/+1 counter on target creature. If …, put
+      two +1/+1 counters on it instead", "Target creature gets +2/+2 until end of turn. If …, that
+      creature gets +4/+4 until end of turn instead". The pronoun becomes A's target phrase, once,
+      and the check below that both halves aim the same way keeps the substitution honest.
+    */
+    const aimed = [...printedA.matchAll(/\b(?:up to one )?target [a-z' ]*?(?:creature|player|opponent|permanent|planeswalker)(?: you control| an opponent controls| you don't control)?\b/gi)];
+    const pronouns = [...printedB.matchAll(/\b(?:it|that (?:creature|player|permanent))\b/gi)];
+    if (aimed.length === 1 && pronouns.length === 1 && !/\b(?:its|those|they|them)\b/i.test(printedB)) {
+      const at = pronouns[0]!.index;
+      textB = `${printedB.slice(0, at)}${aimed[0]![0]}${printedB.slice(at + pronouns[0]![0].length)}`;
+    }
+  }
   if (textB === null) return null;
   const no = composeEffects([printedA], name, where);
   const yes = composeEffects([textB], name, where);

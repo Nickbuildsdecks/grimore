@@ -39712,7 +39712,8 @@ describe('"A. If …, B instead." (D1203)', () => {
   const ROWS = [
     { name: 'Test Ire', type_line: 'Sorcery', oracle_text: 'Test Ire deals 2 damage to any target. If you control a Wizard, it deals 4 damage instead.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
     { name: 'Test Study', type_line: 'Sorcery', oracle_text: 'Draw a card. If you control a Wizard, draw two cards instead.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
-    { name: 'Test Graft', type_line: 'Sorcery', oracle_text: 'Put a +1/+1 counter on target creature. If you control a Wizard, put two +1/+1 counters on it instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    // "On it" with no target in A to be (D1204 reads it when A has one).
+    { name: 'Test Graft', type_line: 'Sorcery', oracle_text: 'Draw a card. If you control a Wizard, put a +1/+1 counter on it instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
     { name: 'Test Adept', type_line: 'Creature — Human Wizard', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
   ];
   const deck = customDeck({
@@ -39728,7 +39729,7 @@ describe('"A. If …, B instead." (D1203)', () => {
     type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
   } as Action)), 30);
 
-  it('reads whole, and refuses a B that refers back to A ("put two … on it instead")', () => {
+  it('reads whole, and refuses a B that refers back to nothing in A ("put a +1/+1 counter on it instead")', () => {
     expect(deck.unknown.filter((n) => n !== 'Test Graft')).toEqual([]);
     for (const row of ROWS.filter((r) => r.name !== 'Test Graft')) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
     const graft = compileCard(ROWS[2] as never);
@@ -39749,6 +39750,47 @@ describe('"A. If …, B instead." (D1203)', () => {
     hand = ids(s, 0, 'hand').length;
     s = cast(s, 'Test Study');
     expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+});
+
+describe('"A. If …, B instead." where B refers back to A\'s target (D1204)', () => {
+  const ROWS = [
+    { name: 'Test Graft', type_line: 'Sorcery', oracle_text: 'Put a +1/+1 counter on target creature. If you control a Wizard, put two +1/+1 counters on it instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Boost', type_line: 'Instant', oracle_text: 'Target creature gets +2/+2 until end of turn. If you control a Wizard, that creature gets +4/+4 until end of turn instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Adept', type_line: 'Creature — Human Wizard', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1204', name: 'Instead, aimed',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 44 }],
+    data: ROWS as never[],
+  });
+  const aimAt = (hand: string, mine: string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1204', 1: 'd1204' }, deckSpecs: { d1204: deck.deck },
+      hands: { 0: [hand] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', hand), targets: [{ kind: 'card', id: cub }] } as Action)), 30);
+    return s;
+  };
+  const cubSize = (s: GameState): number[] => { const cub = find(s, 0, 'battlefield', 'Test Cub'); return [power(s, cub), toughness(s, cub)]; };
+
+  it('reads whole, and refuses a B aimed at a different kind of target than A', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const two = compileCard({ ...ROWS[0]!, name: 'Test Split', oracle_text: 'Put a +1/+1 counter on target creature. If you control a Wizard, put two +1/+1 counters on target creature you control instead.' } as never);
+    expect(two.ok && two.unread.length).toBe(1);
+  });
+
+  it('"put two +1/+1 counters on it instead": one counter on the target without a Wizard, two with one', () => {
+    expect(cubSize(aimAt('Test Graft', ['Test Cub']))).toEqual([3, 3]);
+    expect(cubSize(aimAt('Test Graft', ['Test Cub', 'Test Adept']))).toEqual([4, 4]);
+  });
+
+  it('"that creature gets +4/+4 instead": +2/+2 without a Wizard, +4/+4 with one, never both', () => {
+    expect(cubSize(aimAt('Test Boost', ['Test Cub']))).toEqual([4, 4]);
+    expect(cubSize(aimAt('Test Boost', ['Test Cub', 'Test Adept']))).toEqual([6, 6]);
   });
 });
 
