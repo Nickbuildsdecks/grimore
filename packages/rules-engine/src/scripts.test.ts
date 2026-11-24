@@ -40013,6 +40013,50 @@ describe('mana in any combination of colours (D1209)', () => {
   });
 });
 
+describe('a cast trigger that copies at a price (D1210)', () => {
+  const card = (name: string, type: string, text: string, extra: object = {}) => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra });
+  const ROWS = [
+    card('Test Priced Echo', 'Enchantment', 'Whenever you cast an instant or sorcery spell, you may pay {1}. If you do, copy that spell. You may choose new targets for the copy.'),
+    card('Test Bolt', 'Instant', 'Test Bolt deals 3 damage to any target.', { colors: ['R'] }),
+  ];
+  const deck = customDeck({
+    id: 'd1210', name: 'Priced copies',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 50 }],
+    data: ROWS as never[],
+  });
+  const table = (lands: number) => advanceTo(arena({
+    decks: { 0: 'd1210', 1: 'd1210' }, deckSpecs: { d1210: deck.deck },
+    hands: { 0: ['Test Bolt'] }, battlefield: { 0: ['Test Priced Echo', ...Array.from({ length: lands }, () => 'Island')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState): GameState => {
+    let next = drain(passBoth(s));
+    for (let i = 0; i < 8 && next.pendingDecision !== null; i += 1) {
+      next = drain(passBoth(apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [] })));
+    }
+    return next;
+  };
+  const bolt = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 1 }] })));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('paid: the {1} is spent and the copy deals 3 more', () => {
+    let s = bolt(table(1));
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {1}']);
+    s = settle(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}' } as Action));
+    expect(life(s, 1)).toBe(14);
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Island' && s.instances[id]!.tapped)).toHaveLength(1);
+  });
+
+  it('declined: no copy, no mana spent', () => {
+    let s = bolt(table(1));
+    s = settle(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Decline' } as Action));
+    expect(life(s, 1)).toBe(17);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

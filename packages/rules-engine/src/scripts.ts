@@ -23881,7 +23881,12 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     replicate) make theirs. Only when every event the prologue gives is a cast: an activation or a
     damage trigger has no spell to copy.
   */
-  const copyCast = /^(.+?), (you may )?copy (?:it|that spell)\. You may choose new targets for the copy\.?$/i
+  /*
+    And with a price (D1210): "you may pay {2}. If you do, copy that spell" (Primal Wellspring's
+    cousins, the Expressive Iteration-era copiers). The mana is paid on the answer that copies
+    (`payIfChosen`), and only an answer that can be paid is offered as paid.
+  */
+  const copyCast = /^(.+?), (you may |you may pay ((?:\{[^}]+\})+)\. If you do, )?copy (?:it|that spell)\. You may choose new targets for the copy\.?$/i
     .exec(withoutAbilityWord(plain(line).trim()));
   if (copyCast !== null) {
     const stand = triggerFromLine(`${copyCast[1]!}, draw a card.`, name);
@@ -23889,7 +23894,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     if (stand === null || triggers.length === 0 || Object.keys(stand).some((key) => key !== 'triggers')
       || triggers.some((t) => t.on.kind !== 'spell-cast' || (t.decisions ?? []).length > 0 || (t.targets ?? []).length > 0)) return null;
     const optional = copyCast[2] !== undefined;
-    const COPY = 'Copy it';
+    const price = copyCast[3];
+    const COPY = price === undefined ? 'Copy it' : `Pay ${price}`;
     const retarget: TargetDecisionSpec = {
       ...NEW_TARGETS_FOR_THE_COPY,
       retargets: (_state, object) => (object as { answering?: string }).answering,
@@ -23897,9 +23903,14 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     return {
       triggers: triggers.map((t) => ({
         ...t,
-        description: `${optional ? 'you may ' : ''}copy that spell; you may choose new targets for the copy`,
+        description: `${price !== undefined ? `you may pay ${price} to ` : optional ? 'you may ' : ''}copy that spell; you may choose new targets for the copy`,
         decisions: optional
-          ? [{ who: 'controller', prompt: 'Copy that spell?', options: [COPY, "Don't copy"], best: () => COPY },
+          ? [price === undefined
+            ? { who: 'controller', prompt: 'Copy that spell?', options: [COPY, "Don't copy"], best: () => COPY }
+            : {
+              who: 'controller', prompt: `Pay ${price} to copy that spell?`, options: ['Decline', COPY],
+              payIfChosen: { option: COPY, cost: price }, best: () => COPY,
+            },
             { ...retarget, askOnlyIfChosen: COPY }]
           : [retarget],
         effect: (c: EffectContext) => {
