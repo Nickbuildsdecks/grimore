@@ -42930,3 +42930,33 @@ battlefield is removed by the existing source cleanup; the "you control" terms a
 when control changes instead, which no test here covers.
 
 Coverage: 16,244 of 31,900 cards (+51 over D1181's 16,193), 38,568 of 59,888 lines (+58). The difference also counts the D7xx session's D832, merged in after D1181 was measured.
+
+## D1183 — tokens that enter tapped and attacking
+
+"Create two 1/1 white Soldier creature tokens that are tapped and attacking" (Hero of Bladehold)
+did not read; 83 single-unread legal lines print "tapped and attacking". Mobilize (D905) did it for
+one keyword's own Warriors. Now any token clause does, in the three printed orders: "… token tapped
+and attacking", "… token that's tapped and attacking" / "… tokens that are tapped and attacking",
+and "create two tapped and attacking 1/1 …" (`attackingTokenEffect`, in front of the token reader).
+
+Each new token is tapped and joins the combat (CR 508.4) against the player, or planeswalker, the
+creature the ability is about is attacking: the trigger's subject ("whenever a creature you control
+attacks"), else the source; with neither attacking, the first opponent. It was never declared as an
+attacker, so "whenever … attacks" does not see it, and a noncreature token is only tapped.
+
+Read whole now (11), among others: Hero of Bladehold, Captain's Claws, Carefree Swinemaster,
+Skyknight Vanguard, War Effort, Inexorable Blob, Pugnacious Pugilist. Still unread: the riders
+"exile / sacrifice that token at end of combat" (a handful) and "whenever a nontoken creature you
+control attacks" as a trigger.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- Two Soldiers, tapped, in the attack against the same player, and their damage lands (3 + 2).
+- On another permanent's trigger, the token attacks alongside the creature the trigger is about,
+  and does not fire the trigger again.
+
+Faults injected by hand: 2, all caught.
+- The tokens left out of the combat.
+- The tokens left untapped.
+
+Coverage: 16,255 of 31,900 cards (+11 over D1182's 16,244), 38,583 of 59,888 lines (+15).
