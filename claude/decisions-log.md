@@ -60813,3 +60813,35 @@ Faults injected by hand: 3, all caught.
 - The question asked of the controller instead of the player hit.
 
 Coverage: 16,363 of 31,900 cards (+2 over D1195's 16,361), 38,715 of 59,888 lines (+2).
+
+## D1197 — "create a number of … tokens equal to …", and "~'s power"
+
+"Create a number of 1/1 white Soldier creature tokens equal to your devotion to white" is the same
+sentence as "Create X 1/1 white Soldier creature tokens, where X is your devotion to white", which
+already reads (D1172 and before). So `readEffect` reads the first as the second, unless the clause
+has an X of its own. 38 lines in the unread list start this way; the measure decides the rest.
+
+And a measure: **"~'s power" / "~'s toughness"**, the source's own size. Live while it is on the
+battlefield (Jacked Rabbit's attack, Krenko after its own +1/+1 counter). Once it has left, as it
+last was, from the size the event recorded (Termagant Swarm and Flesh Carver dying, CR 608.2h).
+
+Read whole now (16): Abhorrent Overlord, Chittering Witch, Evangel of Heliod, Master of Waves,
+Reverent Hoplite, Goblin Gathering, Royal Talon Fighter Jet, Silverwing Squadron, Tyranid Invasion,
+Underworld Hermit, Jacked Rabbit, Krenko, Tin Street Kingpin, Termagant Swarm, Flesh Carver,
+Elemental Mastery, Dragon Throne of Tarkir. Still unread in the family: die rolls ("equal to the
+result"), excess damage, "this creature" for "~", and counts this engine does not keep (nontoken
+creatures that entered this turn, opponents attacked this turn, colors among permanents).
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- An enters trigger: three Mountains, three Soldier tokens.
+- "Equal to two plus the number of …": five Goblins.
+- "Equal to ~'s power" as it attacks: three Rabbits from a 3/3.
+- "Equal to ~'s power" once it has died: two Tyranids from a 2/2 killed by 3 damage.
+
+Faults injected by hand: 3, all caught.
+- The power of a source that has left read as 0.
+- The power of a source on the battlefield read as 1.
+- The measure replaced by a different count.
+
+Coverage: 16,379 of 31,900 cards (+16 over D1196's 16,363), 38,739 of 59,888 lines (+24).
