@@ -43657,3 +43657,27 @@ Faults injected by hand: 3, all caught.
 - The mana guard removed.
 
 Coverage: 16,490 of 31,900 cards (+8 over D1205's 16,482), 38,881 of 59,888 lines (+8).
+
+## D1207 — a return from the graveyard on another card's death
+
+Nether Traitor: "Whenever another creature is put into your graveyard from the battlefield, you may
+pay {B}. If you do, return ~ from your graveyard to the battlefield". D632 reads a card returning
+itself from its graveyard only when the event's subject is on the battlefield, because a card's own
+death already fires from the graveyard. That also refused another card's death, whose subject is in
+a graveyard too but is not this card: this card hears it from its own graveyard like any other
+event. A death or a trip to the graveyard of **another** card now takes D632's reading.
+
+Read whole now (1): Nether Traitor. The others with "return ~ from your graveyard" are unread for
+other parts (tapped and attacking, "while ~ is in your graveyard", perpetual).
+
+**Tests.** 3 engine tests:
+- Both test cards read whole, each as a graveyard ability.
+- Another creature dies: {1} paid, and the card returns from your graveyard to the battlefield.
+- "Whenever another creature dies, you may return ~ … to your hand": on a yes it goes to your hand.
+
+Faults injected by hand: 2, 1 caught.
+- Another card's death not taken: caught.
+- "Put into your graveyard" counted as another card only when the event says so explicitly: not
+  caught, because the trigger reader always says so; the default is there for safety only.
+
+Coverage: 16,491 of 31,900 cards (+1 over D1206's 16,490), 38,882 of 59,888 lines (+1).
