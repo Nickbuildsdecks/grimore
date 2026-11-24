@@ -402,6 +402,8 @@ export function relocate(
     ...(toZone === 'battlefield' ? {} : { frozen: false }),
     // And a Class's level (D638), which belongs to the object that gained it.
     ...(toZone === 'battlefield' ? {} : { classLevel: undefined }),
+    // And "it's not a creature" (D837), which belongs to the object that came back as one.
+    ...(toZone === 'battlefield' ? {} : { returnedNoncreature: undefined }),
     // And what it chose as it entered (D641): the next object chooses again.
     ...(toZone === 'battlefield' ? {} : { chosen: undefined }),
     // And flashback given until end of turn (D694), which the new object does not have.

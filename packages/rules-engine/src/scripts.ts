@@ -16402,7 +16402,7 @@ function selfEffect(
     return does not tap.
   */
   const backFromTheGrave = new RegExp(
-    `^return (?:(${self})|it|that card) to the battlefield( tapped)? under (its owner's|your) control( at the beginning of the next end step)?$`, 'i',
+    `^return (?:(${self})|it|that card) to the battlefield( tapped)? under (its owner's|your) control( at the beginning of the next end step)?( as an enchantment)?$`, 'i',
   ).exec(text);
   if (backFromTheGrave !== null && where === 'graveyard'
     && !(backFromTheGrave[2] !== undefined && backFromTheGrave[4] !== undefined)) {
@@ -16410,6 +16410,14 @@ function selfEffect(
     const tapped = backFromTheGrave[2] !== undefined;
     const toOwner = backFromTheGrave[3]!.toLowerCase().startsWith('its');
     const later = backFromTheGrave[4] !== undefined;
+    /*
+      "It's an enchantment" (D837, the Enduring cycle): it comes back as itself, not a creature, for
+      as long as it stays. A flag on the object (`CardInstance.returnedNoncreature`), not an effect:
+      an effect whose source is the card ends as the card leaves, and the snapshot of its next
+      death would then say "creature" and return it again.
+    */
+    const enchantmentOnly = backFromTheGrave[5] !== undefined;
+    if (enchantmentOnly && later) return null;
     return {
       effect: (c) => {
         const id = itMeans(named, c);
@@ -16427,7 +16435,12 @@ function selfEffect(
             description: `return ${nameOfCard(c.state, id)} to the battlefield`,
           });
         }
-        return putOntoBattlefield(c.state, id, toOwner ? inst.owner : c.controller, tapped ? { tapped: true } : {});
+        /*
+          Marked before it arrives, so its entry already sees a noncreature (`returnedNoncreature`):
+          nothing that watches "a creature enters" fires for it, as with the printed card.
+        */
+        const marked = enchantmentOnly ? withInstance(c.state, id, { returnedNoncreature: true }) : c.state;
+        return putOntoBattlefield(marked, id, toOwner ? inst.owner : c.controller, tapped ? { tapped: true } : {});
       },
     };
   }
@@ -30380,6 +30393,8 @@ function clausesOf(line: string): readonly string[] {
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')
+    // The Enduring cycle (D837): "It's an enchantment" is about the card the return just brought back.
+    .replace(/(return (?:it|that card) to the battlefield(?: tapped)? under its owner's control)\.\s+It's an enchantment\b/gi, '$1 as an enchantment')
     // Creeping Bloodsucker (D831): the life gained is the damage the first sentence dealt.
     .replace(/\b(deals \d+ damage to each (?:opponent|other player))\.\s+You gain life equal to the damage dealt this way/gi, '$1 and you gain life equal to the damage dealt this way')
     // Dark Confidant (D816): the life lost is for the card the first sentence put in the hand.
@@ -36962,6 +36977,27 @@ export function manaSpentScryTrigger(n: number, name: string): TriggerDef | null
  * the dash is the whole ability; some readers strip the label themselves, and this covers the rest.
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  /*
+    "When ~ dies, if it was a creature, …" (D837, the Enduring cycle): the death of the card as a
+    creature, read as the same line without the condition and with the death trigger narrowed to a
+    creature. The Enduring cards come back as enchantments, and this is what stops them coming back
+    again when that enchantment is put into a graveyard.
+  */
+  const wasCreature = new RegExp(`^(When (?:${selfRef(name)}) dies), if it was a creature, (.+)$`, 'i').exec(plain(line).trim());
+  if (wasCreature !== null) {
+    const inner = lineScriptFor(`${wasCreature[1]!}, ${wasCreature[2]!}`, name);
+    const triggers = inner?.triggers ?? [];
+    const deaths = (on: TriggerDef['on']): boolean => (Array.isArray(on) ? on : [on]).every((o) => o.kind === 'dies');
+    if (inner !== null && Object.keys(inner).every((key) => key === 'triggers') && triggers.length === 1 && deaths(triggers[0]!.on)) {
+      const t = triggers[0]!;
+      return {
+        triggers: [{
+          ...t,
+          on: Array.isArray(t.on) ? t.on.map((o) => ({ ...o, what: 'creature' as const })) : { ...t.on, what: 'creature' as const },
+        } as TriggerDef],
+      };
+    }
+  }
   const whole = lineScriptForWhole(line, name);
   if (whole !== null) return whole;
   const bare = withoutAbilityWord(line);

@@ -40193,6 +40193,44 @@ describe('"double the number of +1/+1 counters on …", Kalonian Hydra (D836)', 
   });
 });
 
+describe('"When ~ dies, if it was a creature, return it … It\'s an enchantment", the Enduring cycle (D837)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Enduring', 'Enchantment Creature — Elk Glimmer', "When Test Enduring dies, if it was a creature, return it to the battlefield under its owner's control. It's an enchantment. (It's not a creature.)", { power: '3', toughness: '3' }),
+    R('Test Doom', 'Instant', 'Destroy target creature.'),
+    R('Test Erase', 'Instant', 'Destroy target enchantment.'),
+  ];
+  const deck = customDeck({ id: 'd837', name: 'Enduring', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('dies as a creature and returns as an enchantment that is not one; destroyed as an enchantment, it stays gone', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd837', 1: 'd837' }, deckSpecs: { d837: deck.deck },
+      hands: { 1: ['Test Doom', 'Test Erase'] }, battlefield: { 0: ['Test Enduring'] }, turn: 3, firstSeat: 1,
+    } as never), 'precombat-main');
+    const id = find(s, 0, 'battlefield', 'Test Enduring');
+    const cast = (t: GameState, card: string) => {
+      let u = apply(t, { type: 'auto:cast', by: 1, card: find(t, 1, 'hand', card), targets: [{ kind: 'card', id }] });
+      for (let i = 0; i < 6 && u.stackOrder.length > 0; i++) u = drain(passBoth(u));
+      return u;
+    };
+    s = cast(s, 'Test Doom');
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    const back = characteristicsOf(s, s.instances[id]!);
+    expect(back.typeLine.types.map((t) => t.toLowerCase())).toEqual(['enchantment']);
+    s = cast(s, 'Test Erase');
+    expect(s.instances[id]!.zone).toBe('graveyard');
+    // And the mark belongs to that object: the card put back onto the battlefield is a creature.
+    s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'battlefield' });
+    expect(characteristicsOf(s, s.instances[id]!).isCreature).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

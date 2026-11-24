@@ -61329,3 +61329,33 @@ opponent's creatures included).
 
 - engine tests: 6436, all passing (on a9f8fce, D835 and D836 gated together)
 - Coverage, both together: 16,547 to 16,561 of 31,900 cards with every line read, and 38,958 to 38,978 of 59,888 lines, against a9f8fce.
+
+## D837 — "When ~ dies, if it was a creature, return it … It's an enchantment": the Enduring cycle
+
+Most-played order: Enduring Vitality (rank 432), Enduring Innocence (738), Enduring Tenacity (791),
+Enduring Curiosity (834) and Enduring Courage (1161). Each was one sentence short of finished.
+
+**Reader.**
+- "When ~ dies, if it was a creature, …" is read as the line without the condition, with the
+  death trigger narrowed to a creature (`what: 'creature'`, asked of the snapshot as it died).
+- `clausesOf` joins "return it to the battlefield under its owner's control. It's an enchantment"
+  into one clause, and D1061's back-from-the-graveyard reader takes "as an enchantment".
+
+**Engine.** The card comes back not a creature, as itself otherwise. That is a flag on the object,
+`CardInstance.returnedNoncreature`, set as it is put back: `characteristicsOf` takes the creature
+type and creature subtypes off its type line while it is on the battlefield, and `relocate` clears
+it on the way out, so the card in a graveyard is a creature card again. The first version used a
+continuous effect sourced from the card. That effect ended as the card left, so the snapshot of its
+next death said "creature" and the card came back again; the test caught it.
+
+**Tests.** 2 engine tests:
+- the card reads;
+- destroyed as a 3/3 it returns as an enchantment that is not a creature; destroyed as that
+  enchantment it stays in the graveyard; moved back onto the battlefield as a new object, it is a
+  creature again.
+
+Faults injected by script: 4 of 4 caught (the flag not set, the death not narrowed to a creature,
+`characteristicsOf` ignoring the flag, and `relocate` keeping it).
+
+- engine tests: 6438, all passing (on d581153)
+- Coverage: 16,561 to 16,566 of 31,900 cards with every line read, and 38,978 to 38,983 of 59,888 lines, against d581153.
