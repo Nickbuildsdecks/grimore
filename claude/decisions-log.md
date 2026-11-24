@@ -60509,3 +60509,36 @@ Faults injected by hand: 2, all caught.
 - The event not offered to the board.
 
 Coverage: 16,269 of 31,900 cards (+4 over D1185's 16,265), 38,608 of 59,888 lines (+4).
+
+## D1187 — playing a land as an event
+
+"Whenever an opponent plays a land" (Burgeoning, Dirtcowl Wurm, Pangosaur, Infernal Sovereign,
+Horn of Greed) had no event to listen to: a land played was only seen entering (`etb`,
+landfall's). Playing a land is a special action (CR 305.1) and is now its own event,
+`land-played`, raised by `playLand` with the seat that played it. A land put onto the battlefield
+by an effect is not played and does not raise it.
+
+- "Whenever you / an opponent / a player plays a land" reads, with `by` as for a cast.
+- "That player" after it is the player who played the land: `land-played` joins the events whose
+  acting seat is "that player" (`PLAYER_ACTION_EVENTS`), so Horn of Greed's "that player draws a
+  card" draws for them.
+- "Whenever you play a land or cast a spell" is the two events with one effect.
+
+Read whole now: Burgeoning, Dirtcowl Wurm, Infernal Sovereign, Pangosaur, Horn of Greed. Still
+unread: Flubs's "Otherwise" and Pia Nalaar's "from exile".
+
+The deck-coverage test (caught by the pregate) lists `trigger land-played` as a mechanic no
+built-in deck plays, like D1164's `trigger dungeon-completed`.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "An opponent plays a land": their land gains you a life; yours does not.
+- "That player draws": the player who played it draws, and a land put onto the battlefield by an
+  effect is not played.
+
+Faults injected by hand: 3, all caught.
+- The event never raised.
+- Whose play ignored.
+- "That player" not bound to the player who played it.
+
+Coverage: 16,274 of 31,900 cards (+5 over D1186's 16,269), 38,614 of 59,888 lines (+6).
