@@ -20097,6 +20097,27 @@ const TRIGGER_SHAPES: readonly ({
     ),
     from: boardTrigger,
   },
+  /*
+    A tribe with nobody's side named (D1213): "Whenever another Elf enters" (Elvish Vanguard),
+    "Whenever a Beast enters" (Wirewood Savage), "Whenever a Rogue creature enters" (Cloak and
+    Dagger), "Whenever another Human creature dies" (Village Cannibals). Anybody's, as "a creature
+    dies" with no side named is (D565). The word must be a creature type.
+  */
+  {
+    prologue: () => new RegExp(
+      `^When(?:ever)? (?<who>a|an|another) (?<tribe>[A-Z][A-Za-z'-]*)(?<creature> creature)? (?<event>${ENTERS}|dies), (?<clause>.+)$`,
+    ),
+    from: (matched: RegExpExecArray): readonly BoardEvent[] | null => {
+      const g = matched.groups ?? {};
+      const who = BOARD_WHO[(g.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+      if (who === undefined || !isCreatureType(g.tribe!)) return null;
+      const dying = /dies$/i.test(g.event ?? '');
+      const what = g.creature === undefined ? 'permanent' : 'creature';
+      return [(dying
+        ? { kind: 'dies', who, what, ofSubtypes: [g.tribe!] }
+        : { kind: 'etb', who, of: 'any', what, ofSubtypes: [g.tribe!] }) as BoardEvent];
+    },
+  },
   // Subject words on an entry (D1112): see `richEntryTrigger`. After the plainer rows.
   {
     prologue: () => new RegExp(

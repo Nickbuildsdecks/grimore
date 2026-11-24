@@ -40237,6 +40237,52 @@ describe('"double the power [and toughness] of each creature you control", Zopan
   });
 });
 
+describe('"whenever another Elf enters / a Human creature dies", anybody\'s (D1213)', () => {
+  const ROWS = [
+    { name: 'Test Vanguard', type_line: 'Creature — Elf Warrior', oracle_text: 'Whenever another Elf enters, put a +1/+1 counter on Test Vanguard.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Cannibals', type_line: 'Creature — Human', oracle_text: 'Whenever another Human creature dies, put a +1/+1 counter on Test Cannibals.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Peasant', type_line: 'Creature — Human', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1213', name: 'Tribes',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirHand: string[], myHand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1213', 1: 'd1213' }, deckSpecs: { d1213: deck.deck },
+    hands: { 0: myHand, 1: theirHand }, battlefield: { 0: mine }, turn: 4, firstSeat: 1,
+  }), 'precombat-main');
+  const counters = (s: GameState, name: string): number => s.instances[find(s, 0, 'battlefield', name)]!.counters['+1/+1'] ?? 0;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an opponent\'s Elf entering counts; their Bear does not', () => {
+    let s = table(['Test Vanguard'], ['Test Elf', 'Test Cub']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Cub') })), 20);
+    expect(counters(s, 'Test Vanguard')).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Elf') })), 20);
+    expect(counters(s, 'Test Vanguard')).toBe(1);
+  });
+
+  it('another Human creature dying counts, a Bear does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1213', 1: 'd1213' }, deckSpecs: { d1213: deck.deck },
+      hands: { 0: ['Test Bolt', 'Test Bolt'] }, battlefield: { 0: ['Test Cannibals', 'Test Cub'], 1: ['Test Peasant'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bolt = (t: GameState, id: string) => drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id }] } as Action)), 20);
+    s = bolt(s, find(s, 0, 'battlefield', 'Test Cub'));
+    expect(counters(s, 'Test Cannibals')).toBe(0);
+    s = bolt(s, find(s, 1, 'battlefield', 'Test Peasant'));
+    expect(counters(s, 'Test Cannibals')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
