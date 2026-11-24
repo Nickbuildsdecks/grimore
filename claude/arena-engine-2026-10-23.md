@@ -42604,3 +42604,25 @@ Faults injected by hand: 4, all caught.
 - The subtype noun ignored (caught once the Vehicle test was added).
 
 Coverage: 16,091 of 31,900 cards (+25 over D1172's 16,066), 38,370 of 59,888 lines (+37).
+## D831 — "Deals N damage to each opponent. You gain life equal to the damage dealt this way"
+
+Most-played order: Creeping Bloodsucker (rank 1566), with Syphon Soul ("each other player", which
+is each opponent in a pod).
+
+**Reader.** `clausesOf` joins the two sentences, and `readEffect` reads the joined clause: the
+source deals N to each opponent in turn, and its controller gains the damage that was dealt. That
+is measured on each opponent as life lost plus poison gained by the hit, so prevented damage
+gains nothing. The other three printings in the corpus aim the damage elsewhere ("any target",
+"each creature that shares a color", "target player or planeswalker") and stay unread.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- in a pod of three, Syphon Soul takes 2 from each opponent and gains its caster 4, and with one
+  opponent shielded by "Prevent all damage that would be dealt to you" it gains 2;
+- the Bloodsucker's upkeep drains one.
+
+Faults injected by script: 3 of 3 caught (the joiner off, the printed amount gained in place of
+the damage dealt, and one opponent's worth gained).
+
+- engine tests: 6228, all passing (on 2a4f236; the first gate run was lost to a container restart and re-run)
+- Coverage: 15,846 to 15,848 of 31,900 cards with every line read, and 38,022 to 38,024 of 59,888 lines, against 2a4f236.

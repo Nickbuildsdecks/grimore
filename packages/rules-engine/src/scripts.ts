@@ -28310,6 +28310,28 @@ function readEffect(
       };
     }
   }
+  /*
+    "~ deals 1 damage to each opponent. You gain life equal to the damage dealt this way" (D831,
+    Creeping Bloodsucker; Syphon Soul's "each other player"), joined by `clausesOf`. The life
+    gained is the damage dealt, so prevented damage gains nothing: measured as each opponent's life
+    lost and poison gained to the hit.
+  */
+  const drain = new RegExp(`^(?:${selfRef(name)}|it) deals (\\d+) damage to each (?:opponent|other player) and you gain life equal to the damage dealt this way$`, 'i').exec(clause.trim());
+  if (drain !== null) {
+    const amount = Number(drain[1]);
+    return {
+      effect: (c) => {
+        let state = c.state;
+        let dealt = 0;
+        for (const seat of opponentsOf(state, c.controller)) {
+          const before = { life: state.seats[seat]!.life, poison: state.seats[seat]!.poison ?? 0 };
+          state = dealDamage(state, { kind: 'player', seat }, amount, { controller: c.controller, source: c.source });
+          dealt += Math.max(0, before.life - state.seats[seat]!.life) + Math.max(0, (state.seats[seat]!.poison ?? 0) - before.poison);
+        }
+        return dealt === 0 ? state : gainLife(state, c.controller, dealt);
+      },
+    };
+  }
   const untapLands = /^untap up to (one|two|three|four|five|\d+) lands$/i.exec(clause.trim());
   if (untapLands !== null) {
     const n = countFrom(untapLands[1]!);
@@ -29678,6 +29700,8 @@ function clausesOf(line: string): readonly string[] {
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')
+    // Creeping Bloodsucker (D831): the life gained is the damage the first sentence dealt.
+    .replace(/\b(deals \d+ damage to each (?:opponent|other player))\.\s+You gain life equal to the damage dealt this way/gi, '$1 and you gain life equal to the damage dealt this way')
     // Dark Confidant (D816): the life lost is for the card the first sentence put in the hand.
     .replace(/\breveal the top card of your library and put (?:that card|it) into your hand\.\s+You lose life equal to (?:its|that card's) mana value/gi, 'reveal the top card of your library and put it into your hand and lose life equal to its mana value')
     // And the top card's condition (D1036): "If it's a land card, …" is about the card just looked at.
