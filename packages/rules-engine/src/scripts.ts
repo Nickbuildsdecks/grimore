@@ -24082,7 +24082,15 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         } as TriggerDef)),
       };
     }
-    const fromYard = where === 'battlefield'
+    /*
+      And another card's death or trip to a graveyard (D1207): Nether Traitor's "Whenever another
+      creature is put into your graveyard from the battlefield, you may pay {B}. If you do, return ~
+      from your graveyard to the battlefield". The event's subject is in a graveyard, but it is not
+      this card, which hears it from its own graveyard like any other event.
+    */
+    const othersLeaving = on.length > 0 && on.every((event) => (event.kind === 'dies' && event.who === 'another')
+      || (event.kind === 'to-graveyard' && (event.who ?? 'another') === 'another'));
+    const fromYard = (where === 'battlefield' || othersLeaving)
       && new RegExp(`\\b(?:return|put) (?:${self}|this card) from your graveyard\\b`, 'i').test(clause);
     if (fromYard) {
       const own = (text: string): ReadEffect | null => graveyardSelfReturn(text, name);

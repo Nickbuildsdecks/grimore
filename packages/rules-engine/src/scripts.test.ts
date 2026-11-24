@@ -39883,6 +39883,54 @@ describe('"Choose a color." spells (D1206)', () => {
   });
 });
 
+describe('a return from the graveyard on another card\'s death (D1207)', () => {
+  const ROWS = [
+    { name: 'Test Traitor', type_line: 'Creature — Spirit', oracle_text: 'Whenever another creature is put into your graveyard from the battlefield, you may pay {1}. If you do, return Test Traitor from your graveyard to the battlefield.', mana_cost: '{B}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '3', toughness: '1' },
+    { name: 'Test Haunt', type_line: 'Creature — Spirit', oracle_text: 'Whenever another creature dies, you may return Test Haunt from your graveyard to your hand.', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1207', name: 'From the yard',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }],
+    data: ROWS as never[],
+  });
+  const kill = (yard: string): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1207', 1: 'd1207' }, deckSpecs: { d1207: deck.deck },
+      battlefield: { 0: ['Swamp', 'Test Cub'] }, graveyard: { 0: [yard] }, hands: { 0: ['Test Bolt'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bolt'), targets: [{ kind: 'card', id: cub }] } as Action)), 20);
+    for (let i = 0; i < 4 && s.pendingDecision === null; i++) s = passBoth(s);
+    return s;
+  };
+
+  it('reads whole, each as a graveyard ability', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) {
+      const read = compileCard(row as never);
+      expect(read.ok && read.unread).toEqual([]);
+      expect(read.ok && read.script?.triggers?.[0]?.inGraveyard).toBe(true);
+    }
+  });
+
+  it('another creature dies: paid, and the card comes back from your graveyard to the battlefield', () => {
+    let s = kill('Test Traitor');
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {1}']);
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}' } as Action)), 20);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Traitor');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Test Traitor');
+  });
+
+  it('"another creature dies, you may return ~ to your hand": on a yes it goes to your hand', () => {
+    let s = kill('Test Haunt');
+    s = say(s, 0, 'Yes');
+    s = drain(passBoth(s), 20);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Haunt');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
