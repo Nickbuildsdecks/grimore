@@ -43981,3 +43981,57 @@ Faults injected by hand: 2, all caught.
 The coverage below includes the other session's D835 and D836, merged in before this was measured.
 
 Coverage: 16,611 of 31,900 cards (+30 over D1213's 16,581), 39,048 of 59,888 lines (+41).
+## D837 — "When ~ dies, if it was a creature, return it … It's an enchantment": the Enduring cycle
+
+Most-played order: Enduring Vitality (rank 432), Enduring Innocence (738), Enduring Tenacity (791),
+Enduring Curiosity (834) and Enduring Courage (1161). Each was one sentence short of finished.
+
+**Reader.**
+- "When ~ dies, if it was a creature, …" is read as the line without the condition, with the
+  death trigger narrowed to a creature (`what: 'creature'`, asked of the snapshot as it died).
+- `clausesOf` joins "return it to the battlefield under its owner's control. It's an enchantment"
+  into one clause, and D1061's back-from-the-graveyard reader takes "as an enchantment".
+
+**Engine.** The card comes back not a creature, as itself otherwise. That is a flag on the object,
+`CardInstance.returnedNoncreature`, set as it is put back: `characteristicsOf` takes the creature
+type and creature subtypes off its type line while it is on the battlefield, and `relocate` clears
+it on the way out, so the card in a graveyard is a creature card again. The first version used a
+continuous effect sourced from the card. That effect ended as the card left, so the snapshot of its
+next death said "creature" and the card came back again; the test caught it.
+
+**Tests.** 2 engine tests:
+- the card reads;
+- destroyed as a 3/3 it returns as an enchantment that is not a creature; destroyed as that
+  enchantment it stays in the graveyard; moved back onto the battlefield as a new object, it is a
+  creature again.
+
+Faults injected by script: 4 of 4 caught (the flag not set, the death not narrowed to a creature,
+`characteristicsOf` ignoring the flag, and `relocate` keeping it).
+
+- engine tests: 6438, all passing (on d581153)
+- Coverage: 16,561 to 16,566 of 31,900 cards with every line read, and 38,978 to 38,983 of 59,888 lines, against d581153.
+
+## D838 — "Put a +1/+1 counter on ~ and it …": the "it" is the card (Kappa Cannoneer)
+
+Most-played order: Kappa Cannoneer (rank 888), with Infernal Pet.
+
+"Whenever an artifact you control enters, put a +1/+1 counter on Kappa Cannoneer and it can't be
+blocked this turn." The second half did not read, and the shape had a worse problem beside it. On
+a trigger about another permanent, a bare "it" is read as the event's subject (the docblock above
+`selfEffect` explains why: Armory of Iroas's "put a +1/+1 counter on it" is the equipped creature).
+So "… on ~ and it gains flying" would have given the entering artifact flying, not the card. In
+this sentence "it" is the card the first half named.
+
+**Reader.** In `conjoinedEffect`, when the first part ends "on <the card's name>", a later part
+that begins with "it" has the name put in its place. "It can't be blocked this turn" then reads as
+the card's own restriction.
+
+**Tests.** 2 engine tests:
+- both cards read;
+- an artifact creature entering puts a counter on the Cannoneer, which also can't be blocked, and
+  on a second watcher, which also gains flying. The artifact gets neither.
+
+Faults injected by script: 1 of 1 caught (the name not carried into "it").
+
+- engine tests: 6440, all passing (on f2b4851)
+- Coverage: 16,566 to 16,567 of 31,900 cards with every line read, and 38,983 to 38,984 of 59,888 lines, against f2b4851. Infernal Pet already read before, with "it" resolved through the cast event, whose subject is unset, so it was not counted twice.

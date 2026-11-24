@@ -434,6 +434,13 @@ export interface CardInstance {
    * which is the one rule in this engine that changes a permanent's type without it moving.
    */
   readonly bestowed?: true;
+  /**
+   * Returned to the battlefield as "an enchantment. (It's not a creature.)" (D837, the Enduring
+   * cycle): this object is not a creature for as long as it stays. On the instance rather than an
+   * effect so the snapshot taken as it leaves still says so, which is what stops it returning
+   * again; `relocate` clears it on the way out, so the card in the graveyard is a creature card.
+   */
+  readonly returnedNoncreature?: true;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   /**

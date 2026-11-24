@@ -337,6 +337,16 @@ function reconfiguredTypeLine(printed: TypeLine, instance: CardInstance, def: Ca
   };
 }
 
+/** "It's an enchantment. (It's not a creature.)" (D837): the creature type goes, the rest stays. */
+function returnedNoncreatureTypeLine(printed: TypeLine, instance: CardInstance): TypeLine {
+  if (instance.returnedNoncreature !== true || instance.zone !== 'battlefield') return printed;
+  return {
+    supertypes: printed.supertypes,
+    types: printed.types.filter((t) => t.toLowerCase() !== 'creature'),
+    subtypes: printed.subtypes.filter((t) => !isCreatureType(t)),
+  };
+}
+
 function bestowTypeLine(printed: TypeLine, instance: CardInstance): TypeLine {
   if (instance.bestowed !== true) return printed;
   return {
@@ -3269,7 +3279,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     been done to it".
   */
   const bandNow = levelBandOf(def, instance);
-  const bestowed = reconfiguredTypeLine(bestowTypeLine(parseTypeLine(def?.typeLine), instance), instance, def);
+  const bestowed = returnedNoncreatureTypeLine(
+    reconfiguredTypeLine(bestowTypeLine(parseTypeLine(def?.typeLine), instance), instance, def), instance,
+  );
   // A Spacecraft at its threshold is an artifact creature (D637, CR 721): its own static ability,
   // so part of the base type line, before any effect's layer 4.
   const printed = bandNow?.creature === true && !hasType(bestowed, 'creature')
