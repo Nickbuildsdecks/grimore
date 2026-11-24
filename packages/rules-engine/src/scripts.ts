@@ -21883,6 +21883,18 @@ function countOfThing(
     }
   }
   /*
+    D1194: "the number of cards named ~ in all graveyards / your graveyard" (Kindle, Flame Burst,
+    Accumulated Knowledge, Galvanic Bombardment, Undead Servant). Cards by their printed name; the
+    spell resolving is on the stack, not in a graveyard, so it does not count itself (CR 608.2).
+  */
+  const namedHere = new RegExp(`^cards? named ${self} in (all graveyards|your graveyard)$`, 'i').exec(text);
+  if (namedHere !== null) {
+    const everyone = namedHere[1]!.toLowerCase() === 'all graveyards';
+    return (c) => (everyone ? c.state.seats.map((seat) => seat.index) : [c.controller])
+      .flatMap((seat) => listAt(c.state, zoneKey(seat, 'graveyard')))
+      .filter((id) => c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.name === name).length;
+  }
+  /*
     D1191: "for each counter on it", any kind (Kinsbaile Borderguard's dies trigger): the counters
     the permanent had as it left, the event's snapshot, else its own now.
   */

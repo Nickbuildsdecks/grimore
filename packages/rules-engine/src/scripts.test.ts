@@ -39251,6 +39251,52 @@ describe('compound X: "N plus", "twice", "A plus B" (D1193)', () => {
   });
 });
 
+describe('"cards named ~ in all graveyards / your graveyard" (D1194)', () => {
+  const ROWS = [
+    { name: 'Test Kindle', type_line: 'Instant', oracle_text: 'Test Kindle deals X damage to any target, where X is 2 plus the number of cards named Test Kindle in all graveyards.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Inventory', type_line: 'Instant', oracle_text: 'Draw a card, then draw cards equal to the number of cards named Test Inventory in your graveyard.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1194', name: 'Named',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 52 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mineInGraveyard: number, theirsInGraveyard: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1194', 1: 'd1194' }, deckSpecs: { d1194: deck.deck },
+      hands: { 0: [hand] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bury = (seat: 0 | 1, n: number) => {
+      for (const id of ids(s, seat, 'library').filter((i) => s.cardDefs[s.instances[i]!.defKey]!.name === hand).slice(0, n)) {
+        s = apply(s, { type: 'card:move', by: seat, card: id, toZone: 'graveyard' });
+      }
+    };
+    bury(0, mineInGraveyard);
+    bury(1, theirsInGraveyard);
+    // And a card of another name, which never counts.
+    s = apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'library', 'Mountain'), toZone: 'graveyard' });
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"in all graveyards": one in each graveyard is 2 plus 2; the one resolving does not count itself', () => {
+    let s = table('Test Kindle', 1, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kindle'), targets: [{ kind: 'player', seat: 1 }] })), 20);
+    expect(life(s, 1)).toBe(16);
+  });
+
+  it('"in your graveyard": two in yours and one in theirs draws one plus two', () => {
+    let s = table('Test Inventory', 2, 1);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Inventory') })), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
