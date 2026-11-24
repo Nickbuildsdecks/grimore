@@ -39139,6 +39139,48 @@ describe('an Aura\'s protection from the chosen color (D1190)', () => {
   });
 });
 
+describe('a dying creature\'s counters: moved on, or counted (D1191)', () => {
+  const ROWS = [
+    { name: 'Test Drone', type_line: 'Artifact Creature — Construct', oracle_text: 'When Test Drone dies, put its counters on target creature you control.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Guard', type_line: 'Creature — Kithkin', oracle_text: 'When Test Guard dies, create a 1/1 white Soldier creature token for each counter on it.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Kill', type_line: 'Sorcery', oracle_text: 'Destroy target creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1191', name: 'Counters on death',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 48 }],
+    data: ROWS as never[],
+  });
+  const killWithCounters = (mine: string[], victim: string, counters: Record<string, number>): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1191', 1: 'd1191' }, deckSpecs: { d1191: deck.deck },
+      hands: { 0: ['Test Kill'] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'battlefield', victim);
+    s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters } } };
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Kill'), targets: [{ kind: 'card', id }] });
+    // The trigger's one legal target (the Bear) is taken without a question.
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"put its counters on": two +1/+1 and an oil counter move to the Bear', () => {
+    const s = killWithCounters(['Test Drone', 'Test Bear'], 'Test Drone', { '+1/+1': 2, oil: 1 });
+    const bear = s.instances[find(s, 0, 'battlefield', 'Test Bear')]!;
+    expect([bear.counters['+1/+1'], bear.counters.oil]).toEqual([2, 1]);
+  });
+
+  it('"for each counter on it": three counters of two kinds, three Soldiers', () => {
+    const s = killWithCounters(['Test Guard'], 'Test Guard', { '+1/+1': 2, oil: 1 });
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Soldier')).toHaveLength(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

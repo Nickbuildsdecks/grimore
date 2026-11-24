@@ -21859,6 +21859,14 @@ function countOfThing(
       }).length;
     }
   }
+  /*
+    D1191: "for each counter on it", any kind (Kinsbaile Borderguard's dies trigger): the counters
+    the permanent had as it left, the event's snapshot, else its own now.
+  */
+  if (new RegExp(`^counters? on (?:${self}|it)$`, 'i').test(text)) {
+    return (c) => Object.values(c.subjectCounters ?? c.state.instances[c.source]?.counters ?? {})
+      .reduce((sum, n) => sum + Math.max(0, n ?? 0), 0);
+  }
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it)$`, 'i').test(text)) {
     return (c) => {
       const snapshot = c.subjectCounters?.['+1/+1'];
@@ -29106,6 +29114,26 @@ function readEffect(
     const then = condition === null ? null : readEffect(trailing[1]!.trim(), name, where);
     if (condition !== null && then !== null && then.beforeDecisions === undefined && (then.decisions ?? []).length === 0) {
       return guardedBy(then, condition);
+    }
+  }
+  /*
+    "Put its counters on target creature you control" (D1191): Dockworker Drone, Parish-Blade
+    Trainee, Graft Surgeon ("up to one target"). Every counter the permanent had, of every kind, as
+    it left (the dies event's snapshot), else as it is now.
+  */
+  const itsCounters = new RegExp(`^put (?:its|${selfRef(name)}'s) counters on ((?:up to one )?target .+)$`, 'i').exec(clause.trim().replace(/\.$/, ''));
+  if (itsCounters !== null) {
+    const spec = targetSpecFrom(itsCounters[1]!, /\byou control\b/i.test(itsCounters[1]!));
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          if (id === null) return c.state;
+          const had = c.subjectCounters ?? c.state.instances[c.source]?.counters ?? {};
+          return Object.entries(had).reduce((state, [kind, n]) => ((n ?? 0) > 0 ? addCounters(state, id, kind, n!) : state), c.state);
+        },
+      };
     }
   }
   /*
