@@ -40107,6 +40107,69 @@ describe('switching power and toughness (D1211)', () => {
   });
 });
 
+describe('damage that can\'t be prevented, and players who can\'t gain life (D1212)', () => {
+  const ROWS = [
+    { name: 'Test Crack', type_line: 'Instant', oracle_text: "Players can't gain life this turn. Damage can't be prevented this turn. Test Crack deals 1 damage to target player or planeswalker.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Combust', type_line: 'Instant', oracle_text: "Test Combust deals 3 damage to target creature. The damage can't be prevented.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Ward', type_line: 'Instant', oracle_text: 'Prevent the next 3 damage that would be dealt to target creature this turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Tonic', type_line: 'Instant', oracle_text: 'You gain 3 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1212', name: 'Unpreventable',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1212', 1: 'd1212' }, deckSpecs: { d1212: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Test Cub'], 1: ['Test Cub'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: unknown[]): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+  const shielded = (hand: string[]) => {
+    let s = table(['Test Ward', ...hand]);
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = cast(s, 'Test Ward', [{ kind: 'card', id: cub }]);
+    return { s, cub };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a prevention shield stops an ordinary 3 damage, but not "the damage can\'t be prevented"', () => {
+    let { s, cub } = shielded(['Test Bolt']);
+    s = cast(s, 'Test Bolt', [{ kind: 'card', id: cub }]);
+    expect(s.instances[cub]?.zone).toBe('battlefield');
+    ({ s, cub } = shielded(['Test Combust']));
+    s = cast(s, 'Test Combust', [{ kind: 'card', id: cub }]);
+    expect(s.instances[cub]?.zone).toBe('graveyard');
+  });
+
+  it('only Combust\'s own damage: a Bolt after it is prevented as usual', () => {
+    let { s, cub } = shielded(['Test Combust', 'Test Bolt']);
+    const theirs = find(s, 1, 'battlefield', 'Test Cub');
+    s = cast(s, 'Test Combust', [{ kind: 'card', id: theirs }]);
+    expect(s.instances[theirs]?.zone).toBe('graveyard');
+    expect(s.damageUnpreventableNow ?? false).toBe(false);
+    s = cast(s, 'Test Bolt', [{ kind: 'card', id: cub }]);
+    expect(s.instances[cub]?.zone).toBe('battlefield');
+  });
+
+  it('"damage can\'t be prevented this turn" and "players can\'t gain life this turn": for the rest of the turn', () => {
+    let { s, cub } = shielded(['Test Crack', 'Test Bolt', 'Test Tonic']);
+    s = cast(s, 'Test Crack', [{ kind: 'player', seat: 1 }]);
+    expect(life(s, 1)).toBe(19);
+    s = cast(s, 'Test Bolt', [{ kind: 'card', id: cub }]);
+    expect(s.instances[cub]?.zone).toBe('graveyard');
+    s = cast(s, 'Test Tonic');
+    expect(life(s, 0)).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

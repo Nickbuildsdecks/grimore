@@ -15263,6 +15263,37 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    Skullcrack's sentences (D1212): "Damage can't be prevented this turn" and "Players can't gain
+    life this turn" (or your opponents, or target player). Facts about this turn on the game state,
+    cleared with the others when it ends.
+  */
+  if (/^damage can'?t be prevented this turn$/i.test(text)) {
+    return { effect: (c) => ({ ...c.state, damageUnpreventableThisTurn: true }) };
+  }
+  const noGain = /^(players|your opponents|each opponent|target player|target opponent) can'?t gain life this turn$/i.exec(text);
+  if (noGain !== null) {
+    const who = noGain[1]!.toLowerCase();
+    const block = (state: GameState, seats: readonly SeatIndex[]): GameState => ({
+      ...state,
+      lifeGainBlockedThisTurn: { ...(state.lifeGainBlockedThisTurn ?? {}), ...Object.fromEntries(seats.map((seat) => [String(seat), true as const])) },
+    });
+    if (who.startsWith('target')) {
+      const spec = targetSpecFrom(who, false);
+      if (spec !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => { const seat = firstPlayerTarget(c); return seat === null ? c.state : block(c.state, [seat]); },
+        };
+      }
+    } else {
+      return {
+        effect: (c) => block(c.state, who === 'players'
+          ? c.state.seats.map((seat) => seat.index)
+          : opponentsOf(c.state, c.controller)),
+      };
+    }
+  }
   const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
   if (roundDiscard !== null) {
     const n = countFrom(roundDiscard[2]!);
@@ -32006,6 +32037,24 @@ function composeEffects(
   // "If …, A. Otherwise, B." (D1157): see `ifOtherwiseGroup`.
   const branched = ifOtherwiseGroup(clauses, name, where);
   if (branched !== null) return branched;
+  /*
+    "~ deals 5 damage to target creature. The damage can't be prevented." (D1212): Combust,
+    Pinpoint Avalanche. The sentences before it, with their own damage unpreventable while they
+    resolve and only then.
+  */
+  if (clauses.length >= 2 && /^the damage can'?t be prevented\.?$/i.test(clauses[clauses.length - 1]!.trim())) {
+    const before = composeEffects(clauses.slice(0, -1), name, where);
+    if (before !== null && (before.decisions ?? []).length === 0 && before.reflexive === undefined && before.beforeDecisions === undefined) {
+      return {
+        ...before,
+        effect: (c) => {
+          const was = c.state.damageUnpreventableNow === true;
+          const after = before.effect({ ...c, state: { ...c.state, damageUnpreventableNow: true } });
+          return { ...after, damageUnpreventableNow: was };
+        },
+      };
+    }
+  }
   // "A. If …, B instead." (D1203): see `insteadGroup`.
   const replaced = insteadGroup(clauses, name, where);
   if (replaced !== null) return replaced;

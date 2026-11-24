@@ -1531,6 +1531,15 @@ export interface AutomationState {
    * rest of the turn's facts.
    */
   readonly counteredSpellsThisTurn?: Readonly<Record<string, { readonly manaValue: number; readonly manaSpent: number }>>;
+  /** "Damage can't be prevented this turn" (D1212, Skullcrack). Cleared with the turn's facts. */
+  readonly damageUnpreventableThisTurn?: boolean;
+  /**
+   * "The damage can't be prevented" (D1212, Combust): set only while one spell's own damage is
+   * being dealt, and put back as it was straight after.
+   */
+  readonly damageUnpreventableNow?: boolean;
+  /** "Players can't gain life this turn" (D1212): the seats, by index. Cleared with the turn's facts. */
+  readonly lifeGainBlockedThisTurn?: Readonly<Record<string, true>>;
   /**
    * "If you descended this turn" (D612): how many **permanent cards** each seat has had put into
    * its graveyard this turn, from anywhere — which is what "descend" means on the cards that print it.

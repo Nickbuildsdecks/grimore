@@ -278,7 +278,7 @@ const MAX_REDIRECTS = 4;
  * for a choice that has no consequence here, so it is ordered and written down instead.
  */
 function spendShields(
-  state: GameState, target: Target, amount: number,
+  state: GameState, target: Target, amount: number, onlyRedirects = false,
 ): {
   readonly state: GameState;
   readonly amount: number;
@@ -291,7 +291,9 @@ function spendShields(
   const redirects: { to: Target; amount: number }[] = [];
   for (const effect of state.effects) {
     const shield = effect.preventsDamageAmount;
-    if (shield === undefined || shield <= 0 || left <= 0 || !shieldCovers(state, effect, target)) {
+    // Damage that can't be prevented (D1212) still meets a redirect, which is not a prevention.
+    if (shield === undefined || shield <= 0 || left <= 0 || !shieldCovers(state, effect, target)
+      || (onlyRedirects && effect.redirectTo === undefined)) {
       kept.push(effect);
       continue;
     }
@@ -483,17 +485,23 @@ export function dealDamage(
   */
   if (target.kind === 'ability') return state;
   let next = state;
+  /*
+    Damage that can't be prevented (D1212): Skullcrack's turn, or Combust's own damage. Every
+    prevention below is skipped — protection's included (CR 702.16e), and a shield counter's, which
+    is a prevention too (CR 122.1c) — and a redirect still applies, since it is not one.
+  */
+  const unpreventable = next.damageUnpreventableThisTurn === true || next.damageUnpreventableNow === true;
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
-  if (target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
+  if (!unpreventable && target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
   // And "prevent all damage that would be dealt to you" (D716, `CardScript.preventsDamageToYou`).
-  if (target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
+  if (!unpreventable && target.kind === 'player' && damageToYouPrevented(next, target.seat)) return next;
   // And a player with protection from everything (D718): damage to them is prevented.
-  if (target.kind === 'player' && playerProtected(next, target.seat)) return next;
+  if (!unpreventable && target.kind === 'player' && playerProtected(next, target.seat)) return next;
   // And "prevent all damage that would be dealt to / by …" this turn (D738).
-  if (damagePrevented(next, target, opts.source, opts.combatFrom !== undefined || opts.combat === true)) return next;
+  if (!unpreventable && damagePrevented(next, target, opts.source, opts.combatFrom !== undefined || opts.combat === true)) return next;
   // A shield counter (D1033, CR 122.1c): the damage is replaced by removing one.
-  if (target.kind === 'card') {
+  if (!unpreventable && target.kind === 'card') {
     const shielded = spendShieldCounter(next, target.id);
     if (shielded !== null) return shielded;
   }
@@ -510,7 +518,7 @@ export function dealDamage(
     does not count towards the twenty-one a commander needs, does not mark deathtouch, and gains no
     life for a lifelink source. A shield read after the fact could not do any of that.
   */
-  const shielded = spendShields(next, target, amount);
+  const shielded = spendShields(next, target, amount, unpreventable);
   next = shielded.state;
   const left = shielded.amount;
   /*
@@ -772,6 +780,8 @@ export function gainLife(state: GameState, seat: SeatIndex, gained0: number): Ga
   if (gained0 <= 0) return state;
   // "Your life total can't change" (D733): no life is gained, so nothing triggers on it.
   if (lifeLocked(state, seat)) return state;
+  // "Players can't gain life this turn" (D1212, Skullcrack).
+  if (state.lifeGainBlockedThisTurn?.[String(seat)] === true) return state;
   /*
     The replacements on gaining life (D1127, CR 614.1a). The gaining player orders them (CR 616.1),
     and the order that gains the most is taken: "gains no life" ends it, "loses that much life
