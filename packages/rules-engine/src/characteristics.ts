@@ -2776,7 +2776,13 @@ export type StaticCountable =
   | { readonly kind: 'instants-and-sorceries-in-graveyard' }
   | { readonly kind: 'artifacts-you-control' }
   | { readonly kind: 'counters-on-self'; readonly counter: string }
-  | { readonly kind: 'permanents-of-subtype'; readonly subtype: string }
+  | { readonly kind: 'permanents-of-subtype'; readonly subtype: string; readonly token?: true }
+  /**
+   * "For each token you control" (D1177). `token` on the two kinds beside it narrows them the same
+   * way: "Officer token", "artifact token". Whether a permanent is a token is a fact about the
+   * object, not a characteristic, so it is as safe to read here as a printed type line.
+   */
+  | { readonly kind: 'tokens-you-control' }
   /** Domain (D1168): the basic land types among the controller's lands, read off their printed type lines. */
   | { readonly kind: 'basic-land-types' }
   /**
@@ -2785,7 +2791,7 @@ export type StaticCountable =
    * everybody's. Printed for the reason `artifacts-you-control` is (see `sizePerCount`), and never
    * "creature", which D523 refuses for the reason given there.
    */
-  | { readonly kind: 'permanents-of-type'; readonly types: readonly string[]; readonly whose: 'you' | 'all' };
+  | { readonly kind: 'permanents-of-type'; readonly types: readonly string[]; readonly whose: 'you' | 'all'; readonly token?: true };
 
 /**
  * A static counted size's count, answered without reading any permanent's live characteristics.
@@ -2852,6 +2858,7 @@ function staticCount(
         for (const id of state.zones[zoneKey(seat, 'battlefield')] ?? []) {
           const inst = state.instances[id];
           if (inst === undefined) continue;
+          if (of.token === true && inst.isToken !== true) continue;
           const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
           if (of.types.some((type) => hasType(line, type))) n += 1;
         }
@@ -2864,10 +2871,14 @@ function staticCount(
       for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {
         const inst = state.instances[id];
         if (inst === undefined) continue;
+        if (of.token === true && inst.isToken !== true) continue;
         if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), wanted)) n += 1;
       }
       return n;
     }
+    case 'tokens-you-control':
+      return (state.zones[zoneKey(controller, 'battlefield')] ?? [])
+        .filter((id) => state.instances[id]?.isToken === true).length;
     case 'basic-land-types': {
       const found = new Set<string>();
       for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {

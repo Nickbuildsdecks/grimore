@@ -33422,6 +33422,24 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
     crewed Vehicle, an animated land), and that refusal stands. "Other" is refused too: on an
     attachment it means other than the creature it is attached to.
   */
+  /*
+    Tokens (D1177): "for each token you control", "… artifact token you control" (Thorin, King of
+    Durin's Folk), "… Officer token you control" (Academy Instructor). The same printed reads, kept
+    to tokens. "Creature token" stays refused, for D523's reason.
+  */
+  const tokened = /^(?:(.+?) )?tokens? you control$/i.exec(text);
+  if (tokened !== null) {
+    const inner = tokened[1];
+    if (inner === undefined) return { kind: 'tokens-you-control' };
+    const ofType = /^(?:artifact|enchantment|land)(?: and\/or (?:artifact|enchantment|land))*$/i.test(inner)
+      ? inner.toLowerCase().split(/ and\/or /) : null;
+    if (ofType !== null) return { kind: 'permanents-of-type', types: ofType, whose: 'you', token: true };
+    if (/^[A-Z][A-Za-z'-]*$/.test(inner)) {
+      const subtype = subtypeFromTribalPhrase(inner, 'singular');
+      return subtype === null ? null : { kind: 'permanents-of-subtype', subtype, token: true };
+    }
+    return null;
+  }
   const typed = /^((?:artifact|enchantment|land|planeswalker)(?: and\/or (?:artifact|enchantment|land|planeswalker))*)s? (you control|on the battlefield)$/i.exec(text);
   if (typed !== null) {
     const types = typed[1]!.toLowerCase().split(/ and\/or /);

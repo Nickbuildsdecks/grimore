@@ -38329,6 +38329,48 @@ describe('a counter on each permanent of any scope massScope reads (D1176)', () 
   });
 });
 
+describe('tokens in a static count (D1177)', () => {
+  const ROWS = [
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a 1/1 white Soldier creature token. Create a Treasure token.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Captain', type_line: 'Creature — Human', oracle_text: 'Test Captain gets +1/+1 for each token you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Smith', type_line: 'Creature — Dwarf', oracle_text: 'Test Smith gets +1/+0 for each artifact token you control.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Drillmaster', type_line: 'Creature — Human', oracle_text: 'Test Drillmaster gets +1/+0 for each Soldier token you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem Soldier', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1177', name: 'Static tokens',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (watcher: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1177', 1: 'd1177' }, deckSpecs: { d1177: deck.deck },
+      hands: { 0: ['Test Spawner'] }, battlefield: { 0: [watcher, 'Test Golem'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spawner') })), 20);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(1, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"each token": the Soldier and the Treasure, not the nontoken Golem', () => {
+    const s = table('Test Captain');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Captain'))).toBe(3);
+  });
+
+  it('"each artifact token": the Treasure only; the Golem is an artifact but not a token', () => {
+    const s = table('Test Smith');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Smith'))).toBe(2);
+  });
+
+  it('"each Soldier token": the Soldier token only; the Golem Soldier is not a token', () => {
+    const s = table('Test Drillmaster');
+    expect(power(s, find(s, 0, 'battlefield', 'Test Drillmaster'))).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
