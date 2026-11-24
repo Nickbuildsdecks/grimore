@@ -31642,6 +31642,55 @@ function ifOtherwiseGroup(clauses: readonly string[], name: string, where: Subje
 }
 
 /**
+ * "A. If <condition>, B instead." (D1203): Court of Ire's "~ deals 2 damage to any target. If
+ * you're the monarch, it deals 7 damage instead", "Draw a card. If you control a Wizard, draw two
+ * cards instead". The condition is anything an intervening-if can ask, checked as the ability
+ * resolves; B runs in place of A when it holds, A otherwise.
+ *
+ * B is read on its own, or, when it is "it deals N damage" after A's "~ deals M damage to …", as A
+ * with the new number (the same target). A B that refers back ("it", "that creature", "that
+ * player", "those") is otherwise refused: read on its own it would name something else. Not a
+ * replacement effect ("if … would …, … instead"), which is a different family, nor a kicker, which
+ * has its own readers. Refused when either half asks a question or both target differently.
+ */
+function insteadGroup(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
+  const trimmed = clauses.map((c) => c.trim().replace(/\.$/, ''));
+  if (trimmed.length !== 2) return null;
+  const masked = name.replace(/,/g, '\u0011');
+  const second = /^if ([^,]+), (.+) instead$/i.exec(trimmed[1]!.split(name).join(masked));
+  if (second === null) return null;
+  const unmask = (t: string): string => t.split(masked).join(name);
+  const condition = unmask(second[1]!);
+  if (/\bwould\b|\bwas kicked\b/i.test(condition)) return null;
+  const holds = interveningConditionFor(condition, name);
+  if (holds === null) return null;
+  const printedA = trimmed[0]!;
+  const printedB = unmask(second[2]!);
+  const self = selfRef(name);
+  const moreDamage = new RegExp(`^(?:it|${self}) deals (\\d+) damage$`, 'i').exec(printedB);
+  const baseDamage = new RegExp(`^(${self} deals )(\\d+)( damage to .+)$`, 'i').exec(printedA);
+  let textB: string | null = null;
+  if (moreDamage !== null && baseDamage !== null) textB = `${baseDamage[1]!}${moreDamage[1]!}${baseDamage[3]!}`;
+  else if (!/\b(?:it|its|that (?:creature|player|permanent|card|spell)|those|they|them)\b/i.test(printedB)) textB = printedB;
+  if (textB === null) return null;
+  const no = composeEffects([printedA], name, where);
+  const yes = composeEffects([textB], name, where);
+  if (yes === null || no === null) return null;
+  const parts = [yes, no];
+  if (parts.some((p) => (p.decisions ?? []).length > 0 || p.reflexive !== undefined || p.beforeDecisions !== undefined)) return null;
+  const shape = (p: ReadEffect): string => JSON.stringify(p.targets ?? []);
+  if ((yes.targets ?? []).length > 0 && shape(yes) !== shape(no)) return null;
+  return {
+    ...((no.targets ?? []).length > 0 ? { targets: no.targets } : {}),
+    effect: (c) => (holds(c) ? yes : no).effect(c),
+    // A draw done now (`ReadEffect.immediate`), from whichever half runs.
+    ...(yes.immediate === undefined && no.immediate === undefined ? {} : {
+      immediate: (c: EffectContext) => { const half = holds(c) ? yes : no; return (half.immediate ?? half.effect)(c); },
+    }),
+  };
+}
+
+/**
  * "Flip a coin. If you win the flip, X. [If you lose the flip, Y.]" (D1152, CR 705): Mogg Assassin,
  * Fiery Gambit's simpler cousins, Goblin Archaeologist. Each branch is read by `composeEffects` on
  * its own. The flip is made as the ability resolves, then the branch for the result runs. Refused
@@ -31776,6 +31825,9 @@ function composeEffects(
   // "If …, A. Otherwise, B." (D1157): see `ifOtherwiseGroup`.
   const branched = ifOtherwiseGroup(clauses, name, where);
   if (branched !== null) return branched;
+  // "A. If …, B instead." (D1203): see `insteadGroup`.
+  const replaced = insteadGroup(clauses, name, where);
+  if (replaced !== null) return replaced;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;

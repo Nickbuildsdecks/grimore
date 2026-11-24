@@ -39708,6 +39708,50 @@ describe('"If …, this spell costs {N} less to cast" (D1202)', () => {
   });
 });
 
+describe('"A. If …, B instead." (D1203)', () => {
+  const ROWS = [
+    { name: 'Test Ire', type_line: 'Sorcery', oracle_text: 'Test Ire deals 2 damage to any target. If you control a Wizard, it deals 4 damage instead.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Study', type_line: 'Sorcery', oracle_text: 'Draw a card. If you control a Wizard, draw two cards instead.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Graft', type_line: 'Sorcery', oracle_text: 'Put a +1/+1 counter on target creature. If you control a Wizard, put two +1/+1 counters on it instead.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Adept', type_line: 'Creature — Human Wizard', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1203', name: 'Instead',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1203', 1: 'd1203' }, deckSpecs: { d1203: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: unknown[]): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+
+  it('reads whole, and refuses a B that refers back to A ("put two … on it instead")', () => {
+    expect(deck.unknown.filter((n) => n !== 'Test Graft')).toEqual([]);
+    for (const row of ROWS.filter((r) => r.name !== 'Test Graft')) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const graft = compileCard(ROWS[2] as never);
+    expect(graft.ok && graft.unread.length).toBe(1);
+  });
+
+  it('"it deals 4 damage instead": 2 without a Wizard, 4 with one, at the same target', () => {
+    expect(life(cast(table('Test Ire', []), 'Test Ire', [{ kind: 'player', seat: 1 }]), 1)).toBe(18);
+    expect(life(cast(table('Test Ire', ['Test Adept']), 'Test Ire', [{ kind: 'player', seat: 1 }]), 1)).toBe(16);
+  });
+
+  it('"draw two cards instead": one without a Wizard, two with one, never three', () => {
+    let s = table('Test Study', []);
+    let hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Study');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 1);
+    s = table('Test Study', ['Test Adept']);
+    hand = ids(s, 0, 'hand').length;
+    s = cast(s, 'Test Study');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
