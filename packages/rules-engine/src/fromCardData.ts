@@ -816,6 +816,26 @@ function parseManaLine(line: string, name: string, chosenOk = false): ManaLine |
     const runs = COLOURS.map((colour) => Array.from({ length: n }, () => colour));
     return { mode: 'runs', produces: [...COLOURS], runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
   }
+  /*
+    "Two mana in any combination of colors" (D1209): Ancient Ziggurat's cousins, the Wisdom of the
+    Ages lands, Pillar of the Paruns' kin, and "… of {R} and/or {G}" (the Shadowmoor filter text in
+    long form). Every multiset of that size from the colours named is one run, as the filter lands'
+    runs are (D665), so the solver and the player pick among them the same way.
+  */
+  const combination = /^(two|three) mana in any combination of (colou?rs|(?:\{[WUBRG]\},? )+and\/or \{[WUBRG]\})$/i.exec(body);
+  if (combination !== null) {
+    const n = WORDS[combination[1]!.toLowerCase()]!;
+    const palette: ManaType[] = /^colou?rs$/i.test(combination[2]!)
+      ? [...COLOURS]
+      : [...new Set((combination[2]!.match(/\{[WUBRG]\}/g) ?? []).map((sym) => sym.slice(1, 2) as ManaType))];
+    const runs: ManaType[][] = [];
+    const build = (from: number, run: ManaType[]): void => {
+      if (run.length === n) { runs.push(run); return; }
+      for (let i = from; i < palette.length; i++) build(i, [...run, palette[i]!]);
+    };
+    build(0, []);
+    return { mode: 'runs', produces: palette, runs, cost, printed, damage, ...(freezes ? { freezes: true as const } : {}), ...(gains === undefined ? {} : { gains }), ...(onlyIf === null ? {} : { onlyIf, onlyIfWords: rest.replace(/\.$/, '') }), ...(spendOnly === undefined ? {} : { spendOnly }) };
+  }
   // "An amount of {G} equal to your devotion to green" (D713): Karametra's Acolyte's count.
   const devoted = /^an amount of (\{[WUBRG]\}) equal to your devotion to (white|blue|black|red|green)$/i.exec(body);
   if (devoted !== null) {

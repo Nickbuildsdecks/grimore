@@ -39971,6 +39971,48 @@ describe('a group that can\'t block this turn, and "you draw a card and lose 1 l
   });
 });
 
+describe('mana in any combination of colours (D1209)', () => {
+  const row = (name: string, type: string, text: string, cost = '{0}') => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 0, colors: [], layout: 'normal',
+  });
+  const ROWS = [
+    row('Test Prism', 'Artifact', '{T}: Add two mana in any combination of colors.'),
+    row('Test Filter', 'Land', '{T}: Add two mana in any combination of {R} and/or {G}.', ''),
+  ];
+  const deck = customDeck({
+    id: 'd1209', name: 'Combination',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 44 }],
+    data: ROWS,
+  }).deck;
+  const table = (mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1209', 1: 'd1209' }, deckSpecs: { d1209: deck },
+    battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const abilities = (s: GameState, id: string) => scriptForCard(s.cardDefs[s.instances[id]!.defKey])?.abilities ?? [];
+
+  it('reads whole', () => {
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"of {R} and/or {G}": three answers, RR, RG and GG, and a tap makes the one picked', () => {
+    let s = table(['Test Filter']);
+    const land = find(s, 0, 'battlefield', 'Test Filter');
+    const offered = abilities(s, land).map((a) => (a.produces ?? []).join(''));
+    expect(offered).toEqual(['RR', 'RG', 'GG']);
+    s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: offered.indexOf('RG') });
+    expect([s.pools['0']!.R, s.pools['0']!.G]).toEqual([1, 1]);
+  });
+
+  it('"of colors": every pair of five colours, fifteen answers, two mana each', () => {
+    const s = table(['Test Prism']);
+    const offered = abilities(s, find(s, 0, 'battlefield', 'Test Prism')).map((a) => (a.produces ?? []).join(''));
+    expect(offered).toHaveLength(15);
+    expect(offered).toContain('WU');
+    expect(offered).toContain('GG');
+    expect(offered.every((run) => run.length === 2)).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

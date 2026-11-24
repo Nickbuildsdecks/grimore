@@ -8534,8 +8534,9 @@ describe('a mana ability that is a choice of colours', () => {
     // 20 legal lines, and there is no chosen colour until an "As ~ enters, choose a colour" reader
     // exists to make one.
     ['Colour Thing', 'Land', '{T}: Add one mana of the chosen color.'],
-    // 10 legal lines: two mana, not one, and the combination is a choice per symbol.
-    ['Combination Thing', 'Artifact', '{T}: Add two mana in any combination of colors.'],
+    // Two and three mana in any combination read since D1209 (one run per multiset); five does
+    // not, because five of five colours is 126 runs for the solver to weigh.
+    ['Combination Thing', 'Artifact', '{T}: Add five mana in any combination of colors.'],
     /*
       **Adarkar Wastes was here and is read (D497).** The row said "a second sentence, which is
       Adarkar Wastes' painland clause — the choice is right and the damage is not read, so the line
