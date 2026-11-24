@@ -42652,3 +42652,30 @@ Faults injected by hand: 2, all caught.
 - Nothing sacrificed.
 
 Coverage: 16,102 of 31,900 cards (+11 over D1173's 16,091), 38,394 of 59,888 lines (+24). The difference also counts the D7xx session's D831, merged in after D1173 was measured.
+
+## D1175 — tokens in a scope
+
+`massScope` (D600, D1169) read "nontoken" but not "token". It now reads "token" and "tokens" as a
+fact about the permanent, the way "nontoken" is: "Destroy all creature tokens", "exile all
+Skeleton tokens", "for each token you control", "for each Blood token you control". With no type
+word beside it, "tokens" is every token, noncreature ones (Treasure, Food, Blood) included.
+
+The mass pump takes "creature tokens you control" as a subject too, through D1169's fallback to
+`massScope`: "Creature tokens you control get +1/+1 until end of turn".
+
+Read whole now, among others: Sengir Autocrat, Drudge Spell. Still unread: the same words in a
+static count ("gets +1/+0 for each Officer token you control", Academy Instructor, Thorin) and in a
+cost reduction (Magnus the Red), which have their own vocabularies, and "put a +1/+1 counter on
+each creature token you control".
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "All creature tokens": the Soldier dies; the Golem and the Treasure stay.
+- "Each token you control": two, the Treasure counted with the Soldier.
+- "Creature tokens you control get +1/+1": the Soldier, not the Golem.
+
+Faults injected by hand: 2, all caught.
+- The token test always true.
+- A bare "tokens" read as creature tokens only.
+
+Coverage: 16,113 of 31,900 cards (+11 over D1174's 16,102), 38,415 of 59,888 lines (+21).
