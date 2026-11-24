@@ -37896,6 +37896,64 @@ describe('annihilator granted by an Aura, Eldrazi Conscription (D829)', () => {
   });
 });
 
+describe("that spell's mana value, and the mana spent to cast it (D1171)", () => {
+  const ROWS = [
+    { name: 'Test Scholar', type_line: 'Creature — Human', oracle_text: "Whenever you cast a noncreature spell, you gain life equal to that spell's mana value.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Weaver', type_line: 'Creature — Human', oracle_text: 'Whenever you cast a noncreature spell, you gain life equal to the amount of mana spent to cast that spell.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Study', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal' },
+    { name: 'Test Surge', type_line: 'Sorcery', oracle_text: 'You gain X life.', mana_cost: '{X}{U}', cmc: 1, colors: ['U'], layout: 'normal' },
+    { name: 'Test Denial', type_line: 'Instant', oracle_text: "Counter target spell. You gain life equal to that spell's mana value.", mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1171', name: 'Spells',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }],
+    data: ROWS as never[],
+  });
+  const at = (watcher: string, hand: string[], lands: number) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'd1171', 1: 'd1171' }, deckSpecs: { d1171: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: [watcher, ...Array.from({ length: lands }, () => 'Island')] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 2), ROWS[4]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the mana value of a {2}{U} spell: three life', () => {
+    let s = at('Test Scholar', ['Test Study'], 3);
+    const before = life(s, 0);
+    s = drain(passBoth(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Study') }))));
+    expect(life(s, 0)).toBe(before + 3);
+  });
+
+  it('X counts on the stack: {X}{U} for X=3 is mana value four', () => {
+    let s = at('Test Scholar', ['Test Surge'], 4);
+    const before = life(s, 0);
+    s = drain(passBoth(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Surge'), x: 3 }))));
+    // Four from the trigger, then three from the Surge itself.
+    expect(life(s, 0)).toBe(before + 4 + 3);
+  });
+
+  it('a countered spell is measured as it was countered: X=3 still counts', () => {
+    let s = at('Island', ['Test Surge', 'Test Denial'], 5);
+    const before = life(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Surge'), x: 3 });
+    const surge = find(s, 0, 'stack', 'Test Surge');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Denial'), targets: [{ kind: 'card', id: surge }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    // Four from the Denial; the Surge never resolved, so none of its own three.
+    expect(s.instances[surge]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 4);
+  });
+
+  it('the mana spent: four for X=3, and the trigger reads it off the spell as cast', () => {
+    let s = at('Test Weaver', ['Test Surge'], 4);
+    const before = life(s, 0);
+    s = drain(passBoth(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Surge'), x: 3 }))));
+    expect(life(s, 0)).toBe(before + 4 + 3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

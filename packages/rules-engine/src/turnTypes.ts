@@ -410,6 +410,11 @@ export interface StackObject {
    * Absent for none: a copy and a spell cast without paying its mana cost spent nothing.
    */
   readonly coloursSpent?: number;
+  /**
+   * How much mana was spent to cast this spell (D1171): "the amount of mana spent to cast that
+   * spell". Absent for none, as `coloursSpent` is.
+   */
+  readonly manaSpent?: number;
   /** Which colours of mana were spent on it (D742): "if {U} was spent to cast it". */
   readonly colorsSpent?: readonly string[];
   /** Cast when a sorcery couldn't have been (D727): Necromancy's flash, and its cleanup sacrifice. */
@@ -1519,6 +1524,13 @@ export interface AutomationState {
    * count.
    */
   readonly manaSpentOnSpellsThisTurn?: Readonly<Record<string, number>>;
+  /**
+   * A countered spell's last known measures (D1171), keyed by its id: "Counter target spell. Create
+   * X Treasure tokens, where X is that spell's mana value" measures a spell the first sentence has
+   * already taken off the stack. Mana value with X as chosen; mana spent as paid. Cleared with the
+   * rest of the turn's facts.
+   */
+  readonly counteredSpellsThisTurn?: Readonly<Record<string, { readonly manaValue: number; readonly manaSpent: number }>>;
   /**
    * "If you descended this turn" (D612): how many **permanent cards** each seat has had put into
    * its graveyard this turn, from anywhere — which is what "descend" means on the cards that print it.

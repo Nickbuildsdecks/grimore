@@ -1053,6 +1053,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         leftBattlefieldThisTurn: {},
         lifeGainedThisTurn: {},
         manaSpentOnSpellsThisTurn: {},
+        counteredSpellsThisTurn: {},
         descendedThisTurn: {},
         cardsDrawnThisTurn: {},
         detached: {},

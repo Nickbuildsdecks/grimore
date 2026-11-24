@@ -21062,6 +21062,8 @@ const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
  * than a guessed one.
  */
 function boardCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  const measured = spellMeasure(plain(phrase).trim().replace(/\.$/, ''));
+  if (measured !== null) return measured;
   const paid = sacrificedMeasure(plain(phrase).trim().replace(/\.$/, ''));
   if (paid !== null) return paid;
   const devoted = devotionCount(plain(phrase).trim().replace(/\.$/, ''));
@@ -21289,9 +21291,54 @@ function devotionCount(phrase: string): ((c: EffectContext) => number) | null {
 }
 
 
-/** The printed spellings of a measure of what was sacrificed, as a regex source. See below. */
+/**
+ * The measures of the spell a cast trigger answers (D1171): "that spell's mana value", "the mana
+ * value of that spell", "the amount of mana spent to cast that spell". See `spellMeasure`.
+ */
+const SPELL_MEASURE = "that spell's mana value|the mana value of that spell|the amount of mana spent to cast that spell";
+
+/**
+ * The printed spellings of a measure of what was sacrificed, as a regex source. See below. Since
+ * D1171 it also carries `SPELL_MEASURE`, so every "equal to" and "where X is" reader that takes
+ * the one takes the other; `boardCount` tells them apart.
+ */
 const SACRIFICED_MEASURE = "the sacrificed (?:creature|artifact|permanent)'s (?:power|toughness|mana value)"
-  + '|the mana value of the sacrificed (?:creature|artifact|permanent)';
+  + '|the mana value of the sacrificed (?:creature|artifact|permanent)'
+  + `|${SPELL_MEASURE}`;
+
+/**
+ * A measure of the spell a cast trigger answers (D1171), read when the trigger resolves.
+ *
+ * "That spell" is `EffectContext.answering`, the spell whose cast fired the trigger (the channel
+ * `copyCast` and the counter-on-cast readers use). The trigger goes on the stack above the spell
+ * and resolves first, so the spell is normally still there to measure: its mana value counts X as
+ * chosen (CR 202.3e, `manaValueOnStack`), and the mana spent is what its cost was paid with,
+ * recorded as it was cast. A spell already gone (countered in response) measures 0; this engine
+ * keeps no last-known information for a spell.
+ */
+function spellMeasure(phrase: string): ((c: EffectContext) => number) | null {
+  const text = phrase.trim().toLowerCase();
+  if (!new RegExp(`^(?:${SPELL_MEASURE})$`).test(text)) return null;
+  /*
+    The spell is the one a cast trigger answers, else the spell this effect targets ("Counter
+    target spell. Create X Treasure tokens, where X is that spell's mana value"; "Change the target
+    of target spell … You lose life equal to that spell's mana value"). Measured on the stack if it
+    is still there, else as it was countered (`GameState.counteredSpellsThisTurn`).
+  */
+  const measure = (c: EffectContext, spent: boolean): number => {
+    const ids = [c.answering, ...c.targets.map((t) => (t.kind === 'card' ? t.id : undefined))]
+      .filter((id): id is string => id !== undefined);
+    for (const id of ids) {
+      const object = c.state.stackObjects[id];
+      if (object?.kind === 'spell') return spent ? object.manaSpent ?? 0 : manaValueOnStack(c.state, id);
+      const gone = c.state.counteredSpellsThisTurn?.[id];
+      if (gone !== undefined) return spent ? gone.manaSpent : gone.manaValue;
+    }
+    return 0;
+  };
+  const spent = text.includes('mana spent');
+  return (c) => measure(c, spent);
+}
 
 /**
  * "The sacrificed creature's power", as a number read when the effect runs (D586).
@@ -21307,7 +21354,7 @@ const SACRIFICED_MEASURE = "the sacrificed (?:creature|artifact|permanent)'s (?:
 function sacrificedMeasure(phrase: string): ((c: EffectContext) => number) | null {
   if (!sacrificeInCost) return null;
   const text = phrase.trim().toLowerCase();
-  if (!new RegExp(`^(?:${SACRIFICED_MEASURE})$`).test(text)) return null;
+  if (!new RegExp(`^(?:${SACRIFICED_MEASURE})$`).test(text) || !text.includes('sacrificed')) return null;
   if (text.includes('mana value')) return (c) => c.sacrificed?.manaValue ?? 0;
   if (text.endsWith('toughness')) return (c) => c.sacrificed?.toughness ?? 0;
   return (c) => c.sacrificed?.power ?? 0;

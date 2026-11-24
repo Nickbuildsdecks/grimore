@@ -1300,6 +1300,7 @@ export function endTurnCleanup(state: GameState): GameState {
     lifeGainedThisTurn: {},
     tokensCreatedThisTurn: {},
     manaSpentOnSpellsThisTurn: {},
+    counteredSpellsThisTurn: {},
     // And mana kept "until end of turn" (D1034), which ends here with the other until-end-of-turn effects.
     keptMana: {},
     keptManaCombat: {},

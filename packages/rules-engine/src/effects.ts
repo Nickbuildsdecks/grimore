@@ -1569,6 +1569,13 @@ export function counterSpell(
     ...state,
     stackObjects: objects,
     stackOrder: state.stackOrder.filter((o) => o !== id),
+    // What it was as it left (D1171), for "where X is that spell's mana value" after the counter.
+    ...(object.kind === 'spell' ? {
+      counteredSpellsThisTurn: {
+        ...state.counteredSpellsThisTurn,
+        [id]: { manaValue: manaValueOnStack(state, id), manaSpent: object.manaSpent ?? 0 },
+      },
+    } : {}),
   };
   const inst = next.instances[id];
   if (object.kind !== 'spell' || inst === undefined) return next;

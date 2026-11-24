@@ -1263,6 +1263,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     castFrom: inst.zone,
     // And how many colours of mana were spent on it (D917), for sunburst and converge.
     ...(paid.coloursSpent > 0 ? { coloursSpent: paid.coloursSpent, colorsSpent: [...paid.colorsSpent] } : {}),
+    // And how much mana (D1171), for "the amount of mana spent to cast that spell".
+    ...(paid.manaSpent > 0 ? { manaSpent: paid.manaSpent } : {}),
     // And whether casualty was paid (D923), for its copy.
     ...(action.casualty === true ? { casualtyPaid: true as const } : {}),
     // And conspire (D926).
