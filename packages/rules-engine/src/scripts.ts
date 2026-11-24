@@ -12645,6 +12645,13 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
   const text = plain(line).trim().replace(/\.$/, '');
   const self = selfRef(name);
   /*
+    The condition in front (D1202): "If you have 3 or less life, this spell costs {6} less to cast"
+    (the Avatar cycle), "If you weren't the starting player, …". The same sentence as "This spell
+    costs {6} less to cast if you have 3 or less life", and read as that.
+  */
+  const leading = /^If ([^,]+), this spell costs (\{(?:\d+|X)\} less to cast)$/i.exec(text);
+  if (leading !== null) return selfCostChangeFromLine(`This spell costs ${leading[2]!} if ${leading[1]!}`, name);
+  /*
     "As an additional cost to cast this spell, reveal a Pirate card from your hand or pay {1}", and
     "… behold a Goblin or pay {2}" (D909). Revealing costs nothing, so the cost is nothing whenever
     there is a card to reveal (another card of that type in hand, or for behold also a permanent of

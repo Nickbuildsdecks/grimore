@@ -39671,6 +39671,43 @@ describe('"whenever one or more <kind> you control deal combat damage to a playe
   });
 });
 
+describe('"If …, this spell costs {N} less to cast" (D1202)', () => {
+  const HOPE = { name: 'Test Hope', type_line: 'Creature — Avatar', mana_cost: '{6}{W}{W}', cmc: 8, colors: ['W'], power: '4', toughness: '9', oracle_text: 'If you have 3 or less life, this spell costs {6} less to cast.\nFlying', layout: 'normal' };
+  const FURY = { name: 'Test Fury', type_line: 'Creature — Avatar', mana_cost: '{6}{R}{R}', cmc: 8, colors: ['R'], power: '6', toughness: '6', oracle_text: 'If an opponent controls seven or more lands, this spell costs {6} less to cast.', layout: 'normal' };
+  const ROWS = [HOPE, FURY];
+  const deck = customDeck({
+    id: 'd1202', name: 'Avatars',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 26 }, { name: 'Mountain', count: 26 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, theirLands = 0): GameState => advanceTo(arena({
+    decks: { 0: 'd1202', 1: 'd1202' }, deckSpecs: { d1202: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 1: Array.from({ length: theirLands }, () => 'Mountain') },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const change = (s: GameState, name: string): number => {
+    const id = find(s, 0, 'hand', name);
+    return costChangeFor(s, 0, s.cardDefs[s.instances[id]!.defKey], id).generic;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the condition decides: 20 life is no change, 3 life is {6} less', () => {
+    let s = table('Test Hope');
+    expect(change(s, 'Test Hope')).toBe(0);
+    s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: -17 } as Action);
+    expect(change(s, 'Test Hope')).toBe(-6);
+  });
+
+  it('an opponent with seven lands makes it {6} less, with six it does not', () => {
+    expect(change(table('Test Fury', 6), 'Test Fury')).toBe(0);
+    expect(change(table('Test Fury', 7), 'Test Fury')).toBe(-6);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
