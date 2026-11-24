@@ -40283,6 +40283,75 @@ describe('"whenever another Elf enters / a Human creature dies", anybody\'s (D12
   });
 });
 
+describe('"when you play another land, sacrifice ~", City of Traitors (D835)', () => {
+  const CITY = { name: 'Test City', type_line: 'Land', oracle_text: 'When you play another land, sacrifice Test City.\n{T}: Add {C}{C}.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' };
+  const deck = customDeck({ id: 'd835', name: 'City', entries: [{ name: 'Test City', count: 2 }, { name: 'Forest', count: 58 }], data: [CITY] as never[] });
+  const table = (hand: string[], battlefield: string[], seat: 0 | 1 = 0) => advanceTo(arena({
+    decks: { 0: 'd835', 1: 'd835' }, deckSpecs: { d835: deck.deck },
+    hands: { [seat]: hand }, battlefield: { 0: battlefield }, turn: 3, firstSeat: seat,
+  } as never), 'precombat-main');
+  const play = (s: GameState, seat: 0 | 1, name: string) => drain(passBoth(apply(s, { type: 'auto:playLand', by: seat, card: find(s, seat, 'hand', name) })));
+
+  it('reads', () => {
+    expect(compileCard(CITY as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('playing the City itself does not sacrifice it', () => {
+    const s = play(table(['Test City'], []), 0, 'Test City');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test City');
+  });
+
+  it('playing another land sacrifices it', () => {
+    const s = play(table(['Forest'], ['Test City']), 0, 'Forest');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test City');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test City');
+  });
+
+  it("an opponent's land does not", () => {
+    const s = play(table(['Forest'], ['Test City'], 1), 1, 'Forest');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test City');
+  });
+});
+
+describe('"double the number of +1/+1 counters on …", Kalonian Hydra (D836)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Swell', 'Sorcery', 'Double the number of +1/+1 counters on each creature you control.'),
+    R('Test Feed', 'Instant', 'Double the number of +1/+1 counters on target creature.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Elk', 'Creature — Elk', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd836', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const run = (spell: string, aimAt?: 'ours' | 'theirs') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd836', 1: 'd836' }, deckSpecs: { d836: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Test Bear', 'Test Elk'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const ours = find(s, 0, 'battlefield', 'Test Bear');
+    const elk = find(s, 0, 'battlefield', 'Test Elk');
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [ours]: { ...s.instances[ours]!, counters: { '+1/+1': 2 } }, [theirs]: { ...s.instances[theirs]!, counters: { '+1/+1': 3 } } } };
+    const target = aimAt === undefined ? undefined : aimAt === 'ours' ? ours : theirs;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }) })));
+    const n = (id: string) => s.instances[id]!.counters['+1/+1'] ?? 0;
+    return [n(ours), n(elk), n(theirs)];
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each creature you control: 2 becomes 4, none stays none, and theirs keeps 3', () => {
+    expect(run('Test Swell')).toEqual([4, 0, 3]);
+  });
+
+  it('target creature: their 3 becomes 6', () => {
+    expect(run('Test Feed', 'theirs')).toEqual([2, 0, 6]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

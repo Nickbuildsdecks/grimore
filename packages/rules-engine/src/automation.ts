@@ -1544,6 +1544,8 @@ function triggerMatches(
     }
     // "Whenever you scry / surveil" (D991): whose scry, and which keyword.
     case 'land-played': {
+      // "Another land" (D835): the watcher's own play is not one.
+      if (want.kind === 'land-played' && want.other === true && isSubject) return false;
       const by = want.kind === 'land-played' ? want.by ?? 'you' : 'you';
       if (by === 'any') return true;
       if (actorSeat === undefined) return false;
@@ -2575,8 +2577,8 @@ function raise(
       || event.kind === 'damaged' || event.kind === 'deals-damage'
       // And the card that was cycled (D567), and the permanent that was sacrificed (D570).
       || event.kind === 'cycles' || event.kind === 'sacrifices'
-      // And the card that was discarded (D719).
-      || event.kind === 'discards')) {
+      // And the card that was discarded (D719), and the land that was played (D835).
+      || event.kind === 'discards' || event.kind === 'land-played')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.

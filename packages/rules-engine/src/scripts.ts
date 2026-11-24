@@ -20858,11 +20858,12 @@ const TRIGGER_SHAPES: readonly ({
   },
   // "Whenever an opponent plays a land" (D1187), and "you play a land or cast a spell".
   {
-    prologue: () => /^Whenever (?<by>you|an opponent|a player) plays? a land, (?<clause>.+)$/i,
+    prologue: () => /^When(?:ever)? (?<by>you|an opponent|a player) plays? (?<another>a|another) land, (?<clause>.+)$/i,
     from: (matched) => {
       const by = ({ you: 'you', 'an opponent': 'opponent', 'a player': 'any' } as const)[
         matched.groups!.by!.toLowerCase() as 'you' | 'an opponent' | 'a player'];
-      return [{ kind: 'land-played' as const, by }];
+      // "Another land" (D835, City of Traitors): not this land's own play.
+      return [{ kind: 'land-played' as const, by, ...(/^another$/i.test(matched.groups!.another!) ? { other: true as const } : {}) }];
     },
   },
   {
@@ -28932,6 +28933,30 @@ function readEffect(
     creature you control until end of turn", the power or the toughness alone too. Each creature
     gets its own size as the effect resolves, as one target does.
   */
+  /*
+    "Double the number of +1/+1 counters on each creature you control" (D836, Kalonian Hydra), "on
+    target creature [you control]", "on this creature". To double them is to put that many more
+    (CR 122.7), so it goes through `addCounters` and anything that changes how many are put.
+  */
+  const doubledCounters = new RegExp(`^double the number of \\+1/\\+1 counters on (each creature you control|target creature(?: you control)?|this creature|${selfRef(name)})$`, 'i').exec(clause.trim());
+  if (doubledCounters !== null) {
+    const which = doubledCounters[1]!.toLowerCase();
+    const more = (state: GameState, id: string): GameState => {
+      const have = state.instances[id]?.counters['+1/+1'] ?? 0;
+      return have > 0 && state.instances[id]?.zone === 'battlefield' ? addCounters(state, id, '+1/+1', have) : state;
+    };
+    if (which === 'each creature you control') {
+      return { effect: (c) => creaturesControlledBy(c.state, c.controller).reduce(more, c.state) };
+    }
+    if (which.startsWith('target ')) {
+      const spec = targetSpecFrom(which, true);
+      if (spec !== null && spec.kind === 'creature') {
+        return { targets: [spec], effect: (c) => { const id = firstCardTarget(c); return id === null ? c.state : more(c.state, id); } };
+      }
+    } else {
+      return { effect: (c) => more(c.state, c.source) };
+    }
+  }
   const doubledAll = /^double the (power and toughness|power|toughness) of each (other )?creature you control until end of turn$/i.exec(clause.trim());
   if (doubledAll !== null) {
     const which = doubledAll[1]!.toLowerCase();

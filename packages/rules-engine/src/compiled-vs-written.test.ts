@@ -225,6 +225,17 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     keys: ['triggers'],
     digest: '8dd9a954',
   },
+  /*
+    D836: Dragonsguard Elite's "{4}{G}{G}: Double the number of +1/+1 counters on ~" compiles now,
+    and the effect is the same (as many again through `addCounters`). The hand-written ability keeps
+    its `buysNothingIf` bot hint, six mana to double no counters, which a compiled ability does not
+    carry. The hand-written script is the one played.
+  */
+  'Dragonsguard Elite': {
+    why: 'the hand-written ability carries a bot hint (buysNothingIf with no counters)',
+    keys: ['abilities'],
+    digest: 'f1b506d1',
+  },
 };
   /*
     **Two more were here and are settled (D420).** `Flame Slash` wanted the `removesACreature` hint
