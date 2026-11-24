@@ -60639,3 +60639,26 @@ Faults injected by hand: 2, all caught.
 - The chosen colour's protection not sparing its source.
 
 Coverage: 16,318 of 31,900 cards (+4 over D1189's 16,314), 38,662 of 59,888 lines (+5).
+
+## D1191 — a dying creature's counters: moved on, or counted
+
+Two shapes on dies triggers that read the counters the creature had:
+- **"Put its counters on target creature you control"** (Dockworker Drone, Parish-Blade Trainee,
+  and "up to one target" on Graft Surgeon): every counter of every kind the creature had as it left,
+  off the dies event's snapshot (`EffectContext.subjectCounters`), else as it is now, put on the
+  target.
+- **"For each counter on it"**, any kind (Kinsbaile Borderguard): the sum of that snapshot. "For
+  each +1/+1 counter on it" already read.
+
+Read whole now: Dockworker Drone, Graft Surgeon, Parish-Blade Trainee, Kinsbaile Borderguard.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Put its counters on": two +1/+1 counters and an oil counter move to the Bear.
+- "For each counter on it": three counters of two kinds make three Soldiers.
+
+Faults injected by hand: 2, all caught.
+- The counters read off the dead card now (none) instead of the snapshot.
+- Kinds counted instead of counters.
+
+Coverage: 16,329 of 31,900 cards (+11 over D1190's 16,318), 38,679 of 59,888 lines (+17).
