@@ -39045,6 +39045,44 @@ describe('nine more "as long as" conditions (D1188)', () => {
   });
 });
 
+describe('"This effect doesn\'t remove ~": the Ward Auras (D1189)', () => {
+  const ROWS = [
+    { name: 'Test Ward', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature has protection from white. This effect doesn't remove Test Ward.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Halo', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1189', name: 'Wards',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const enchant = (s0: GameState, aura: string, host: string): GameState => {
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', aura), targets: [{ kind: 'card', id: host }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Ward stays on its own protection; another white Aura falls off', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1189', 1: 'd1189' }, deckSpecs: { d1189: deck.deck },
+      hands: { 0: ['Test Halo', 'Test Ward'] }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = enchant(s, 'Test Halo', bear);
+    expect(power(s, bear)).toBe(3);
+    s = enchant(s, 'Test Ward', bear);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Halo');
+    const ward = find(s, 0, 'battlefield', 'Test Ward');
+    expect(s.instances[ward]!.attachedTo).toBe(bear);
+    expect(power(s, bear)).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

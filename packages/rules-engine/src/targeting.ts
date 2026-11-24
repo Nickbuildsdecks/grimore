@@ -191,7 +191,10 @@ function satisfies(
   // And protection stops anything of that colour, whoever controls it (CR 702.16c) — which is the
   // difference from hexproof: a white creature with protection from black cannot be Doom Bladed by
   // its own controller either, and a black creature with protection from black cannot target it.
-  if (protectionApplies(state, ch.protectionFrom, source ?? null, ch.protectionQualities)) return false;
+  // "This effect doesn't remove ~" (D1189): an attachment is asked only against the protection
+  // that does not spare it.
+  const spared = forAttachment && source !== undefined && (ch.protectionSpares ?? []).includes(source);
+  if (protectionApplies(state, spared ? ch.protectionUnspared ?? [] : ch.protectionFrom, source ?? null, ch.protectionQualities)) return false;
   return spec.filter ? spec.filter(state, candidate, controller, source) : true;
 }
 

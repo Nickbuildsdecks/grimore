@@ -1749,6 +1749,12 @@ export interface ContinuousEffect {
    */
   readonly protectionFrom?: readonly Color[];
   /**
+   * "This effect doesn't remove ~" (D1189): the White Ward cycle. This effect's protection does not
+   * make its own source, the Aura, an illegal attachment (CR 702.16d), so the Aura stays on.
+   * Protection from the same colour from anywhere else still removes it.
+   */
+  readonly protectionSparesSource?: true;
+  /**
    * **Triggered abilities this effect hands the permanents in scope** (CR 113.6, 603.2) — the
    * indices of entries in the *source card's* `grantedTriggers`.
    *
@@ -2421,6 +2427,13 @@ export interface Characteristics {
   readonly protectionFrom: readonly Color[];
   /** And from these qualities that are not colours (D596). See `protectionQuality`. */
   readonly protectionQualities: readonly string[];
+  /**
+   * The sources whose own protection spares them (D1189, `protectionSparesSource`), and the
+   * protection from every other source and the printed card, which is what such a source is
+   * still asked against as an attachment.
+   */
+  readonly protectionSpares?: readonly string[];
+  readonly protectionUnspared?: readonly Color[];
   /**
    * Total toxic value (CR 702.164b): the poison counters a player gets, on top of the damage, for
    * being dealt combat damage by this creature. 0 for almost everything. See `printedToxic`.
@@ -3384,6 +3397,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const printedProt = printedProtection(def?.oracleText);
   let protectionFrom: Color[] | null = printedProt.length === 0 ? null : [...printedProt];
+  // D1189: see `Characteristics.protectionSpares`.
+  const spares: string[] = [];
+  const unspared: Color[] = [...printedProt];
   // And the printed qualities, a base characteristic cleared with the colours (D596).
   let protectionQualities: readonly string[] = printedProtectionQualities(def?.oracleText);
   // Printed toxic, a base characteristic like the two above and cleared with them (CR 613.1f).
@@ -3481,7 +3497,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     for (const colour of effect.protectionFrom ?? []) {
       protectionFrom ??= [];
       if (!protectionFrom.includes(colour)) protectionFrom.push(colour);
+      if (effect.protectionSparesSource !== true && !unspared.includes(colour)) unspared.push(colour);
     }
+    if (effect.protectionSparesSource === true && (effect.protectionFrom ?? []).length > 0) spares.push(effect.source);
     // Layer 5 (CR 613.1d), which only has to be in effect order to be right: two effects that both
     // set a colour resolve last-one-wins, the same way two that set power do.
     if (effect.setColors !== undefined) setColors = effect.setColors;
@@ -3545,6 +3563,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     goadedBy: goadedBy ?? NO_SEATS,
     protectionFrom: protectionFrom ?? NO_COLORS,
     protectionQualities,
+    ...(spares.length === 0 ? {} : { protectionSpares: spares, protectionUnspared: unspared }),
     toxic,
   };
 }

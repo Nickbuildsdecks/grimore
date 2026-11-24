@@ -3068,6 +3068,8 @@ export interface PumpOptions {
   readonly mustAttackAnotherPlayer?: boolean;
   /** See `ContinuousEffect.protectionFrom` — protection from a colour (CR 702.16). */
   readonly protectionFrom?: readonly Color[];
+  /** See `ContinuousEffect.protectionSparesSource` (D1189). */
+  readonly protectionSparesSource?: true;
   /** See `ContinuousEffect.setPower` — layer 7b, "becomes 1/1" rather than "gets +1/+1". */
   readonly setPower?: number;
   readonly setToughness?: number;
@@ -3179,6 +3181,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.landwalk === undefined ? {} : { landwalk: [...opts.landwalk] }),
     ...(opts.mustAttackAnotherPlayer ? { mustAttackAnotherPlayer: true } : {}),
     ...(opts.protectionFrom ? { protectionFrom: opts.protectionFrom } : {}),
+    ...(opts.protectionSparesSource ? { protectionSparesSource: true as const } : {}),
     ...(opts.setPower === undefined ? {} : { setPower: opts.setPower }),
     ...(opts.setToughness === undefined ? {} : { setToughness: opts.setToughness }),
     ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),

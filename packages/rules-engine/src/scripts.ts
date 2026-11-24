@@ -17252,6 +17252,14 @@ function attachmentBonus(
   if (/^(?:enchanted|equipped) creature's controller may have it assign its combat damage as though it weren't blocked\.?$/i.test(plain(line).trim())) {
     return { bonus: { assignsAsUnblocked: true }, harmful: false };
   }
+  // "Enchanted creature has protection from white. This effect doesn't remove ~." (D1189): the Ward
+  // cycle. Read as the protection, with `protectionSparesSource` so the Aura itself stays on.
+  const sparing = new RegExp(`^(.+?)\\.\\s+This effect doesn't remove ${selfRef(name)}\\.?$`, 'i').exec(plain(line).trim());
+  if (sparing !== null) {
+    const inner = attachmentBonus(sparing[1]!, name);
+    if (inner === null || (inner.bonus.protectionFrom ?? []).length === 0) return null;
+    return { ...inner, bonus: { ...inner.bonus, protectionSparesSource: true } };
+  }
   // Lure (D914): "All creatures able to block enchanted creature do so." See `ContinuousEffect.lure`.
   if (/^all creatures able to block (?:enchanted|equipped) creature do so\.?$/i.test(plain(line).trim())) {
     return { bonus: { lure: true }, harmful: false };
