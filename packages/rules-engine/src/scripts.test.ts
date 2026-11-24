@@ -39794,6 +39794,50 @@ describe('"A. If …, B instead." where B refers back to A\'s target (D1204)', (
   });
 });
 
+describe('a grant of protection from a colour (D1205)', () => {
+  const ROWS = [
+    { name: 'Test Ward', type_line: 'Instant', oracle_text: 'Target creature gains protection from red until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Shelter', type_line: 'Instant', oracle_text: 'Creatures you control gain flying and protection from black and from red until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Spark', type_line: 'Instant', oracle_text: 'Test Spark deals 2 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1205', name: 'Protection',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1205', 1: 'd1205' }, deckSpecs: { d1205: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets?: unknown[]): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), ...(targets === undefined ? {} : { targets }),
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"target creature gains protection from red": a red spell can no longer target it', () => {
+    let s = table(['Test Ward', 'Test Spark'], ['Test Cub']);
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    s = cast(s, 'Test Ward', [{ kind: 'card', id: cub }]);
+    expect(characteristicsOf(s, s.instances[cub]!).protectionFrom).toEqual(['R']);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spark'), targets: [{ kind: 'card', id: cub }] } as Action)).not.toBeNull();
+  });
+
+  it('"gain flying and protection from black and from red": both colours and the keyword, on each of yours', () => {
+    let s = table(['Test Shelter'], ['Test Cub', 'Test Cub']);
+    s = cast(s, 'Test Shelter');
+    for (const id of ids(s, 0, 'battlefield').filter((i) => nameOf(s, i) === 'Test Cub')) {
+      const chars = characteristicsOf(s, s.instances[id]!);
+      expect([...chars.protectionFrom].sort()).toEqual(['B', 'R']);
+      expect(chars.keywords).toContain('flying');
+    }
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

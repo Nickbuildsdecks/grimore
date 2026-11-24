@@ -14667,15 +14667,14 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       "… and protection from each color" at the end of a list (D668): Akroma's Will's second mode.
       Protection from all five colours, which is what the printed Etched Champion stores (D83).
     */
-    const everyColour = /^(.*?),?\s*(?:and\s+)?protection from (?:each|all) colou?rs?$/i.exec(teamGains[2]!.trim());
-    const words = everyColour === null ? grantedKeywordList(teamGains[2]!)
-      : everyColour[1]!.trim() === '' ? [] : grantedKeywordList(everyColour[1]!);
+    // And protection from named colours (D1205): "protection from black and from red".
+    const words = grantedWithProtection(teamGains[2]!);
     if (subject !== null && words !== null) {
       return {
         ...(subject.targets === undefined ? {} : { targets: subject.targets }),
         effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, {
-          keywords: words,
-          ...(everyColour === null ? {} : { protectionFrom: ['W', 'U', 'B', 'R', 'G'] }),
+          keywords: words.keywords,
+          ...(words.protectionFrom.length === 0 ? {} : { protectionFrom: words.protectionFrom }),
         }),
       };
     }
@@ -15969,6 +15968,27 @@ function pumpAndGrant(
  * nothing and a spell that looks like it worked. "Protection from red" is the shape that catches —
  * refused here, reported unread, played by hand (D362).
  */
+/**
+ * A grant that may end in protection (D1205): "gains protection from red", "gain flying and
+ * protection from black and from red", "gain protection from each color". The keywords before it
+ * are `grantedKeywordList`'s, and the colours are protection's (`PumpOptions.protectionFrom`).
+ * "From creatures", "from instants" and "from the chosen color" stay unread here.
+ */
+function grantedWithProtection(granted: string): { readonly keywords: Keyword[]; readonly protectionFrom: Color[] } | null {
+  const text = granted.trim();
+  const prot = /^(.*?),?\s*(?:and\s+)?protection from (each colou?r|all colou?rs|(?:white|blue|black|red|green)(?:,? (?:and )?from (?:white|blue|black|red|green))*)$/i.exec(text);
+  if (prot === null) {
+    const keywords = grantedKeywordList(text);
+    return keywords === null ? null : { keywords, protectionFrom: [] };
+  }
+  const colours: Color[] = /^(?:each|all)/i.test(prot[2]!)
+    ? ['W', 'U', 'B', 'R', 'G']
+    : prot[2]!.split(/,? (?:and )?from /i).map((word) => COLOUR_WORDS[word.trim().toLowerCase()]!);
+  const head = prot[1]!.trim();
+  const keywords = head === '' ? [] : grantedKeywordList(head);
+  return keywords === null ? null : { keywords, protectionFrom: colours };
+}
+
 function grantedKeywordList(granted: string): Keyword[] | null {
   // A list too (D668): "flying, vigilance, and double strike" — Akroma's Will.
   const words = granted.trim().toLowerCase().split(/,\s*(?:and\s+)?|\s+and\s+/).map((word) => word.trim());
@@ -26139,9 +26159,10 @@ function newBodyFrom(predicates: string): { readonly opts: PumpOptions; readonly
     } else if (pumped !== null && opts.power === undefined) {
       opts = { ...opts, power: Number(pumped[1]), toughness: Number(pumped[2]) };
     } else if (gains !== null && opts.keywords === undefined) {
-      const words = grantedKeywordList(gains[1]!);
+      // And protection from a colour (D1205): "gains protection from red".
+      const words = grantedWithProtection(gains[1]!);
       if (words === null) { ok = false; break; }
-      opts = { ...opts, keywords: words };
+      opts = { ...opts, keywords: words.keywords, ...(words.protectionFrom.length === 0 ? {} : { protectionFrom: words.protectionFrom }) };
     } else if (becomes !== null && opts.setCreatureTypes === undefined && opts.addSubtypes === undefined) {
       const types = becomes[2]!.split(' ');
       if (!types.every((word) => isCreatureType(word))) { ok = false; break; }
@@ -28062,25 +28083,29 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     /^((?:another |up to one (?:other )?)?target [^,]+?)(?: becomes ([a-z]+) and)? gains ([a-z][a-z', ]*?)( until end of turn)?$/i
       .exec(text);
   if (granted !== null) {
-    const words = grantedKeywordList(granted[3]!);
+    // And protection from a colour (D1205): "target creature gains protection from red".
+    const grant = grantedWithProtection(granted[3]!);
+    const words = grant === null ? null : grant.keywords;
+    const shield = grant === null ? [] : grant.protectionFrom;
     const aimed = targetSpecFrom(granted[1]!, true);
     // A creature only: "target land gains shroud" is not a creature's keyword. (A plural target prints "gain".)
     // Or a target printed as a **permanent**, for the keywords any permanent can have (D796): "Target
     // permanent you control gains hexproof and indestructible until end of turn" (Tamiyo's
     // Safekeeping). "Target land gains shroud" stays unread, as D1030 pins.
-    const anyPermanent = words !== null && words.every((word) => word === 'hexproof' || word === 'indestructible' || word === 'shroud');
+    const anyPermanent = words !== null && shield.length === 0 && words.every((word) => word === 'hexproof' || word === 'indestructible' || word === 'shroud');
     const spec = aimed !== null && (aimed.kind === 'creature' || (aimed.kind === 'permanent' && anyPermanent && /\bpermanent\b/i.test(granted[1]!))) ? aimed : null;
     const becomes = granted[2] === undefined
       ? undefined
       : TOKEN_COLOURS[granted[2].toLowerCase()] ?? null;
     const colourOk = granted[2] === undefined || (becomes !== undefined && becomes !== null);
     if (words !== null && spec !== null && colourOk) {
-      const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
+      const protective = shield.length > 0 || words.some((word) => word === 'hexproof' || word === 'shroud');
       const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
       const lasting = granted[4] === undefined;
+      const shielded = shield.length === 0 ? {} : { protectionFrom: shield };
       const options: PumpOptions = becomes === undefined || becomes === null
-        ? { keywords: words, ...(lasting ? { duration: 'permanent' as const } : {}) }
-        : { keywords: words, setColors: [becomes], ...(lasting ? { duration: 'permanent' as const } : {}) };
+        ? { keywords: words, ...shielded, ...(lasting ? { duration: 'permanent' as const } : {}) }
+        : { keywords: words, setColors: [becomes], ...shielded, ...(lasting ? { duration: 'permanent' as const } : {}) };
       return {
         targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => {

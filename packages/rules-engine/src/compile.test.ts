@@ -6225,7 +6225,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it.each([
       ['Target creature gains flying and soaring until end of turn.'],
-      ['Target creature gains protection from red until end of turn.'],
+      // "Protection from red" was this row until D1205 read a colour's protection.
+      ['Target creature gains protection from creatures until end of turn.'],
     ])('refuses %s, whose words this engine would ignore', (text) => {
       /*
         `isKeyword` is the gate: the engine's keyword list is what `characteristicsOf` consults, so a
