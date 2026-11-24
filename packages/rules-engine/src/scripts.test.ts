@@ -39218,6 +39218,39 @@ describe('the dig\'s consolation: "if you didn\'t put a card into your hand this
   });
 });
 
+describe('compound X: "N plus", "twice", "A plus B" (D1193)', () => {
+  const ROWS = [
+    { name: 'Test Plus', type_line: 'Sorcery', oracle_text: 'You gain X life, where X is 3 plus the number of artifacts you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Twice', type_line: 'Sorcery', oracle_text: 'You gain X life, where X is twice the number of artifacts you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Sum', type_line: 'Sorcery', oracle_text: 'You gain X life, where X is the number of artifacts you control plus the number of creatures you control.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1193', name: 'Compound',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 45 }],
+    data: ROWS as never[],
+  });
+  const gained = (card: string): number => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1193', 1: 'd1193' }, deckSpecs: { d1193: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: ['Test Relic', 'Test Relic', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card) })), 20);
+    return life(s, 0) - before;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two artifacts and a creature: 3 plus 2, twice 2, 2 plus 1', () => {
+    expect([gained('Test Plus'), gained('Test Twice'), gained('Test Sum')]).toEqual([5, 4, 3]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
