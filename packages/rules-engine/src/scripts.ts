@@ -20498,9 +20498,25 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'damaged', combatOnly: true }],
   },
   // "Enchanted creature is dealt damage", "enchanted creature / land becomes tapped" (D994).
+  // And "equipped creature" (D1186): the Equipment's host, as an Aura's.
   {
-    prologue: () => /^When(?:ever)? enchanted creature is dealt damage, (.+)$/i,
+    prologue: () => /^When(?:ever)? (?:enchanted|equipped) creature is dealt damage, (.+)$/i,
     on: [{ kind: 'damaged', who: 'attached' }],
+  },
+  /*
+    The board's "is dealt damage" (D1186): "a creature (you control | an opponent controls) is dealt
+    damage", "a permanent you control …", "a Dragon you control …". Asked of the permanent as it
+    was dealt the damage, like the board's tap (D1121).
+  */
+  {
+    prologue: () => /^Whenever an? (?<what>creature|permanent|[A-Z][A-Za-z'-]*)(?<whose> you control| an opponent controls)? is dealt damage, (?<clause>.+)$/,
+    from: (matched) => {
+      const what = matched.groups!.what!;
+      const whose = (matched.groups!.whose ?? '').trim();
+      const of = whose === 'you control' ? { of: 'you' as const } : whose === 'an opponent controls' ? { of: 'opponent' as const } : {};
+      if (what === 'creature' || what === 'permanent') return [{ kind: 'damaged' as const, who: 'any' as const, what, ...of }];
+      return isCreatureType(what) ? [{ kind: 'damaged' as const, who: 'any' as const, what: 'creature' as const, ofSubtypes: [what], ...of }] : null;
+    },
   },
   {
     prologue: () => /^When(?:ever)? enchanted (?:creature|land|permanent|artifact) becomes tapped, (.+)$/i,

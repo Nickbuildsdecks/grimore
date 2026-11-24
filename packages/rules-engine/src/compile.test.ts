@@ -18259,8 +18259,9 @@ describe('damage as an event: the five prologues (D566)', () => {
   });
 
   it.each([
-    ['"equipped creature is dealt damage", whose host may be dead and detached by then',
-      'Whenever equipped creature is dealt damage, you gain 1 life.', 'Artifact — Equipment'],
+    // "Equipped creature is dealt damage" reads since D1186: the event carries what was attached as
+    // the damage was dealt (D994), so a host that dies of it still fires the trigger (its test is
+    // in scripts.test.ts).
     ['"dealt damage by enchanted creature", whose one card means the enchanted creature by "that creature"',
       'Whenever a creature dealt damage by enchanted creature this turn dies, put a +1/+1 counter on that creature.', AURA],
     ['a threshold on the damage', 'Whenever Sengir Vampire is dealt 3 or more damage, draw a card.', undefined],

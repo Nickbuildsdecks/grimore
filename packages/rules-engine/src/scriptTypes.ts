@@ -833,25 +833,24 @@ export type TriggerEvent =
    * per **combat damage step** however many creatures dealt it — combat damage is simultaneous
    * (CR 510.2), so three blockers are one event where three pings are three.
    *
-   * Its own permanent only, like `becomes-tapped` and `leaves`, so it takes no `who`: the board
-   * forms ("a creature you control is dealt damage", "equipped creature is dealt damage") are two
-   * legal cards between them and are refused where the row is.
+   * Since D1186 the board's too, the way `becomes-tapped` became the board's in D1121: "a creature
+   * you control is dealt damage", "a creature an opponent controls …", "a Dragon you control …",
+   * with `who: 'any'` and the `BoardSubjectFilter` filters. `attached` (D994) is an Aura's or an
+   * Equipment's host: "Whenever enchanted / equipped creature is dealt damage".
    */
-  | {
+  | ({
       readonly kind: 'damaged';
       /** Set by the engine: which permanent was dealt the damage. */
       readonly subject?: string;
       /** "Whenever ~ is dealt **combat** damage" (D992): only the combat damage step's event. */
       readonly combatOnly?: true;
-      /** `attached` (D994): "Whenever enchanted creature is dealt damage". */
-      readonly who?: 'self' | 'attached';
       /** Set by the engine (D994): what was attached to it as the damage was dealt. */
       readonly attachments?: readonly string[];
       /** Set by the engine (D992): whether it was combat damage. */
       readonly combat?: boolean;
       /** Set by the engine: how much it was dealt (D904); combat damage is summed, as one event. */
       readonly amount?: number;
-    }
+    } & BoardSubjectFilter)
   /**
    * "Whenever ~ **deals damage to an opponent**" — any damage, not only combat damage (D566).
    *

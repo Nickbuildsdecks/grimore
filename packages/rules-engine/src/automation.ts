@@ -1349,7 +1349,7 @@ function boardSubjectMatches(
  * permanent or an emblem with a `who` of `any` or `another`. `raise` asks before it offers a tap or
  * a leave to the whole board, since a tap is raised for every land tapped for mana.
  */
-function boardWatched(state: GameState, kind: 'becomes-tapped' | 'becomes-untapped' | 'leaves' | 'turned-face-up'): boolean {
+function boardWatched(state: GameState, kind: 'becomes-tapped' | 'becomes-untapped' | 'leaves' | 'turned-face-up' | 'damaged'): boolean {
   for (const key of Object.keys(state.zones)) {
     const battlefield = key.endsWith(':battlefield');
     if (!battlefield && !key.endsWith(':command')) continue;
@@ -1984,6 +1984,11 @@ function triggerMatches(
       // The board's version (D1121): "whenever a creature an opponent controls becomes tapped".
       if (want.kind === 'becomes-tapped' && (want.who === 'any' || want.who === 'another')) {
         return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'becomes-tapped' }>, sourceSeat, isSubject);
+      }
+      // And a creature the board watches being dealt damage (D1186).
+      if (want.kind === 'damaged' && (want.who === 'any' || want.who === 'another')) {
+        return boardSubjectMatches(want, event as Extract<TriggerEvent, { kind: 'damaged' }>, sourceSeat, isSubject)
+          && !(want.combatOnly === true && (event as { combat?: boolean }).combat !== true);
       }
       // An attached watcher is only ever offered its own host's event by `raise`, so only `self`
       // needs asking: an Aura's own "this enchantment becomes tapped" is not its host tapping.
@@ -2780,9 +2785,9 @@ function raise(
     mana is what `selfOnly` below exists to avoid.
   */
   const watchedByBoard = subject !== undefined
-    && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')
+    && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up' || event.kind === 'damaged')
     && boardWatched(next, event.kind);
-  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up')) {
+  if (watchedByBoard && (event.kind === 'becomes-tapped' || event.kind === 'becomes-untapped' || event.kind === 'leaves' || event.kind === 'turned-face-up' || event.kind === 'damaged')) {
     const inst = next.vanished[subject as string] ?? next.instances[subject as string];
     if (inst !== undefined) {
       const ch = characteristicsOf(next, inst);

@@ -38857,6 +38857,66 @@ describe('sacrifice triggers with "X or Y", "nontoken", a land, a creature type 
   });
 });
 
+describe('the board\'s "is dealt damage" (D1186)', () => {
+  const ROWS = [
+    { name: 'Test Watch', type_line: 'Enchantment', oracle_text: 'Whenever a creature you control is dealt damage, draw a card.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Hoard', type_line: 'Enchantment', oracle_text: 'Whenever a Dragon you control is dealt damage, you gain 2 life.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Ping', type_line: 'Instant', oracle_text: 'Test Ping deals 1 damage to any target.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '4' },
+    { name: 'Test Drake', type_line: 'Creature — Dragon', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '4' },
+    { name: 'Test Lash', type_line: 'Artifact — Equipment', oracle_text: 'Whenever equipped creature is dealt damage, you gain 2 life.\nEquip {2}', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Mite', type_line: 'Creature — Insect', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1186', name: 'Dealt damage',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1186', 1: 'd1186' }, deckSpecs: { d1186: deck.deck },
+    hands: { 0: ['Test Ping', 'Test Ping'] }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ping = (s0: GameState, target: string): GameState => {
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Ping'), targets: [{ kind: 'card', id: target }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 2), ROWS[5]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a creature you control": your Bear draws a card; their Bear does not', () => {
+    let s = table(['Test Watch', 'Test Bear'], ['Test Bear']);
+    const hand = ids(s, 0, 'hand').length;
+    s = ping(s, find(s, 0, 'battlefield', 'Test Bear'));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 1);
+    s = ping(s, find(s, 1, 'battlefield', 'Test Bear'));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 2 + 1);
+  });
+
+  it('"equipped creature is dealt damage": fires even when the damage kills the host', () => {
+    let s = table(['Test Lash', 'Test Mite'], []);
+    const lash = find(s, 0, 'battlefield', 'Test Lash');
+    const mite = find(s, 0, 'battlefield', 'Test Mite');
+    s = { ...s, instances: { ...s.instances, [lash]: { ...s.instances[lash]!, attachedTo: mite } } };
+    const before = life(s, 0);
+    s = ping(s, mite);
+    expect(s.instances[mite]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 2);
+  });
+
+  it('"a Dragon you control": the Dragon gains, the Bear does not', () => {
+    let s = table(['Test Hoard', 'Test Bear', 'Test Drake'], []);
+    const before = life(s, 0);
+    s = ping(s, find(s, 0, 'battlefield', 'Test Bear'));
+    expect(life(s, 0)).toBe(before);
+    s = ping(s, find(s, 0, 'battlefield', 'Test Drake'));
+    expect(life(s, 0)).toBe(before + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
