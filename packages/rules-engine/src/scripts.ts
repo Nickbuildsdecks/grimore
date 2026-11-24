@@ -17257,7 +17257,7 @@ function attachmentBonus(
   const sparing = new RegExp(`^(.+?)\\.\\s+This effect doesn't remove ${selfRef(name)}\\.?$`, 'i').exec(plain(line).trim());
   if (sparing !== null) {
     const inner = attachmentBonus(sparing[1]!, name);
-    if (inner === null || (inner.bonus.protectionFrom ?? []).length === 0) return null;
+    if (inner === null || ((inner.bonus.protectionFrom ?? []).length === 0 && inner.bonus.protectionFromChosen !== true)) return null;
     return { ...inner, bonus: { ...inner.bonus, protectionSparesSource: true } };
   }
   // Lure (D914): "All creatures able to block enchanted creature do so." See `ContinuousEffect.lure`.
@@ -17522,6 +17522,8 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
     red" on its own. Colours only; "from creatures", "from instants" and "from the chosen color"
     stay unread.
   */
+  // "Has protection from the chosen color" (D1190): see `ContinuousEffect.protectionFromChosen`.
+  if (/^has protection from the chosen colou?r$/i.test(rider)) return { bonus: { protectionFromChosen: true }, harmful: false };
   const shielded = /^has protection from (white|blue|black|red|green)(?:,? and from (white|blue|black|red|green))?$/i.exec(rider);
   if (shielded !== null) {
     const colours = [shielded[1]!, shielded[2]].filter((w): w is string => w !== undefined)

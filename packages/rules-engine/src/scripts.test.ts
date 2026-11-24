@@ -39083,6 +39083,62 @@ describe('"This effect doesn\'t remove ~": the Ward Auras (D1189)', () => {
   });
 });
 
+describe('an Aura\'s protection from the chosen color (D1190)', () => {
+  const ROWS = [
+    { name: 'Test Lights', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nAs Test Lights enters, choose a color.\nEnchanted creature has protection from the chosen color. This effect doesn't remove Test Lights.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Halo', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1190', name: 'Chosen',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }],
+    data: ROWS as never[],
+  });
+  const enchant = (s0: GameState, aura: string, host: string, colour?: string): GameState => {
+    let s = apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', aura), targets: [{ kind: 'card', id: host }] });
+    for (let i = 0; i < 6; i++) {
+      if (s.pendingDecision !== null && colour !== undefined) {
+        s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: colour } as Action);
+        continue;
+      }
+      if (s.stackOrder.length === 0) break;
+      s = passBoth(s);
+    }
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('choosing white: the creature has protection from white, the white Halo falls off, the Aura stays', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1190', 1: 'd1190' }, deckSpecs: { d1190: deck.deck },
+      hands: { 0: ['Test Halo', 'Test Lights'] }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = enchant(s, 'Test Halo', bear);
+    s = enchant(s, 'Test Lights', bear, 'white');
+    expect(characteristicsOf(s, s.instances[bear]!).protectionFrom).toContain('W');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Halo');
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Lights')]!.attachedTo).toBe(bear);
+  });
+
+  it('choosing red: no protection from white, and the Halo stays', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1190', 1: 'd1190' }, deckSpecs: { d1190: deck.deck },
+      hands: { 0: ['Test Halo', 'Test Lights'] }, battlefield: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = enchant(s, 'Test Halo', bear);
+    s = enchant(s, 'Test Lights', bear, 'red');
+    const prot = characteristicsOf(s, s.instances[bear]!).protectionFrom;
+    expect([prot.includes('R'), prot.includes('W')]).toEqual([true, false]);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Halo');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

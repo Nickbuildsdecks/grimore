@@ -1755,6 +1755,12 @@ export interface ContinuousEffect {
    */
   readonly protectionSparesSource?: true;
   /**
+   * "Protection from the chosen color" (D1190) on an Aura or Equipment: the colour the effect's
+   * source chose as it entered (`CardInstance.chosen`), read live, so the effect is the same object
+   * whether it was installed before or after the choice was recorded. No colour chosen, none given.
+   */
+  readonly protectionFromChosen?: true;
+  /**
    * **Triggered abilities this effect hands the permanents in scope** (CR 113.6, 603.2) — the
    * indices of entries in the *source card's* `grantedTriggers`.
    *
@@ -3494,12 +3500,15 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       goadedBy ??= [];
       if (!goadedBy.includes(effect.controller)) goadedBy.push(effect.controller);
     }
-    for (const colour of effect.protectionFrom ?? []) {
+    // D1190: the source's chosen colour, as if printed in `protectionFrom`.
+    const chosenColour = effect.protectionFromChosen === true
+      ? state.instances[effect.source]?.chosen?.color as Color | undefined : undefined;
+    for (const colour of chosenColour === undefined ? effect.protectionFrom ?? [] : [...(effect.protectionFrom ?? []), chosenColour]) {
       protectionFrom ??= [];
       if (!protectionFrom.includes(colour)) protectionFrom.push(colour);
       if (effect.protectionSparesSource !== true && !unspared.includes(colour)) unspared.push(colour);
     }
-    if (effect.protectionSparesSource === true && (effect.protectionFrom ?? []).length > 0) spares.push(effect.source);
+    if (effect.protectionSparesSource === true && ((effect.protectionFrom ?? []).length > 0 || chosenColour !== undefined)) spares.push(effect.source);
     // Layer 5 (CR 613.1d), which only has to be in effect order to be right: two effects that both
     // set a colour resolve last-one-wins, the same way two that set power do.
     if (effect.setColors !== undefined) setColors = effect.setColors;
