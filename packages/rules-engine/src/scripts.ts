@@ -14342,6 +14342,18 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => scope.ids(c).reduce((state, id) => addCounters(state, id, kind, 1), c.state),
       };
     }
+    /*
+      D1176: any other scope `massScope` reads: "each creature token you control" (Sandstorm
+      Salvager), "each creature you control with flying", "each white creature you control", "each
+      tapped creature you control", "each nonblack creature". Frozen before the first counter, as
+      above.
+    */
+    const wider = massScope(eachCounter[2]!);
+    if (wider !== null) {
+      return {
+        effect: (c) => wider(c).reduce((state, id) => addCounters(state, id, kind, 1), c.state),
+      };
+    }
   }
 
   /*

@@ -38271,6 +38271,64 @@ describe('tokens in a scope (D1175)', () => {
   });
 });
 
+describe('a counter on each permanent of any scope massScope reads (D1176)', () => {
+  const ROWS = [
+    { name: 'Test Bloom', type_line: 'Sorcery', oracle_text: 'Put a +1/+1 counter on each green creature you control.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Blight', type_line: 'Sorcery', oracle_text: 'Put a -1/-1 counter on each nonblack creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bird', type_line: 'Creature — Bird', oracle_text: 'Flying', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', power: '1', toughness: '2' },
+    { name: 'Test Bat', type_line: 'Creature — Bat', oracle_text: 'Flying', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1176', name: 'Counters',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1176', 1: 'd1176' }, deckSpecs: { d1176: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"each green creature you control": your Bear, not your Bird, not their Bear', () => {
+    const s = cast(table(['Test Bloom'], ['Test Bear', 'Test Bird'], ['Test Bear']), 'Test Bloom');
+    expect([
+      s.instances[find(s, 0, 'battlefield', 'Test Bear')]!.counters['+1/+1'] ?? 0,
+      s.instances[find(s, 0, 'battlefield', 'Test Bird')]!.counters['+1/+1'] ?? 0,
+      s.instances[find(s, 1, 'battlefield', 'Test Bear')]!.counters['+1/+1'] ?? 0,
+    ]).toEqual([1, 0, 0]);
+  });
+
+  it('a list of subtypes is a union: "each Bird and Bat you control", not the Bear', () => {
+    const LIST = { name: 'Test Roost', type_line: 'Sorcery', oracle_text: 'Put a +1/+1 counter on each Bird and Bat you control.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' };
+    expect(compileCard(LIST as never)).toMatchObject({ ok: true, unread: [] });
+    const roost = customDeck({
+      id: 'd1176b', name: 'Roost', entries: [{ name: 'Test Roost', count: 3 }, { name: 'Test Bird', count: 3 }, { name: 'Test Bat', count: 3 }, { name: 'Test Bear', count: 3 }, { name: 'Forest', count: 45 }],
+      data: [LIST, ...ROWS.slice(2)] as never[],
+    });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1176b', 1: 'd1176b' }, deckSpecs: { d1176b: roost.deck },
+      hands: { 0: ['Test Roost'] }, battlefield: { 0: ['Test Bird', 'Test Bat', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = cast(s, 'Test Roost');
+    expect(['Test Bird', 'Test Bat', 'Test Bear'].map((n) => s.instances[find(s, 0, 'battlefield', n)]!.counters['+1/+1'] ?? 0)).toEqual([1, 1, 0]);
+  });
+
+  it('"each nonblack creature": both sides, the black Bat spared', () => {
+    const s = cast(table(['Test Blight'], ['Test Bird', 'Test Bat'], ['Test Bear']), 'Test Blight');
+    expect([
+      s.instances[find(s, 0, 'battlefield', 'Test Bird')]!.counters['-1/-1'] ?? 0,
+      s.instances[find(s, 0, 'battlefield', 'Test Bat')]!.counters['-1/-1'] ?? 0,
+      s.instances[find(s, 1, 'battlefield', 'Test Bear')]!.counters['-1/-1'] ?? 0,
+    ]).toEqual([1, 0, 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

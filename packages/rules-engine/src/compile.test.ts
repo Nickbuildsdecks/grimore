@@ -9423,6 +9423,11 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     ['their creatures, said the third way', 'put a -1/-1 counter on each creature you don’t control.'],
     // Harbinger of Night: no controller clause at all, which is every creature on the battlefield.
     ['every creature in the game', 'put a -1/-1 counter on each creature.'],
+    // D1176: the scopes `boardScope` refused and `massScope` reads (D1169 colours and keywords, its
+    // comma lists), each pinned by the D1176 tests in scripts.test.ts.
+    ['a list of subtypes', 'put a +1/+1 counter on each Pest, Bat, Insect, Snake, and Spider you control.'],
+    ['a keyword the creature has', 'put a +1/+1 counter on each creature you control with lifelink.'],
+    ['a colour', 'put a +1/+1 counter on each white creature you control.'],
   ])('reads %s', (_label, text) => {
     const compiled = probe(text as string);
     expect(compiled.ok).toBe(true);
@@ -9449,8 +9454,8 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     // D1037 (a counter condition on the set); see the D1037 tests in scripts.test.ts.
     // Arcbound Overseer: a condition before it, which is the same problem from the other side.
     ['a keyword condition', 'put a +1/+1 counter on each creature with modular you control.'],
-    // Blech, Loafing Pest: five subtypes in a list.
-    ['a list of subtypes', 'put a +1/+1 counter on each Pest, Bat, Insect, Snake, and Spider you control.'],
+    // Blech, Loafing Pest's five subtypes in a list read since D1176, through `massScope`, which
+    // splits the list before it classifies a word; see "reads" above.
     // Venerated Loxodon: a fact about how the spell was cast, not about the board.
     ['a fact about the cast', 'put a +1/+1 counter on each creature that convoked it.'],
     // Choking Fumes' "each attacking creature" reads since D749 (state words in a board scope).
@@ -9479,9 +9484,7 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     */
     // "each creature target player controls" reads since D1037: the target player is a real target.
     ['a union of two types', 'put a +1/+1 counter on each artifact creature and/or Vehicle you control.'],
-    ['a keyword the creature has', 'put a +1/+1 counter on each creature you control with lifelink.'],
     ['a back-reference to earlier creatures', 'put a +1/+1 counter on each of those creatures.'],
-    ['a colour', 'put a +1/+1 counter on each white creature you control.'],
     ['a second clause riding along', 'put a +1/+1 counter on each creature you control and gain 4 life.'],
   ])('refuses %s', (_label, text) => {
     expect(unreadLines(probe(text as string))).toEqual([`When Probe Beast enters, ${text as string}`]);
@@ -9504,7 +9507,7 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
   });
 
-  it('refuses a word that is not a word, rather than a scope that matches nothing', () => {
+  it('a comma list is split before a word is classified, never read as a word with a comma on it', () => {
     /*
       The punctuation guard, and the reason it exists rather than the word count.
 
@@ -9519,8 +9522,13 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
       which no card prints — it is here because the guard has no printed counter-example and a
       guard nobody can test gets removed by someone who does not know what it is for.
     */
+    /*
+      D1176: `boardScope` still refuses this, and the clause now falls back to `massScope`, which
+      splits the list at its commas first ("Pest", "Bat") and reads a union of the two subtypes, so
+      no word ever reaches a subtype test with its comma on. The D1176 tests pin the union.
+    */
     const text = 'put a +1/+1 counter on each Pest, Bat you control.';
-    expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
+    expect(unreadLines(probe(text))).toEqual([]);
   });
 
   it('refuses a counter key the engine does not read as size', () => {
