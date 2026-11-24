@@ -43219,3 +43219,31 @@ which asks a question.
 Faults injected by hand: 1, caught: the consolation always happening.
 
 Coverage: 16,332 of 31,900 cards (+3 over D1191's 16,329), 38,682 of 59,888 lines (+3).
+
+## D1193 — compound X
+
+68 legal cards print a measure with arithmetic in it: "where X is 2 plus the number of …",
+"where X is twice the number of …", "… equal to the number of creatures you control plus the
+number of Foods you control". None read: the measure readers took one measure.
+
+`boardCount` now reads three compound forms, each part a measure it already reads: a number plus a
+measure, twice a measure, and the sum of two measures. The five "where X is" and "equal to" readers
+(`countTailOf`, draw, life, damage) accept a leading "N plus" or "twice" on "the number of"; the sum
+already matched there and failed in the count.
+
+15 of the 68 read whole after this change: An-Havva Constable, Artillery Blast, Aysen Crusader,
+Bloodtithe Harvester, Deathforge Shaman, Gaea's Avenger, Jovial Evil, Liliana, the Last Hope,
+Masumaro, First to Live, Price of Progress, Road Rage, Sky Cycle, Territorial Maro, Welding Sparks
+and Wing Storm. The rest fail on a part this does not read, such as "cards named ~ in all
+graveyards".
+
+**Tests.** 2 engine tests:
+- The test cards read whole.
+- Two artifacts and a creature: 3 plus 2 is five life, twice 2 is four, 2 plus 1 is three.
+
+Faults injected by hand: 3, all caught.
+- "Twice" read once.
+- The fixed part of "N plus" dropped.
+- Only the first part of a sum counted.
+
+Coverage: 16,345 of 31,900 cards (+13 over D1192's 16,332), 38,696 of 59,888 lines (+14).
