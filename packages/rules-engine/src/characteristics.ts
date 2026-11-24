@@ -2083,7 +2083,20 @@ export interface ContinuousEffect {
          * type line has a permanent type. Absent counts every card, which is threshold.
          */
         readonly permanents?: true;
+        /** "N or more **creature** cards in your graveyard" (D1188). */
+        readonly creatures?: true;
+        /** Whose graveyard (D1188): "an opponent has eight or more cards in their graveyard". */
+        readonly whose?: 'an-opponent';
       }
+    /*
+      D1188: four facts about the controller and one about the source, each read off state the
+      engine keeps: "you've drawn two or more cards this turn", "you're the monarch", "you have more
+      cards in hand than each opponent", "~ entered this turn".
+    */
+    | { readonly kind: 'controller-drew'; readonly atLeast: number }
+    | { readonly kind: 'controller-monarch' }
+    | { readonly kind: 'controller-most-cards-in-hand' }
+    | { readonly kind: 'source-entered-this-turn' }
     /*
       The general "as long as" family (D604/D605), each answered without a live characteristic: a
       zone's printed cards, the source instance's own facts, the combat record, a life total, a hand,
@@ -2141,7 +2154,13 @@ export interface ContinuousEffect {
         readonly subtype?: string;
         readonly colours?: readonly string[];
         readonly nontoken?: true;
+        /** "You control a token" (D1188). */
+        readonly token?: true;
+        /** "Another multicolored permanent" (D1188): two or more printed colours. */
+        readonly multicolored?: true;
         readonly atLeast: number;
+        /** "Exactly one creature" (D1188). */
+        readonly atMost?: number;
       };
   /**
    * A size that is a **count times a rate**: layer 7c, `~ gets +1/+1 for each Equipment you
@@ -2502,9 +2521,28 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     a graveyard is a card in a graveyard.
   */
   if (cond.kind === 'controller-graveyard') {
-    const cards = state.zones[zoneKey(effect.controller, 'graveyard')] ?? [];
-    if (cond.permanents !== true) return cards.length >= cond.atLeast;
-    return cards.filter((id) => isPermanentCard(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine)).length >= cond.atLeast;
+    const holds = (seat: SeatIndex): boolean => {
+      const cards = state.zones[zoneKey(seat, 'graveyard')] ?? [];
+      if (cond.creatures === true) {
+        return cards.filter((id) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'creature')).length >= cond.atLeast;
+      }
+      if (cond.permanents !== true) return cards.length >= cond.atLeast;
+      return cards.filter((id) => isPermanentCard(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine)).length >= cond.atLeast;
+    };
+    return cond.whose === 'an-opponent'
+      ? state.seats.some((seat) => seat.index !== effect.controller && !seat.eliminated && holds(seat.index))
+      : holds(effect.controller);
+  }
+  if (cond.kind === 'controller-drew') return (state.cardsDrawnThisTurn[String(effect.controller)] ?? 0) >= cond.atLeast;
+  if (cond.kind === 'controller-monarch') return state.monarch === effect.controller;
+  if (cond.kind === 'controller-most-cards-in-hand') {
+    const mine = (state.zones[zoneKey(effect.controller, 'hand')] ?? []).length;
+    return state.seats.every((seat) => seat.index === effect.controller || seat.eliminated
+      || (state.zones[zoneKey(seat.index, 'hand')] ?? []).length < mine);
+  }
+  if (cond.kind === 'source-entered-this-turn') {
+    const inst = state.instances[effect.source];
+    return inst !== undefined && inst.zone === 'battlefield' && inst.enteredTurn === state.turn;
   }
   // The general family (D605): see the union.
   if (cond.kind === 'graveyard-card-types') {
@@ -2574,7 +2612,9 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
         const inst = state.instances[id];
         if (inst === undefined || isFaceDownPermanent(inst)) continue;
         if (cond.nontoken === true && inst.isToken) continue;
+        if (cond.token === true && inst.isToken !== true) continue;
         const def = state.cardDefs[inst.defKey];
+        if (cond.multicolored === true && (def?.colors ?? []).length < 2) continue;
         const line = parseTypeLine(def?.typeLine);
         if (!(cond.types ?? []).every((type) => hasType(line, type))) continue;
         if (cond.subtype !== undefined && !hasSubtype(line, cond.subtype)) continue;
@@ -2583,9 +2623,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
       }
       return n;
     };
+    const fits = (n: number): boolean => n >= cond.atLeast && (cond.atMost === undefined || n <= cond.atMost);
     return cond.whose === 'you'
-      ? counts(effect.controller) >= cond.atLeast
-      : state.seats.some((seat) => seat.index !== effect.controller && !seat.eliminated && counts(seat.index) >= cond.atLeast);
+      ? fits(counts(effect.controller))
+      : state.seats.some((seat) => seat.index !== effect.controller && !seat.eliminated && fits(counts(seat.index)));
   }
   // Equipment attached to the source, whoever controls it: the sentence says "attached to it".
   if (cond.kind === 'source-equipment') {

@@ -38963,6 +38963,88 @@ describe('playing a land as an event (D1187)', () => {
   });
 });
 
+describe('nine more "as long as" conditions (D1188)', () => {
+  const lord = (name: string, cond: string) => ({ name, type_line: 'Creature — Human', oracle_text: `As long as ${cond}, ${name} gets +1/+1.`, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    lord('Test Drawer', "you've drawn two or more cards this turn"),
+    lord('Test Royal', "you're the monarch"),
+    lord('Test Hoarder', 'you have more cards in hand than each opponent'),
+    lord('Test Mill', 'an opponent has eight or more cards in their graveyard'),
+    lord('Test Ghoul', 'there are two or more creature cards in your graveyard'),
+    lord('Test Fresh', 'Test Fresh entered this turn'),
+    lord('Test Tokener', 'you control a token'),
+    lord('Test Loner', 'you control exactly one creature'),
+    lord('Test Prism', 'you control another multicolored permanent'),
+    { name: 'Test Gold', type_line: 'Artifact', oracle_text: '', mana_cost: '{W}{U}', cmc: 2, colors: ['W', 'U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1188', name: 'Conditions',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 27 }],
+    data: ROWS as never[],
+  });
+  const at = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1188', 1: 'd1188' }, deckSpecs: { d1188: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const p = (s: GameState, name: string) => power(s, find(s, 0, 'battlefield', name));
+  const toGraveyard = (s0: GameState, seat: 0 | 1, n: number, kind?: string): GameState => {
+    let s = s0;
+    const picks = ids(s, seat, 'library').filter((id) => kind === undefined || s.cardDefs[s.instances[id]!.defKey]!.typeLine.includes(kind)).slice(0, n);
+    for (const id of picks) s = apply(s, { type: 'card:move', by: seat, card: id, toZone: 'graveyard' });
+    return s;
+  };
+  const set = (s: GameState, id: string, patch: Record<string, unknown>): GameState => ({ ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, ...patch } } });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 9)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cards drawn this turn, the monarch, the bigger hand', () => {
+    let s = at(['Test Drawer', 'Test Royal', 'Test Hoarder']);
+    s = { ...s, cardsDrawnThisTurn: { ...s.cardsDrawnThisTurn, 0: 1 }, monarch: 1 };
+    const handsEqual = ids(s, 0, 'hand').length === ids(s, 1, 'hand').length;
+    expect([p(s, 'Test Drawer'), p(s, 'Test Royal')]).toEqual([1, 1]);
+    s = { ...s, cardsDrawnThisTurn: { ...s.cardsDrawnThisTurn, 0: 2 }, monarch: 0 };
+    expect([p(s, 'Test Drawer'), p(s, 'Test Royal')]).toEqual([2, 2]);
+    // The hand: one more card than the opponent's, by moving one of theirs away.
+    if (handsEqual) expect(p(s, 'Test Hoarder')).toBe(1);
+    const theirs = ids(s, 1, 'hand');
+    for (const id of theirs) s = apply(s, { type: 'card:move', by: 1, card: id, toZone: 'graveyard' });
+    expect(p(s, 'Test Hoarder')).toBe(ids(s, 0, 'hand').length > 0 ? 2 : 1);
+  });
+
+  it('their graveyard of eight, and two creature cards in yours', () => {
+    let s = at(['Test Mill', 'Test Ghoul']);
+    s = toGraveyard(s, 1, 7);
+    expect(p(s, 'Test Mill')).toBe(1);
+    s = toGraveyard(s, 1, 1);
+    expect(p(s, 'Test Mill')).toBe(2);
+    s = toGraveyard(s, 0, 3, 'Artifact');
+    expect(p(s, 'Test Ghoul')).toBe(1);
+    s = toGraveyard(s, 0, 2, 'Creature');
+    expect(p(s, 'Test Ghoul')).toBe(2);
+  });
+
+  it('entered this turn, a token, exactly one creature, another multicolored permanent', () => {
+    let s = at(['Test Fresh', 'Test Tokener', 'Test Prism']);
+    const fresh = find(s, 0, 'battlefield', 'Test Fresh');
+    s = set(s, fresh, { enteredTurn: s.turn - 1 });
+    expect(p(s, 'Test Fresh')).toBe(1);
+    s = set(s, fresh, { enteredTurn: s.turn });
+    expect(p(s, 'Test Fresh')).toBe(2);
+    expect([p(s, 'Test Tokener'), p(s, 'Test Prism')]).toEqual([1, 1]);
+    const plains = ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Test Gold')!;
+    s = drain(apply(s, { type: 'card:move', by: 0, card: plains, toZone: 'battlefield' }), 10);
+    s = set(s, plains, { isToken: true });
+    expect([p(s, 'Test Tokener'), p(s, 'Test Prism')]).toEqual([2, 2]);
+    const alone = at(['Test Loner']);
+    expect(p(alone, 'Test Loner')).toBe(2);
+    expect(p(at(['Test Loner', 'Test Bear']), 'Test Loner')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

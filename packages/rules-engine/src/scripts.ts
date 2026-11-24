@@ -34377,6 +34377,34 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
 
   // "As long as you have the city's blessing" (D762).
   if (/^you have the city's blessing$/i.test(text)) return { kind: 'controller-citys-blessing' };
+  // D1188: see the union's note on the four facts.
+  const drew = /^you've drawn (\S+) or more cards this turn$/i.exec(text);
+  if (drew !== null) {
+    const atLeast = n(drew[1]!);
+    if (atLeast !== null && atLeast > 0) return { kind: 'controller-drew', atLeast };
+  }
+  if (/^you're the monarch$/i.test(text)) return { kind: 'controller-monarch' };
+  if (/^you have more cards in hand than each opponent$/i.test(text)) return { kind: 'controller-most-cards-in-hand' };
+  if (new RegExp(`^${self} entered (?:the battlefield )?this turn$`, 'i').test(text)) return { kind: 'source-entered-this-turn' };
+  const creatureCards = /^there are (\S+) or more creature cards in your graveyard$/i.exec(text);
+  if (creatureCards !== null) {
+    const atLeast = n(creatureCards[1]!);
+    if (atLeast !== null) return { kind: 'controller-graveyard', atLeast, creatures: true };
+  }
+  const theirGraveyard = /^an opponent has (\S+) or more cards in (?:their|his or her) graveyard$/i.exec(text);
+  if (theirGraveyard !== null) {
+    const atLeast = n(theirGraveyard[1]!);
+    if (atLeast !== null) return { kind: 'controller-graveyard', atLeast, whose: 'an-opponent' };
+  }
+  if (/^you control an? token$/i.test(text)) return { kind: 'board-has', whose: 'you', atLeast: 1, token: true };
+  if (/^you control another multicolored permanent$/i.test(text)) {
+    return { kind: 'board-has', whose: 'you', atLeast: 1, other: true, multicolored: true };
+  }
+  const exactly = /^you control exactly (\S+) (creature|artifact|land|enchantment)s?$/i.exec(text);
+  if (exactly !== null) {
+    const count = n(exactly[1]!);
+    if (count !== null) return { kind: 'board-has', whose: 'you', atLeast: count, atMost: count, types: [exactly[2]!.toLowerCase()] };
+  }
   /*
     "As long as ~ has seven or more quest counters on it" (D798): Beastmaster Ascension, Quest for the
     Goblin Lord, and the creatures that grow into a keyword (Voice of the Blessed, Pelt Collector,

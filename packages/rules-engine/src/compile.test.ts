@@ -12139,7 +12139,8 @@ describe('the threshold condition: a static that is on while your graveyard is b
       + ' Probe Beast gets +1/+1.'],
     ['somebody else\'s graveyard', 'Probe Beast gets +1/+1 as long as there are seven or more cards'
       + " in an opponent's graveyard."],
-    ['a count of a kind of card', 'Probe Beast gets +1/+1 as long as there are seven or more creature'
+    // "Seven or more creature cards in your graveyard" (a count of a kind of card) reads since D1188.
+    ['a count of a kind of card the vocabulary lacks', 'Probe Beast gets +1/+1 as long as there are seven or more instant'
       + ' cards in your graveyard.'],
   ])('leaves a line unread: %s', (_why, text) => {
     const read = creature('Probe Beast', text as string);
