@@ -43147,3 +43147,29 @@ of Loyalty, whose protection is not a single colour.
 Faults injected by hand: 1, caught: the source never spared.
 
 Coverage: 16,314 of 31,900 cards (+5 over D1188's 16,309), 38,657 of 59,888 lines (+5).
+
+## D1190 — an Aura's protection from the chosen color
+
+"As ~ enters, choose a color. Enchanted creature has protection from the chosen color." (Ward of
+Lights, Cho-Manno's Blessing, Pentarch Ward, Flickering Ward) did not read: the attachment reader
+took a printed colour only, and D641's chosen-colour fill is for a permanent's own statics.
+
+- **The reader.** `attachmentRider` reads "has protection from the chosen color" as a new
+  `protectionFromChosen` on the effect, and D1189's "This effect doesn't remove ~" accepts it.
+- **The engine.** `characteristicsOf` adds the colour the effect's source chose as it entered
+  (`CardInstance.chosen.color`), read live, so the effect is the same whether the Aura's effect
+  was installed before or after the choice was recorded. With no colour chosen, none is given.
+
+Read whole now: Ward of Lights, Cho-Manno's Blessing, Pentarch Ward, Flickering Ward.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- Choosing white: the creature has protection from white, the white Halo falls off, the Aura
+  stays.
+- Choosing red: protection from red and not from white, and the Halo stays.
+
+Faults injected by hand: 2, all caught.
+- The chosen colour always white.
+- The chosen colour's protection not sparing its source.
+
+Coverage: 16,318 of 31,900 cards (+4 over D1189's 16,314), 38,662 of 59,888 lines (+5).
