@@ -60482,3 +60482,30 @@ Faults injected by hand: 3, all caught.
 - "Any of" read as "all of" (caught once the plain artifact was added).
 
 Coverage: 16,265 of 31,900 cards (+6 over D1184's 16,259), 38,604 of 59,888 lines (+14).
+
+## D1186 — the board's "is dealt damage"
+
+"Whenever ~ is dealt damage" (D566) was the permanent's own only, offered to one permanent because
+the event is raised for every landing of damage. Two shapes were left out:
+- **The board's:** "Whenever a creature you control is dealt damage", "… a creature an opponent
+  controls …", "… a creature …", "… a permanent you control …", "… a Dragon you control …". The
+  `damaged` event now takes the `BoardSubjectFilter` filters, and `raise` offers it to the whole
+  board only while something there watches for it (`boardWatched`), with what the permanent was as
+  the damage landed: its controller, types, subtypes, token or not, counters. The same mechanism
+  D1121 gave "becomes tapped".
+- **"Whenever equipped creature is dealt damage"**, an Equipment's host, read as an Aura's (D994).
+  D566's pin said the host may be dead and unattached by the time the trigger is asked; D994's
+  event carries what was attached as the damage was dealt, so the pin (caught by running
+  compile.test.ts) now reads, and a test shows the trigger firing when the damage kills the host.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- "A creature you control": your Bear draws a card; their Bear does not.
+- "Equipped creature is dealt damage": fires even when the damage kills the host.
+- "A Dragon you control": the Dragon gains life, the Bear does not.
+
+Faults injected by hand: 2, all caught.
+- The board filter ignored.
+- The event not offered to the board.
+
+Coverage: 16,269 of 31,900 cards (+4 over D1185's 16,265), 38,608 of 59,888 lines (+4).
