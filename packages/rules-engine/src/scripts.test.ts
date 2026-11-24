@@ -38371,6 +38371,55 @@ describe('tokens in a static count (D1177)', () => {
   });
 });
 
+describe('an anthem with a count (D1178)', () => {
+  const ROWS = [
+    { name: 'Test Warcaller', type_line: 'Creature — Elf Warrior', oracle_text: 'Other Elf creatures you control get +1/+1 for each +1/+1 counter on Test Warcaller.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Unity', type_line: 'Enchantment', oracle_text: 'Creatures you control get +1/+1 for each unity counter on Test Unity.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Forge', type_line: 'Enchantment', oracle_text: 'Creatures you control get +1/+0 for each artifact you control.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Elf', type_line: 'Creature — Elf', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1178', name: 'Anthems',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1178', 1: 'd1178' }, deckSpecs: { d1178: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const withCounters = (s: GameState, name: string, kind: string, n: number): GameState => {
+    const id = find(s, 0, 'battlefield', name);
+    return { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, counters: { ...s.instances[id]!.counters, [kind]: n } } } };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"other Elf creatures … for each +1/+1 counter on ~": two counters, the Elf +2/+2; the Bear and the Warcaller itself are not other Elves', () => {
+    const s = withCounters(table(['Test Warcaller', 'Test Elf', 'Test Bear']), 'Test Warcaller', '+1/+1', 2);
+    expect([
+      power(s, find(s, 0, 'battlefield', 'Test Elf')),
+      power(s, find(s, 0, 'battlefield', 'Test Bear')),
+      power(s, find(s, 0, 'battlefield', 'Test Warcaller')),
+    ]).toEqual([3, 2, 3]);
+  });
+
+  it('"for each unity counter on ~": the counters on the enchantment, for every creature you control and none of theirs', () => {
+    const s = withCounters(table(['Test Unity', 'Test Bear'], ['Test Bear']), 'Test Unity', 'unity', 3);
+    expect([power(s, find(s, 0, 'battlefield', 'Test Bear')), power(s, find(s, 1, 'battlefield', 'Test Bear'))]).toEqual([5, 2]);
+  });
+
+  it('"for each artifact you control": two Relics, +2/+0', () => {
+    const s = table(['Test Forge', 'Test Relic', 'Test Relic', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect([power(s, bear), toughness(s, bear)]).toEqual([4, 2]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -33448,6 +33448,12 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it|this creature)$`, 'i').test(text)) {
     return { kind: 'counters-on-self', counter: '+1/+1' };
   }
+  // A named counter on the permanent itself (D1178): "for each unity counter on ~" (Call for
+  // Unity), "… blessing counter on ~". A kind word, never an article ("a counter" is any kind).
+  const namedCounter = new RegExp(`^([a-z]+) counters? on (?:${self}|it|this (?:creature|enchantment|artifact|permanent))$`, 'i').exec(text);
+  if (namedCounter !== null && !['a', 'an', 'each', 'one'].includes(namedCounter[1]!.toLowerCase())) {
+    return { kind: 'counters-on-self', counter: namedCounter[1]!.toLowerCase() };
+  }
   // Domain (D1168): "basic land type among lands you control".
   if (/^basic land types? among lands you control$/i.test(text)) return { kind: 'basic-land-types' };
   const tribe = /^([A-Z][A-Za-z'-]*) you control$/.exec(text);
@@ -33490,7 +33496,29 @@ function staticCountedSizeFromLine(line: string, name: string): Partial<CardScri
   const sized = new RegExp(
     `^(?:${self}|this creature) gets ([+-](?:X|\\d+))/([+-](?:X|\\d+))$`, 'i',
   ).exec(body);
-  if (sized === null) return null;
+  if (sized === null) {
+    /*
+      D1178: the same count on an anthem. "Creatures you control get +1/+1 for each Gate you
+      control", "… for each unity counter on ~" (Call for Unity), "Other Elf creatures you control
+      get +1/+1 for each +1/+1 counter on ~" (Joraga Warcaller), "Other Dwarves you control get
+      +1/+0 for each artifact token you control" (Thorin). The count is the source's
+      (`staticCount` is handed the static's source and controller), the same for every creature.
+    */
+    const team = /^(?:([Oo]ther) )?(?:([Cc]reature tokens)|([Cc]reatures)|([A-Z][A-Za-z'-]*) creatures|([A-Z][A-Za-z'-]*s)) you control get ([+-](?:X|\d+))\/([+-](?:X|\d+))$/.exec(body);
+    if (team === null) return null;
+    const other = team[1] !== undefined;
+    let scope: NonNullable<CardScript['statics']>[number]['scope'];
+    if (team[3] !== undefined) scope = other ? 'other-controller-creatures' : 'controller-creatures';
+    else if (team[2] !== undefined) { if (other) return null; scope = 'controller-tokens'; }
+    else {
+      const subtype = team[4] ?? subtypeFromTribalPhrase(team[5]!, 'plural');
+      if (subtype === null || !isCreatureType(subtype)) return null;
+      scope = other ? { subtype, other: true } : { subtype };
+    }
+    const teamRate = countedSizeRate(team[6]!, team[7]!, grammar);
+    if (teamRate === null) return null;
+    return { statics: [{ scope, effect: { sizePerCount: { of: counted, ...teamRate } } }] };
+  }
 
   const rate = countedSizeRate(sized[1]!, sized[2]!, grammar);
   if (rate === null) return null;
