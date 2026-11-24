@@ -60031,3 +60031,42 @@ Faults injected by hand: 3, all caught.
 - The keywords dropped from the token.
 
 Coverage: 16,066 of 31,900 cards (+14 over D1171's 16,052), 38,333 of 59,888 lines (+25). The difference also counts the D7xx session's D830, merged in after D1171 was measured.
+
+## D1173 — sacrifice "X or Y", a token, a subtype
+
+`permanentDescribed` (D465, D741) is the description reader behind "sacrifice a …", "return a …
+you control to its owner's hand" and "target player sacrifices a …". It read one type with colour
+and state adjectives. On the ETB "you may sacrifice …" lines alone, about 20 single-unread legal
+lines failed on three shapes:
+- **A disjunction of whole descriptions:** "another creature or artifact", "a creature or land",
+  "an artifact or creature", "a creature, artifact, or enchantment". Read only when every part is a
+  description of its own. Otherwise the "or" is the colour list's ("a red or green creature"), read
+  as before.
+- **A token:** "a token", "a creature token", and the adjective "nontoken".
+- **A subtype as the noun**, off the printed capital: "a Vehicle", "a Goblin", "an Equipment". A
+  phrase that reaches the reader lower-cased still refuses, as D471 required, so a subtype is never
+  widened to its type.
+
+Read whole now, among others: Harvester Troll, Undercity Eliminator, Gastal Blockbuster, The
+Sackville-Bagginses, Glorifier of Suffering, Boilerbilges Ripper. Still unread: "sacrifice a
+creature or discard a creature card" (Crypt Lurker, K'un-Lun Warrior) and Shire Shirriff's "until
+~ leaves the battlefield".
+
+D471's pin "sacrifice a Goblin stays unread" (caught by running the file) now reads, and is moved
+to the reads list.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- "Another creature or artifact": the Golem and the Relic are offered; the Swamp and the creature
+  itself are not. The chosen one goes, and a card is drawn.
+- "Another creature or Vehicle": the Vehicle and the Golem, not the plain artifact.
+- "A token": only the token can go, and the Golem stays.
+- "A nontoken creature": the token stays, the Golem goes.
+
+Faults injected by hand: 4, all caught.
+- The disjunction read as a conjunction.
+- The token requirement ignored.
+- "Nontoken" inverted.
+- The subtype noun ignored (caught once the Vehicle test was added).
+
+Coverage: 16,091 of 31,900 cards (+25 over D1172's 16,066), 38,370 of 59,888 lines (+37).
