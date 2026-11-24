@@ -61061,3 +61061,33 @@ Faults injected by hand: 3, all caught.
 - The same-target check removed (caught once a test named a B aimed elsewhere).
 
 Coverage: 16,477 of 31,900 cards (+6 over D1203's 16,471), 38,866 of 59,888 lines (+7).
+
+## D1205 — a grant of protection from a colour
+
+"Target creature gains protection from red until end of turn", "Target creature you control gains
+indestructible and protection from white until end of turn", "Creatures you control gain flying and
+protection from black and from red until end of turn". Until now a grant read only keywords, and
+"protection from red" was refused on purpose (D966's pin): the engine stores protection as colours
+(`PumpOptions.protectionFrom`), not as a keyword. `grantedWithProtection` reads the keywords before
+it and the colours after "protection from", including "from black and from red" and "from each
+color". The single-target grant and the team grant use it; a protection grant counts as protective
+for the bot, as hexproof does.
+
+"Protection from creatures", "from instants" and "from the chosen color" in a spell stay unread.
+D966's compile pin moved to "protection from creatures".
+
+Read whole now (4): Crimson Acolyte, Obsidian Acolyte, Teroh's Vanguard, Willow Priestess.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Target creature gains protection from red": the creature has protection from red, and a red
+  spell can no longer target it.
+- "Gain flying and protection from black and from red": both colours and the keyword, on each of
+  your creatures.
+
+Faults injected by hand: 3, all caught.
+- The single-target grant's protection dropped.
+- The second colour dropped.
+- The team grant's protection dropped.
+
+Coverage: 16,482 of 31,900 cards (+5 over D1204's 16,477), 38,873 of 59,888 lines (+7).
