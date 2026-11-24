@@ -1746,6 +1746,14 @@ export type TriggerEvent =
       readonly ofSubtype?: string;
       // "an opponent's graveyard" (D1122): The Haunt of Hightower, Bloodchief Ascension.
       readonly into?: 'yours' | 'opponents';
+      /**
+       * "Whenever one or more [land] cards are put into your graveyard from anywhere" (D841, The
+       * Gitrog Monster): one event per graveyard owner per move, however many cards, beside the
+       * per-card ones. A trigger hears only its own kind, as discards' `batch` does (D993).
+       */
+      readonly batch?: true;
+      /** Set by the engine on a batch: each card's printed card types, lowercased. */
+      readonly batchTypes?: readonly (readonly string[])[];
       /** Set by the engine (D1116): the card's printed types and subtypes, lowercased. */
       readonly subjectTypes?: readonly string[];
       readonly subjectSubtypes?: readonly string[];

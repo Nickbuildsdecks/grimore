@@ -2785,16 +2785,17 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       arithmetic on life totals: two seats' totals and the caster's, which is what the assertions
       below read.
     */
-    it('leaves Cruel Celebrant’s printed trigger unread, and says so (D576)', () => {
+    it('reads Cruel Celebrant’s printed trigger as the hand-written one does (D576, D840)', () => {
       /*
         This card was in the row below while the pool gave it Zulaport Cutthroat's sentence. It
-        prints "Whenever Cruel Celebrant or another creature or planeswalker you control dies", a
-        subject no reader takes yet, so the compiler refuses the line and the card is the
-        hand-written one. Asserted so the refusal is a known state and not a silent one.
+        prints "Whenever Cruel Celebrant or another creature or planeswalker you control dies", which
+        no reader took until D840 added the row beside Zulaport's; this test asserted the refusal
+        until then. Now the compiled trigger is the hand-written one's: the same event, the same
+        filter, itself included.
       */
       const celebrant = compiledScript('Cruel Celebrant');
-      expect(celebrant.unread.map((u) => u.line).join()).toContain('or another creature or planeswalker you control dies');
-      expect(triggerOf(celebrant.script)).toBeUndefined();
+      expect(celebrant.unread).toEqual([]);
+      expect(triggerOf(celebrant.script)?.on).toEqual({ kind: 'dies', who: 'any', of: 'you', what: 'creature-or-planeswalker' });
     });
 
     it.each([
@@ -10246,8 +10247,8 @@ describe('the "or another" prologue, read off the printed subject', () => {
       'a defined class (CR 701.x) that is three things at once'],
     ['Whenever Watching Thing or another non-Human creature you control enters',
       'a negated subtype, which `ofSubtypes` cannot say'],
-    ['Whenever Watching Thing or another creature or planeswalker you control dies',
-      'two types in one subject'],
+    // 'two types in one subject' ("… or another creature or planeswalker you control dies") reads
+    // since D840, on the `creature-or-planeswalker` filter the engine already had.
     ['Whenever Watching Thing or another land you control dies',
       'dies is defined for creatures (CR 700.4), so the land half exists on the entry only'],
     ['Whenever Watching Thing or another creature an opponent controls enters',

@@ -1668,6 +1668,15 @@ function triggerMatches(
       asked: the event carries no `by` and no `what`, for the reason its declaration gives.
     */
     case 'to-graveyard': {
+      // Per card or per batch (D841): each trigger hears only its own kind.
+      if ((want.kind === 'to-graveyard' && want.batch === true) !== ((event as { batch?: true }).batch === true)) return false;
+      if (want.kind === 'to-graveyard' && want.batch === true) {
+        const seat = (event as { subjectSeat?: SeatIndex }).subjectSeat;
+        if (want.into === 'yours' && seat !== sourceSeat) return false;
+        if (want.into === 'opponents' && (seat === undefined || seat === sourceSeat)) return false;
+        const cards = (event as { batchTypes?: readonly (readonly string[])[] }).batchTypes ?? [];
+        return want.what === undefined ? cards.length > 0 : cards.some((types) => types.includes(want.what!));
+      }
       // "from the battlefield" (D569): a card that was milled, discarded or countered did not.
       if ((want.from ?? 'anywhere') === 'battlefield'
         && (event as { cameFrom?: string }).cameFrom !== 'battlefield') return false;
@@ -4682,6 +4691,17 @@ function settle(state: GameState, before: GameState): GameState {
         { kind: 'to-graveyard', ...(fromPlay.has(id) ? { cameFrom: 'battlefield' as const } : {}) },
         next.instances[id]?.zoneSeat, id,
       );
+    }
+    // And once per graveyard (D841), for "one or more cards are put into your graveyard".
+    const byGraveyard = new Map<SeatIndex, string[][]>();
+    for (const id of buried) {
+      const inst = next.instances[id];
+      if (inst === undefined || inst.zone !== 'graveyard') continue;
+      const types = parseTypeLine(next.cardDefs[inst.defKey]?.typeLine ?? '').types.map((t) => t.toLowerCase());
+      byGraveyard.set(inst.zoneSeat, [...(byGraveyard.get(inst.zoneSeat) ?? []), types]);
+    }
+    for (const [seat, batchTypes] of byGraveyard) {
+      next = raise(next, { kind: 'to-graveyard', batch: true, batchTypes, subjectSeat: seat }, seat);
     }
     /*
       And the exiles, after the graveyards for the same reason the graveyards come after the deaths:

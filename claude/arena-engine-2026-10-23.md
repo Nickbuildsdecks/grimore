@@ -44099,3 +44099,56 @@ entry refused, and the reader off).
 
 - engine tests: 6444, all passing (on 94287f0)
 - Coverage: 16,567 to 16,571 of 31,900 cards with every line read, and 38,984 to 38,991 of 59,888 lines, against 94287f0.
+
+## D840 — "~ or another creature or planeswalker you control dies": Cruel Celebrant
+
+Most-played order: Cruel Celebrant (rank 990).
+
+**Reader.** A trigger row beside Zulaport Cutthroat's "~ or another creature you control dies",
+with "or planeswalker", on the `creature-or-planeswalker` death filter the engine already had
+(D1113's Mavren Fein family).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- our planeswalker, our creature and the Celebrant itself each drain one when destroyed;
+- the opponent's creature does not.
+
+Faults injected by script: 2 of 2 caught (creatures only, and anyone's).
+
+**Two compile.test pins, retargeted.** The first gate failed on both, on purpose:
+- D576's "leaves Cruel Celebrant's printed trigger unread" now asserts the compiled trigger equals
+  the hand-written one's `on` (`dies`, any, of you, `creature-or-planeswalker`);
+- the "or another" prologue table's "creature or planeswalker … dies" refusal row is gone, with a
+  note.
+
+- engine tests: 6468, all passing (on 97a76ef, D840 and D841 gated together)
+- Coverage, both together: 16,636 to 16,641 of 31,900 cards with every line read, and 39,091 to 39,096 of 59,888 lines, against 97a76ef.
+
+## D841 — "Whenever one or more [land] cards are put into your graveyard from anywhere": The Gitrog Monster
+
+Most-played order: The Gitrog Monster (rank 910). The corpus prints the batched form on about 18
+lines; this reads "from anywhere" with no type or with land, creature, artifact or enchantment.
+
+**Engine.** The `to-graveyard` event had only one event per card. Now, after those, `settle`
+raises one batch per graveyard per move, carrying each card's printed types (`batch`,
+`batchTypes`, and the owner as `subjectSeat`). As discards do (D993), a trigger hears only its own
+kind: a per-card trigger ignores the batch and a batch trigger ignores the cards. A batch trigger
+matches if its graveyard is the right one and any card in the batch is of its type.
+
+**Not read:** "from your library" (9 lines), which needs to know where each card came from.
+`cameFrom` records only the battlefield.
+
+**Tests.** 5 engine tests:
+- the card reads;
+- two lands and an Ox milled at once draw one card, not two;
+- three Oxen draw nothing;
+- lands milled into the opponent's graveyard draw nothing;
+- a per-card watcher ("a card is put into your graveyard") still gains one life per card, four
+  for three milled cards and the spell, and does not hear the batch.
+
+Faults injected by script: 4 of 4 caught. They cover the batch not raised, per-card triggers
+hearing the batch (missed at first; the per-card watcher test was added for it), the type ignored,
+and whose graveyard ignored.
+
+- engine tests: 6468, all passing (on 97a76ef, D840 and D841 gated together)
+- Coverage, both together: 16,636 to 16,641 of 31,900 cards with every line read, and 39,091 to 39,096 of 59,888 lines, against 97a76ef.
