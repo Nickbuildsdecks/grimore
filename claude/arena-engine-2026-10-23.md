@@ -43196,3 +43196,26 @@ Faults injected by hand: 2, all caught.
 - Kinds counted instead of counters.
 
 Coverage: 16,329 of 31,900 cards (+11 over D1190's 16,318), 38,679 of 59,888 lines (+17).
+
+## D1192 — the dig's consolation
+
+"Look at the top five cards of your library. You may reveal a creature or enchantment card from
+among them and put it into your hand. Put the rest on the bottom of your library in a random order.
+If you didn't put a card into your hand this way, you gain 4 life." (Blossom Prancer, Rosecot
+Knight): the dig (D584) read, the last sentence did not.
+
+`composeEffects` now reads "If you didn't / don't put a card into your hand this way, <effect>"
+right after a dig as part of it: the effect happens after the dig, only when the dig's answer chose
+no card. Only an effect with no question or target of its own.
+
+Read whole now: Blossom Prancer, Rosecot Knight. Still unread: Contagious Vorrac's "proliferate",
+which asks a question.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- No land among the four: nothing taken, four life.
+- A land taken: no life.
+
+Faults injected by hand: 1, caught: the consolation always happening.
+
+Coverage: 16,332 of 31,900 cards (+3 over D1191's 16,329), 38,682 of 59,888 lines (+3).
