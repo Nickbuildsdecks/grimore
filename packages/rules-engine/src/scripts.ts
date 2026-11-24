@@ -15728,6 +15728,9 @@ const MASS_PUMP_SUBJECTS: string = [
   "(?:all |other )?creatures(?: you control| your opponents control| you don't control)? with [a-z0-9+/ -]+?",
   // D1175: "Creature tokens you control get +1/+1 until end of turn", read by `massScope`.
   "(?:all |other )?creature tokens(?: you control| your opponents control| you don't control)?",
+  // D1200: any other creature scope `massScope` reads: "all other creatures", "untapped creatures
+  // you control", "all other creatures you control". `massPumpSubject` refuses what it cannot read.
+  "(?:all other |all |other )?(?:[a-z][a-z'-]* )?creatures(?: you control| your opponents control| you don't control)?",
 ].join('|');
 
 /**
@@ -28557,6 +28560,23 @@ function readEffect(
     Waves, Chittering Witch, Goblin Gathering, Jacked Rabbit. Not where the clause has an X of its
     own, which would be two different numbers.
   */
+  /*
+    "Each creature you control gets +1/+1 until end of turn", "each other creature gets -1/-1 until
+    end of turn" (D1200): the singular of the plural sentence the mass pump reads, and read as it
+    ("creatures you control get …", "all other creatures get …"). Not where the rest says "it" or
+    "its", which would be each creature in turn ("+1/+1 for each of its colors", "if it has
+    flying"): the plural has no such word.
+  */
+  const eachOne = /^((?:.*, )?)each (other )?((?:[a-z][\w'-]* )*?)creature( you control| your opponents control| you don't control)? (gets|gains|has|loses) (.+)$/i
+    .exec(clause.trim().replace(/\.$/, ''));
+  if (eachOne !== null && !/\b(?:it|its|it's|itself)\b/i.test(eachOne[6]!) && !/\bfor $/i.test(eachOne[1]!)) {
+    const whose = eachOne[4] ?? '';
+    const subject = `${eachOne[2] !== undefined ? (whose === '' ? 'all other ' : 'other ') : (whose === '' ? 'all ' : '')}${eachOne[3]!}creatures${whose}`;
+    const verb = ({ gets: 'get', gains: 'gain', has: 'have', loses: 'lose' } as Record<string, string>)[eachOne[5]!.toLowerCase()]!;
+    const rest = eachOne[6]!.replace(/\bgains\b/g, 'gain').replace(/\bloses\b/g, 'lose').replace(/\bhas\b/g, 'have');
+    const read = readEffect(`${eachOne[1]!}${eachOne[1] === '' ? subject.charAt(0).toUpperCase() + subject.slice(1) : subject} ${verb} ${rest}`, name, where);
+    if (read !== null) return read;
+  }
   const aNumberOf = /^(?:you )?create a number of (.+?) equal to (.+)$/i.exec(clause.trim().replace(/\.$/, ''));
   if (aNumberOf !== null && !/\bX\b/.test(clause)) {
     return readEffect(`Create X ${aNumberOf[1]!}, where X is ${aNumberOf[2]!}`, name, where);
@@ -29336,7 +29356,13 @@ function readEffect(
     (`askOnlyIf`), checked as the clause resolves.
   */
   const unlessHolds = /^(.+?) unless (.+)$/i.exec(clause.trim());
-  if (unlessHolds !== null && !/^if\b/i.test(clause.trim())
+  /*
+    Not a condition about "it" after a body about "each …" (D1200): "Each creature you control gets
+    +1/+1 until end of turn unless it's tapped" asks about each creature in turn, and the condition
+    vocabulary would read "it" as the source.
+  */
+  const distributive = unlessHolds !== null && /\beach\b/i.test(unlessHolds[1]!) && /\b(?:it|its|it's)\b/i.test(unlessHolds[2]!);
+  if (unlessHolds !== null && !distributive && !/^if\b/i.test(clause.trim())
     && !/^(?:you|they|that player|its controller|an opponent|any player|each player|target player)\s+(?:pay|pays|discard|discards|sacrifice|sacrifices|put|puts|return|returns|exile|exiles|reveal|reveals|tap|taps|remove|removes|have|has)\b/i.test(unlessHolds[2]!.trim())) {
     const holds = interveningConditionFor(unlessHolds[2]!.trim(), name);
     const then = holds === null ? null : readEffect(unlessHolds[1]!.trim(), name, where);

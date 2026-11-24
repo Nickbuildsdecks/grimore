@@ -39570,6 +39570,56 @@ describe('colours among a scope, differently named, and the highest mana value a
   });
 });
 
+describe('"each [other] creature [you control] gets …" as the plural it is (D1200)', () => {
+  const ROWS = [
+    { name: 'Test Plague', type_line: 'Sorcery', oracle_text: 'Each creature gets -2/-2 until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Kodama', type_line: 'Creature — Spirit', oracle_text: 'When Test Kodama enters, each other creature you control gets +1/+1 and gains trample until end of turn.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Hue', type_line: 'Sorcery', oracle_text: "Each creature you control gets +1/+1 until end of turn unless it's tapped.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Brute', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd1200', name: 'Each creature',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 40 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string, mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1200', 1: 'd1200' }, deckSpecs: { d1200: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+  } as Action)), 30);
+
+  it('reads whole, and refuses "its" (each creature in turn), which the plural cannot say', () => {
+    expect(deck.unknown.filter((n) => n !== 'Test Hue')).toEqual([]);
+    for (const row of ROWS.filter((r) => r.name !== 'Test Hue')) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const hue = compileCard(ROWS[2] as never);
+    expect(hue.ok && hue.unread.length).toBe(1);
+  });
+
+  it('"each creature gets -2/-2": every creature on both sides, so the 2/2s die and the 3/3 lives', () => {
+    let s = table('Test Plague', ['Test Cub'], ['Test Cub', 'Test Brute']);
+    s = cast(s, 'Test Plague');
+    expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Test Cub')).toHaveLength(0);
+    expect(ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Test Cub')).toHaveLength(0);
+    const brute = find(s, 1, 'battlefield', 'Test Brute');
+    expect([power(s, brute), toughness(s, brute)]).toEqual([1, 1]);
+  });
+
+  it('"each other creature you control gets +1/+1 and gains trample": yours, not itself, not theirs', () => {
+    let s = table('Test Kodama', ['Test Cub'], ['Test Brute']);
+    s = cast(s, 'Test Kodama');
+    const cub = find(s, 0, 'battlefield', 'Test Cub');
+    const kodama = find(s, 0, 'battlefield', 'Test Kodama');
+    const brute = find(s, 1, 'battlefield', 'Test Brute');
+    expect([power(s, cub), toughness(s, cub)]).toEqual([3, 3]);
+    expect(characteristicsOf(s, s.instances[cub]!).keywords).toContain('trample');
+    expect([power(s, kodama), toughness(s, kodama)]).toEqual([1, 1]);
+    expect([power(s, brute), toughness(s, brute)]).toEqual([3, 3]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
