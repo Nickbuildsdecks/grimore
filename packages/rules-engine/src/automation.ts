@@ -981,7 +981,7 @@ function onEnterStep(state: GameState, step: Step): GameState {
         const inst = next.instances[id];
         return inst !== undefined && inst.tapped && !allAbilitiesLost(next, inst)
           && scriptForCard(next.cardDefs[inst.defKey])?.mayStayTapped === true
-          && next.effects.some((e) => e.source === id && e.controlWhile?.tapped === true);
+          && next.effects.some((e) => e.source === id && (e.controlWhile?.tapped === true || e.lastsWhile?.tapped === true));
       }));
       next = untapAll(next, next.activeSeat, { keep });
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
@@ -3755,6 +3755,14 @@ export function stateBasedActions(state: GameState): GameState {
     const controlled = auraControl(next);
     if (controlled !== next) {
       next = controlled;
+      changed = true;
+    }
+
+    // "For as long as ~ remains tapped" on any other effect (D1182): gone once its terms fail.
+    const lapsed = new Set(next.effects.filter((e) => e.lastsWhile !== undefined
+      && !controlTermsHold(next, e.source, e.controller, e.lastsWhile)).map((e) => e.id));
+    if (lapsed.size > 0) {
+      next = { ...next, effects: next.effects.filter((e) => !lapsed.has(e.id)) };
       changed = true;
     }
 

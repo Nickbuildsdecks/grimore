@@ -38610,6 +38610,98 @@ describe('a token with a name of its own, Kher Keep (D832)', () => {
   });
 });
 
+describe('"for as long as ~ remains tapped" on any continuous effect (D1182)', () => {
+  const ROWS = [
+    { name: 'Test Weaponry', type_line: 'Artifact', oracle_text: '{T}: Target creature gets +1/+1 for as long as Test Weaponry remains tapped.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Leech', type_line: 'Artifact', oracle_text: "You may choose not to untap Test Leech during your untap step.\n{T}: Tap target land. It doesn't untap during its controller's untap step for as long as Test Leech remains tapped.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Geists', type_line: 'Creature — Spirit', oracle_text: "When Test Geists enters, tap target creature an opponent controls. That creature doesn't untap during its controller's untap step for as long as you control Test Geists.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd1182', name: 'Tapped',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1182', 1: 'd1182' }, deckSpecs: { d1182: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, name: string, target: string, seat: 0 | 1): GameState => {
+    let next = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0,
+      targets: [{ kind: 'card', id: target }],
+    } as Action);
+    for (let i = 0; i < 4 && next.stackOrder.length > 0; i++) next = passBoth(next);
+    void seat;
+    return next;
+  };
+  /** On to the next turn's upkeep, seat 0 declaring no attack on the way if it has a creature. */
+  const nextUpkeep = (s0: GameState): GameState => {
+    let s = s0;
+    if (s.activeSeat === 0 && namesIn(s, 0, 'battlefield').includes('Test Bear')) {
+      s = advanceTo(s, 'declare-attackers');
+      s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    }
+    return advanceTo(advanceTo(s, 'end'), 'upkeep');
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [...ROWS.slice(0, 2), ROWS[3]!]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the pump lasts past the turn while the artifact stays tapped, and ends when it untaps', () => {
+    let s = table(['Test Weaponry', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = activate(s, 'Test Weaponry', bear, 0);
+    expect(power(s, bear)).toBe(3);
+    // The end of this turn does not end it.
+    s = nextUpkeep(s);
+    expect(s.activeSeat).toBe(1);
+    expect(power(s, bear)).toBe(3);
+    // Seat 0's untap step untaps the Weaponry, and the bonus is gone.
+    s = nextUpkeep(s);
+    expect(s.activeSeat).toBe(0);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Weaponry')]!.tapped).toBe(false);
+    expect(power(s, bear)).toBe(2);
+  });
+
+  it('"for as long as you control ~": frozen while the Geists is here, untapping once it is gone', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1182', 1: 'd1182' }, deckSpecs: { d1182: deck.deck },
+      hands: { 0: ['Test Geists'] }, battlefield: { 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Geists') });
+    for (let i = 0; i < 6 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) s = passBoth(s);
+    s = drain(s, 20);
+    expect(s.instances[bear]!.tapped).toBe(true);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(advanceTo(s, 'end'), 'upkeep');
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[bear]!.tapped).toBe(true);
+    // The Geists leaves; at seat 1's next untap step the Bear untaps.
+    s = drain(apply(s, { type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Test Geists'), toZone: 'graveyard' }), 20);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [] });
+    s = advanceTo(advanceTo(advanceTo(s, 'end'), 'upkeep'), 'end');
+    s = advanceTo(s, 'upkeep');
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[bear]!.tapped).toBe(false);
+  });
+
+  it('the land stays tapped through its untap step while the Leech is tapped', () => {
+    let s = table(['Test Leech'], ['Forest']);
+    const land = find(s, 1, 'battlefield', 'Forest');
+    s = activate(s, 'Test Leech', land, 1);
+    expect(s.instances[land]!.tapped).toBe(true);
+    s = nextUpkeep(s);
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[land]!.tapped).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

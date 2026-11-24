@@ -2297,6 +2297,13 @@ export interface ContinuousEffect {
    * effect, and sends the permanent home, the first time a settle finds them false.
    */
   readonly controlWhile?: { readonly controlled?: boolean; readonly tapped?: boolean };
+  /**
+   * The same terms on any other `permanent` effect (D1182): "Target creature gets +1/+1 for as long
+   * as ~ remains tapped" (Tawnos's Weaponry), "It doesn't untap during its controller's untap step
+   * for as long as ~ remains tapped" (Mana Leech). Dropped, with nothing to send home, the first
+   * time a settle finds them false; it does not come back if they hold again.
+   */
+  readonly lastsWhile?: { readonly controlled?: boolean; readonly tapped?: boolean };
 }
 
 export interface Characteristics {

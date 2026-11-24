@@ -15895,8 +15895,8 @@ describe('the freeze: "doesn\'t untap during its controller\'s next untap step" 
     expect(JSON.stringify(read.script?.triggers ?? [])).not.toMatch(/next untap step/);
   });
 
-  it('refuses Dungeon Geists, whose freeze lasts as long as it is on the table', () => {
-    // The same discrimination one card over, and with a referent: no "next", so no reading.
+  it('reads Dungeon Geists since D1182: the freeze lasts as long as you control it', () => {
+    // No "next", so not D538's freeze: since D1182 a `doesntUntap` effect with `lastsWhile`.
     const read = row('Dungeon Geists', 'Creature — Spirit',
       'Flying\n'
       + 'When this creature enters, tap target creature an opponent controls. That creature '
@@ -15904,15 +15904,8 @@ describe('the freeze: "doesn\'t untap during its controller\'s next untap step" 
       { mana_cost: '{2}{U}{U}', cmc: 4, power: '3', toughness: '3' });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    /*
-      Named rather than counted, because a refusal asserted as `length === 1` passes whichever line
-      was refused — and this card prints three. Three of this stretch's rows refused for the wrong
-      reason before being caught, so the line itself is the assertion.
-    */
-    expect(read.unread.map((u) => u.line)).toEqual([
-      'When this creature enters, tap target creature an opponent controls. That creature '
-      + "doesn't untap during its controller's untap step for as long as you control this creature.",
-    ]);
+    // The behaviour is pinned by the D1182 tests in scripts.test.ts.
+    expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 
   it('reads the plural referent since D946, and a plural with no targeting clause before it stays unread', () => {

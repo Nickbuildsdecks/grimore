@@ -28282,6 +28282,58 @@ function readEffect(
     since those are the readings made of continuous effects; a permission or a delayed effect "until
     end of turn" is bounded some other way and would end too soon.
   */
+  /*
+    **"For as long as ~ remains tapped"** (D1182) on a continuous effect: "Target creature gets +1/+1
+    for as long as ~ remains tapped" (Tawnos's Weaponry, the Couriers), "It doesn't untap during its
+    controller's untap step for as long as ~ remains tapped" (Mana Leech, Rust Tick), and "… for as
+    long as you control ~". The clause is read as it would be until end of turn (or with no
+    duration), and every effect it makes lasts instead until the terms fail (`lastsWhile`). "Gain
+    control" has its own reader (D1040) and is left to it.
+  */
+  const lastingShape = new RegExp(`^(?:for as long as (${selfRef(name)} remains tapped|you control ${selfRef(name)}), (.+)|(.+) for as long as (${selfRef(name)} remains tapped|you control ${selfRef(name)}))$`, 'i')
+    .exec(clause.trim().replace(/\.$/, ''));
+  if (lastingShape !== null) {
+    const body = (lastingShape[2] ?? lastingShape[3])!;
+    const terms = /remains tapped$/i.test(lastingShape[1] ?? lastingShape[4]!) ? { tapped: true } : { controlled: true };
+    if (!/^gain control\b/i.test(body)
+      && /\b(?:gets?|gains?|has|have|loses?|can['\u2019]t|cannot|doesn['\u2019]t untap|don['\u2019]t untap|becomes?)\b/i.test(body)) {
+      /*
+        "Tap target land. It doesn't untap during its controller's untap step for as long as ~
+        remains tapped." (Mana Leech, Rust Tick, Sand Squid, Amber Prison): joined into one clause by
+        `composeEffects`, read here as the tap and a `doesntUntap` effect on the same permanent.
+      */
+      const tapHeld = /^tap (target .+?) and it doesn't untap during its controller's untap step$/i.exec(body);
+      const heldSpec = tapHeld === null ? null : targetSpecFrom(tapHeld[1]!, false);
+      const inner: ReadEffect | null = heldSpec !== null && pointsAtAPermanent(heldSpec)
+        ? {
+          targets: [heldSpec],
+          effect: (c) => {
+            const id = firstCardTarget(c);
+            if (id === null || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+            return pump(tap(c.state, id, true), [id], c.source, c.controller, { doesntUntap: true });
+          },
+        }
+        : readEffect(`${body} until end of turn`, name, where)
+        ?? readEffect(`${body.replace(/\b(has|have)\b/i, (w) => (w.toLowerCase() === 'has' ? 'gains' : 'gain'))} until end of turn`, name, where)
+        ?? readEffect(body, name, where);
+      if (inner !== null) {
+        const hold = (fn: EffectFn): EffectFn => (c) => {
+          const before = new Set(c.state.effects.map((e) => e.id));
+          const after = fn(c);
+          return {
+            ...after,
+            effects: after.effects.map((e) => (!before.has(e.id) && (e.duration === 'end-of-turn' || e.duration === 'permanent')
+              ? { ...e, duration: 'permanent' as const, lastsWhile: terms } : e)),
+          };
+        };
+        return {
+          ...inner,
+          effect: hold(inner.effect),
+          ...(inner.immediate === undefined ? {} : { immediate: hold(inner.immediate) }),
+        };
+      }
+    }
+  }
   const nextTurnShape = /^(?:until your next turn, (.+)|(.+) until your next turn)$/i.exec(clause.trim().replace(/\.$/, ''));
   if (nextTurnShape !== null) {
     const body = (nextTurnShape[1] ?? nextTurnShape[2])!;
@@ -31276,6 +31328,20 @@ function composeEffects(
     .map((clause) => clause.replace(/^(\s*)you create /i, (_m, lead: string) => `${lead}Create `))
     .map((clause) => (/^\s*then that player or that permanent's controller may pay\b/i.test(clause)
       ? clause : clause.replace(/^(\s*)then,?\s+/i, '$1')))
+    // D1182: "Tap target X. It doesn't untap … for as long as ~ remains tapped." is one effect.
+    .reduce<string[]>((joined, clause) => {
+      const last = joined[joined.length - 1];
+      const held = /^\s*(?:it|that (?:creature|permanent|land|artifact)) (doesn't untap during its controller's untap step for as long as .+)$/i.exec(clause);
+      const tapped = last === undefined ? null : /^\s*tap (target [^.]+?)\.?\s*$/i.exec(last);
+      const spec = tapped === null ? null : targetSpecFrom(tapped[1]!, false);
+      // Joined only when the joined clause will read, so a reader that splits it again cannot loop.
+      if (last !== undefined && held !== null && spec !== null && pointsAtAPermanent(spec)) {
+        joined[joined.length - 1] = `${last.trim().replace(/\.$/, '')} and it ${held[1]!}`;
+        return joined;
+      }
+      joined.push(clause);
+      return joined;
+    }, [])
     .flatMap((clause) => conniveClauses(clause, name) ?? splitDamageClauses(clause));
   if (clauses.length === 0) return null;
   // The rider first, because it is a reading of the whole list that the clause loop below would
