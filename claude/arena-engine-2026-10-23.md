@@ -43625,3 +43625,35 @@ Faults injected by hand: 3, all caught.
 - The team grant's protection dropped.
 
 Coverage: 16,482 of 31,900 cards (+5 over D1204's 16,477), 38,873 of 59,888 lines (+7).
+
+## D1206 — "Choose a color." spells
+
+"Choose a color. Creatures you control gain protection from the chosen color until end of turn"
+(Brave the Elements, Akroma's Blessing), "Choose a color. ~ deals X damage to each creature of the
+chosen color" (Sudden Demise), Searing Rays' count of "creatures of the chosen color that player
+controls". Read as D1142's "Choose a creature type." spells are: the colour is asked as the spell
+resolves, and the rest is read with the colour written in ("red creatures", "protection from
+red"), once with a stand-in colour for whether it reads and what it targets, and again with the
+colour chosen. The bot names the colour it most fears for protection and damage, its own deck's
+colour otherwise. D1205's protection grants are what make the first shape read.
+
+Not a mana ability that chooses a colour (Astral Cornucopia, "{T}: Choose a color. Add one mana of
+that color …"): read here it would go on the stack, and a mana ability never does (CR 605.3). It
+stays unread.
+
+Read whole now (5): Akroma's Blessing, Brave the Elements, Reverent Mantra, Searing Rays, Sudden
+Demise.
+
+**Tests.** 3 engine tests:
+- The test cards read whole, and a mana ability that chooses a colour is left unread.
+- "Protection from the chosen color": black named, and each of your creatures has protection from
+  black.
+- "Each creature of the chosen color": red named, the red creatures on both sides die and the green
+  ones live.
+
+Faults injected by hand: 3, all caught.
+- The colour chosen ignored (always red).
+- The protection rewrite removed.
+- The mana guard removed.
+
+Coverage: 16,490 of 31,900 cards (+8 over D1205's 16,482), 38,881 of 59,888 lines (+8).
