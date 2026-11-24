@@ -8036,6 +8036,8 @@ describe('deck coverage', () => {
       'trigger ring-tempted',
       // D1147: "If damage would be dealt to ~, …" (the Phantoms); no pool deck plays one.
       'script damageToSelf',
+      // D1187: Burgeoning's land play; no built-in deck plays into it.
+      'trigger land-played',
       // D1164: "Whenever you complete a dungeon" (Varis); no pool deck plays one.
       'trigger dungeon-completed',
     ]);
@@ -38914,6 +38916,50 @@ describe('the board\'s "is dealt damage" (D1186)', () => {
     expect(life(s, 0)).toBe(before);
     s = ping(s, find(s, 0, 'battlefield', 'Test Drake'));
     expect(life(s, 0)).toBe(before + 2);
+  });
+});
+
+describe('playing a land as an event (D1187)', () => {
+  const ROWS = [
+    { name: 'Test Burgeon', type_line: 'Enchantment', oracle_text: 'Whenever an opponent plays a land, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Horn', type_line: 'Artifact', oracle_text: 'Whenever a player plays a land, that player draws a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1187', name: 'Land plays',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 54 }],
+    data: ROWS as never[],
+  });
+  /** Seat `active`'s main phase, with a Forest in each hand. */
+  const table = (mine: string[], active: 0 | 1) => advanceTo(arena({
+    decks: { 0: 'd1187', 1: 'd1187' }, deckSpecs: { d1187: deck.deck },
+    hands: { 0: ['Forest'], 1: ['Forest'] }, battlefield: { 0: mine }, turn: 3, firstSeat: active,
+  }), 'precombat-main');
+  const play = (s0: GameState, seat: 0 | 1): GameState => {
+    let s = apply(s0, { type: 'auto:playLand', by: seat, card: find(s0, seat, 'hand', 'Forest') } as Action);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return drain(s, 10);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"an opponent plays a land": their land gains you a life, yours does not', () => {
+    const theirs = play(table(['Test Burgeon'], 1), 1);
+    expect(life(theirs, 0)).toBe(21);
+    const mine = play(table(['Test Burgeon'], 0), 0);
+    expect(life(mine, 0)).toBe(20);
+  });
+
+  it('"that player draws": the player who played it draws, and a land put onto the battlefield is not played', () => {
+    let s = table(['Test Horn'], 1);
+    const [mine, theirs] = [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length];
+    s = play(s, 1);
+    expect([ids(s, 0, 'hand').length, ids(s, 1, 'hand').length]).toEqual([mine, theirs - 1 + 1]);
+    const lib = ids(s, 1, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Forest')!;
+    s = drain(apply(s, { type: 'card:move', by: 1, card: lib, toZone: 'battlefield' }), 10);
+    expect(ids(s, 1, 'hand').length).toBe(theirs);
   });
 });
 

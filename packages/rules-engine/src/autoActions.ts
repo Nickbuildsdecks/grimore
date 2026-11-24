@@ -1885,6 +1885,8 @@ function playLand(
     next = withInstance(next, inst.id, { paidToEnterUntapped: true });
   }
   next = { ...next, landsPlayed: { ...next.landsPlayed, [String(action.by)]: played + 1 } };
+  // The play itself (D1187): "whenever an opponent plays a land". Its entry is raised by `settle`.
+  next = raise(next, { kind: 'land-played' }, action.by);
   /*
     No entry trigger raised here, and that is a fix rather than an omission.
 

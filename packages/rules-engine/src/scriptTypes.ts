@@ -1593,6 +1593,15 @@ export type TriggerEvent =
       readonly did?: 'scry' | 'surveil';
     }
   /**
+   * "Whenever an opponent plays a land" (D1187, CR 305.1): the special action of playing one, not
+   * the land entering (that is `etb`, landfall's). A land put onto the battlefield by an effect is
+   * not played. `by` is whose play, `you` by default.
+   */
+  | {
+      readonly kind: 'land-played';
+      readonly by?: 'you' | 'opponent' | 'any';
+    }
+  /**
    * "Whenever one or more +1/+1 counters are put on ~" (D633), and on a creature or a permanent you
    * control. One event per placement on one permanent, however many counters it added — the "one or
    * more" every printing says. Watched from the battlefield; the subject is the permanent the

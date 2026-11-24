@@ -323,6 +323,8 @@ const PLAYER_ACTION_EVENTS: ReadonlySet<string> = new Set([
   'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
   // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
   'sacrifices',
+  // And the seat that played a land (D1187): Horn of Greed's "that player draws a card".
+  'land-played',
   /*
     And the controller of the spell or ability that targeted (D1021): Thunderbreak Regent's "Whenever
     a Dragon you control becomes the target of a spell or ability an opponent controls, Thunderbreak
@@ -20649,6 +20651,19 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
+  },
+  // "Whenever an opponent plays a land" (D1187), and "you play a land or cast a spell".
+  {
+    prologue: () => /^Whenever (?<by>you|an opponent|a player) plays? a land, (?<clause>.+)$/i,
+    from: (matched) => {
+      const by = ({ you: 'you', 'an opponent': 'opponent', 'a player': 'any' } as const)[
+        matched.groups!.by!.toLowerCase() as 'you' | 'an opponent' | 'a player'];
+      return [{ kind: 'land-played' as const, by }];
+    },
+  },
+  {
+    prologue: () => /^Whenever you play a land or cast a spell, (.+)$/i,
+    on: [{ kind: 'land-played', by: 'you' }, { kind: 'spell-cast', by: 'you' }],
   },
   // "Whenever a nontoken creature you control attacks" (D1184): Militia's Pride, Myrel's Kithkin.
   {

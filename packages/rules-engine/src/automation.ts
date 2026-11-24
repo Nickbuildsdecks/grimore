@@ -1541,6 +1541,12 @@ function triggerMatches(
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
     }
     // "Whenever you scry / surveil" (D991): whose scry, and which keyword.
+    case 'land-played': {
+      const by = want.kind === 'land-played' ? want.by ?? 'you' : 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     case 'scries': {
       const what = want.kind === 'scries' ? want.what ?? 'either' : 'either';
       const did = (event as { did?: 'scry' | 'surveil' }).did;
