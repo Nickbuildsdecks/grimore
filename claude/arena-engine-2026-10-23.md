@@ -43786,3 +43786,40 @@ Faults injected by hand: 2, all caught.
 - The switch applied to the base before the pumps (caught once a test had an uneven pump).
 
 Coverage: 16,556 of 31,900 cards (+20 over D1210's 16,536), 38,970 of 59,888 lines (+26).
+
+## D1212 — damage that can't be prevented, and players who can't gain life
+
+Skullcrack's turn: "Players can't gain life this turn. Damage can't be prevented this turn." Two new
+facts about the turn on the game state, cleared with the others when it ends:
+- `damageUnpreventableThisTurn`: `dealDamage` skips every prevention (protection's included, CR
+  702.16e, and a shield counter's, CR 122.1c), while a redirect still applies, since it is not a
+  prevention.
+- `lifeGainBlockedThisTurn`, by seat: `gainLife` gains nothing for them. "Players", "your
+  opponents", "each opponent", "target player" and "target opponent" read.
+
+And Combust's "~ deals 5 damage to target creature. The damage can't be prevented.": the sentences
+before it resolve with `damageUnpreventableNow` set, and it is put back as it was straight after,
+so only the spell's own damage is unpreventable.
+
+Not yet: "Damage that would be dealt by ~ can't be prevented" as a static (Excruciator), "Combat
+damage can't be prevented" (Frenzied Baloth), Lava Burst's "can't be prevented or dealt instead".
+The Phantoms' "prevent that damage. Remove a +1/+1 counter" (D1147) is left as it was under
+unpreventable damage; its ruling (the counter is still removed and the damage dealt) is a later
+refinement.
+
+Read whole now (7): Call In a Professional, Combust, Flaring Pain, Impractical Joke, Pinpoint
+Avalanche, Pyrewood Gearhulk, Skullcrack.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- A prevention shield stops an ordinary 3 damage, but not "the damage can't be prevented".
+- Only Combust's own damage: a Bolt after it is prevented as usual.
+- "Damage can't be prevented this turn" and "players can't gain life this turn" last for the
+  turn: a shielded creature dies to a Bolt, and 3 life gained is no life gained.
+
+Faults injected by hand: 3, all caught.
+- The prevention shields still spent.
+- Combust's flag left set after it.
+- The life-gain block ignored.
+
+Coverage: 16,566 of 31,900 cards (+10 over D1211's 16,556), 38,988 of 59,888 lines (+18).
