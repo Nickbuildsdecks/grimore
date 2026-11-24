@@ -59996,3 +59996,38 @@ historic, legends dropped, and the rewrite off).
 
 - engine tests: 6225, all passing (on 342e819)
 - Coverage: 15,844 to 15,846 of 31,900 cards with every line read, and 38,020 to 38,022 of 59,888 lines, against 342e819.
+
+## D1172 — an X/X token, where X is a measure
+
+"Create an X/X green Ooze creature token, where X is …" was 26 single-unread legal lines. The token
+reader (`tokenFrom`) took only a printed power and toughness, and the "where X is" grammar
+(`tokenEffect`, D520) only as the number of tokens.
+
+`tokenEffect` now reads "create a/an X/X <token>, where X is <measure>" as one token whose power and
+toughness are the measure as the clause resolves. The token's definition is the 0/0 the rest of
+the sentence describes, so colours, subtypes, "artifact" and keywords read as they do on any token;
+`addTokens` (D810) keeps two Oozes of different sizes as two definitions. X of 0 still makes the
+token, which the state-based check then removes (CR 704.5f).
+
+Any measure `boardCount` reads works: a count, "the greatest power among …", a devotion, and
+D1171's "that spell's mana value" (Mystic Genesis measures the spell it countered).
+
+Read whole now, among others: Miming Slime, Tumbleweed Rising, Kin-Tree Invocation, Seed Guardian,
+Oviya Pashiri's ability, Spoils of Blood, Abzan Monument, Grakmaw, Manaform Hellkite, Mystic
+Genesis. Still unread: "~'s power" on a dies trigger (Flesh Carver), "the sacrificed creature's
+power" on abilities with other restrictions (Ooze Garden, Geralf), and lines with a second sentence
+of their own (Experimental Overload, Phyrexian Rebirth).
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- The greatest power: a 5/3 on the board makes a 5/5 Ooze.
+- A graveyard count, and the keyword: two creature cards make a 2/2 with trample.
+- X of 0: no 0/0 is left on the battlefield.
+- The countered spell's mana value: X=3 on a {X}{G} spell makes a 4/4.
+
+Faults injected by hand: 3, all caught.
+- Toughness fixed at 1.
+- Size fixed at 1/1.
+- The keywords dropped from the token.
+
+Coverage: 16,066 of 31,900 cards (+14 over D1171's 16,052), 38,333 of 59,888 lines (+25). The difference also counts the D7xx session's D830, merged in after D1171 was measured.
