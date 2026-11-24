@@ -43681,3 +43681,35 @@ Faults injected by hand: 2, 1 caught.
   caught, because the trigger reader always says so; the default is there for safety only.
 
 Coverage: 16,491 of 31,900 cards (+1 over D1206's 16,490), 38,882 of 59,888 lines (+1).
+
+## D1208 — a group that can't block this turn, "without flying", and "you draw a card and lose 1 life"
+
+Three small readers:
+- **A group that can't block (or attack, or be blocked) this turn**: "Creatures without flying
+  can't block this turn" (Seismic Stomp), "Creatures your opponents control can't block this
+  turn", "Creatures with power 2 or less can't block this turn". The single-target form has read
+  since D528; this is the same restriction over any creature scope the mass pump reads, as it
+  stands when the spell resolves.
+- **"Without <keyword>"** in `massScope`, the negation of D1169's "with <keyword>": "Destroy all
+  creatures without flying", "deals 2 damage to each creature without flying".
+- **"You draw a card and lose 1 life"**, with "you" said once, read as "… and you lose 1 life",
+  which already read.
+
+D528's compile pin "an untargeted board scope" used Seismic Stomp's sentence; it now uses one with
+a price ("unless their controller sacrifices a land"), which stays unread.
+
+Read whole now (about 30), among them: Seismic Stomp, Falter, Deluge, Fire Ants, Magmatic Chasm,
+Tectonic Rift, Sundering Eruption, Awe for the Guilds, Cosmotronic Wave, Hazardous Blast, Hero of
+Oxid Ridge, Goblin Locksmith, Venser, the Sojourner, Jace, Arcane Strategist, Relentless Drednok.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Creatures without flying can't block this turn": the Bear can't block, the Bird still can.
+- "You draw a card and lose 1 life": one card and one life.
+
+Faults injected by hand: 3, all caught.
+- "Without" read as "with".
+- The group restriction doing nothing.
+- The life loss dropped.
+
+Coverage: 16,529 of 31,900 cards (+38 over D1207's 16,491), 38,932 of 59,888 lines (+50).
