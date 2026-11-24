@@ -38175,6 +38175,52 @@ describe('"deals N damage to each opponent. You gain life equal to the damage de
   });
 });
 
+describe('an edict of any description (D1174)', () => {
+  const ROWS = [
+    { name: 'Test Purge', type_line: 'Sorcery', oracle_text: 'Each opponent sacrifices a creature token.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Tithe', type_line: 'Sorcery', oracle_text: 'Each opponent sacrifices an artifact or creature.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a 1/1 white Soldier creature token.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1174', name: 'Edicts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 45 }],
+    data: ROWS as never[],
+  });
+  const named = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  /** Seat 1 goes first and makes a Soldier; then seat 0's main phase, with the edict in hand. */
+  const table = (theirs: string[], hand: string[], soldier: boolean) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1174', 1: 'd1174' }, deckSpecs: { d1174: deck.deck },
+      hands: { 0: hand, 1: soldier ? ['Test Spawner'] : [] }, battlefield: { 1: theirs }, turn: 3, firstSeat: soldier ? 1 : 0,
+    }), 'precombat-main');
+    if (!soldier) return s;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Spawner') })), 20);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 1, attackers: [] });
+    return advanceTo(advanceTo(s, 'end'), 'precombat-main');
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a creature token": the Soldier goes, the Golem stays', () => {
+    let s = table(['Test Golem'], ['Test Purge'], true);
+    expect(s.activeSeat).toBe(0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Purge') })), 40);
+    expect(ids(s, 1, 'battlefield').map((id) => named(s, id))).toEqual(['Test Golem']);
+  });
+
+  it('"an artifact or creature": the Relic is the only one, so it goes; the Swamp stays', () => {
+    let s = table(['Swamp', 'Test Relic'], ['Test Tithe'], false);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tithe') })), 40);
+    expect(ids(s, 1, 'battlefield').map((id) => named(s, id))).toEqual(['Swamp']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

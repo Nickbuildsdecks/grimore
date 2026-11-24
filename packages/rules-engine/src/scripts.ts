@@ -14014,6 +14014,32 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    D1174: any other description `permanentDescribed` reads, one each: "each opponent sacrifices a
+    creature token", "each player sacrifices an artifact or creature", "… a creature or
+    planeswalker", "… an untapped creature", "… a Goblin". Each player chooses from their own, as
+    the fixed kinds above do.
+  */
+  const edictDescribed = /^(each player|each opponent|defending player) sacrifices (an?) (.+)$/i.exec(text);
+  if (edictDescribed !== null && !/\b(?:with|that|of their choice|they control|unless|for each)\b/i.test(edictDescribed[3]!)) {
+    const subject = edictDescribed[1]!.toLowerCase();
+    const who = subject === 'each player' ? 'each-player' as const
+      : subject === 'each opponent' ? 'each-opponent' as const : 'hit-player' as const;
+    const describes = permanentDescribed(edictDescribed[3]!);
+    if (describes !== null) {
+      return {
+        decisions: [{
+          who,
+          from: 'battlefield',
+          prompt: `Sacrifice ${edictDescribed[2]!.toLowerCase()} ${edictDescribed[3]!}`,
+          min: 1,
+          max: 1,
+          filter: (state: GameState, id: string) => describes(state, id),
+        }],
+        effect: (c) => c.decisions.reduce((state, answer) => sacrifice(state, answer.ids), c.state),
+      };
+    }
+  }
 
   /*
     "Return a land you control to its owner's hand" — a bounce the controller **chooses**, which is
