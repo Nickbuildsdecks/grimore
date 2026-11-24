@@ -61501,3 +61501,34 @@ Faults injected by script: 1 of 1 caught (the name not carried into "it").
 
 - engine tests: 6440, all passing (on f2b4851)
 - Coverage: 16,566 to 16,567 of 31,900 cards with every line read, and 38,983 to 38,984 of 59,888 lines, against f2b4851. Infernal Pet already read before, with "it" resolved through the cast event, whose subject is unset, so it was not counted twice.
+
+## D1215 — a graveyard, or a hand and a graveyard, shuffled into the library
+
+Timetwister, Echo of Eons and Time Reversal: "Each player shuffles their hand and graveyard into
+their library, then draws seven cards." Reminisce, Thran Foundry and Cranial Archive: "Target player
+shuffles their graveyard into their library." Feldon's Cane: "Shuffle your graveyard into your
+library." Mnemonic Nexus: "Each player …". Every card goes to its owner's library, the library is
+shuffled, then the draws, seat by seat as the wheel's are. ", then draws seven cards" is held to the
+sentence when the line is cut into clauses, as Wheel of Fortune's is (D651), because cut apart
+neither half is a sentence.
+
+D404's compile pin "leaves a clause it cannot read alone" used Timetwister's shuffle as its example
+of a clause with no reader; it now uses "each player skips their next turn".
+
+Read whole now (10): Archangel's Light, Blessed Respite, Cranial Archive, Echo of Eons, Feldon's
+Cane, Mnemonic Nexus, Reminisce, Thran Foundry, Time Reversal, Timetwister.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Each player shuffles their hand and graveyard into their library, then draws seven": both
+  graveyards empty but the spell, seven cards in each hand, and no card lost.
+- "Target player shuffles their graveyard into their library": theirs is emptied into their
+  library, yours is untouched.
+
+Faults injected by hand: 2, all caught.
+- The hand left out.
+- The controller's graveyard shuffled instead of the target's.
+
+The coverage below includes the other session's D837 and D838, merged in before this was measured.
+
+Coverage: 16,631 of 31,900 cards (+20 over D1214's 16,611), 39,082 of 59,888 lines (+34).
