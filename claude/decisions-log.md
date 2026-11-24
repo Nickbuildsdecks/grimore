@@ -60951,3 +60951,32 @@ Faults injected by hand: 4, all caught.
 - The D1180 guard removed.
 
 Coverage: 16,447 of 31,900 cards (+37 over D1199's 16,410), 38,829 of 59,888 lines (+48).
+
+## D1201 — "whenever one or more <kind> you control deal combat damage to a player"
+
+The batched hit (D443's `combat-damage-dealt`, once per damaged player however many creatures
+connected) with a kind on the creatures: "one or more **artifact creatures** you control"
+(Thopter Spy Network, Automated Assembly Line), "**nontoken creatures**", "**Ninja creatures**",
+and a creature type in the plural: "**Dragons**", "**Faeries**", "**Elves**" (-ves is -f;
+otherwise the s goes, and a word that is not then a creature type is refused).
+
+The event now carries each creature in the hit as it dealt the damage (its types, subtypes and
+whether it is a token), and the trigger fires when at least one of them is of the kind. It still
+fires once for the hit, not once per creature of the kind.
+
+Read whole now (5): Automated Assembly Line, Captain Janeway, Endgame, Rooftop Bypass, The Odd
+Acorn Gang, Thopter Spy Network. Most of the other lines with this opening are unread for their
+effect, not their trigger.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- Two artifact creatures and a Dog connect: one card, once for the hit.
+- Only the Dog connects: no card.
+- "Dragons" in the plural: a Dragon in the hit gains 3 life; the Dog alone gains nothing.
+
+Faults injected by hand: 3, all caught.
+- The kind ignored.
+- Only the last creature of the hit kept.
+- The plural's singular cut one letter short.
+
+Coverage: 16,453 of 31,900 cards (+6 over D1200's 16,447), 38,838 of 59,888 lines (+9).
