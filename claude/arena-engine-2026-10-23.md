@@ -43247,3 +43247,29 @@ Faults injected by hand: 3, all caught.
 - Only the first part of a sum counted.
 
 Coverage: 16,345 of 31,900 cards (+13 over D1192's 16,332), 38,696 of 59,888 lines (+14).
+
+## D1194 — "cards named ~ in all graveyards / your graveyard"
+
+15 legal cards count copies of themselves in graveyards: Kindle, Flame Burst, Accumulated Knowledge,
+Galvanic Bombardment, Undead Servant, Muscle Burst. `countOfThing` now reads "cards named ~ in all
+graveyards" and "… in your graveyard": cards by their printed name. The spell resolving is on the
+stack, not in a graveyard, so it does not count itself (CR 608.2); it goes to the graveyard after.
+With D1193's "N plus", "where X is 2 plus the number of cards named Kindle in all graveyards"
+reads too.
+
+Read whole now (9 of the 15): Kindle, Flame Burst, Accumulated Knowledge, Galvanic Bombardment,
+Undead Servant, Muscle Burst, Take Inventory, Frantic Inventory, Kjeldoran War Cry. Still unread:
+Mind Burst (a discard of X cards), Feast of Flesh ("and you gain X life"), Goblin Gathering
+("equal to two plus"), Aether Burst ("as you cast this spell"), Ancestral Anger and Growth Cycle.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "In all graveyards": one in each graveyard is 2 plus 2 damage; the copy resolving does not count
+  itself, and a card of another name never counts.
+- "In your graveyard": two in yours and one in theirs draws one plus two.
+
+Faults injected by hand: 2, all caught.
+- "Your graveyard" read as all graveyards.
+- Every card counted, whatever its name (caught once a card of another name was in the graveyard).
+
+Coverage: 16,354 of 31,900 cards (+9 over D1193's 16,345), 38,705 of 59,888 lines (+9).
