@@ -2380,8 +2380,14 @@ export type DecisionSpec =
  * being asked and the answer being applied: the engine resolves it more than once (to plan the
  * questions, to ask one, to pay for the answer) and the three must agree. An age counter put on by
  * `beforeDecisions` is safe, because that runs before any of them.
+ *
+ * `at` (D1195) is the resolution's own context — its controller, targets and X — for a question whose
+ * size is a count: "Target player discards a card for each Swamp you control", "Target player
+ * discards X cards". The engine always passes it; it is optional so the older two-argument functions
+ * still type.
  */
-export type DecisionSpecOf = DecisionSpec | ((state: GameState, source: string) => DecisionSpec);
+export type DecisionSpecOf = DecisionSpec
+  | ((state: GameState, source: string, at?: EffectContext) => DecisionSpec);
 
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>

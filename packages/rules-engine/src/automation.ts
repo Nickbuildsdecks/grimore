@@ -5356,9 +5356,31 @@ function runModes(
  * place for the answer to live. The contract that makes that safe is on `DecisionSpecOf`: the
  * function is pure and reads nothing that can change between the question and its answer.
  */
+/**
+ * The context a computed question reads (D1195): the resolution's controller, targets and X, with no
+ * answers yet. The same fields the effect will see, from the same stack object, so a count read
+ * here and a count read by the effect agree.
+ */
+function askingContext(state: GameState, object: StackObject): EffectContext {
+  return {
+    state, source: object.source,
+    controller: object.controller, targets: object.targets, x: object.x ?? triggerX(state, object), decisions: [],
+    kicked: object.kicked === true, attacked: object.attacked,
+    ...(object.kind === 'spell' ? { resolving: object } : {}),
+    ...aboutNow(state, object),
+    answering: object.answering,
+    actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
+    ...(object.eventAmount === undefined ? {} : { eventAmount: object.eventAmount }),
+    ...(object.subjectStats === undefined ? {} : { subjectStats: object.subjectStats }),
+    ...(object.tappedPower === undefined ? {} : { tappedPower: object.tappedPower }),
+    enteringAttack: object.enteringAttack,
+    ...(object.division === undefined ? {} : { division: object.division }),
+  };
+}
+
 function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
   const asked = (specs: readonly DecisionSpecOf[]): readonly DecisionSpec[] =>
-    specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source) : spec));
+    specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source, askingContext(state, object)) : spec));
   const script = scriptOnStack(state, object);
   if (object.kind !== 'spell') return asked(abilityOrTrigger(script, object, state.cardDefs)?.decisions ?? []);
   const modes = modesOf(script, object.modes);

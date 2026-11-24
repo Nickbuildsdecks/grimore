@@ -15187,6 +15187,43 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       },
     };
   }
+  /*
+    A discard of a count (D1195): "Target player discards a card for each Swamp you control" (Mind
+    Sludge, Honden of Night's Reach), "Target player discards X cards, where X is one plus the number
+    of cards named ~ in all graveyards" (Mind Burst), "Target player discards X cards" with the X
+    paid, "cards equal to …". The discarding player still chooses, as in every discard that does not
+    say "at random". The count is read when the question is asked, from the resolution's own context
+    (`DecisionSpecOf`'s `at`), and is clamped to the hand like every other discard.
+
+    "Each player/opponent" only over a count that does not name the player discarding: "for each
+    card in their hand" is a different count for each of them, and the question is asked of one.
+  */
+  const countedDiscard = /^(target player|target opponent|each opponent|each player|you)?\s*discards? (?:X cards(?:, where X is (.+))?|a card for each (.+)|cards equal to (.+))$/i.exec(text);
+  if (countedDiscard !== null) {
+    const subject = (countedDiscard[1] ?? 'you').toLowerCase();
+    const measure = countedDiscard[2] ?? countedDiscard[4];
+    const count: ((c: EffectContext) => number) | null = measure !== undefined
+      ? whereXCount(measure, name)
+      : countedDiscard[3] !== undefined
+        ? forEachCount(countedDiscard[3], name)
+        : (xPayable && xAnnounced === 0 ? (c: EffectContext) => c.x : null);
+    const each = subject.startsWith('each');
+    const spec = subject.startsWith('target') ? targetSpecFrom(subject, false) : null;
+    const relative = /\b(?:they|their|them|that player)\b/i.test(measure ?? countedDiscard[3] ?? '');
+    if (count !== null && (spec !== null || !subject.startsWith('target')) && !(each && relative)) {
+      const who = spec !== null ? 'target-player' as const
+        : each ? (subject === 'each opponent' ? 'each-opponent' as const : 'each-player' as const)
+          : 'controller' as const;
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        decisions: [(state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+          const n = at === undefined ? 0 : Math.max(0, count({ ...at, state }));
+          return { who, from: 'hand', prompt: `Discard ${n} card${n === 1 ? '' : 's'}`, min: n, max: n };
+        }],
+        effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
+      };
+    }
+  }
   const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
   if (roundDiscard !== null) {
     const n = countFrom(roundDiscard[2]!);
@@ -23459,7 +23496,7 @@ function optionalEffect(
   */
   const gatedOn = (word: string): readonly DecisionSpecOf[] =>
     (read.decisions ?? []).filter(gatable).map((spec): DecisionSpecOf => (typeof spec === 'function'
-      ? (state: GameState, source: string) => ({ ...spec(state, source), askOnlyIfChosen: word }) as DecisionSpec
+      ? (state: GameState, source: string, at?: EffectContext) => ({ ...spec(state, source, at), askOnlyIfChosen: word }) as DecisionSpec
       : { ...spec, askOnlyIfChosen: word } as DecisionSpec));
   /*
     **The inner effect must not see this reader's own question.**
@@ -29201,7 +29238,7 @@ function readEffect(
           } as DecisionSpec;
         };
         return typeof spec === 'function'
-          ? ((state: GameState, source: string) => withAsk((spec as (st: GameState, src: string) => DecisionSpec)(state, source)))
+          ? ((state: GameState, source: string, at?: EffectContext) => withAsk((spec as (st: GameState, src: string, ctx?: EffectContext) => DecisionSpec)(state, source, at)))
           : withAsk(spec as DecisionSpec);
       });
       return {

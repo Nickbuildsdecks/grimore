@@ -39297,6 +39297,78 @@ describe('"cards named ~ in all graveyards / your graveyard" (D1194)', () => {
   });
 });
 
+describe('a discard of a count: "a card for each", "X cards" (D1195)', () => {
+  const ROWS = [
+    { name: 'Test Sludge', type_line: 'Sorcery', oracle_text: 'Target player discards a card for each Mountain you control.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Burst', type_line: 'Sorcery', oracle_text: 'Target player discards X cards.', mana_cost: '{X}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Omens', type_line: 'Sorcery', oracle_text: 'Each opponent discards X cards, where X is the number of Mountains you control.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Return', type_line: 'Sorcery', oracle_text: "Test Return deals X damage to target opponent or planeswalker. That player or that planeswalker's controller discards X cards.", mana_cost: '{X}', cmc: 0, colors: ['B', 'R'], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1195', name: 'Counted',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }],
+    data: ROWS as never[],
+  });
+  const table = (spell: string, theirHand: number, mountains = 3) => advanceTo(arena({
+    decks: { 0: 'd1195', 1: 'd1195' }, deckSpecs: { d1195: deck.deck },
+    hands: { 0: [spell], 1: Array.from({ length: theirHand }, () => 'Mountain') },
+    battlefield: { 0: Array.from({ length: mountains }, () => 'Mountain') },
+    turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const answer = (s: GameState): GameState => {
+    const n = s.pendingDecision?.max ?? 0;
+    return drain(apply(s, { type: 'auto:decide', by: 1, cards: [...(s.pendingDecision?.candidates ?? []).slice(0, n)] } as Action));
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"a card for each Mountain you control": three Mountains, three cards, chosen by the player discarding', () => {
+    let s = table('Test Sludge', 5);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sludge'), targets: [{ kind: 'player', seat: 1 }] })), 20);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.prompt).toBe('Discard 3 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(2);
+  });
+
+  it('"X cards": the X paid', () => {
+    let s = table('Test Burst', 5);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Burst'), targets: [{ kind: 'player', seat: 1 }], x: 2 } as Action)), 20);
+    expect(s.pendingDecision?.prompt).toBe('Discard 2 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(3);
+  });
+
+  it('"each opponent discards X cards, where X is …": the count read as it resolves', () => {
+    let s = table('Test Omens', 5, 4);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Omens') })), 20);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.prompt).toBe('Discard 4 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(1);
+  });
+
+  it('"that player or that planeswalker\'s controller discards X cards": the player dealt the damage discards', () => {
+    let s = table('Test Return', 5);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Return'), targets: [{ kind: 'player', seat: 1 }], x: 2 } as Action)), 20);
+    expect(life(s, 1)).toBe(18);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.prompt).toBe('Discard 2 cards');
+    s = answer(s);
+    expect(ids(s, 1, 'hand').length).toBe(3);
+  });
+
+  it('a count larger than the hand takes the whole hand, and asks nothing', () => {
+    let s = table('Test Sludge', 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Sludge'), targets: [{ kind: 'player', seat: 1 }] })), 20);
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 1, 'hand').length).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
