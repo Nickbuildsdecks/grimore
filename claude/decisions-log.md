@@ -61225,3 +61225,51 @@ Faults injected by hand: 2, all caught.
 - The copy made whatever was answered.
 
 Coverage: 16,536 of 31,900 cards (+2 over D1209's 16,534), 38,944 of 59,888 lines (+3).
+
+## D833 — A counted size and keywords on an attachment: Ethereal Armor
+
+Most-played order: Ethereal Armor (rank 1130). The same reading covers Armored Ascension, Claws of
+Valakut, Crown of Skemfar, Crystalline Armor, Glaive of the Guildpact, Mace of the Valiant and
+Nyxborn Hydra.
+
+**Reader.** `attachmentBonus` read "gets +1/+1 for each <thing>" (D523) and "has <keywords>", but
+not one followed by the other: "gets +1/+1 for each enchantment you control and has first
+strike". The two halves are now split at " and has ", each read as its own line, and joined: the
+`sizePerCount` from the first, the keywords from the second. Not when the second half is a quoted
+grant. Four printings stay unread because their count is not one `staticCountOf` knows (Auras
+attached to it, counters on it, a party).
+
+**Tests.** 2 engine tests:
+- the card reads;
+- with two other enchantments of ours and one of theirs, the Armor makes our Bear a 5/5 first
+  striker, and a 4/4 when one of ours leaves.
+
+Faults injected by script: 2 of 2 caught (the keywords dropped, and the size dropped).
+
+- engine tests: 6429, all passing (on a171093, D833 and D834 gated together)
+- Coverage, both together: 16,537 to 16,547 of 31,900 cards with every line read, and 38,946 to 38,958 of 59,888 lines, against a171093. The first measure read 16,502, because it ran on a build from before the fast-forward; the measure script now rebuilds first.
+
+## D834 — "Double the power [and toughness] of each creature you control": Zopandrel
+
+Most-played order: Zopandrel, Hunger Dominus (rank 1227), with Unnatural Growth and Double
+Trouble.
+
+**Reader.** D825's doubling, on each creature its controller controls ("each other creature" too):
+each gets +X/+X (or +X/+0, or +0/+X) for its own size as the effect resolves, until end of turn.
+"Each Dragon you control" (one printing) is not read. God-Eternal Rhonas's line has a second
+sentence and Roar of Endless Song is a Saga chapter, so both stay unread for that.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- power and toughness doubled makes our 2/2 a 4/4 and our 3/1 a 6/2, and the opponent's
+  creature is untouched;
+- power alone makes the 3/1 a 6/1.
+
+Faults injected by script: 2 of 2 caught (the opponent's creatures included, and toughness
+always doubled).
+
+The D833 and D834 tests went in beside the other session's D1208 block at the same anchor. The
+stash pop conflicted there, both sides were kept, and the diff adds lines only.
+
+- engine tests: 6429, all passing (on a171093, D833 and D834 gated together)
+- Coverage, both together: 16,537 to 16,547 of 31,900 cards with every line read, and 38,946 to 38,958 of 59,888 lines, against a171093. The first measure read 16,502, because it ran on a build from before the fast-forward; the measure script now rebuilds first.

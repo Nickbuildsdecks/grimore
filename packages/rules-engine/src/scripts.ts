@@ -17417,6 +17417,19 @@ function attachmentBonus(
     `harmful` is read off the sign, as it is for a printed size: a shrink on the host is removal and
     a bot that does not know that holds the Aura for nothing (see this function's docblock).
   */
+  /*
+    A counted size and keywords (D833, Ethereal Armor): "gets +1/+1 for each enchantment you control
+    and has first strike". Each half read on its own, then joined. The count's phrase is never
+    "… and has", so the split is at the last " and has ".
+  */
+  const countedAndKeywords = /^(gets [+-](?:X|\d+)\/[+-](?:X|\d+) for each .+) and (has [a-z ,]+)$/i.exec(tail);
+  if (countedAndKeywords !== null) {
+    const size = attachmentBonus(`${host} creature ${countedAndKeywords[1]!}`, name);
+    const keys = attachmentBonus(`${host} creature ${countedAndKeywords[2]!}`, name);
+    if (size === null || keys === null || size.bonus.sizePerCount === undefined
+      || keys.grantedTriggers !== undefined || keys.grantedAbilities !== undefined) return null;
+    return { bonus: { ...keys.bonus, ...size.bonus }, harmful: size.harmful || keys.harmful };
+  }
   const countedTail = /^gets ([+-](?:X|\d+))\/([+-](?:X|\d+)) for each (.+)$/i.exec(tail)
     ?? /^gets ([+-](?:X|\d+))\/([+-](?:X|\d+)), where X is the number of (.+)$/i.exec(tail);
   if (countedTail !== null) {
@@ -28829,6 +28842,29 @@ function readEffect(
     is its power (and toughness) as the spell resolves (CR 701.10e). A negative power is not
     doubled further down: it gets +0.
   */
+  /*
+    And each creature you control (D834, Zopandrel): "double the power and toughness of each [other]
+    creature you control until end of turn", the power or the toughness alone too. Each creature
+    gets its own size as the effect resolves, as one target does.
+  */
+  const doubledAll = /^double the (power and toughness|power|toughness) of each (other )?creature you control until end of turn$/i.exec(clause.trim());
+  if (doubledAll !== null) {
+    const which = doubledAll[1]!.toLowerCase();
+    const other = doubledAll[2] !== undefined;
+    return {
+      effect: (c) => creaturesControlledBy(c.state, c.controller)
+        .filter((id) => !other || id !== c.source)
+        .reduce((state, id) => {
+          const inst = state.instances[id];
+          if (inst === undefined || inst.zone !== 'battlefield') return state;
+          const now = characteristicsOf(state, inst);
+          return pump(state, [id], c.source, c.controller, {
+            ...(which === 'toughness' ? {} : { power: Math.max(0, now.power) }),
+            ...(which === 'power' ? {} : { toughness: Math.max(0, now.toughness) }),
+          });
+        }, c.state),
+    };
+  }
   const doubled = /^double (?:(target [^']+?)'s (power(?: and toughness)?)|the (power(?: and toughness)?) of (target .+?)) until end of turn$/i.exec(clause.trim());
   if (doubled !== null) {
     const spec = targetSpecFrom((doubled[1] ?? doubled[4])!, true);
