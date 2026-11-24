@@ -1549,7 +1549,11 @@ export type TriggerEvent =
       readonly kind: 'sacrifices';
       readonly by?: 'you' | 'opponent' | 'any';
       readonly who?: 'self' | 'another' | 'any';
-      readonly what?: 'permanent' | 'creature' | 'artifact' | 'token';
+      readonly what?: 'permanent' | 'creature' | 'artifact' | 'token' | 'land';
+      /** Any of these card types (D1185): "you sacrifice another creature or artifact". */
+      readonly whatAny?: readonly ('creature' | 'artifact' | 'land')[];
+      /** "You sacrifice a nontoken permanent" (D1185). */
+      readonly nontoken?: true;
       readonly ofSubtypes?: readonly string[];
       /** Set by the engine: which permanent, and what it was as it left. */
       readonly subject?: string;

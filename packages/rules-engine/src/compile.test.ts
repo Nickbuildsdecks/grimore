@@ -18410,12 +18410,11 @@ describe('sacrifice as an event: every printed combination of the three slots (D
   });
 
   it.each([
-    ['a card type the event has no answer for', 'Whenever you sacrifice a land, you gain 1 life.'],
+    // "A land", "a nontoken creature", "a Goblin" and "an artifact or creature" read since D1185
+    // (see its tests in scripts.test.ts); two filters on one noun and a batch still refuse.
     ['two filters at once', 'Whenever you sacrifice a creature token, you gain 1 life.'],
-    ['a negated filter', 'Whenever you sacrifice a nontoken creature, you gain 1 life.'],
-    ['a creature subtype, which is not in the closed list', 'Whenever you sacrifice a Goblin, you gain 1 life.'],
     ['a batch', 'Whenever you sacrifice one or more Foods, you gain 1 life.'],
-    ['an either-or', 'Whenever you sacrifice an artifact or creature, you gain 1 life.'],
+    ['a type the event has no answer for', 'Whenever you sacrifice an enchantment, you gain 1 life.'],
   ])('leaves %s unread', (_what, line) => {
     const got = card(line);
     expect(got.script?.triggers ?? []).toEqual([]);

@@ -1527,6 +1527,11 @@ function triggerMatches(
       if (what === 'creature' && e.subjectIsCreature !== true) return false;
       if (what === 'artifact' && !(e.subjectTypes ?? []).includes('artifact')) return false;
       if (what === 'token' && e.subjectIsToken !== true) return false;
+      if (what === 'land' && !(e.subjectTypes ?? []).includes('land')) return false;
+      // D1185: one of several card types, and "nontoken".
+      if (want.whatAny !== undefined && !want.whatAny.some((type) => (type === 'creature'
+        ? e.subjectIsCreature === true : (e.subjectTypes ?? []).includes(type)))) return false;
+      if (want.nontoken === true && e.subjectIsToken !== false) return false;
       if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
         (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
       ))) return false;

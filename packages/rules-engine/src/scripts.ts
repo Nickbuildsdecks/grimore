@@ -18753,8 +18753,33 @@ function sacrificeTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][]
   ];
   if (by === undefined) return null;
   const word = (groups.what ?? '').toLowerCase();
+  const nontoken = groups.nontoken !== undefined ? { nontoken: true as const } : {};
+  /*
+    D1185: two kinds joined by "or" — "another creature or artifact", "an artifact or creature",
+    "a Clue or Food" — as one event with any of them, so an artifact creature fires it once. Card
+    types with card types, subtypes with subtypes; a mix refuses. A creature type alone is a
+    subtype too ("another Eldrazi").
+  */
+  const printedWords = (groups.what ?? '').split(/ or (?:an? )?/i);
+  const TYPES = ['creature', 'artifact', 'land'] as const;
+  const subtypeOf = (w: string): string | undefined => SACRIFICED_TOKEN_SUBTYPES.find((known) => known.toLowerCase() === w.toLowerCase())
+    ?? (/^[A-Z]/.test(w) && isCreatureType(w) ? w : undefined);
+  const another = /^another$/i.test(groups.who ?? '') ? { who: 'another' as const } : {};
+  if (printedWords.length > 1 || (printedWords.length === 1 && subtypeOf(printedWords[0]!) !== undefined
+    && SACRIFICED_TOKEN_SUBTYPES.every((known) => known.toLowerCase() !== word))) {
+    if (groups.token !== undefined) return null;
+    const types = printedWords.map((w) => TYPES.find((t) => t === w.toLowerCase()));
+    if (types.every((t) => t !== undefined)) {
+      return [{ kind: 'sacrifices', by, ...another, ...nontoken, whatAny: types as ('creature' | 'artifact' | 'land')[] }];
+    }
+    const subs = printedWords.map(subtypeOf);
+    if (subs.every((t) => t !== undefined)) {
+      return [{ kind: 'sacrifices', by, ...another, ...nontoken, ofSubtypes: subs as string[] }];
+    }
+    return null;
+  }
   const subtype = SACRIFICED_TOKEN_SUBTYPES.find((known) => known.toLowerCase() === word);
-  let asked: { what?: 'creature' | 'artifact' | 'token'; ofSubtypes?: readonly string[] };
+  let asked: { what?: 'creature' | 'artifact' | 'token' | 'land'; ofSubtypes?: readonly string[] };
   if (subtype !== undefined) {
     // "a Blood **token**" says nothing "a Blood" does not: the subtype is only ever a token's.
     asked = { ofSubtypes: [subtype] };
@@ -18763,14 +18788,15 @@ function sacrificeTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][]
     return null;
   } else if (word === 'permanent') {
     asked = {};
-  } else if (word === 'creature' || word === 'artifact' || word === 'token') {
+  } else if (word === 'creature' || word === 'artifact' || word === 'token' || word === 'land') {
     asked = { what: word };
   } else {
     return null;
   }
   return [{
     kind: 'sacrifices', by,
-    ...((groups.who ?? '').toLowerCase() === 'another' ? { who: 'another' as const } : {}),
+    ...another,
+    ...nontoken,
     ...asked,
   }];
 }
@@ -20574,7 +20600,7 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => new RegExp(
       '^Whenever (?<by>you|a player|an opponent) sacrifices? (?<who>a|an|another)'
-      + ' (?<what>[A-Za-z]+)(?<token> token)?, (?<clause>.+)$',
+      + ' (?<nontoken>nontoken )?(?<what>[A-Za-z]+(?: or (?:an? )?[A-Za-z]+)?)(?<token> token)?, (?<clause>.+)$',
       'i',
     ),
     from: sacrificeTrigger,

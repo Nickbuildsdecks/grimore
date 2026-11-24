@@ -38801,6 +38801,62 @@ describe('"a nontoken creature you control attacks", and a token gone at end of 
   });
 });
 
+describe('sacrifice triggers with "X or Y", "nontoken", a land, a creature type (D1185)', () => {
+  const ROWS = [
+    { name: 'Test Altar', type_line: 'Artifact', oracle_text: 'Sacrifice a permanent: You gain 1 life.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Either', type_line: 'Enchantment', oracle_text: 'Whenever you sacrifice an artifact or creature, draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Nontoken', type_line: 'Enchantment', oracle_text: 'Whenever you sacrifice a nontoken permanent, draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Landed', type_line: 'Enchantment', oracle_text: 'Whenever you sacrifice a land, draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Spawner', type_line: 'Sorcery', oracle_text: 'Create a Treasure token.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Relic', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({
+    id: 'd1185', name: 'Sacrifice triggers',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 42 }],
+    data: ROWS as never[],
+  });
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1185', 1: 'd1185' }, deckSpecs: { d1185: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Test Altar', ...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Cards drawn when `victim` is fed to the Altar. */
+  const drawnFeeding = (s0: GameState, victim: string): number => {
+    const hand = ids(s0, 0, 'hand').length;
+    let s = apply(s0, { type: 'auto:activate', by: 0, card: find(s0, 0, 'battlefield', 'Test Altar'), abilityIndex: 0, sacrifice: victim } as Action);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    s = drain(s, 20);
+    return ids(s, 0, 'hand').length - hand;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"an artifact or creature": an artifact creature draws once, not twice; a land draws nothing', () => {
+    const s = table(['Test Either', 'Test Golem', 'Test Relic', 'Swamp']);
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Test Golem'))).toBe(1);
+    // Either one is enough: a plain artifact draws too.
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Test Relic'))).toBe(1);
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Swamp'))).toBe(0);
+  });
+
+  it('"a land": the Swamp draws, the Golem does not', () => {
+    const s = table(['Test Landed', 'Test Golem', 'Swamp']);
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Swamp'))).toBe(1);
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Test Golem'))).toBe(0);
+  });
+
+  it('"a nontoken permanent": the Golem draws, a Treasure token does not', () => {
+    let s = table(['Test Nontoken', 'Test Golem'], ['Test Spawner']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spawner') })), 20);
+    const treasure = ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!;
+    expect(drawnFeeding(s, treasure)).toBe(0);
+    expect(drawnFeeding(s, find(s, 0, 'battlefield', 'Test Golem'))).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
