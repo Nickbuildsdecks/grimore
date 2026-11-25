@@ -45162,6 +45162,40 @@ describe('Gilded Drake: exchange, or sacrifice it (D1249)', () => {
   });
 });
 
+describe('Mana Crypt: "If you lose the flip" alone (D1250)', () => {
+  const ROWS = [
+    { name: 'Test Crypt', type_line: 'Artifact', oracle_text: 'At the beginning of your upkeep, flip a coin. If you lose the flip, Test Crypt deals 3 damage to you.\n{T}: Add {C}{C}.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1250', name: 'Crypt', entries: [{ name: 'Test Crypt', count: 4 }, { name: 'Island', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('each upkeep costs 3 life on a lost flip and nothing on a won one, and both happen', () => {
+    const compiled = compileCard(ROWS[0] as never);
+    if (!compiled.ok) throw new Error('did not compile');
+    const trigger = compiled.script!.triggers![0]!;
+    const base = advanceTo(arena({
+      decks: { 0: 'd1250', 1: 'd1250' }, deckSpecs: { d1250: deck.deck },
+      battlefield: { 0: ['Test Crypt'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const crypt = find(base, 0, 'battlefield', 'Test Crypt');
+    const losses = new Set<number>();
+    for (let seed = 1; seed <= 24; seed++) {
+      const s = { ...base, rngSeed: seed };
+      const after = trigger.effect({ state: s, source: crypt, controller: 0 as SeatIndex, targets: [], x: 0, decisions: [], kicked: false });
+      const lost = life(s, 0) - life(after, 0);
+      losses.add(lost);
+      // The flip is recorded (D1152): the loss follows its result, not the other way round.
+      const flip = (after.coinFlips ?? []).at(-1);
+      expect(lost).toBe(flip?.won === false ? 3 : 0);
+    }
+    expect([...losses].sort()).toEqual([0, 3]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

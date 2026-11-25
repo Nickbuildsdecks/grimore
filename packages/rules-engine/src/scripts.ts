@@ -33492,13 +33492,18 @@ function insteadGroup(clauses: readonly string[], name: string, where: SubjectZo
 function coinFlipGroup(clauses: readonly string[], name: string, where: SubjectZone | null): ReadEffect | null {
   const trimmed = clauses.map((c) => c.trim().replace(/\.$/, ''));
   if (trimmed.length < 2 || trimmed.length > 3 || !/^flip a coin$/i.test(trimmed[0]!)) return null;
-  const win = /^if you win the flip, (.+)$/i.exec(trimmed[1]!);
-  const lose = trimmed.length === 3 ? /^if you lose the flip, (.+)$/i.exec(trimmed[2]!) : null;
-  if (win === null || (trimmed.length === 3 && lose === null)) return null;
-  const won = composeEffects([win[1]!], name, where);
+  /*
+    And the losing branch alone (D1250): "Flip a coin. If you lose the flip, ~ deals 3 damage to
+    you" (Mana Crypt, Mogg Fanatic's cousins). Winning does nothing.
+  */
+  const loseOnly = trimmed.length === 2 ? /^if you lose the flip, (.+)$/i.exec(trimmed[1]!) : null;
+  const win = loseOnly !== null ? null : /^if you win the flip, (.+)$/i.exec(trimmed[1]!);
+  const lose = loseOnly ?? (trimmed.length === 3 ? /^if you lose the flip, (.+)$/i.exec(trimmed[2]!) : null);
+  if ((win === null && loseOnly === null) || (trimmed.length === 3 && lose === null)) return null;
+  const won = win === null ? null : composeEffects([win[1]!], name, where);
   const lost = lose === null ? null : composeEffects([lose[1]!], name, where);
-  if (won === null || (lose !== null && lost === null)) return null;
-  const parts = [won, ...(lost === null ? [] : [lost])];
+  if ((win !== null && won === null) || (lose !== null && lost === null)) return null;
+  const parts = [...(won === null ? [] : [won]), ...(lost === null ? [] : [lost])];
   if (parts.some((p) => (p.decisions ?? []).length > 0 || p.reflexive !== undefined)) return null;
   const targeted = parts.filter((p) => (p.targets ?? []).length > 0);
   if (targeted.length > 1) return null;
