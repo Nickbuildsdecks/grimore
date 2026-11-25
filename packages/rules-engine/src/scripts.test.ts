@@ -41296,6 +41296,53 @@ describe('cards from any graveyard: Rise of the Dark Realms and Noxious Revival 
   });
 });
 
+describe('counters of two or three kinds in one sentence (D1224)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    I('Test Fangs', 'Put a +1/+1 counter and a lifelink counter on target creature.'),
+    I('Test Viper', 'Put a +1/+1 counter, a reach counter, and a deathtouch counter on target creature. Untap it.'),
+    { name: 'Test Captain', type_line: 'Creature — Human', oracle_text: '{0}: Put a +1/+1 counter and an indestructible counter on Test Captain.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1224', name: 'Counter kinds', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1224', 1: 'd1224' }, deckSpecs: { d1224: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Forest', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, with one target', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const fangs = compileCard(ROWS[0] as never);
+    expect(fangs.ok && fangs.script?.targets).toHaveLength(1);
+  });
+
+  it('two kinds on the one target', () => {
+    let s = table(['Test Fangs'], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fangs'), targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(s.instances[bear]!.counters).toMatchObject({ '+1/+1': 1, lifelink: 1 });
+    expect(characteristicsOf(s, s.instances[bear]!).keywords).toContain('lifelink');
+  });
+
+  it('three kinds, and the untap after them, on the same creature', () => {
+    let s = table(['Test Viper'], ['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = { ...s, instances: { ...s.instances, [bear]: { ...s.instances[bear]!, tapped: true } } };
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Viper'), targets: [{ kind: 'card', id: bear }] } as Action));
+    expect(s.instances[bear]!.counters).toMatchObject({ '+1/+1': 1, reach: 1, deathtouch: 1 });
+    expect(s.instances[bear]!.tapped).toBe(false);
+  });
+
+  it('"on ~": both kinds on itself', () => {
+    let s = table([], ['Test Captain']);
+    const captain = find(s, 0, 'battlefield', 'Test Captain');
+    s = settle(apply(s, { type: 'auto:activate', by: 0, card: captain, abilityIndex: 0 } as Action));
+    expect(s.instances[captain]!.counters).toMatchObject({ '+1/+1': 1, indestructible: 1 });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

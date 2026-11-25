@@ -30696,6 +30696,19 @@ function clausesOf(line: string): readonly string[] {
   const BACK = ', then put them back in any order';
   const LIFE_LOST = ', and you gain life equal to the life lost this way';
   return plain(line)
+    /*
+      Counters of two or three kinds in one sentence (D1224): "Put a +1/+1 counter and a lifelink
+      counter on target creature" (Unexpected Fangs), "Put a flying counter, a deathtouch counter, and
+      a lifelink counter on target creature" (Qarsi Revenant). One sentence per kind, the first on
+      what was printed and the rest on the same object: "it" after a target, so no second target is
+      asked for, and the printed words again for anything else ("~", "that creature").
+    */
+    .replace(/\bput (an? [^.,;]*? counter)((?:, an? [^.,;]*? counter)*),? and (an? [^.,;]*? counter) on ([^.;]+?)(?=\.|$)/gi,
+      (_m, first: string, middle: string, last: string, on: string) => {
+        const again = /\btarget\b/i.test(on) ? 'it' : on;
+        const rest = [...middle.split(/,\s*/).filter((kind) => kind.trim() !== ''), last];
+        return [`put ${first} on ${on}`, ...rest.map((kind) => `Put ${kind.trim()} on ${again}`)].join('. ');
+      })
     // An emblem's quoted abilities (D734) are one clause: their own punctuation is hidden from the
     // splitting below and put back by `emblemClause`.
     .replace(/you get an emblem with ("[^"]+"(?: and "[^"]+")?)/gi, (_m, quoted: string) => `you get an emblem with ${hideEmblemText(quoted)}`)
