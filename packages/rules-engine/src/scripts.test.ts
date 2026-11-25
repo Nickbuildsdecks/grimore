@@ -44455,6 +44455,49 @@ describe('"Each player sacrifices seven / thirteen creatures of their choice" (D
   });
 });
 
+describe('"Look at target player\'s hand.": Gitaxian Probe (D3014)', () => {
+  const ROWS = [
+    { name: 'Test Probe', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: "Look at target player's hand.\nDraw a card." },
+  ];
+  const deck = customDeck({ id: 'd3014', name: 'Probe', entries: [{ name: 'Test Probe', count: 4 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd3014', 1: 'd3014' }, deckSpecs: { d3014: deck.deck },
+    hands: { 0: ['Test Probe'], 1: theirs }, turn: 5, firstSeat: 0,
+  } as never), 'precombat-main');
+  const probe = (s: GameState) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Probe'), targets: [{ kind: 'player', seat: 1 }],
+  } as Action)));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('shows the caster the whole hand, picks nothing, then draws', () => {
+    const s0 = table(['Grizzly Bears', 'Island']);
+    const theirs = [...ids(s0, 1, 'hand')];
+    const mine = ids(s0, 0, 'hand').length;
+    let s = probe(s0);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect([...s.pendingDecision!.candidates].sort()).toEqual(theirs.sort());
+    expect(s.pendingDecision!.max).toBe(0);
+    // A bot holding the question answers it the same way, so a bot game does not stall on it.
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:decide', by: 0, cards: [] });
+    s = drain(passBoth(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action)));
+    expect(s.pendingDecision).toBeFalsy();
+    expect([...ids(s, 1, 'hand')].sort()).toEqual(theirs.sort());
+    expect(ids(s, 0, 'hand').length).toBe(mine - 1 + 1);
+  });
+
+  it('an empty hand is nothing to see, so nothing is asked', () => {
+    const s0 = table([]);
+    const mine = ids(s0, 0, 'hand').length;
+    const s = probe(s0);
+    expect(s.pendingDecision).toBeFalsy();
+    expect(ids(s, 0, 'hand').length).toBe(mine);
+  });
+});
+
 describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   const ROWS = [
     { name: 'Test Knuckles', type_line: 'Legendary Creature — Echidna', oracle_text: 'Treasure Hunter — At the beginning of your upkeep, if you control thirty or more artifacts, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },

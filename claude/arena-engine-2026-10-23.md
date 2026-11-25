@@ -46234,3 +46234,19 @@ are thirteen or more creatures on the battlefield" has nowhere to go: a conditio
 cost is not a field yet. Bloom Tender and Faeburrow Elder ("for each color among permanents you
 control, add one mana of that color") make a set of colours that changes with the board, and about
 50 places read `produces` directly, so it is a change on its own.
+
+## D3014 — "Look at target player's hand.": Gitaxian Probe, Peek
+
+**Reader.** The sentence on its own, ahead of the composer loop with the other hand readers
+(`handLookPrefix`). It is a hand question over the target's hand with `max: 0`. The caster is shown
+the cards and picks none, and nothing on the board changes.
+
+**Engine.** A question with nothing to pick used to be answered by the engine itself, which would
+make the look silent. A target-hand question with `max: 0` is now asked anyway while the hand has
+cards, for the same reason D584 asks a dig with nothing to take: what the cards are is the point of
+looking. An empty hand is not asked. A bot answers it with no cards, like any other show-only question.
+
+**Tests.** The Probe at an opponent holding two cards asks seat 0, shows exactly those two, and
+takes none. The bot answers it the same way, the opponent keeps both cards, and the caster draws one.
+At an empty hand nothing is asked. Faults injected by script: 3 of 3 caught (answered silently,
+asked over an empty hand, the caster's own hand shown).
