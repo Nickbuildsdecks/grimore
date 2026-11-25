@@ -45603,3 +45603,39 @@ Pod sweep 84001 (100 games, d694dfa): 99 finished, 1 looping (seed 84086, Mist D
 The coverage below includes the other session's D888 to D893, merged in before this was measured.
 
 Coverage: 16,920 of 31,900 cards (+15 over D1230's 16,905), 39,474 of 59,888 lines (+20).
+
+## D1232 — Stranglehold, Mindlock Orb and Aven Mindcensor
+
+"Your opponents can't search libraries." (Stranglehold), "Players can't search libraries." (Mindlock
+Orb), and "If an opponent would search a library, that player searches the top four cards of that
+library instead." (Aven Mindcensor). A new script field, `searchLimit`, asked as a library search
+finds its candidates: nothing under a Stranglehold or an Orb, or only the cards among the top N of
+their library under a Mindcensor (the smallest N if there are several). The rest of the effect still
+happens, so a fetch land is still sacrificed and the library still shuffled, which is the ruling. A
+search stopped this way raises no "searches" event (the other session's D863), since nothing was
+searched.
+
+And Stranglehold's second line, "If an opponent would begin an extra turn, that player skips that
+turn instead." (`opponentsSkipExtraTurns`): the extra turn is dropped where the next turn is chosen.
+
+Read whole now (3): Aven Mindcensor, Mindlock Orb, Stranglehold.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- An opponent's Stranglehold: the search finds nothing; with none, or with the searcher's own,
+  it finds the land.
+- Aven Mindcensor: a land fourth from the top is found, one fifth is not.
+- An opponent's extra turn is skipped under Stranglehold, and taken without it.
+
+Faults injected by hand: 4, all caught.
+- No limit ever.
+- "Your opponents" read as every player.
+- The top five searched instead of four.
+- The extra turn taken anyway.
+
+Not covered by a test: a player's own Stranglehold leaving their own extra turn alone.
+
+The two new fields are listed among the mechanics the compiler reads that no built-in deck plays,
+with the runtime block above as their evidence.
+
+Coverage: 16,923 of 31,900 cards (+3 over D1231's 16,920), 39,479 of 59,888 lines (+5).
