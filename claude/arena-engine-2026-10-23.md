@@ -46726,3 +46726,28 @@ Faults injected by hand: 2, all caught.
 - The land branch skipped.
 
 Coverage: 17,085 of 31,900 cards (+3 over D1255's 17,082), 39,741 of 59,888 lines (+4).
+
+## D1257 — Kinnan, Bonder Prodigy
+
+Both of Kinnan's lines:
+- "Whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced":
+  D1106's echo (`tapManaExtra`, `adds: 'produced'`) with a new kind, `nonland permanent`. It
+  counts in the pips, in the auto-payer and when the permanent is tapped by hand, the three places
+  the echo is already asked.
+- "Look at the top five cards of your library. You may put a non-Human creature card from among them
+  onto the battlefield": the dig's card words (D973) read "non-<creature type>" in front, leaving
+  that type out.
+
+Read whole now (1): Kinnan, Bonder Prodigy.
+
+**Tests.** 4 engine tests:
+- The test card reads whole.
+- A rock makes two colourless with Kinnan out, and a land still makes one.
+- The dig offers a non-Human creature and not a Human.
+- Tapping the rock by hand adds the extra one too.
+
+Faults injected by hand: 2, all caught.
+- Lands echoed as well.
+- The Human not left out.
+
+Coverage: 17,086 of 31,900 cards (+1 over D1256's 17,085), 39,743 of 59,888 lines (+2).
