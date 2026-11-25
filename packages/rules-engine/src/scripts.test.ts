@@ -45104,6 +45104,64 @@ describe('Exchanging control (D1248)', () => {
   });
 });
 
+describe('Gilded Drake: exchange, or sacrifice it (D1249)', () => {
+  const ROWS = [
+    { name: 'Test Drake', type_line: 'Creature — Drake', oracle_text: "Flying\nWhen Test Drake enters, exchange control of Test Drake and up to one target creature an opponent controls. If you don't or can't make an exchange, sacrifice Test Drake. This ability still resolves if its target becomes illegal.", mana_cost: '{0}', cmc: 2, colors: ['U'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Wolf', type_line: 'Creature — Wolf', oracle_text: '', mana_cost: '{0}', cmc: 4, colors: ['G'], layout: 'normal', power: '4', toughness: '4' },
+  ];
+  const deck = customDeck({ id: 'd1249', name: 'Drake', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }], data: ROWS as never[] });
+  const table = (theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1249', 1: 'd1249' }, deckSpecs: { d1249: deck.deck }, hands: { 0: ['Test Drake'] },
+    battlefield: { 0: ['Island'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts the Drake and aims its trigger at the opponent's creature, or at nothing when there is none. */
+  const aimed = (s0: GameState): GameState => {
+    let s = drain(passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Drake'), targets: [] } as Action)), 30);
+    if (s.pendingChoice !== null) {
+      const wolf = ids(s, 1, 'battlefield').find((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Wolf');
+      s = apply(s, { type: 'auto:choose', by: 0, targets: wolf === undefined ? [] : [{ kind: 'card', id: wolf }] } as Action);
+    }
+    return s;
+  };
+  /** Casts the Drake and lets its trigger resolve. */
+  const play = (s0: GameState) => {
+    let s = aimed(s0);
+    for (let i = 0; i < 12 && (s.pendingDecision !== null || s.stackOrder.length > 0); i++) {
+      const p = s.pendingDecision;
+      s = p !== null ? drain(apply(s, botAction(s, p.seat, {})!)) : drain(passBoth(s));
+    }
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the Drake goes to the opponent and their creature comes to me", () => {
+    const s = play(table(['Test Wolf']));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Wolf');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Drake');
+  });
+
+  it('a target gone in response does not save the Drake: the ability still resolves, and it is sacrificed', () => {
+    let s = aimed(table(['Test Wolf']));
+    expect(s.stackOrder.length).toBe(1);
+    expect(s.stackObjects[s.stackOrder[0]!]!.targets).toHaveLength(1);
+    const wolf = find(s, 1, 'battlefield', 'Test Wolf');
+    s = relocate(s, s.instances[wolf]!, 'graveyard', 1 as SeatIndex, 'top');
+    s = drain(passBoth(s));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Drake');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Drake');
+  });
+
+  it('with nothing to exchange for, the Drake is sacrificed', () => {
+    const s = play(table([]));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Drake');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Drake');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

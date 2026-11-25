@@ -33248,6 +33248,45 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
 }
 
 /**
+ * Gilded Drake (D1249): "exchange control of ~ and up to one target creature an opponent controls.
+ * If you don't or can't make an exchange, sacrifice ~. This ability can't be countered except by
+ * spells and abilities." The exchange is D1248's. Whether one was made is read off the board: the
+ * Drake changed hands. With no target, or a target gone by resolution, the Drake is sacrificed.
+ * The last sentence says only that the ability is countered the ordinary way, so it asks nothing.
+ */
+function drakeExchange(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const self = selfRef(name);
+  const m = new RegExp(`^exchange control of (?:${self}) and (up to one target (creature)(?: an opponent controls)?)\\. if you don't or can't make an exchange, sacrifice (?:${self})(\\. this ability (?:can't be countered except by spells and abilities|still resolves if its target becomes illegal))?\\.?$`, 'i').exec(text);
+  if (m === null) return null;
+  const parsed = targetSpecFrom(m[1]!, false);
+  if (parsed === null || !pointsAtAPermanent(parsed) || targetCount(parsed) !== 1) return null;
+  const opponents = /an opponent controls/i.test(m[1]!);
+  /*
+    "Still resolves if its target becomes illegal": not countered for a lost target (CR 608.2b), so
+    the sacrifice happens. The effect then checks the target itself: still a creature, and still an
+    opponent's where the card says so.
+  */
+  const anyway = /still resolves/i.test(m[3] ?? '');
+  const spec: TargetSpec = anyway ? { ...parsed, resolvesAnyway: true } : parsed;
+  return {
+    targets: [spec],
+    effect: (c) => {
+      const before = c.state.instances[c.source]?.zoneSeat;
+      const target = c.targets.flatMap((t) => (t.kind === 'card' ? [t.id] : [])).find((id) => {
+        const inst = c.state.instances[id];
+        return inst !== undefined && inst.zone === 'battlefield' && characteristicsOf(c.state, inst).isCreature
+          && (!opponents || inst.zoneSeat !== c.controller);
+      });
+      const after = target === undefined ? c.state : exchangeControl(c.state, c.source, target);
+      const drake = after.instances[c.source];
+      if (drake === undefined || drake.zone !== 'battlefield' || drake.zoneSeat !== before) return after;
+      return sacrifice(after, [c.source]);
+    },
+  };
+}
+
+/**
  * Demonic Consultation (D1247): "Choose a card name. Exile the top six cards of your library, then
  * reveal cards from the top of your library until you reveal a card with the chosen name. Put that
  * card into your hand and exile all other cards revealed this way." The name is asked as the spell
@@ -33656,6 +33695,9 @@ function composeEffectsAsPrinted(
   // Demonic Consultation (D1247): see `consultation`.
   const consulted = consultation(clauses);
   if (consulted !== null) return consulted;
+  // Gilded Drake (D1249): see `drakeExchange`.
+  const drake = drakeExchange(clauses, name);
+  if (drake !== null) return drake;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;

@@ -52,6 +52,12 @@ export interface TargetSpec {
   /** "up to": the spell is castable with fewer, including none. */
   readonly optional?: boolean;
   /**
+   * "This ability still resolves if its target becomes illegal" (D1249, Gilded Drake): the
+   * ability is not countered for having lost its target (CR 608.2b), and its effect checks the
+   * target itself.
+   */
+  readonly resolvesAnyway?: true;
+  /**
    * With `optional`, the fewest that may be chosen (D1024): "**one or two** target creatures" is
    * `count: 2, optional: true, min: 1`. A spell or ability needs that many legal targets to be cast
    * or put on the stack, and is announced with no fewer.

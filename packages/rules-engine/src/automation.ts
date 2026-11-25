@@ -6596,6 +6596,8 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     why the count it started with decides, rather than the list that is left.
   */
   const hasTarget = chosen.length === 0
+    // Gilded Drake (D1249): "This ability still resolves if its target becomes illegal".
+    || specs.some((spec) => spec.resolvesAnyway === true)
     || (live.length > 0 && stillHasLegalTarget(state, specs, live, object.controller, object.source));
   if (specs.length > 0 && !hasTarget) {
     let next = popStack(state, object.id);
