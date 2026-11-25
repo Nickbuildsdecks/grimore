@@ -62713,3 +62713,52 @@ Coverage: 16,832 to 16,853 of 31,900 cards with every line read, and 39,369 to 3
 lines. Card-by-card diffs: D872–D875 against 02d07b5, 0 lost and 6 gained (including Maelstrom
 Wanderer and Forked-Branch Garami); D876–D880 against that, 0 lost and 16 gained (including
 Fumarole, Plague Spores, Netherborn Altar and Biomass Mutation).
+
+## D1228 — "That ability triggers an additional time", and Elesh Norn
+
+Panharmonicon ("If an artifact or creature entering causes a triggered ability of a permanent you
+control to trigger, that ability triggers an additional time."), and the same sentence with "a
+permanent entering" (Elesh Norn, Mother of Machines; Virtue of Knowledge; Starfield Vocalist), "a
+land entering" (Ancient Greenwarden), "a creature dying" (Teysa Karlov, Drivnod), "a creature
+attacking" (Isshin, Two Heavens as One) and "a creature you control attacking" (Wulfgar of Icewind
+Dale). A new script field, `extraTriggers`. When a permanent's printed trigger fires for one of
+those events, its controller's live doublers whose event and kinds fit each fire it once more: two
+Panharmonicons, three times. A batch of arrivals or deaths counts when any of it fits. A dying
+creature's own death trigger is a permanent's (it was one as it triggered), so Teysa doubles it.
+
+And Elesh Norn's second line, "Permanents entering don't cause abilities of permanents your
+opponents control to trigger": D1227's silence for the watchers of its controller's opponents
+only (`opponentsEntriesDontTrigger`).
+
+Not doubled: a modal trigger, whose mode question would be asked over the first copy's; a granted
+trigger (only printed ones are fired again); an emblem's. A trigger that "triggers only once each
+turn" triggers once. Not read: the other doubling sentences ("If a triggered ability of a Ninja you
+control triggers", Veyran's casting, Krang's drawing), each its own event.
+
+Read whole now (8): Ancient Greenwarden, Drivnod, Carnage Dominus, Elesh Norn, Mother of Machines,
+Isshin, Two Heavens as One, Panharmonicon, Starfield Vocalist, Teysa Karlov, Virtue of Knowledge,
+Wulfgar of Icewind Dale.
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- An entry: twice with one doubler, three times with two, and an opponent's doubler does nothing
+  for you.
+- A death: twice under the dying doubler, once under the entering one.
+- An attack: twice.
+- Elesh Norn: an entry fires nothing for her controller's opponent, and still does for her
+  controller.
+- A land: the land doubler doubles landfall; the artifact-or-creature one does not.
+
+Faults injected by hand: 5, all caught.
+- No extra trigger ever.
+- The kinds ignored.
+- Every player's doublers counted, not the controller's.
+- Norn's silence dropped.
+- Norn silencing her controller instead of the opponents.
+
+The three new fields are listed among the mechanics the compiler reads that no built-in deck plays,
+with the runtime block above as their evidence.
+
+The coverage below includes the other session's D851 to D880, merged in before this was measured.
+
+Coverage: 16,867 of 31,900 cards (+78 over D1227's 16,789), 39,413 of 59,888 lines (+97).
