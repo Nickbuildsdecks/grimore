@@ -13,7 +13,7 @@ import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { commanderTaxFor, listAt, relocate, requireInstance, withCommanderTaxPaid, withInstance } from './cardActions.js';
 import {
-  characteristicsOf, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
+  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef,
 } from './characteristics.js';
 import { nextTargetQuestion, emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
@@ -1951,6 +1951,14 @@ function activate(
       : undefined;
   /** The key this activation is recorded under, which differs for a granted ability. */
   const useKey = abilityUseKey(action.abilityIndex, action.grantedBy);
+  /*
+    A printed ability of a permanent that has lost all its abilities (CR 613.1f): a Frogged creature,
+    a Blood Mooned land (D1246). The offer list has never shown one; the action itself now refuses
+    it too. A grant that landed after the loss is still the permanent's (`grantedBy`).
+  */
+  if (inst.zone === 'battlefield' && action.grantedBy === undefined && allAbilitiesLost(state, inst)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristicsOf(state, inst).name} has no abilities to activate`);
+  }
   // Arrest's rider (D943): nothing on this permanent may be activated while it holds.
   if (inst.zone === 'battlefield' && (characteristicsOf(state, inst).cantActivate
     || (characteristicsOf(state, inst).cantActivateNonMana && ability?.produces === undefined))) {

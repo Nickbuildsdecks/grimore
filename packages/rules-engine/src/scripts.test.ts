@@ -44920,6 +44920,75 @@ describe('Orcish Bowmasters: an opponent draws a card except the first in their 
   });
 });
 
+describe('Land types set: Blood Moon, Spreading Seas, Song of the Dryads (D1246)', () => {
+  const E = (name: string, text: string, type = 'Enchantment') => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    E('Test Moon', 'Nonbasic lands are Mountains.'),
+    E('Test Seas', 'Enchant land\nWhen Test Seas enters, draw a card.\nEnchanted land is an Island.', 'Enchantment — Aura'),
+    E('Test Song', 'Enchant permanent\nEnchanted permanent is a colorless Forest land.', 'Enchantment — Aura'),
+    { name: 'Test Grove', type_line: 'Land', oracle_text: '{T}: Add {G}.\n{1}, {T}: Draw a card.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Dual', type_line: 'Land — Forest Island', oracle_text: '({T}: Add {G} or {U}.)', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: 'Flying', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1246', name: 'Moon', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 40 }], data: ROWS as never[] });
+  const table = (hand: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1246', 1: 'd1246' }, deckSpecs: { d1246: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: ['Swamp'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, target?: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: target === undefined ? [] : [{ kind: 'card', id: target }],
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('under the Moon a nonbasic land taps for red and nothing else; a basic is untouched', () => {
+    const before = table(['Test Moon'], ['Test Grove', 'Swamp']);
+    expect(potentialMana(before, 1).G).toBe(1);
+    const s = cast(before, 'Test Moon');
+    expect(potentialMana(s, 1).R).toBe(1);
+    expect(potentialMana(s, 1).G).toBe(0);
+    expect(potentialMana(s, 1).B).toBe(1);
+    const grove = find(s, 1, 'battlefield', 'Test Grove');
+    expect(characteristicsOf(s, s.instances[grove]!).typeLine.subtypes).toEqual(['Mountain']);
+    const theirs = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(refusal(theirs, { type: 'auto:activate', by: 1, card: grove, abilityIndex: 1 } as Action)).not.toBeNull();
+    // And the auto-payer agrees with the pips: the Grove pays red, and only red.
+    expect(manaSources(s, 1 as SeatIndex).filter((e) => e.key === grove)
+      .flatMap((e) => e.produces)).toEqual(['R']);
+  });
+
+  it('a land with land types loses them all: a Forest Island under the Moon is only a Mountain', () => {
+    const s = cast(table(['Test Moon'], ['Test Dual']), 'Test Moon');
+    const dual = find(s, 1, 'battlefield', 'Test Dual');
+    expect(characteristicsOf(s, s.instances[dual]!).typeLine.subtypes).toEqual(['Mountain']);
+    expect(potentialMana(s, 1).G + potentialMana(s, 1).U).toBe(0);
+    expect(potentialMana(s, 1).R).toBe(1);
+  });
+
+  it('the enchanted land is an Island: blue, not green', () => {
+    const before = table(['Test Seas'], ['Test Grove']);
+    const s = cast(before, 'Test Seas', find(before, 1, 'battlefield', 'Test Grove'));
+    expect(potentialMana(s, 1).U).toBe(1);
+    expect(potentialMana(s, 1).G).toBe(0);
+  });
+
+  it('the enchanted creature is a colorless Forest land with no abilities', () => {
+    const before = table(['Test Song'], ['Test Bear']);
+    const bear = find(before, 1, 'battlefield', 'Test Bear');
+    const s = cast(before, 'Test Song', bear);
+    const ch = characteristicsOf(s, s.instances[bear]!);
+    expect(ch.isCreature).toBe(false);
+    expect(ch.isLand).toBe(true);
+    expect(ch.colors).toEqual([]);
+    expect(ch.keywords.has('flying')).toBe(false);
+    expect(ch.typeLine.subtypes).toEqual(['Forest']);
+    expect(potentialMana(s, 1).G).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

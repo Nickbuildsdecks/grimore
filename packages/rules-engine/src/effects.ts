@@ -3289,6 +3289,8 @@ export interface PumpOptions {
   readonly addSubtypes?: readonly string[];
   /** See `ContinuousEffect.setCreatureTypes` — "becomes a Frog". */
   readonly setCreatureTypes?: readonly string[];
+  /** See `ContinuousEffect.setLandTypes` — "Enchanted land is an Island" (D1246). */
+  readonly setLandTypes?: readonly string[];
   /** See `ContinuousEffect.allCreatureTypes` — "with all creature types". */
   readonly allCreatureTypes?: boolean;
   /** See `ContinuousEffect.setColors` — layer 5, "becomes red". */
@@ -3404,6 +3406,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.removeTypes ? { removeTypes: opts.removeTypes } : {}),
     ...(opts.addSubtypes ? { addSubtypes: opts.addSubtypes } : {}),
     ...(opts.setCreatureTypes ? { setCreatureTypes: opts.setCreatureTypes } : {}),
+    ...(opts.setLandTypes ? { setLandTypes: opts.setLandTypes } : {}),
     ...(opts.allCreatureTypes ? { allCreatureTypes: true } : {}),
     ...(opts.setColors ? { setColors: opts.setColors } : {}),
     ...(opts.definesSize ? { definesSize: opts.definesSize } : {}),

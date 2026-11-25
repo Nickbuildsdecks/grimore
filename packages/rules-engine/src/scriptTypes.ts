@@ -4601,6 +4601,8 @@ export interface CardScript {
       | 'enchantments-you-control' | 'other-enchantments-you-control' | 'other-artifacts-you-control'
       /** Your opponents' artifacts or lands, and every planeswalker (D1226): Karn's and Sharkey's "can't be activated". */
       | 'opponent-artifacts' | 'opponent-lands' | 'all-planeswalkers'
+      /** Every land that isn't basic (D1246): Blood Moon. */
+      | 'nonbasic-lands'
       /** `everyone` (D620): every creature of the type, whoever controls it — "All Slivers have …". */
       | { readonly subtype: string; readonly other?: boolean; readonly everyone?: boolean }
       /**

@@ -1617,6 +1617,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'other-artifacts-you-control' }
     /** Your opponents' artifacts or lands, and every planeswalker (D1226). */
     | { readonly kind: 'opponent-artifacts' } | { readonly kind: 'opponent-lands' } | { readonly kind: 'all-planeswalkers' }
+    /** Every land that isn't basic (D1246): Blood Moon, Magus of the Moon. */
+    | { readonly kind: 'nonbasic-lands' }
     /** Every permanent with this card name (D1237): Pithing Needle's. A face-down one has no name. */
     | { readonly kind: 'named'; readonly name: string }
     /**
@@ -2067,6 +2069,14 @@ export interface ContinuousEffect {
   readonly removeTypes?: readonly string[];
   /** Subtypes this effect adds, for the same layer. */
   readonly addSubtypes?: readonly string[];
+  /**
+   * "Enchanted land is an Island", "Nonbasic lands are Mountains" (D1246, CR 305.7): the land types
+   * this effect leaves the permanent with, replacing every land type it had. Same layer. The rule
+   * also takes away the land's rules-text abilities, so an effect that sets this sets
+   * `losesAllAbilities` beside it; the new type's own mana ability still works (`manaSources`,
+   * through `landTypesSet`).
+   */
+  readonly setLandTypes?: readonly string[];
   /**
    * "Becomes a blue **Frog**" (D577): the creature types this effect leaves the permanent with,
    * replacing the ones it had. Same layer. A subtype that is not a creature type — an Equipment
@@ -2881,6 +2891,9 @@ function effectApplies(
       return instance.zone === 'battlefield' && hasType(typeLine, 'artifact') && instance.zoneSeat !== effect.controller;
     case 'opponent-lands':
       return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat !== effect.controller;
+    case 'nonbasic-lands':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'land')
+        && !typeLine.supertypes.some((s) => s.toLowerCase() === 'basic');
     case 'all-planeswalkers':
       return instance.zone === 'battlefield' && hasType(typeLine, 'planeswalker');
     case 'named':
@@ -3116,7 +3129,7 @@ function withAddedTypes(
   };
   for (const effect of state.effects ?? []) {
     if (effect.addTypes === undefined && effect.addSubtypes === undefined && effect.removeTypes === undefined
-      && effect.setCreatureTypes === undefined && effect.allCreatureTypes !== true) continue;
+      && effect.setCreatureTypes === undefined && effect.allCreatureTypes !== true && effect.setLandTypes === undefined) continue;
     if (silenced(state, effect.source)) continue;
     if (!effectApplies(state, effect, instance, printedCreature, printed)) continue;
     for (const type of effect.addTypes ?? []) {
@@ -3138,6 +3151,13 @@ function withAddedTypes(
       subtypes = [
         ...(subtypes ?? printed.subtypes).filter((sub) => !isCreatureType(sub)),
         ...effect.setCreatureTypes,
+      ];
+    }
+    // The land types replaced (D1246, CR 305.7), in effect order like the creature types above.
+    if (effect.setLandTypes !== undefined) {
+      subtypes = [
+        ...(subtypes ?? printed.subtypes).filter((sub) => !LAND_SUBTYPES.has(sub.toLowerCase())),
+        ...effect.setLandTypes,
       ];
     }
     for (const sub of effect.addSubtypes ?? []) add(sub);
@@ -3751,6 +3771,26 @@ export function assignsNoCombatDamage(state: GameState, instance: CardInstance):
  * ability can arrive after the Frog, which is why that function walks the list and this one does
  * not.
  */
+/** The land types (CR 205.3i), which a land-type-setting effect replaces (D1246). */
+const LAND_SUBTYPES: ReadonlySet<string> = new Set([
+  'plains', 'island', 'swamp', 'mountain', 'forest', 'cave', 'cloud', 'desert', 'gate', 'lair',
+  'locus', 'mine', 'planet', 'power-plant', 'sphere', 'tower', 'town', "urza's",
+]);
+
+/**
+ * Whether an effect has set this land's land types (D1246, CR 305.7). Such a land has lost its
+ * rules-text abilities, but the mana ability its new basic land type gives it still works.
+ */
+export function landTypesSet(state: GameState, instance: CardInstance): boolean {
+  const def = state.cardDefs[instance.defKey];
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
+  return (state.effects ?? []).some(
+    (effect) => effect.setLandTypes !== undefined && !silenced(state, effect.source)
+      && effectApplies(state, effect, instance, creature, line),
+  );
+}
+
 export function allAbilitiesLost(state: GameState, instance: CardInstance): boolean {
   const def = state.cardDefs[instance.defKey];
   const line = parseTypeLine(def?.typeLine);

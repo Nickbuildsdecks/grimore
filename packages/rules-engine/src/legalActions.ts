@@ -13,7 +13,7 @@
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { commanderTaxFor, listAt } from './cardActions.js';
 import {
-  allAbilitiesLost, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef, type TypeLine,
+  allAbilitiesLost, landTypesSet, cardHasSubtype, characteristicsOf, commanderIdentity, grantedAbilitiesOn, hasSubtype, hasType, parseTypeLine, type GrantedTriggerRef, type TypeLine,
 } from './characteristics.js';
 import { emergeOptions, conspireOptions, casualtyOptions,
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
@@ -1363,8 +1363,14 @@ export function manaSources(
     if (isFaceDownPermanent(inst)) continue;
     // And a permanent whose abilities have been taken away taps for nothing: a Frogged Llanowar
     // Elves is a 1/1 with no text (CR 613.1f). See `allAbilitiesLost`. Nor an Arrested one (D943).
-    if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
-    const script = scriptForCard(state.cardDefs[inst.defKey]);
+    /*
+      Except a land whose land types an effect set (D1246, CR 305.7): it has lost its rules-text
+      abilities, and keeps the one its new basic land type gives it. A Blood Mooned Command Tower
+      taps for {R} and nothing else.
+    */
+    const retyped = landTypesSet(state, inst);
+    if ((allAbilitiesLost(state, inst) && !retyped) || characteristicsOf(state, inst).cantActivate) continue;
+    const script = retyped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     /*
       The permanent's own mana abilities, and the ones an effect handed it (CR 113.6): a
@@ -1590,8 +1596,10 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     const tapKinds = new Set<ManaType>();
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
     // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
-    if (allAbilitiesLost(state, inst) || characteristicsOf(state, inst).cantActivate) continue;
-    const script = scriptForCard(state.cardDefs[inst.defKey]);
+    // And a land whose land types were set keeps only its new type's mana (D1246), as in `manaSources`.
+    const retyped = landTypesSet(state, inst);
+    if ((allAbilitiesLost(state, inst) && !retyped) || characteristicsOf(state, inst).cantActivate) continue;
+    const script = retyped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     // The granted ones too, kept in step with `manaSources` above — the dimmed pips and the
     // auto-tapper answering different questions about the same board is what both docblocks warn
@@ -1601,6 +1609,13 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
       ...grantedAbilitiesOn(state, inst)
         .map((ref) => grantedAbilityFor(state, ref))
         .filter((ability): ability is AbilityDef => ability !== undefined),
+      /*
+        And the mana a basic land type gives a land only because an effect says so (D1246), which
+        `manaSources` has counted since D699 and this had not: a Forest under Urborg lit no black pip.
+      */
+      ...(ch.isLand ? typeGrantedMana(ch.typeLine.subtypes)
+        .filter((granted) => !(script?.abilities ?? []).some((own) => own.cost.tap && own.cost.mana === undefined
+          && (own.produces ?? []).length === 1 && own.produces![0] === granted.produces![0])) : []),
     ]) {
       if (ability.produces === undefined) continue;
       /*

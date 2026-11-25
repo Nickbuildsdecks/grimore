@@ -17889,6 +17889,30 @@ function attachmentBonus(
       harmful: true,
     };
   }
+  /*
+    "Enchanted land is an Island" (D1246, Spreading Seas, Evil Presence, Sea's Claim): its land types
+    replaced and its rules-text abilities gone (CR 305.7); it taps for the new type's colour.
+  */
+  const retyped = /^is an? (plains|island|swamp|mountain|forest)$/i.exec(tail);
+  if (retyped !== null && /^enchanted land\b/i.test(plain(line).trim())) {
+    const type = retyped[1]!.charAt(0).toUpperCase() + retyped[1]!.slice(1).toLowerCase();
+    return { bonus: { setLandTypes: [type], losesAllAbilities: true }, harmful: true };
+  }
+  /*
+    "Enchanted permanent is a colorless Forest land" (D1246, Song of the Dryads): every other card
+    type and creature type gone, its colour gone, and a Forest's land type and nothing else.
+  */
+  const sung = /^is a colorless (plains|island|swamp|mountain|forest) land$/i.exec(tail);
+  if (sung !== null && /^enchanted permanent\b/i.test(plain(line).trim())) {
+    const type = sung[1]!.charAt(0).toUpperCase() + sung[1]!.slice(1).toLowerCase();
+    return {
+      bonus: {
+        removeTypes: ['Artifact', 'Creature', 'Enchantment', 'Planeswalker', 'Battle'], addTypes: ['Land'],
+        setCreatureTypes: [], setLandTypes: [type], setColors: [], losesAllAbilities: true,
+      },
+      harmful: true,
+    };
+  }
   const alone = attachmentRider(tail);
   if (alone !== null) return alone;
   /*
@@ -39227,6 +39251,13 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
   // Containment Priest (D1241): see `CardScript.exilesUncastCreatures`.
   if (/^if a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.?$/i.test(plain(line).trim())) {
     return { exilesUncastCreatures: true };
+  }
+  // Blood Moon and Magus of the Moon (D1246, CR 305.7): see `ContinuousEffect.setLandTypes`.
+  const mooned = /^nonbasic lands are (plains|islands|swamps|mountains|forests)\.?$/i.exec(plain(line).trim());
+  if (mooned !== null) {
+    const plural = mooned[1]!.toLowerCase();
+    const type = plural === 'plains' ? 'Plains' : plural.charAt(0).toUpperCase() + plural.slice(1, -1);
+    return { statics: [{ scope: 'nonbasic-lands', effect: { setLandTypes: [type], losesAllAbilities: true } }] };
   }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());
