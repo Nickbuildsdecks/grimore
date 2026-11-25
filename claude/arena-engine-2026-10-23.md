@@ -46552,3 +46552,35 @@ conditional parts with it. Anything that is neither does nothing.
 with it. An Aura with "+2/+2" is cast onto one Bear and moved to the other by its ability, and the
 bonus follows. Faults injected by script: 3 of 3 caught (the Aura moved without its grant, the
 Equipment moved without its bonus, the Aura treated as nothing).
+
+## D1251 — A printed alternative of mana or life: Snuff Out, the Bringers
+
+"You may pay X rather than pay this spell's mana cost", where X is mana or life, with "If you control
+a <basic land type>," in front where printed. `CardScript.altCost` holds it. It is offered as an
+alternative-cost cast beside the pitch (D691) and the others, while the caster controls the land type
+named and has the life to pay without losing. It is checked again as the cast is made, and validated
+with the other alternative costs, so two cannot be combined. The bot sends the flag with the play it
+chose.
+
+Read whole now, by the probe: Snuff Out, Rouse, and the five Bringers (Bringer of the Black, Blue,
+Green, Red and White Dawn). The permanent cards needed the reader on the static path as well as the
+spell path.
+
+Not read yet, in the same family: costs paid by returning lands to hand (Daze, Gush), sacrificing
+lands (Fireblast), discarding a typed card (Abolish), tapping a creature (Angelic Favor), the
+Borderposts, and the conditional "Trap" alternatives.
+
+Also: a debug print left in a D1216 test (`BOTACT`) is removed.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- With a Swamp and no mana to spare, Snuff Out is offered for 4 life, costs 4 life and kills.
+- Without a Swamp it is neither offered nor allowed.
+
+Faults injected by hand: 4, all caught.
+- The land-type condition ignored in the offer.
+- The life not paid.
+- The cast-time check skipped.
+- The printed mana cost charged instead of the alternative.
+
+Coverage: 17,043 of 31,900 cards (+14 over D1250's 17,029), 39,678 of 59,888 lines (+21).
