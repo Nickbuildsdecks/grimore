@@ -1479,6 +1479,8 @@ function triggerMatches(
         spell is simply not what this trigger is about, however the rest of it reads.
       */
       if (want.self === true) return isSubject;
+      // "Another … spell" (D1260): the watcher's own cast is not one.
+      if (want.another === true && isSubject) return false;
       /*
         A cast or a copy, and the default is `cast` so that every watcher older than this clause
         keeps seeing exactly what it saw before. A copy of a spell is not cast (CR 707.12), so
@@ -3321,6 +3323,22 @@ function raise(
     (CR 113.8). A snapshot of each graveyard, because firing can only add to the stack, not move
     cards, but the list is read once regardless.
   */
+  /*
+    **And from the command zone** (D1260, eminence, CR 903.3): a commander there hears events for the
+    triggers the compiler marked `inCommandZone`, controlled by its owner.
+  */
+  for (const seat of next.seats) {
+    if (seat.eliminated) continue;
+    for (const id of [...(next.zones[zoneKey(seat.index, 'command')] ?? [])]) {
+      const inst = next.instances[id];
+      if (inst === undefined || inst.zone !== 'command' || inst.emblem === true) continue;
+      const script = scriptForCard(next.cardDefs[inst.defKey]);
+      for (const [i, trigger] of (script?.triggers ?? []).entries()) {
+        if (trigger.inCommandZone !== true) continue;
+        next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, false);
+      }
+    }
+  }
   for (const seat of next.seats) {
     if (seat.eliminated) continue;
     for (const id of [...(next.zones[zoneKey(seat.index, 'graveyard')] ?? [])]) {

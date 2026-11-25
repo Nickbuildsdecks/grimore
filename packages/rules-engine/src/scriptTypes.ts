@@ -1243,6 +1243,8 @@ export type TriggerEvent =
        */
       readonly duringOpponentsTurn?: true;
       readonly fromZone?: 'graveyard' | 'not-hand' | 'exile';
+      /** "Whenever you cast **another** Vampire spell" (D1260, Edgar Markov): not the watcher's own cast. */
+      readonly another?: true;
       /**
        * "Whenever you cast a **legendary** spell" and "a spell **with {X} in its mana cost**"
        * (D1120): the supertype, and an X in the printed cost, which the event carries as `hasX`.
@@ -2544,6 +2546,12 @@ export interface TriggerDef {
    * and never to these triggers while the card is anywhere else.
    */
   readonly inGraveyard?: true;
+  /**
+   * Eminence (D1260): "… if ~ is in the command zone or on the battlefield, …" (Edgar Markov, The
+   * Ur-Dragon, Arahbo, Inalla). The trigger works from the battlefield as any other does, and `raise`
+   * also offers events to a commander in its command zone for these triggers.
+   */
+  readonly inCommandZone?: true;
   /**
    * The intervening-if clause: "**if** that creature's power is greater than this creature's, put
    * a +1/+1 counter on it" (CR 603.4).

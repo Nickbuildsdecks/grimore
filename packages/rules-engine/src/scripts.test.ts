@@ -45685,6 +45685,41 @@ describe('Tymna: pay X life and draw X, X the opponents dealt combat damage (D12
   });
 });
 
+describe('Eminence: a trigger that works from the command zone (D1260)', () => {
+  const ROWS = [
+    { name: 'Test Edgar', type_line: 'Legendary Creature — Vampire Knight', oracle_text: 'Eminence — Whenever you cast another Vampire spell, if Test Edgar is in the command zone or on the battlefield, create a 1/1 black Vampire creature token.\nFirst strike, haste', mana_cost: '{0}', cmc: 6, colors: ['R', 'W', 'B'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Vampire', type_line: 'Creature — Vampire', oracle_text: '', mana_cost: '{0}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1260', name: 'Edgar', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  /** Edgar in `zone`, and `spell` cast from hand; returns the Vampire tokens made. */
+  const castWith = (zone: 'command' | 'battlefield' | 'graveyard', spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1260', 1: 'd1260' }, deckSpecs: { d1260: deck.deck }, hands: { 0: ['Test Edgar', spell] },
+      battlefield: { 0: ['Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const edgar = find(s, 0, 'hand', 'Test Edgar');
+    s = relocate(s, s.instances[edgar]!, zone, 0 as SeatIndex, 'top');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [] } as Action)), 20);
+    return ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken === true).length;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('from the command zone and from the battlefield, a Vampire spell makes a token', () => {
+    expect(castWith('command', 'Test Vampire')).toBe(1);
+    expect(castWith('battlefield', 'Test Vampire')).toBe(1);
+  });
+
+  it('not from the graveyard, and not for a spell of another type', () => {
+    expect(castWith('graveyard', 'Test Vampire')).toBe(0);
+    expect(castWith('command', 'Test Bear')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

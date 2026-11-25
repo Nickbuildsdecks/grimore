@@ -19850,11 +19850,15 @@ function castTrigger(matched: RegExpExecArray, self: string): readonly CastEvent
   const what = castDescriptor(groups.what ?? '');
   const bound = castBound(groups.tail ?? '', self);
   if (by === undefined || what === null || bound === null) return null;
+  // "Another" only with a kind (D1260): "another Vampire spell" is Edgar's; a bare "another spell" on
+  // a permanent has nothing to be other than, and stays unread.
+  if (groups.another !== undefined && (groups.what ?? '').trim() === '') return null;
   return [{
     kind: 'spell-cast',
     by,
     ...what,
     ...bound,
+    ...(groups.another === undefined ? {} : { another: true as const }),
     // "cast **or copy**" is magecraft, and the only printed line that counts a copy (CR 707.12).
     ...(groups.copy === undefined ? {} : { how: 'any' as const }),
   }];
@@ -20667,7 +20671,7 @@ const TRIGGER_SHAPES: readonly ({
       '^When(?:ever)? (?<who>you|a player|an opponent) (?:cast|casts)'
       // A list with commas is taken only in its printed shape, "x, y, or z " (D606), so a comma after
       // "spell" that ends the prologue is never swallowed into the descriptor.
-      + "(?<copy> or (?:copy|copies))? an? (?<what>(?:[A-Za-z'-]+, )+or [A-Za-z'-]+ |[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$",
+      + "(?<copy> or (?:copy|copies))? (?:(?<another>another) |an? )(?<what>(?:[A-Za-z'-]+, )+or [A-Za-z'-]+ |[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$",
       'i',
     ),
     from: castTrigger,
@@ -24817,6 +24821,33 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     // Any event: the condition names the zone outright, so it does not depend on where the event's
     // own subject is (a Bridge from Below hears another creature's death from the graveyard).
+    /*
+      Eminence (D1260): "if ~ is in the command zone or on the battlefield, …". Read as any battlefield
+      trigger, marked to work from the command zone as well, with the zone asked again as it resolves.
+    */
+    const eminence = new RegExp(`^if (?:${self}) is in the command zone or on the battlefield, (.+)$`, 'i').exec(clause);
+    if (eminence !== null) {
+      const rest = eminence[1]!;
+      const read = (text: string): ReadEffect | null => eventRelativeEffect(text, name, on) ?? composeEffects(clausesOf(text), name, 'battlefield');
+      const body = read(rest) ?? optionalEffect(rest, read);
+      if (body === null || body.beforeDecisions !== undefined) return null;
+      const there: NonNullable<TriggerDef['condition']> = (c) => {
+        const zone = c.state.instances[c.source]?.zone;
+        return zone === 'command' || zone === 'battlefield';
+      };
+      return {
+        triggers: on.map((event) => ({
+          on: event,
+          description: clause,
+          inCommandZone: true as const,
+          condition: there,
+          ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
+          ...(body.targets === undefined ? {} : { targets: body.targets }),
+          ...(body.decisions === undefined ? {} : { decisions: body.decisions }),
+          effect: body.effect,
+        } as TriggerDef)),
+      };
+    }
     const yardIf = new RegExp(`^if (?:${self}|this card) is in your graveyard, (.+)$`, 'i').exec(clause);
     if (yardIf !== null) {
       const rest = yardIf[1]!.replace(
