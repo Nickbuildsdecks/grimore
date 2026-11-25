@@ -2975,6 +2975,8 @@ export type StaticCountable =
   | { readonly kind: 'attached-to-self'; readonly subtypes: readonly string[] }
   /** Domain (D1168): the basic land types among the controller's lands, read off their printed type lines. */
   | { readonly kind: 'basic-land-types' }
+  /** "For each experience counter you have" (D1263): the controller's own counters of a kind. */
+  | { readonly kind: 'player-counters'; readonly counter: string }
   /**
    * "for each enchantment you control", "… artifact and/or enchantment you control", "… land on the
    * battlefield" (D604): permanents with any of `types` on their printed type line, yours or
@@ -3090,6 +3092,8 @@ function staticCount(
     case 'tokens-you-control':
       return (state.zones[zoneKey(controller, 'battlefield')] ?? [])
         .filter((id) => state.instances[id]?.isToken === true).length;
+    case 'player-counters':
+      return state.seats[controller]?.counters[of.counter] ?? 0;
     case 'basic-land-types': {
       const found = new Set<string>();
       for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {

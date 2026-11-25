@@ -878,6 +878,21 @@ export function addEnergy(state: GameState, seat: SeatIndex, amount: number): Ga
   return replaceSeat(state, seat, { counters });
 }
 
+/**
+ * A player's other named counters (D1263): experience (CR 122.1), and any kind a card names. Energy
+ * has its own pair above because three files spell its key; this is the same arithmetic for the rest.
+ */
+export function addSeatCounters(state: GameState, seat: SeatIndex, kind: string, amount: number): GameState {
+  if (amount === 0) return state;
+  const s = state.seats[seat];
+  if (s === undefined) return state;
+  const next = Math.max(0, clampValue((s.counters[kind] ?? 0) + amount));
+  const counters: Record<string, number> = { ...s.counters };
+  if (next === 0) delete counters[kind];
+  else counters[kind] = next;
+  return replaceSeat(state, seat, { counters });
+}
+
 /** "Pay {E}{E}" — the same arithmetic the other way, named for what a card says. */
 export function spendEnergy(state: GameState, seat: SeatIndex, amount: number): GameState {
   return addEnergy(state, seat, -amount);

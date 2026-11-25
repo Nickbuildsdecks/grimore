@@ -45804,6 +45804,50 @@ describe('Eminence on a cost: The Ur-Dragon (D1262)', () => {
   });
 });
 
+describe('Experience counters (D1263)', () => {
+  const ROWS = [
+    { name: 'Test Daxos', type_line: 'Legendary Creature — Human Soldier', oracle_text: 'Whenever another creature you control enters, you get an experience counter.', mana_cost: '{0}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Mizzix', type_line: 'Legendary Creature — Goblin Wizard', oracle_text: 'Instant and sorcery spells you cast cost {1} less to cast for each experience counter you have.', mana_cost: '{0}', cmc: 4, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Kalemne', type_line: 'Legendary Creature — Giant Soldier', oracle_text: 'Test Kalemne gets +1/+1 for each experience counter you have.', mana_cost: '{0}', cmc: 4, colors: ['R', 'W'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{4}{R}', cmc: 5, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1263', name: 'Daxos', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd1263', 1: 'd1263' }, deckSpecs: { d1263: deck.deck }, hands: { 0: hand }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const xp = (s: GameState) => s.seats[0]!.counters['experience'] ?? 0;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ROWS[0], ROWS[1], ROWS[3]]) expect(compileCard(row as never), row!.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('another creature entering gives an experience counter', () => {
+    const s = table(['Test Daxos'], ['Test Bear']);
+    expect(xp(s)).toBe(0);
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear'), targets: [] } as Action)), 20);
+    expect(xp(t)).toBe(1);
+  });
+
+  it('a creature gets +1/+1 for each experience counter', () => {
+    const s = table(['Test Kalemne'], []);
+    const two = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, counters: { ...seat.counters, experience: 2 } } : seat)) };
+    const k = find(s, 0, 'battlefield', 'Test Kalemne');
+    expect(characteristicsOf(s, s.instances[k]!).power).toBe(3);
+    expect(characteristicsOf(two, two.instances[k]!).power).toBe(5);
+  });
+
+  it('a spell costs one less for each experience counter', () => {
+    const s = table(['Test Mizzix'], ['Test Bolt']);
+    const bolt = find(s, 0, 'hand', 'Test Bolt');
+    const cost = (state: GameState) => costChangeFor(state, 0 as SeatIndex, state.cardDefs[state.instances[bolt]!.defKey], bolt).generic;
+    expect(cost(s)).toBe(0);
+    const three = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, counters: { ...seat.counters, experience: 3 } } : seat)) };
+    expect(cost(three)).toBe(-3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

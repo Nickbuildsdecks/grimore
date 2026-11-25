@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, canPayLife, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
+  createEmblem, addSeatCounters, canPayLife, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -12872,6 +12872,10 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
  */
 function whereXCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
   const text = plain(phrase).trim().replace(/\.$/, '');
+  // "The number of experience counters you have" (D1263).
+  if (/^the number of experience counters you have$/i.test(text)) {
+    return (c) => c.state.seats[c.controller]?.counters['experience'] ?? 0;
+  }
   // "The number of opponents that were dealt combat damage this turn" (D1259, Tymna).
   if (/^the number of opponents (?:that were|who were) dealt combat damage this turn$/i.test(text)) {
     return (c) => opponentsOf(c.state, c.controller).filter((seat) => c.state.combatDamagedThisTurn?.[String(seat)] === true).length;
@@ -22344,6 +22348,9 @@ function sacrificedMeasure(phrase: string): ((c: EffectContext) => number) | nul
  * the noun's number is a parameter of the shared reader rather than something it guesses.
  */
 function forEachCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  // "For each experience counter you have" (D1263): the player's own counters.
+  const own = /^experience counter you have$/i.test(plain(phrase).trim().replace(/\.$/, ''));
+  if (own) return (c) => c.state.seats[c.controller]?.counters['experience'] ?? 0;
   return countOfThing(plain(phrase).trim().replace(/\.$/, ''), name, 'singular');
 }
 
@@ -33901,6 +33908,12 @@ function composeEffectsAsPrinted(
   // "A. If …, B instead." (D1203): see `insteadGroup`.
   const replaced = insteadGroup(clauses, name, where);
   if (replaced !== null) return replaced;
+  // "You get an experience counter" (D1263): see `addSeatCounters`.
+  const experienced = clauses.length === 1 ? /^you get (an?|one|two|three) experience counters?\.?$/i.exec(clauses[0]!.trim()) : null;
+  if (experienced !== null) {
+    const n = /^an?$/i.test(experienced[1]!) ? 1 : countFrom(experienced[1]!) ?? 1;
+    return { effect: (c) => addSeatCounters(c.state, c.controller, 'experience', n) };
+  }
   // Tymna (D1259): see `payXLifeDrawX`.
   const paid = payXLifeDrawX(clauses, name);
   if (paid !== null) return paid;
@@ -36283,6 +36296,8 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
     return { kind: 'instants-and-sorceries-in-graveyard' };
   }
   if (/^artifacts? you control$/i.test(text)) return { kind: 'artifacts-you-control' };
+  // "Experience counter you have" (D1263): Kalemne.
+  if (/^experience counters? you have$/i.test(text)) return { kind: 'player-counters', counter: 'experience' };
   /*
     "~ gets +2/+2 for each Aura attached to it" (D3016, Kor Spiritdancer, Rabid Wombat), and
     "Equipment" or "Aura and Equipment": `attached-to-self`.
