@@ -27809,6 +27809,36 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    "Target player sacrifices a permanent for each soot counter on ~" (D1234): Smokestack's second
+    line, through the "that player" swap on its each-upkeep trigger, and "Target opponent
+    sacrifices a creature for each …". A counted edict whose count is read as the effect resolves,
+    as D1195's counted discard is: the soot counters put on this upkeep count.
+  */
+  const countedEdict = /^(target player|target opponent|each player|each opponent) sacrifices an? (.+?) for each (.+)$/i.exec(text);
+  if (countedEdict !== null) {
+    const subject = countedEdict[1]!.toLowerCase();
+    const spec = subject.startsWith('target') ? targetSpecFrom(subject, false) : null;
+    const describes = permanentDescribed(countedEdict[2]!);
+    const count = forEachCount(countedEdict[3]!, name);
+    // Each player's own count would be "they" or "their", which is a different number per seat.
+    const relative = /\b(?:they|their|them|that player)\b/i.test(countedEdict[3]!);
+    if ((spec !== null || !subject.startsWith('target')) && describes !== null && count !== null && !relative) {
+      const noun = countedEdict[2]!;
+      const who = spec !== null ? 'target-player' as const : subject === 'each opponent' ? 'each-opponent' as const : 'each-player' as const;
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        decisions: [(state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+          const n = at === undefined ? 0 : Math.max(0, count({ ...at, state }));
+          return {
+            who, from: 'battlefield', prompt: `Sacrifice ${n} ${noun}${n === 1 ? '' : 's'}`,
+            min: n, max: n, filter: (st: GameState, id: string) => describes(st, id),
+          };
+        }],
+        effect: (c) => c.decisions.reduce((state, answer) => sacrifice(state, answer.ids), c.state),
+      };
+    }
+  }
   const aimedEdict = /^(target player|target opponent) sacrifices (an? (.+))$/i.exec(text);
   if (aimedEdict !== null) {
     const spec = targetSpecFrom(aimedEdict[1]!, false);

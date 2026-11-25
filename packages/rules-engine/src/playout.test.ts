@@ -182,7 +182,12 @@ describe('a whole automated game', () => {
     expect(unfinished).toEqual([]);
     // Twenty-one pairings, four shuffles each: eighty-four whole games, which is more than
     // vitest's default five seconds buys even with the shallow bot.
-  });
+    /*
+      Its own limit (D1234), as "answers the questions cards ask mid-resolution" has (D1003): 53
+      seconds on a quiet machine, and over the suite's 60 when the gate runs beside a coverage
+      measurement, which failed one gate with every assertion passing. The games are the point.
+    */
+  }, 180_000);
 
   it('counters spells when it has the mana for it, rather than ignoring the stack', () => {
     /*

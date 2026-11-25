@@ -43802,6 +43802,73 @@ describe('attack triggers for tokens: Dreadhorde Invasion (D899)', () => {
   });
 });
 
+describe('"sacrifices a permanent for each soot counter on ~" (D1234)', () => {
+  const ROWS = [
+    { name: 'Test Stack', type_line: 'Artifact', oracle_text: 'At the beginning of your upkeep, you may put a soot counter on Test Stack.\nAt the beginning of each player\'s upkeep, that player sacrifices a permanent for each soot counter on Test Stack.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Ruin', type_line: 'Sorcery', oracle_text: 'Each player sacrifices a land for each card in your hand.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1234', name: 'Soot', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1234', 1: 'd1234' }, deckSpecs: { d1234: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  /** Plays on, answering every question with its first option or the fewest cards, until `seat`'s main phase. */
+  const untilMain = (from: GameState, seat: SeatIndex): GameState => {
+    let s = from;
+    for (let i = 0; i < 80; i += 1) {
+      if (s.activeSeat === seat && s.step === 'precombat-main' && s.stackOrder.length === 0 && s.pendingDecision === null) return s;
+      const d = s.pendingDecision;
+      if (d !== null) {
+        s = apply(s, (d.options !== undefined
+          ? { type: 'auto:decide', by: d.seat, cards: [], option: d.options[d.options.length - 1]! }
+          : { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, d.min) }) as Action);
+        continue;
+      }
+      if (s.priority === null) break;
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    return s;
+  };
+
+  it('two soot counters: the next player sacrifices two permanents in their upkeep', () => {
+    let s = arena({
+      decks: { 0: 'd1234', 1: 'd1234' }, deckSpecs: { d1234: deck.deck },
+      battlefield: { 0: ['Test Stack'], 1: ['Mountain', 'Mountain', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    });
+    // Past seat 0's own upkeep first: with the counters already there, its controller would pay.
+    s = untilMain(s, 0);
+    const stack = find(s, 0, 'battlefield', 'Test Stack');
+    s = { ...s, instances: { ...s.instances, [stack]: { ...s.instances[stack]!, counters: { soot: 2 } } } };
+    const before = ids(s, 1, 'battlefield').length;
+    s = untilMain(nextTurn(s), 1);
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[stack]!.counters['soot']).toBe(2);
+    expect(ids(s, 1, 'battlefield').length).toBe(before - 2);
+  });
+
+  it('"each player … for each card in your hand": both seats sacrifice that many lands', () => {
+    const lands = ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'];
+    let s = table(lands, lands, ['Test Ruin', 'Test Bear']);
+    const n = ids(s, 0, 'hand').length - 1;
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThan(5);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ruin'), targets: [] } as Action)), 30);
+    for (let i = 0; i < 4 && s.pendingDecision !== null; i++) {
+      const d = s.pendingDecision!;
+      s = drain(apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, d.min) } as Action), 30);
+    }
+    expect(namesIn(s, 0, 'battlefield').filter((x) => x === 'Mountain')).toHaveLength(5 - n);
+    expect(namesIn(s, 1, 'battlefield').filter((x) => x === 'Mountain')).toHaveLength(5 - n);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
