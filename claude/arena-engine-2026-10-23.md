@@ -45784,3 +45784,34 @@ coverage measurement, with every assertion passing.
 The coverage below includes the other session's D894 to D899, merged in before this was measured.
 
 Coverage: 16,939 of 31,900 cards (+15 over D1233's 16,924), 39,505 of 59,888 lines (+21).
+
+## D1235 — Underworld Breach
+
+"Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana cost
+plus exile three other cards from your graveyard." A new script field, `grantsEscape`, and one
+function every escape question now asks, `escapeOf`: a card's own escape, or the one a live
+Underworld Breach on its owner's battlefield gives it while it is in that graveyard, at its own
+mana cost. The offers, the cast, the cost, the cards exiled and the log line all read it, where each
+read the card's own `escape` before. Its end-step sacrifice already read.
+
+A nonland card with no mana cost is given no escape: what it would cost is not something its
+printing says, so the reading refuses that play rather than guessing.
+
+Read whole now (1): Underworld Breach.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- With a Breach, the graveyard's nonland card is offered by escape and the land is not; without
+  one, nothing is.
+- Cast by escape for its own mana cost: three other cards are exiled and the spell resolves.
+
+Faults injected by hand: 3, 2 caught.
+- No escape granted: caught.
+- Nothing exiled for it: caught.
+- The land check dropped: not caught, because a land has no mana cost and the no-mana-cost rule
+  refuses it first. The check is kept as the statement of the printed "nonland".
+
+The new field is listed among the mechanics the compiler reads that no built-in deck plays, with the
+runtime block above as its evidence.
+
+Coverage: 16,940 of 31,900 cards (+1 over D1234's 16,939), 39,506 of 59,888 lines (+1).
