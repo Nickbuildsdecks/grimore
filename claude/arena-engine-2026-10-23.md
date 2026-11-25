@@ -47017,3 +47017,36 @@ Faults injected by hand: 3, all caught.
 - Only the first player's answer used.
 
 Coverage: 17,131 of 31,900 cards (+1 over D1266's 17,130), 39,821 of 59,888 lines (+1).
+
+## D1268 — A search bounded by "where X is …", its destination in the next sentence
+
+"Search your library for up to X basic land cards, where X is the greatest power among creatures you
+control. Put those cards onto the battlefield tapped, then shuffle." And Eldritch Evolution's "a
+creature card with mana value X or less, where X is 2 plus the sacrificed creature's mana value. Put
+that card onto the battlefield". A composer (`searchWhereX`) joins the two sentences: the plain
+search reads the kind and the destination, and the question is worked out as it is asked
+(`DecisionSpecOf`, D1195) with X counted from the board at that moment — the most cards that may be
+taken, or the highest mana value one may have. The prompt shows the X it was asked with. With no
+context to count from, X is 0.
+
+`boardCount`'s "N plus …" now takes any measure it reads after the number, not only "the number of
+…", which is what makes "2 plus the sacrificed creature's mana value" a count; the sacrificed
+measure is still read only behind a sacrifice paid as a cost (D586).
+
+Read whole now: Eldritch Evolution, Traverse the Outlands, Kyoshi Island Plaza, Prismatic
+Undercurrents. Celebrate the Harvest, Point the Way, Surveyor's Scope and Oreskos Explorer print the
+same shape over counts not read yet ("different powers", "your speed", "players who control more
+lands than you").
+
+**Tests.** 4 engine tests:
+- Both forms read whole; with nothing sacrificed, the sacrificed-mana-value bound stays unread.
+- Up to X basic lands with a 3-power creature: three at most, entering tapped, the prompt showing X.
+- With no creature, X is 0 and nothing is found.
+- A mana value 2 creature sacrificed offers the fours and not the fives, and the one chosen enters.
+
+Faults injected by hand: 3, all caught.
+- The count not applied as the maximum.
+- The mana value bound off by one.
+- "N plus" back to "the number of …" only.
+
+Coverage: 17,135 of 31,900 cards (+4 over D1267's 17,131), 39,825 of 59,888 lines (+4).
