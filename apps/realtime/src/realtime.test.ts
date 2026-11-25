@@ -1546,7 +1546,9 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
         expectedVersion: ack.stateVersion!,
       }));
-      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!);
+      // Fifteen seconds rather than five: dealing a pasted list reads it out of the card table, and
+      // under the full gate's parallel load that has taken longer than five (D1240).
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!, 15_000);
       const view = unpackView(after.state as unknown as PackedView);
       expect(view.seats.find((s) => s.index === 0)?.deckId).toBe('custom:0');
       // Fifty-nine in the library — a count rather than a list, because a library's order is
@@ -1567,7 +1569,8 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
         expectedVersion: ack.stateVersion!,
       }));
-      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!);
+      // Fifteen seconds, for the reason the test above gives.
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (s) => s.stateVersion >= loaded.stateVersion!, 15_000);
       const view = unpackView(after.state as unknown as PackedView);
       expect(view.seats.find((s) => s.index === 0)?.libraryCount).toBe(59);
       expect(view.zones['0:command']?.length).toBe(1);
@@ -1631,7 +1634,7 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         opening hand: the library reads 52 there, and 52 is a number this test would have to
         restate every time the opening hand size changed. 59 is the list.
       */
-      const after = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.stateVersion >= loaded.stateVersion!);
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.stateVersion >= loaded.stateVersion!, 15_000);
       const view = unpackView(after.state as unknown as PackedView);
       expect(view.seats.find((st) => st.index === 0)?.libraryCount).toBe(59);
       expect(view.zones['0:command']?.length).toBe(1);
