@@ -558,6 +558,13 @@ export type TriggerEvent =
        * not only at planeswalkers.
        */
       readonly atAPlayer?: true;
+      /**
+       * "Whenever one or more **Dragons** you control attack" (D1261, The Ur-Dragon), on the
+       * **watched** event: at least one attacker of this creature type. `attackerSubtypes`, on the
+       * raised event, is each attacker's subtypes as it was declared.
+       */
+      readonly withSubtype?: string;
+      readonly attackerSubtypes?: readonly (readonly string[])[];
       /** Set by the engine (D996): the seats attacked as players, and the seats attacked at all. */
       readonly playersAttacked?: readonly SeatIndex[];
       readonly seatsAttacked?: readonly SeatIndex[];

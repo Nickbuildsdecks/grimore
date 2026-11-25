@@ -21524,6 +21524,16 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever one or more creatures you control attack, (.+)$/i,
     on: [{ kind: 'attack-declared', by: 'you' }],
   },
+  // "Whenever one or more Dragons you control attack" (D1261): a creature type, in the plural.
+  {
+    prologue: () => /^Whenever one or more (?<tribe>[A-Z][a-z]+) you control attack, (?<clause>.+)$/,
+    from: (m: RegExpExecArray) => {
+      const plural = m.groups?.tribe ?? '';
+      const single = [plural.replace(/ves$/, 'f'), plural.replace(/ies$/, 'y'), plural.replace(/es$/, ''), plural.replace(/s$/, '')]
+        .find((word) => word !== plural && isCreatureType(word));
+      return single === undefined ? [] : [{ kind: 'attack-declared' as const, by: 'you' as const, withSubtype: single }];
+    },
+  },
   /*
     "Whenever you attack with **two / three or more** creatures" (D631): the same declaration with a
     count on it, which `attack-declared` now carries. 8 + 6 legal lines; Chivalric Alliance, Armasaur
@@ -24774,7 +24784,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       // And how many of a batch (D1110): "whenever one or more tokens you control enter, … that many".
       || k.kind === 'permanents-entered' || k.kind === 'creatures-died'
       // And a player dealt damage (D1115).
-      || k.kind === 'player-damaged')
+      || k.kind === 'player-damaged'
+      // And how many attacked (D1261): "Whenever one or more Dragons you control attack, draw that many cards".
+      || k.kind === 'attack-declared')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;

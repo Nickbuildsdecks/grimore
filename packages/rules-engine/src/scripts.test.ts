@@ -45720,6 +45720,42 @@ describe('Eminence: a trigger that works from the command zone (D1260)', () => {
   });
 });
 
+describe('"Whenever one or more Dragons you control attack, draw that many cards" (D1261)', () => {
+  const ROWS = [
+    { name: 'Test Ur', type_line: 'Legendary Creature — Dragon Avatar', oracle_text: 'Whenever one or more Dragons you control attack, draw that many cards.', mana_cost: '{0}', cmc: 9, colors: ['R'], layout: 'normal', power: '10', toughness: '10' },
+    { name: 'Test Drake', type_line: 'Creature — Dragon', oracle_text: '', mana_cost: '{0}', cmc: 4, colors: ['R'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1261', name: 'Ur', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  /** Seat 0 attacks seat 1 with `attackers`; returns how many cards it drew from the trigger. */
+  const attack = (mine: string[], attackers: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1261', 1: 'd1261' }, deckSpecs: { d1261: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const all = ids(s, 0, 'battlefield');
+    const used = new Set<string>();
+    const pick = (name: string) => { const id = all.find((x) => !used.has(x) && s.cardDefs[s.instances[x]!.defKey]?.name === name)!; used.add(id); return id; };
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: attackers.map((n) => ({ attacker: pick(n), defender: 1 })) });
+    const triggered = s.stackOrder.length;
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    return { drew: ids(drain(s, 10), 0, 'hand').length - hand, triggered };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two Dragons and a Bear attack: two cards', () => {
+    expect(attack(['Test Ur', 'Test Drake', 'Test Bear'], ['Test Ur', 'Test Drake', 'Test Bear']).drew).toBe(2);
+  });
+
+  it('only a Bear attacks: it does not trigger at all', () => {
+    expect(attack(['Test Ur', 'Test Bear'], ['Test Bear'])).toEqual({ drew: 0, triggered: 0 });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -1708,6 +1708,8 @@ function triggerMatches(
       return true;
     }
     case 'attack-declared': {
+      // "One or more Dragons you control attack" (D1261): at least one attacker of the type.
+      if (want.withSubtype !== undefined && attackersOfType(event, want.withSubtype) === 0) return false;
       // "With three or more creatures" (D631): the count travels on the raised event.
       if (want.atLeast !== undefined
         && ((event as Extract<TriggerEvent, { kind: 'attack-declared' }>).attackers ?? 0) < want.atLeast) return false;
@@ -2241,6 +2243,12 @@ function answeringFor(event: TriggerEvent): string | undefined {
  *
  * Returns the state unchanged when the trigger did not fire, which is most calls.
  */
+/** How many of a declaration's attackers had this creature type (D1261). */
+function attackersOfType(event: TriggerEvent, subtype: string): number {
+  if (event.kind !== 'attack-declared') return 0;
+  return (event.attackerSubtypes ?? []).filter((subs) => subs.some((s) => s.toLowerCase() === subtype.toLowerCase())).length;
+}
+
 function fireTrigger(
   state: GameState, trigger: TriggerDef, holder: string, inst: CardInstance,
   abilityIndex: number, event: TriggerEvent, actor: SeatIndex | undefined,
@@ -2513,6 +2521,9 @@ function fireTrigger(
       || event.kind === 'life-lost' || event.kind === 'life-gained')
       && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
+    // And for a declaration, how many attacked of the kind the trigger names (D1261): "draw that many cards".
+    ...(event.kind === 'attack-declared' && trigger.on.kind === 'attack-declared'
+      ? { eventAmount: trigger.on.withSubtype === undefined ? event.attackers ?? 0 : attackersOfType(event, trigger.on.withSubtype) } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
     ...(event.kind === 'attacks' && event.opponentsAttacked !== undefined
       ? { eventAmount: event.opponentsAttacked } : {}),

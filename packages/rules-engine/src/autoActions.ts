@@ -2983,6 +2983,11 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     // control]": as players, and at all.
     next = raise(next, {
       kind: 'attack-declared', attackers: attacks.length,
+      // Each attacker's subtypes as declared (D1261), for "one or more Dragons you control attack".
+      attackerSubtypes: attacks.map((a) => {
+        const attacker = next.instances[a.attacker];
+        return attacker === undefined ? [] : characteristicsOf(next, attacker).typeLine.subtypes;
+      }),
       playersAttacked: [...new Set(attacks.filter((a) => a.planeswalker === undefined).map((a) => a.defender))],
       seatsAttacked: [...new Set(attacks.map((a) => a.defender))],
     }, action.by);
