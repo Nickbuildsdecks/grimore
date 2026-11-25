@@ -3179,7 +3179,9 @@ export type CastLimit =
    */
   | 'each-one-nonartifact'
   /** "Spells with the chosen name can't be cast" (D1238): Meddling Mage, Nevermore, Voidstone Gargoyle. */
-  | 'chosen-name';
+  | 'chosen-name'
+  /** "Players can't cast spells from graveyards [or libraries]" (D1241): Grafdigger's Cage, Kunoros. */
+  | 'no-graveyard-casts' | 'no-library-casts';
 
 export interface CardScript {
   /** Matched case-insensitively against the card's printed name. */
@@ -3361,6 +3363,20 @@ export interface CardScript {
    * `draw` before anything replaces the draw: a draw a player cannot make is not made at all.
    */
   readonly drawLimit?: { readonly who: 'opponents' | 'everyone' | 'you'; readonly perTurn: number };
+  /**
+   * "Creature cards in graveyards [and libraries] can't enter the battlefield" (D1241): Grafdigger's
+   * Cage, Kunoros, Soulless Jailer ("Permanent cards"), Weathered Runestone ("Nonland permanent
+   * cards"). The card stays where it is: a reanimation does nothing, a search that would put the
+   * creature onto the battlefield leaves it in the library. Asked in `relocate`, the one place a
+   * card changes zone, through `setArrivalBan`.
+   */
+  readonly enterBan?: { readonly from: readonly ('graveyard' | 'library')[]; readonly kind: 'creature' | 'permanent' | 'nonland-permanent' };
+  /**
+   * "If a nontoken creature would enter and it wasn't cast, exile it instead" (D1241): Containment
+   * Priest. A creature card arriving from anywhere but the stack goes to exile: reanimated, put in
+   * from a hand or a library, or coming back from a blink.
+   */
+  readonly exilesUncastCreatures?: true;
   /**
    * "Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana
    * cost plus exile three other cards from your graveyard." (D1235, Underworld Breach). Read by

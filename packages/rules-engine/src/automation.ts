@@ -29,7 +29,7 @@ import {
 import {
   isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance,
 } from './cards.js';
-import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
+import { listAt, relocate, requireInstance, setArrivalBan, withInstance, withZones } from './cardActions.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
   flankingPenalties, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
@@ -2700,6 +2700,34 @@ function fireDeathWatches(state: GameState, id: string): GameState {
  * a creature's death fires none, over every live permanent that says so. `null` when nothing does,
  * which is nearly always, so `raise` pays one board walk and no characteristics for it.
  */
+/*
+  Grafdigger's Cage and Containment Priest (D1241), asked by `relocate` of every card arriving on the
+  battlefield. Printed types, because the card is not on the battlefield yet to have any other.
+*/
+setArrivalBan((state, inst) => {
+  const def = state.cardDefs[inst.defKey];
+  if (def === undefined) return undefined;
+  const line = parseTypeLine(def.typeLine);
+  const creature = hasType(line, 'creature');
+  const permanent = ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'].some((t) => hasType(line, t));
+  for (const seat of state.seats) {
+    for (const id of listAt(state, zoneKey(seat.index, 'battlefield'))) {
+      const script = scriptOf(state, id);
+      if (script === undefined) continue;
+      const ban = script.enterBan;
+      if (ban !== undefined && (inst.zone === 'graveyard' || inst.zone === 'library') && ban.from.includes(inst.zone)) {
+        const fits = ban.kind === 'creature' ? creature
+          : ban.kind === 'permanent' ? permanent : permanent && !hasType(line, 'land');
+        if (fits) return { to: 'stay', by: script.name };
+      }
+      if (script.exilesUncastCreatures === true && creature && inst.isToken !== true && inst.zone !== 'stack') {
+        return { to: 'exile', by: script.name };
+      }
+    }
+  }
+  return undefined;
+});
+
 function triggerSilence(state: GameState): { readonly entering: ReadonlySet<string>; readonly dying: boolean } | null {
   let entering: Set<string> | null = null;
   let dying = false;

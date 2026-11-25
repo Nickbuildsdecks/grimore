@@ -830,7 +830,7 @@ export function escapeOf(state: GameState, id: string): CardScript['escape'] {
 
 export function castProhibition(
   state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean, fromHand = true, isArtifact = false,
-  spellName?: string,
+  spellName?: string, fromZone?: string,
 ): string | null {
   // Silence and Orim's Chant (D791): barred for the rest of this turn.
   if (state.castBannedTurn?.[String(seat)] === state.turn) return "you can't cast spells this turn";
@@ -852,6 +852,9 @@ export function castProhibition(
     if (limit === 'opponents-no-spells-your-turn' && theirs && state.activeSeat === from) return `${name}: no spells during its controller's turn`;
     if (limit === 'opponents-hand-only' && theirs && !fromHand) return `${name}: you can cast spells only from your hand`;
     if (limit === 'each-one-nonartifact' && !isArtifact && nonartifact >= 1) return `${name}: no more than one nonartifact spell each turn`;
+    // Grafdigger's Cage, Kunoros (D1241): flashback, escape, a Yawgmoth's Will, a Future Sight.
+    if (limit === 'no-graveyard-casts' && fromZone === 'graveyard') return `${name}: spells can't be cast from graveyards`;
+    if (limit === 'no-library-casts' && fromZone === 'library') return `${name}: spells can't be cast from libraries`;
   }
   return null;
 }
@@ -2004,7 +2007,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     }
     // A permanent's casting limit (D788): Rule of Law, Teferi, Grand Abolisher.
     const prohibited = castProhibition(state, seat, ch.isCreature, offered, inst.zone === 'hand', hasType(ch.typeLine, 'artifact'),
-      state.cardDefs[inst.defKey]?.name);
+      state.cardDefs[inst.defKey]?.name, inst.zone);
     if (prohibited !== null) {
       why(id, prohibited);
       continue;

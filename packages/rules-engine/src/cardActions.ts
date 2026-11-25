@@ -141,6 +141,17 @@ function assertMayTouch(state: GameState, action: Action, inst: CardInstance, ct
 }
 
 /**
+ * Whether a card arriving on the battlefield may (D1241): `stay` where it is (Grafdigger's Cage), or
+ * go to `exile` instead (Containment Priest), and which permanent says so. Registered by
+ * `automation`, which can read card scripts; this module cannot without an import cycle.
+ */
+export type ArrivalBan = (state: GameState, inst: CardInstance) => { readonly to: 'stay' | 'exile'; readonly by: string } | undefined;
+let arrivalBan: ArrivalBan | undefined;
+export function setArrivalBan(fn: ArrivalBan): void {
+  arrivalBan = fn;
+}
+
+/**
  * Moves one card, detaching anything attached to it and detaching it from whatever it was on.
  * Leaving the battlefield with an aura still attached is the kind of stale pointer that shows up
  * three turns later as a card that cannot be picked up.
@@ -174,6 +185,24 @@ export function relocate(
     toZone = 'command';
     toSeat = inst.owner;
   }
+  /*
+    A card that can't enter the battlefield, or is exiled instead (D1241). Only on an automated
+    table, and only for a card arriving from elsewhere: a change of controller moves between two
+    battlefields and is not an arrival.
+  */
+  let banNote: string | undefined;
+  if (state.automated && toZone === 'battlefield' && inst.zone !== 'battlefield' && arrivalBan !== undefined) {
+    const ban = arrivalBan(state, inst);
+    if (ban !== undefined) {
+      const named = cardName(state, inst);
+      if (ban.to === 'stay') {
+        return { ...state, replacements: [...state.replacements, `${ban.by}: ${named} can't enter the battlefield`] };
+      }
+      toZone = 'exile';
+      toSeat = inst.owner;
+      banNote = `${ban.by}: ${named} — exiled instead`;
+    }
+  }
   const fromKey = zoneKey(inst.zoneSeat, inst.zone);
   const toKey = zoneKey(toSeat, toZone);
   const from = listAt(state, fromKey).filter((id) => id !== inst.id);
@@ -182,6 +211,7 @@ export function relocate(
     : [...listAt(state, toKey).filter((id) => id !== inst.id), inst.id];
 
   let next = withZones(state, fromKey === toKey ? { [toKey]: to } : { [fromKey]: from, [toKey]: to });
+  if (banNote !== undefined) next = { ...next, replacements: [...next.replacements, banNote] };
 
   /**
    * A permanent moving from the battlefield to a graveyard has **died** (CR 700.4), whatever did

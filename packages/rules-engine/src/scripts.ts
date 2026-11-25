@@ -37186,6 +37186,9 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     [/^spells with the chosen name can't be cast$/i, ['chosen-name']],
     // Ethersworn Canonist (D1231).
     [/^each player who has cast a nonartifact spell this turn can't cast additional nonartifact spells$/i, ['each-one-nonartifact']],
+    // Grafdigger's Cage, Weathered Runestone, Kunoros (D1241).
+    [/^players can't cast spells from graveyards or libraries$/i, ['no-graveyard-casts', 'no-library-casts']],
+    [/^players can't cast spells from graveyards$/i, ['no-graveyard-casts']],
     [/^during your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments$/i,
       ['opponents-no-spells-your-turn', 'opponents-no-abilities-your-turn']],
   ];
@@ -39091,6 +39094,21 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
         ...(nontoken ? {} : { tokens: true }),
       }],
     };
+  }
+  // Grafdigger's Cage, Kunoros, Soulless Jailer, Weathered Runestone (D1241): see `CardScript.enterBan`.
+  const banned = /^(creature|permanent|nonland permanent) cards in graveyards( and libraries)? can't enter the battlefield\.?$/i.exec(plain(line).trim());
+  if (banned !== null) {
+    const word = banned[1]!.toLowerCase();
+    return {
+      enterBan: {
+        from: banned[2] === undefined ? ['graveyard'] : ['graveyard', 'library'],
+        kind: word === 'creature' ? 'creature' : word === 'permanent' ? 'permanent' : 'nonland-permanent',
+      },
+    };
+  }
+  // Containment Priest (D1241): see `CardScript.exilesUncastCreatures`.
+  if (/^if a nontoken creature would enter(?: the battlefield)? and it wasn't cast, exile it instead\.?$/i.test(plain(line).trim())) {
+    return { exilesUncastCreatures: true };
   }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());

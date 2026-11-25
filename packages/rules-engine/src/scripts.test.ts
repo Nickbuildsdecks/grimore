@@ -8097,6 +8097,9 @@ describe('deck coverage', () => {
       // D1235: Underworld Breach; no pool deck plays one. Driven at runtime by "each nonland card in
       // your graveyard has escape" (D1235).
       'script grantsEscape',
+      // D1241: Grafdigger's Cage and Containment Priest; no pool deck plays one. Driven at runtime by
+      // "Grafdigger's Cage and Containment Priest (D1241)".
+      'script enterBan', 'script exilesUncastCreatures',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -44546,6 +44549,66 @@ describe('"Look at an opponent\'s hand, then choose any card name": Sorcerous Sp
   it('the bot names the dearest card with an ability in that hand', () => {
     expect(botAction(asked('Test Spyglass'), 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Wand' });
     expect(botAction(asked('Test Needle'), 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Font' });
+  });
+});
+
+describe('Grafdigger\'s Cage and Containment Priest (D1241)', () => {
+  const ROWS = [
+    { name: 'Test Cage', type_line: 'Artifact', oracle_text: "Creature cards in graveyards and libraries can't enter the battlefield.\nPlayers can't cast spells from graveyards or libraries.", mana_cost: '{0}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Jailer', type_line: 'Artifact Creature — Phyrexian Golem', oracle_text: "Permanent cards in graveyards can't enter the battlefield.\nPlayers can't cast spells from graveyards.", mana_cost: '{0}', cmc: 2, colors: [], layout: 'normal', power: '0', toughness: '4' },
+    { name: 'Test Priest', type_line: 'Creature — Human Cleric', oracle_text: "If a nontoken creature would enter and it wasn't cast, exile it instead.", mana_cost: '{0}', cmc: 2, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '{T}: Add {C}.', mana_cost: '{0}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Recall', type_line: 'Sorcery', oracle_text: 'Draw a card.\nFlashback {0}', mana_cost: '{0}', cmc: 1, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1241', name: 'Cage', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 36 }], data: ROWS as never[] });
+  const table = (mine: string[], yard: string[] = [], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1241', 1: 'd1241' }, deckSpecs: { d1241: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine }, graveyard: { 0: yard, 1: yard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const put = (s: GameState, id: string) => relocate(s, s.instances[id]!, 'battlefield', 0 as SeatIndex, 'top');
+  const where = (s: GameState, id: string) => s.instances[id]?.zone;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a creature card in a graveyard or a library stays there; a noncreature card does not', () => {
+    const s = table(['Test Cage'], ['Test Bear', 'Test Rock']);
+    const bear = find(s, 1, 'graveyard', 'Test Bear');
+    expect(where(put(s, bear), bear)).toBe('graveyard');
+    const rock = find(s, 1, 'graveyard', 'Test Rock');
+    expect(where(put(s, rock), rock)).toBe('battlefield');
+    const top = ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear')!;
+    expect(where(put(s, top), top)).toBe('library');
+    const open = table([], ['Test Bear']);
+    const free = find(open, 1, 'graveyard', 'Test Bear');
+    expect(where(put(open, free), free)).toBe('battlefield');
+  });
+
+  it('"permanent cards in graveyards" stops an artifact too, but not a library', () => {
+    const s = table(['Test Jailer'], ['Test Rock']);
+    const rock = find(s, 1, 'graveyard', 'Test Rock');
+    expect(where(put(s, rock), rock)).toBe('graveyard');
+    const top = ids(s, 0, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear')!;
+    expect(where(put(s, top), top)).toBe('battlefield');
+  });
+
+  it('flashback is refused under the Cage, offered without it', () => {
+    const recall = (s: GameState): Action => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Recall'), flashback: true, targets: [] } as Action);
+    const caged = table(['Test Cage', 'Island'], ['Test Recall']);
+    expect(refusal(caged, recall(caged))).toMatch(/graveyards/);
+    const open = table(['Island'], ['Test Recall']);
+    expect(refusal(open, recall(open))).toBeNull();
+  });
+
+  it('a creature that was not cast is exiled instead; one that was cast enters', () => {
+    const s = table(['Test Priest'], ['Test Bear'], ['Test Bear']);
+    const bear = find(s, 1, 'graveyard', 'Test Bear');
+    expect(where(put(s, bear), bear)).toBe('exile');
+    const cast = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear'), targets: [] } as Action)), 20);
+    expect(ids(cast, 0, 'battlefield').filter((id) => cast.cardDefs[cast.instances[id]!.defKey]?.name === 'Test Bear')).toHaveLength(1);
   });
 });
 
