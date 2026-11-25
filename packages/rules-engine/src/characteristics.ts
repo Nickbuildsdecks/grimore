@@ -2165,6 +2165,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'source-auras'; readonly atLeast: number }
     /** Hellbent and its cousins: "you have no cards in hand", "N or more cards in hand". */
     | { readonly kind: 'controller-hand'; readonly atLeast?: number; readonly atMost?: number }
+    /** "Your library has no cards in it" (D854, Jace, Wielder of Mysteries): the controller's library size. */
+    | { readonly kind: 'controller-library'; readonly atMost: number }
     /** "You control a Plains", "… a Gate": a printed subtype among your permanents. */
     | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
     /** "You have N or more life". */
@@ -2640,6 +2642,9 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
       if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'Aura')) attached += 1;
     }
     return attached >= cond.atLeast;
+  }
+  if (cond.kind === 'controller-library') {
+    return (state.zones[zoneKey(effect.controller, 'library')] ?? []).length <= cond.atMost;
   }
   if (cond.kind === 'controller-hand') {
     const held = (state.zones[zoneKey(effect.controller, 'hand')] ?? []).length;

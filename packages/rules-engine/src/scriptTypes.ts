@@ -1601,6 +1601,15 @@ export type TriggerEvent =
       readonly subject?: string;
     }
   /**
+   * "Whenever an opponent searches their library" (D863, Archivist of Oghma, Ob Nixilis, Unshackled):
+   * raised as a search of a library is answered or answers itself, once per search, the searching
+   * seat the actor. `by` is whose search, `you` by default.
+   */
+  | {
+      readonly kind: 'searches';
+      readonly by?: 'you' | 'opponent' | 'any';
+    }
+  /**
    * "Whenever you scry", "… surveil", "… scry or surveil" (D991): raised as a scry or surveil
    * question is answered, once per scry, whoever's ability asked it. `what` is which keyword the
    * trigger listens for (`either` for both); the engine sets `did` to the one that happened.
@@ -2007,6 +2016,11 @@ export interface CardsDecisionSpec {
    * question whose answer is a sequence rather than a set, and no card in the pool turns on it.
    */
   readonly look?: number;
+  /**
+   * For `library-top`: the number looked at when it is not printed (D853), "the top X cards of your
+   * library, where X is your devotion to blue" — counted live for the seat asked, in place of `look`.
+   */
+  readonly lookCount?: (state: GameState, seat: SeatIndex) => number;
   /**
    * For `library-top`: where the cards the chooser picks go. `'bottom'` by default (D452).
    *
@@ -3298,6 +3312,13 @@ export interface CardScript {
    * the permanent leaves or loses its abilities.
    */
   readonly noMaxHandSize?: true;
+  /**
+   * "If you would draw a card while your library has no cards in it, you win the game instead."
+   * (D852, CR 614.1a, 104.2a) — Laboratory Maniac, Jace, Wielder of Mysteries. Asked by `draw` of
+   * the drawing seat's permanents, live: a draw that finds the library empty wins instead of being
+   * recorded as an empty draw (CR 704.5b).
+   */
+  readonly winsOnEmptyDraw?: true;
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,

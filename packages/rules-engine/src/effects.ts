@@ -943,6 +943,12 @@ export const REGENERATION = 'regeneration';
  * answer survives (the same read a Hangarback Walker's death trigger makes).
  */
 export const UNEARTHED = 'unearthed';
+/**
+ * "If it would leave the battlefield, exile it instead of putting it anywhere else" (D859, Whip of
+ * Erebos): a marker on the permanent, read by `replaceZoneChange` off the `vanished` snapshot, so it
+ * holds however the permanent leaves and whatever became of the card that put it there.
+ */
+export const EXILED_ON_LEAVING = 'exiled-on-leaving';
 
 /**
  * The marker an **evoked** permanent carries, so its own sacrifice trigger can read it
@@ -1073,7 +1079,7 @@ export const IMPENDED = 'impended';
 /** Which kicker of a double kicker was paid (D1099): "if it was kicked with its {B} kicker". */
 export const KICKED_FIRST = 'kicked-first';
 export const KICKED_SECOND = 'kicked-second';
-export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND]);
+export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND]);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
@@ -1256,6 +1262,17 @@ export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
     return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
+  });
+}
+
+/** See `CardScript.winsOnEmptyDraw` (D852): a permanent of the seat's that wins it the game instead. */
+function winsOnEmptyDraw(state: GameState, seat: SeatIndex): boolean {
+  if (scriptLookup === null) return false;
+  const lookup = scriptLookup;
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+    return lookup(state.cardDefs[inst.defKey])?.winsOnEmptyDraw === true;
   });
 }
 
@@ -2034,6 +2051,12 @@ export function draw(state: GameState, seat: SeatIndex, count: number): GameStat
     : result.state.cardsDrawnThisTurn;
   // A player who could not draw has lost (CR 704.5b) — recorded here, acted on by state-based
   // actions, because losing is not Harmonize's business.
+  // D852: a Laboratory Maniac on the drawing seat's side wins instead (CR 614.1a).
+  if (result.drawn < count && winsOnEmptyDraw(result.state, seat)) {
+    const won = result.state.seats.reduce(
+      (s, other) => (other.index === seat || other.eliminated ? s : loseTheGame(s, other.index)), result.state);
+    return { ...won, drew, cardsDrawnThisTurn };
+  }
   if (result.drawn < count && !result.state.drewFromEmpty.includes(seat)) {
     return {
       ...result.state, drew, cardsDrawnThisTurn,
