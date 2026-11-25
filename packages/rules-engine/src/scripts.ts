@@ -37926,6 +37926,22 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  * pay this spell's mana cost" (Snuff Out, Rouse). See `CardScript.altCost`.
  */
 function altCostFromLine(line: string): Partial<CardScript> | null {
+  /*
+    And lands (D1252): "You may return an Island you control to its owner's hand" (Daze), "return
+    two Islands you control to their owner's hand" (Gush), "sacrifice two Mountains" (Fireblast),
+    "sacrifice a Mountain" (Crash's kin), each "rather than pay this spell's mana cost".
+  */
+  const landed = /^you may (return|sacrifice) (an?|two|three) (plains|islands?|swamps?|mountains?|forests?)(?: you control)?(?: to (?:its|their) owner's hand)? rather than pay this spell's mana cost$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (landed !== null) {
+    const how = landed[1]!.toLowerCase() as 'return' | 'sacrifice';
+    const returning = /to (?:its|their) owner's hand/i.test(line);
+    if ((how === 'return') !== returning) return null;
+    const count = /^an?$/i.test(landed[2]!) ? 1 : landed[2]!.toLowerCase() === 'two' ? 2 : 3;
+    const word = landed[3]!.toLowerCase().replace(/s$/, '');
+    const subtype = word === 'plain' ? 'Plains' : word.charAt(0).toUpperCase() + word.slice(1);
+    return { altCost: { lands: { how, count, subtype } } };
+  }
   const read = /^(?:if you control an? (plains|island|swamp|mountain|forest), )?you may pay (?:(\w+) life|((?:\{[^}]+\})+)) rather than pay this spell's mana cost$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (read === null) return null;

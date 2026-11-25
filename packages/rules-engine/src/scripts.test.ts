@@ -45288,6 +45288,47 @@ describe('A printed alternative of mana or life: Snuff Out, the Bringers (D1251)
   });
 });
 
+describe('Alternatives paid in lands: Daze, Gush, Fireblast (D1252)', () => {
+  const ROWS = [
+    { name: 'Test Daze', type_line: 'Instant', oracle_text: "You may return an Island you control to its owner's hand rather than pay this spell's mana cost.\nDraw a card.", mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal' },
+    { name: 'Test Blast', type_line: 'Instant', oracle_text: "You may sacrifice two Mountains rather than pay this spell's mana cost.\nTest Blast deals 4 damage to any target.", mana_cost: '{4}{R}{R}', cmc: 6, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1252', name: 'Daze', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 26 }, { name: 'Mountain', count: 26 }], data: ROWS as never[] });
+  const table = (hand: string[], lands: string[]) => advanceTo(arena({
+    decks: { 0: 'd1252', 1: 'd1252' }, deckSpecs: { d1252: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: lands }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const altPlay = (s: GameState, name: string) => legalActions(s, 0).plays
+    .find((p) => p.card === find(s, 0, 'hand', name) && (p as { altCast?: boolean }).altCast === true);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Island goes back to hand instead of the mana, and the spell resolves', () => {
+    const s0 = table(['Test Daze'], ['Island']);
+    const island = find(s0, 0, 'battlefield', 'Island');
+    const s = { ...s0, instances: { ...s0.instances, [island]: { ...s0.instances[island]!, tapped: true } } };
+    expect(altPlay(s, 'Test Daze')).toBeDefined();
+    const hand = ids(s, 0, 'hand').length;
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Daze'), altCast: true, targets: [] } as Action)), 20);
+    expect(t.instances[island]?.zone).toBe('hand');
+    // The Daze left, the Island came back, and a card was drawn.
+    expect(ids(t, 0, 'hand')).toHaveLength(hand + 1);
+    expect(altPlay(table(['Test Daze'], ['Mountain']), 'Test Daze')).toBeUndefined();
+  });
+
+  it('two Mountains sacrificed instead of the mana; one is not enough', () => {
+    const s = table(['Test Blast'], ['Mountain', 'Mountain', 'Island']);
+    expect(altPlay(s, 'Test Blast')).toBeDefined();
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Blast'), altCast: true, targets: [{ kind: 'player', seat: 1 }] } as Action)), 20);
+    expect(namesIn(t, 0, 'battlefield')).toEqual(['Island']);
+    expect(life(t, 1)).toBe(life(s, 1) - 4);
+    expect(altPlay(table(['Test Blast'], ['Mountain', 'Island']), 'Test Blast')).toBeUndefined();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

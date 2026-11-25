@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -1085,6 +1085,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (lifeForCost > 0) next = loseLife(next, action.by, lifeForCost);
   // The pitch (D691): its life, and its card exiled, as the rest of the cost is paid.
   if (pitchLife > 0) next = loseLife(next, action.by, pitchLife);
+  // And an alternative paid in lands (D1252): Daze's Island back to hand, Fireblast's two Mountains.
+  if (altCast && script?.altCost?.lands !== undefined) {
+    const lands = landCostPlan(next, action.by, script.altCost.lands);
+    if (lands === null) throw new EngineError('RULE_NOT_APPLICABLE', `you do not control enough ${script.altCost.lands.subtype}s`);
+    next = script.altCost.lands.how === 'return' ? moveToHand(next, lands) : sacrifice(next, lands);
+  }
   if (pitchedForCost !== null) {
     const card = requireInstance(next, pitchedForCost);
     next = relocate(next, card, 'exile', card.owner, 'bottom');

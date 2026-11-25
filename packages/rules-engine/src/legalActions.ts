@@ -734,9 +734,21 @@ function payingFor(state: GameState, id: string, def: CardDef | undefined): Paym
  * Whether a printed alternative of mana or life is open to this seat now (D1251): the land type it
  * names controlled, and the life there to pay without losing the game.
  */
+/**
+ * The lands an alternative cost returns or sacrifices (D1252): `bouncePlan`'s order, tapped ones
+ * first and then the cheapest. `null` when there are too few.
+ */
+export function landCostPlan(
+  state: GameState, seat: SeatIndex, lands: { readonly count: number; readonly subtype: string },
+): readonly string[] | null {
+  return bouncePlan(state, seat, { count: lands.count, kind: 'land', subtype: lands.subtype }, '');
+}
+
 export function altCostOpen(
-  state: GameState, seat: SeatIndex, alt: { readonly life?: number; readonly ifControl?: string },
+  state: GameState, seat: SeatIndex,
+  alt: { readonly life?: number; readonly ifControl?: string; readonly lands?: { readonly count: number; readonly subtype: string } },
 ): boolean {
+  if (alt.lands !== undefined && landCostPlan(state, seat, alt.lands) === null) return false;
   if (alt.ifControl !== undefined && !listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
     const inst = state.instances[id];
     return inst !== undefined && characteristicsOf(state, inst).typeLine.subtypes.includes(alt.ifControl!);
@@ -2246,7 +2258,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         ...(script?.altCost === undefined || !altCostOpen(state, seat, script.altCost) ? [] : [{
           flag: 'altCast' as const,
           cost: script.altCost.mana ?? '{0}',
-          note: `alternative cost (${script.altCost.life === undefined ? script.altCost.mana ?? '{0}' : `${script.altCost.life} life`})`,
+          note: `alternative cost (${script.altCost.lands !== undefined
+            ? `${script.altCost.lands.how} ${script.altCost.lands.count === 1 ? `a ${script.altCost.lands.subtype}` : `${script.altCost.lands.count} ${script.altCost.lands.subtype}s`}`
+            : script.altCost.life === undefined ? script.altCost.mana ?? '{0}' : `${script.altCost.life} life`})`,
           specs: specsFor(script),
         }]),
         // Impending (D1097): cheaper, and not a creature until its time counters are gone.

@@ -4281,7 +4281,15 @@ export interface CardScript {
    * pay 4 life". `ifControl` is the basic land type the caster must control for the offer to
    * stand. Cast from the hand only, like every alternative cost here.
    */
-  readonly altCost?: { readonly mana?: string; readonly life?: number; readonly ifControl?: string };
+  readonly altCost?: {
+    readonly mana?: string; readonly life?: number; readonly ifControl?: string;
+    /**
+     * Lands of a basic type returned to their owner's hand, or sacrificed, instead of the mana
+     * (D1252): Daze and Gush return Islands, Fireblast sacrifices two Mountains. Which lands is the
+     * planner's answer, tapped ones first (see `landCostPlan`).
+     */
+    readonly lands?: { readonly how: 'return' | 'sacrifice'; readonly count: number; readonly subtype: string };
+  };
   /**
    * "Shuffle ~ into its owner's library" as the last sentence of a spell (D687): Green Sun's
    * Zenith, the Beacons, Kodama's Reach's cousins that recycle. As the spell resolves, its card
