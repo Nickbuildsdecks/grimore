@@ -33459,6 +33459,31 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * Meren of Clan Nel Toth (D1264): "choose target creature card in your graveyard. If that card's mana
+ * value is less than or equal to the number of experience counters you have, return it to the
+ * battlefield. Otherwise, put it into your hand." The comparison is made as it resolves, with the
+ * counters the player has then. A card no longer in the graveyard does nothing (CR 400.7).
+ */
+function merenReturn(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^choose (target creature card in your graveyard)\. if that card's mana value is less than or equal to (.+?), return it to the battlefield\. otherwise, put it into your hand\.?$/i.exec(text);
+  if (m === null) return null;
+  const spec = targetSpecFrom(m[1]!.replace(/ in your graveyard$/i, ' from your graveyard'), false) ?? targetSpecFrom(m[1]!, false);
+  const count = whereXCount(m[2]!, name);
+  if (spec === null || count === null) return null;
+  return {
+    targets: [spec],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      const card = id === null ? undefined : c.state.instances[id];
+      if (id === null || card === undefined || card.zone !== 'graveyard') return c.state;
+      const value = c.state.cardDefs[card.defKey]?.cmc ?? 0;
+      return value <= count(c) ? putOntoBattlefield(c.state, id, c.controller) : moveToHand(c.state, [id]);
+    },
+  };
+}
+
+/**
  * Gilded Drake (D1249): "exchange control of ~ and up to one target creature an opponent controls.
  * If you don't or can't make an exchange, sacrifice ~. This ability can't be countered except by
  * spells and abilities." The exchange is D1248's. Whether one was made is read off the board: the
@@ -33914,6 +33939,9 @@ function composeEffectsAsPrinted(
     const n = /^an?$/i.test(experienced[1]!) ? 1 : countFrom(experienced[1]!) ?? 1;
     return { effect: (c) => addSeatCounters(c.state, c.controller, 'experience', n) };
   }
+  // Meren of Clan Nel Toth (D1264): see `merenReturn`.
+  const meren = merenReturn(clauses, name);
+  if (meren !== null) return meren;
   // Tymna (D1259): see `payXLifeDrawX`.
   const paid = payXLifeDrawX(clauses, name);
   if (paid !== null) return paid;

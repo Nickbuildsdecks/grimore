@@ -45848,6 +45848,38 @@ describe('Experience counters (D1263)', () => {
   });
 });
 
+describe('Meren of Clan Nel Toth: back to the battlefield or to hand by experience (D1264)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    S('Test Meren', "Choose target creature card in your graveyard. If that card's mana value is less than or equal to the number of experience counters you have, return it to the battlefield. Otherwise, put it into your hand."),
+    { name: 'Test Ogre', type_line: 'Creature — Ogre', oracle_text: '', mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({ id: 'd1264', name: 'Meren', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[] });
+  const run = (experience: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1264', 1: 'd1264' }, deckSpecs: { d1264: deck.deck }, hands: { 0: ['Test Meren'] }, graveyard: { 0: ['Test Ogre'] },
+      battlefield: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, counters: { ...seat.counters, experience } } : seat)) };
+    const ogre = find(s, 0, 'graveyard', 'Test Ogre');
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Meren'), targets: [{ kind: 'card', id: ogre }] } as Action)), 20);
+    return t.instances[ogre]?.zone;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('mana value 3 with three experience counters: to the battlefield', () => {
+    expect(run(3)).toBe('battlefield');
+  });
+
+  it('with two: to the hand', () => {
+    expect(run(2)).toBe('hand');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
