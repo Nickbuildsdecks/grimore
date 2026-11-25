@@ -44552,6 +44552,56 @@ describe('"{0}: Attach ~ to target creature you control": Cranial Plating, Felid
   });
 });
 
+describe('"~ gets +2/+2 for each Aura attached to it": Kor Spiritdancer (D3016)', () => {
+  const ROWS = [
+    { name: 'Test Dancer', type_line: 'Creature — Kor Wizard', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '2',
+      oracle_text: 'Test Dancer gets +2/+2 for each Aura attached to it.' },
+    { name: 'Test Ward', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.' },
+    { name: 'Test Axe', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: 'Equipped creature gets +1/+0.\nEquip {0}' },
+    { name: 'Test Gauntlets', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: 'Equipped creature gets +1/+0 for each Equipment attached to it.\nEquip {0}' },
+  ];
+  const deck = customDeck({ id: 'd3016', name: 'Dancer', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 44 }], data: ROWS as never[] });
+  const table = (hand: string[], board: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd3016', 1: 'd3016' }, deckSpecs: { d3016: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Test Dancer', 'Grizzly Bears', ...board] }, turn: 5, firstSeat: 0,
+  } as never), 'precombat-main');
+  const enchant = (s: GameState, on: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ward'), targets: [{ kind: 'card', id: on }] } as Action)));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('+2/+2 per Aura on it, none for an Aura on another creature or for an Equipment', () => {
+    let s = table(['Test Ward', 'Test Ward', 'Test Ward'], ['Test Axe']);
+    const dancer = find(s, 0, 'battlefield', 'Test Dancer');
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect([power(s, dancer), toughness(s, dancer)]).toEqual([0, 2]);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Axe'), abilityIndex: 0, targets: [{ kind: 'card', id: dancer }] } as Action)));
+    expect([power(s, dancer), toughness(s, dancer)]).toEqual([1, 2]);
+    s = enchant(s, bear);
+    expect([power(s, dancer), toughness(s, dancer)]).toEqual([1, 2]);
+    s = enchant(s, dancer);
+    expect([power(s, dancer), toughness(s, dancer)]).toEqual([4, 5]);
+    // A second Aura on it is two of them: +4/+4 from the count and +2/+2 from the Auras themselves.
+    s = enchant(s, dancer);
+    expect([power(s, dancer), toughness(s, dancer)]).toEqual([7, 8]);
+  });
+
+  it('on an Equipment, "it" is the creature it is attached to (Golem-Skin Gauntlets)', () => {
+    let s = table([], ['Test Axe', 'Test Gauntlets']);
+    const bear = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const equip = (gear: string) => { s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', gear), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action))); };
+    equip('Test Gauntlets');
+    expect(power(s, bear)).toBe(3);
+    equip('Test Axe');
+    expect(power(s, bear)).toBe(5);
+  });
+});
+
 describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   const ROWS = [
     { name: 'Test Knuckles', type_line: 'Legendary Creature — Echidna', oracle_text: 'Treasure Hunter — At the beginning of your upkeep, if you control thirty or more artifacts, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },

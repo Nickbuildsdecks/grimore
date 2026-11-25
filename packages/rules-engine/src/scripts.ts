@@ -36100,6 +36100,18 @@ function staticCountOf(thing: string, name: string): StaticCountable | null {
   }
   if (/^artifacts? you control$/i.test(text)) return { kind: 'artifacts-you-control' };
   /*
+    "~ gets +2/+2 for each Aura attached to it" (D3016, Kor Spiritdancer, Rabid Wombat), and
+    "Equipment" or "Aura and Equipment": `attached-to-self`.
+  */
+  const onIt = new RegExp(`^(auras?|equipment|auras? and equipment) attached to (?:it|${self})$`, 'i').exec(text);
+  if (onIt !== null) {
+    const word = onIt[1]!.toLowerCase();
+    return {
+      kind: 'attached-to-self',
+      subtypes: word.startsWith('aura') && word.includes('equipment') ? ['aura', 'equipment'] : word.startsWith('aura') ? ['aura'] : ['equipment'],
+    };
+  }
+  /*
     Card types on the battlefield (D604): "artifact and/or enchantment you control" (All That
     Glitters), "enchantment you control" (Helm of the Gods), "land on the battlefield". Read off the
     printed type line, metalcraft's compromise. **Not "creature"**: D523 refuses that count here,
