@@ -62894,3 +62894,42 @@ X = 3 deals 3 to each of two targets. The gate was restarted once, because that 
 written into the test file while the first run was going.
 
 Gated together on f64cc0c: full gate green, engine tests 6642. Coverage: 16,858 to 16,886 of 31,900 cards with every line read, and 39,404 to 39,434 of 59,888 lines.
+
+## D1230 — "Players can't untap more than one land during their untap steps"
+
+Winter Orb ("As long as Winter Orb is untapped, players can't untap more than one land during their
+untap steps"), Static Orb ("… two permanents"), Damping Field and Imi Statue ("… one artifact"),
+Smoke and Stoic Angel ("… one creature"), Winter Moon ("… one nonbasic land"), and Mungha Wurm's
+"You can't untap more than one land during your untap step". A new script field, `untapLimit`,
+read live off every permanent as each untap step begins; "as long as ~ is untapped" holds only if
+the Orb is untapped at that moment. For each limit that reaches the active player, their tapped
+permanents of the kind beyond the first N stay tapped.
+
+**The engine chooses which permanents untap, for every player**: mana sources first, then the
+highest mana value, then board order. The rules give that choice to the player (CR 502.3); asking
+a person is not built yet, and this is the reading that costs a player least in nearly every game.
+
+Read whole now (8): Damping Field, Imi Statue, Mungha Wurm, Smoke, Static Orb, Stoic Angel, Winter
+Moon, Winter Orb.
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- Without a limit, all three lands untap.
+- An opponent's untapped Orb: one land untaps, and the creature still does.
+- A tapped Orb limits nothing.
+- "Two permanents": two of the four, lands first.
+- "You can't": its controller is limited, its opponent is not.
+
+Faults injected by hand: 5, all caught.
+- The limit never applied.
+- "As long as ~ is untapped" ignored.
+- "You" read as every player.
+- Mana sources chosen last.
+- One permanent too many untapped.
+
+The new field is listed among the mechanics the compiler reads that no built-in deck plays, with the
+runtime block above as its evidence.
+
+The coverage below includes the other session's D881 to D893, merged in before this was measured.
+
+Coverage: 16,905 of 31,900 cards (+36 over D1229's 16,869), 39,454 of 59,888 lines (+38).
