@@ -1753,6 +1753,8 @@ function triggerMatches(
         difference to the answer.
       */
       if (want.onNth !== undefined && e.nth !== want.onNth) return false;
+      // Orcish Bowmasters (D1245): not the draw step's own card.
+      if (want.exceptDrawStepFirst === true && e.drawStepFirst === true) return false;
       const by = want.by ?? 'you';
       if (by === 'you') return actorSeat === sourceSeat;
       if (by === 'opponent') return actorSeat !== sourceSeat;
@@ -4833,7 +4835,9 @@ function settle(state: GameState, before: GameState): GameState {
     // The ordinal travels with the event, because the running total cannot tell the first card of a
     // `draw(2)` from the second by the time either trigger is matched. See the `draws` event's
     // `onNth`, and miracle's note below, which found the same thing first.
-    for (const { seat, nth } of drawn) next = raise(next, { kind: 'draws', nth }, seat);
+    for (const { seat, nth } of drawn) {
+      next = raise(next, { kind: 'draws', nth, drawStepFirst: nth === 1 && next.step === 'draw' && next.activeSeat === seat }, seat);
+    }
     /*
       Discards, and then cycling, which is a discard that was also something more (D567).
 

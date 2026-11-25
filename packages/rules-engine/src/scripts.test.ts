@@ -77,6 +77,7 @@ const customDeck = (input: Parameters<typeof eagerDeck>[0]): ReturnType<typeof e
     get partnerRefused() { return built().partnerRefused; },
   };
 };
+import { draw as drawCards } from './effects.js';
 import { REGENERATION, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
 import { attackTaxFor, costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
@@ -44887,6 +44888,35 @@ describe('a three-way punisher: "unless they sacrifice a nonland permanent or di
   it('a land is not a nonland permanent, and an empty hand has nothing to discard', () => {
     expect(play(table([], ['Swamp']), 'Lose 3 life').offered).toBeUndefined();
     expect(play(table([], ['Test Rock']), 'Lose 3 life').offered).toEqual(['Lose 3 life', 'Sacrifice a nonland permanent']);
+  });
+});
+
+describe('Orcish Bowmasters: an opponent draws a card except the first in their draw step (D1245)', () => {
+  const ROWS = [
+    { name: 'Test Bowmasters', type_line: 'Creature — Orc Archer', oracle_text: 'Flash\nWhen Test Bowmasters enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, Test Bowmasters deals 1 damage to any target. Then amass Orcs 1.', mana_cost: '{0}', cmc: 2, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({ id: 'd1245', name: 'Bowmasters', entries: [{ name: 'Test Bowmasters', count: 4 }, { name: 'Swamp', count: 56 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1245', 1: 'd1245' }, deckSpecs: { d1245: deck.deck },
+    battlefield: { 0: ['Test Bowmasters'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const triggers = (s: GameState) => s.stackOrder.filter((id) => s.stackObjects[id]?.kind === 'triggered').length;
+  const drawn = (s: GameState) => engineSettle(drawCards(s, 1 as SeatIndex, 1), s);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an opponent's draw on my turn triggers it", () => {
+    expect(triggers(drawn(table()))).toBe(1);
+  });
+
+  it("the first card of their own draw step does not; a second card in that step does", () => {
+    const step = { ...table(), step: 'draw' as const, activeSeat: 1 as SeatIndex, cardsDrawnThisTurn: {} };
+    const first = drawn(step);
+    expect(triggers(first)).toBe(0);
+    expect(triggers(drawn(first))).toBe(1);
   });
 });
 

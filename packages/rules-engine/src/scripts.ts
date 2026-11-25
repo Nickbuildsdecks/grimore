@@ -21781,6 +21781,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever an opponent draws a card, (.+)$/i,
     on: [{ kind: 'draws', by: 'opponent' }],
   },
+  // Orcish Bowmasters (D1245): see `TriggerEvent.exceptDrawStepFirst`.
+  {
+    prologue: () => /^Whenever an opponent draws a card except the first one they draw in each of their draw steps, (.+)$/i,
+    on: [{ kind: 'draws', by: 'opponent', exceptDrawStepFirst: true }],
+  },
 ];
 
 /**

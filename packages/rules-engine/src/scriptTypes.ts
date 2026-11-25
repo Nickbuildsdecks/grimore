@@ -1699,6 +1699,13 @@ export type TriggerEvent =
       readonly onNth?: number;
       /** Set by the engine when it raises the event: this card's place in the seat's own turn. */
       readonly nth?: number;
+      /**
+       * "Except the first one they draw in each of their draw steps" (D1245, Orcish Bowmasters): the
+       * question. `drawStepFirst` is the engine's answer, set as it raises the event: the seat's first
+       * card this turn, drawn in its own draw step, the reading Notion Thief's exemption uses (D891).
+       */
+      readonly exceptDrawStepFirst?: true;
+      readonly drawStepFirst?: boolean;
     }
   /**
    * "Whenever another card is put into a graveyard from anywhere" (CR 400.7).
