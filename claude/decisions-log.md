@@ -62207,3 +62207,56 @@ Faults injected by script: 3 of 3 real faults caught: the check removed, the com
 the attacker's power, and the line left unread. A fourth fault broke the syntax and is not counted.
 
 Gated together on c07922b: engine tests 6526, all passing; full gate green. Coverage: 16,759 to 16,766 of 31,900 cards with every line read, and 39,281 to 39,288 of 59,888 lines. Card-by-card diff for D847: 0 lost, 2 gained.
+
+## D1227 — "Creatures entering don't cause abilities to trigger"
+
+Torpor Orb, Tocatli Honor Guard and Hushwing Gryff; Doorkeeper Thrull ("Artifacts and creatures
+entering …"); Hushbringer ("Creatures entering or dying …"). Two new script fields,
+`entriesDontTrigger` (the kinds) and `deathsDontTrigger`, read live off every permanent on the
+battlefield that still has its abilities. `raise` checks them before anything else, and an entry
+or a death of a silenced kind is not announced at all: not to the permanent's own "when this
+enters", not to the board's "whenever a creature enters", not to a death watch (D1222). A batch of
+arrivals ("one or more creatures enter") keeps only the arrivals that are not silenced, and is
+dropped if none are left. Replacement effects and "enters with" are not triggers, so they are
+untouched.
+
+Not read: Elesh Norn's "Permanents entering don't cause abilities of permanents your opponents
+control to trigger", which waits on its other line (an extra trigger, next).
+
+Read whole now (5): Doorkeeper Thrull, Hushbringer, Hushwing Gryff, Tocatli Honor Guard, Torpor Orb.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- Without a silencer, a creature's own enter trigger, a board watcher and a batch watcher all fire.
+- Torpor: none of the three fire for a creature; an artifact's enter trigger still does.
+- "Artifacts and creatures": the artifact's is silenced too.
+- "Or dying": a death fires nothing where, without Hushbringer, it did.
+
+Faults injected by hand: 5, all caught.
+- An entry never silenced.
+- A death never silenced.
+- The batch not filtered.
+- The artifact kind ignored.
+- Every entry silenced, not only creatures'.
+
+Pod sweep 83001 (100 games, D1223 build): 100 finished, no throw, no stall.
+
+The two new fields are listed among the mechanics the compiler reads that no built-in deck plays
+(the deck-coverage test), with the runtime block above as their evidence.
+
+**And the gate's `Timeout calling "onTaskUpdate"`, found and fixed.** Five gate and pregate runs in
+a row failed with that error beside every test passing. Running files on their own found it:
+`scripts.test.ts` alone reproduces it, and `playout.test.ts` alone does not. Every test in
+`scripts.test.ts` is synchronous, and vitest runs synchronous tests one after another without
+returning to the event loop, so the file is one unbroken stretch of work; once that passed 60
+seconds (76 now), the worker's pending reporter call timed out before it could read the reply already
+waiting for it. A file-level `afterEach` now yields to the event loop every hundred tests, and the
+file alone runs clean. Two smaller changes made on the way are kept, since both shorten unbroken
+stretches: the file's decks are built on first use rather than as the file is collected (a getter
+wrapper over `customDeck` in the test file only; collection went from 25 seconds to 8), and the long
+`playout.test.ts` games yield every few hundred moves and once a game, as `vitest.config.ts` asks.
+No assertion changed.
+
+The coverage below includes the other session's D847 to D850, merged in before this was measured.
+
+Coverage: 16,789 of 31,900 cards (+12 over D1226's 16,777), 39,316 of 59,888 lines (+12).
