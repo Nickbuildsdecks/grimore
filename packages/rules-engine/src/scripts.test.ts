@@ -40839,6 +40839,63 @@ describe('"prevent all combat damage that would be dealt this turn by <a group>"
   });
 });
 
+describe('one subject, several verbs: Archon of Cruelty (D842)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Cruelty', 'Sorcery', 'Target opponent sacrifices a creature, discards a card, and loses 3 life. You draw a card and gain 3 life.'),
+    R('Test Tithe', 'Sorcery', 'Each opponent discards a card and loses 2 life.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd842', name: 'Subjects', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const settle = (s0: GameState) => {
+    let s = s0;
+    for (let i = 0; i < 12; i++) {
+      if (s.pendingDecision !== null) {
+        const d = s.pendingDecision;
+        s = drain(apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, d.min ?? 1) } as Action), 30);
+        continue;
+      }
+      if (s.stackOrder.length === 0) break;
+      s = drain(passBoth(s), 30);
+    }
+    return s;
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the targeted opponent sacrifices, discards and loses 3; we draw and gain 3; one target throughout', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd842', 1: 'd842' }, deckSpecs: { d842: deck.deck },
+      hands: { 0: ['Test Cruelty'], 1: ['Test Bear', 'Test Bear'] }, battlefield: { 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const before = { hand0: ids(s, 0, 'hand').length - 1, hand1: ids(s, 1, 'hand').length, life0: life(s, 0), life1: life(s, 1) };
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Cruelty'), targets: [{ kind: 'player', seat: 1 }] } as Action);
+    s = settle(s);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(ids(s, 1, 'hand')).toHaveLength(before.hand1 - 1);
+    expect(life(s, 1)).toBe(before.life1 - 3);
+    expect(ids(s, 0, 'hand')).toHaveLength(before.hand0 + 1);
+    expect(life(s, 0)).toBe(before.life0 + 3);
+  });
+
+  it('each opponent discards and loses 2, in a pod of three; we are untouched', () => {
+    let s = advanceTo(arena({
+      seats: 3, format: 'pod',
+      decks: { 0: 'd842', 1: 'd842', 2: 'd842' }, deckSpecs: { d842: deck.deck },
+      hands: { 0: ['Test Tithe'], 1: ['Test Bear'], 2: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const before = [life(s, 0), life(s, 1), life(s, 2)];
+    const hands = [ids(s, 1, 'hand').length, ids(s, 2, 'hand').length];
+    s = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Tithe') } as Action));
+    expect([life(s, 0) - before[0]!, life(s, 1) - before[1]!, life(s, 2) - before[2]!]).toEqual([0, -2, -2]);
+    expect([ids(s, 1, 'hand').length, ids(s, 2, 'hand').length]).toEqual([hands[0]! - 1, hands[1]! - 1]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

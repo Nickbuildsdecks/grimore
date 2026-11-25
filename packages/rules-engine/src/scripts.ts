@@ -30595,6 +30595,32 @@ function emblemClause(clause: string, name: string): ReadEffect | null {
   return { effect: (c) => createEmblem(c.state, c.controller, text, name) };
 }
 
+/**
+ * One subject and several verbs (D842): "target opponent sacrifices a creature, discards a card, and
+ * loses 3 life" (Archon of Cruelty), "you draw a card and gain 3 life", "each opponent discards a
+ * card and loses 2 life". Each later verb is given its subject back as its own sentence: "That
+ * player" after a targeted player, so it stays one target, and the same words after "each …" and
+ * "you". Only where the next word is one of these verbs, so a list of objects ("a creature, an
+ * artifact, and …") is never cut.
+ */
+const THIRD_PERSON_VERBS = 'discards|loses|gains|draws|sacrifices|mills|creates|reveals|scries|surveils|exiles|shuffles';
+const SECOND_PERSON_VERBS = 'draw|gain|lose|discard|sacrifice|mill|create|scry|surveil';
+function distributeSubject(text: string): string {
+  return text.replace(
+    /(^|\.\s+|,\s+)(target opponent|target player|each opponent|each player|you) ([a-z]+)\b([^.]*)/gi,
+    (whole, lead: string, subject: string, verb: string, rest: string) => {
+      const you = /^you$/i.test(subject);
+      const verbs = you ? SECOND_PERSON_VERBS : THIRD_PERSON_VERBS;
+      if (!new RegExp(`^(?:${verbs})$`, 'i').test(verb)) return whole;
+      const cut = new RegExp(`(?:,\\s*and\\s+|,\\s+|\\s+and\\s+)(?=(?:${verbs})\\b)`, 'i');
+      const parts = `${verb}${rest}`.split(cut);
+      if (parts.length < 2) return whole;
+      const next = /^target/i.test(subject) ? 'That player' : subject.charAt(0).toUpperCase() + subject.slice(1);
+      return `${lead}${subject} ${parts[0]!}${parts.slice(1).map((part) => `. ${next} ${part}`).join('')}`;
+    },
+  );
+}
+
 function clausesOf(line: string): readonly string[] {
   /*
     "…, reveal it, then shuffle and put that card on top" is one step and not two (D602): cut at its
@@ -32253,13 +32279,33 @@ function copyTargetSpell(clauses: readonly string[]): ReadEffect | null {
   };
 }
 
+/** Set while `composeEffects` retries with the subject distributed (D842), so it retries once. */
+let distributing = 0;
+
 function composeEffects(
+  printedClauses: readonly string[], name: string, where: SubjectZone | null,
+): ReadEffect | null {
+  const asPrinted = composeEffectsAsPrinted(printedClauses, name, where);
+  if (asPrinted !== null || distributing > 0) return asPrinted;
+  /*
+    One subject, several verbs (D842): only when the clauses do not read as printed. "You gain 1
+    life and scry 1" and "you gain X life and draw X cards, where X is …" read as one clause, and
+    cut into sentences they do not, so the split is a fallback and can only add readings.
+  */
+  const joined = printedClauses.join('. ');
+  const distributed = distributeSubject(joined);
+  if (distributed === joined) return null;
+  distributing += 1;
+  try { return composeEffectsAsPrinted(clausesOf(distributed), name, where); } finally { distributing -= 1; }
+}
+
+function composeEffectsAsPrinted(
   printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   // A group whose X is announced in any clause (D1055): every X in it is that count. See `xAnnounced`.
   if (xAnnounced === 0 && printedClauses.some((clause) => /\bwhere X is\b/i.test(clause))) {
     xAnnounced += 1;
-    try { return composeEffects(printedClauses, name, where); } finally { xAnnounced -= 1; }
+    try { return composeEffectsAsPrinted(printedClauses, name, where); } finally { xAnnounced -= 1; }
   }
   // "You create a 2/2 black Zombie creature token" is "Create …" (D1143): the subject is the
   // controller either way, and it is printed after a clause about another player (No Way Out).
