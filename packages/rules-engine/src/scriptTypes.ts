@@ -4276,6 +4276,13 @@ export interface CardScript {
     readonly notYourTurn?: true;
   };
   /**
+   * "You may pay X rather than pay this spell's mana cost" (D1251), where X is mana or life:
+   * the Bringers' "{W}{U}{B}{R}{G}", and Snuff Out's and Rouse's "If you control a Swamp, you may
+   * pay 4 life". `ifControl` is the basic land type the caster must control for the offer to
+   * stand. Cast from the hand only, like every alternative cost here.
+   */
+  readonly altCost?: { readonly mana?: string; readonly life?: number; readonly ifControl?: string };
+  /**
    * "Shuffle ~ into its owner's library" as the last sentence of a spell (D687): Green Sun's
    * Zenith, the Beacons, Kodama's Reach's cousins that recycle. As the spell resolves, its card
    * goes into its owner's library, which is shuffled, instead of into a graveyard (CR 608.2n). A

@@ -2532,6 +2532,8 @@ function candidateActions(
             ...(play.commanderFree === true ? { commanderFree: true } : {}),
             // And the pitch (D691): the card it exiles rides as `discarded`, chosen above.
             ...(play.pitchCast === true ? { pitchCast: true } : {}),
+            // And a printed mana or life alternative (D1251).
+            ...(play.altCast === true ? { altCast: true } : {}),
             // And Bolas's Citadel's life (D731): sent without it, a cast off the top the engine refuses.
             ...(play.payLifeFromTop === true ? { payLifeFromTop: true } : {}),
             // And retrace, flashback's zone again (D601): sent without it, the land the bot chose
@@ -4956,7 +4958,7 @@ const playKey = (play: LegalPlay): string =>
   + `${play.evoked === true ? 'e' : ''}${play.dashed === true ? 'd' : ''}`
   + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
   + `${play.overloaded === true ? 'o' : ''}`
-  + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}${play.payLifeFromTop === true ? 'l' : ''}`
+  + `${play.commanderFree === true ? 'f' : ''}${play.pitchCast === true ? 'p' : ''}${play.payLifeFromTop === true ? 'l' : ''}${play.altCast === true ? 'x' : ''}`
   // And casualty (D923): the cast that sacrifices and copies is a different play from the one that does not.
   + `${play.casualty === true ? 'c' : ''}${play.conspire === true ? 'n' : ''}${play.emerged === true ? 'm' : ''}${play.awakened === true ? 'a' : ''}${play.prototyped === true ? 'r' : ''}${play.preparedCopy === true ? 'q' : ''}`
   // And replicate's count, for the same reason one step further: the three castings of a Pyromatics

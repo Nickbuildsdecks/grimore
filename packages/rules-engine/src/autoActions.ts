@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -626,10 +626,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const prototyped = action.prototyped === true;
   // And impending (D1097).
   const impended = action.impended === true;
-  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened || prototyped || impended) {
+  // And a printed mana or life alternative (D1251).
+  const altCast = action.altCast === true;
+  if (evoked || dashed || bestowed || spectacled || overloaded || commanderFree || pitchCast || awakened || prototyped || impended || altCast) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
       : spectacled ? 'spectacle' : overloaded ? 'overload' : pitchCast ? 'pitch cost' : awakened ? 'awaken'
-        : prototyped ? 'prototype' : impended ? 'impending' : 'free cast';
+        : prototyped ? 'prototype' : impended ? 'impending' : altCast ? 'alternative cost' : 'free cast';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -639,13 +641,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
-      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped, impended].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped, impended, altCast].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
     if ((evoked ? script?.evoke : dashed ? script?.dash
       : bestowed ? script?.bestow : spectacled ? script?.spectacle
         : overloaded ? script?.overload : pitchCast ? script?.pitch : awakened ? script?.awaken
-          : prototyped ? script?.prototype : impended ? script?.impending : script?.freeWithCommander) === undefined) {
+          : prototyped ? script?.prototype : impended ? script?.impending : altCast ? script?.altCost : script?.freeWithCommander) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
     }
     // Spectacle, and surge (D928), prowl and freerunning (D935): one flag, four conditions.
@@ -654,6 +656,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (refusal !== null) throw new EngineError('RULE_NOT_APPLICABLE', refusal);
     if (commanderFree && !controlsACommander(state, action.by)) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'you do not control a commander');
+    }
+    if (altCast && script?.altCost !== undefined && !altCostOpen(state, action.by, script.altCost)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', script.altCost.ifControl === undefined
+        ? `you do not have the life to pay ${characteristics.name}'s alternative cost`
+        : `you need to control a ${script.altCost.ifControl} to pay ${characteristics.name}'s alternative cost`);
     }
     if (pitchCast && script?.pitch?.notYourTurn === true && state.activeSeat === action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that pitch cost is only payable when it is not your turn');
@@ -806,6 +813,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} does not ask for a discard`);
   }
   const pitchLife = pitchCast ? script?.pitch?.life ?? 0
+    // A printed life alternative (D1251): Snuff Out's 4.
+    : altCast ? script?.altCost?.life ?? 0
     // Bolas's Citadel's (D731): the mana value of the face cast, paid the same way.
     : payLifeFromTop ? def?.cmc ?? 0 : 0;
   if (!canPayLife(state, action.by, pitchLife)) {
@@ -874,6 +883,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                   : action.emerged === true && sacrificed !== null
                     ? reducedCostText(script?.emerge?.cost ?? '', state.cardDefs[state.instances[sacrificed]!.defKey]?.cmc ?? 0) ?? undefined
                   // And a plotted card's later cast (D922): without paying its mana cost.
+                  // A printed mana alternative (D1251): the Bringers' five colours, or nothing for life.
+                  : altCast ? script?.altCost?.mana ?? '{0}'
                   : commanderFree || pitchCast || plotCast || payLifeFromTop ? '{0}'
                   : kicked ? `${def?.manaCost ?? ''}${kickerCost}`
                   // And buyback, which adds on top exactly as the kicker does — what differs

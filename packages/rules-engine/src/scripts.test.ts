@@ -8101,6 +8101,9 @@ describe('deck coverage', () => {
       // D1241: Grafdigger's Cage and Containment Priest; no pool deck plays one. Driven at runtime by
       // "Grafdigger's Cage and Containment Priest (D1241)".
       'script enterBan', 'script exilesUncastCreatures',
+      // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
+      // alternative of mana or life: Snuff Out, the Bringers (D1251)".
+      'script altCost',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -19286,7 +19289,6 @@ describe('"You control enchanted creature" (D938)', () => {
       battlefield: { 0: ['Island', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
     }), 'precombat-main');
     const action = botAction(s, 0) as { type: string; card?: string; targets?: Target[] };
-    console.log('BOTACT', JSON.stringify(action));
     expect(action.type).toBe('auto:cast');
     const target = action.targets?.[0];
     expect(target?.kind === 'card' ? s.instances[target.id]!.zoneSeat : null).toBe(1);
@@ -45244,6 +45246,45 @@ describe('Mana Crypt: "If you lose the flip" alone (D1250)', () => {
       expect(lost).toBe(flip?.won === false ? 3 : 0);
     }
     expect([...losses].sort()).toEqual([0, 3]);
+  });
+});
+
+describe('A printed alternative of mana or life: Snuff Out, the Bringers (D1251)', () => {
+  const ROWS = [
+    { name: 'Test Snuff', type_line: 'Instant', oracle_text: "If you control a Swamp, you may pay 4 life rather than pay this spell's mana cost.\nDestroy target nonblack creature.", mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal' },
+    { name: 'Test Bringer', type_line: 'Creature — Elemental', oracle_text: "Trample\nYou may pay {W}{U}{B}{R}{G} rather than pay this spell's mana cost.", mana_cost: '{7}{W}', cmc: 8, colors: ['W'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1251', name: 'Snuff', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 24 }, { name: 'Island', count: 24 }], data: ROWS as never[] });
+  const table = (lands: string[]) => advanceTo(arena({
+    decks: { 0: 'd1251', 1: 'd1251' }, deckSpecs: { d1251: deck.deck }, hands: { 0: ['Test Snuff'] },
+    battlefield: { 0: lands, 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const altPlay = (s: GameState) => legalActions(s, 0).plays
+    .find((p) => p.card === find(s, 0, 'hand', 'Test Snuff') && (p as { altCast?: boolean }).altCast === true);
+  const snuff = (s: GameState): Action => ({
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Snuff'), altCast: true,
+    targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }],
+  } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with a Swamp and no mana to spare, it is offered for 4 life, and kills', () => {
+    const s = table(['Swamp']);
+    expect(altPlay(s)).toBeDefined();
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const t = drain(passBoth(apply(s, snuff(s))), 20);
+    expect(life(t, 0)).toBe(life(s, 0) - 4);
+    expect(t.instances[bear]?.zone).toBe('graveyard');
+  });
+
+  it('without a Swamp it is neither offered nor allowed', () => {
+    const s = table(['Island']);
+    expect(altPlay(s)).toBeUndefined();
+    expect(refusal(s, snuff(s))).toMatch(/Swamp/);
   });
 });
 

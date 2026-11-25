@@ -37920,6 +37920,27 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  * cost." Force of Will's "pay 1 life and" before it, and Force of Negation's "If it's not your
  * turn," in front. One card only: "exile two white cards" (Sunscour) is refused.
  */
+/**
+ * A printed alternative of mana or life (D1251): "You may pay {W}{U}{B}{R}{G} rather than pay this
+ * spell's mana cost" (the Bringers), and "If you control a Swamp, you may pay 4 life rather than
+ * pay this spell's mana cost" (Snuff Out, Rouse). See `CardScript.altCost`.
+ */
+function altCostFromLine(line: string): Partial<CardScript> | null {
+  const read = /^(?:if you control an? (plains|island|swamp|mountain|forest), )?you may pay (?:(\w+) life|((?:\{[^}]+\})+)) rather than pay this spell's mana cost$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (read === null) return null;
+  const life = read[2] === undefined ? undefined : WORD_NUMBERS[read[2].toLowerCase()] ?? (/^\d+$/.test(read[2]) ? Number(read[2]) : undefined);
+  if (read[2] !== undefined && life === undefined) return null;
+  const type = read[1] === undefined ? undefined : read[1].charAt(0).toUpperCase() + read[1].slice(1).toLowerCase();
+  return {
+    altCost: {
+      ...(read[3] === undefined ? {} : { mana: read[3] }),
+      ...(life === undefined ? {} : { life }),
+      ...(type === undefined ? {} : { ifControl: type }),
+    },
+  };
+}
+
 function pitchFromLine(line: string): Partial<CardScript> | null {
   const read = /^(if it's not your turn, )?you may (?:pay (\w+) life and )?exile an? (white|blue|black|red|green) card from your hand rather than pay this spell's mana cost$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
@@ -39458,6 +39479,8 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
   }
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)
+    // A printed mana or life alternative on a permanent card (D1251): the Bringers.
+    ?? altCostFromLine(line)
     /*
       A static about the **spell**, which a permanent card prints too: Carnage Tyrant, Thrun and
       Blurred Mongoose all say "This spell can't be countered", and the line is about the object on
@@ -40332,7 +40355,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       compiled.push(line);
       continue;
     }
-    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line) ?? pitchFromLine(line)
+    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line) ?? pitchFromLine(line) ?? altCostFromLine(line)
       ?? spellStaticFromLine(line) ?? selfCostChangeFromLine(line, name);
     if (keyword === null) {
       /*

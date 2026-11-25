@@ -282,6 +282,8 @@ export interface LegalPlay {
    */
   readonly pitchCast?: boolean;
   readonly pitchWords?: string;
+  /** Set on the play that casts the card for its printed mana or life alternative (D1251). */
+  readonly altCast?: boolean;
   /** Cast off the top of the library for life equal to its mana value (D731): Bolas's Citadel. */
   readonly payLifeFromTop?: boolean;
   /**
@@ -726,6 +728,20 @@ export function abilityLifeCost(state: GameState, seat: SeatIndex, cost: Ability
 /** What a spell's mana is being spent on, for a restricted source (D595, D697). */
 function payingFor(state: GameState, id: string, def: CardDef | undefined): PaymentFor {
   return { spell: parseTypeLine(def?.typeLine), commander: state.instances[id]?.isCommander === true };
+}
+
+/**
+ * Whether a printed alternative of mana or life is open to this seat now (D1251): the land type it
+ * names controlled, and the life there to pay without losing the game.
+ */
+export function altCostOpen(
+  state: GameState, seat: SeatIndex, alt: { readonly life?: number; readonly ifControl?: string },
+): boolean {
+  if (alt.ifControl !== undefined && !listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && characteristicsOf(state, inst).typeLine.subtypes.includes(alt.ifControl!);
+  })) return false;
+  return canPayLife(state, seat, alt.life ?? 0);
 }
 
 /** Colour words, for the pitch's offer (D691). */
@@ -2223,6 +2239,16 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
             note: `alternative cost (exile a ${COLOUR_NAMES[script.pitch.colour]} card from your hand${script.pitch.life === undefined ? '' : ` and pay ${script.pitch.life} life`})`,
             specs: specsFor(script),
           }]),
+        /*
+          A printed alternative of mana or life (D1251): the Bringers, Snuff Out. Offered while the
+          caster controls the land type it names, and has the life to pay without losing.
+        */
+        ...(script?.altCost === undefined || !altCostOpen(state, seat, script.altCost) ? [] : [{
+          flag: 'altCast' as const,
+          cost: script.altCost.mana ?? '{0}',
+          note: `alternative cost (${script.altCost.life === undefined ? script.altCost.mana ?? '{0}' : `${script.altCost.life} life`})`,
+          specs: specsFor(script),
+        }]),
         // Impending (D1097): cheaper, and not a creature until its time counters are gone.
         ...(script?.impending === undefined ? [] : [{
           flag: 'impended' as const,

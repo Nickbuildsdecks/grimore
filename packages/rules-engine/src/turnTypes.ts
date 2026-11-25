@@ -2035,6 +2035,11 @@ export interface AutoCastAction {
    */
   readonly pitchCast?: boolean;
   /**
+   * Cast it for its printed alternative cost of mana or life (D1251, `CardScript.altCost`). Refused
+   * on a card without one, or without the land type it names.
+   */
+  readonly altCast?: boolean;
+  /**
    * Cast the top card of your library for life equal to its mana value instead of its mana cost
    * (D731): Bolas's Citadel. Refused without such a permission or with the life not there.
    */
