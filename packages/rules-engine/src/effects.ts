@@ -1318,6 +1318,17 @@ function multipliedDamage(state: GameState, target: Target, amount: number, cont
   return total + added;
 }
 
+/** See `CardScript.cantLose` (D3009): a permanent of the seat's, face up and with its abilities, that says so. */
+export function cantLoseTheGame(state: GameState, seat: SeatIndex): boolean {
+  if (scriptLookup === null) return false;
+  const lookup = scriptLookup;
+  return listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+    return lookup(state.cardDefs[inst.defKey])?.cantLose === true;
+  });
+}
+
 /** See `CardScript.winsOnEmptyDraw` (D852): a permanent of the seat's that wins it the game instead. */
 function winsOnEmptyDraw(state: GameState, seat: SeatIndex): boolean {
   if (scriptLookup === null) return false;
@@ -2279,6 +2290,7 @@ export function miracleOffer(state: GameState, card: string, cost: string): Game
  */
 export function loseTheGame(state: GameState, seat: SeatIndex): GameState {
   if (state.seats[seat] === undefined || state.seats[seat]!.eliminated) return state;
+  if (cantLoseTheGame(state, seat)) return state;
   return replaceSeat(state, seat, { eliminated: true, eliminatedReason: 'effect' });
 }
 

@@ -3326,6 +3326,11 @@ export interface CardScript {
    */
   readonly noMaxHandSize?: true;
   /**
+   * "Each opponent's maximum hand size is reduced by seven" (D3007, Jin-Gitaxias, Core Augur): asked
+   * by `maxHandSize` of every other seat's permanents, live; it cannot go below zero.
+   */
+  readonly opponentsMaxHandSizeReduction?: number;
+  /**
    * "Creatures entering don't cause abilities to trigger." (D1227): Torpor Orb, Tocatli Honor Guard,
    * Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull). The kinds whose entry
    * fires nothing while this permanent is on the battlefield with its abilities: no "when this
@@ -3381,6 +3386,13 @@ export interface CardScript {
    */
   readonly winsOnEmptyDraw?: true;
   /**
+   * "You can't lose the game and your opponents can't win the game" (D3009, Platinum Angel): asked by
+   * `cantLoseTheGame` wherever a seat would be eliminated by the rules or by an effect (life, poison,
+   * commander damage, an empty library, "you lose the game"). An opponent winning is every other
+   * player losing, so the one flag covers both halves. A concession is not stopped (CR 104.3a).
+   */
+  readonly cantLose?: true;
+  /**
    * "If an opponent would draw a card except the first one they draw in each of their draw steps,
    * instead that player skips that draw and you draw a card." (D891, Notion Thief.) Asked by `draw`.
    */
@@ -3400,7 +3412,7 @@ export interface CardScript {
     readonly plus?: number;
     /** Only a source of this colour (D872, "a red source you control"), read live. */
     readonly colour?: Color;
-    /** Only a creature source (D900, Gratuitous Violence's "a creature you control"), read live. */
+    /** Only a creature source (D3000, Gratuitous Violence's "a creature you control"), read live. */
     readonly creatures?: true;
   };
   /**

@@ -38,6 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
+import { maxHandSize } from './automation.js';
 
 /**
  * `customDeck`, built on first use rather than as the file is collected (D1227).
@@ -8111,6 +8112,11 @@ describe('deck coverage', () => {
       // D891: Notion Thief; driven by "under our Thief, their Divination draws two for us". No pool deck
       // plays one.
       'script stealsExtraDraws',
+      // D3007: Jin-Gitaxias, Core Augur; driven by "the opponent's maximum hand size is 0". No pool deck
+      // plays one.
+      'script opponentsMaxHandSizeReduction',
+      // D3009: Platinum Angel; driven by "at 0 life we are still in". No pool deck plays one.
+      'script cantLose',
     ]);
 
     const declared = [
@@ -43910,7 +43916,7 @@ describe('"each nonland card in your graveyard has escape" (D1235)', () => {
   });
 });
 
-describe('double damage from creatures only: Gratuitous Violence (D900)', () => {
+describe('double damage from creatures only: Gratuitous Violence (D3000)', () => {
   const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
     name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
   });
@@ -43939,7 +43945,7 @@ describe('double damage from creatures only: Gratuitous Violence (D900)', () => 
   });
 });
 
-describe('"if you have exactly 13 cards in your hand": Triskaidekaphile (D901)', () => {
+describe('"if you have exactly 13 cards in your hand": Triskaidekaphile (D3001)', () => {
   const ROWS = [
     { name: 'Test Trisk', type_line: 'Creature — Human Wizard', oracle_text: 'You have no maximum hand size.\nAt the beginning of your upkeep, if you have exactly 13 cards in your hand, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '3' },
   ];
@@ -43964,7 +43970,7 @@ describe('"if you have exactly 13 cards in your hand": Triskaidekaphile (D901)',
   });
 });
 
-describe('two target players each draw a card: Gleaming Splendor (D902)', () => {
+describe('two target players each draw a card: Gleaming Splendor (D3002)', () => {
   const ROWS = [
     { name: 'Test Splendor', type_line: 'Artifact', oracle_text: '{0}: Two target players each draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
   ];
@@ -43987,7 +43993,7 @@ describe('two target players each draw a card: Gleaming Splendor (D902)', () => 
   });
 });
 
-describe('a wipe measured against a target: Fell the Mighty (D903)', () => {
+describe('a wipe measured against a target: Fell the Mighty (D3003)', () => {
   const C = (name: string, p: string) => ({ name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: p, toughness: '9' });
   const ROWS = [
     { name: 'Test Fell', type_line: 'Sorcery', oracle_text: "Destroy all creatures with power greater than target creature's power.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
@@ -44010,7 +44016,7 @@ describe('a wipe measured against a target: Fell the Mighty (D903)', () => {
   });
 });
 
-describe('half X, rounded down: Hydroid Krasis (D904)', () => {
+describe('half X, rounded down: Hydroid Krasis (D3004)', () => {
   const ROWS = [
     { name: 'Test Krasis', type_line: 'Creature — Jellyfish Hydra Beast', oracle_text: 'When you cast this spell, you gain half X life and draw half X cards. Round down each time.\nFlying, trample\nTest Krasis enters with X +1/+1 counters on it.', mana_cost: '{X}', cmc: 0, colors: ['G', 'U'], layout: 'normal', power: '0', toughness: '0' },
   ];
@@ -44169,6 +44175,212 @@ describe('"Spells with the chosen name can\'t be cast" (D1238)', () => {
   it('the bot names the dearest nonland card an opponent has shown', () => {
     const asked = castMage(table([], ['Test Bolt', 'Test Zenith']));
     expect(botAction(asked, 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Zenith' });
+  });
+});
+
+describe('"destroy all creatures that aren\'t enchanted": Winds of Rath (D3005)', () => {
+  const ROWS = [
+    { name: 'Test Winds', type_line: 'Sorcery', oracle_text: "Destroy all creatures that aren't enchanted. They can't be regenerated.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Halo', type_line: 'Enchantment — Aura', oracle_text: 'Enchant creature\nEnchanted creature gets +1/+1.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd3005', name: 'Winds', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Bear wearing the Halo lives; the bare Bears on both sides die', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3005', 1: 'd3005' }, deckSpecs: { d3005: deck.deck },
+      hands: { 0: ['Test Halo', 'Test Winds'] }, battlefield: { 0: ['Test Bear', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const [dressed] = ids(s, 0, 'battlefield');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Halo'), targets: [{ kind: 'card', id: dressed! }] })));
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Winds') })));
+    expect(s.instances[dressed!]!.zone).toBe('battlefield');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Bear')).toHaveLength(1);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+  });
+});
+
+describe('"for each black creature card in your graveyard": Crypt of Agadeem (D3006)', () => {
+  const ROWS = [
+    { name: 'Test Crypt', type_line: 'Land', oracle_text: '{T}: Add {B}.\n{2}, {T}: Add {B} for each black creature card in your graveyard.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Zombie', type_line: 'Creature — Zombie', oracle_text: '', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd3006', name: 'Crypt', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two black Zombies and a green Bear in the graveyard: {B}{B}', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3006', 1: 'd3006' }, deckSpecs: { d3006: deck.deck },
+      battlefield: { 0: ['Test Crypt'] }, graveyard: { 0: ['Test Zombie', 'Test Zombie', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 2 } } };
+    const crypt = find(s, 0, 'battlefield', 'Test Crypt');
+    // Read as Cabal Coffers is, an ability that resolves.
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: crypt, abilityIndex: 1 })));
+    expect(s.pools['0']!.B).toBe(2);
+  });
+});
+
+describe('"each opponent\'s maximum hand size is reduced by seven": Jin-Gitaxias, Core Augur (D3007)', () => {
+  const ROWS = [
+    { name: 'Test Jin', type_line: 'Legendary Creature — Phyrexian Praetor', oracle_text: "Flash\nAt the beginning of your end step, draw seven cards.\nEach opponent's maximum hand size is reduced by seven.", mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '5', toughness: '4' },
+  ];
+  const deck = customDeck({ id: 'd3007', name: 'Jin', entries: [{ name: 'Test Jin', count: 4 }, { name: 'Island', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the opponent\'s maximum hand size is 0; ours stays 7; it returns when Jin is gone', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3007', 1: 'd3007' }, deckSpecs: { d3007: deck.deck }, battlefield: { 0: ['Test Jin'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    expect([maxHandSize(s, 0), maxHandSize(s, 1)]).toEqual([7, 0]);
+    const jin = find(s, 0, 'battlefield', 'Test Jin');
+    s = { ...s, instances: { ...s.instances, [jin]: { ...s.instances[jin]!, zone: 'graveyard' } }, zones: { ...s.zones, '0:battlefield': [] } };
+    expect(maxHandSize(s, 1)).toBe(7);
+  });
+});
+
+describe('"whenever a creature is exiled from the battlefield", compiled (D3008)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Herder', 'Creature — Spirit', 'Whenever a creature is exiled from the battlefield, put a +1/+1 counter on Test Herder.', { power: '1', toughness: '1' }),
+    R('Test Path', 'Instant', 'Exile target creature.', { colors: ['W'] }),
+    R('Test Murder', 'Instant', 'Destroy target creature.', { colors: ['B'] }),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd3008', name: 'Herder', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('exiling their Bear grows the Herder; destroying one does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3008', 1: 'd3008' }, deckSpecs: { d3008: deck.deck },
+      hands: { 0: ['Test Path', 'Test Murder'] }, battlefield: { 0: ['Test Herder'], 1: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const herder = find(s, 0, 'battlefield', 'Test Herder');
+    const [a, b] = ids(s, 1, 'battlefield');
+    const cast = (spell: string, id: string) => {
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id }] })));
+      for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    };
+    cast('Test Murder', a!);
+    expect(s.instances[herder]!.counters['+1/+1'] ?? 0).toBe(0);
+    cast('Test Path', b!);
+    expect(s.instances[herder]!.counters['+1/+1']).toBe(1);
+  });
+});
+
+describe('"you can\'t lose the game and your opponents can\'t win the game": Platinum Angel (D3009)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Angel', 'Artifact Creature — Angel', "Flying\nYou can't lose the game and your opponents can't win the game.", { power: '4', toughness: '4' }),
+    R('Test Revel', 'Sorcery', 'You win the game.', { colors: ['B'] }),
+    R('Test Murder', 'Instant', 'Destroy target creature.', { colors: ['B'] }),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.', { colors: ['R'] }),
+  ];
+  const deck = customDeck({ id: 'd3009', name: 'Angel', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const table = (hand1: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd3009', 1: 'd3009' }, deckSpecs: { d3009: deck.deck }, hands: { 1: hand1 },
+    battlefield: { 0: ['Test Angel'] }, turn: 3, firstSeat: 1,
+  } as never), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('shocked to 0 life we are still in, and out once the Angel dies', () => {
+    let s = table(['Test Shock', 'Test Murder']);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 2 } : seat)) };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Shock'), targets: [{ kind: 'player', seat: 0 }] })), 10);
+    expect([life(s, 0), s.seats[0]!.eliminated]).toEqual([0, false]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Murder'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Angel') }] })), 10);
+    expect(s.seats[0]!.eliminated).toBe(true);
+  });
+
+  it('only its controller: the opponent, shocked to 0 by us, is out', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3009', 1: 'd3009' }, deckSpecs: { d3009: deck.deck }, hands: { 0: ['Test Shock'] },
+      battlefield: { 0: ['Test Angel'], 1: ['Swamp'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, life: 2 } : seat)) };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shock'), targets: [{ kind: 'player', seat: 1 }] })), 10);
+    expect(s.seats[1]!.eliminated).toBe(true);
+  });
+
+  it('their "you win the game" does not take us out', () => {
+    let s = table(['Test Revel']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Revel') })), 10);
+    expect([s.seats[0]!.eliminated, s.seats[1]!.eliminated]).toEqual([false, false]);
+  });
+});
+
+describe('"enters or dies" as two triggers: Daxos, Blessed by the Sun (D3010)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Daxos', 'Legendary Enchantment Creature — Demigod', 'Whenever another creature you control enters or dies, you gain 1 life.', { power: '2', toughness: '2' }),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    R('Test Murder', 'Instant', 'Destroy target creature.', { colors: ['B'] }),
+  ];
+  const deck = customDeck({ id: 'd3010', name: 'Daxos', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Bear entering gains 1, and its death another 1', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3010', 1: 'd3010' }, deckSpecs: { d3010: deck.deck },
+      hands: { 0: ['Test Bear', 'Test Murder'] }, battlefield: { 0: ['Test Daxos'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const settle = () => { for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s)); };
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bear') }))); settle();
+    expect(life(s, 0)).toBe(21);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Murder'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }] }))); settle();
+    expect(life(s, 0)).toBe(22);
+  });
+});
+
+describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
+  const ROWS = [
+    { name: 'Test Knuckles', type_line: 'Legendary Creature — Echidna', oracle_text: 'Treasure Hunter — At the beginning of your upkeep, if you control thirty or more artifacts, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd3011', name: 'Knuckles', entries: [{ name: 'Test Knuckles', count: 2 }, { name: 'Test Rock', count: 31 }, { name: 'Mountain', count: 27 }], data: ROWS as never[] });
+  const upkeep = (rocks: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3011', 1: 'd3011' }, deckSpecs: { d3011: deck.deck },
+      battlefield: { 0: ['Test Knuckles', ...Array.from({ length: rocks }, () => 'Test Rock')] }, turn: 2, firstSeat: 1,
+    } as never), 'precombat-main');
+    s = nextTurn(s);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    return [namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Rock').length, s.seats[1]!.eliminated];
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('thirty artifacts at our upkeep win; twenty-nine do not', () => {
+    expect(upkeep(30)).toEqual([30, true]);
+    expect(upkeep(29)).toEqual([29, false]);
   });
 });
 

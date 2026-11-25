@@ -220,6 +220,18 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     the draw when the unblocked hit would be lethal — which the compiled "may" has no way to say.
     The hand-written script is the one played, so nothing changes at the table.
   */
+  /*
+    D3008: Soulherder's exile trigger compiles now (a TRIGGER_SHAPES row for "is exiled from the
+    battlefield"), so the whole card does, and the rules agree. The two spell the printed "you may"
+    differently: the compiled end step asks yes or no over a required target, and the hand-written
+    one takes "up to one target", the shape the D576 comment explains. Both decline cleanly and both
+    blink the same creature. The hand-written script is the one played, so nothing changes at the table.
+  */
+  Soulherder: {
+    why: 'the printed "may" is a yes-or-no decision when compiled and an optional target when hand-written',
+    keys: ['triggers'],
+    digest: '8c6fd445',
+  },
   Ophidian: {
     why: 'the hand-written trigger carries a bot heuristic (decline the draw when the hit is lethal)',
     keys: ['triggers'],

@@ -7,7 +7,7 @@ import {
   isFormatId,
 } from './formats.js';
 import { commandersOf, dealOpeningHands, listAt, reduceCardAction } from './cardActions.js';
-import { returnExiledBy } from './effects.js';
+import { cantLoseTheGame, returnExiledBy } from './effects.js';
 import { zoneKey, type CardInstance, type ZoneId } from './cards.js';
 import { reduceAutoAction } from './autoActions.js';
 import { answerDecision, pendingDeclaration, stateBasedActions } from './automation.js';
@@ -464,7 +464,8 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
     ) {
       reason = 'commanderDamage';
     }
-    if (reason !== null) {
+    // Platinum Angel (D3009): the rules do not take a seat that can't lose.
+    if (reason !== null && !cantLoseTheGame(next, seat.index)) {
       next = replaceSeat(next, seat.index, { eliminated: true, eliminatedReason: reason });
       eliminations.push({ seat: seat.index, reason });
     }
