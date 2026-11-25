@@ -28920,9 +28920,64 @@ export function withXPayable<T>(payable: boolean, read: () => T): T {
   try { return read(); } finally { xPayable = was; }
 }
 
+/**
+ * **"Copy target triggered ability you control. You may choose new targets for the copy."** (D1225),
+ * the compiled form of the Strionic Resonator the pool has had written by hand since the stack could
+ * hold an ability: "activated or triggered" (Lithoform Engine, Peter Parker's Camera), and the source
+ * named — "from an artifact source" (Tawnos, Urza's Apprentice), "a creature source", "an
+ * enchantment source", "a colorless source", "another legendary source that's not a commander" (The
+ * Peregrine Dynamo). The source is read live where it still is on the battlefield, and as printed
+ * where it has gone. One copy, with the printed retarget question (`NEW_TARGETS_FOR_THE_COPY`).
+ * "Twice" and "X times" are not read: each copy may be pointed somewhere else, and one question
+ * cannot say where both go.
+ */
+function abilityCopyEffect(clause: string): ReadEffect | null {
+  const read = /^copy target (activated or triggered|triggered|activated) ability you control(?: from (an?|another) (artifact|creature|enchantment|colorless|legendary) source( that's not a commander)?)?\u0016$/i
+    .exec(clause.trim().replace(/\.$/, ''));
+  if (read === null) return null;
+  const which = read[1]!.toLowerCase();
+  const kind = read[3]?.toLowerCase();
+  const another = read[2]?.toLowerCase() === 'another';
+  // "Another" is printed only with "legendary", and "not a commander" only after it.
+  if ((another || read[4] !== undefined) !== (kind === 'legendary')) return null;
+  const fromSource = (state: GameState, source: string, self: string): boolean => {
+    if (kind === undefined) return true;
+    if (another && source === self) return false;
+    const inst = state.instances[source] ?? state.vanished[source];
+    if (inst === undefined) return false;
+    if (read[4] !== undefined && inst.isCommander === true) return false;
+    const live = inst.zone === 'battlefield' ? characteristicsOf(state, inst) : null;
+    const line = live?.typeLine ?? parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+    if (kind === 'colorless') return (live?.colors ?? state.cardDefs[inst.defKey]?.colors ?? []).length === 0;
+    if (kind === 'legendary') return isLegendary(line);
+    return hasType(line, kind);
+  };
+  const description = `target ${which} ability you control${kind === undefined ? '' : ` from ${read[2]!} ${kind} source${read[4] ?? ''}`}`;
+  return {
+    targets: [{
+      kind: 'ability',
+      description,
+      filter: (state, candidate, controller, self) => {
+        if (candidate.kind !== 'ability') return false;
+        const object = state.stackObjects[candidate.id];
+        if (object === undefined || object.kind === 'spell' || object.controller !== controller) return false;
+        if (which !== 'activated or triggered' && object.kind !== which) return false;
+        return fromSource(state, object.source, self ?? '');
+      },
+    }],
+    decisions: [NEW_TARGETS_FOR_THE_COPY],
+    effect: (c) => {
+      const id = firstAbilityTarget(c);
+      return id === null ? c.state : copyAbilityOnStack(c.state, id, c.controller, c.decisions[0]?.target);
+    },
+  };
+}
+
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
+  const copied = abilityCopyEffect(clause);
+  if (copied !== null) return copied;
   if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
     xAnnounced += 1;
     try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
@@ -30696,6 +30751,8 @@ function clausesOf(line: string): readonly string[] {
   const BACK = ', then put them back in any order';
   const LIFE_LOST = ', and you gain life equal to the life lost this way';
   return plain(line)
+    // A copied ability and its retarget (D1225) are one question: see `abilityCopyEffect`.
+    .replace(/(copy target (?:activated or triggered|triggered|activated) ability you control[^.]*?)\.\s+You may choose new targets for the copy(?=\.|$)/gi, '$1\u0016')
     /*
       Counters of two or three kinds in one sentence (D1224): "Put a +1/+1 counter and a lifelink
       counter on target creature" (Unexpected Fangs), "Put a flying counter, a deathtouch counter, and

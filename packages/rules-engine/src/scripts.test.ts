@@ -41343,6 +41343,72 @@ describe('counters of two or three kinds in one sentence (D1224)', () => {
   });
 });
 
+describe('copying an ability on the stack, read from the card (D1225)', () => {
+  const A = (name: string, text: string, type = 'Artifact') => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    A('Test Resonator', '{0}, {T}: Copy target triggered ability you control. You may choose new targets for the copy.'),
+    A('Test Camera', '{0}, {T}: Copy target activated or triggered ability you control. You may choose new targets for the copy.'),
+    A('Test Tinker', '{0}, {T}: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy.'),
+    { name: 'Test Healer', type_line: 'Creature — Cleric', oracle_text: 'When this creature enters, you gain 2 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    A('Test Relic', 'When this artifact enters, you gain 2 life.'),
+    A('Test Font', '{0}: You gain 1 life.'),
+  ];
+  const deck = customDeck({ id: 'd1225', name: 'Copies', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 42 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  /** Seat 0 has `copier` (and a Font) out, casts `card`, and stops with its enter trigger on the stack. */
+  const withTrigger = (copier: string, card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1225', 1: 'd1225' }, deckSpecs: { d1225: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: ['Plains', copier, 'Test Font'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [] } as Action);
+    for (let i = 0; i < 4 && !s.stackOrder.some((id) => s.stackObjects[id]!.kind === 'triggered'); i++) s = passBoth(s);
+    const trigger = s.stackOrder.find((id) => s.stackObjects[id]!.kind === 'triggered')!;
+    return { s, trigger, copier: find(s, 0, 'battlefield', copier) };
+  };
+  const copy = (s: GameState, copier: string, id: string): Action => ({
+    type: 'auto:activate', by: 0, card: copier, abilityIndex: 0, targets: [{ kind: 'ability', id }],
+  } as Action);
+
+  it('reads whole; "twice" stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const twice = compileCard(A('Test Twice', '{0}, {T}: Copy target triggered ability you control twice. You may choose new targets for the copies.') as never);
+    expect(twice.ok && twice.unread.length).toBe(1);
+  });
+
+  it('a copied enter trigger gains the life twice', () => {
+    const { s, trigger, copier } = withTrigger('Test Resonator', 'Test Healer');
+    expect(trigger).toBeDefined();
+    const after = settle(apply(s, copy(s, copier, trigger)));
+    expect(life(after, 0)).toBe(24);
+  });
+
+  it('"triggered" only: an activated ability is not a target; "activated or triggered" takes it', () => {
+    let { s, copier } = withTrigger('Test Resonator', 'Test Healer');
+    const font = find(s, 0, 'battlefield', 'Test Font');
+    s = apply(s, { type: 'auto:activate', by: 0, card: font, abilityIndex: 0 } as Action);
+    const activated = s.stackOrder.find((id) => s.stackObjects[id]!.kind === 'activated')!;
+    expect(refusal(s, copy(s, copier, activated))).not.toBeNull();
+    let camera = withTrigger('Test Camera', 'Test Healer');
+    const font2 = find(camera.s, 0, 'battlefield', 'Test Font');
+    let t = apply(camera.s, { type: 'auto:activate', by: 0, card: font2, abilityIndex: 0 } as Action);
+    const activated2 = t.stackOrder.find((id) => t.stackObjects[id]!.kind === 'activated')!;
+    expect(refusal(t, copy(t, camera.copier, activated2))).toBeNull();
+    t = settle(apply(t, copy(t, camera.copier, activated2)));
+    // The Healer's 2 and the Font's 1, twice.
+    expect(life(t, 0)).toBe(24);
+  });
+
+  it('"from an artifact source": an artifact\'s trigger, not a creature\'s', () => {
+    const creature = withTrigger('Test Tinker', 'Test Healer');
+    expect(refusal(creature.s, copy(creature.s, creature.copier, creature.trigger))).not.toBeNull();
+    const artifact = withTrigger('Test Tinker', 'Test Relic');
+    const after = settle(apply(artifact.s, copy(artifact.s, artifact.copier, artifact.trigger)));
+    expect(life(after, 0)).toBe(24);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
