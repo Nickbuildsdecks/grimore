@@ -7118,7 +7118,8 @@ function applyStatics(
         || entry.scope === 'all-enchantments' || entry.scope === 'other-enchantments'
         || entry.scope === 'permanents-you-control' || entry.scope === 'other-permanents-you-control'
         || entry.scope === 'enchantments-you-control' || entry.scope === 'other-enchantments-you-control'
-        || entry.scope === 'other-artifacts-you-control' ? { kind: entry.scope }
+        || entry.scope === 'other-artifacts-you-control' || entry.scope === 'opponent-artifacts'
+        || entry.scope === 'opponent-lands' || entry.scope === 'all-planeswalkers' ? { kind: entry.scope }
       : entry.scope === 'other-controller-creatures' ? { kind: 'other-controller-creatures' }
       : entry.scope === 'opponent-creatures' ? { kind: 'opponent-creatures' }
       : { kind: 'all-creatures' };

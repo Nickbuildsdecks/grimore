@@ -37731,6 +37731,32 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       };
     }
   }
+  /*
+    **"Activated abilities of artifacts can't be activated."** (D1226): Null Rod, Stony Silence,
+    Collector Ouphe; "of creatures" (Cursed Totem), "of creatures your opponents control" (Linvala,
+    Keeper of Silence), "of artifacts your opponents control" (Karn, the Great Creator), "of
+    artifacts, creatures, and planeswalkers" (Clarion Conqueror), and "… unless they're mana
+    abilities" (Damping Matrix, Sharkey). Arrest's flags (D943, D944) as a static over each kind
+    named: a mana ability is an activated ability (CR 605.1a), so a Null Rod stops a Sol Ring's, and
+    the mana-source list leaves it out. "Sources with the chosen name" (Pithing Needle) waits on a
+    card-name choice as it enters.
+  */
+  const silenced = /^activated abilities of (.+?) can't be activated( unless they're mana abilities)?\.?$/i.exec(plain(line).trim());
+  if (silenced !== null) {
+    const SCOPES: Readonly<Record<string, 'all-artifacts' | 'all-creatures' | 'all-planeswalkers' | 'opponent-creatures' | 'opponent-artifacts' | 'opponent-lands'>> = {
+      artifacts: 'all-artifacts', creatures: 'all-creatures', planeswalkers: 'all-planeswalkers',
+      'creatures your opponents control': 'opponent-creatures',
+      'artifacts your opponents control': 'opponent-artifacts',
+      'lands your opponents control': 'opponent-lands',
+    };
+    const phrase = silenced[1]!.toLowerCase();
+    const kinds = / your opponents control$/.test(phrase) ? [phrase] : phrase.split(/,\s*(?:and\s+)?|\s+and\s+/);
+    const scopes = kinds.map((kind) => SCOPES[kind.trim()]);
+    if (scopes.length > 0 && scopes.every((scope) => scope !== undefined)) {
+      const effect = silenced[2] === undefined ? { cantActivate: true } : { cantActivateNonMana: true };
+      return { statics: scopes.map((scope) => ({ scope: scope!, effect })) };
+    }
+  }
   const landGrant = /^lands you control have "([^"]+)"\.?$/i.exec(plain(line).trim());
   if (landGrant !== null) {
     const granted = grantedAbilityFrom(landGrant[1]!, name);

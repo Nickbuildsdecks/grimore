@@ -1574,6 +1574,8 @@ export interface ContinuousEffect {
     /** Its controller's enchantments or artifacts but the source (D819): Sterling Grove's shroud. */
     | { readonly kind: 'enchantments-you-control' } | { readonly kind: 'other-enchantments-you-control' }
     | { readonly kind: 'other-artifacts-you-control' }
+    /** Your opponents' artifacts or lands, and every planeswalker (D1226). */
+    | { readonly kind: 'opponent-artifacts' } | { readonly kind: 'opponent-lands' } | { readonly kind: 'all-planeswalkers' }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2804,6 +2806,12 @@ function effectApplies(
         && instance.id !== effect.source;
     case 'opponent-creatures':
       return creature && instance.zoneSeat !== effect.controller;
+    case 'opponent-artifacts':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'artifact') && instance.zoneSeat !== effect.controller;
+    case 'opponent-lands':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat !== effect.controller;
+    case 'all-planeswalkers':
+      return instance.zone === 'battlefield' && hasType(typeLine, 'planeswalker');
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':

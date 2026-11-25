@@ -41454,6 +41454,64 @@ describe('"attacks this turn if able", Bident of Thassa (D846)', () => {
   });
 });
 
+describe('"activated abilities of … can\'t be activated" (D1226)', () => {
+  const A = (name: string, text: string, type = 'Artifact') => ({ name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Elf', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    A('Test Rod', 'Activated abilities of artifacts can\'t be activated.'),
+    A('Test Totem', 'Activated abilities of creatures can\'t be activated.'),
+    C('Test Linvala', 'Activated abilities of creatures your opponents control can\'t be activated.'),
+    A('Test Matrix', 'Activated abilities of artifacts and creatures can\'t be activated unless they\'re mana abilities.'),
+    A('Test Rock', '{T}: Add {C}.'),
+    A('Test Font', '{0}: You gain 1 life.'),
+    C('Test Elf', '{T}: Add {G}.'),
+    C('Test Healer', '{0}: You gain 1 life.'),
+  ];
+  const deck = customDeck({ id: 'd1226', name: 'Silence', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 36 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1226', 1: 'd1226' }, deckSpecs: { d1226: deck.deck },
+      battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+  };
+  const activate = (s: GameState, seat: 0 | 1, name: string): Action => ({ type: 'auto:activate', by: seat, card: find(s, seat, 'battlefield', name), abilityIndex: 0 } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"of artifacts": an artifact\'s ability and its mana are both stopped; a creature\'s are not', () => {
+    const s = table(['Test Rod', 'Test Font', 'Test Rock', 'Test Healer', 'Test Elf']);
+    expect(refusal(s, activate(s, 0, 'Test Font'))).not.toBeNull();
+    expect(refusal(s, activate(s, 0, 'Test Healer'))).toBeNull();
+    expect(potentialMana(s, 0).C).toBe(0);
+    expect(potentialMana(s, 0).G).toBe(1);
+  });
+
+  it('"of creatures": the other way round', () => {
+    const s = table(['Test Totem', 'Test Font', 'Test Healer']);
+    expect(refusal(s, activate(s, 0, 'Test Healer'))).not.toBeNull();
+    expect(refusal(s, activate(s, 0, 'Test Font'))).toBeNull();
+  });
+
+  it('"creatures your opponents control": theirs stopped, its controller\'s not', () => {
+    const s = table(['Test Linvala', 'Test Healer'], ['Test Healer']);
+    expect(refusal(s, activate(s, 0, 'Test Healer'))).toBeNull();
+    const theirTurn = { ...s, priority: 1 as SeatIndex };
+    expect(refusal(theirTurn, activate(theirTurn, 1, 'Test Healer'))).not.toBeNull();
+  });
+
+  it('"unless they\'re mana abilities": the mana is still there, the rest is stopped', () => {
+    const s = table(['Test Matrix', 'Test Font', 'Test Rock', 'Test Healer', 'Test Elf']);
+    expect(refusal(s, activate(s, 0, 'Test Font'))).not.toBeNull();
+    expect(refusal(s, activate(s, 0, 'Test Healer'))).not.toBeNull();
+    expect(potentialMana(s, 0).C).toBe(1);
+    expect(potentialMana(s, 0).G).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
