@@ -40952,6 +40952,46 @@ describe('the controller of what targeted it, and Valiant (D1220)', () => {
   });
 });
 
+describe('a modal activated ability as one ability per mode, Cankerbloom (D843)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Bloom', 'Creature — Phyrexian Fungus', '{1}, Sacrifice Test Bloom: Choose one —\n• Destroy target artifact.\n• Destroy target enchantment.\n• Draw a card.', { power: '3', toughness: '2' }),
+    R('Test Limited', 'Artifact', '{1}: Choose one —\n• You gain 1 life.\n• Draw a card.\nActivate only once each turn.'),
+    R('Test Relic', 'Artifact', ''),
+    R('Test Charm', 'Enchantment', ''),
+  ];
+  const deck = customDeck({ id: 'd843', name: 'Modal', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+
+  it('reads the plain one as three abilities, and refuses the one with a shared limit', () => {
+    const bloom = compileCard(ROWS[0] as never);
+    expect(bloom).toMatchObject({ ok: true, unread: [] });
+    expect(bloom.ok && bloom.script?.abilities?.map((a) => a.description)).toEqual([
+      '{1}, Sacrifice Test Bloom: Destroy target artifact.',
+      '{1}, Sacrifice Test Bloom: Destroy target enchantment.',
+      '{1}, Sacrifice Test Bloom: Draw a card.',
+    ]);
+    const limited = compileCard(ROWS[1] as never);
+    expect(limited.ok && limited.unread.map((u) => u.line)).toContain('{1}: Choose one —');
+  });
+
+  it('one mode per activation: the enchantment mode destroys the enchantment and the Bloom is sacrificed', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd843', 1: 'd843' }, deckSpecs: { d843: deck.deck },
+      battlefield: { 0: ['Test Bloom', 'Forest'], 1: ['Test Relic', 'Test Charm'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bloom = find(s, 0, 'battlefield', 'Test Bloom');
+    const plays = legalActions(s, 0).plays.filter((p) => p.kind === 'activate' && p.card === bloom);
+    expect(plays.length).toBeGreaterThanOrEqual(3);
+    const charm = find(s, 1, 'battlefield', 'Test Charm');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: bloom, abilityIndex: 1, targets: [{ kind: 'card', id: charm }] })));
+    expect(s.instances[charm]!.zone).toBe('graveyard');
+    expect(s.instances[bloom]!.zone).toBe('graveyard');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Relic');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

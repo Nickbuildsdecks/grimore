@@ -48,7 +48,7 @@ import {
 } from './fromCardData.js';
 import {
   championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
-  manaSpentScryTrigger, modalTriggerFor, dieTableFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
+  manaSpentScryTrigger, modalTriggerFor, modalAbilityFor, dieTableFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
 import { CHOSEN_COLOR, CHOSEN_TYPE, KICKED, copyAsToken, pump } from './effects.js';
@@ -935,6 +935,13 @@ function compileSingle(row: CardDataRow): Compilation {
   if (modalTrigger !== null && merge(built, modalTrigger.fragment) === 'merged') {
     for (const line of modalTrigger.claimed) claimed.add(line);
     compiled.push(...modalTrigger.claimed);
+  }
+
+  // A modal activated ability (D843): one ability per mode, each with the whole cost.
+  const modalAbility = firstBand >= 0 ? null : modalAbilityFor(lines.filter((line) => !claimed.has(line)), def.name);
+  if (modalAbility !== null && merge(built, modalAbility.fragment) === 'merged') {
+    for (const line of modalAbility.claimed) claimed.add(line);
+    compiled.push(...modalAbility.claimed);
   }
 
   for (const [index, line] of lines.entries()) {
