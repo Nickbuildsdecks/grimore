@@ -125,6 +125,12 @@ export interface DamageRecord {
    * creature is dealt damage": damage that kills it has detached them by the time it is announced.
    */
   readonly hosted?: readonly string[];
+  /**
+   * And the Auras and Equipment on the **source** as it dealt the damage (D844), for "whenever
+   * equipped creature deals combat damage": a creature that dies in that combat has lost them by
+   * the time the event is raised, and the trigger still sees the moment it dealt it.
+   */
+  readonly sourceHosted?: readonly string[];
 }
 
 /** One clock that ran out: which object, which counter it was counting, and what it was called. */

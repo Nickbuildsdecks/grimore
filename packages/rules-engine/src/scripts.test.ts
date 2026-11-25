@@ -41063,6 +41063,72 @@ describe('"look at target player\'s hand and choose N cards from it" (D1221)', (
   });
 });
 
+describe('"whenever equipped creature deals combat damage", Umezawa\'s Jitte (D844)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Jitte', 'Legendary Artifact — Equipment', "Whenever equipped creature deals combat damage, put two charge counters on Test Jitte.\nRemove a charge counter from Test Jitte: Choose one —\n• Equipped creature gets +2/+2 until end of turn.\n• Target creature gets -1/-1 until end of turn.\n• You gain 2 life.\nEquip {2}"),
+    R('Test Pinger', 'Creature — Human', '{T}: Test Pinger deals 1 damage to any target.', { colors: ['R'], power: '2', toughness: '2' }),
+    R('Test Ogre', 'Creature — Ogre', '', { colors: ['R'], power: '3', toughness: '3' }),
+    R('Test Wall', 'Creature — Wall', 'Defender', { colors: ['W'], power: '0', toughness: '4' }),
+  ];
+  const deck = customDeck({ id: 'd844', name: 'Jitte', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 54 }], data: ROWS as never[] });
+  const equipped = () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd844', 1: 'd844' }, deckSpecs: { d844: deck.deck },
+      battlefield: { 0: ['Test Jitte', 'Test Pinger', 'Mountain', 'Mountain'], 1: ['Test Ogre', 'Test Wall'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const jitte = find(s, 0, 'battlefield', 'Test Jitte');
+    const pinger = find(s, 0, 'battlefield', 'Test Pinger');
+    const equip = legalActions(s, 0).plays.filter((p) => p.kind === 'activate' && p.card === jitte).at(-1)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: jitte, abilityIndex: equip.abilityIndex ?? 0, targets: [{ kind: 'card', id: pinger }] })));
+    expect(s.instances[jitte]!.attachedTo).toBe(pinger);
+    return { s, jitte, pinger };
+  };
+  const charges = (s: GameState, jitte: string) => s.instances[jitte]!.counters['charge'] ?? 0;
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('noncombat damage puts none; combat damage to a blocker puts two, once', () => {
+    let { s, jitte, pinger } = equipped();
+    const ping = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === pinger)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: pinger, abilityIndex: ping.abilityIndex ?? 0, targets: [{ kind: 'player', seat: 1 }] })));
+    expect(charges(s, jitte)).toBe(0);
+    s = nextTurn(nextTurn(s));
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pinger, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Wall'), attacker: pinger }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(charges(s, jitte)).toBe(2);
+  });
+
+  it('and when the equipped creature dies of that combat, the Jitte still saw the damage', () => {
+    let { s, jitte, pinger } = equipped();
+    s = nextTurn(nextTurn(s));
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pinger, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: find(s, 1, 'battlefield', 'Test Ogre'), attacker: pinger }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[pinger]!.zone).toBe('graveyard');
+    expect(charges(s, jitte)).toBe(2);
+  });
+
+  it('a counter pays for a mode: you gain 2 life', () => {
+    let { s, jitte } = equipped();
+    s = { ...s, instances: { ...s.instances, [jitte]: { ...s.instances[jitte]!, counters: { charge: 2 } } } };
+    const before = life(s, 0);
+    const gain = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === jitte && /gain 2 life/i.test(p.description ?? ''))!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: jitte, abilityIndex: gain.abilityIndex ?? 0 })));
+    expect(life(s, 0)).toBe(before + 2);
+    expect(charges(s, jitte)).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
