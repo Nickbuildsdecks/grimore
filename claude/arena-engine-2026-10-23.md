@@ -46319,3 +46319,29 @@ Not covered by a test: "nontoken" (a token sacrificed has ceased to exist, so th
 take either way).
 
 Coverage: 16,997 of 31,900 cards (+10 over D1242's 16,987), 39,619 of 59,888 lines (+16).
+
+## D1244 — A three-way punisher: "unless they sacrifice a nonland permanent or discard a card"
+
+D1162's punisher, with a third way out. Each player asked chooses to lose the life, to sacrifice the
+permanent, or to discard a card. Each way is offered only when they can take it, and the card for the
+chosen way is asked from the battlefield or from the hand. "A nonland permanent" joins the kinds a
+punisher's sacrifice may be. The bot, as the player choosing, loses the life while it has more than
+9; otherwise it discards while it has cards, then sacrifices, giving up the cheapest.
+
+Read whole now, by the probe: Tergrid, God of Fright (with D1243, both faces), Hag of Ceaseless
+Torment, Nicol Bolas, the Deceiver, Starseer Mentor, Thornplate Intimidator and Torment of Scarabs.
+Torment of Hailfire and Perforating Artist already had their own reading (D730).
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- All three ways are offered, and each costs what it says: 3 life, the artifact (not the land), or
+  the card in hand.
+- A player with only a land and an empty hand is not asked. With an artifact and an empty hand,
+  the discard is not offered.
+
+Faults injected by hand: 3, all caught.
+- A land counted as a nonland permanent.
+- The discard chosen and never done.
+- The discard offered to an empty hand.
+
+Coverage: 17,001 of 31,900 cards (+4 over D1243's 16,997), 39,623 of 59,888 lines (+4).
