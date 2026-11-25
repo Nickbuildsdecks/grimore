@@ -44989,6 +44989,66 @@ describe('Land types set: Blood Moon, Spreading Seas, Song of the Dryads (D1246)
   });
 });
 
+describe('Demonic Consultation (D1247)', () => {
+  const ROWS = [
+    { name: 'Test Consult', type_line: 'Instant', oracle_text: 'Choose a card name. Exile the top six cards of your library, then reveal cards from the top of your library until you reveal a card with the chosen name. Put that card into your hand and exile all other cards revealed this way.', mana_cost: '{0}', cmc: 1, colors: ['B'], layout: 'normal' },
+    { name: 'Test Prize', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 5, colors: ['U'], layout: 'normal' },
+    { name: 'Test Chaff', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 1, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1247', name: 'Consult', entries: [{ name: 'Test Consult', count: 2 }, { name: 'Test Prize', count: 2 }, { name: 'Test Chaff', count: 4 }, { name: 'Island', count: 52 }], data: ROWS as never[] });
+  /** Seat 0's library laid out as `names` from the top, the rest after them. */
+  const table = (names: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1247', 1: 'd1247' }, deckSpecs: { d1247: deck.deck }, hands: { 0: ['Test Consult'] },
+      battlefield: { 0: ['Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = [...ids(s, 0, 'library')];
+    const nameOf = (id: string) => s.cardDefs[s.instances[id]!.defKey]?.name;
+    const top: string[] = [];
+    for (const n of names) {
+      const at = lib.findIndex((id) => nameOf(id) === n);
+      top.push(...lib.splice(at, 1));
+    }
+    return { ...s, zones: { ...s.zones, '0:library': [...top, ...lib.filter((id) => nameOf(id) !== 'Test Prize')] } };
+  };
+  const consult = (s: GameState, named?: string) => {
+    let t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Consult'), targets: [] } as Action)), 30);
+    const asked = t.pendingDecision;
+    if (asked !== null && named !== undefined) t = drain(apply(t, { type: 'auto:decide', by: 0, cards: [], option: named } as Action), 30);
+    return { t, asked };
+  };
+  const SIX = ['Island', 'Island', 'Island', 'Island', 'Island', 'Island'];
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the named card below the top six comes to hand; six and the one before it are exiled', () => {
+    const s = table([...SIX, 'Test Chaff', 'Test Prize']);
+    const before = ids(s, 0, 'library').length;
+    const { t, asked } = consult(s, 'Test Prize');
+    expect(asked?.options).toContain('Test Prize');
+    expect(namesIn(t, 0, 'hand')).toContain('Test Prize');
+    expect(ids(t, 0, 'exile')).toHaveLength(7);
+    expect(ids(t, 0, 'library')).toHaveLength(before - 8);
+  });
+
+  it('a name in the top six, or nowhere, exiles the whole library', () => {
+    const s = table(['Test Prize', ...SIX]);
+    const before = ids(s, 0, 'library').length;
+    const { t } = consult(s, 'Test Prize');
+    expect(namesIn(t, 0, 'hand')).not.toContain('Test Prize');
+    expect(ids(t, 0, 'library')).toHaveLength(0);
+    expect(ids(t, 0, 'exile')).toHaveLength(before);
+  });
+
+  it('the bot names the dearest nonland card left in its library', () => {
+    const { t } = consult(table([...SIX, 'Test Chaff', 'Test Prize']));
+    expect(botAction(t, 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Prize' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -7738,7 +7738,7 @@ export function enterChoiceDecision(
  * yet cannot be chosen; that is this reading's one limit. The bot names the opponents' permanent
  * with an activated ability and the highest mana value.
  */
-export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' = 'abilities', peek = false): ChoiceDecisionSpec {
+export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' | 'own-library' = 'abilities', peek = false): ChoiceDecisionSpec {
   const isLand = (state: GameState, id: string): boolean => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land');
   /*
     "Look at an opponent's hand, then choose any card name" (D1240, Sorcerous Spyglass): the hand
@@ -7755,6 +7755,8 @@ export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' =
   const seen = (state: GameState, chooser?: SeatIndex): string[] => {
     const ids = [
       ...peeked(state, chooser),
+      // A player knows what is in their own deck (D1247): Demonic Consultation names a card from it.
+      ...(aim === 'own-library' && chooser !== undefined ? listAt(state, zoneKey(chooser, 'library')) : []),
       ...state.seats.flatMap((seat) => [
         ...listAt(state, zoneKey(seat.index, 'battlefield')),
         ...listAt(state, zoneKey(seat.index, 'graveyard')),
@@ -7780,6 +7782,20 @@ export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' =
         For "spells with the chosen name can't be cast" (D1238), the dearest nonland card an opponent
         has shown, in a graveyard or on the battlefield: the card most worth not seeing again.
       */
+      /*
+        Demonic Consultation (D1247): the dearest nonland card still in the chooser's own library,
+        the card most worth digging for. Which of them is in the top six is not known to anyone.
+      */
+      if (aim === 'own-library') {
+        for (const id of listAt(state, zoneKey(chooser, 'library'))) {
+          const inst = state.instances[id];
+          if (inst === undefined || isLand(state, id)) continue;
+          const def = state.cardDefs[inst.defKey];
+          if (def === undefined) continue;
+          if (best === undefined || (def.cmc ?? 0) > best.value) best = { name: def.name, value: def.cmc ?? 0 };
+        }
+        return best?.name ?? seen(state, chooser)[0];
+      }
       if (aim === 'spells') {
         for (const other of state.seats) {
           if (other.index === chooser) continue;
@@ -33181,6 +33197,46 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
 }
 
 /**
+ * Demonic Consultation (D1247): "Choose a card name. Exile the top six cards of your library, then
+ * reveal cards from the top of your library until you reveal a card with the chosen name. Put that
+ * card into your hand and exile all other cards revealed this way." The name is asked as the spell
+ * resolves, from the names anyone can see and the caster's own library (`cardNameDecision`'s
+ * `own-library`). A name that is not found exiles the whole library, which is how it is played with
+ * Thassa's Oracle; the caster loses only when they next draw (CR 704.5b).
+ */
+function consultation(clauses: readonly string[]): ReadEffect | null {
+  // Joined with stops: the clauses arrive split, ", then" included.
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^choose a card name\.? exile the top (one|two|three|four|five|six|seven|\d+) cards? of your library(?:, then|\.) reveal cards from the top of your library until you reveal a card with the chosen name\.? put that card into your hand and exile all other cards revealed this way\.?$/i.exec(text);
+  if (m === null) return null;
+  const count = countFrom(m[1]!);
+  if (count === null) return null;
+  return {
+    decisions: [cardNameDecision(false, 'own-library')],
+    effect: (c) => {
+      const named = chosenOption(c);
+      let state = c.state;
+      for (let i = 0; i < count; i++) {
+        const top = listAt(state, zoneKey(c.controller, 'library'))[0];
+        if (top === undefined) break;
+        state = exileCard(state, top);
+      }
+      for (;;) {
+        const top = listAt(state, zoneKey(c.controller, 'library'))[0];
+        if (top === undefined) break;
+        const card = state.instances[top];
+        if (named !== null && state.cardDefs[card?.defKey ?? '']?.name === named) {
+          state = moveToHand(state, [top]);
+          break;
+        }
+        state = exileCard(state, top);
+      }
+      return state;
+    },
+  };
+}
+
+/**
  * The rest of a "Choose a color." spell with the colour written in (D1206): "creatures of the
  * chosen color" becomes "red creatures", "protection from the chosen color" "protection from red",
  * "one mana of that color" "{R}" (refused by the caller for now: see `chosenColorSpell`). `null`
@@ -33546,6 +33602,9 @@ function composeEffectsAsPrinted(
   // "A. If …, B instead." (D1203): see `insteadGroup`.
   const replaced = insteadGroup(clauses, name, where);
   if (replaced !== null) return replaced;
+  // Demonic Consultation (D1247): see `consultation`.
+  const consulted = consultation(clauses);
+  if (consulted !== null) return consulted;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;
