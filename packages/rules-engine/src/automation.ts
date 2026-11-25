@@ -1378,6 +1378,8 @@ export function endTurnCleanup(state: GameState): GameState {
     lifeLostThisTurn: {},
     // And the turn's damage, which is bloodthirst's fact and cleared with the others (D558).
     damagedThisTurn: {},
+    // And which seats were dealt combat damage (D1259).
+    combatDamagedThisTurn: {},
     // And who hit which permanent, which is "dealt damage by ~ this turn" (D566).
     damagedBy: {},
     // And D564's four: who attacked, what died, what left and who gained life.

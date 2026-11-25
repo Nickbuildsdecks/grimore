@@ -1448,6 +1448,12 @@ export interface AutomationState {
    */
   readonly damagedThisTurn?: Readonly<Record<string, number>>;
   /**
+   * The seats dealt **combat** damage this turn (D1259), for "the number of opponents that were dealt
+   * combat damage this turn" (Tymna the Weaver). Written beside `damagedThisTurn` when the damage
+   * came from an attacker (`combatFrom`), and cleared with it.
+   */
+  readonly combatDamagedThisTurn?: Readonly<Record<string, true>>;
+  /**
    * Four more facts about **this turn**, each one a condition printed on a card (D564).
    *
    * | field | the card asks | written by |

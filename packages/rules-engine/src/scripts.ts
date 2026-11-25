@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
+  createEmblem, canPayLife, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -12872,6 +12872,10 @@ function selfCostChangeFromLine(line: string, name: string): Partial<CardScript>
  */
 function whereXCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
   const text = plain(phrase).trim().replace(/\.$/, '');
+  // "The number of opponents that were dealt combat damage this turn" (D1259, Tymna).
+  if (/^the number of opponents (?:that were|who were) dealt combat damage this turn$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller).filter((seat) => c.state.combatDamagedThisTurn?.[String(seat)] === true).length;
+  }
   const the = /^the number of (.+)$/i.exec(text);
   return (the === null ? null : countOfThing(the[1]!, name, 'plural')) ?? boardCount(text, name);
 }
@@ -33368,6 +33372,43 @@ function revealUntil(clauses: readonly string[], name: string): ReadEffect | nul
 }
 
 /**
+ * "You may pay X life, where X is <count>. If you do, draw X cards." (D1259, Tymna the Weaver). X is
+ * counted as the ability resolves, and the question is asked only when X is more than nothing and the
+ * life is there to pay. The bot pays while it would keep more than 10 life.
+ */
+function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^you may pay X life, where X is (.+?)\. if you do, draw X cards\.?$/i.exec(text);
+  if (m === null) return null;
+  const count = whereXCount(m[1]!, name);
+  if (count === null) return null;
+  const xOf = (state: GameState, source: string, controller: SeatIndex): number => count({
+    state, source, controller, targets: [], x: 0, decisions: [], kicked: false,
+  });
+  const YES = 'Pay the life and draw';
+  const NO = 'Decline';
+  return {
+    decisions: [{
+      who: 'controller', prompt: `Pay X life and draw X cards?`, options: [YES, NO],
+      askOnlyIf: (state: GameState, controller: SeatIndex, source: string) => {
+        const x = xOf(state, source, controller);
+        return x > 0 && canPayLife(state, controller, x);
+      },
+      best: (state: GameState, chooser: SeatIndex) => {
+        const x = opponentsOf(state, chooser).filter((seat) => state.combatDamagedThisTurn?.[String(seat)] === true).length;
+        return (state.seats[chooser]?.life ?? 0) - x > 10 ? YES : NO;
+      },
+    } as ChoiceDecisionSpec],
+    effect: (c) => {
+      if (chosenOption(c) !== YES) return c.state;
+      const x = xOf(c.state, c.source, c.controller);
+      if (x <= 0 || !canPayLife(c.state, c.controller, x)) return c.state;
+      return draw(loseLife(c.state, c.controller, x), c.controller, x);
+    },
+  };
+}
+
+/**
  * Gilded Drake (D1249): "exchange control of ~ and up to one target creature an opponent controls.
  * If you don't or can't make an exchange, sacrifice ~. This ability can't be countered except by
  * spells and abilities." The exchange is D1248's. Whether one was made is read off the board: the
@@ -33817,6 +33858,9 @@ function composeEffectsAsPrinted(
   // "A. If …, B instead." (D1203): see `insteadGroup`.
   const replaced = insteadGroup(clauses, name, where);
   if (replaced !== null) return replaced;
+  // Tymna (D1259): see `payXLifeDrawX`.
+  const paid = payXLifeDrawX(clauses, name);
+  if (paid !== null) return paid;
   // Demonic Consultation (D1247): see `consultation`.
   const consulted = consultation(clauses);
   if (consulted !== null) return consulted;

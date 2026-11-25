@@ -654,6 +654,10 @@ export function dealDamage(
         );
     // After both branches, because both dealt damage: poison or life is what it *did* (D558).
     next = recordDamaged(next, target.seat, left);
+    // And whether it was combat damage (D1259): Tymna's count.
+    if (opts.combatFrom !== undefined && left > 0) {
+      next = { ...next, combatDamagedThisTurn: { ...(next.combatDamagedThisTurn ?? {}), [String(target.seat)]: true } };
+    }
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;

@@ -45643,6 +45643,48 @@ describe('Prosper: whenever you play a card from exile (D1258)', () => {
   });
 });
 
+describe('Tymna: pay X life and draw X, X the opponents dealt combat damage (D1259)', () => {
+  const ROWS = [
+    { name: 'Test Tymna', type_line: 'Legendary Creature — Human Cleric', oracle_text: 'Lifelink\nAt the beginning of each of your postcombat main phases, you may pay X life, where X is the number of opponents that were dealt combat damage this turn. If you do, draw X cards.', mana_cost: '{0}', cmc: 3, colors: ['W', 'B'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1259', name: 'Tymna', entries: [{ name: 'Test Tymna', count: 4 }, { name: 'Plains', count: 56 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1259', 1: 'd1259' }, deckSpecs: { d1259: deck.deck }, battlefield: { 0: ['Test Tymna'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const trigger = () => {
+    const compiled = compileCard(ROWS[0] as never);
+    if (!compiled.ok) throw new Error('did not compile');
+    return compiled.script!.triggers![0]!;
+  };
+  const run = (s: GameState, answer: string) => trigger().effect({
+    state: s, source: find(s, 0, 'battlefield', 'Test Tymna'), controller: 0 as SeatIndex, targets: [], x: 0, kicked: false,
+    decisions: [{ seat: 0 as SeatIndex, ids: [], option: answer }],
+  });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('combat damage to a player is recorded; other damage is not', () => {
+    const s = table();
+    const tymna = find(s, 0, 'battlefield', 'Test Tymna');
+    expect(dealDamage(s, { kind: 'player', seat: 1 }, 2, { controller: 0, source: tymna, combatFrom: tymna }).combatDamagedThisTurn?.['1']).toBe(true);
+    expect(dealDamage(s, { kind: 'player', seat: 1 }, 2, { controller: 0, source: tymna }).combatDamagedThisTurn?.['1']).toBeUndefined();
+  });
+
+  it('one opponent hit: pay 1 and draw 1; none hit: nothing', () => {
+    const s = { ...table(), combatDamagedThisTurn: { '1': true as const } };
+    const t = run(s, 'Pay the life and draw');
+    expect(life(t, 0)).toBe(life(s, 0) - 1);
+    expect(ids(t, 0, 'hand')).toHaveLength(ids(s, 0, 'hand').length + 1);
+    const none = table();
+    const u = run(none, 'Pay the life and draw');
+    expect(life(u, 0)).toBe(life(none, 0));
+    expect(ids(u, 0, 'hand')).toHaveLength(ids(none, 0, 'hand').length);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
