@@ -8084,6 +8084,9 @@ describe('deck coverage', () => {
       // D1228: Panharmonicon and Teysa Karlov's extra trigger; no pool deck plays one. Driven at
       // runtime by "that ability triggers an additional time" (D1228).
       'script extraTriggers', 'script opponentsEntriesDontTrigger',
+      // D1230: Winter Orb, Static Orb; no pool deck plays one. Driven at runtime by "players can't
+      // untap more than one land" (D1230).
+      'script untapLimit',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -43213,6 +43216,63 @@ describe('4 to one target and 3 to each of up to two others: Drakuseth, Maw of F
     const [c] = ids(t, 1, 'battlefield');
     t = drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Breath'), targets: [{ kind: 'card', id: c! }, { kind: 'player', seat: 1 }] })));
     expect([t.instances[c!]!.damage, life(t, 1)]).toEqual([4, 17]);
+  });
+});
+
+describe('"players can\'t untap more than one land during their untap steps" (D1230)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    A('Test Orb', 'As long as Test Orb is untapped, players can\'t untap more than one land during their untap steps.'),
+    A('Test Static', 'As long as Test Static is untapped, players can\'t untap more than two permanents during their untap steps.'),
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: 'You can\'t untap more than one land during your untap step.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '6', toughness: '5' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1230', name: 'Orbs', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  /** Seat 1's turn, with seat 0's three Forests and Bear tapped; then on to seat 0's untap step. */
+  const untapWith = (mine: string[], theirs: string[], orbTapped = false) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1230', 1: 'd1230' }, deckSpecs: { d1230: deck.deck },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Test Bear', ...mine], 1: theirs }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    const down = ids(s, 0, 'battlefield').filter((id) => !/Orb|Static/.test(nameOf(s, id)) || orbTapped);
+    s = { ...s, instances: { ...s.instances, ...Object.fromEntries(down.map((id) => [id, { ...s.instances[id]!, tapped: true }])) } };
+    s = nextTurn(s);
+    return s;
+  };
+  const untapped = (s: GameState, name: string) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name && !s.instances[id]!.tapped).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('without one, everything untaps', () => {
+    const s = untapWith([], []);
+    expect(s.activeSeat).toBe(0);
+    expect(untapped(s, 'Forest')).toBe(3);
+  });
+
+  it('an opponent\'s untapped Orb: one land untaps, and the creature still does', () => {
+    const s = untapWith([], ['Test Orb']);
+    expect(s.activeSeat).toBe(0);
+    expect(untapped(s, 'Forest')).toBe(1);
+    expect(untapped(s, 'Test Bear')).toBe(1);
+  });
+
+  it('a tapped Orb limits nothing', () => {
+    const s = untapWith(['Test Orb'], [], true);
+    expect(untapped(s, 'Forest')).toBe(3);
+  });
+
+  it('"two permanents": two of the four, lands first', () => {
+    const s = untapWith([], ['Test Static']);
+    expect(untapped(s, 'Forest') + untapped(s, 'Test Bear')).toBe(2);
+    expect(untapped(s, 'Forest')).toBe(2);
+  });
+
+  it('"You can\'t": only its controller is limited', () => {
+    expect(untapped(untapWith(['Test Wurm'], []), 'Forest')).toBe(1);
+    expect(untapped(untapWith([], ['Test Wurm']), 'Forest')).toBe(3);
   });
 });
 

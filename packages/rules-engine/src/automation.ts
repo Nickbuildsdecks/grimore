@@ -103,6 +103,51 @@ function untapsDuringOthersUntap(state: GameState, seat: SeatIndex): readonly (t
 }
 
 /**
+ * Winter Orb and Static Orb (D1230): what `seat`'s untap step keeps tapped beyond `keep`. For each
+ * live limit that reaches this seat, its tapped permanents of the limit's kind beyond the first
+ * `count` stay tapped. **The engine picks which untap**, for every player: mana sources first, then
+ * the highest mana value, then board order. A Winter Orb or Static Orb applies only while it is
+ * untapped as the step begins.
+ */
+function untapLimited(state: GameState, seat: SeatIndex, keep: ReadonlySet<string>): ReadonlySet<string> {
+  const limits: NonNullable<CardScript['untapLimit']>[] = [];
+  for (const other of state.seats) {
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      const limit = scriptForCard(state.cardDefs[inst.defKey])?.untapLimit;
+      if (limit === undefined || (limit.whose === 'you' && other.index !== seat)) continue;
+      if (limit.whileUntapped === true && inst.tapped) continue;
+      limits.push(limit);
+    }
+  }
+  if (limits.length === 0) return keep;
+  const kept = new Set(keep);
+  const ofKind = (id: string, kind: NonNullable<CardScript['untapLimit']>['kind']): boolean => {
+    const inst = state.instances[id];
+    if (inst === undefined) return false;
+    const ch = characteristicsOf(state, inst);
+    if (kind === 'permanent') return true;
+    if (kind === 'creature') return ch.isCreature;
+    if (kind === 'nonbasic-land') return ch.isLand && !ch.typeLine.supertypes.some((t) => /^basic$/i.test(t));
+    return hasType(ch.typeLine, kind);
+  };
+  const worth = (id: string): number => {
+    const inst = state.instances[id]!;
+    const script = scriptForCard(state.cardDefs[inst.defKey]);
+    const mana = (script?.abilities ?? []).some((a) => a.produces !== undefined) || characteristicsOf(state, inst).isLand;
+    return (mana ? 1000 : 0) + (state.cardDefs[inst.defKey]?.cmc ?? 0);
+  };
+  for (const limit of limits) {
+    const tapped = listAt(state, zoneKey(seat, 'battlefield'))
+      .filter((id) => state.instances[id]?.tapped === true && !kept.has(id) && ofKind(id, limit.kind));
+    const chosen = [...tapped].sort((a, b) => worth(b) - worth(a)).slice(0, limit.count);
+    for (const id of tapped) if (!chosen.includes(id)) kept.add(id);
+  }
+  return kept;
+}
+
+/**
  * Whether a permanent arriving now is one an opponent's "<kinds> your opponents control enter
  * tapped" covers (D787). Asked of the arriving permanent as it is, so a face-down one is a 2/2
  * creature with no name and no types but creature.
@@ -989,7 +1034,7 @@ function onEnterStep(state: GameState, step: Step): GameState {
           && scriptForCard(next.cardDefs[inst.defKey])?.mayStayTapped === true
           && next.effects.some((e) => e.source === id && (e.controlWhile?.tapped === true || e.lastsWhile?.tapped === true));
       }));
-      next = untapAll(next, next.activeSeat, { keep });
+      next = untapAll(next, next.activeSeat, { keep: untapLimited(next, next.activeSeat, keep) });
       // Seedborn Muse (D661): every other seat with one untaps too, in the same turn-based action.
       for (const seat of next.seats) {
         const kinds = seat.index === next.activeSeat || seat.eliminated ? [] : untapsDuringOthersUntap(next, seat.index);

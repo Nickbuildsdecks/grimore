@@ -38389,6 +38389,21 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       return { extraTriggers: [{ on, ...(kinds === undefined ? {} : { kinds }), ...(/ you control$/.test(what) ? { yours: true as const } : {}) }] };
     }
   }
+  /*
+    "As long as ~ is untapped, players can't untap more than one land during their untap steps."
+    (D1230): Winter Orb, Static Orb ("… two permanents"), Damping Field, Smoke, Winter Moon, Mungha
+    Wurm. See `CardScript.untapLimit`.
+  */
+  const untapCap = new RegExp(`^(as long as (?:${selfRef(name)}|this \\w+) is untapped, )?(players|you) can't untap more than (one|two|three) (land|permanent|artifact|creature|nonbasic land)s? during (?:their|your) untap steps?\\.?$`, 'i')
+    .exec(plain(line).trim());
+  if (untapCap !== null) {
+    const kind = untapCap[4]!.toLowerCase().replace(' ', '-') as 'land' | 'permanent' | 'artifact' | 'creature' | 'nonbasic-land';
+    return { untapLimit: {
+      count: { one: 1, two: 2, three: 3 }[untapCap[3]!.toLowerCase() as 'one' | 'two' | 'three'],
+      kind, whose: untapCap[2]!.toLowerCase() === 'you' ? 'you' : 'everyone',
+      ...(untapCap[1] === undefined ? {} : { whileUntapped: true as const }),
+    } };
+  }
   // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
   if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
     return { opponentsEntriesDontTrigger: true };

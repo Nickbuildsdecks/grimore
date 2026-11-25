@@ -3377,6 +3377,18 @@ export interface CardScript {
    */
   readonly untapsDuringOthersUntap?: true | 'artifacts' | 'creatures' | 'self';
   /**
+   * "Players can't untap more than one land during their untap steps" (D1230): Winter Orb, Static
+   * Orb ("… two permanents"), Damping Field ("… one artifact"), Smoke ("… one creature"), Winter
+   * Moon ("… one nonbasic land"), Mungha Wurm ("You can't …"). `whileUntapped` is "As long as ~ is
+   * untapped". Asked of every live permanent as each untap step begins.
+   */
+  readonly untapLimit?: {
+    readonly count: number;
+    readonly kind: 'land' | 'permanent' | 'artifact' | 'creature' | 'nonbasic-land';
+    readonly whose: 'everyone' | 'you';
+    readonly whileUntapped?: true;
+  };
+  /**
    * "You may play an additional land on each of your turns" (1), "… two additional lands …" (2) —
    * D648, CR 305.2. Added live by `landDropsFor` while the permanent is on its controller's
    * battlefield with its abilities; several stack.
