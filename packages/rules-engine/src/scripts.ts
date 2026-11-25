@@ -38492,6 +38492,18 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       ...(untapCap[1] === undefined ? {} : { whileUntapped: true as const }),
     } };
   }
+  /*
+    Stranglehold, Mindlock Orb and Aven Mindcensor (D1232): see `CardScript.searchLimit` and
+    `CardScript.opponentsSkipExtraTurns`.
+  */
+  const searchText = plain(line).trim().replace(/\.$/, '');
+  if (/^your opponents can't search libraries$/i.test(searchText)) return { searchLimit: { who: 'opponents' } };
+  if (/^players can't search libraries$/i.test(searchText)) return { searchLimit: { who: 'everyone' } };
+  const censor = /^if an opponent would search a library, that player searches the top (two|three|four|five) cards of that library instead$/i.exec(searchText);
+  if (censor !== null) {
+    return { searchLimit: { who: 'opponents', topN: { two: 2, three: 3, four: 4, five: 5 }[censor[1]!.toLowerCase() as 'two' | 'three' | 'four' | 'five'] } };
+  }
+  if (/^if an opponent would begin an extra turn, that player skips that turn instead$/i.test(searchText)) return { opponentsSkipExtraTurns: true };
   // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
   if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
     return { opponentsEntriesDontTrigger: true };

@@ -3339,6 +3339,15 @@ export interface CardScript {
    */
   readonly opponentsEntriesDontTrigger?: true;
   /**
+   * "Your opponents can't search libraries." (D1232, Stranglehold), "Players can't search
+   * libraries." (Mindlock Orb), and with `topN` "If an opponent would search a library, that player
+   * searches the top four cards of that library instead." (Aven Mindcensor). Asked as a library
+   * search finds its candidates: none, or only those among the top N of their library.
+   */
+  readonly searchLimit?: { readonly who: 'opponents' | 'everyone'; readonly topN?: number };
+  /** "If an opponent would begin an extra turn, that player skips that turn instead." (D1232, Stranglehold). */
+  readonly opponentsSkipExtraTurns?: true;
+  /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to
    * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's
    * dying, Isshin's attacking. Which event, and which kinds of permanent it is about (none: any

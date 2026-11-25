@@ -202,6 +202,36 @@ function nextAlive(state: GameState, from: SeatIndex): SeatIndex {
   return from;
 }
 
+/** Whether a live permanent of one of `seat`'s opponents skips its extra turns (D1232, Stranglehold). */
+function extraTurnSkipped(state: GameState, seat: SeatIndex): boolean {
+  return state.seats.some((other) => other.index !== seat && listAt(state, zoneKey(other.index, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && !isFaceDownPermanent(inst) && !allAbilitiesLost(state, inst)
+      && scriptForCard(state.cardDefs[inst.defKey])?.opponentsSkipExtraTurns === true;
+  }));
+}
+
+/**
+ * What `seat` may find when it searches a library (D1232): nothing under a Stranglehold or a
+ * Mindlock Orb (`cant`), only the top N of a library under an Aven Mindcensor (`top`, the smallest
+ * such N), or no limit (`null`).
+ */
+function searchLimitFor(state: GameState, seat: SeatIndex): { readonly cant: boolean; readonly top?: number } | null {
+  let cant = false;
+  let top: number | undefined;
+  for (const other of state.seats) {
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      const limit = scriptForCard(state.cardDefs[inst.defKey])?.searchLimit;
+      if (limit === undefined || (limit.who === 'opponents' && other.index === seat)) continue;
+      if (limit.topN === undefined) cant = true;
+      else top = Math.min(top ?? limit.topN, limit.topN);
+    }
+  }
+  return !cant && top === undefined ? null : { cant, ...(top === undefined ? {} : { top }) };
+}
+
 /**
  * Whose turn comes next, and the extra turns left after it (D1132): the newest extra turn of a
  * player still in the game, or else the next seat in order. Extra turns of eliminated players are
@@ -213,6 +243,8 @@ function takeExtraTurn(state: GameState): {
   const owed = [...(state.extraTurns ?? [])];
   while (owed.length > 0) {
     const seat = owed.pop()!;
+    // Stranglehold (D1232): an opponent's extra turn is skipped.
+    if (extraTurnSkipped(state, seat)) continue;
     if (state.seats[seat]?.eliminated === false) {
       return {
         activeSeat: seat,
@@ -6085,12 +6117,20 @@ function askOrFinish(
           && (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= Math.max(0, object.x ?? 0),
       }
       : spec;
+    // Stranglehold and Aven Mindcensor (D1232): what this searcher may find at all.
+    const searchCap = !isCountersDecision(spec) && spec.from === 'library' ? searchLimitFor(state, entry.seat) : null;
     const candidates = (isCountersDecision(bounded)
       ? proliferateCandidates(state)
       : decisionCandidates(
         state, bounded, entry.seat,
         poolSeat !== undefined && poolSeat.kind === 'player' ? poolSeat.seat : undefined,
-      )).filter((id) => !taken.has(id));
+      )).filter((id) => !taken.has(id))
+      .filter((id) => {
+        if (searchCap === null) return true;
+        if (searchCap.cant) return false;
+        const inst = state.instances[id];
+        return inst !== undefined && listAt(state, zoneKey(inst.zoneSeat, 'library')).slice(0, searchCap.top ?? 0).includes(id);
+      });
     const { min, max } = decisionBounds(spec, candidates.length);
     /*
       The cards a dig is looking at (D584), which is the top of the library whether or not a
@@ -6130,7 +6170,8 @@ function askOrFinish(
         state = applyLibraryTop(state, spec, entry.seat, ids);
       }
       // A search that answered itself is still a search (D863).
-      if (!isCountersDecision(spec) && spec.from === 'library') state = raise(state, { kind: 'searches' }, entry.seat);
+      // Not one a Stranglehold stopped (D1232): nothing was searched.
+      if (!isCountersDecision(spec) && spec.from === 'library' && searchCap?.cant !== true) state = raise(state, { kind: 'searches' }, entry.seat);
       continue;
     }
     const asking: GameState = {

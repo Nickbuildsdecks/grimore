@@ -8087,6 +8087,9 @@ describe('deck coverage', () => {
       // D1230: Winter Orb, Static Orb; no pool deck plays one. Driven at runtime by "players can't
       // untap more than one land" (D1230).
       'script untapLimit',
+      // D1232: Stranglehold, Aven Mindcensor; no pool deck plays one. Driven at runtime by "your
+      // opponents can't search libraries" (D1232).
+      'script searchLimit', 'script opponentsSkipExtraTurns',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -43514,6 +43517,64 @@ describe('Ethersworn Canonist, and a free grant to itself the bot stops repeatin
     expect(characteristicsOf(s, s.instances[drake]!).keywords.has('flying')).toBe(true);
     const after = mine(s);
     expect(after?.type === 'auto:activate' && after.card === drake).toBe(false);
+  });
+});
+
+describe('"your opponents can\'t search libraries", and Aven Mindcensor (D1232)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Enchantment', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    A('Test Hold', 'Your opponents can\'t search libraries.\nIf an opponent would begin an extra turn, that player skips that turn instead.'),
+    A('Test Censor', 'If an opponent would search a library, that player searches the top four cards of that library instead.'),
+    { name: 'Test Seek', type_line: 'Sorcery', oracle_text: 'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Walk', type_line: 'Sorcery', oracle_text: 'Take an extra turn after this one.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1232', name: 'Hold', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }], data: ROWS as never[] });
+  const table = (hand: string[], mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1232', 1: 'd1232' }, deckSpecs: { d1232: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: ['Forest', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const seek = (s: GameState) => {
+    let t = settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Seek'), targets: [] } as Action));
+    if (t.pendingDecision !== null && t.pendingDecision.candidates.length > 0) {
+      t = settle(apply(t, { type: 'auto:decide', by: 0, cards: [t.pendingDecision.candidates[0]!] } as Action));
+    }
+    return t;
+  };
+  const forestsInHand = (s: GameState) => namesIn(s, 0, 'hand').filter((n) => n === 'Forest').length;
+  /** Seat 0's library with every Forest moved below the top `n` cards. */
+  const forestsBelow = (s: GameState, n: number): GameState => {
+    const key = '0:library';
+    const library = [...(s.zones[key] ?? [])];
+    const others = library.filter((id) => nameOf(s, id) !== 'Forest');
+    const forests = library.filter((id) => nameOf(s, id) === 'Forest');
+    return { ...s, zones: { ...s.zones, [key]: [...others.slice(0, n), ...forests, ...others.slice(n)] } };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 4)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an opponent\'s Stranglehold: the search finds nothing; its controller\'s own search is not stopped', () => {
+    expect(forestsInHand(seek(table(['Test Seek'], [], [])))).toBe(1);
+    expect(forestsInHand(seek(table(['Test Seek'], [], ['Test Hold'])))).toBe(0);
+    expect(forestsInHand(seek(table(['Test Seek'], ['Test Hold'], [])))).toBe(1);
+  });
+
+  it('Aven Mindcensor: only the top four can be found', () => {
+    expect(forestsInHand(seek(forestsBelow(table(['Test Seek'], [], ['Test Censor']), 4)))).toBe(0);
+    expect(forestsInHand(seek(forestsBelow(table(['Test Seek'], [], ['Test Censor']), 3)))).toBe(1);
+  });
+
+  it('an opponent\'s extra turn is skipped', () => {
+    const walk = (theirs: string[]) => {
+      const s = table(['Test Walk'], [], theirs);
+      return nextTurn(settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Walk'), targets: [] } as Action)));
+    };
+    expect(walk([]).activeSeat).toBe(0);
+    expect(walk(['Test Hold']).activeSeat).toBe(1);
   });
 });
 
