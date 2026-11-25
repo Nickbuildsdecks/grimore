@@ -64396,3 +64396,34 @@ Faults injected by hand: 2, all caught.
 - Always to the battlefield.
 
 Coverage: 17,095 of 31,900 cards (+1 over D1263's 17,094), 39,766 of 59,888 lines (+1).
+
+## D1265 — Birthing Pod: one mana value up from what was sacrificed
+
+"Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's
+mana value, put that card onto the battlefield, then shuffle." The bound is peeled off the search
+phrase and carried on the question (`CardsDecisionSpec.manaValueSacrificedPlus`), and the engine
+applies it as it asks, off the stack object's `sacrificedStats` — what the permanent was as it left
+the battlefield — exactly as the X bound is applied (D686). Only a card whose printed mana value is
+exactly that much more qualifies; with nothing recorded, none does.
+
+Read only behind a sacrifice paid as a cost (`withSacrificeInCost`, D586). A sacrifice in the effect
+("You may sacrifice a creature. If you do, search …", Vivien on the Hunt, Iron Man) and a search with
+no sacrifice at all stay unread, because there the stack object carries nothing.
+
+Read whole now: Birthing Pod, Prime Speaker Vannifar, Repurposing Bay. Oswald Fiddlebender's line
+reads with its flavour word off (see D1266); Neoform's "with an additional +1/+1 counter on it" is
+still unread.
+
+**Tests.** 4 engine tests:
+- Four cost-paid forms read whole; the effect-paid form and a search with nothing sacrificed stay unread.
+- A mana value 2 creature sacrificed offers only the mana value 3 creatures in the library, and the one chosen enters.
+- A mana value 3 creature sacrificed offers the fours, not the threes.
+- A mana value 4 creature sacrificed finds nothing in a library with no fives.
+
+Faults injected by hand: 3, all caught.
+- The bound dropped in the engine.
+- The bound applied as "equal to" rather than "1 plus".
+- The cost-sacrifice guard removed (caught by the no-sacrifice search, added after a first run in
+  which the effect-paid form alone did not catch it).
+
+Coverage: 17,098 of 31,900 cards (+3 over D1264's 17,095), 39,769 of 59,888 lines (+3).
