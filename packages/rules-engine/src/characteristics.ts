@@ -1845,6 +1845,8 @@ export interface ContinuousEffect {
   readonly onlyAttacking?: true;
   /** Nontoken permanents only (D871, Ashaya's "Nontoken creatures you control"). */
   readonly onlyNontoken?: true;
+  /** Tokens only, of any type (D873, Jaheira's "Tokens you control have …"). */
+  readonly onlyTokens?: true;
   readonly onlyWithCounter?: string;
   /**
    * "Other creatures you control **with flying** get +1/+1" (D1126): the creature's own keyword,
@@ -2804,6 +2806,7 @@ function effectApplies(
   // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
   if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
   if (effect.onlyNontoken === true && instance.isToken === true) return false;
+  if (effect.onlyTokens === true && instance.isToken !== true) return false;
   if (effect.onlyWithCounter !== undefined && (effect.onlyWithCounter === '*'
     // '*' is any kind (D870), the markers the engine keeps for itself excepted.
     ? !Object.entries(instance.counters).some(([kind, n]) => (n ?? 0) > 0 && !COUNTER_MARKERS.has(kind))

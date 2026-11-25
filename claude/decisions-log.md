@@ -62535,3 +62535,129 @@ Faults injected by script: 4 of 4 caught. The first run missed the token's grant
 token was summoning sick; the test now uses an old token.
 
 Gated together on b9cafe7: full gate green, engine tests 6601. Coverage: 16,814 to 16,832 of 31,900 cards with every line read, and 39,347 to 39,369 of 59,888 lines. Card-by-card diff (D865–D870) against b9cafe7: 0 lost, 17 gained (including Angrath's Marauders, Hollowhenge Spirit, Labyrinth of Skophos).
+
+## D872 — Plus 2 from a red source: Torbran, Thane of Red Fell
+
+Most-played order: Torbran, Thane of Red Fell (rank 1010).
+
+**Engine.** D865's `damageMultiplier` gains `plus` and `colour`. A source of the colour, read live,
+gets the addition after every factor, the order that gives its controller the most
+(CR 616.1).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- our red Shock deals 4 to the opponent and 4 to their Wall, and 2 to our own Wall;
+- a green Bear's combat damage stays 2;
+- with City on Fire as well, a Shock deals 2 × 3 + 2 = 8.
+
+Faults injected by script: 4 of 4 caught.
+
+## D873 — A grant to every token you control: Jaheira, Friend of the Forest
+
+Most-played order: Jaheira, Friend of the Forest (rank 955).
+
+**Engine.** `ContinuousEffect.onlyTokens`.
+
+**Reader.** D1104's quoted grant takes "Tokens you control have …" (your permanents, tokens only,
+of any type) and "Permanents you control have …".
+
+**Tests.** The card reads. A Saproling and a Clue are each offered the granted "{T}: Add {G}", and
+the Clue makes {G}. The nontoken Bear is not offered it. Faults injected by script: 3 of 3 caught.
+
+## D874 — Unblockable while countered: Herald of Secret Streams
+
+Most-played order: Herald of Secret Streams (rank 1046).
+
+**Reader.** "[Other] creatures you control [with (+1/+1) counters on them] can't be blocked", and
+"each creature you control with a counter on it …", is `cantBeBlocked` on the group, with the
+counter filter where printed.
+
+**Tests.** The card reads. Our Bear with a +1/+1 counter can't be blocked by their Wall, and our
+Elk with none can. Faults injected by script: 2 of 2 caught.
+
+## D875 — A keyword list with a scripted keyword: Apex Devastator
+
+Most-played order: Apex Devastator (rank 1044).
+
+**Reader.** A comma list of keywords where a part needs a script is read part by part. A printed
+keyword needs nothing, and trigger lists concatenate, so "Cascade, cascade, cascade, cascade" is
+four cascade triggers, each its own (CR 702.85c), and "Flying, cascade" is the printed keyword
+plus the script. Any other part, or any other field set twice, refuses the list.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- casting the Devastator puts four cascade triggers on the stack, four offers are taken, and
+  four Bears come in;
+- "Flying, cascade" cascades once.
+
+Faults injected by script: 3 of 3 caught.
+
+## D876 — A discard round paid back in cards: Syphon Mind
+
+Most-played order: Syphon Mind (rank 1043).
+
+**Reader.** "Each other player [or each opponent] discards a card. You draw a card for each card
+discarded this way." Each discarding player chooses from their own hand, and then one card is
+drawn for each card actually discarded.
+
+**Tests.** The card reads. In a three-player pod, one opponent discards, the other has an empty
+hand, and we draw one. Faults injected by script: 3 of 3 caught.
+
+## D877 — A base size for the whole team: Mirror Entity
+
+Most-played order: Mirror Entity (rank 1016).
+
+**Reader.** "Until end of turn, creatures you control have base power and toughness X/X [and gain
+all creature types]", with a number or the X paid. Layer 7b, and every creature type where
+printed, applies to each creature you control as it resolves (CR 611.2c).
+
+**Tests.** The card reads. With X = 4, our Bear and the Entity are 4/4 and the Bear has every
+creature type; the opponent's Bear is unchanged; and it wears off next turn. Faults injected by
+script: 3 of 3 caught.
+
+## D878 — A card for each opponent who drew one: Cut a Deal
+
+Most-played order: Cut a Deal (rank 948).
+
+**Reader.** "Each opponent draws a card, then you draw a card for each opponent who drew a card this
+way". Each opponent draws, and those whose draw found a card are counted; an empty library is not.
+Then you draw that many.
+
+**Tests.** The card reads. In a three-player pod, both opponents draw and we draw two. With one
+opponent's library empty, we draw one. Faults injected by script: 3 of 3 caught.
+
+## D879 — A counter put on as a cost: Devoted Druid
+
+Most-played order: Devoted Druid (rank 963).
+
+**Engine.** `AbilityCost.putCounter`, paid on the source as the cost is paid, beside
+`removeCounter`, before the ability is on the stack. A Druid that dies of it still untaps
+(CR 602.2), and the cost is always payable.
+
+**Reader.** "Put a -1/-1 counter on ~" as a cost component.
+
+**Tests.** The card reads. Tap for {G}, untap for a -1/-1 counter, and tap again for two {G} in
+all. The second untap kills the 0/2. Faults injected by script: 3 of 3 caught.
+
+## D880 — One target of each kind: Decimate
+
+Most-played order: Decimate (rank 1009).
+
+**Reader.** "Destroy target A, target B, target C, and target D", and two targets joined by "and".
+Each phrase is one target of its own kind, and all of them are destroyed as it resolves. The bot's
+removal flag is set only when a creature is among them.
+
+**Tests.** The card reads. Their Rock, Bear, enchantment and Mountain are all destroyed, and a
+creature offered in the artifact slot is refused. Faults injected by script: 2 of 2 caught.
+
+Two compile.test pins were retargeted by D875 and are recorded here. Forked-Branch Garami's
+"Soulshift 4, soulshift 4" was refused because its reminder text merges the two into one
+ability. Each instance of soulshift triggers separately (CR 702.46b), and the two triggers return
+the same cards, so it is now pinned as two triggers. "Flanking, rampage 2" reads now, since both
+parts read, so the D554 pin moved to "Flanking, bands with other Dinosaurs", which still does not.
+
+Gated together on 02d07b5: full gate green (re-run after the two pins), engine tests 6622.
+Coverage: 16,832 to 16,853 of 31,900 cards with every line read, and 39,369 to 39,399 of 59,888
+lines. Card-by-card diffs: D872–D875 against 02d07b5, 0 lost and 6 gained (including Maelstrom
+Wanderer and Forked-Branch Garami); D876–D880 against that, 0 lost and 16 gained (including
+Fumarole, Plague Spores, Netherborn Altar and Biomass Mutation).

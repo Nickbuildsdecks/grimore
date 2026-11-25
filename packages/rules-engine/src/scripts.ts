@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -11779,6 +11779,35 @@ export { cardTargets, destroy };
 export function keywordScriptFor(line: string, name: string): Partial<CardScript> | null {
   const text = line.trim();
   const word = text.toLowerCase();
+  /*
+    A comma list where a part needs a script (D875): Apex Devastator's "Cascade, cascade, cascade,
+    cascade" is four cascade triggers, each its own (CR 702.85c); "Flying, cascade" is the printed
+    keyword and the script. Each part read alone; a part that is a printed keyword needs nothing;
+    any other part refuses the list, and so does a field two parts both set unless it is a trigger list.
+  */
+  if (/,/.test(text) && !/[:."]/.test(text)) {
+    const parts = text.split(/,\s*/).map((part) => part.trim()).filter((part) => part !== '');
+    if (parts.length > 1) {
+      const merged: Record<string, unknown> = {};
+      let scripted = false;
+      for (const part of parts) {
+        const lower = part.toLowerCase();
+        const read = keywordScriptFor(part, name);
+        if (read === null) {
+          if (isKeyword(lower)) continue;
+          return null;
+        }
+        scripted = true;
+        for (const [key, value] of Object.entries(read)) {
+          const prior = merged[key];
+          if (prior === undefined) merged[key] = value;
+          else if (key === 'triggers' && Array.isArray(prior) && Array.isArray(value)) merged[key] = [...prior, ...value];
+          else return null;
+        }
+      }
+      return scripted ? merged as Partial<CardScript> : null;
+    }
+  }
 
   // ── The keywords whose line is the whole instruction ──────────────────────────────────────────
   if (word === 'cascade') return { triggers: [cascade()] };
@@ -27367,6 +27396,23 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     without the untap. `removeFromCombat`: it stops attacking or blocking, and deals and is dealt no
     combat damage (CR 506.4).
   */
+  /*
+    "Destroy target artifact, target creature, target enchantment, and target land" (D880, Decimate),
+    and two joined by "and": one target per phrase, each a permanent of its own kind, all destroyed as
+    it resolves. A target that is no longer legal is skipped by the resolution, the rest still go.
+  */
+  const several = /^destroy (target [^,]+?(?:, target [^,]+?)*,? and target .+)$/i.exec(text);
+  if (several !== null) {
+    const phrases = several[1]!.split(/,? and (?=target )|, (?=target )/i).map((p) => p.trim());
+    const specs = phrases.map((phrase) => targetSpecFrom(phrase, false));
+    if (phrases.length >= 2 && specs.every((spec) => spec !== null && pointsAtAPermanent(spec) && (spec.count ?? 1) === 1)) {
+      return {
+        targets: specs as TargetSpec[],
+        effect: (c) => foldCardTargets(c, (state, id) => destroy(state, id)),
+        ...(specs.some((spec) => spec!.kind === 'creature') ? { spellFlags: { removesACreature: true } } : {}),
+      };
+    }
+  }
   const removed = /^remove (target .+?) from combat( and untap it)?$/i.exec(text);
   if (removed !== null) {
     const spec = targetSpecFrom(removed[1]!, /\byou control\b/i.test(removed[1]!));
@@ -28633,6 +28679,24 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         spellFlags: { expiresAtEndOfTurn: true },
       };
     }
+  }
+  /*
+    "Until end of turn, creatures you control have base power and toughness X/X and gain all creature
+    types" (D877, Mirror Entity), with a number or the X paid: layer 7b on each creature you control as
+    it resolves (CR 611.2c), and every creature type where printed.
+  */
+  const mirrored = /^(until end of turn, )?creatures you control have base power and toughness (x|\d+)\/(x|\d+)( and gain all creature types)?( until end of turn)?$/i.exec(text);
+  if (mirrored !== null && (mirrored[1] === undefined) !== (mirrored[5] === undefined)
+    && (mirrored[2]!.toLowerCase() === 'x') === (mirrored[3]!.toLowerCase() === 'x')) {
+    const sized = (word: string, c: EffectContext) => (word.toLowerCase() === 'x' ? Math.max(0, c.x ?? 0) : Number(word));
+    const everyType = mirrored[4] !== undefined;
+    return {
+      effect: (c) => pump(c.state, creaturesControlledBy(c.state, c.controller), c.source, c.controller, {
+        setPower: sized(mirrored[2]!, c), setToughness: sized(mirrored[3]!, c),
+        ...(everyType ? { allCreatureTypes: true } : {}),
+      }),
+      spellFlags: { expiresAtEndOfTurn: true },
+    };
   }
   const reshaped = /^(until end of turn, )?((?:up to one (?:other )?|another )?target .+?) ((?:loses|has|becomes|gets|gains) .+?)( until end of turn)?$/i.exec(text);
   if (reshaped !== null && (reshaped[1] === undefined) !== (reshaped[4] === undefined)) {
@@ -31883,6 +31947,26 @@ const CHAOS_WARP_TAIL = ', and reveals the top card of their library, putting it
 const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 
 /**
+ * "Each other player discards a card. You draw a card for each card discarded this way." (D876, Syphon
+ * Mind.) The discard round as `each player discards a card` asks it, each discarding player choosing
+ * from their own hand, and then one draw for each card that was discarded, which a player with an
+ * empty hand did not add to.
+ */
+function discardThenDraw(clause: string, next: string | undefined): ReadEffect | null {
+  const round = /^(each other player|each opponent) discards (a|one|two) cards?$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (round === null || next === undefined) return null;
+  if (!/^you draw a card for each card discarded this way$/i.test(next.trim().replace(/\.$/, ''))) return null;
+  const n = round[2]!.toLowerCase() === 'two' ? 2 : 1;
+  return {
+    decisions: [{ who: 'each-opponent', from: 'hand', prompt: `Discard ${n === 1 ? 'a card' : 'two cards'}`, min: n, max: n }],
+    effect: (c) => {
+      const discarded = c.decisions.flatMap((answer) => answer.ids).filter((id) => c.state.instances[id]?.zone === 'hand');
+      return draw(moveToGraveyard(c.state, discarded), c.controller, discarded.length);
+    },
+  };
+}
+
+/**
  * "Each player sacrifices a creature or planeswalker. Each player who can't discards a card." (D858,
  * Plaguecrafter.) Two questions round the table: the sacrifice, then a discard offered only to a
  * player who had nothing to sacrifice — its filter reads the board before anything is sacrificed,
@@ -32972,6 +33056,27 @@ function composeEffectsAsPrinted(
     // The edict with a forfeit (D858): see `edictOrDiscard`.
     const forfeit = edictOrDiscard(clause, rest[at + 1]);
     if (forfeit !== null) { parts.push(forfeit); at++; continue; }
+    // A discard round paid back in cards (D876): see `discardThenDraw`.
+    const syphon = discardThenDraw(clause, rest[at + 1]);
+    if (syphon !== null) { parts.push(syphon); at++; continue; }
+    // "Each opponent draws a card, then you draw a card for each opponent who drew a card this way" (D878).
+    if (/^each opponent draws a card$/i.test(clause.trim().replace(/\.$/, ''))
+      && /^(?:then )?you draw a card for each opponent who drew a card this way$/i.test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      parts.push({
+        effect: (c) => {
+          let state = c.state;
+          let drew = 0;
+          for (const seat of opponentsOf(state, c.controller)) {
+            const before = drawnThisTurn(state, seat);
+            state = draw(state, seat, 1);
+            if (drawnThisTurn(state, seat) > before) drew += 1;
+          }
+          return draw(state, c.controller, drew);
+        },
+      });
+      at++;
+      continue;
+    }
     // Two sentences that are one effect, wherever in the sequence they sit (D583).
     const impulse = impulseDraw(clause, rest[at + 1]);
     if (impulse !== null) { parts.push(impulse); at++; continue; }
@@ -34257,6 +34362,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesFromGraveyard = false;
   let energy = 0;
   let removes: { counter: string; amount: number } | null = null;
+  let puts: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
@@ -34398,6 +34504,15 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       number — "Remove X storage counters", "any number of", "all" are amounts chosen or counted
       as the cost is paid, and `removeCounter.amount` is fixed.
     */
+    // D879: "Put a -1/-1 counter on ~" as a cost (Devoted Druid).
+    const putOn = new RegExp(`^Put (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? on ${self}$`, 'i').exec(component);
+    if (putOn !== null) {
+      if (puts !== null) return null;
+      const amount = /^an?$/i.test(putOn[1]!) ? 1 : countFrom(putOn[1]!);
+      if (amount === null || amount <= 0) return null;
+      puts = { counter: putOn[2]!.toLowerCase(), amount };
+      continue;
+    }
     const removed = new RegExp(
       `^Remove (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? from ${self}$`, 'i',
     ).exec(component);
@@ -34570,7 +34685,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const anything = taps > 0 || untaps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
-    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null
+    || exilesSelf || energy > 0 || removes !== null || puts !== null || tapsOthers !== null || exilesCards !== null
     || discardsAtRandom || returnsSelf || returnsOthers !== null;
   // `{T}` and `{Q}` together is no printing, and each is one symbol at most.
   if (taps > 1 || untaps > 1 || (taps > 0 && untaps > 0) || !anything) return null;
@@ -34599,6 +34714,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
     ...(removes === null ? {} : { removeCounter: removes }),
+    ...(puts === null ? {} : { putCounter: puts }),
     ...(energy === 0 ? {} : { energy }),
     ...(exilesSelf ? { exileSelf: true as const } : {}),
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
@@ -36317,6 +36433,18 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (/^if an opponent would lose life during your turn, they lose twice that much life instead\.?$/i.test(plain(line).trim())) {
     return { opponentsLoseDoubleOnYourTurn: true };
   }
+  // D872: Torbran's "If a red source you control would deal damage to an opponent or a permanent an
+  // opponent controls, it deals that much damage plus 2 instead."
+  const plussed = /^if an? (white|blue|black|red|green) source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals that much damage plus (\d+) instead\.?$/i.exec(plain(line).trim());
+  if (plussed !== null) {
+    return {
+      damageMultiplier: {
+        factor: 1, plus: Number(plussed[3]),
+        colour: COLOUR_WORDS[plussed[1]!.toLowerCase()]!,
+        ...(/opponent/i.test(plussed[2]!) ? { opponents: true as const } : {}),
+      },
+    };
+  }
   // D865: "If a source you control would deal damage to …, it deals double / triple that damage instead."
   const multiplied = /^if a source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
   if (multiplied !== null) {
@@ -36616,6 +36744,25 @@ const KIND_WORDS = 'white|blue|black|red|green|colorless|multicolored|monocolore
 
 function groupStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
+  /*
+    "Creatures you control with +1/+1 counters on them can't be blocked" (D874, Herald of Secret
+    Streams), "Each creature you control with a counter on it can't be blocked", and the plain
+    "[Other] creatures you control can't be blocked": `cantBeBlocked` on the group, with the counter
+    filter where printed.
+  */
+  const unblockable = /^(other )?(?:creatures you control|each creature you control)(?: with (?:an? )?(\+1\/\+1 )?counters? on (?:it|them))? can't be blocked$/i.exec(text);
+  if (unblockable !== null) {
+    const countered = /with (?:an? )?(?:\+1\/\+1 )?counters? on/i.test(text);
+    return {
+      statics: [{
+        scope: unblockable[1] === undefined ? 'controller-creatures' : 'other-controller-creatures',
+        effect: {
+          cantBeBlocked: true,
+          ...(countered ? { onlyWithCounter: unblockable[2] === undefined ? '*' : '+1/+1' } : {}),
+        },
+      }],
+    };
+  }
   type Scope = NonNullable<CardScript['statics']>[number]['scope'];
   let scope: Scope | null = null;
   let predicate = '';
@@ -38119,20 +38266,25 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     have …". A triggered or an activated ability, on the scopes of the same names. "This artifact"
     in the quote is the holder, as "this creature" is for a creature lord's grant.
   */
-  const permanentGrant = /^(all artifacts|artifacts you control|all enchantments|other enchantments) have "([^"]+)"\.?$/i.exec(plain(line).trim());
+  // And "Tokens you control have …" (D873, Jaheira, Friend of the Forest): your permanents, tokens
+  // only, of any type; and "Permanents you control have …".
+  const permanentGrant = /^(all artifacts|artifacts you control|all enchantments|other enchantments|tokens you control|permanents you control) have "([^"]+)"\.?$/i.exec(plain(line).trim());
   if (permanentGrant !== null) {
     const scopes = {
       'all artifacts': 'all-artifacts', 'artifacts you control': 'artifacts-you-control',
       'all enchantments': 'all-enchantments', 'other enchantments': 'other-enchantments',
+      'tokens you control': 'permanents-you-control', 'permanents you control': 'permanents-you-control',
     } as const;
-    const scope = scopes[permanentGrant[1]!.toLowerCase() as keyof typeof scopes];
+    const which = permanentGrant[1]!.toLowerCase() as keyof typeof scopes;
+    const scope = scopes[which];
+    const tokensOnly = which === 'tokens you control' ? { onlyTokens: true as const } : {};
     const triggers = grantedTriggerFrom(permanentGrant[2]!, name);
     if (triggers !== null) {
-      return { statics: [{ scope, effect: { grants: triggers.map((_t, i) => i) } }], grantedTriggers: triggers };
+      return { statics: [{ scope, effect: { grants: triggers.map((_t, i) => i), ...tokensOnly } }], grantedTriggers: triggers };
     }
     const granted = grantedAbilityFrom(permanentGrant[2]!, name);
     if (granted !== null) {
-      return { statics: [{ scope, effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
+      return { statics: [{ scope, effect: { grantsAbilities: granted.map((_a, i) => i), ...tokensOnly } }], grantedAbilities: granted };
     }
   }
   /*

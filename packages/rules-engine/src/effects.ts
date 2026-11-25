@@ -1299,16 +1299,22 @@ function multipliedDamage(state: GameState, target: Target, amount: number, cont
   if (seat === undefined) return amount;
   const lookup = scriptLookup;
   const victim = target.kind === 'player' ? target.seat : state.instances[target.id]?.zoneSeat;
+  const sourceInst = source === null ? undefined : state.instances[source];
+  const sourceColours = sourceInst === undefined ? [] : characteristicsOf(state, sourceInst).colors;
   let total = amount;
+  let added = 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
     const rule = lookup(state.cardDefs[inst.defKey])?.damageMultiplier;
     if (rule === undefined) continue;
     if (rule.opponents === true && (victim === undefined || victim === seat)) continue;
+    if (rule.colour !== undefined && !sourceColours.includes(rule.colour)) continue;
     total *= rule.factor;
+    added += rule.plus ?? 0;
   }
-  return total;
+  // The additions after the factors, the order that gives the controller the most (CR 616.1).
+  return total + added;
 }
 
 /** See `CardScript.winsOnEmptyDraw` (D852): a permanent of the seat's that wins it the game instead. */
@@ -3229,6 +3235,8 @@ export interface PumpOptions {
   readonly onlyAttacking?: true;
   /** See `ContinuousEffect.onlyNontoken` (D871). */
   readonly onlyNontoken?: true;
+  /** See `ContinuousEffect.onlyTokens` (D873). */
+  readonly onlyTokens?: true;
   readonly onlyWithCounter?: string;
   /** See `ContinuousEffect.onlyWithKeyword` (D1126). */
   readonly onlyWithKeyword?: Keyword;
@@ -3318,6 +3326,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
     ...(opts.onlyAttacking ? { onlyAttacking: true as const } : {}),
     ...(opts.onlyNontoken ? { onlyNontoken: true as const } : {}),
+    ...(opts.onlyTokens ? { onlyTokens: true as const } : {}),
     ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
     ...(opts.onlyWithKeyword ? { onlyWithKeyword: opts.onlyWithKeyword } : {}),
     ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),

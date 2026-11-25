@@ -2289,6 +2289,10 @@ function activate(
     next = addCounters(next, inst.id,
       ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
   }
+  // D879: a counter put on as the cost.
+  if (ability.cost.putCounter !== undefined) {
+    next = addCounters(next, inst.id, ability.cost.putCounter.counter, ability.cost.putCounter.amount);
+  }
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
   // A {Q} cost untaps through the stun counter's replacement too (D723, CR 122.1d).
   if (ability.cost.untap === true) next = untapPermanent(next, inst.id);

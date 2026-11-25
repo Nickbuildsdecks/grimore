@@ -2759,6 +2759,12 @@ export interface AbilityCost {
    */
   readonly removeCounter?: { readonly counter: string; readonly amount: number };
   /**
+   * "Put a -1/-1 counter on ~:" (D879, Devoted Druid): counters put on the source as the cost is paid,
+   * before the ability is on the stack, so a Druid that dies of it still untaps itself (CR 602.2).
+   * Always payable.
+   */
+  readonly putCounter?: { readonly counter: string; readonly amount: number };
+  /**
    * "Pay {E}{E}:" — energy, which is a counter on the **player** rather than on a permanent
    * (CR 122.1, CR 107.17).
    *
@@ -3327,7 +3333,14 @@ export interface CardScript {
    * a permanent an opponent controls" (`opponents`). Asked by `dealDamage` of the source's controller's
    * permanents, live; two of them multiply together (CR 616.1, each applied once).
    */
-  readonly damageMultiplier?: { readonly factor: number; readonly opponents?: true };
+  readonly damageMultiplier?: {
+    readonly factor: number;
+    readonly opponents?: true;
+    /** Torbran's "that much damage plus 2" (D872): added after every factor, once per such permanent. */
+    readonly plus?: number;
+    /** Only a source of this colour (D872, "a red source you control"), read live. */
+    readonly colour?: Color;
+  };
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,
