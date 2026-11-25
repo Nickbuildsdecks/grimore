@@ -27558,11 +27558,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     targets as the return below, a different destination: the owner's library, on top (CR 401.4).
   */
   const toTop = new RegExp(
-    `^put (${TARGET_QUANTIFIER_PREFIX}target .*?cards?(?: with mana value \\d+ or (?:less|greater))?) from your graveyard on top of your library$`,
+    `^put (${TARGET_QUANTIFIER_PREFIX}target .*?cards?(?: with mana value \\d+ or (?:less|greater))?) from (your|a) graveyard on top of (?:your|its owner's) library$`,
     'i',
   ).exec(text);
-  if (toTop !== null) {
-    const spec = targetSpecFrom(graveyardPhrase(toTop[1]!, 'your'), false);
+  // And from any graveyard to its owner's library (D845, Noxious Revival): "a graveyard … its owner's".
+  const anyGraveyard = toTop !== null && toTop[2]!.toLowerCase() === 'a';
+  if (toTop !== null && anyGraveyard === /its owner's library$/i.test(text)) {
+    const spec = targetSpecFrom(graveyardPhrase(toTop[1]!, anyGraveyard ? 'a' : 'your'), false);
     if (spec !== null && POINTS_AT_A_GRAVEYARD_CARD.has(spec.kind)) {
       return {
         targets: [spec],
@@ -29987,6 +29989,23 @@ function readEffect(
         },
       };
     }
+  }
+  /*
+    "Put all creature cards from all graveyards onto the battlefield under your control" (D845, Rise
+    of the Dark Realms, Liliana, Death's Majesty's ultimate's cousins): D804's mass return, from
+    every graveyard, all under the controller. Land, artifact and creature cards only, for D804's
+    reason.
+  */
+  const massTheft = /^(?:put|return) all (land|artifact|creature) cards from all graveyards (?:onto|to) the battlefield under your control$/i.exec(clause.trim());
+  if (massTheft !== null) {
+    const kind = massTheft[1]!.toLowerCase();
+    return {
+      effect: (c) => {
+        const ids = c.state.seats.flatMap((_, seat) => listAt(c.state, zoneKey(seat as SeatIndex, 'graveyard')))
+          .filter((id) => hasType(parseTypeLine(c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.typeLine), kind));
+        return ids.reduce((state, id) => putOntoBattlefield(state, id, c.controller), c.state);
+      },
+    };
   }
   // "Each other player discards a card" (D808): every player but the controller, which is each opponent.
   if (/^each other player (draws|discards|loses|gains|mills|sacrifices|creates|reveals)\b/i.test(clause.trim())) {
