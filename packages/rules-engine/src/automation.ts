@@ -6193,7 +6193,13 @@ function askOrFinish(
       five cards, and what they are is the point of having looked. So it is asked with nothing to
       pick, and the answer is the confirmation that they have seen them.
     */
-    const showsOnly = looked !== undefined && looked.length > 0 && max === 0;
+    /*
+      And a look at a hand (D3014): "Look at target player's hand" has nothing to pick, and is asked
+      for the same reason, so long as there is a hand to see.
+    */
+    const handLook = !isCountersDecision(spec) && spec.from === 'hand' && spec.fromSeat === 'target-player'
+      && spec.max === 0 && candidates.length > 0;
+    const showsOnly = (looked !== undefined && looked.length > 0 && max === 0) || handLook;
     /*
       **A reorder is asked even when every card must be picked** (D651): Ponder's "put them back in
       any order" picks all three, so the set is forced — but the answer is the *order*, and the rule

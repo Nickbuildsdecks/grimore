@@ -63734,3 +63734,18 @@ Faults injected by hand: 3, all caught.
 - The second half run on the state before the exile.
 
 Coverage: 16,987 of 31,900 cards (+4 over D1241's 16,983), 39,603 of 59,888 lines (+8).
+## D3014 — "Look at target player's hand.": Gitaxian Probe, Peek
+
+**Reader.** The sentence on its own, ahead of the composer loop with the other hand readers
+(`handLookPrefix`). It is a hand question over the target's hand with `max: 0`. The caster is shown
+the cards and picks none, and nothing on the board changes.
+
+**Engine.** A question with nothing to pick used to be answered by the engine itself, which would
+make the look silent. A target-hand question with `max: 0` is now asked anyway while the hand has
+cards, for the same reason D584 asks a dig with nothing to take: what the cards are is the point of
+looking. An empty hand is not asked. A bot answers it with no cards, like any other show-only question.
+
+**Tests.** The Probe at an opponent holding two cards asks seat 0, shows exactly those two, and
+takes none. The bot answers it the same way, the opponent keeps both cards, and the caster draws one.
+At an empty hand nothing is asked. Faults injected by script: 3 of 3 caught (answered silently,
+asked over an empty hand, the caster's own hand shown).

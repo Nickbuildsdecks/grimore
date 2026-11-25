@@ -32703,6 +32703,32 @@ function lookedDiscardPrefix(
   };
 }
 
+/**
+ * "Look at target player's hand." on its own (D3014): Gitaxian Probe, Peek, Telepathy's kin. The
+ * caster is shown the target's hand and picks nothing: a hand question with `max: 0`, which
+ * `automation.ts` asks rather than answering itself (see `showsOnly` there), so the look is a real
+ * prompt and the answer is the confirmation that it was seen. Nothing changes on the board.
+ */
+function handLookPrefix(
+  clauses: readonly string[],
+): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
+  const looked = /^look at target (opponent|player)'s hand$/i.exec((clauses[0] ?? '').trim().replace(/\.$/, ''));
+  if (looked === null) return null;
+  const spec = targetSpecFrom(`target ${looked[1]!.toLowerCase()}`, false);
+  if (spec === null) return null;
+  return {
+    read: {
+      targets: [spec],
+      decisions: [{
+        who: 'controller', fromSeat: 'target-player', from: 'hand',
+        prompt: "Look at that player's hand", min: 0, max: 0,
+      }],
+      effect: (c) => c.state,
+    },
+    rest: clauses.slice(1),
+  };
+}
+
 function chosenDiscardPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
@@ -33461,7 +33487,7 @@ function composeEffectsAsPrinted(
     Tried in order and at most one can match, since their first sentences are different; whichever
     does consumes its own clauses and the loop below reads the tail.
   */
-  const grouped = stealPrefix(clauses) ?? chosenDiscardPrefix(clauses) ?? lookedDiscardPrefix(clauses);
+  const grouped = stealPrefix(clauses) ?? chosenDiscardPrefix(clauses) ?? lookedDiscardPrefix(clauses) ?? handLookPrefix(clauses);
   const rest = grouped === null ? clauses : grouped.rest;
   const parts: ReadEffect[] = grouped === null ? [] : [grouped.read];
   // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
