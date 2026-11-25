@@ -63105,3 +63105,32 @@ The two new fields are listed among the mechanics the compiler reads that no bui
 with the runtime block above as their evidence.
 
 Coverage: 16,923 of 31,900 cards (+3 over D1231's 16,920), 39,479 of 59,888 lines (+5).
+
+## D1233 — "Each opponent can't draw more than one card each turn"
+
+Narset, Parter of Veils and Leovold ("Each opponent can't draw more than one card each turn"),
+Spirit of the Labyrinth ("Each player …"), Omen Machine and Maralen of the Mornsong ("Players can't
+draw cards"), and "You can't draw cards". A new script field, `drawLimit`, asked by `draw` before
+anything else: a draw is cut to what the turn's limit leaves (one, less what the player has drawn
+this turn, or none). It comes before the other session's Notion Thief replacement (D891), because a
+draw a player cannot make is not made, so there is nothing to replace.
+
+Read whole now (1): Spirit of the Labyrinth. Narset, Leovold, Omen Machine and Maralen read this
+line and wait on others (Narset's -2, Leovold's targeting trigger, the two draw-step triggers).
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- "Draw two cards" under an opponent's Narset draws one; with none, or with its own controller's,
+  two.
+- "Each player" limits its controller to one; "Players can't draw cards" stops both.
+
+Faults injected by hand: 4, all caught.
+- No limit ever.
+- "Each opponent" read as every player.
+- "Can't draw cards" read as one a turn.
+- The cards already drawn this turn not counted.
+
+The new field is listed among the mechanics the compiler reads that no built-in deck plays, with the
+runtime block above as its evidence.
+
+Coverage: 16,924 of 31,900 cards (+1 over D1232's 16,923), 39,484 of 59,888 lines (+5).
