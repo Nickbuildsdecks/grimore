@@ -1332,6 +1332,8 @@ function watcherSees(
   const c = ch();
   const kind = watches.yours;
   return kind === 'land' ? c.isLand
+    // Kinnan (D1257): "a nonland permanent".
+    : kind === 'nonland permanent' ? !c.isLand
     : kind === 'creature' ? c.isCreature
       : kind === 'land creature' ? c.isLand && c.isCreature
         : c.typeLine.subtypes.some((s) => s.toLowerCase() === kind.subtype.toLowerCase());

@@ -3263,7 +3263,7 @@ export interface CardScript {
    */
   readonly tapManaExtra?: {
     /** The permanent this is attached to, or a permanent of its controller's of the kind named. */
-    readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | { readonly subtype: string } }
+    readonly watches: 'enchanted' | { readonly yours: 'land' | 'creature' | 'land creature' | 'nonland permanent' | { readonly subtype: string } }
       /**
        * Anybody's land of the kind (D1106): "Whenever a player taps a land for mana" (Mana Flare,
        * Heartbeat of Spring), "… a basic land" (Lavaleaper), "… a Mountain, Forest, or Plains"

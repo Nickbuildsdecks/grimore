@@ -32764,13 +32764,19 @@ function digGroup(
     "You may reveal up to two artifact cards from among them and put them into your hand".
   */
   const kindTest = (printed: string, cap: string | undefined) => {
-    const test = graveyardTypeTest(printed.replace(/\s+and\/or\s+/g, ' or ').replace(/,\s*(?:or\s+)?/g, ' or '));
+    // "A non-Human creature card" (D1257, Kinnan): a creature type left out.
+    const without = /^non-([A-Z][a-z]+) (.+)$/.exec(printed);
+    if (without !== null && !isCreatureType(without[1]!)) return null;
+    const rest = without === null ? printed : without[2]!;
+    const test = graveyardTypeTest(rest.replace(/\s+and\/or\s+/g, ' or ').replace(/,\s*(?:or\s+)?/g, ' or '));
     if (test === null) return null;
     const most = cap === undefined ? null : Number(cap);
     return (state: GameState, id: string): boolean => {
       const inst = state.instances[id];
       const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
-      return inst !== undefined && test(parseTypeLine(def?.typeLine), def) && (most === null || (def?.cmc ?? 0) <= most);
+      const line = parseTypeLine(def?.typeLine);
+      if (without !== null && hasSubtype(line, without[1]!)) return false;
+      return inst !== undefined && test(line, def) && (most === null || (def?.cmc ?? 0) <= most);
     };
   };
   const later = clauses[at + 2]?.trim().replace(/^then\s+/i, '');
@@ -39460,6 +39466,13 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     "Whenever you tap a land for mana, add one mana of any type that land produced" (Zendikar
     Resurgent, Mirari's Wake). See `CardScript.tapManaExtra`.
   */
+  /*
+    "Whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced"
+    (D1257, Kinnan, Bonder Prodigy): D1106's echo for your nonland permanents.
+  */
+  if (/^whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced\.?$/i.test(plain(line).trim())) {
+    return { tapManaExtra: { watches: { yours: 'nonland permanent' }, adds: 'produced' } };
+  }
   const echoed = /^whenever (a player|you) taps? an? (land|basic land|(?:(?:plains|island|swamp|mountain|forest)(?:, or |, | or ))*(?:plains|island|swamp|mountain|forest)) for mana, (?:that player adds|add) one mana of any type that land produced\.?$/i.exec(plain(line).trim());
   if (echoed !== null) {
     const kind = echoed[2]!.toLowerCase();

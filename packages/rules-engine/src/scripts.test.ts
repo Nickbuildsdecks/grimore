@@ -45555,6 +45555,53 @@ describe('The top card, if it is of a kind, "Otherwise, draw a card": Thrasios (
   });
 });
 
+describe('Kinnan: a nonland permanent tapped for mana makes one more (D1257)', () => {
+  const ROWS = [
+    { name: 'Test Kinnan', type_line: 'Legendary Creature — Human Druid', oracle_text: 'Whenever you tap a nonland permanent for mana, add one mana of any type that permanent produced.\n{5}{G}{U}: Look at the top five cards of your library. You may put a non-Human creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.', mana_cost: '{0}', cmc: 2, colors: ['G', 'U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Rock', type_line: 'Artifact', oracle_text: '{T}: Add {C}.', mana_cost: '{0}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Dig', type_line: 'Sorcery', oracle_text: 'Look at the top five cards of your library. You may put a non-Human creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Human', type_line: 'Creature — Human', oracle_text: '', mana_cost: '{0}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Elk', type_line: 'Creature — Elk', oracle_text: '', mana_cost: '{0}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({ id: 'd1257', name: 'Kinnan', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1257', 1: 'd1257' }, deckSpecs: { d1257: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a rock makes two colourless with Kinnan, a land still makes one', () => {
+    expect(potentialMana(table(['Test Rock']), 0).C).toBe(1);
+    const s = table(['Test Kinnan', 'Test Rock', 'Forest']);
+    expect(potentialMana(s, 0).C).toBe(2);
+    expect(potentialMana(s, 0).G).toBe(1);
+  });
+
+  it('the dig offers a non-Human creature and not a Human', () => {
+    const s0 = advanceTo(arena({
+      decks: { 0: 'd1257', 1: 'd1257' }, deckSpecs: { d1257: deck.deck }, hands: { 0: ['Test Dig'] }, battlefield: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = [...ids(s0, 0, 'library')];
+    const pick = (n: string) => lib.splice(lib.findIndex((id) => s0.cardDefs[s0.instances[id]!.defKey]?.name === n), 1)[0]!;
+    const top = [pick('Test Human'), pick('Test Elk')];
+    const s = { ...s0, zones: { ...s0.zones, '0:library': [...top, ...lib] } };
+    const t = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Dig'), targets: [] } as Action)), 20);
+    const offered = (t.pendingDecision?.candidates ?? []).map((id) => t.cardDefs[t.instances[id]!.defKey]?.name);
+    expect(offered).toContain('Test Elk');
+    expect(offered).not.toContain('Test Human');
+  });
+
+  it('tapping the rock by hand adds the extra one too', () => {
+    const s = table(['Test Kinnan', 'Test Rock']);
+    const rock = find(s, 0, 'battlefield', 'Test Rock');
+    const t = apply(s, { type: 'auto:activate', by: 0, card: rock, abilityIndex: 0 } as Action);
+    expect(poolOf(t, 0).C ?? 0).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
