@@ -61677,3 +61677,33 @@ and whose graveyard ignored.
 
 - engine tests: 6468, all passing (on 97a76ef, D840 and D841 gated together)
 - Coverage, both together: 16,636 to 16,641 of 31,900 cards with every line read, and 39,091 to 39,096 of 59,888 lines, against 97a76ef.
+
+## D1218 — "prevent all damage that would be dealt to ~ by <a kind of source>"
+
+Argothian Pixies' "Prevent all damage that would be dealt to ~ by artifact creatures", Wall of
+Putrid Flesh's "by enchanted creatures", Tresserhorn Skyknight's "by creatures with first strike",
+and "by creatures", "by artifact sources". D752's static read "prevent all damage that would be
+dealt to ~" and refused a source filter because the flags had none. A new effect field,
+`preventsDamageBy`, narrows `preventsDamageTo` to a source with every listed type, the keyword, or
+an Aura on it, asked of the source as it deals the damage. Only on the card itself.
+
+The pass-through was the part that needed a test to find: a static's effect is copied field by
+field (`modsFrom`), and without `preventsDamageBy` in that list the static prevented all damage,
+from any source.
+
+Read whole now (8): Argothian Pixies, Argothian Treefolk, Champion Lancer, Enchanted Being, Istvan,
+Butcher of Eln; Tresserhorn Skyknight; Uncle Istvan; Wall of Putrid Flesh. Not yet: "by creatures
+blocking it" (Armored Transport), "by creatures it's blocking" (Wall of Vapor), which ask about
+the combat.
+
+**Tests.** 2 engine tests:
+- The test cards read whole.
+- An artifact creature's 1 damage to the Pixies is prevented; a plain creature's kills it.
+
+Faults injected by hand: 2, all caught.
+- The filter not copied onto the installed effect (everything prevented).
+- The filter inverted.
+
+The coverage below includes the other session's D840 and D841, merged in before this was measured.
+
+Coverage: 16,677 of 31,900 cards (+13 over D1217's 16,664), 39,145 of 59,888 lines (+13).
