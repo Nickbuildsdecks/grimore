@@ -46751,3 +46751,25 @@ Faults injected by hand: 2, all caught.
 - The Human not left out.
 
 Coverage: 17,086 of 31,900 cards (+1 over D1256's 17,085), 39,743 of 59,888 lines (+2).
+
+## D1258 — Prosper: "Whenever you play a card from exile"
+
+"Play" is cast or play a land (CR 701.13), so the line is two events: a spell cast from exile
+(D1120's `fromZone: 'exile'`), and a land played from exile, which is new. The land play now carries
+whether it came out of exile (`playedFromExile`, from the permission the play used), and a
+`land-played` trigger can ask for it (`fromExile`). "Whenever you play a land from exile" is the
+second event alone.
+
+Read whole now (1): Prosper, Tome-Bound.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- A land played from exile makes a Treasure; one from hand does not.
+- A spell cast from exile makes a Treasure; one from hand does not.
+
+Faults injected by hand: 3, all caught.
+- The exile check on the land play skipped.
+- The spell half of "a card" dropped.
+- The land play not telling where it came from.
+
+Coverage: 17,087 of 31,900 cards (+1 over D1257's 17,086), 39,745 of 59,888 lines (+2).
