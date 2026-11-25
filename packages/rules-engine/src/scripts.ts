@@ -20026,6 +20026,17 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'targeted', by: 'opponent' }],
   },
   /*
+    And **its own controller's** (D1220): Valiant, "Whenever ~ becomes the target of a spell or
+    ability you control for the first time each turn" (`triggerRestriction` has already taken the
+    "first time" off and set the once-a-turn flag), and the few that print it without the limit.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? ${self} becomes the target of a spell or ability you control, (.+)$`, 'i',
+    ),
+    on: [{ kind: 'targeted', by: 'you' }],
+  },
+  /*
     **A spell** rather than a spell or ability (D791): Fblthp, Departed Deckhand, Stormchaser Drake
     ("… a spell you control"), Reality Smasher ("… a spell an opponent controls"). The same event
     with `spellOnly`, which ward's machinery already sets on it.
@@ -22690,6 +22701,8 @@ type ReferentPronoun =
    */
   | 'its controller' | "that creature's controller" | "that permanent's controller"
   | "that land's controller" | "that spell's controller"
+  /** The controller of whatever targeted the watcher, on a targeted trigger (D1220). */
+  | "that spell or ability's controller"
   // And the other permanent nouns (D1035), possessive and plain.
   | "that artifact's controller" | "that enchantment's controller" | "that planeswalker's controller"
   | 'that artifact' | 'that enchantment' | 'that land' | 'that permanent'
@@ -23204,6 +23217,25 @@ function eventRelativeEffect(
     if (read !== null) {
       const asked = (read.read.decisions ?? []).map((spec) => ({ ...spec, fromSeat: 'hit-player' as const })) as readonly DecisionSpecOf[];
       return { decisions: asked, effect: read.read.effect };
+    }
+  }
+  /*
+    **The controller of what did the targeting** (D1220): Bonecrusher Giant's "Whenever ~ becomes the
+    target of a spell, ~ deals 2 damage to that spell's controller", and "that spell or ability's
+    controller" where an ability can do it too. `targeted` is raised with the targeting object's
+    controller as its actor, so the player is `c.actor` — `?? c.controller` because the trigger drops
+    an actor that is the watcher's own controller (your own spell aimed at your own Giant), not
+    because there might be nobody: every targeting has a controller.
+  */
+  if (events.length > 0 && events.every((one) => one.kind === 'targeted')) {
+    for (const pronoun of ["that spell's controller", "that spell or ability's controller"] as const) {
+      const aimed = referentEffect(
+        text, pronoun, 'player',
+        (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
+        (swapped) => readEffect(swapped, name, null),
+        'acting-player',
+      );
+      if (aimed !== null) return aimed;
     }
   }
   if (aboutTheHitPlayer) {

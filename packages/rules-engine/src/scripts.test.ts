@@ -40896,6 +40896,62 @@ describe('one subject, several verbs: Archon of Cruelty (D842)', () => {
   });
 });
 
+describe('the controller of what targeted it, and Valiant (D1220)', () => {
+  const C = (name: string, p: string, t: string, text = '') => ({ name, type_line: 'Creature — Giant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: p, toughness: t, oracle_text: text });
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', oracle_text: text });
+  const ROWS = [
+    C('Test Crusher', '4', '3', 'Whenever Test Crusher becomes the target of a spell, Test Crusher deals 2 damage to that spell\'s controller.'),
+    C('Test Thorn', '2', '2', 'Whenever Test Thorn becomes the target of a spell or ability, Test Thorn deals 1 damage to that spell or ability\'s controller.'),
+    C('Test Valiant', '1', '1', 'Whenever Test Valiant becomes the target of a spell or ability you control for the first time each turn, put a +1/+1 counter on Test Valiant.'),
+    I('Test Pump', 'Target creature gets +0/+1 until end of turn.'),
+  ];
+  const deck = customDeck({ id: 'd1220', name: 'Aimed', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 28 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  /** Seat 0 holds `at`; seat `by` casts `times` Test Pumps at it, one after another. */
+  const pump = (at: string, by: 0 | 1, times = 1) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1220', 1: 'd1220' }, deckSpecs: { d1220: deck.deck },
+      battlefield: { 0: ['Forest', at], 1: ['Forest'] }, hands: { [by]: Array.from({ length: times }, () => 'Test Pump') }, turn: 3, firstSeat: by,
+    }), 'precombat-main');
+    const aim = find(s, 0, 'battlefield', at);
+    for (let i = 0; i < times; i += 1) {
+      s = settle(apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', 'Test Pump'), targets: [{ kind: 'card', id: aim }] } as Action));
+    }
+    return { s, aim };
+  };
+
+  it('reads every row whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never)).toMatchObject({ ok: true, unread: [] });
+    // On another event the possessive names nobody, and stays unread.
+    const elsewhere = compileCard(C('Test Other', '2', '2', 'Whenever Test Other attacks, Test Other deals 2 damage to that spell\'s controller.') as never);
+    expect(elsewhere.ok && elsewhere.unread.length).toBe(1);
+  });
+
+  it('the opponent who targeted it takes the damage', () => {
+    const { s } = pump('Test Crusher', 1);
+    expect(life(s, 1)).toBe(18);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('its own controller, when the spell was theirs', () => {
+    const { s } = pump('Test Crusher', 0);
+    expect(life(s, 0)).toBe(18);
+    expect(life(s, 1)).toBe(20);
+  });
+
+  it('"that spell or ability\'s controller" reads the same player', () => {
+    expect(life(pump('Test Thorn', 1).s, 1)).toBe(19);
+  });
+
+  it('Valiant: once a turn, and only off its own controller\'s spell', () => {
+    const twice = pump('Test Valiant', 0, 2);
+    expect(twice.s.instances[twice.aim]!.counters['+1/+1'] ?? 0).toBe(1);
+    const theirs = pump('Test Valiant', 1);
+    expect(theirs.s.instances[theirs.aim]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
