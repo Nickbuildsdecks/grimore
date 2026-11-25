@@ -2081,6 +2081,41 @@ export function drawLater(state: GameState, seat: SeatIndex, count: number): Gam
 }
 
 export function draw(state: GameState, seat: SeatIndex, count: number): GameState {
+  /*
+    Notion Thief (D891, CR 614.1a): each card an opponent of its controller would draw, except the first
+    in their own draw step, is skipped and the Thief's controller draws one instead. The draw step's
+    first card is the one they draw there before any other this turn; draws that were replaced were not
+    theirs, so they do not count towards it.
+  */
+  const thief = count > 0 ? drawThiefAgainst(state, seat) : undefined;
+  if (thief !== undefined) {
+    const exempt = state.step === 'draw' && state.activeSeat === seat && drawnThisTurn(state, seat) === 0 ? 1 : 0;
+    const kept = Math.min(count, exempt);
+    const own = kept > 0 ? drawUnreplaced(state, seat, kept) : state;
+    // The stolen draw is drawn as it is, not offered to another Thief: two Thieves on opposite sides
+    // would otherwise pass one card back and forth without end. A deliberate simplification.
+    return Array.from({ length: count - kept }).reduce<GameState>((s) => drawUnreplaced(s, thief, 1), own);
+  }
+  return drawUnreplaced(state, seat, count);
+}
+
+/** The seat of an opponent of `seat` whose Notion Thief takes `seat`'s draws (D891), if any. */
+function drawThiefAgainst(state: GameState, seat: SeatIndex): SeatIndex | undefined {
+  if (scriptLookup === null) return undefined;
+  const lookup = scriptLookup;
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    const has = listAt(state, zoneKey(other.index, 'battlefield')).some((id) => {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+      return lookup(state.cardDefs[inst.defKey])?.stealsExtraDraws === true;
+    });
+    if (has) return other.index;
+  }
+  return undefined;
+}
+
+function drawUnreplaced(state: GameState, seat: SeatIndex, count: number): GameState {
   const result = drawFromLibrary(state, seat, count);
   /*
     One `drew` entry per card that actually arrived, for `settle` to announce. See `GameState.drew`

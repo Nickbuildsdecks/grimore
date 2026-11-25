@@ -3351,6 +3351,11 @@ export interface CardScript {
    * recorded as an empty draw (CR 704.5b).
    */
   readonly winsOnEmptyDraw?: true;
+  /**
+   * "If an opponent would draw a card except the first one they draw in each of their draw steps,
+   * instead that player skips that draw and you draw a card." (D891, Notion Thief.) Asked by `draw`.
+   */
+  readonly stealsExtraDraws?: true;
   /** "If an opponent would lose life during your turn, they lose twice that much life instead" (D868). See `lifeLossMultiplier`. */
   readonly opponentsLoseDoubleOnYourTurn?: true;
   /**

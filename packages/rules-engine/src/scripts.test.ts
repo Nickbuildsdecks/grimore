@@ -8099,6 +8099,9 @@ describe('deck coverage', () => {
       // D868: Bloodletter of Aclazotz; driven by "on our turn: a Shock costs the opponent 4". No pool
       // deck plays one.
       'script opponentsLoseDoubleOnYourTurn',
+      // D891: Notion Thief; driven by "under our Thief, their Divination draws two for us". No pool deck
+      // plays one.
+      'script stealsExtraDraws',
     ]);
 
     const declared = [
@@ -43273,6 +43276,193 @@ describe('"players can\'t untap more than one land during their untap steps" (D1
   it('"You can\'t": only its controller is limited', () => {
     expect(untapped(untapWith(['Test Wurm'], []), 'Forest')).toBe(1);
     expect(untapped(untapWith([], ['Test Wurm']), 'Forest')).toBe(3);
+  });
+});
+
+describe('token doublers in other words: Exalted Sunborn, Primal Vigor (D888)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Sunborn', 'Creature — Angel', 'Flying, lifelink\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.', { colors: ['W'], power: '4', toughness: '5' }),
+    R('Test Vigor', 'Enchantment', 'If one or more tokens would be created, twice that many of those tokens are created instead.\nIf one or more +1/+1 counters would be put on a creature, twice that many +1/+1 counters are put on that creature instead.'),
+    R('Test Loot', 'Sorcery', 'Create two Treasure tokens.'),
+  ];
+  const deck = customDeck({ id: 'd888', name: 'Doublers', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+  const treasures = (mine: string[], theirs: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd888', 1: 'd888' }, deckSpecs: { d888: deck.deck },
+      hands: { 0: ['Test Loot'] }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Loot') })));
+    return namesIn(s, 0, 'battlefield').filter((n) => n === 'Treasure').length;
+  };
+
+  it('reads both', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our Sunborn doubles our Treasures; theirs does not', () => {
+    expect([treasures(['Test Sunborn'], []), treasures([], ['Test Sunborn'])]).toEqual([4, 2]);
+  });
+
+  it('Primal Vigor doubles anybody\'s: on their side it still doubles ours', () => {
+    expect([treasures(['Test Vigor'], []), treasures([], ['Test Vigor'])]).toEqual([4, 4]);
+  });
+});
+
+describe('half the library and half the life, rounded up: Peer into the Abyss (D889)', () => {
+  const ROWS = [
+    { name: 'Test Peer', type_line: 'Sorcery', oracle_text: 'Target player draws cards equal to half the number of cards in their library and loses half their life. Round up each time.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd889', name: 'Peer', entries: [{ name: 'Test Peer', count: 4 }, { name: 'Swamp', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a library of 7 and 19 life: we draw 4 and lose 10', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd889', 1: 'd889' }, deckSpecs: { d889: deck.deck }, hands: { 0: ['Test Peer'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, zones: { ...s.zones, '0:library': ids(s, 0, 'library').slice(0, 7) } };
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: 19 } : seat)) };
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Peer'), targets: [{ kind: 'player', seat: 0 }] })));
+    expect([ids(s, 0, 'hand').length - (hand - 1), ids(s, 0, 'library').length, life(s, 0)]).toEqual([4, 3, 9]);
+  });
+});
+
+describe('mana for each life the opponents lost: Neheb, the Eternal (D890)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Neheb', 'Legendary Creature — Zombie Minotaur Warrior', 'Afflict 3\nAt the beginning of each of your postcombat main phases, add {R} for each 1 life your opponents have lost this turn.', { power: '4', toughness: '6' }),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.'),
+  ];
+  const deck = customDeck({ id: 'd890', name: 'Neheb', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 52 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Shock at the opponent before combat: {R}{R} at the start of the postcombat main phase', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd890', 1: 'd890' }, deckSpecs: { d890: deck.deck },
+      hands: { 0: ['Test Shock'] }, battlefield: { 0: ['Test Neheb'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shock'), targets: [{ kind: 'player', seat: 1 }] })));
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(s, 'postcombat-main');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = passBoth(s);
+    expect(s.step).toBe('postcombat-main');
+    expect(s.pools['0']!.R).toBe(2);
+  });
+});
+
+describe('an opponent\'s extra draws are ours: Notion Thief (D891)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Thief', 'Creature — Human Rogue', 'Flash\nIf an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card.', { colors: ['U', 'B'], power: '3', toughness: '1' }),
+    R('Test Divination', 'Sorcery', 'Draw two cards.'),
+  ];
+  const deck = customDeck({ id: 'd891', name: 'Thief', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 52 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('under our Thief, their draw step card is theirs, and their Divination draws two for us', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd891', 1: 'd891' }, deckSpecs: { d891: deck.deck },
+      hands: { 1: ['Test Divination'] }, battlefield: { 0: ['Test Thief'] }, turn: 2, firstSeat: 0,
+    } as never), 'precombat-main');
+    // Into their turn: their draw step card is theirs.
+    const theirs = ids(s, 1, 'hand').length;
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(ids(s, 1, 'hand').length).toBe(theirs + 1);
+    const ours = ids(s, 0, 'hand').length;
+    const before = ids(s, 1, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Divination') })));
+    expect(ids(s, 1, 'hand').length).toBe(before - 1);
+    expect(ids(s, 0, 'hand').length).toBe(ours + 2);
+  });
+
+  it('our own draws are untouched by our Thief', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd891', 1: 'd891' }, deckSpecs: { d891: deck.deck },
+      hands: { 0: ['Test Divination'] }, battlefield: { 0: ['Test Thief'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const ours = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Divination') })));
+    expect(ids(s, 0, 'hand').length).toBe(ours - 1 + 2);
+  });
+});
+
+describe('"at least five other Mountains" and "you may have ~ deal": Valakut, the Molten Pinnacle (D892)', () => {
+  const ROWS = [
+    { name: 'Test Valakut', type_line: 'Land', oracle_text: 'Test Valakut enters tapped.\nWhenever a Mountain you control enters, if you control at least five other Mountains, you may have Test Valakut deal 3 damage to any target.\n{T}: Add {R}.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd892', name: 'Valakut', entries: [{ name: 'Test Valakut', count: 4 }, { name: 'Mountain', count: 56 }], data: ROWS as never[] });
+  const sixth = (mountains: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd892', 1: 'd892' }, deckSpecs: { d892: deck.deck },
+      hands: { 0: ['Mountain'] }, battlefield: { 0: ['Test Valakut', ...Array.from({ length: mountains }, () => 'Mountain')] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Mountain') } as Action);
+    for (let i = 0; i < 12; i++) {
+      if (s.pendingChoice?.seat === 0) { s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] } as Action); continue; }
+      const d = s.pendingDecision;
+      if (d !== null) { s = apply(s, { type: 'auto:decide', by: d.seat, cards: [], option: d.options?.[0] } as Action); continue; }
+      if (s.stackOrder.length === 0) break;
+      s = passBoth(s);
+    }
+    return life(drain(s, 20), 1);
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with five other Mountains the sixth deals 3; with four it does nothing', () => {
+    expect(sixth(5)).toBe(17);
+    expect(sixth(4)).toBe(20);
+  });
+});
+
+describe('countering a spell cast for no mana: Vexing Bauble (D893)', () => {
+  const R = (name: string, type: string, text: string, cost: string, cmc: number) => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc, colors: ['R'], layout: 'normal',
+  });
+  const ROWS = [
+    R('Test Bauble', 'Artifact', 'Whenever a player casts a spell, if no mana was spent to cast it, counter that spell.\n{1}, {T}, Sacrifice Test Bauble: Draw a card.', '{1}', 1),
+    R('Test Free', 'Sorcery', 'Test Free deals 2 damage to any target.', '{0}', 0),
+    R('Test Paid', 'Sorcery', 'Test Paid deals 2 damage to any target.', '{1}', 1),
+  ];
+  const deck = customDeck({ id: 'd893', name: 'Bauble', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }], data: ROWS as never[] });
+  const cast = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd893', 1: 'd893' }, deckSpecs: { d893: deck.deck },
+      hands: { 1: [spell] }, battlefield: { 0: ['Test Bauble'] }, turn: 3, firstSeat: 1,
+    } as never), 'precombat-main');
+    s = { ...s, pools: { ...s.pools, '1': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 1 } } };
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', spell), targets: [{ kind: 'player', seat: 0 }] });
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    return life(s, 0);
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the free spell is countered; the one paid for with {1} resolves', () => {
+    expect(cast('Test Free')).toBe(20);
+    expect(cast('Test Paid')).toBe(18);
   });
 });
 
