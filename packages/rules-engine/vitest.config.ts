@@ -69,6 +69,14 @@ export default defineConfig({
 
       The cap stays because it is marginally *faster* and leaves the main thread a core, not
       because it was shown to fix anything.
+      **And a third time, from a different shape (D1227).** Five gates in a row failed this way,
+      and running files one at a time found it: `scripts.test.ts` alone reproduces it and
+      `playout.test.ts` alone does not. That file is thousands of *short synchronous* tests, and
+      vitest runs synchronous tests back to back without returning to the event loop, so the whole
+      file is one unbroken stretch; once it passed 60 seconds, the reporter call timed out though its
+      reply was already waiting. No single test is long, so reading durations does not find it. The
+      cure is the same yield, between tests: an `afterEach` in that file turns the event loop every
+      hundred tests. When this error returns, run each file alone first.
     */
     maxWorkers: 2,
   },

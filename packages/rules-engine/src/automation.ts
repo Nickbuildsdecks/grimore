@@ -2624,6 +2624,38 @@ function triggerSilence(state: GameState): { readonly entering: ReadonlySet<stri
   return entering === null && !dying ? null : { entering: entering ?? new Set(), dying };
 }
 
+/**
+ * How many additional times a triggered ability of `watcher` triggers for `event` (D1228): one for
+ * each live Panharmonicon-like permanent its controller controls whose event and kinds fit. Only a
+ * permanent's ability counts, and a dying creature's own death trigger is one (it was a permanent
+ * you controlled as it triggered).
+ */
+function extraTriggerCount(state: GameState, event: TriggerEvent, watcher: CardInstance, subject?: string): number {
+  if (watcher.emblem === true) return 0;
+  const on = event.kind === 'etb' || event.kind === 'permanents-entered' ? 'entering'
+    : event.kind === 'dies' || event.kind === 'creatures-died' ? 'dying'
+      : event.kind === 'attacks' ? 'attacking' : null;
+  if (on === null) return 0;
+  const about = event as { subjectTypes?: readonly string[]; subjectIsCreature?: boolean; subjectSeat?: SeatIndex };
+  const batch = event.kind === 'permanents-entered' ? event.entered ?? []
+    : event.kind === 'creatures-died' ? event.died ?? [] : null;
+  let extra = 0;
+  for (const id of listAt(state, zoneKey(watcher.zoneSeat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+    for (const doubler of scriptForCard(state.cardDefs[inst.defKey])?.extraTriggers ?? []) {
+      if (doubler.on !== on) continue;
+      const fits = (types: readonly string[], seat: SeatIndex | undefined): boolean =>
+        (doubler.kinds === undefined || doubler.kinds.some((kind) => types.includes(kind)))
+        && (doubler.yours !== true || seat === inst.zoneSeat);
+      const types = about.subjectTypes ?? (about.subjectIsCreature === true || on === 'attacking' ? ['creature'] : []);
+      const seat = about.subjectSeat ?? (subject === undefined ? undefined : (state.instances[subject] ?? state.vanished[subject])?.zoneSeat);
+      if (batch !== null ? batch.some((one) => fits(one.types, one.seat)) : fits(types, seat)) extra += 1;
+    }
+  }
+  return extra;
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
@@ -2948,6 +2980,21 @@ function raise(
   const everyBattlefieldAndAttached = attachedWatchers.length === 0 && diedAlongside.length === 0
     ? everyBattlefield
     : [...new Set([...everyBattlefield, ...attachedWatchers, ...diedAlongside])];
+  /*
+    The seats with a live "permanents entering don't cause abilities of permanents your opponents
+    control to trigger" (D1228), for an entry; `null` for any other event or when nobody has one.
+  */
+  const normSeats = event.kind === 'etb' || event.kind === 'permanents-entered' ? (() => {
+    const seats: SeatIndex[] = [];
+    for (const seat of next.seats) {
+      for (const pid of listAt(next, zoneKey(seat.index, 'battlefield'))) {
+        const p = next.instances[pid];
+        if (p === undefined || isFaceDownPermanent(p) || allAbilitiesLost(next, p)) continue;
+        if (scriptForCard(next.cardDefs[p.defKey])?.opponentsEntriesDontTrigger === true) seats.push(seat.index);
+      }
+    }
+    return seats.length === 0 ? null : seats;
+  })() : null;
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
     || event.kind === 'blocks' || event.kind === 'becomes-blocked'
     || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
@@ -2979,6 +3026,8 @@ function raise(
     */
     const inst = next.instances[id] ?? (id === subject || diedAlongside.includes(id) ? next.vanished[id] : undefined);
     if (inst === undefined) continue;
+    // Elesh Norn's second line (D1228): an entry fires nothing for its controller's opponents.
+    if (normSeats !== null && normSeats.some((seat) => seat !== inst.zoneSeat)) continue;
     // A `dies` trigger fires from the graveyard, but only for the creature that died: any other
     // watcher has to still be on the battlefield to be watching.
     // A `dies` or `leaves` trigger fires from wherever the permanent went, but only for the
@@ -3081,7 +3130,17 @@ function raise(
       if (ownCycle && !(trigger.on.kind === 'cycles' && trigger.on.self === true)) continue;
       // A graveyard ability does nothing anywhere else (D632); the loop below offers it.
       if (trigger.inGraveyard === true) continue;
+      const before = next.stackOrder.length;
       next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, fromStack);
+      /*
+        And again for each Panharmonicon (D1228), if it triggered at all. Not a modal one, whose
+        mode question would be asked over the first copy's.
+      */
+      if (next.stackOrder.length > before && trigger.modal === undefined) {
+        for (let extra = extraTriggerCount(next, event, inst, subject); extra > 0; extra -= 1) {
+          next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, fromStack);
+        }
+      }
     }
     // And nothing grants an ability to a card in a graveyard.
     if (ownCycle) continue;

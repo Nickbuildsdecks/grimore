@@ -8081,6 +8081,9 @@ describe('deck coverage', () => {
       // D1227: Torpor Orb and Hushbringer; no pool deck plays one. Driven at runtime by
       // "creatures entering don't cause abilities to trigger" (D1227).
       'script entriesDontTrigger', 'script deathsDontTrigger',
+      // D1228: Panharmonicon and Teysa Karlov's extra trigger; no pool deck plays one. Driven at
+      // runtime by "that ability triggers an additional time" (D1228).
+      'script extraTriggers', 'script opponentsEntriesDontTrigger',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -42881,6 +42884,77 @@ describe('one target of each kind: Decimate (D880)', () => {
     expect(() => apply(s, { type: 'auto:cast', by: 0, card: spell, targets: [t('Test Bear'), t('Test Rock'), t('Test Pact'), t('Mountain')] })).toThrow();
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: spell, targets: [t('Test Rock'), t('Test Bear'), t('Test Pact'), t('Mountain')] })));
     expect(namesIn(s, 1, 'battlefield')).toEqual([]);
+  });
+});
+
+describe('"that ability triggers an additional time" (D1228)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Cleric', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    A('Test Harmonicon', 'If an artifact or creature entering causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.'),
+    A('Test Teysa', 'If a creature dying causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.'),
+    A('Test Isshin', 'If a creature attacking causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.'),
+    A('Test Greenwarden', 'If a land entering causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.'),
+    C('Test Healer', 'When this creature enters, you gain 2 life.'),
+    A('Test Artist', 'Whenever a creature dies, you gain 1 life.'),
+    C('Test Raider', 'Whenever this creature attacks, you gain 1 life.'),
+    A('Test Fall', 'Whenever a land you control enters, you gain 1 life.'),
+    A('Test Norn', 'Permanents entering don\'t cause abilities of permanents your opponents control to trigger.'),
+    A('Test Warden', 'Whenever a creature enters, you gain 1 life.'),
+    { name: 'Test Ping', type_line: 'Instant', oracle_text: 'Test Ping deals 1 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1228', name: 'Echoes', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 33 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], mine: string[], theirs: string[] = []) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1228', 1: 'd1228' }, deckSpecs: { d1228: deck.deck },
+      hands: { 0: hand }, battlefield: { 0: ['Plains', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+  };
+  const cast = (s: GameState, card: string, targets: Target[] = []) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [...ROWS.slice(0, 4), ROWS[8]!]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an entry: twice with one, three times with two, and an opponent\'s does nothing for you', () => {
+    expect(life(cast(table(['Test Healer'], []), 'Test Healer'), 0)).toBe(22);
+    expect(life(cast(table(['Test Healer'], ['Test Harmonicon']), 'Test Healer'), 0)).toBe(24);
+    expect(life(cast(table(['Test Healer'], ['Test Harmonicon', 'Test Harmonicon']), 'Test Healer'), 0)).toBe(26);
+    expect(life(cast(table(['Test Healer'], [], ['Test Harmonicon']), 'Test Healer'), 0)).toBe(22);
+  });
+
+  it('a death: twice under the dying doubler, once under the entering one', () => {
+    const kill = (mine: string[]) => {
+      const s = table(['Test Ping'], ['Test Raider', 'Test Artist', ...mine]);
+      return cast(s, 'Test Ping', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Raider') }]);
+    };
+    expect(life(kill(['Test Teysa']), 0)).toBe(22);
+    expect(life(kill(['Test Harmonicon']), 0)).toBe(21);
+  });
+
+  it('an attack: twice', () => {
+    let s = table([], ['Test Raider', 'Test Isshin']);
+    s = advanceTo(s, 'declare-attackers');
+    s = settle(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Raider'), defender: 1 }] }));
+    expect(life(s, 0)).toBe(22);
+  });
+
+  it('Elesh Norn: an entry fires nothing for its controller\'s opponents, and still does for its controller', () => {
+    const s = cast(table(['Test Healer'], ['Test Warden'], ['Test Norn', 'Test Warden']), 'Test Healer');
+    expect(life(s, 0)).toBe(20);
+    expect(life(s, 1)).toBe(21);
+  });
+
+  it('a land: the land doubler doubles landfall, the artifact-or-creature one does not', () => {
+    const play = (mine: string[]) => {
+      const s = table(['Plains'], ['Test Fall', ...mine]);
+      return settle(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Plains') }));
+    };
+    expect(life(play(['Test Greenwarden']), 0)).toBe(22);
+    expect(life(play(['Test Harmonicon']), 0)).toBe(21);
   });
 });
 

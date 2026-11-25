@@ -38242,6 +38242,29 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull); "Creatures entering or
     dying …" (Hushbringer). See `CardScript.entriesDontTrigger`.
   */
+  /*
+    "If an artifact or creature entering causes a triggered ability of a permanent you control to
+    trigger, that ability triggers an additional time." (D1228): Panharmonicon; "a permanent
+    entering" (Elesh Norn's first line, Virtue of Knowledge, Starfield Vocalist), "a land entering"
+    (Ancient Greenwarden), "a creature dying" (Teysa Karlov, Drivnod), "a creature attacking"
+    (Isshin), "a creature you control attacking" (Wulfgar). See `CardScript.extraTriggers`.
+  */
+  const doubled = /^if (an? (?:artifact or creature|creature you control|creature|permanent|land)) (entering(?: the battlefield)?|dying|attacking) causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time\.?$/i.exec(plain(line).trim());
+  if (doubled !== null) {
+    const what = doubled[1]!.toLowerCase().replace(/^an? /, '');
+    const on = doubled[2]!.toLowerCase().startsWith('entering') ? 'entering' as const
+      : doubled[2]!.toLowerCase() === 'dying' ? 'dying' as const : 'attacking' as const;
+    const kinds = what === 'permanent' ? undefined
+      : what === 'artifact or creature' ? ['artifact', 'creature'] : [what.replace(/ you control$/, '')];
+    // A creature attacks and dies; only an entry is about any other kind.
+    if (on === 'entering' || kinds?.length === 1 && kinds[0] === 'creature') {
+      return { extraTriggers: [{ on, ...(kinds === undefined ? {} : { kinds }), ...(/ you control$/.test(what) ? { yours: true as const } : {}) }] };
+    }
+  }
+  // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
+  if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
+    return { opponentsEntriesDontTrigger: true };
+  }
   const hushed = /^(creatures|artifacts and creatures) entering( or dying)? don't cause abilities to trigger\.?$/i.exec(plain(line).trim());
   if (hushed !== null) {
     return {

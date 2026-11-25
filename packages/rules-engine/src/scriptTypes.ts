@@ -3328,6 +3328,23 @@ export interface CardScript {
   /** "… or dying don't cause abilities to trigger" (D1227): Hushbringer. A creature's death fires nothing. */
   readonly deathsDontTrigger?: true;
   /**
+   * "Permanents entering don't cause abilities of permanents your opponents control to trigger."
+   * (D1228): Elesh Norn, Mother of Machines. D1227's silence for the watchers of this permanent's
+   * controller's opponents only.
+   */
+  readonly opponentsEntriesDontTrigger?: true;
+  /**
+   * "If an artifact or creature entering causes a triggered ability of a permanent you control to
+   * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's
+   * dying, Isshin's attacking. Which event, and which kinds of permanent it is about (none: any
+   * permanent); `yours` for "a creature **you control** attacking". Each such permanent adds one.
+   */
+  readonly extraTriggers?: readonly {
+    readonly on: 'entering' | 'dying' | 'attacking';
+    readonly kinds?: readonly string[];
+    readonly yours?: true;
+  }[];
+  /**
    * "If you would draw a card while your library has no cards in it, you win the game instead."
    * (D852, CR 614.1a, 104.2a) — Laboratory Maniac, Jace, Wielder of Mysteries. Asked by `draw` of
    * the drawing seat's permanents, live: a draw that finds the library empty wins instead of being
