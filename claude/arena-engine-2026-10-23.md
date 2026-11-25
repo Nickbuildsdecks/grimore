@@ -46489,3 +46489,33 @@ Faults injected by hand: 3.
   depends on.
 
 Coverage: 17,024 of 31,900 cards (+9 over D1247's 17,015), 39,650 of 59,888 lines (+12).
+
+## D1249 — Gilded Drake
+
+"When ~ enters, exchange control of ~ and up to one target creature an opponent controls. If you
+don't or can't make an exchange, sacrifice ~. This ability still resolves if its target becomes
+illegal." This is D1248's exchange. Whether one was made is read off the board: the Drake changed
+hands. Otherwise it is sacrificed: with no target, or with a target gone or no longer an opponent's
+creature by resolution.
+
+One engine addition: a target spec can say `resolvesAnyway`. The Oracle's last sentence means the
+ability is not countered for having lost its target (CR 608.2b), which is the only way the sacrifice
+can happen when the creature it was aimed at is removed in response. The effect then checks the
+target itself. The older printed wording ("can't be countered except by spells and abilities") is
+read too, as asking nothing.
+
+Read whole now (1): Gilded Drake.
+
+**Tests.** 4 engine tests:
+- The test card reads whole.
+- The Drake goes to the opponent and their creature comes to me.
+- A target removed in response does not save the Drake: the ability still resolves, and it is
+  sacrificed.
+- With nothing to exchange for, the Drake is sacrificed.
+
+Faults injected by hand: 3, all caught.
+- The ability countered for its lost target (no `resolvesAnyway`).
+- No sacrifice when no exchange was made.
+- No exchange made.
+
+Coverage: 17,025 of 31,900 cards (+1 over D1248's 17,024), 39,651 of 59,888 lines (+1).
