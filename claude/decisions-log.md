@@ -64102,3 +64102,20 @@ Faults injected by hand: 2, all caught.
 - The kind of spell ignored.
 
 Coverage: 17,058 of 31,900 cards (+4 over D1252's 17,054), 39,705 of 59,888 lines (+5).
+## D3016 — "~ gets +2/+2 for each Aura attached to it": Kor Spiritdancer, Graceblade Artisan, Rabid Wombat
+
+**Reader.** A new static count kind, `attached-to-self`, which counts the permanents on any
+battlefield whose `attachedTo` is the source and whose printed type line has the subtype: "Aura",
+"Equipment", or "Aura and Equipment". It reads printed type lines, for the reason the other static
+counts do: it never re-enters `characteristicsOf`.
+
+"It" is the creature the line is about. On a creature that is the source; on an Aura or Equipment
+(Golem-Skin Gauntlets, Auramancer's Guise, Thran Power Suit: "Equipped creature gets +1/+0 for each
+Equipment attached to it") it is the host the source is attached to. The first card-by-card diff
+caught this: the first version counted on the Equipment, which made the Gauntlets a wrong card.
+
+**Tests.** A 0/2 with the line: an Equipment on it adds only its own +1/+0, an Aura on a different
+creature adds nothing, and one and then two Auras of "+1/+1" on it make it 4/5 and then 7/8. A
+Gauntlets-shaped Equipment on a Bear gives +1/+0, and +2/+0 once a second Equipment joins it.
+Faults injected by script: 3 of 3 caught. A fault that fixed the count at one went uncaught
+until the test put a second Aura on it.

@@ -2967,6 +2967,12 @@ export type StaticCountable =
    * object, not a characteristic, so it is as safe to read here as a printed type line.
    */
   | { readonly kind: 'tokens-you-control' }
+  /**
+   * "For each Aura attached to it" (D3016): permanents on any battlefield whose `attachedTo` is the
+   * source and whose **printed** type line has one of `subtypes`, for the reason the rows around it
+   * read printed lines.
+   */
+  | { readonly kind: 'attached-to-self'; readonly subtypes: readonly string[] }
   /** Domain (D1168): the basic land types among the controller's lands, read off their printed type lines. */
   | { readonly kind: 'basic-land-types' }
   /**
@@ -3008,6 +3014,27 @@ function staticCount(
   };
 
   switch (of.kind) {
+    case 'attached-to-self': {
+      /*
+        "It" is the creature the line is about. On a creature (Kor Spiritdancer) that is the source;
+        on an Aura or Equipment (Golem-Skin Gauntlets, Auramancer's Guise: "Equipped creature gets
+        +1/+0 for each Equipment attached to it") it is the host the source is attached to.
+      */
+      const self = state.instances[source];
+      const selfLine = parseTypeLine(self === undefined ? undefined : state.cardDefs[self.defKey]?.typeLine);
+      const host = self !== undefined && self.attachedTo !== null && self.attachedTo !== undefined
+        && (hasSubtype(selfLine, 'aura') || hasSubtype(selfLine, 'equipment')) ? self.attachedTo : source;
+      let n = 0;
+      for (const row of state.seats) {
+        for (const id of state.zones[zoneKey(row.index, 'battlefield')] ?? []) {
+          const inst = state.instances[id];
+          if (inst === undefined || inst.attachedTo !== host) continue;
+          const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+          if (of.subtypes.some((subtype) => hasSubtype(line, subtype))) n += 1;
+        }
+      }
+      return n;
+    }
     case 'cards-in-hand':
       return inZone(controller, 'hand').length;
     case 'cards-in-graveyard':
