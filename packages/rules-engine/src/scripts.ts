@@ -14446,6 +14446,24 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
         }),
         ...flags,
       };
+    } else if (/\bcreatures\b/.test(subject) && !/\btarget\b/.test(subject)) {
+      /*
+        Any other creature scope `massScope` reads (D1219): "… by attacking creatures" (Harmless
+        Assault), "by creatures without trample" (Tanglesap), "by creatures with power 4 or less"
+        (Vine Snare), "by nongreen creatures" (Hunter's Ambush). The creatures are those in the group
+        as the spell resolves; one that joins it later in the turn is not covered, which is the
+        engine's one approximation here.
+      */
+      const scoped = massScope(prevented[3]!.trim());
+      if (scoped !== null) {
+        return {
+          effect: (c) => {
+            const ids = scoped(c).filter((id) => { const inst = c.state.instances[id]; return inst !== undefined && characteristicsOf(c.state, inst).isCreature; });
+            return preventDamageThisTurn(c.state, c.source, c.controller, { direction, combatOnly, scope: { kind: 'cards', ids } });
+          },
+          ...flags,
+        };
+      }
     }
   }
 

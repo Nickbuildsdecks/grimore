@@ -40804,6 +40804,41 @@ describe('"prevent all damage that would be dealt to ~ by <a kind of source>" (D
   });
 });
 
+describe('"prevent all combat damage that would be dealt this turn by <a group>" (D1219)', () => {
+  const ROWS = [
+    { name: 'Test Tanglesap', type_line: 'Instant', oracle_text: 'Prevent all combat damage that would be dealt this turn by creatures without trample.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wurm', type_line: 'Creature — Wurm', oracle_text: 'Trample', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({
+    id: 'd1219', name: 'Scoped fog',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Bear\'s combat damage is prevented, the trampling Wurm\'s is not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1219', 1: 'd1219' }, deckSpecs: { d1219: deck.deck },
+      hands: { 1: ['Test Tanglesap'] }, battlefield: { 0: ['Test Cub', 'Test Wurm'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [
+      { attacker: find(s, 0, 'battlefield', 'Test Cub'), defender: 1 },
+      { attacker: find(s, 0, 'battlefield', 'Test Wurm'), defender: 1 },
+    ] });
+    s = advanceTo(s, 'declare-blockers');
+    // The defender casts it before damage.
+    if (s.priority !== 1) s = apply(s, { type: 'auto:pass', by: s.priority! });
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Tanglesap') } as Action)), 30);
+    s = drain(advanceTo(s, 'postcombat-main'), 30);
+    expect(life(s, 1)).toBe(17);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
