@@ -63985,3 +63985,23 @@ Faults injected by hand: 3, all caught.
 - No exchange made.
 
 Coverage: 17,025 of 31,900 cards (+1 over D1248's 17,024), 39,651 of 59,888 lines (+1).
+
+## D1250 — Mana Crypt: "If you lose the flip" alone
+
+D1152's coin flip read "If you win the flip, X" with an optional losing branch after it. The losing
+branch alone did not read: "Flip a coin. If you lose the flip, ~ deals 3 damage to you." Now it
+does, and winning does nothing. Mana Crypt is the card that matters. Scoria Wurm, Wild Wurm and
+Volatile Rig read whole with it too; 14 legal cards print the shape.
+
+Read whole now, by the probe (4): Mana Crypt, Scoria Wurm, Wild Wurm, Volatile Rig.
+
+**Tests.** 2 engine tests:
+- The test card reads whole.
+- Over 24 seeds, each upkeep's loss follows the recorded flip: 3 life on a lost flip, nothing on a
+  won one, and both happen.
+
+Faults injected by hand: 2, all caught.
+- The losing branch run whatever the flip.
+- The lose-only form not read.
+
+Coverage: 17,029 of 31,900 cards (+4 over D1249's 17,025), 39,657 of 59,888 lines (+6).
