@@ -46705,3 +46705,24 @@ Faults injected by hand: 2, all caught.
 - The creature types not checked.
 
 Coverage: 17,082 of 31,900 cards (+2 over D1254's 17,080), 39,737 of 59,888 lines (+2).
+
+## D1256 — The top card, if it is of a kind: "Otherwise, draw a card" (Thrasios)
+
+D1036's "Reveal the top card of your library. If it's a land card, put it onto the battlefield
+[tapped]", with the other half: "Otherwise, draw a card" (Thrasios, Triton Hero) or "Otherwise, put
+that card into your hand" (Coiling Oracle, Skyward Eye Prophets). It is joined onto the clause as
+D1073's "If you don't put …" is, and read only where nothing is asked (no "you may"). Six legal
+cards print the shape.
+
+Read whole now, by the probe (3): Thrasios, Triton Hero; Coiling Oracle; Skyward Eye Prophets.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- A land on top goes onto the battlefield tapped, and nothing is drawn.
+- Anything else: a card is drawn, and it is that card.
+
+Faults injected by hand: 2, all caught.
+- The draw left out.
+- The land branch skipped.
+
+Coverage: 17,085 of 31,900 cards (+3 over D1255's 17,082), 39,741 of 59,888 lines (+4).
