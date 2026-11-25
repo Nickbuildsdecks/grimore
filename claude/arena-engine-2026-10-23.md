@@ -46064,3 +46064,52 @@ injected by script: 2 of 2 caught.
 Card-by-card diffs: D3005–D3006 against bc3eace, 0 lost and 2 gained; D3007–D3011 against that,
 0 lost and 8 gained (including Gnat Miser and Locust Miser from D3007, and Herald of Eternal Dawn
 from D3009).
+
+## D1239 — "Exile it instead", from any permanent, of a graveyard or a death
+
+Rest in Peace, Leyline of the Void and the "a creature an opponent controls would die" family, read
+off the card rather than written out by hand. The replacement pass these need has existed since D576
+(`replaceZoneChange`); what was missing was the reader. Two lines:
+- "If a card [or token] would be put into (a | your | an opponent's) graveyard from anywhere, exile
+  it instead", and "an instant or sorcery card" (Dryad Militant). Whose graveyard is the card's
+  owner's, which is where a card goes (CR 404.1).
+- "If a [nontoken] creature an opponent controls would die, exile it instead", and "a Warlock you
+  control" (Lorcan). Who controlled it is read off the snapshot `relocate` takes as it leaves the
+  battlefield, not off the graveyard it reached.
+
+One engine fix with it. A token has ceased to exist by the time a replacement is asked, and the token
+branch of the pass never asked the rule's own test: it treated every "or token" rule as
+unconditional, which was true of Rest in Peace and nothing else. With "your graveyard" (Necrodominance,
+Festival of Embers, Emet-Selch) that would have exiled an opponent's tokens as well, so their deaths
+would never have triggered anything. The test is now asked of the token's last state.
+
+Read whole now (5): Rest in Peace, Leyline of the Void, Dryad Militant, Stone of Erech, Misery's
+Shadow. The line is read on ten more that each have another line left (Vren, Gisa, Liesa, Garruk,
+Veiled Butcher, Lorcan, Yawgmoth's Agenda, Necrodominance, Festival of Embers, Emet-Selch, Forbidden
+Crypt).
+
+Not read, and why: lines that exile with a counter (Dauthi Voidwalker, Draugr Necromancer, Rayami),
+because the counter is what a later ability reads; "When you do, create …" after the exile (Head of
+the Hunt, Nemata), a reflexive trigger; Abandoned Sarcophagus's "and it wasn't cycled"; and the
+spells' "this turn" form (Gaea's Will, Yawgmoth's Will).
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- An opponent's graveyard: their creature is exiled and mine is not.
+- A creature an opponent controls: exiled, and a "whenever a creature dies" watcher gains nothing;
+  my own creature dies and the watcher gains 1.
+- A Warlock you control: my Warlock is exiled, my Bear and their Warlock are not.
+- "A card or token … your graveyard": my token does not die, theirs still does.
+- An instant or sorcery card: a discarded Bolt is exiled and a discarded Bear is not.
+
+Faults injected by hand: 6, all caught.
+- The token branch asks no test (the old behaviour).
+- "An opponent's" not checked.
+- "You control" read as "an opponent controls".
+- "Instant or sorcery" not checked.
+- The creature type not checked.
+- "Your" not checked.
+
+Not covered by a test: a stolen creature (the snapshot's controller rather than the owner).
+
+Coverage: 16,969 of 31,900 cards (+15 over D1238's 16,954), 39,564 of 59,888 lines (+26).
