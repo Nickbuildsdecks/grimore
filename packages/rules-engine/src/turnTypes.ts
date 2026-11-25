@@ -228,6 +228,13 @@ export interface DelayedTrigger {
    * your hand at the beginning of your next end step", for a card it exiled face down.
    */
   readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you';
+  /**
+   * Fires when `subject` dies, not at a step (D1222): "When that creature dies this turn, …". Only
+   * during the turn it was made in (`createdTurn`), and only for the object it was made about
+   * (`subjectSeq`); `fireDelayed` drops the entry once that turn is over, and never fires it at
+   * `step`, which is only a placeholder here.
+   */
+  readonly onDeath?: true;
 }
 
 /** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */

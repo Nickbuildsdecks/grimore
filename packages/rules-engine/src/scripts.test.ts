@@ -41129,6 +41129,76 @@ describe('"whenever equipped creature deals combat damage", Umezawa\'s Jitte (D8
   });
 });
 
+describe('"when that creature dies this turn" (D1222)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    I('Test Good Day', 'Target creature gets +2/+0 until end of turn. When that creature dies this turn, you draw a card.'),
+    I('Test Searing', 'Test Searing deals 2 damage to target creature. When that creature dies this turn, Test Searing deals 3 damage to the creature\'s controller.'),
+    I('Test Wound', 'Put a -1/-1 counter on target creature. When that creature dies this turn, its controller gets a poison counter.'),
+    I('Test Ping', 'Test Ping deals 1 damage to target creature.'),
+    I('Test Blink', 'Exile target creature you control, then return that card to the battlefield under its owner\'s control.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Mite', type_line: 'Creature — Insect', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({ id: 'd1222', name: 'Watches', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 39 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], theirs: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1222', 1: 'd1222' }, deckSpecs: { d1222: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Mountain', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castAt = (s: GameState, card: string, seat: 0 | 1, at: string) => settle(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'card', id: find(s, seat, 'battlefield', at) }],
+  } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the creature dies later in the turn: the watch fires then', () => {
+    let s = table(['Test Good Day', 'Test Ping', 'Test Ping'], ['Test Bear']);
+    const hand = ids(s, 0, 'hand').length;
+    s = castAt(s, 'Test Good Day', 1, 'Test Bear');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+    s = castAt(s, 'Test Ping', 1, 'Test Bear');
+    s = castAt(s, 'Test Ping', 1, 'Test Bear');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Bear');
+    // Three cards cast, one drawn.
+    expect(ids(s, 0, 'hand').length).toBe(hand - 2);
+  });
+
+  it('the spell kills it: "the creature\'s controller" takes 3, not the caster', () => {
+    const s = castAt(table(['Test Searing'], ['Test Bear']), 'Test Searing', 1, 'Test Bear');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Test Bear');
+    expect(life(s, 1)).toBe(17);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('"its controller gets a poison counter"', () => {
+    const s = castAt(table(['Test Wound'], ['Test Mite']), 'Test Wound', 1, 'Test Mite');
+    expect(s.seats[1]!.poison ?? 0).toBe(1);
+    expect(s.seats[0]!.poison ?? 0).toBe(0);
+  });
+
+  it('a creature that survives the turn: the watch is gone by the next one', () => {
+    let s = castAt(table(['Test Good Day'], ['Test Bear']), 'Test Good Day', 1, 'Test Bear');
+    expect(s.delayed.length).toBe(1);
+    s = advanceTo(s, 'upkeep');
+    expect(s.delayed.length).toBe(0);
+  });
+
+  it('a creature blinked after the spell is a new object, and its death fires nothing', () => {
+    let s = table(['Test Good Day', 'Test Blink', 'Test Ping', 'Test Ping'], [], ['Test Bear']);
+    const hand = ids(s, 0, 'hand').length;
+    s = castAt(s, 'Test Good Day', 0, 'Test Bear');
+    s = castAt(s, 'Test Blink', 0, 'Test Bear');
+    s = castAt(s, 'Test Ping', 0, 'Test Bear');
+    s = castAt(s, 'Test Ping', 0, 'Test Bear');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Test Bear');
+    expect(ids(s, 0, 'hand').length).toBe(hand - 4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

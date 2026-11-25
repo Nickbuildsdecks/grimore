@@ -31449,6 +31449,27 @@ function revealKeepGroup(
 }
 
 /**
+ * The effect of a death watch (D1222): read as a sentence of its own, or with the dead creature's
+ * controller as its player — "its controller", "the creature's controller", "that creature's
+ * controller" — who is the actor the watch fires with (`fireDeathWatches`).
+ */
+function deathWatchBody(body: string, name: string): ReadEffect | null {
+  const sentence = `${body.charAt(0).toUpperCase()}${body.slice(1)}`;
+  const plainRead = readResolution([`${sentence}.`], name);
+  if (plainRead !== null) return plainRead;
+  for (const pronoun of ['its controller', "that creature's controller"] as const) {
+    const read = referentEffect(
+      sentence.replace(/\bthe creature's controller\b/i, "that creature's controller"), pronoun, 'player',
+      (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
+      (swapped) => readEffect(swapped, name, null),
+      'acting-player',
+    );
+    if (read !== null) return read;
+  }
+  return null;
+}
+
+/**
  * A spell's resolution, followed by scheduling its delayed upkeep trigger (D689). The trigger is
  * found by identity in the card's own script, or by its description if the script was rebuilt.
  */
@@ -31458,6 +31479,8 @@ function withLaterTrigger(
   const schedule = (c: EffectContext, state: GameState): GameState => {
     const subject = aboutTarget ? firstCardTarget(c) ?? undefined : undefined;
     if (aboutTarget && subject === undefined) return state;
+    // A death watch (D1222) is about a creature still on the battlefield as the spell finishes.
+    if (when === 'that-dies' && state.instances[subject!]?.zone !== 'battlefield') return state;
     const inst = state.instances[c.source];
     const script = scriptOfCard(inst === undefined ? undefined : state.cardDefs[inst.defKey]);
     const index = (script?.triggers ?? [])
@@ -31465,7 +31488,8 @@ function withLaterTrigger(
     if (index < 0) return state;
     return scheduleDelayed(state, {
       source: c.source, controller: c.controller, abilityIndex: index,
-      step: when === 'upkeep' ? 'upkeep' : nextMainPhase(state, c.controller), of,
+      step: when === 'upkeep' ? 'upkeep' : when === 'that-dies' ? 'cleanup' : nextMainPhase(state, c.controller), of,
+      ...(when === 'that-dies' ? { onDeath: true as const } : {}),
       ...(subject === undefined ? {} : { subject }),
       description: trigger.description,
     });
@@ -31531,7 +31555,7 @@ const castFromAGraveyard = (c: EffectContext): boolean =>
   c.resolving?.castFrom === 'graveyard' && c.resolving.copyOf === undefined;
 
 /** When a delayed spell trigger fires (D689, D692). */
-type LaterStep = 'upkeep' | 'next-main';
+type LaterStep = 'upkeep' | 'next-main' | 'that-dies';
 
 /**
  * "Your next main phase" (D692): the postcombat main of this turn while the caster's own precombat
@@ -38635,7 +38659,15 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       as adding, since mana nobody spends empties from the pool unused.
     */
     const nextMain = /^at the beginning of your next main phase, (?:you may )?add an amount of \{C\} equal to that spell's mana value$/i.exec(final);
-    const body = nextTurn?.[1] ?? yourNext?.[1] ?? (nextMain === null ? undefined : 'add {C} for each mana in that spell\'s mana value');
+    /*
+      **"When that creature dies this turn, <effect>"** (D1222): A Good Day to Die, Make Your Mark,
+      Felonious Rage, Searing Blood, Virulent Wound. A watch on the creature the spell aimed at,
+      scheduled as the spell finishes and fired as that creature dies, if it dies before the turn is
+      over (`DelayedTrigger.onDeath`). The effect may name the dead creature's controller ("its
+      controller", "the creature's controller"), who is the actor the watch fires with.
+    */
+    const thatDies = /^when that creature dies this turn, (.+)$/i.exec(final);
+    const body = nextTurn?.[1] ?? yourNext?.[1] ?? thatDies?.[1] ?? (nextMain === null ? undefined : 'add {C} for each mana in that spell\'s mana value');
     /*
       Arcane Denial (D707): "Its controller may draw up to two cards at the beginning of the next
       turn's upkeep." "Its" is the spell the line countered, which the delayed trigger carries as
@@ -38666,14 +38698,16 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
         const n = subject === undefined ? 0 : c.state.cardDefs[subject.defKey]?.cmc ?? 0;
         return n > 0 ? addToPool(c.state, c.controller, 'C', n) : c.state;
       } } as ReadEffect
-      : body === undefined ? null : readResolution([`${body.charAt(0).toUpperCase()}${body.slice(1)}.`], name);
+      : body === undefined ? null
+      : thatDies !== null ? deathWatchBody(body, name)
+      : readResolution([`${body.charAt(0).toUpperCase()}${body.slice(1)}.`], name);
     if (inner !== null && body !== undefined && (inner.targets ?? []).length === 0
       && inner.beforeDecisions === undefined && inner.appliesNothing !== true) {
-      laterOf = nextTurn !== null ? 'any' : 'you';
-      laterStep = nextMain !== null ? 'next-main' : 'upkeep';
-      laterAboutTarget = nextMain !== null || upTo !== null;
+      laterOf = nextTurn !== null || thatDies !== null ? 'any' : 'you';
+      laterStep = nextMain !== null ? 'next-main' : thatDies !== null ? 'that-dies' : 'upkeep';
+      laterAboutTarget = nextMain !== null || upTo !== null || thatDies !== null;
       laterTrigger = {
-        on: { kind: 'step', step: nextMain !== null ? 'precombat-main' : 'upkeep', of: laterOf },
+        on: thatDies !== null ? { kind: 'dies' } : { kind: 'step', step: nextMain !== null ? 'precombat-main' : 'upkeep', of: laterOf },
         delayed: true,
         description: body.charAt(0).toLowerCase() + body.slice(1),
         effect: inner.effect,

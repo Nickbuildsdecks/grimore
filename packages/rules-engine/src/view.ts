@@ -692,7 +692,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     stack,
     later: state.delayed.map((entry) => ({
       description: entry.description,
-      stepLabel: STEP_LABELS[entry.step],
+      stepLabel: entry.onDeath === true ? 'When it dies this turn' : STEP_LABELS[entry.step],
     })),
     pools: state.pools,
     combat: state.combat,

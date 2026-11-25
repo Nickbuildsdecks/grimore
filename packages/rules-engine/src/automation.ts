@@ -453,9 +453,13 @@ export function raiseUnblockedAttacks(state: GameState): GameState {
  * cannot be the step it was created in: a delayed trigger made during an end step waits for the
  * following turn's (CR 603.7b).
  */
-function fireDelayed(state: GameState, step: Step): GameState {
-  if (state.delayed.length === 0) return state;
+function fireDelayed(from: GameState, step: Step): GameState {
+  if (from.delayed.length === 0) return from;
+  // A death watch (D1222) lasts the turn it was made in, and is dropped on the next turn's first step.
+  const stale = from.delayed.filter((entry) => entry.onDeath === true && entry.createdTurn !== from.turn);
+  const state = stale.length === 0 ? from : { ...from, delayed: from.delayed.filter((entry) => !stale.includes(entry)) };
   const due = state.delayed.filter((entry) => {
+    if (entry.onDeath === true) return false;
     if (entry.step !== step) return false;
     if (entry.of === 'you' && state.activeSeat !== entry.controller) return false;
     return !(entry.createdTurn === state.turn && entry.createdStep === step);
@@ -2569,10 +2573,32 @@ function batchCount(
     && whose(d)).length;
 }
 
+/**
+ * "When that creature dies this turn, …" (D1222): the death watches on `id`, put on the stack as it
+ * dies. Only the object the watch was made about (CR 400.7): the snapshot `relocate` took as it left
+ * still carries that object's `objectSeq`. The player who controlled it goes down as the actor, for
+ * "its controller" — the snapshot's seat, which for a token is where it went (its owner's).
+ */
+function fireDeathWatches(state: GameState, id: string): GameState {
+  const was = state.vanished[id] ?? state.instances[id];
+  const due = state.delayed.filter((entry) => entry.onDeath === true && entry.subject === id
+    && entry.createdTurn === state.turn
+    && (entry.subjectSeq === undefined || (was?.objectSeq ?? 0) === entry.subjectSeq));
+  if (due.length === 0) return state;
+  let next: GameState = { ...state, delayed: state.delayed.filter((entry) => !due.includes(entry)) };
+  for (const entry of due) {
+    next = pushAbility(
+      next, entry.source, entry.controller, entry.abilityIndex, [], 'triggered', entry.description,
+      { subject: id, ...(was === undefined ? {} : { actor: was.zoneSeat }) },
+    );
+  }
+  return next;
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
-  let next = state;
+  let next = event.kind === 'dies' && subject !== undefined ? fireDeathWatches(state, subject) : state;
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
       || event.kind === 'blocks' || event.kind === 'becomes-blocked'
