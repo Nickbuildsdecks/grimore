@@ -64427,3 +64427,33 @@ Faults injected by hand: 3, all caught.
   which the effect-paid form alone did not catch it).
 
 Coverage: 17,098 of 31,900 cards (+3 over D1264's 17,095), 39,769 of 59,888 lines (+3).
+
+## D1266 — A flavour word in front of an activated ability comes off
+
+"Magical Tinkering — {W}, {T}, Sacrifice an artifact: Search your library …" (Oswald Fiddlebender).
+D623 took an ability word off an activated ability only when what was left carried an "Activate
+only if" sentence, so a label was never the one thing restricting it. That requirement is dropped:
+an ability word has no rules meaning (CR 207.2c), nor has a flavour word (CR 207.2d), so the ability
+is exactly what follows the dash. A keyword in the same position *is* a restriction ("Max speed —",
+"Exhaust —", "Boast —", "Channel —", "Cycling—"), and those were never labels, by
+`withoutAbilityWord`'s list; they stay as they were.
+
+Measured before the change: of the labelled activated lines in the legal corpus whose remainder
+reads on its own, 50 carry a true ability or flavour word (Imprint, Domain, Ferocious, and one-card
+flavour words from the Universes Beyond and Alchemy sets) and 15 a keyword. No legal card prints a
+condition ability word (Threshold, Metalcraft, Hellbent …) in front of an activated ability without
+restating the condition. Two of the newly read lines cost "Discard this card", which the engine
+already activates from the hand (`discardSelf`).
+
+The D623 pin that kept a made-up "Threshold — {1}: You gain 4 life." unread now pins it read as
+printed, with no activation condition.
+
+**Tests.** 2 engine tests, and the D623 pin changed:
+- A flavour-labelled ability reads whole; "Max speed —" in the same place stays unread.
+- The labelled ability activates and does what follows the dash; the button keeps the label.
+
+Faults injected by hand: 2, all caught.
+- The "Activate only if" requirement restored.
+- "Max speed" let through as a label.
+
+Coverage: 17,130 of 31,900 cards (+32 over D1265's 17,098), 39,820 of 59,888 lines (+51).
