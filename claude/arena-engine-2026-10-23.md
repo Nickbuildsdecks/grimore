@@ -44437,3 +44437,48 @@ the combat raise not carrying it).
 
 - engine tests: 6492, all passing (on 3c56540)
 - Coverage: 16,723 to 16,730 of 31,900 cards with every line read, and 39,239 to 39,247 of 59,888 lines, against 3c56540.
+
+## D1222 — "When that creature dies this turn, …"
+
+A Good Day to Die, Make Your Mark, Felonious Rage, Searing Blood, Virulent Wound, Burn Away: a
+spell aims at a creature and leaves a watch on it for the rest of the turn. Delayed triggers had
+only ever fired at a step; this one fires on an event, so `DelayedTrigger` gained `onDeath`. The
+spell schedules the watch as it finishes (on the creature it aimed at, if that creature is still on
+the battlefield), `raise` fires it when that creature dies (`fireDeathWatches`), and `fireDelayed`
+drops it on the next turn's first step if it never did. Only the object the watch was made about
+counts (CR 400.7): a creature blinked after the spell is a new object, and its death fires nothing.
+
+The effect may name the dead creature's controller ("its controller", "the creature's
+controller"): the watch fires with that player as its actor, taken from the snapshot `relocate`
+keeps of what left the battlefield. For a token that snapshot's seat is where it went, its owner's,
+which differs from its controller only for a stolen token.
+
+The view shows the watch under "later" as "When it dies this turn".
+
+Not read: the same sentence on abilities (Grim Javelineer, Sandals of Abdallah), in the middle of
+a spell (Time to Feed), or with an effect that refers to the creature itself (Rushed Rebirth's
+"lesser mana value", Scintillating Encore's "return it").
+
+Read whole now (9): A Good Day to Die, Blessed Defiance, Burn Away, Felonious Rage, Make Your Mark,
+Otherworldly Outburst, Scarblade's Malice, Searing Blood, Virulent Wound.
+
+**Tests.** 6 engine tests:
+- The test cards read whole.
+- The creature dies two spells later: the watch fires then, and draws.
+- The spell kills it: the creature's controller takes 3, not the caster.
+- "Its controller gets a poison counter."
+- A creature that survives: the watch is gone by the next turn's upkeep.
+- A creature blinked after the spell, then killed: nothing is drawn.
+
+Faults injected by hand: 4, all caught.
+- The watch never fired on a death.
+- The object check dropped.
+- The watch kept past the turn.
+- No actor passed, so the caster took the damage.
+
+Not covered by a test: the watch skipped when the aimed-at creature has already left the battlefield
+as the spell finishes.
+
+The coverage below includes the other session's D844, merged in before this was measured.
+
+Coverage: 16,742 of 31,900 cards (+16 over D1221's 16,726), 39,259 of 59,888 lines (+17).
