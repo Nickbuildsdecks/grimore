@@ -8090,6 +8090,9 @@ describe('deck coverage', () => {
       // D1232: Stranglehold, Aven Mindcensor; no pool deck plays one. Driven at runtime by "your
       // opponents can't search libraries" (D1232).
       'script searchLimit', 'script opponentsSkipExtraTurns',
+      // D1233: Narset's and Spirit of the Labyrinth's draw limit; no pool deck plays one. Driven at
+      // runtime by "each opponent can't draw more than one card each turn" (D1233).
+      'script drawLimit',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -43575,6 +43578,45 @@ describe('"your opponents can\'t search libraries", and Aven Mindcensor (D1232)'
     };
     expect(walk([]).activeSeat).toBe(0);
     expect(walk(['Test Hold']).activeSeat).toBe(1);
+  });
+});
+
+describe('"each opponent can\'t draw more than one card each turn" (D1233)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    A('Test Narset', 'Each opponent can\'t draw more than one card each turn.'),
+    A('Test Spirit', 'Each player can\'t draw more than one card each turn.'),
+    A('Test Omen', 'Players can\'t draw cards.'),
+    { name: 'Test Divination', type_line: 'Sorcery', oracle_text: 'Draw two cards.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1233', name: 'Narset', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  /** Seat 0 on its own main phase, having drawn for the turn, casts Test Divination. */
+  const drawTwo = (mine: string[], theirs: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1233', 1: 'd1233' }, deckSpecs: { d1233: deck.deck }, hands: { 0: ['Test Divination'] },
+      battlefield: { 0: ['Island', ...mine], 1: theirs }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // As if nothing had been drawn yet this turn, so a limit of one reads as one card.
+    s = { ...s, cardsDrawnThisTurn: {} };
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Divination'), targets: [] } as Action)), 30);
+    return ids(s, 0, 'hand').length - (hand - 1);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an opponent\'s Narset: two cards become what is left of one a turn; its controller is not limited', () => {
+    expect(drawTwo([], [])).toBe(2);
+    expect(drawTwo([], ['Test Narset'])).toBe(1);
+    expect(drawTwo(['Test Narset'], [])).toBe(2);
+  });
+
+  it('"each player" limits its controller too, and "players can\'t draw cards" stops every draw', () => {
+    expect(drawTwo(['Test Spirit'], [])).toBe(1);
+    expect(drawTwo(['Test Omen'], [])).toBe(0);
   });
 });
 

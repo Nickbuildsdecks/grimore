@@ -2080,7 +2080,10 @@ export function drawLater(state: GameState, seat: SeatIndex, count: number): Gam
   };
 }
 
-export function draw(state: GameState, seat: SeatIndex, count: number): GameState {
+export function draw(state: GameState, seat: SeatIndex, wanted: number): GameState {
+  // Narset and Spirit of the Labyrinth (D1233): only as many as the turn's limit leaves.
+  const count = Math.min(wanted, drawsAllowed(state, seat));
+  if (count <= 0) return state;
   /*
     Notion Thief (D891, CR 614.1a): each card an opponent of its controller would draw, except the first
     in their own draw step, is skipped and the Thief's controller draws one instead. The draw step's
@@ -2097,6 +2100,25 @@ export function draw(state: GameState, seat: SeatIndex, count: number): GameStat
     return Array.from({ length: count - kept }).reduce<GameState>((s) => drawUnreplaced(s, thief, 1), own);
   }
   return drawUnreplaced(state, seat, count);
+}
+
+/** How many more cards `seat` may draw this turn under every live `drawLimit` that reaches it (D1233). */
+function drawsAllowed(state: GameState, seat: SeatIndex): number {
+  if (scriptLookup === null) return Number.POSITIVE_INFINITY;
+  const lookup = scriptLookup;
+  let allowed = Number.POSITIVE_INFINITY;
+  for (const other of state.seats) {
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+      const limit = lookup(state.cardDefs[inst.defKey])?.drawLimit;
+      if (limit === undefined) continue;
+      if (limit.who === 'opponents' && other.index === seat) continue;
+      if (limit.who === 'you' && other.index !== seat) continue;
+      allowed = Math.min(allowed, limit.perTurn - drawnThisTurn(state, seat));
+    }
+  }
+  return Math.max(0, allowed);
 }
 
 /** The seat of an opponent of `seat` whose Notion Thief takes `seat`'s draws (D891), if any. */

@@ -38504,6 +38504,19 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     return { searchLimit: { who: 'opponents', topN: { two: 2, three: 3, four: 4, five: 5 }[censor[1]!.toLowerCase() as 'two' | 'three' | 'four' | 'five'] } };
   }
   if (/^if an opponent would begin an extra turn, that player skips that turn instead$/i.test(searchText)) return { opponentsSkipExtraTurns: true };
+  // Narset, Spirit of the Labyrinth, Omen Machine (D1233): see `CardScript.drawLimit`.
+  const drawCap = /^(each opponent|each player|players|you) can't draw (more than one card each turn|cards)$/i.exec(searchText);
+  if (drawCap !== null) {
+    const subject = drawCap[1]!.toLowerCase();
+    const one = drawCap[2]!.toLowerCase().startsWith('more');
+    // "Each … more than one" and "Players / You can't draw cards"; not "each player can't draw cards".
+    if (one === subject.startsWith('each')) {
+      return { drawLimit: {
+        who: subject === 'each opponent' ? 'opponents' : subject === 'you' ? 'you' : 'everyone',
+        perTurn: one ? 1 : 0,
+      } };
+    }
+  }
   // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
   if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
     return { opponentsEntriesDontTrigger: true };

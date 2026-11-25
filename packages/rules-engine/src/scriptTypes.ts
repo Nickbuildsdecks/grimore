@@ -3348,6 +3348,13 @@ export interface CardScript {
   /** "If an opponent would begin an extra turn, that player skips that turn instead." (D1232, Stranglehold). */
   readonly opponentsSkipExtraTurns?: true;
   /**
+   * "Each opponent can't draw more than one card each turn." (D1233, Narset, Parter of Veils;
+   * Leovold), "Each player can't …" (Spirit of the Labyrinth), and with `perTurn: 0` "Players can't
+   * draw cards." (Omen Machine, Maralen of the Mornsong) and "You can't draw cards." Asked by
+   * `draw` before anything replaces the draw: a draw a player cannot make is not made at all.
+   */
+  readonly drawLimit?: { readonly who: 'opponents' | 'everyone' | 'you'; readonly perTurn: number };
+  /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to
    * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's
    * dying, Isshin's attacking. Which event, and which kinds of permanent it is about (none: any
