@@ -44313,7 +44313,10 @@ D1117's "for the first time each turn" leaves behind on the Valiant cards that n
 Beta Ray Bill, Flowerfoot Swordmaster and Whiskervale Forerunner now read their trigger and wait on
 their effects.
 
-Read whole now (1): Bonecrusher Giant.
+Read whole now (10): Bonecrusher Giant, and the self-named Valiant cards Emberheart Challenger,
+Heartfire Hero, Lava Runner, Mouse Trapper, Nettle Guard, Retromancer, Seedglaive Mentor, Veteran
+Guardmouse, Whiskerquill Scribe. (Corrected after the measurement: the first draft of this entry
+said 1.)
 
 **Tests.** 5 engine tests:
 - Every test card reads whole; the possessive on an attack trigger stays unread.
@@ -44329,6 +44332,8 @@ Faults injected by hand: 4, all caught.
 - The once-a-turn flag dropped from "for the first time each turn".
 
 Coverage: 16,714 of 31,900 cards (+30 over D1219's 16,684), 39,190 of 59,888 lines (+37).
+The +30 includes the other session's D842, merged in after D1219 was measured; D1220's own gain
+is the 10 cards above.
 ## D843 — A modal activated ability as one ability per mode: Cankerbloom
 
 Most-played order: Cankerbloom (in the top 2000), with Breya, Etherium Shaper, Breya's

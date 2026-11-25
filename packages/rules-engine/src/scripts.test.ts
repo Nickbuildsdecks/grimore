@@ -40992,6 +40992,77 @@ describe('a modal activated ability as one ability per mode, Cankerbloom (D843)'
   });
 });
 
+describe('"look at target player\'s hand and choose N cards from it" (D1221)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    S('Test Extort', 'Look at target player\'s hand and choose up to two cards from it. That player discards those cards.'),
+    S('Test Surgeon', 'Look at target player\'s hand and choose a nonland card from it. That player discards that card.'),
+    S('Test Memory', 'Look at target opponent\'s hand and choose a card from it. Put that card on top of that player\'s library.'),
+    S('Test Agony', 'Look at target player\'s hand and choose two cards from it. Put them on top of that player\'s library in any order.'),
+    { name: 'Test Cheap', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Dear', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{4}{G}', cmc: 5, colors: ['G'], layout: 'normal', power: '5', toughness: '5' },
+  ];
+  const deck = customDeck({
+    id: 'd1221', name: 'Looked discards',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 42 }],
+    data: ROWS as never[],
+  });
+  /** Casts `card` at seat 1, whose hand is `theirs`, and answers the question with `picked`. */
+  const castAt = (card: string, theirs: string[], picked?: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1221', 1: 'd1221' }, deckSpecs: { d1221: deck.deck }, hands: { 0: [card], 1: theirs },
+      battlefield: { 0: ['Swamp'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let t = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [{ kind: 'player', seat: 1 }] } as Action), 30);
+    for (let i = 0; i < 6 && t.pendingDecision === null && t.stackOrder.length > 0; i++) t = passBoth(t);
+    const asked = t.pendingDecision;
+    if (picked !== undefined && asked !== null) {
+      const cards = picked.map((name) => find(t, 1, 'hand', name));
+      t = drain(apply(t, { type: 'auto:decide', by: asked.seat, cards } as Action), 30);
+      for (let i = 0; i < 6 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30);
+    }
+    return { t, asked };
+  };
+
+  it('reads whole; a pronoun that disagrees with the count stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 4)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+    const wrong = compileCard(S('Test Wrong', 'Look at target player\'s hand and choose a card from it. That player discards those cards.') as never);
+    expect(wrong.ok && wrong.unread.length).toBe(1);
+  });
+
+  it('"up to two": the caster is asked for up to two, and both picked are discarded', () => {
+    const { t, asked } = castAt('Test Extort', ['Test Cheap', 'Test Dear', 'Swamp'], ['Test Cheap', 'Test Dear']);
+    expect(asked?.seat).toBe(0);
+    expect(asked?.min).toBe(0);
+    expect(asked?.max).toBe(2);
+    expect(namesIn(t, 1, 'graveyard')).toEqual(expect.arrayContaining(['Test Cheap', 'Test Dear']));
+    expect(namesIn(t, 1, 'hand')).toEqual(['Swamp']);
+  });
+
+  it('"a nonland card": the only nonland card is taken, the land stays', () => {
+    const { t } = castAt('Test Surgeon', ['Test Cheap', 'Swamp']);
+    expect(t.pendingDecision).toBeNull();
+    expect(namesIn(t, 1, 'graveyard')).toContain('Test Cheap');
+    expect(namesIn(t, 1, 'hand')).toEqual(['Swamp']);
+  });
+
+  it('on top of the library: the card picked is the next one drawn', () => {
+    const { t } = castAt('Test Memory', ['Test Dear', 'Test Cheap'], ['Test Dear']);
+    expect(namesIn(t, 1, 'hand')).toEqual(['Test Cheap']);
+    const top = ids(t, 1, 'library')[0]!;
+    expect(t.cardDefs[t.instances[top]!.defKey]?.name).toBe('Test Dear');
+  });
+
+  it('two on top "in any order": the last picked is on top, the first just under it', () => {
+    const { t } = castAt('Test Agony', ['Test Dear', 'Test Cheap', 'Swamp'], ['Test Dear', 'Test Cheap']);
+    expect(namesIn(t, 1, 'hand')).toEqual(['Swamp']);
+    const [first, second] = ids(t, 1, 'library');
+    expect(t.cardDefs[t.instances[first!]!.defKey]?.name).toBe('Test Cheap');
+    expect(t.cardDefs[t.instances[second!]!.defKey]?.name).toBe('Test Dear');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

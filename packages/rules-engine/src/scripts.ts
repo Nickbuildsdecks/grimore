@@ -31714,6 +31714,83 @@ function digGroup(
   }, 3);
 }
 
+/**
+ * The type words of a card chosen out of a hand (D970, and shared with D1221's look): a comma list
+ * ("an artifact, instant, or sorcery card") is the "or" list `graveyardTypeTest` reads, and stacked
+ * negations ("a noncreature, nonland card": Duress, Mardu Charm; "a nonlegendary, nonland card":
+ * Lay Bare the Heart) are each excluded — a card type, or the legendary supertype.
+ */
+function handCardTypeTest(printed: string): ((line: TypeLine, def?: CardDef) => boolean) | null {
+  const nons = /^(non[a-z]+)(?:,\s*non[a-z]+)+$/i.test(printed)
+    ? printed.split(/,\s*/).map((word) => word.slice(3).toLowerCase())
+    : null;
+  const excluded = (line: TypeLine, word: string): boolean => (word === 'legendary' ? isLegendary(line) : hasType(line, word));
+  return nons !== null
+    ? (nons.every((word) => word === 'legendary' || GRAVEYARD_CARD_TYPES.includes(word))
+      ? (line: TypeLine) => nons.every((word) => !excluded(line, word)) : null)
+    : graveyardTypeTest(/,/.test(printed) && /\bor\b/i.test(printed) ? printed.replace(/,\s*(?:or\s+)?/g, ' or ') : printed);
+}
+
+/**
+ * **"Look at target player's hand and choose N cards from it"** (D1221), the older printing of the
+ * chosen discard: Thrull Surgeon ("… choose a card from it. That player discards that card"),
+ * Extortion ("… up to two cards …. That player discards those cards"), and the two that put the
+ * cards back on top instead: Painful Memories ("Put that card on top of that player's library") and
+ * Agonizing Memories ("Put them on top of that player's library in any order").
+ *
+ * One sentence where the newer cards print two, and the same question: the caster picks out of the
+ * target's hand, which the question shows them, as D987's hit-player form already does. A count of
+ * one, two or three, or "up to" one; the next sentence must agree with it ("that card" after one,
+ * "those cards" or "them" after more). "In any order" is the order the cards were picked, the last
+ * one picked ending on top. X ("choose X cards", Mind Warp) is not read: the question's size is
+ * fixed before X could be looked at.
+ */
+function lookedDiscardPrefix(
+  clauses: readonly string[],
+): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
+  if (clauses.length < 2) return null;
+  const looked = /^look at target (opponent|player)'s hand and choose (an?|one|two|three|up to (?:one|two|three)) (.*?)cards? from it$/i
+    .exec(clauses[0]!.trim().replace(/\.$/, ''));
+  if (looked === null) return null;
+  const COUNTS: Readonly<Record<string, number>> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
+  const word = looked[2]!.toLowerCase();
+  const upTo = word.startsWith('up to ');
+  const n = COUNTS[word.replace(/^up to /, '')]!;
+  const them = n === 1 ? '(?:that card|it)' : '(?:those cards|them)';
+  const second = clauses[1]!.trim().replace(/\.$/, '');
+  const discards = new RegExp(`^that player discards ${them}$`, 'i').test(second);
+  const topped = new RegExp(`^put ${them} on top of that player's library${n === 1 ? '' : '(?: in any order)?'}$`, 'i').test(second);
+  if (!discards && !topped) return null;
+  const printed = looked[3]!.trim();
+  const test = handCardTypeTest(printed);
+  const spec = targetSpecFrom(`target ${looked[1]!.toLowerCase()}`, false);
+  if (test === null || spec === null) return null;
+  const noun = `${printed === '' ? '' : `${printed} `}card${n === 1 ? '' : 's'}`;
+  return {
+    read: {
+      targets: [spec],
+      decisions: [{
+        who: 'controller',
+        fromSeat: 'target-player',
+        from: 'hand',
+        prompt: `Choose ${upTo ? 'up to ' : ''}${n === 1 ? (upTo ? 'one' : /^[aeiou]/i.test(noun) ? 'an' : 'a') : n} ${noun} to ${discards ? 'discard' : 'put on top of their library'}`,
+        min: upTo ? 0 : n,
+        max: n,
+        filter: (state, id) => {
+          const inst = state.instances[id];
+          const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+          return inst !== undefined && test(parseTypeLine(def?.typeLine), def);
+        },
+      }],
+      // Each to its owner's library or graveyard; on top in the order picked, so the last is on top.
+      effect: (c) => (discards
+        ? moveToGraveyard(c.state, chosenCards(c))
+        : chosenCards(c).reduce((state, id) => putOnTopOfLibrary(state, id), c.state)),
+    },
+    rest: clauses.slice(2),
+  };
+}
+
 function chosenDiscardPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
@@ -31752,14 +31829,7 @@ function chosenDiscardPrefix(
     nonland card": Duress, Mardu Charm; "a nonlegendary, nonland card": Lay Bare the Heart) are
     each excluded — a card type, or the legendary supertype.
   */
-  const nons = /^(non[a-z]+)(?:,\s*non[a-z]+)+$/i.test(printed)
-    ? printed.split(/,\s*/).map((word) => word.slice(3).toLowerCase())
-    : null;
-  const excluded = (line: TypeLine, word: string): boolean => (word === 'legendary' ? isLegendary(line) : hasType(line, word));
-  const test = nons !== null
-    ? (nons.every((word) => word === 'legendary' || GRAVEYARD_CARD_TYPES.includes(word))
-      ? (line: TypeLine) => nons.every((word) => !excluded(line, word)) : null)
-    : graveyardTypeTest(/,/.test(printed) && /\bor\b/i.test(printed) ? printed.replace(/,\s*(?:or\s+)?/g, ' or ') : printed);
+  const test = handCardTypeTest(printed);
   if (test === null) return null;
   const spec = targetSpecFrom(`target ${revealed[1]!.toLowerCase()}`, false);
   if (spec === null) return null;
@@ -32442,7 +32512,7 @@ function composeEffectsAsPrinted(
     Tried in order and at most one can match, since their first sentences are different; whichever
     does consumes its own clauses and the loop below reads the tail.
   */
-  const grouped = stealPrefix(clauses) ?? chosenDiscardPrefix(clauses);
+  const grouped = stealPrefix(clauses) ?? chosenDiscardPrefix(clauses) ?? lookedDiscardPrefix(clauses);
   const rest = grouped === null ? clauses : grouped.rest;
   const parts: ReadEffect[] = grouped === null ? [] : [grouped.read];
   // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
