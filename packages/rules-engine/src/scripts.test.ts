@@ -41255,6 +41255,47 @@ describe('"those creatures", "they" and "them" after a clause that aimed at seve
   });
 });
 
+describe('cards from any graveyard: Rise of the Dark Realms and Noxious Revival (D845)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Rise', 'Sorcery', 'Put all creature cards from all graveyards onto the battlefield under your control.'),
+    R('Test Revival', 'Instant', "Put target card from a graveyard on top of its owner's library."),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd845', name: 'Graveyards', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const table = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd845', 1: 'd845' }, deckSpecs: { d845: deck.deck },
+      hands: { 0: [spell, 'Test Bear'], 1: ['Test Bear', 'Swamp'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    for (const [seat, name] of [[0, 'Test Bear'], [1, 'Test Bear'], [1, 'Swamp']] as const) {
+      s = apply(s, { type: 'card:move', by: seat, card: find(s, seat, 'hand', name), toZone: 'graveyard' });
+    }
+    return s;
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Rise: both Bears, ours and theirs, come back under us; their land stays in their graveyard', () => {
+    let s = table('Test Rise');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rise') })));
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Test Bear')).toHaveLength(2);
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Swamp');
+  });
+
+  it("Revival: the opponent's Bear goes on top of the opponent's library", () => {
+    let s = table('Test Revival');
+    const theirs = find(s, 1, 'graveyard', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Revival'), targets: [{ kind: 'card', id: theirs }] })));
+    expect(ids(s, 1, 'library')[0]).toBe(theirs);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

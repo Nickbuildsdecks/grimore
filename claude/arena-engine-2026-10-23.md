@@ -44516,3 +44516,29 @@ Faults injected by hand: 4, 2 caught.
   "gains"; the agreement matters for the other verbs.
 
 Coverage: 16,747 of 31,900 cards (+5 over D1222's 16,742), 39,264 of 59,888 lines (+5).
+## D845 — Cards from any graveyard: Rise of the Dark Realms and Noxious Revival
+
+Most-played order: Rise of the Dark Realms (rank 479) and Noxious Revival (rank 638), with Liliana
+Vess's ultimate.
+
+**Readers.**
+- "Put all creature (land, artifact) cards from all graveyards onto the battlefield under your
+  control": D804's mass return from every seat's graveyard, all under the controller. As in D804,
+  only the kinds that need nothing to arrive; an Aura would need something to attach to.
+- D656's "put target … card from your graveyard on top of your library" also takes "from a
+  graveyard … on top of its owner's library". `putOnTopOfLibrary` already puts a card in its
+  owner's library. The two halves must agree: "your graveyard … its owner's library" and "a
+  graveyard … your library" are not printed, and are skipped rather than refused, so later
+  readers still see them.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- Rise puts our Bear and the opponent's Bear onto our battlefield and leaves their Swamp in their
+  graveyard;
+- Revival on the opponent's Bear puts it on top of the opponent's library.
+
+Faults injected by script: 3 of 3 caught (only our graveyard, any card type, and the owner's
+library unread).
+
+- engine tests: 6500, all passing (on 8444c77)
+- Coverage: 16,734 to 16,737 of 31,900 cards with every line read, and 39,252 to 39,255 of 59,888 lines, against 8444c77.
