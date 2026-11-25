@@ -1310,6 +1310,7 @@ function multipliedDamage(state: GameState, target: Target, amount: number, cont
     if (rule === undefined) continue;
     if (rule.opponents === true && (victim === undefined || victim === seat)) continue;
     if (rule.colour !== undefined && !sourceColours.includes(rule.colour)) continue;
+    if (rule.creatures === true && (sourceInst === undefined || sourceInst.zone !== 'battlefield' || !characteristicsOf(state, sourceInst).isCreature)) continue;
     total *= rule.factor;
     added += rule.plus ?? 0;
   }

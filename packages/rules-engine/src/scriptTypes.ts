@@ -3392,6 +3392,8 @@ export interface CardScript {
     readonly plus?: number;
     /** Only a source of this colour (D872, "a red source you control"), read live. */
     readonly colour?: Color;
+    /** Only a creature source (D900, Gratuitous Violence's "a creature you control"), read live. */
+    readonly creatures?: true;
   };
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,

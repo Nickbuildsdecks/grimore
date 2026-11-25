@@ -7124,7 +7124,14 @@ interface Resolvable {
  * X the permanent's spell was cast with. 0 for anything else, as before.
  */
 function triggerX(state: GameState, object: StackObject): number {
-  return object.kind === 'triggered' ? state.instances[object.source]?.castX ?? 0 : 0;
+  if (object.kind !== 'triggered') return 0;
+  /*
+    A spell's own cast trigger (D904, "When you cast this spell, you gain half X life"): the X is the
+    spell's, still on the stack, and the permanent's `castX` is not written until it resolves.
+  */
+  const answered = object.answering === undefined ? undefined : state.stackObjects[object.answering];
+  if (answered?.kind === 'spell' && answered.source === object.source) return answered.x ?? 0;
+  return state.instances[object.source]?.castX ?? 0;
 }
 
 function abilityOrTrigger(

@@ -63220,3 +63220,66 @@ finality counter carries a rule of its own (CR 122.1i) that the wrapper does not
 now reads only +1/+1 and -1/-1 counters, and the pin stands.
 
 Gated together on 580ac9b: full gate green (re-run after the D527 fix), engine tests 6684. Coverage: 16,920 to 16,938 of 31,900 cards with every line read, and 39,475 to 39,499 of 59,888 lines.
+
+## D900 — Double damage from creatures only: Gratuitous Violence
+
+Most-played order: Gratuitous Violence (rank 1517).
+
+**Engine.** D865's `damageMultiplier` gains `creatures`: only a creature on the battlefield as the
+source, read live.
+
+**Reader.** "If a creature you control would deal damage to …, it deals double that damage …".
+
+**Tests.** The card reads. Our Shock, which is not a creature, still deals 2, and our Bear connects
+for 4. D865's and D872's tests still pass. Faults injected by script: 2 of 2 caught.
+
+## D901 — "If you have exactly 13 cards in your hand": Triskaidekaphile
+
+Most-played order: Triskaidekaphile (rank 1479).
+
+**Reader.** "You have exactly N cards in your hand" is the hand-size condition with both bounds
+at N.
+
+**Tests.** The card reads. Thirteen cards at our upkeep wins, and twelve or fourteen does not.
+Faults injected by script: 2 of 2 caught. The fourteen-card case was added when the
+at-least-only fault went uncaught.
+
+## D902 — Two target players each draw a card: Gleaming Splendor
+
+Most-played order: Gleaming Splendor (rank 1568).
+
+**Reader.** "[Up to] two target players each draw a card / draw N cards / gain N life / lose N
+life": two distinct players chosen as it is activated or cast, each doing it.
+
+**Tests.** The card reads. In a three-player pod, the two players chosen each draw one and the
+third draws nothing. Faults injected by script: 2 of 2 caught.
+
+## D903 — A wipe measured against a target: Fell the Mighty
+
+Most-played order: Fell the Mighty (rank 1526).
+
+**Reader.** "Destroy all creatures with power greater (or less) than target creature's power".
+The target's power as the spell resolves is compared with each creature's, so the target is
+spared by the comparison itself.
+
+**Tests.** The card reads. Aimed at our 2-power Bear, it kills their 4-power Ogre, and our Bear,
+our Mouse and their 2-power Bear live. Faults injected by script: 2 of 2 caught.
+
+## D904 — Half X, rounded down: Hydroid Krasis
+
+Most-played order: Hydroid Krasis (rank 1560).
+
+**Engine.** `triggerX` now reads a spell's own cast trigger's X from the spell it answers, still on
+the stack. Before, it read only the permanent's `castX`, which is written as the spell resolves,
+so "When you cast this spell, … X …" lines counted X as 0. That is a fix for every card of the
+shape, not only this one.
+
+**Reader.** "You gain half X life and draw half X cards. Round down each time."
+
+**Tests.** The card reads. Cast for X = 5, we gain 2, draw 2, and it enters with five counters.
+Faults injected by script: 3 of 3 caught.
+
+Card-by-card diff for D900–D904 against c998c8e: 0 lost, 8 gained (including Library of Alexandria
+and Magus of the Library from D901's exact hand size, and Mandate of Abaddon from D903).
+
+Gated together on efdda8a: full gate green, engine tests 6704. Coverage: 16,938 to 16,946 of 31,900 cards with every line read, and 39,504 to 39,513 of 59,888 lines.
