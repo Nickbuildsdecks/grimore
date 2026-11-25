@@ -433,7 +433,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   // A permanent's casting limit (D788), asked where the cast is offered as well.
   const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered, inst.zone === 'hand',
-    hasType(characteristics.typeLine, 'artifact'));
+    hasType(characteristics.typeLine, 'artifact'), printedDef?.name);
   if (prohibited !== null) throw new EngineError('RULE_NOT_APPLICABLE', prohibited);
 
   const cost = parseManaCost(def?.manaCost);

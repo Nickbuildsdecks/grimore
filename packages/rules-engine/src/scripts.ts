@@ -7738,7 +7738,7 @@ export function enterChoiceDecision(
  * yet cannot be chosen; that is this reading's one limit. The bot names the opponents' permanent
  * with an activated ability and the highest mana value.
  */
-function cardNameDecision(nonland: boolean): ChoiceDecisionSpec {
+export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' = 'abilities'): ChoiceDecisionSpec {
   const isLand = (state: GameState, id: string): boolean => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land');
   const seen = (state: GameState): string[] => {
     const ids = [
@@ -7763,6 +7763,23 @@ function cardNameDecision(nonland: boolean): ChoiceDecisionSpec {
     optionsFor: (state) => seen(state),
     best: (state, chooser) => {
       let best: { name: string; value: number } | undefined;
+      /*
+        For "spells with the chosen name can't be cast" (D1238), the dearest nonland card an opponent
+        has shown, in a graveyard or on the battlefield: the card most worth not seeing again.
+      */
+      if (aim === 'spells') {
+        for (const other of state.seats) {
+          if (other.index === chooser) continue;
+          for (const id of [...listAt(state, zoneKey(other.index, 'graveyard')), ...listAt(state, zoneKey(other.index, 'battlefield'))]) {
+            const inst = state.instances[id];
+            if (inst === undefined || inst.faceDown === true || isLand(state, id)) continue;
+            const def = state.cardDefs[inst.defKey];
+            if (def === undefined) continue;
+            if (best === undefined || (def.cmc ?? 0) > best.value) best = { name: def.name, value: def.cmc ?? 0 };
+          }
+        }
+        return best?.name ?? seen(state)[0];
+      }
       for (const other of state.seats) {
         if (other.index === chooser) continue;
         for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
@@ -37113,6 +37130,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     [/^each opponent can cast spells only any time they could cast a sorcery$/i, ['opponents-sorcery-speed']],
     [/^your opponents can't cast spells during your turn$/i, ['opponents-no-spells-your-turn']],
     [/^your opponents can't cast spells from anywhere other than their hands$/i, ['opponents-hand-only']],
+    // Meddling Mage, Nevermore (D1238): with the name the permanent chose as it entered.
+    [/^spells with the chosen name can't be cast$/i, ['chosen-name']],
     // Ethersworn Canonist (D1231).
     [/^each player who has cast a nonartifact spell this turn can't cast additional nonartifact spells$/i, ['each-one-nonartifact']],
     [/^during your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments$/i,

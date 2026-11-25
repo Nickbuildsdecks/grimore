@@ -44138,6 +44138,40 @@ describe('"As ~ enters, choose a card name", and Pithing Needle (D1237)', () => 
   });
 });
 
+describe('"Spells with the chosen name can\'t be cast" (D1238)', () => {
+  const ROWS = [
+    { name: 'Test Mage', type_line: 'Creature — Human Wizard', oracle_text: 'As Test Mage enters, choose a nonland card name.\nSpells with the chosen name can\'t be cast.', mana_cost: '{0}', cmc: 0, colors: ['W', 'U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 1 damage to any target.', mana_cost: '{0}', cmc: 1, colors: ['R'], layout: 'normal' },
+    { name: 'Test Zenith', type_line: 'Sorcery', oracle_text: 'Draw two cards.', mana_cost: '{0}', cmc: 5, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1238', name: 'Mage', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (theirHand: string[], theirYard: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1238', 1: 'd1238' }, deckSpecs: { d1238: deck.deck }, hands: { 0: ['Test Mage'], 1: theirHand },
+    battlefield: { 0: ['Island'], 1: ['Island'] }, graveyard: { 1: theirYard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const castMage = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mage'), targets: [] } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the named spell can\'t be cast; another one can', () => {
+    let s = castMage(table(['Test Bolt', 'Test Zenith'], ['Test Bolt']));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Test Bolt' } as Action), 30);
+    s = { ...s, priority: 1 as SeatIndex };
+    const bolt: Action = { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Bolt'), targets: [{ kind: 'player', seat: 0 }] } as Action;
+    expect(refusal(s, bolt)).toMatch(/Test Bolt/);
+    const theirs = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(refusal(theirs, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Zenith'), targets: [] } as Action)).toBeNull();
+  });
+
+  it('the bot names the dearest nonland card an opponent has shown', () => {
+    const asked = castMage(table([], ['Test Bolt', 'Test Zenith']));
+    expect(botAction(asked, 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Zenith' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

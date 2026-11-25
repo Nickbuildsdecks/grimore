@@ -786,11 +786,18 @@ export function controlsACommander(state: GameState, seat: SeatIndex): boolean {
 }
 
 /** Every live casting limit on the table (D788), with the permanent and seat it comes from. */
-function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readonly from: SeatIndex; readonly name: string }[] {
-  const out: { limit: CastLimit; from: SeatIndex; name: string }[] = [];
+function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readonly from: SeatIndex; readonly name: string; readonly chosenName?: string }[] {
+  const out: { limit: CastLimit; from: SeatIndex; name: string; chosenName?: string }[] = [];
   for (const other of state.seats) {
-    for (const script of staticsOf(state, other.index)) {
-      for (const limit of script.castLimits ?? []) out.push({ limit, from: other.index, name: script.name });
+    // Read off the permanents rather than their scripts (D1238), for the name each one chose.
+    const emblems = listAt(state, zoneKey(other.index, 'command')).filter((id) => state.instances[id]?.emblem === true);
+    for (const id of [...listAt(state, zoneKey(other.index, 'battlefield')), ...emblems]) {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown === true || allAbilitiesLost(state, inst)) continue;
+      const script = scriptForCard(state.cardDefs[inst.defKey]);
+      for (const limit of script?.castLimits ?? []) {
+        out.push({ limit, from: other.index, name: script!.name, ...(inst.chosen?.name === undefined ? {} : { chosenName: inst.chosen.name }) });
+      }
     }
   }
   return out;
@@ -823,6 +830,7 @@ export function escapeOf(state: GameState, id: string): CardScript['escape'] {
 
 export function castProhibition(
   state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean, fromHand = true, isArtifact = false,
+  spellName?: string,
 ): string | null {
   // Silence and Orim's Chant (D791): barred for the rest of this turn.
   if (state.castBannedTurn?.[String(seat)] === state.turn) return "you can't cast spells this turn";
@@ -831,7 +839,8 @@ export function castProhibition(
   const cast = state.spellsCastThisTurnBy[String(seat)] ?? 0;
   const noncreature = state.spellsCastThisTurnByKind?.[`${seat}:noncreature`] ?? 0;
   const nonartifact = state.spellsCastThisTurnByKind?.[`${seat}:nonartifact`] ?? 0;
-  for (const { limit, from, name } of castLimitsInPlay(state)) {
+  for (const { limit, from, name, chosenName } of castLimitsInPlay(state)) {
+    if (limit === 'chosen-name' && chosenName !== undefined && spellName === chosenName) return `${name}: spells named ${chosenName} can't be cast`;
     const theirs = from !== seat;
     if (limit === 'each-one-spell' && cast >= 1) return `${name}: no more than one spell each turn`;
     if (limit === 'you-one-spell' && !theirs && cast >= 1) return `${name}: no more than one spell each turn`;
@@ -1994,7 +2003,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
     // A permanent's casting limit (D788): Rule of Law, Teferi, Grand Abolisher.
-    const prohibited = castProhibition(state, seat, ch.isCreature, offered, inst.zone === 'hand', hasType(ch.typeLine, 'artifact'));
+    const prohibited = castProhibition(state, seat, ch.isCreature, offered, inst.zone === 'hand', hasType(ch.typeLine, 'artifact'),
+      state.cardDefs[inst.defKey]?.name);
     if (prohibited !== null) {
       why(id, prohibited);
       continue;

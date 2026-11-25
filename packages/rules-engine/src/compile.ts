@@ -47,7 +47,7 @@ import {
   type CardDataRow, type CardFaceRow, type DerivedKind,
 } from './fromCardData.js';
 import {
-  championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
+  cardNameDecision, championTriggers, classLevelAbility, embalm, enterChoiceDecision, eternalize, isKeywordDeclaration, levelUpAbility, lineScriptFor, withXPayable,
   manaSpentScryTrigger, modalTriggerFor, modalAbilityFor, dieTableFor, spellScriptFor, stationAbility, wholeCardShapeFor, type ChoiceAim,
 } from './scripts.js';
 import type { AbilityDef, CardScript, TriggerDef } from './scriptTypes.js';
@@ -1279,6 +1279,14 @@ function compileSingle(row: CardDataRow): Compilation {
   /*
     The bot's answer to "choose a creature type / a color", aimed now that every line is read (D641).
   */
+  /*
+    A name chosen to stop spells (D1238): the bot names what an opponent has cast rather than a
+    permanent with an ability, which is the Pithing Needle default.
+  */
+  if (built['entersChoice'] === 'card-name' && ((built['castLimits'] ?? []) as readonly string[]).includes('chosen-name')) {
+    const nonland = JSON.stringify(row.oracle_text ?? '').toLowerCase().includes('choose a nonland card name');
+    built['decisions'] = [cardNameDecision(nonland, 'spells')];
+  }
   if (built['entersChoice'] === 'creature-type' || built['entersChoice'] === 'color') {
     built['decisions'] = [enterChoiceDecision(
       built['entersChoice'], choiceAimOf(built['statics'] as CardScript['statics'], built['triggers'] as CardScript['triggers']),

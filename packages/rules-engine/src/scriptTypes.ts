@@ -3177,7 +3177,9 @@ export type CastLimit =
    * "Each player who has cast a nonartifact spell this turn can't cast additional nonartifact
    * spells" (D1231): Ethersworn Canonist. Artifact spells are never limited.
    */
-  | 'each-one-nonartifact';
+  | 'each-one-nonartifact'
+  /** "Spells with the chosen name can't be cast" (D1238): Meddling Mage, Nevermore, Voidstone Gargoyle. */
+  | 'chosen-name';
 
 export interface CardScript {
   /** Matched case-insensitively against the card's printed name. */
