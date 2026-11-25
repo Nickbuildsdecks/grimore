@@ -41409,6 +41409,51 @@ describe('copying an ability on the stack, read from the card (D1225)', () => {
   });
 });
 
+describe('"attacks this turn if able", Bident of Thassa (D846)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Lure', 'Instant', 'Creatures your opponents control attack this turn if able.'),
+    R('Test Goad', 'Instant', 'Target creature attacks this turn if able.'),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd846', name: 'Attack', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 51 }], data: ROWS as never[] });
+  /** Seat 1's turn, main phase; seat 1 passes and seat 0 casts `spell` (aimed at `target` if given). */
+  const theirTurn = (spell: string, aim?: 'theirs') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd846', 1: 'd846' }, deckSpecs: { d846: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: ['Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 1,
+    } as never), 'precombat-main');
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), ...(aim === undefined ? {} : { targets: [{ kind: 'card', id: theirs }] }) })));
+    return { s, theirs, ours: find(s, 0, 'battlefield', 'Test Bear') };
+  };
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("the opponent's creatures must attack this turn; ours are not touched", () => {
+    const { s, theirs, ours } = theirTurn('Test Lure');
+    expect(characteristicsOf(s, s.instances[theirs]!).mustAttack).toBe(true);
+    expect(characteristicsOf(s, s.instances[ours]!).mustAttack).toBe(false);
+    const t = advanceTo(s, 'declare-attackers');
+    expect(refusal(t, { type: 'auto:attack', by: 1, attackers: [] })).not.toBeNull();
+    expect(refusal(t, { type: 'auto:attack', by: 1, attackers: [{ attacker: theirs, defender: 0 }] })).toBeNull();
+  });
+
+  it('target creature: that one only, and only this turn', () => {
+    const { s, theirs } = theirTurn('Test Goad', 'theirs');
+    expect(characteristicsOf(s, s.instances[theirs]!).mustAttack).toBe(true);
+    let t = advanceTo(s, 'declare-attackers');
+    t = apply(t, { type: 'auto:attack', by: 1, attackers: [{ attacker: theirs, defender: 0 }] });
+    const later = nextTurn(t);
+    expect(characteristicsOf(later, later.instances[theirs]!).mustAttack).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

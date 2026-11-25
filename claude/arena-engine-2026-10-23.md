@@ -44608,3 +44608,26 @@ Faults injected by hand: 3, all caught.
 Not covered by a test: an opponent's ability refused as a target (the "you control" check).
 
 Coverage: 16,762 of 31,900 cards (+8 over D1224's 16,754), 39,282 of 59,888 lines (+11).
+## D846 — "Attacks this turn if able": Bident of Thassa
+
+Most-played order: Bident of Thassa (rank 447). The same reader finishes seven cards in the
+corpus.
+
+**Reader.** "Target creature [an opponent controls / you don't control] attacks this turn if able",
+"Creatures your opponents control attack this turn if able" and "All creatures attack this turn
+if able" become D736's `mustAttack`, the flag goad and Lure use, as a pump until end of turn. The
+mass forms reach the creatures on the battlefield as the spell or ability resolves (CR 611.2c),
+not ones that arrive later. "Each combat" (a static: "~ attacks each combat if able") was already
+read and is unchanged.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- cast on the opponent's turn, the mass form makes their Bear required to attack (an empty
+  attack is refused) and leaves ours alone;
+- the targeted form marks that creature for this turn only, and it is free again next turn.
+
+Faults injected by script: 3 of 3 caught (our own creatures included, and either form made
+permanent).
+
+- engine tests: 6513, all passing (on 8d84848)
+- Coverage: 16,751 to 16,759 of 31,900 cards with every line read, and 39,269 to 39,281 of 59,888 lines, against 8d84848.

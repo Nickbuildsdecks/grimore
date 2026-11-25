@@ -29243,6 +29243,36 @@ function readEffect(
       };
     }
   }
+  /*
+    "Target creature attacks this turn if able" (D846), "Creatures your opponents control attack this
+    turn if able" (Bident of Thassa), "All creatures attack this turn if able": D736's `mustAttack`
+    until end of turn, on the creatures there as it resolves (CR 611.2c).
+  */
+  const attacksIfAble = /^(target creature(?: an opponent controls| you don't control)?|creatures your opponents control|all creatures) attacks? this turn if able$/i.exec(clause.trim());
+  if (attacksIfAble !== null) {
+    const who = attacksIfAble[1]!.toLowerCase();
+    if (who.startsWith('target')) {
+      const spec = targetSpecFrom(who, false);
+      if (spec !== null && spec.kind === 'creature') {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const id = firstCardTarget(c);
+            return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { mustAttack: true });
+          },
+        };
+      }
+    } else {
+      return {
+        effect: (c) => {
+          const seats = c.state.seats.map((_, i) => i as SeatIndex)
+            .filter((seat) => who === 'all creatures' || seat !== c.controller);
+          const ids = seats.flatMap((seat) => creaturesControlledBy(c.state, seat));
+          return ids.length === 0 ? c.state : pump(c.state, ids, c.source, c.controller, { mustAttack: true });
+        },
+      };
+    }
+  }
   const doubledAll = /^double the (power and toughness|power|toughness) of each (other )?creature you control until end of turn$/i.exec(clause.trim());
   if (doubledAll !== null) {
     const which = doubledAll[1]!.toLowerCase();
