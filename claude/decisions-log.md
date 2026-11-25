@@ -64268,3 +64268,32 @@ Faults injected by hand: 3, all caught.
 - Every opponent counted.
 
 Coverage: 17,088 of 31,900 cards (+1 over D1258's 17,087), 39,746 of 59,888 lines (+1).
+
+## D1260 — Eminence: a trigger that works from the command zone (Edgar Markov)
+
+"Eminence — Whenever you cast another Vampire spell, if Edgar Markov is in the command zone or on the
+battlefield, create a 1/1 black Vampire creature token." Two pieces:
+- **The command zone**: a trigger marked `inCommandZone` works from the battlefield as any other
+  does, and `raise` also offers events to a commander in its command zone for it, controlled by its
+  owner (CR 903.3). This mirrors the graveyard loop D632 added. The zone is asked again as it
+  resolves.
+- **"Another <kind> spell"**: a cast trigger with "another" in front of a kind leaves the watcher's
+  own cast out. A bare "another spell" stays unread, as `compile.test.ts` pins it: a permanent has
+  nothing to be other than.
+
+Read whole now (1): Edgar Markov. The Ur-Dragon's eminence is a static ("as long as … in the command
+zone or on the battlefield, other Dragon spells you cast cost {1} less"), and Inalla's copies a
+token; both are left.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- From the command zone and from the battlefield, a Vampire spell makes a token.
+- Not from the graveyard, and not for a spell of another type.
+
+Faults injected by hand: 3.
+- No command-zone loop: caught.
+- The trigger not marked for the command zone: caught.
+- The zone check as it resolves always true: not caught. It matters only when the commander leaves
+  the command zone between the trigger and its resolution, and no test moves it there.
+
+Coverage: 17,089 of 31,900 cards (+1 over D1259's 17,088), 39,748 of 59,888 lines (+2).
