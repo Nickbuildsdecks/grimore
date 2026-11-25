@@ -399,6 +399,8 @@ export interface CardInstance {
     // `warped` (D931): no deadline; for its printed cost, at its own timing, on a turn after `grantedTurn`.
     // `while-exiled` (D1163): no deadline, "You may play them" (Runestone Caverns); ends when the card leaves exile.
     readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step' | 'plotted' | 'warped' | 'while-exiled';
+    /** "You may **cast** that card" (D1236): a spell only, never a land drop. */
+    readonly castOnly?: true;
   };
   /**
    * The life was paid for a shock land as it was played (D587), so it enters untapped. Set by the

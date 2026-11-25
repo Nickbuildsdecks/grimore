@@ -23470,6 +23470,28 @@ function eventRelativeEffect(
       if (aimed !== null) return aimed;
     }
   }
+  /*
+    Ragavan's (D1236): "create a Treasure token and exile the top card of that player's library.
+    Until end of turn, you may cast that card." The player it hit, from `c.attacked`, and the card
+    goes to that player's exile with a permission to cast it this turn (never to play it as a land).
+    "Play" is the same with the land drop allowed.
+  */
+  if (aboutTheHitPlayer) {
+    const pilfer = /^(create a treasure token and )?exile the top card of that player's library\. until end of turn, you may (cast|play) that card\.?$/i.exec(text.trim());
+    if (pilfer !== null) {
+      const castOnly = pilfer[2]!.toLowerCase() === 'cast';
+      const treasure = pilfer[1] === undefined ? null : readEffect('create a Treasure token', name, null);
+      if (pilfer[1] === undefined || treasure !== null) {
+        return {
+          effect: (c) => {
+            const made = treasure === null ? c.state : treasure.effect(c);
+            const seat = c.attacked?.defender;
+            return seat === undefined ? made : exileTopToPlay(made, c.controller, 1, 'this-turn', seat, castOnly);
+          },
+        };
+      }
+    }
+  }
   if (aboutTheHitPlayer) {
     const hit = referentEffect(
       text, 'that player', 'player',

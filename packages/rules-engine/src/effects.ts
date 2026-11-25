@@ -1975,17 +1975,20 @@ export function counterUnlessPaid(ctx: EffectContext, cost: string, name: string
 export function exileTopToPlay(
   state: GameState, seat: SeatIndex, count: number,
   through: NonNullable<CardInstance['playFromExile']>['through'],
+  /** Whose library (D1236): Ragavan's "the top card of that player's library". Its owner's exile. */
+  librarySeat: SeatIndex = seat,
+  castOnly = false,
 ): GameState {
   let next = state;
   for (let i = 0; i < Math.max(0, count); i++) {
-    const top = listAt(next, zoneKey(seat, 'library'))[0];
+    const top = listAt(next, zoneKey(librarySeat, 'library'))[0];
     if (top === undefined) break;
     const inst = next.instances[top];
     if (inst === undefined) break;
     next = relocate(next, inst, 'exile', inst.owner, 'bottom');
     next = withInstance(next, inst.id, {
       faceDown: false,
-      playFromExile: { by: seat, grantedTurn: next.turn, through },
+      playFromExile: { by: seat, grantedTurn: next.turn, through, ...(castOnly ? { castOnly: true as const } : {}) },
     });
   }
   return next;

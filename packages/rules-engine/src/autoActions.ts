@@ -1799,7 +1799,8 @@ function playLand(
   const inst = requireInstance(state, action.card);
   // From the hand, or out of exile under a permission to play the card (D583) — which is a land
   // drop like any other and is counted below with the rest.
-  const fromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by;
+  // Not one it may only cast (D1236).
+  const fromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by && inst.playFromExile.castOnly !== true;
   // Or out of the graveyard while Crucible of Worlds or the like says so (D648).
   const fromGraveyard = inst.zone === 'graveyard' && inst.zoneSeat === action.by && landsFromGraveyardFor(state, action.by);
   // Or the top of the library under Courser of Kruphix (D649): the top card only.

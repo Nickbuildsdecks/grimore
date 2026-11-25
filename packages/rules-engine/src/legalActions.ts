@@ -1783,7 +1783,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       for what is printed on it and at its ordinary timing, which is why nothing below treats this
       entry as a different cost — only as a different place.
     */
-    ...listAt(state, zoneKey(seat, 'exile'))
+    // Every exile zone (D1236): a card taken from another player's library sits in its owner's.
+    ...state.seats.flatMap((other) => listAt(state, zoneKey(other.index, 'exile')))
       .filter((id) => state.instances[id]?.playFromExile?.by === seat)
       // A plotted card is cast on a later turn than the one it was plotted on (D922).
       .filter((id) => (state.instances[id]?.playFromExile?.through !== 'plotted'
@@ -1922,6 +1923,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       // A land commander would be *played*, not cast, and nothing in the pool is one; refusing to
       // offer it is better than offering a land drop out of the command zone.
       if (fromCommand) continue;
+      // "You may cast that card" (D1236) is never a land drop.
+      if (impulse && inst.playFromExile?.castOnly === true) continue;
       if (sorcerySpeed && landsPlayed < landsAllowed) {
         /*
           Whether it will arrive tapped, said on the row (D587): a check land with no Mountain or

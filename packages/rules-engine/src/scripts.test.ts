@@ -44034,6 +44034,51 @@ describe('half X, rounded down: Hydroid Krasis (D904)', () => {
   });
 });
 
+describe('Ragavan: "exile the top card of that player\'s library. Until end of turn, you may cast that card." (D1236)', () => {
+  const ROWS = [
+    { name: 'Test Pilferer', type_line: 'Legendary Creature — Monkey Pirate', oracle_text: 'Whenever Test Pilferer deals combat damage to a player, create a Treasure token and exile the top card of that player\'s library. Until end of turn, you may cast that card.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Insight', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1236', name: 'Pilferer', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  /** Seat 0's Pilferer connects with seat 1, whose top card is `top`; on to seat 0's second main phase. */
+  const connect = (top: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1236', 1: 'd1236' }, deckSpecs: { d1236: deck.deck },
+      battlefield: { 0: ['Forest', 'Test Pilferer'], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+    s = putOnTopOfLibrary(s, find(s, 1, 'library', top));
+    const stolen = ids(s, 1, 'library')[0]!;
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Pilferer'), defender: 1 }] });
+    for (let i = 0; i < 12 && s.step !== 'postcombat-main'; i++) s = s.stackOrder.length > 0 ? drain(passBoth(s), 30) : passBoth(s);
+    return { s, stolen };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Treasure, and the defender\'s top card in their exile, castable by the attacker this turn', () => {
+    const { s, stolen } = connect('Test Insight');
+    expect(s.step).toBe('postcombat-main');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Treasure');
+    expect(s.instances[stolen]!.zone).toBe('exile');
+    expect(s.instances[stolen]!.owner).toBe(1);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && (p as { card: string }).card === stolen)).toBe(true);
+    const hand = ids(s, 0, 'hand').length;
+    const after = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: stolen, targets: [] } as Action)), 30);
+    expect(ids(after, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('"cast", not "play": a land taken this way is not a land drop', () => {
+    const { s, stolen } = connect('Forest');
+    expect(s.instances[stolen]!.zone).toBe('exile');
+    expect(legalActions(s, 0).plays.some((p) => (p as { card?: string }).card === stolen)).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
