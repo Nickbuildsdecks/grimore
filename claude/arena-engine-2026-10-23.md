@@ -46372,3 +46372,55 @@ Faults injected by hand: 3, all caught.
 - The first draw of the turn treated as exempt in any step.
 
 Coverage: 17,004 of 31,900 cards (+3 over D1244's 17,001), 39,626 of 59,888 lines (+3).
+
+## D1246 — Land types set: Blood Moon, Spreading Seas, Song of the Dryads
+
+A continuous effect can now set a permanent's land types (CR 305.7), `ContinuousEffect.setLandTypes`.
+Every land type it had (basic or not, from a closed list of the land types in CR 205.3i) is
+replaced, in effect order like creature types. The rule also takes away the land's rules-text
+abilities, so the readers set `losesAllAbilities` beside it. The new type's own mana ability still
+works: `landTypesSet` lets the mana-source walk keep a land that lost its abilities when its land
+types were set, and offer only the mana its types give.
+
+Readers:
+- "Nonbasic lands are Mountains" (Blood Moon, Magus of the Moon), on a new static scope,
+  `nonbasic-lands`.
+- "Enchanted land is an Island / a Swamp / …" (Spreading Seas, Evil Presence, Sea's Claim).
+- "Enchanted permanent is a colorless Forest land" (Song of the Dryads): its other card types and
+  creature types gone, its colour gone, a Forest and nothing else.
+
+Two fixes found on the way:
+- **The mana pips never counted a type an effect added.** `potentialMana` walks the board on its own
+  and had never included the mana a basic land type gives a land that is the type only because an
+  effect says so. `manaSources` has done this since D699. A Forest under Urborg tapped for black when
+  paying, but lit no black pip. Both walks now agree.
+- **Activation never refused a lost ability.** The play list has never offered an ability of a
+  permanent that has lost them all, but the activate action itself did not refuse one. A Frogged
+  creature's printed ability could be activated by an action the table did not offer. A grant that
+  landed after the loss is still allowed.
+
+Not done: Imprisoned in the Moon ("a colorless land with '{T}: Add {C}'") grants a quoted ability
+after the loss, and is left for the attachment grant path. A land whose types were set taps for its
+new colour through the payer, and its printed mana ability is refused if pressed by hand, which is
+right. A UI that taps lands by printed ability index will not see the new colour as a button.
+
+Read whole now, by the probe: Blood Moon, Magus of the Moon, Spreading Seas, Evil Presence, Sea's
+Claim, Song of the Dryads.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- Under the Moon, a nonbasic land taps for red and nothing else, both in the pips and in the
+  auto-payer. Its other ability is refused, and a basic Swamp is untouched.
+- A Forest Island under the Moon is only a Mountain.
+- The enchanted land is an Island: blue, not green.
+- The enchanted creature is a colorless Forest land with no abilities, and taps for green.
+
+Faults injected by hand: 6, all caught (two after tests were added for them).
+- The old land types kept.
+- The auto-payer reading the printed abilities.
+- The pips skipping a retyped land.
+- Basic lands caught by the Moon.
+- The lost ability's activation allowed.
+- Song's colour left on.
+
+Coverage: 17,013 of 31,900 cards (+9 over D1245's 17,004), 39,636 of 59,888 lines (+10).
