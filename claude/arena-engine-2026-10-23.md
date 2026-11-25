@@ -46653,3 +46653,29 @@ creature adds nothing, and one and then two Auras of "+1/+1" on it make it 4/5 a
 Gauntlets-shaped Equipment on a Bear gives +1/+0, and +2/+0 once a second Equipment joins it.
 Faults injected by script: 3 of 3 caught. A fault that fixed the count at one went uncaught
 until the test put a second Aura on it.
+
+## D1254 — Reveal cards until you reveal a kind of card: Hermit Druid
+
+"Reveal cards from the top of your library until you reveal a <kind> card. Put that card into your
+hand [or onto the battlefield, tapped where printed] and the rest [all other cards revealed this way]
+into your graveyard [or on the bottom of your library in a random order]." The kind is a
+library-search phrase (`libraryFilter`). With no such card, every card revealed goes where the rest
+go, so a Hermit Druid with no basic land left mills its whole library. 77 legal cards print "reveal
+cards … until you reveal", and these two endings are the commonest.
+
+Read whole now, by the probe: Hermit Druid, Atla Palani, Clifftop Lookout, Evolutionary Leap,
+Foster, House Cartographer, Jalira, Spinner of Souls, The Regalia, Vivien, Nature's Avenger, Divining
+Witch (with D1247's Demonic Consultation).
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- The first basic land comes to hand, and the cards before it go to the graveyard.
+- With no basic land left, the whole library goes to the graveyard and nothing comes to hand.
+- A creature found goes onto the battlefield, and the card before it goes under the library.
+
+Faults injected by hand: 3, all caught.
+- The rest left in the library.
+- The battlefield ending read as the hand.
+- The first card taken whatever its kind.
+
+Coverage: 17,080 of 31,900 cards (+22 over D1253's 17,058), 39,735 of 59,888 lines (+30).
