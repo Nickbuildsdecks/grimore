@@ -35266,17 +35266,20 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     {T}, Sacrifice Barbarian Ring: It deals 2 damage to any target. Activate only if there are seven
     or more cards in your graveyard." Metalcraft, hellbent and morbid print the same shape.
 
-    The label comes off only when what is left reads with an "Activate only if" condition
-    (`activateOnlyIf`), because then the condition the label names is written out and
-    `activationRestriction` has read it; without that sentence the label would be the only thing
-    restricting the ability, and dropping it would offer the ability always. Keyword costs ("Boast —", "Exhaust —") are never labels here, by
-    `withoutAbilityWord`'s list. The description keeps the label, as the button shows the card.
+    D623 took the label off only when what was left read with an "Activate only if" condition
+    (`activateOnlyIf`). **D1266 drops that requirement**: an ability word has no rules meaning
+    (CR 207.2c) and neither has a flavour word (CR 207.2d) — "Magical Tinkering —" (Oswald
+    Fiddlebender), "Ultimate Sacrifice —" (Adric), "Imprint —" (Death-Mask Duplicant), "Cohort —" —
+    so the ability is exactly what follows the dash, restriction and all. What *does* restrict an
+    ability through its label is a keyword ("Boast —", "Exhaust —", "Max speed —", "Channel —",
+    "Cycling—"), and those are never labels here, by `withoutAbilityWord`'s list. The description
+    keeps the label, as the button shows the card.
   */
   const unlabelled = withoutAbilityWord(text);
   if (unlabelled !== text) {
     const inner = abilityFromLine(unlabelled, name);
     const abilities = inner?.abilities ?? [];
-    if (abilities.length === 0 || abilities.some((ability) => ability.activateOnlyIf === undefined)) return null;
+    if (abilities.length === 0) return null;
     /*
       A line that promises mana must come out as a mana ability or not at all (D497, and
       `isManaAbilityLine`). With the label on, `compile.ts` never saw it as one, so the check is

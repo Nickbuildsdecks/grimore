@@ -45959,6 +45959,40 @@ describe('Birthing Pod: a creature one mana value up from the one sacrificed (D1
   });
 });
 
+describe('a flavour word or ability word in front of an activated ability comes off (D1266)', () => {
+  /*
+    "Magical Tinkering — {W}, {T}, Sacrifice an artifact: …" (Oswald Fiddlebender). The label has
+    no rules meaning (CR 207.2c-d), so the ability is what follows the dash. A keyword in the same
+    position is a restriction and is not a label: "Max speed —" stays unread.
+  */
+  const R = (name: string, text: string) => ({
+    name, type_line: 'Artifact Creature — Construct', oracle_text: text, mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: '1', toughness: '1',
+  });
+  const TINKER = R('Test Tinkerer', 'Magical Tinkering — {T}: Draw a card.');
+  const SPEED = R('Test Speedster', 'Max speed — {T}: Draw a card.');
+  const deck = customDeck({ id: 'd1266', name: 'Tinker', entries: [{ name: 'Test Tinkerer', count: 4 }, { name: 'Forest', count: 56 }], data: [TINKER] as never[] });
+
+  it('reads the labelled ability, and leaves a keyword in the same place unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(TINKER as never)).toMatchObject({ ok: true, unread: [] });
+    const speed = compileCard(SPEED as never);
+    expect(speed.ok && speed.unread.length).toBeGreaterThan(0);
+  });
+
+  it('the ability activates and does what follows the dash; the button keeps the label', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1266', 1: 'd1266' }, deckSpecs: { d1266: deck.deck },
+      battlefield: { 0: ['Test Tinkerer'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const tinker = find(s, 0, 'battlefield', 'Test Tinkerer');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: tinker, abilityIndex: 0 } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    const compiled = compileCard(TINKER as never);
+    expect(compiled.ok && compiled.script?.abilities?.[0]?.description).toMatch(/^Magical Tinkering/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
@@ -82560,9 +82594,14 @@ describe('"Activate only if <condition>" (D623)', () => {
     // The button shows the card as printed, label and all.
     const read = compileCard(RING as never);
     expect(read.ok && read.script?.abilities?.[0]?.description).toMatch(/^Threshold — /);
-    // Without the sentence the label is the only restriction, and the line stays unread.
+    /*
+      Without the sentence the ability has no restriction, because an ability word has no rules
+      meaning (CR 207.2c). D623 left this unread; D1266 reads it as printed. No legal card prints a
+      condition ability word in front of an activated ability without restating it.
+    */
     const bare = compileCard({ ...RING, oracle_text: 'Threshold — {1}: You gain 4 life.' } as never);
-    expect(bare.ok && bare.unread).toHaveLength(1);
+    expect(bare.ok && bare.unread).toHaveLength(0);
+    expect(bare.ok && bare.script?.abilities?.[0]?.activateOnlyIf).toBeUndefined();
   });
 
   it('a labelled mana ability stays a mana ability, and holds back until the condition is met', () => {
