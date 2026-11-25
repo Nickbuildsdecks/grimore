@@ -46773,3 +46773,32 @@ Faults injected by hand: 3, all caught.
 - The land play not telling where it came from.
 
 Coverage: 17,087 of 31,900 cards (+1 over D1257's 17,086), 39,745 of 59,888 lines (+2).
+
+## D1259 — Tymna the Weaver
+
+"At the beginning of each of your postcombat main phases, you may pay X life, where X is the number
+of opponents that were dealt combat damage this turn. If you do, draw X cards."
+
+Three pieces:
+- **A turn fact**: `combatDamagedThisTurn`, the seats dealt combat damage this turn. Written by
+  `dealDamage` when the damage came from an attacker (`combatFrom`), beside `damagedThisTurn`, and
+  cleared with it.
+- **The count**: "the number of opponents that were dealt combat damage this turn", for any "where X
+  is".
+- **The two sentences as one choice**: pay X life and draw X cards, X counted as it resolves. Asked
+  only when X is more than nothing and the life is there to pay. The bot pays while it would keep
+  more than 10 life.
+
+Read whole now (1): Tymna the Weaver.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- Combat damage to a player is recorded; other damage to that player is not.
+- One opponent hit: pay 1 and draw 1. None hit: nothing.
+
+Faults injected by hand: 3, all caught.
+- Every damage recorded as combat damage.
+- The life not paid.
+- Every opponent counted.
+
+Coverage: 17,088 of 31,900 cards (+1 over D1258's 17,087), 39,746 of 59,888 lines (+1).
