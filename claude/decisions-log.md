@@ -61834,3 +61834,38 @@ the reader not registered, and the cost dropped from the modes.
 
 - engine tests: 6483, all passing (on 946f080)
 - Coverage: 16,705 to 16,713 of 31,900 cards with every line read, and 39,181 to 39,228 of 59,888 lines, against 946f080. The line count rises by more than the card count: the modal header and its bullets are claimed on cards still short of another line, Umezawa's Jitte among them.
+
+## D1221 — "Look at target player's hand and choose N cards from it"
+
+The older printing of the chosen discard: Thrull Surgeon ("… choose a card from it. That player
+discards that card"), Extortion ("… up to two cards from it. That player discards those cards"),
+and the two that put the cards back on top: Painful Memories ("Put that card on top of that player's
+library") and Agonizing Memories ("Put them on top of that player's library in any order"). One
+sentence where the newer cards print two, and the same question as D531's: the caster picks out of
+the target's hand, which the question shows them. A count of one, two or three, or "up to" one of
+those; the second sentence must agree with it ("that card" after one, "those cards" or "them" after
+more), or the card stays unread. "In any order" is the order picked, the last one picked ending on
+top. The type words are D970's, now in one function both readers share (`handCardTypeTest`).
+
+Not read: X ("choose X cards", Mind Warp, Abandon Hope, Discordant Dirge), because the question's
+size is fixed before X could be looked at.
+
+Read whole now (4): Agonizing Memories, Extortion, Painful Memories, Thrull Surgeon.
+
+**Tests.** 5 engine tests:
+- Every test card reads whole; "choose a card … discards those cards" stays unread.
+- "Up to two": the caster is asked, for 0 to 2, and both cards picked are discarded.
+- "A nonland card": the only nonland card is taken and the land stays.
+- On top: the card picked is the top of the library.
+- Two on top "in any order": the last picked on top, the first under it.
+
+Faults injected by hand: 5, all caught.
+- "Up to" asked as exactly N.
+- The type filter dropped.
+- The cards put on top in reverse.
+- The pronoun no longer required to agree with the count.
+- Discards put on top instead.
+
+The coverage below includes the other session's D843, merged in before this was measured.
+
+Coverage: 16,726 of 31,900 cards (+12 over D1220's 16,714), 39,242 of 59,888 lines (+52).
