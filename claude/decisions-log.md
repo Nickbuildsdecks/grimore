@@ -61707,3 +61707,23 @@ Faults injected by hand: 2, all caught.
 The coverage below includes the other session's D840 and D841, merged in before this was measured.
 
 Coverage: 16,677 of 31,900 cards (+13 over D1217's 16,664), 39,145 of 59,888 lines (+13).
+
+## D1219 — "prevent all combat damage that would be dealt this turn by <a group>"
+
+Harmless Assault ("… by attacking creatures"), Tanglesap ("… by creatures without trample"), Vine
+Snare ("… by creatures with power 4 or less"), Hunter's Ambush ("… by nongreen creatures"). D738's
+one-turn prevention read three named groups (creatures, yours, your opponents'); any other creature
+scope `massScope` reads now works the same way, with D1208's "without <keyword>" among them. The
+creatures are those in the group as the spell resolves; one that joins the group later in the turn
+is not covered, which is this reading's one approximation.
+
+Read whole now (4): Harmless Assault, Hunter's Ambush, Tanglesap, Vine Snare.
+
+**Tests.** 2 engine tests:
+- The test card reads whole.
+- Cast during combat, the Bear's combat damage is prevented and the trampling Wurm's 3 is dealt.
+
+Faults injected by hand: 1, caught.
+- The group widened to every creature.
+
+Coverage: 16,684 of 31,900 cards (+7 over D1218's 16,677), 39,153 of 59,888 lines (+8).
