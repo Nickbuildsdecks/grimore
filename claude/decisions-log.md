@@ -62097,3 +62097,38 @@ permanent).
 
 - engine tests: 6513, all passing (on 8d84848)
 - Coverage: 16,751 to 16,759 of 31,900 cards with every line read, and 39,269 to 39,281 of 59,888 lines, against 8d84848.
+
+## D1226 — "Activated abilities of artifacts can't be activated"
+
+Null Rod, Stony Silence and Collector Ouphe ("of artifacts"), Cursed Totem ("of creatures"), Linvala,
+Keeper of Silence ("of creatures your opponents control"), Karn, the Great Creator ("of artifacts
+your opponents control"), Clarion Conqueror ("of artifacts, creatures, and planeswalkers"), and
+Damping Matrix and Sharkey ("… unless they're mana abilities"). Arrest's flags (D943, D944) as a
+static over each kind named; three scopes were added for them (`opponent-artifacts`,
+`opponent-lands`, `all-planeswalkers`). A mana ability is an activated ability (CR 605.1a), so under
+a Null Rod a Sol Ring taps for nothing and the mana-source list leaves it out; under a Damping
+Matrix it still does.
+
+Not read: "sources with the chosen name" (Pithing Needle, Phyrexian Revoker, Sorcerous Spyglass),
+which needs a card name chosen as the permanent enters.
+
+Read whole now (7): Clarion Conqueror, Collector Ouphe, Cursed Totem, Damping Matrix, Linvala,
+Keeper of Silence, Null Rod, Stony Silence. Karn and Sharkey read this line and wait on others.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- "Of artifacts": an artifact's ability is refused and its mana is gone; a creature's ability and
+  mana are not touched.
+- "Of creatures": the other way round.
+- "Creatures your opponents control": the opponent's creature is refused, the controller's is not.
+- "Unless they're mana abilities": both kinds' other abilities are refused, both kinds' mana stays.
+
+Faults injected by hand: 4, all caught.
+- Every reading taken as "unless they're mana abilities".
+- "Your opponents'" creatures widened to every creature.
+- "Your opponents'" creatures read as a scope that matches nothing.
+- Only the first kind of a list kept.
+
+The coverage below includes the other session's D846, merged in before this was measured.
+
+Coverage: 16,777 of 31,900 cards (+15 over D1225's 16,762), 39,304 of 59,888 lines (+22).
