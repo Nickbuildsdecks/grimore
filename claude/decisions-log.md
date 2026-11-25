@@ -61677,3 +61677,40 @@ and whose graveyard ignored.
 
 - engine tests: 6468, all passing (on 97a76ef, D840 and D841 gated together)
 - Coverage, both together: 16,636 to 16,641 of 31,900 cards with every line read, and 39,091 to 39,096 of 59,888 lines, against 97a76ef.
+
+## D842 — One subject, several verbs: Archon of Cruelty
+
+Most-played order: Archon of Cruelty (rank 951). The same reading finishes about twenty cards
+across the corpus, among them Mind Drain, Mental Agony, Geth's Verdict, Funeral Rites, Arbiter of
+Woe, Atrocious Experiment and Hopeless Nightmare.
+
+"Target opponent sacrifices a creature or planeswalker, discards a card, and loses 3 life. You draw
+a card and gain 3 life." Each verb read alone, as its own sentence, with "That player" for the
+targeted player, the same words for "each opponent / each player" and "you". The shared subject
+was what nothing read.
+
+**Reader.** `distributeSubject` gives each later verb its subject back. "That player" after a
+targeted player keeps it one target; the same words after "each …" and "you". It splits only where
+the next word is one of a fixed list of player verbs (discards, loses, gains, draws, sacrifices,
+mills, creates, reveals, scries, surveils, exiles, shuffles, and their "you" forms), so a list of
+objects like "a creature, an artifact, and a land" is never cut.
+
+**A fallback, and why.** The first version split every line in `clausesOf`. A card-by-card diff
+against the pushed build found it lost 11 cards while gaining 20. Lines like "you gain 1 life and
+scry 1", "you gain X life and draw X cards, where X is …" and "target player draws two cards and
+loses 2 life" read as one clause already, and cut apart they did not. So `composeEffects` now reads
+the clauses as printed first (`composeEffectsAsPrinted`, the old body), and only if that fails
+retries once with the subject distributed. The diff afterwards: 0 lost, 20 gained.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- Archon's line as a sorcery: the targeted opponent sacrifices their creature, discards and loses
+  3, and we draw and gain 3, with one target throughout;
+- "each opponent discards a card and loses 2 life" in a pod of three takes a card and two life
+  from each opponent and nothing from us.
+
+Faults injected by script: 3 of 3 caught (the target repeated instead of "That player", the
+fallback off, and the "you" verbs off).
+
+- engine tests: 6477, all passing (on 4e24061)
+- Coverage: 16,670 to 16,690 of 31,900 cards with every line read, and 39,139 to 39,165 of 59,888 lines, against 4e24061.
