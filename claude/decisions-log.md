@@ -62038,3 +62038,39 @@ Pod sweep 82001 (100 games, D1221 build): 100 finished, no throw, no stall.
 The coverage below includes the other session's D845, merged in before this was measured.
 
 Coverage: 16,754 of 31,900 cards (+7 over D1223's 16,747), 39,271 of 59,888 lines (+7).
+
+## D1225 — "Copy target triggered ability you control", read from the card
+
+Strionic Resonator has been written by hand since the stack could hold an ability; the compiler
+could not read its text, nor its kin. Now it does: "Copy target triggered ability you control"
+(Strionic Resonator, Kirol), "activated or triggered" (Peter Parker's Camera), and the source
+named, "from an artifact source" (Tawnos, Urza's Apprentice; Scientist Supreme of A.I.M.), "a
+creature source" (Echo, Perceptive Prodigy), "an enchantment source" (Weaver of Harmony), "a
+colorless source" (Abstruse Archaic), "another legendary source that's not a commander" (The
+Peregrine Dynamo). The source is read live where it is still on the battlefield, and as printed
+where it has gone. The copy and its retarget sentence are held together by `clausesOf` and read as
+one ability with the hand-written card's question (`NEW_TARGETS_FOR_THE_COPY`) and the same
+`copyAbilityOnStack`.
+
+Not read: "twice" and "X times" (Mister Fantastic, Gogo), because each copy may be pointed
+somewhere else and one question cannot say where both go.
+
+Read whole now (9): Abstruse Archaic, Echo, Perceptive Prodigy, Kirol, Attentive First-Year, Peter
+Parker's Camera, Scientist Supreme of A.I.M., Strionic Resonator, Tawnos, Urza's Apprentice, The
+Peregrine Dynamo, Weaver of Harmony.
+
+**Tests.** 4 engine tests:
+- The test cards read whole; "twice" stays unread.
+- A copied enter trigger gains its life twice.
+- "Triggered" refuses an activated ability as its target; "activated or triggered" takes it, and
+  the copy resolves.
+- "From an artifact source" refuses a creature's trigger and copies an artifact's.
+
+Faults injected by hand: 3, all caught.
+- The triggered or activated filter dropped.
+- The source filter dropped.
+- The copy never made.
+
+Not covered by a test: an opponent's ability refused as a target (the "you control" check).
+
+Coverage: 16,762 of 31,900 cards (+8 over D1224's 16,754), 39,282 of 59,888 lines (+11).
