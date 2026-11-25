@@ -3266,11 +3266,15 @@ export function costChangeFor(
   let down = 0;
   const notes: string[] = [];
   for (const other of state.seats) {
-    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+    // And a commander in its command zone, for the modifiers eminence marks (D1262).
+    const commanding = listAt(state, zoneKey(other.index, 'command'))
+      .filter((id) => state.instances[id]?.emblem !== true);
+    for (const id of [...listAt(state, zoneKey(other.index, 'battlefield')), ...commanding]) {
       const inst = state.instances[id];
       if (inst === undefined || isFaceDownPermanent(inst)) continue;
       const script = scriptForCard(state.cardDefs[inst.defKey]);
       for (const mod of script?.costModifiers ?? []) {
+        if (inst.zone === 'command' && mod.fromCommandZone !== true) continue;
         const mine = other.index === seat;
         if (mod.whose === 'controller' && !mine) continue;
         if (mod.whose === 'opponents' && mine) continue;

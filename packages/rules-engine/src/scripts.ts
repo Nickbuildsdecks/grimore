@@ -37227,6 +37227,27 @@ function cantAloneFromLine(line: string, name: string): Partial<CardScript> | nu
 }
 
 function costModifierFromLine(line: string, name: string): Partial<CardScript> | null {
+  /*
+    Eminence (D1262): "As long as ~ is in the command zone or on the battlefield, other Dragon spells
+    you cast cost {1} less to cast" (The Ur-Dragon). The rest is read as any cost modifier, marked to
+    work from the command zone too. "Other" leaves out a spell of the card's own name.
+  */
+  const eminent = new RegExp(`^As long as ${selfRef(name)} is in the command zone or on the battlefield, (other )?(.+)$`, 'i')
+    .exec(withoutAbilityWord(plain(line).trim()));
+  if (eminent !== null) {
+    const inner = costModifierFromLine(eminent[2]!.charAt(0).toUpperCase() + eminent[2]!.slice(1), name);
+    if (inner === null || inner.costModifiers === undefined || inner.costModifiers.length !== 1) return null;
+    const mod = inner.costModifiers[0]!;
+    const other = eminent[1] !== undefined;
+    return {
+      costModifiers: [{
+        ...mod,
+        fromCommandZone: true,
+        applies: (state, caster, card, source) => (!other || card.name.toLowerCase() !== name.toLowerCase())
+          && mod.applies(state, caster, card, source),
+      }],
+    };
+  }
   // An ability word in front ("Locus of Slaanesh — …") is only a name (CR 207.2c).
   const printed = withoutAbilityWord(plain(line).trim()).replace(/\.$/, '');
   /*

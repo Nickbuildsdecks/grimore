@@ -4764,6 +4764,11 @@ export interface CardScript {
      * is computed. Animar's "+1/+1 counter on Animar", "artifact you control".
      */
     readonly per?: (state: GameState, caster: SeatIndex, source: string) => number;
+    /**
+     * Eminence (D1262): "As long as ~ is in the command zone or on the battlefield, …" (The
+     * Ur-Dragon). Asked of the permanent's controller's command zone as well as the battlefield.
+     */
+    readonly fromCommandZone?: true;
     /** Shown on the play when the cost changed: "costs {1} less". */
     readonly description: string;
   }[];

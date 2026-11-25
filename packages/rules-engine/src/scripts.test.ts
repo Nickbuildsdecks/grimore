@@ -45756,6 +45756,54 @@ describe('"Whenever one or more Dragons you control attack, draw that many cards
   });
 });
 
+describe('Eminence on a cost: The Ur-Dragon (D1262)', () => {
+  const ROWS = [
+    { name: 'Test Ur', type_line: 'Legendary Creature — Dragon Avatar', oracle_text: 'Eminence — As long as Test Ur is in the command zone or on the battlefield, other Dragon spells you cast cost {1} less to cast.', mana_cost: '{4}{R}', cmc: 5, colors: ['R'], layout: 'normal', power: '10', toughness: '10' },
+    { name: 'Test Drake', type_line: 'Creature — Dragon', oracle_text: '', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Herald', type_line: 'Legendary Creature — Dragon', oracle_text: 'Dragon spells you cast cost {1} less to cast.', mana_cost: '{2}{R}', cmc: 3, colors: ['R'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1262', name: 'Ur', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const table = (urIn: 'command' | 'battlefield' | 'graveyard' | 'none') => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1262', 1: 'd1262' }, deckSpecs: { d1262: deck.deck }, hands: { 0: ['Test Ur', 'Test Drake', 'Test Bear'] },
+      battlefield: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    if (urIn !== 'none') {
+      const ur = find(s, 0, 'hand', 'Test Ur');
+      s = relocate(s, s.instances[ur]!, urIn, 0 as SeatIndex, 'top');
+    }
+    return s;
+  };
+  const change = (s: GameState, name: string) => {
+    const id = find(s, 0, 'hand', name);
+    return costChangeFor(s, 0 as SeatIndex, s.cardDefs[s.instances[id]!.defKey], id).generic;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Dragon costs one less from the command zone and from the battlefield, not from the graveyard', () => {
+    expect(change(table('command'), 'Test Drake')).toBe(-1);
+    expect(change(table('battlefield'), 'Test Drake')).toBe(-1);
+    expect(change(table('graveyard'), 'Test Drake')).toBe(0);
+    expect(change(table('none'), 'Test Drake')).toBe(0);
+  });
+
+  it('an ordinary cost modifier does nothing from the command zone', () => {
+    let s = table('none');
+    const herald = ids(s, 0, 'library').find((x) => s.cardDefs[s.instances[x]!.defKey]?.name === 'Test Herald')!;
+    s = relocate(s, s.instances[herald]!, 'command', 0 as SeatIndex, 'top');
+    expect(change(s, 'Test Drake')).toBe(0);
+  });
+
+  it('a Bear costs the same', () => {
+    expect(change(table('command'), 'Test Bear')).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
