@@ -63749,3 +63749,39 @@ looking. An empty hand is not asked. A bot answers it with no cards, like any ot
 takes none. The bot answers it the same way, the opponent keeps both cards, and the caster draws one.
 At an empty hand nothing is asked. Faults injected by script: 3 of 3 caught (answered silently,
 asked over an empty hand, the caster's own hand shown).
+
+## D1243 — Tergrid: an opponent sacrifices a nontoken permanent or discards a permanent card
+
+Tergrid, God of Fright's front face, in three pieces:
+- **"A permanent card"** in a discard trigger: any of the permanent types, beside D820's card types.
+- **One line, two events**: "Whenever an opponent sacrifices a nontoken permanent or discards a
+  permanent card" is one trigger that fires on either.
+- **"Put that card from a graveyard onto the battlefield under your control"**, in either word
+  order: the card the event was about, taken from whichever graveyard it reached, only while it is
+  still there (CR 400.7).
+
+One engine fix with it. A sacrifice trigger never carried the sacrificed permanent onto the stack as
+the ability's subject, so no effect of one could name "that card". Discards had carried theirs since
+D719; sacrifices now do too. The rest of the sacrifice triggers in the pool are unchanged (204
+sacrifice tests).
+
+Read whole now: Tergrid's front face. The card is not whole yet, because its back face, Tergrid's
+Lantern, has "loses 3 life unless they sacrifice a nonland permanent or discard a card", a three-way
+punisher. That is D1244.
+
+**Tests.** 4 engine tests:
+- The test card reads whole.
+- An opponent's sacrificed creature comes over on a yes, and stays in their graveyard on a no.
+- A discarded permanent card comes over; a discarded instant does not trigger.
+- My own sacrifice does not trigger it.
+
+Faults injected by hand: 4, all caught.
+- The sacrifice's subject not carried.
+- The discard's permanent filter dropped.
+- "An opponent" read as anyone.
+- The card put onto the battlefield under its owner's control.
+
+Not covered by a test: "nontoken" (a token sacrificed has ceased to exist, so there is nothing to
+take either way).
+
+Coverage: 16,997 of 31,900 cards (+10 over D1242's 16,987), 39,619 of 59,888 lines (+16).
