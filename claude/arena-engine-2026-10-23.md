@@ -45296,3 +45296,30 @@ with the runtime block above as their evidence.
 The coverage below includes the other session's D851 to D880, merged in before this was measured.
 
 Coverage: 16,867 of 31,900 cards (+78 over D1227's 16,789), 39,413 of 59,888 lines (+97).
+
+## D1229 — Grand Arbiter Augustin IV's three cost lines, and Reality Shift
+
+Grand Arbiter Augustin IV prints three cost changes on three lines ("White spells you cast cost
+{1} less to cast", "Blue spells …", "Spells your opponents cast cost {1} more to cast"). Each line
+read, and the second and third were refused as a conflict with the first, because `costModifiers`
+is a list but was not one of the fields the compiler lets several lines add to. It is now. A tally
+of every refused merge across the legal pool found this the only card it held up.
+
+And "Target player manifests the top card of their library", which is how Reality Shift's "Exile
+target creature. Its controller manifests the top card of their library." reads once the referent
+has been swapped for a target (D537): the exiled creature's controller gets the face-down 2/2.
+
+Read whole now (2): Grand Arbiter Augustin IV, Reality Shift.
+
+**Tests.** 3 engine tests:
+- Both test cards read whole.
+- All three lines apply: white and blue spells cost one less for the Arbiter's controller, a red
+  one does not, and every spell costs one more for the opponent.
+- Reality Shift: the creature is exiled, and its controller (not the caster) has a face-down
+  permanent.
+
+Faults injected by hand: 2, both caught.
+- `costModifiers` not accumulated.
+- The manifest made for the caster.
+
+Coverage: 16,869 of 31,900 cards (+2 over D1228's 16,867), 39,416 of 59,888 lines (+3).
