@@ -64322,3 +64322,27 @@ triggered, not only that nothing was drawn).
 - "That many" counting every attacker.
 
 Coverage: 17,092 of 31,900 cards (+3 over D1260's 17,089), 39,753 of 59,888 lines (+5).
+
+## D1262 — Eminence on a cost: The Ur-Dragon
+
+"Eminence — As long as The Ur-Dragon is in the command zone or on the battlefield, other Dragon spells
+you cast cost {1} less to cast." The rest of the line is read as any printed cost modifier (D940),
+marked `fromCommandZone`. `costChangeFor` now also asks a commander in its command zone, but only for
+modifiers so marked. "Other" leaves out a spell with the card's own name. With D1261, The Ur-Dragon
+reads whole.
+
+Read whole now (1): The Ur-Dragon.
+
+**Tests.** 4 engine tests:
+- The test card reads whole.
+- A Dragon costs one less with Ur in the command zone or on the battlefield, and not with it in the
+  graveyard or the hand.
+- An ordinary cost modifier does nothing from the command zone.
+- A Bear costs the same.
+
+Faults injected by hand: 3, all caught (the second after the command-zone test was added).
+- The command zone not asked.
+- Every modifier in the command zone applied.
+- The kind of spell, and "other", ignored.
+
+Coverage: 17,093 of 31,900 cards (+1 over D1261's 17,092), 39,755 of 59,888 lines (+2).
