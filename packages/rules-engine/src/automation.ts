@@ -2523,6 +2523,8 @@ function fireTrigger(
         || event.kind === 'combat-damage'
         // And the card discarded, for Necropotence's "exile that card" (D719).
         || event.kind === 'discards'
+        // And the permanent sacrificed (D1243), for Tergrid's "put that card … onto the battlefield".
+        || event.kind === 'sacrifices'
         // And the permanent a board watcher saw targeted (D1021), for "that creature gets +3/+3".
         || (event.kind === 'targeted' && trigger.on.kind === 'targeted'
           && (trigger.on.who === 'any' || trigger.on.who === 'another'))

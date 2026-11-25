@@ -44788,6 +44788,56 @@ describe('"Exile it instead", and something done as well: Kalitas and kin (D1242
   });
 });
 
+describe('Tergrid: an opponent sacrifices a nontoken permanent or discards a permanent card (D1243)', () => {
+  const ROWS = [
+    { name: 'Test Tergrid', type_line: 'Legendary Creature — God', oracle_text: 'Menace\nWhenever an opponent sacrifices a nontoken permanent or discards a permanent card, you may put that card from a graveyard onto the battlefield under your control.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '4', toughness: '5' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 1 damage to any target.', mana_cost: '{0}', cmc: 1, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1243', name: 'Tergrid', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1243', 1: 'd1243' }, deckSpecs: { d1243: deck.deck }, hands: { 1: ['Test Bear', 'Test Bolt'] },
+    battlefield: { 0: ['Test Tergrid', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const mineNow = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Bear').length;
+  const discard = (s: GameState, id: string) => engineSettle(relocate(s, s.instances[id]!, 'graveyard', 1 as SeatIndex, 'top'), s);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an opponent's sacrificed creature comes over to me, if I say yes", () => {
+    const s = table();
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const yes = sayEachTime(passBoth(engineSettle(sacrifice(s, [theirs]), s)), 0, 'Yes');
+    expect(yes.instances[theirs]?.zone).toBe('battlefield');
+    expect(yes.instances[theirs]?.zoneSeat).toBe(0);
+    const no = sayEachTime(passBoth(engineSettle(sacrifice(s, [theirs]), s)), 0, 'No');
+    expect(no.instances[theirs]?.zone).toBe('graveyard');
+  });
+
+  it('a discarded permanent card comes over; a discarded instant does not ask', () => {
+    const s = table();
+    const bear = find(s, 1, 'hand', 'Test Bear');
+    const yes = sayEachTime(passBoth(discard(s, bear)), 0, 'Yes');
+    expect(yes.instances[bear]?.zoneSeat).toBe(0);
+    expect(yes.instances[bear]?.zone).toBe('battlefield');
+    const bolt = find(s, 1, 'hand', 'Test Bolt');
+    const after = drain(passBoth(discard(s, bolt)));
+    expect(after.pendingDecision).toBeNull();
+    expect(after.stackOrder).toHaveLength(0);
+  });
+
+  it('my own sacrifice does not trigger it', () => {
+    const s = table();
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const after = drain(passBoth(engineSettle(sacrifice(s, [mine]), s)));
+    expect(after.pendingDecision).toBeNull();
+    expect(mineNow(after)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

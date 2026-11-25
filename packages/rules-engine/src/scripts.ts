@@ -16719,6 +16719,23 @@ function selfEffect(
   }
 
   /*
+    "Put that card onto the battlefield under your control from their graveyard" (D1243, Tergrid):
+    the card the event was about, taken from whichever graveyard it reached, only while it is still
+    there (CR 400.7). The graveyard is named, so this needs no `where`.
+  */
+  // Tergrid prints the graveyard first: "put that card from a graveyard onto the battlefield under your control".
+  if (/^put that card (?:onto the battlefield under your control from (?:their|that player's|its owner's|a) graveyard|from (?:a|their|that player's|its owner's) graveyard onto the battlefield under your control)$/i.test(text)) {
+    return {
+      effect: (c) => {
+        const id = c.subject;
+        const inst = id === undefined ? undefined : c.state.instances[id];
+        if (id === undefined || inst === undefined || inst.zone !== 'graveyard') return c.state;
+        return putOntoBattlefield(c.state, id, c.controller, {});
+      },
+    };
+  }
+
+  /*
     "Sacrifice it" — the card eating itself, which is the Illusion drawback (D514).
 
     **15 legal cards** print `When ~ becomes the target of a spell or ability, sacrifice it`, 13 of
@@ -21113,8 +21130,17 @@ const TRIGGER_SHAPES: readonly ({
     "a noncreature, nonland card". Card types only, all printed "non" or none.
   */
   {
-    prologue: () => /^Whenever (?<who>you|an opponent|a player) discards? an? (?<kind>(?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle)(?:, (?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle))*) card, (?<clause>.+)$/i,
+    prologue: () => /^Whenever (?<who>you|an opponent|a player) discards? an? (?<kind>permanent|(?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle)(?:, (?:non)?(?:artifact|creature|enchantment|instant|land|planeswalker|sorcery|battle))*) card, (?<clause>.+)$/i,
     from: (m) => {
+      // "A permanent card" (D1243, Tergrid): any of the permanent types.
+      if (/^permanent$/i.test(m.groups?.kind ?? '')) {
+        const who = (m.groups?.who ?? '').toLowerCase();
+        return [{
+          kind: 'discards' as const,
+          by: who === 'you' ? 'you' as const : who === 'an opponent' ? 'opponent' as const : 'any' as const,
+          cardTypes: ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'],
+        }];
+      }
       const words = (m.groups?.kind ?? '').toLowerCase().split(/,\s*/);
       const negated = words.every((w) => w.startsWith('non'));
       if (!negated && words.length > 1) return [];
@@ -21126,6 +21152,18 @@ const TRIGGER_SHAPES: readonly ({
         ...(negated ? { notTypes: words.map((w) => w.slice(3)) } : { cardTypes: words }),
       }];
     },
+  },
+  /*
+    "Whenever an opponent sacrifices a nontoken permanent or discards a permanent card" (D1243,
+    Tergrid): two events, one trigger each time either happens, both about the card that reached
+    the graveyard.
+  */
+  {
+    prologue: () => /^Whenever an opponent sacrifices a nontoken permanent or discards a permanent card, (.+)$/i,
+    on: [
+      { kind: 'sacrifices', by: 'opponent', nontoken: true },
+      { kind: 'discards', by: 'opponent', cardTypes: ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'] },
+    ],
   },
   // "One or more cards" (D993): the batch, once per discard however many cards.
   {
