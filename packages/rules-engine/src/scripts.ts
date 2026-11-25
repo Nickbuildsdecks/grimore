@@ -22025,7 +22025,9 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
     const base = boardCount(twice[1]!, name);
     return base === null ? null : (c) => 2 * base(c);
   }
-  const plusFixed = /^(\w+) plus (the number of .+)$/i.exec(compound);
+  // And a fixed number plus any other measure read here (D1268): "2 plus the sacrificed creature's
+  // mana value" (Eldritch Evolution).
+  const plusFixed = /^(\w+) plus (the .+)$/i.exec(compound);
   if (plusFixed !== null) {
     const fixed = countFrom(plusFixed[1]!);
     const rest = boardCount(plusFixed[2]!, name);
@@ -33511,6 +33513,53 @@ function payXLifeDrawX(clauses: readonly string[], name: string): ReadEffect | n
 }
 
 /**
+ * A search whose count or bound is an X the next words define, and whose destination is the next
+ * sentence (D1268): "Search your library for up to X basic land cards, where X is the greatest power
+ * among creatures you control. Put those cards onto the battlefield tapped, then shuffle." (Traverse
+ * the Outlands, Celebrate the Harvest, Point the Way, Surveyor's Scope, Oreskos Explorer, Kyoshi
+ * Island Plaza, Prismatic Undercurrents), and "a creature card with mana value X or less, where X
+ * is 2 plus the sacrificed creature's mana value" (Eldritch Evolution).
+ *
+ * The plain search reads the kind and the destination; the question is then worked out as it is
+ * asked (`DecisionSpecOf`, D1195), with X counted from the board at that moment: the most cards that
+ * may be taken, or the highest mana value one may have. With no context to count from, X is 0.
+ */
+function searchWhereX(clauses: readonly string[], name: string): ReadEffect | null {
+  // The shuffle the search ends with arrives as a third clause of its own.
+  if (clauses.length !== 2 && !(clauses.length === 3 && /^(?:then )?shuffle\.?$/i.test(clauses[2]!.trim()))) return null;
+  const first = clauses[0]!.trim().replace(/\.$/, '');
+  const second = clauses[1]!.trim().replace(/\.$/, '').replace(/,? then shuffle$/i, '');
+  const head = /^(?:you may )?search your library for (?:up to X (.+?) cards|(an? .+? card) with mana value X or less), where X is (.+)$/i.exec(first);
+  const tail = /^(?:reveal (?:those cards|them|that card|it), )?put (those cards|them|that card|it) (into your hand|onto the battlefield tapped|onto the battlefield)$/i.exec(second);
+  if (head === null || tail === null) return null;
+  const many = head[1] !== undefined;
+  if (many !== /^(?:those cards|them)$/i.test(tail[1]!)) return null;
+  const count = whereXCount(head[3]!, name);
+  if (count === null) return null;
+  const inner = searchClause(many
+    ? `search your library for up to two ${head[1]!} cards, put them ${tail[2]!}`
+    : `search your library for ${head[2]!}, put it ${tail[2]!}`, name);
+  const question = inner?.decisions?.length === 1 ? inner.decisions[0]! : undefined;
+  if (inner === null || inner.targets !== undefined || question === undefined
+    || typeof question === 'function' || !isCardsDecision(question) || question.from !== 'library') return null;
+  const printed = `Search your library for ${many ? `up to X ${head[1]!} cards` : `${head[2]!} with mana value X or less`}, where X is ${head[3]!}`;
+  return {
+    decisions: [(state: GameState, _source: string, at?: EffectContext): DecisionSpec => {
+      const x = at === undefined ? 0 : Math.max(0, count({ ...at, state }));
+      if (many) return { ...question, prompt: `${printed} (X = ${x})`, max: x };
+      const typed = question.filter;
+      return {
+        ...question,
+        prompt: `${printed} (X = ${x})`,
+        filter: (s: GameState, id: string, chooser: SeatIndex) => (typed === undefined || typed(s, id, chooser))
+          && (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= x,
+      };
+    }],
+    effect: inner.effect,
+  };
+}
+
+/**
  * Meren of Clan Nel Toth (D1264): "choose target creature card in your graveyard. If that card's mana
  * value is less than or equal to the number of experience counters you have, return it to the
  * battlefield. Otherwise, put it into your hand." The comparison is made as it resolves, with the
@@ -33991,6 +34040,9 @@ function composeEffectsAsPrinted(
     const n = /^an?$/i.test(experienced[1]!) ? 1 : countFrom(experienced[1]!) ?? 1;
     return { effect: (c) => addSeatCounters(c.state, c.controller, 'experience', n) };
   }
+  // A search bounded by "where X is …" in its own sentence (D1268): see `searchWhereX`.
+  const searchedX = searchWhereX(clauses, name);
+  if (searchedX !== null) return searchedX;
   // Meren of Clan Nel Toth (D1264): see `merenReturn`.
   const meren = merenReturn(clauses, name);
   if (meren !== null) return meren;

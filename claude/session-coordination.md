@@ -184,3 +184,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1264 pushed in ec19d81. D1265 Birthing Pod: search bound by the sacrificed permanent's mana value plus N (CardsDecisionSpec.manaValueSacrificedPlus, applied in automation) (done).
 - D1265 pushed in 1319366. D1266 flavour and ability words come off activated abilities without an "Activate only if" sentence (keywords still excluded) (done).
 - D1266 pushed in 1365e5c. D1267 Show and Tell: each player may put a permanent card from their hand onto the battlefield (done).
+- D1267 pushed in d3abbd1. D1268 searches bounded by "where X is ..." with the destination in the next sentence (searchWhereX; boardCount N plus any measure) (done).

@@ -46053,6 +46053,66 @@ describe('Show and Tell: each player may put a permanent card from their hand on
   });
 });
 
+describe('a search bounded by "where X is …", its destination in the next sentence (D1268)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const C = (name: string, cmc: number, power: number) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: `{${cmc}}`, cmc, colors: ['G'], layout: 'normal', power: String(power), toughness: '2',
+  });
+  const TRAVERSE = S('Test Traverse', 'Search your library for up to X basic land cards, where X is the greatest power among creatures you control. Put those cards onto the battlefield tapped, then shuffle.');
+  const EVOLVE = S('Test Evolution', "As an additional cost to cast this spell, sacrifice a creature.\nSearch your library for a creature card with mana value X or less, where X is 2 plus the sacrificed creature's mana value. Put that card onto the battlefield, then shuffle.");
+  const ROWS = [TRAVERSE, EVOLVE, C('Test Three-Power', 2, 3), C('Test Four', 4, 1), C('Test Five', 5, 1)];
+  const deck = customDeck({
+    id: 'd1268', name: 'Where X',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }],
+    data: ROWS as never[],
+  });
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  const table = (hand: string, mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1268', 1: 'd1268' }, deckSpecs: { d1268: deck.deck },
+    hands: { 0: [hand] }, battlefield: { 0: [...mine] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole; with nothing sacrificed, "2 plus the sacrificed creature\'s mana value" stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [TRAVERSE, EVOLVE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const bare = compileCard({ ...EVOLVE, oracle_text: EVOLVE.oracle_text.split('\n')[1] } as never);
+    expect(bare.ok && bare.unread.length).toBeGreaterThan(0);
+  });
+
+  it('up to X basic lands, X the greatest power: at most three with a 3-power creature, entering tapped', () => {
+    let s = table('Test Traverse', ['Test Three-Power']);
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Traverse') } as Action));
+    expect(s.pendingDecision?.max).toBe(3);
+    expect(s.pendingDecision?.prompt).toContain('X = 3');
+    const forests = s.pendingDecision!.candidates.slice(0, 3);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: forests } as Action), 20);
+    for (const id of forests) {
+      expect(s.instances[id]?.zone).toBe('battlefield');
+      expect(s.instances[id]?.tapped).toBe(true);
+    }
+  });
+
+  it('with no creature, X is 0 and nothing is found', () => {
+    let s = table('Test Traverse', []);
+    const lands = ids(s, 0, 'battlefield').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Traverse') } as Action)), 20);
+    expect(s.pendingDecision?.max ?? 0).toBe(0);
+    expect(ids(s, 0, 'battlefield').length).toBe(lands);
+  });
+
+  it('mana value X or less, X = 2 plus what was sacrificed: a 2 sacrificed offers the fours, not the fives', () => {
+    let s = table('Test Evolution', ['Test Three-Power']);
+    const victim = find(s, 0, 'battlefield', 'Test Three-Power');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Evolution'), sacrifice: victim } as Action));
+    const offered = s.pendingDecision?.candidates ?? [];
+    expect(offered.map((id) => nameOf(s, id))).toContain('Test Four');
+    expect(offered.map((id) => nameOf(s, id))).not.toContain('Test Five');
+    const four = offered.find((id) => nameOf(s, id) === 'Test Four')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [four] } as Action), 20);
+    expect(s.instances[four]?.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
