@@ -31016,7 +31016,7 @@ function readEffect(
     may" the question is asked only when the top card is of that kind, and the move happens only on
     a yes; otherwise the card stays where it is.
   */
-  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card(?: of the chosen type)?), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?$/i.exec(clause.trim());
+  const topIf = /^(look at|reveal) the top card of your library and if it's (an? .+? card(?: of the chosen type)?), (you may )?(?:reveal it and )?put (?:it|that card) (into your hand|onto the battlefield)( tapped)?(?:\u0015(you may )?put it (into your hand|on the bottom of your library|into your graveyard))?(?:\u0017(draw a card|put (?:it|that card) into your hand))?$/i.exec(clause.trim());
   if (topIf !== null) {
     // "… a creature card of the chosen type" (D784): Herald's Horn. The type the source chose.
     const ofChosen = / of the chosen type$/i.test(topIf[2]!);
@@ -31083,7 +31083,21 @@ function readEffect(
           },
         };
       }
-      return { effect: (c) => (matches(c.state, c.controller, c.source) ? move(c.state, c.controller) : c.state) };
+      /*
+        "Otherwise, draw a card" / "… put it into your hand" (D1256, Thrasios, Courser of Kruphix's kin):
+        the other half, when the top card is not of the kind. Only without "may", where nothing is asked.
+      */
+      const elseDo = topIf[8]?.toLowerCase();
+      if (elseDo !== undefined && may) return null;
+      return {
+        effect: (c) => {
+          if (matches(c.state, c.controller, c.source)) return move(c.state, c.controller);
+          if (elseDo === undefined) return c.state;
+          if (elseDo === 'draw a card') return draw(c.state, c.controller, 1);
+          const top = topOf(c.state, c.controller);
+          return top === undefined ? c.state : moveToHand(c.state, [top]);
+        },
+      };
     }
   }
   /*
@@ -31706,6 +31720,8 @@ function clausesOf(line: string): readonly string[] {
     .replace(/((?:look at|reveal) the top card of your library)\.\s+If it's (an? [^,.]+? card(?: of the chosen type)?), ([^.]+)/gi, "$1 and if it's $2, $3")
     // And where it goes otherwise (D1073): "If you don't put the card onto the battlefield, put it into your hand."
     .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+If you don't put (?:the card|it) (?:into your hand|onto the battlefield), ((?:you may )?put it (?:into your hand|on the bottom of your library|into your graveyard))/gi, '$1\u0015$2')
+    // And "Otherwise, draw a card." after it (D1256, Thrasios): what happens when the top card is not that kind.
+    .replace(/(and if it's an? [^,.]+? card, [^.]+)\.\s+Otherwise, (draw a card|put (?:it|that card) into your hand)/gi, '$1\u0017$2')
     // And mana kept until end of turn (D1034): the second sentence is about what the first added.
     .replace(/(add [^.;]+)\.\s+Until end of turn, you don't lose this mana as steps and phases end/gi, '$1 and keep it until end of turn')
     // And until end of combat (D1138): Avatar Roku.

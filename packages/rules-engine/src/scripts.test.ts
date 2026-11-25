@@ -45512,6 +45512,49 @@ describe('Kaalia: put a creature from hand onto the battlefield tapped and attac
   });
 });
 
+describe('The top card, if it is of a kind, "Otherwise, draw a card": Thrasios (D1256)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G', 'U'], layout: 'normal' });
+  const ROWS = [
+    S('Test Thrasios', "Reveal the top card of your library. If it's a land card, put it onto the battlefield tapped. Otherwise, draw a card."),
+    S('Test Chaff', 'Draw a card.'),
+  ];
+  const deck = customDeck({ id: 'd1256', name: 'Thrasios', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (top: string) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1256', 1: 'd1256' }, deckSpecs: { d1256: deck.deck }, hands: { 0: ['Test Thrasios'] },
+      battlefield: { 0: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = [...ids(s, 0, 'library')];
+    const at = lib.findIndex((id) => s.cardDefs[s.instances[id]!.defKey]?.name === top);
+    const first = lib.splice(at, 1);
+    return { ...s, zones: { ...s.zones, '0:library': [...first, ...lib] } };
+  };
+  const cast = (s: GameState) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Thrasios'), targets: [] } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land on top goes onto the battlefield tapped, and nothing is drawn', () => {
+    const s = table('Forest');
+    const top = ids(s, 0, 'library')[0]!;
+    const hand = ids(s, 0, 'hand').length;
+    const t = cast(s);
+    expect(t.instances[top]?.zone).toBe('battlefield');
+    expect(t.instances[top]?.tapped).toBe(true);
+    expect(ids(t, 0, 'hand')).toHaveLength(hand - 1);
+  });
+
+  it('anything else: a card is drawn, and it is that card', () => {
+    const s = table('Test Chaff');
+    const top = ids(s, 0, 'library')[0]!;
+    const t = cast(s);
+    expect(t.instances[top]?.zone).toBe('hand');
+    expect(namesIn(t, 0, 'battlefield')).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
