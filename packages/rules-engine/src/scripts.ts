@@ -39,13 +39,13 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, RENOWNED, MONSTROUS,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, EXILED_ON_LEAVING, RENOWNED, MONSTROUS,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, putOnBottomOfLibrary, wasDealtDamageThisTurn, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, flipPermanent, recordExpiry, pairCreatures,
@@ -321,6 +321,8 @@ const TAX_NOT_PAID = "Don't pay";
 /** Events raised with the seat that acted, whose "that player" is that seat (`acting-player`). */
 const PLAYER_ACTION_EVENTS: ReadonlySet<string> = new Set([
   'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
+  // And the seat that searched (D864): Ob Nixilis, Unshackled's "that player sacrifices a creature".
+  'searches',
   // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
   'sacrifices',
   // And the seat that played a land (D1187): Horn of Greed's "that player draws a card".
@@ -11777,6 +11779,35 @@ export { cardTargets, destroy };
 export function keywordScriptFor(line: string, name: string): Partial<CardScript> | null {
   const text = line.trim();
   const word = text.toLowerCase();
+  /*
+    A comma list where a part needs a script (D875): Apex Devastator's "Cascade, cascade, cascade,
+    cascade" is four cascade triggers, each its own (CR 702.85c); "Flying, cascade" is the printed
+    keyword and the script. Each part read alone; a part that is a printed keyword needs nothing;
+    any other part refuses the list, and so does a field two parts both set unless it is a trigger list.
+  */
+  if (/,/.test(text) && !/[:."]/.test(text)) {
+    const parts = text.split(/,\s*/).map((part) => part.trim()).filter((part) => part !== '');
+    if (parts.length > 1) {
+      const merged: Record<string, unknown> = {};
+      let scripted = false;
+      for (const part of parts) {
+        const lower = part.toLowerCase();
+        const read = keywordScriptFor(part, name);
+        if (read === null) {
+          if (isKeyword(lower)) continue;
+          return null;
+        }
+        scripted = true;
+        for (const [key, value] of Object.entries(read)) {
+          const prior = merged[key];
+          if (prior === undefined) merged[key] = value;
+          else if (key === 'triggers' && Array.isArray(prior) && Array.isArray(value)) merged[key] = [...prior, ...value];
+          else return null;
+        }
+      }
+      return scripted ? merged as Partial<CardScript> : null;
+    }
+  }
 
   // ── The keywords whose line is the whole instruction ──────────────────────────────────────────
   if (word === 'cascade') return { triggers: [cascade()] };
@@ -15602,6 +15633,13 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
       return atMost ? value <= limit : value >= limit;
     };
   }
+  // "That entered this turn" (D857): Oran-Rief, the Vastwood. Arrived on this turn (`enteredTurn`).
+  const arrived = /\s+that entered (?:the battlefield )?this turn$/i.exec(rest);
+  if (arrived !== null) {
+    rest = rest.slice(0, arrived.index);
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && inst.enteredTurn === state.turn;
+  }
   // "With no counters on them" (D809): Damning Verdict. No counter of any kind.
   const uncountered = /\s+with no counters on (?:them|it)$/i.exec(rest);
   if (uncountered !== null) {
@@ -17111,6 +17149,19 @@ function selfEffect(
     call with only `keywords` in it, which is how the hand-written Skithiryx writes it — a keyword
     granted until end of turn is a continuous effect like a pump, not a different mechanism.
   */
+  /*
+    "If it would leave the battlefield, exile it instead of putting it anywhere else" (D859): Whip of
+    Erebos, after "Return target creature card … It gains haste." The card returned, as D1131's "it".
+  */
+  if (/^if it would leave the battlefield, exile it instead of putting it anywhere else$/i.test(text)) {
+    return {
+      effect: (c) => {
+        const id = firstCardTarget(c) ?? itMeans(undefined, c);
+        // A marker on the creature, so it outlasts the Whip. See `EXILED_ON_LEAVING`.
+        return c.state.instances[id]?.zone === 'battlefield' ? addCounters(c.state, id, EXILED_ON_LEAVING, 1) : c.state;
+      },
+    };
+  }
   // And with no duration (D1131): "It gains haste." after a return (Grave Upheaval, Whip of Erebos).
   // It lasts as long as the object (CR 611.2a): the creature is the effect's own source, so the
   // `permanent` duration ends as it leaves.
@@ -17663,6 +17714,24 @@ function attachmentBonus(
     A rider the attachment prints on its own: "Enchanted creature can't block", "… attacks each
     combat if able", "… can't be blocked", "… loses all abilities" (D604). See `attachmentRider`.
   */
+  /*
+    "Enchanted creature loses all abilities and is a green Elk creature with base power and toughness
+    3/3" (D856, Kenrith's Transformation, Frogify's kin): layers 4, 5, 6 and 7b on the host, the
+    creature types replaced (CR 205.1b), its colour replaced when one is printed.
+  */
+  const remade = /^loses all abilities and is an? ((?:(?:white|blue|black|red|green|colorless)(?:,? and | ))*)((?:[A-Z][A-Za-z'-]* )*[A-Z][A-Za-z'-]*) creature with base power and toughness (\d+)\/(\d+)$/.exec(tail);
+  if (remade !== null && remade[2]!.split(' ').every((word) => isCreatureType(word))) {
+    const words = (remade[1] ?? '').toLowerCase().split(/,? and | /).filter((w) => w !== '');
+    const colours = words.filter((w) => w !== 'colorless').map((w) => COLOUR_WORDS[w]!);
+    return {
+      bonus: {
+        losesAllAbilities: true, setCreatureTypes: remade[2]!.split(' '),
+        ...(words.length === 0 ? {} : { setColors: colours }),
+        setPower: Number(remade[3]), setToughness: Number(remade[4]),
+      },
+      harmful: true,
+    };
+  }
   const alone = attachmentRider(tail);
   if (alone !== null) return alone;
   /*
@@ -21258,6 +21327,19 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When(?:ever)? ${self} becomes monstrous, (.+)$`, 'i'),
     on: [{ kind: 'counters-put', counter: MONSTROUS }],
   },
+  // "Whenever an opponent searches their library" (D863): the `searches` event.
+  {
+    prologue: () => /^Whenever an opponent searches their library, (.+)$/i,
+    on: [{ kind: 'searches', by: 'opponent' }],
+  },
+  {
+    prologue: () => /^Whenever you search your library, (.+)$/i,
+    on: [{ kind: 'searches', by: 'you' }],
+  },
+  {
+    prologue: () => /^Whenever a player searches their library, (.+)$/i,
+    on: [{ kind: 'searches', by: 'any' }],
+  },
   // "Whenever you scry", "… surveil", "… scry or surveil" (D991): the `scries` event.
   {
     prologue: () => /^Whenever you scry, (.+)$/i,
@@ -22287,6 +22369,21 @@ function countOfThing(
     the creature's place a subtype test. The Goblin Piledriver family. A plural tribe word is the
     singular's job ("for each" is singular), so only the printed word is tried.
   */
+  /*
+    "For each other attacking creature that shares a creature type with it" (D861, Shared Animosity):
+    "it" is the event's attacker, its creature types read live (a changeling has them all).
+  */
+  if (/^other attacking creature that shares a creature type with it$/i.test(text) && number === 'singular') {
+    const kinds = (state: GameState, id: string): readonly string[] => {
+      const inst = state.instances[id];
+      return inst === undefined ? [] : characteristicsOf(state, inst).typeLine.subtypes.filter((t) => isCreatureType(t));
+    };
+    return (c) => {
+      const it = itMeans(undefined, c);
+      const mine = new Set(kinds(c.state, it));
+      return c.state.combat.attacks.filter(({ attacker }) => attacker !== it && kinds(c.state, attacker).some((t) => mine.has(t))).length;
+    };
+  }
   const attacking = /^(other )?attacking ([A-Za-z'-]+)$/.exec(text);
   if (attacking !== null && number === 'singular') {
     const other = attacking[1] !== undefined;
@@ -22306,9 +22403,10 @@ function countOfThing(
     Accumulated Knowledge, Galvanic Bombardment, Undead Servant). Cards by their printed name; the
     spell resolving is on the stack, not in a graveyard, so it does not count itself (CR 608.2).
   */
-  const namedHere = new RegExp(`^cards? named ${self} in (all graveyards|your graveyard)$`, 'i').exec(text);
+  // And "in each graveyard" (D860, Rite of Flame), which is all of them.
+  const namedHere = new RegExp(`^cards? named ${self} in (all graveyards|each graveyard|your graveyard)$`, 'i').exec(text);
   if (namedHere !== null) {
-    const everyone = namedHere[1]!.toLowerCase() === 'all graveyards';
+    const everyone = namedHere[1]!.toLowerCase() !== 'your graveyard';
     return (c) => (everyone ? c.state.seats.map((seat) => seat.index) : [c.controller])
       .flatMap((seat) => listAt(c.state, zoneKey(seat, 'graveyard')))
       .filter((id) => c.state.cardDefs[c.state.instances[id]?.defKey ?? '']?.name === name).length;
@@ -23067,6 +23165,21 @@ function eventRelativeEffect(
   // Specter's "that player discards a card at random".
   const HIT_EVENTS = new Set(['combat-damage', 'combat-damage-dealt', 'deals-damage']);
   const aboutTheHitPlayer = events.length > 0 && events.every((one) => HIT_EVENTS.has(one.kind));
+  /*
+    "That player sacrifices a creature and loses 10 life" (D864, Ob Nixilis, Unshackled): two of this
+    reader's sentences about the same player, each read alone, the second after the first. Only when
+    the second asks nothing, so the first's questions are the composition's.
+  */
+  const bothHalves = aboutAPlayer || aboutTheHitPlayer
+    ? /^that player (.+?) and ((?:loses|gains|draws|discards|sacrifices|mills) .+)$/i.exec(text) : null;
+  if (bothHalves !== null) {
+    const first = eventRelativeEffect(`that player ${bothHalves[1]!}`, name, events);
+    const second = eventRelativeEffect(`that player ${bothHalves[2]!}`, name, events);
+    if (first !== null && second !== null && (second.decisions ?? []).length === 0 && (second.targets ?? []).length === 0
+      && second.beforeDecisions === undefined && second.immediate === undefined && first.immediate === undefined) {
+      return { ...first, effect: (c) => second.effect({ ...c, state: first.effect(c), decisions: [] }) };
+    }
+  }
 
   /*
     **A measure of the event's creature** (D1020): "Whenever a creature you control deals combat
@@ -25245,6 +25358,12 @@ function targetSpecFrom(
       return spec({ kind: 'permanent', filter: permanentOfTypes('land') });
     case 'target artifact or enchantment':
       return spec({ kind: 'permanent', filter: permanentOfTypes('artifact', 'enchantment') });
+    // Haywire Mite (D855): either type, so long as it is not also a creature.
+    case 'target noncreature artifact or noncreature enchantment': {
+      const either = permanentOfTypes('artifact', 'enchantment');
+      const creature = permanentOfTypes('creature');
+      return spec({ kind: 'permanent', filter: (state, candidate, ...rest) => either(state, candidate, ...rest) && !creature(state, candidate, ...rest) });
+    }
     /*
       The same two types, restricted to an opponent's, which is Ainok Survivalist's phrase and the
       first place the type list and the controller test compose. Its own comment says why the
@@ -27272,6 +27391,42 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     chosen. Supplying one of two is a real extension to the borrow rather than a phrase to match, so
     it is the next increment and not a rider on this one.
   */
+  /*
+    "Remove target attacking creature you control from combat and untap it" (D869, Reconnaissance), and
+    without the untap. `removeFromCombat`: it stops attacking or blocking, and deals and is dealt no
+    combat damage (CR 506.4).
+  */
+  /*
+    "Destroy target artifact, target creature, target enchantment, and target land" (D880, Decimate),
+    and two joined by "and": one target per phrase, each a permanent of its own kind, all destroyed as
+    it resolves. A target that is no longer legal is skipped by the resolution, the rest still go.
+  */
+  const several = /^destroy (target [^,]+?(?:, target [^,]+?)*,? and target .+)$/i.exec(text);
+  if (several !== null) {
+    const phrases = several[1]!.split(/,? and (?=target )|, (?=target )/i).map((p) => p.trim());
+    const specs = phrases.map((phrase) => targetSpecFrom(phrase, false));
+    if (phrases.length >= 2 && specs.every((spec) => spec !== null && pointsAtAPermanent(spec) && (spec.count ?? 1) === 1)) {
+      return {
+        targets: specs as TargetSpec[],
+        effect: (c) => foldCardTargets(c, (state, id) => destroy(state, id)),
+        ...(specs.some((spec) => spec!.kind === 'creature') ? { spellFlags: { removesACreature: true } } : {}),
+      };
+    }
+  }
+  const removed = /^remove (target .+?) from combat( and untap it)?$/i.exec(text);
+  if (removed !== null) {
+    const spec = targetSpecFrom(removed[1]!, /\byou control\b/i.test(removed[1]!));
+    if (spec !== null && spec.kind === 'creature') {
+      const untaps = removed[2] !== undefined;
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => {
+          const out = removeFromCombat(state, id);
+          return untaps ? untapPermanent(out, id) : out;
+        }),
+      };
+    }
+  }
   const bite = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?) deals damage equal to its power to `
     + `(${TARGET_QUANTIFIER_PREFIX}target .+?|any target)$`,
@@ -28509,6 +28664,40 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     A body made small or blank is removal for the turn (`removesACreature`, hostile aim); one made
     big is a gift. Either wears off, so the bot holds it (`expiresAtEndOfTurn`).
   */
+  /*
+    "Target nonland permanent becomes an artifact in addition to its other types until end of turn"
+    (D851, Liquimetal Torque and Liquimetal Coating): layer 4's `addTypes`, on any permanent.
+  */
+  const typed = /^(target .+?) becomes an? (artifact|enchantment) in addition to its other types until end of turn$/i.exec(text);
+  if (typed !== null) {
+    const spec = targetSpecFrom(typed[1]!, false);
+    const type = typed[2]!.charAt(0).toUpperCase() + typed[2]!.slice(1).toLowerCase();
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], c.source, c.controller, { addTypes: [type] })),
+        spellFlags: { expiresAtEndOfTurn: true },
+      };
+    }
+  }
+  /*
+    "Until end of turn, creatures you control have base power and toughness X/X and gain all creature
+    types" (D877, Mirror Entity), with a number or the X paid: layer 7b on each creature you control as
+    it resolves (CR 611.2c), and every creature type where printed.
+  */
+  const mirrored = /^(until end of turn, )?creatures you control have base power and toughness (x|\d+)\/(x|\d+)( and gain all creature types)?( until end of turn)?$/i.exec(text);
+  if (mirrored !== null && (mirrored[1] === undefined) !== (mirrored[5] === undefined)
+    && (mirrored[2]!.toLowerCase() === 'x') === (mirrored[3]!.toLowerCase() === 'x')) {
+    const sized = (word: string, c: EffectContext) => (word.toLowerCase() === 'x' ? Math.max(0, c.x ?? 0) : Number(word));
+    const everyType = mirrored[4] !== undefined;
+    return {
+      effect: (c) => pump(c.state, creaturesControlledBy(c.state, c.controller), c.source, c.controller, {
+        setPower: sized(mirrored[2]!, c), setToughness: sized(mirrored[3]!, c),
+        ...(everyType ? { allCreatureTypes: true } : {}),
+      }),
+      spellFlags: { expiresAtEndOfTurn: true },
+    };
+  }
   const reshaped = /^(until end of turn, )?((?:up to one (?:other )?|another )?target .+?) ((?:loses|has|becomes|gets|gains) .+?)( until end of turn)?$/i.exec(text);
   if (reshaped !== null && (reshaped[1] === undefined) !== (reshaped[4] === undefined)) {
     const body = newBodyFrom(reshaped[3]!);
@@ -29585,6 +29774,24 @@ function readEffect(
   if (discovers !== null) {
     const n = Number(discovers[1]);
     return { effect: (c) => cascadeFrom(c, n) };
+  }
+  /*
+    "Gain control of all artifacts that player controls" (D862, Hellkite Tyrant's hit): the player
+    the hit was dealt to (`attacked`, as D987's hit-player), or a player target. Everything the
+    scope reads that that player controls as it resolves.
+  */
+  // The hit trigger hands it over as "defending player controls" (see `hitTarget`).
+  const takesAll = /^gain control of all (.+?) (?:that player|they|defending player) controls?$/i.exec(clause.trim());
+  const takenScope = takesAll === null ? null : massScope(takesAll[1]!);
+  if (takenScope !== null) {
+    return {
+      effect: (c) => {
+        const seat = firstPlayerTarget(c) ?? c.attacked?.defender ?? defendersOf(c.state, c.controller, c.source)[0] ?? null;
+        if (seat === null || seat === c.controller) return c.state;
+        return takenScope(c).filter((id) => c.state.instances[id]?.zoneSeat === seat)
+          .reduce((state, id) => gainControl(state, id, c.controller), c.state);
+      },
+    };
   }
   const takes = /^gain control of (target .+)$/i.exec(clause.trim());
   if (takes !== null && !/\b(?:until end of turn|for as long as)\b/i.test(takes[1]!)) {
@@ -31740,6 +31947,66 @@ const CHAOS_WARP_TAIL = ', and reveals the top card of their library, putting it
 const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 
 /**
+ * "Each other player discards a card. You draw a card for each card discarded this way." (D876, Syphon
+ * Mind.) The discard round as `each player discards a card` asks it, each discarding player choosing
+ * from their own hand, and then one draw for each card that was discarded, which a player with an
+ * empty hand did not add to.
+ */
+function discardThenDraw(clause: string, next: string | undefined): ReadEffect | null {
+  const round = /^(each other player|each opponent) discards (a|one|two) cards?$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (round === null || next === undefined) return null;
+  if (!/^you draw a card for each card discarded this way$/i.test(next.trim().replace(/\.$/, ''))) return null;
+  const n = round[2]!.toLowerCase() === 'two' ? 2 : 1;
+  return {
+    decisions: [{ who: 'each-opponent', from: 'hand', prompt: `Discard ${n === 1 ? 'a card' : 'two cards'}`, min: n, max: n }],
+    effect: (c) => {
+      const discarded = c.decisions.flatMap((answer) => answer.ids).filter((id) => c.state.instances[id]?.zone === 'hand');
+      return draw(moveToGraveyard(c.state, discarded), c.controller, discarded.length);
+    },
+  };
+}
+
+/**
+ * "Each player sacrifices a creature or planeswalker. Each player who can't discards a card." (D858,
+ * Plaguecrafter.) Two questions round the table: the sacrifice, then a discard offered only to a
+ * player who had nothing to sacrifice — its filter reads the board before anything is sacrificed,
+ * because every question is asked before the effect applies, so "can't" is as of the resolution's
+ * start, as printed. Answers are told apart by the zone their cards are in.
+ */
+function edictOrDiscard(clause: string, next: string | undefined): ReadEffect | null {
+  const edict = /^(each player|each opponent) sacrifices an? (creature or planeswalker|creature|artifact|permanent|nonland permanent)$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (edict === null || next === undefined) return null;
+  const subject = edict[1]!.toLowerCase();
+  if (!new RegExp(`^${subject} who can't discards a card$`, 'i').test(next.trim().replace(/\.$/, ''))) return null;
+  const kind = edict[2]!.toLowerCase();
+  const qualifies = (state: GameState, id: string): boolean => {
+    const inst = state.instances[id];
+    if (inst === undefined) return false;
+    const ch = characteristicsOf(state, inst);
+    if (kind === 'permanent') return true;
+    if (kind === 'nonland permanent') return !hasType(ch.typeLine, 'land');
+    if (kind === 'creature or planeswalker') return ch.isCreature || hasType(ch.typeLine, 'planeswalker');
+    return hasType(ch.typeLine, kind);
+  };
+  const who = subject === 'each player' ? 'each-player' as const : 'each-opponent' as const;
+  return {
+    decisions: [
+      { who, from: 'battlefield', prompt: `Sacrifice a ${kind}`, min: 1, max: 1, filter: (state: GameState, id: string) => qualifies(state, id) },
+      {
+        who, from: 'hand', prompt: `You have no ${kind} to sacrifice: discard a card`, min: 1, max: 1,
+        filter: (state: GameState, _id: string, chooser: SeatIndex) =>
+          !listAt(state, zoneKey(chooser, 'battlefield')).some((id) => qualifies(state, id)),
+      },
+    ],
+    effect: (c) => c.decisions.reduce((state, answer) => {
+      const onField = answer.ids.filter((id) => state.instances[id]?.zone === 'battlefield');
+      const inHand = answer.ids.filter((id) => state.instances[id]?.zone === 'hand');
+      return moveToGraveyard(sacrifice(state, onField), inHand);
+    }, c.state),
+  };
+}
+
+/**
  * The dig — "Look at the top three cards of your library. Put one of them into your hand and the
  * rest on the bottom of your library in any order." — read as the one question it is (D584).
  *
@@ -31791,6 +32058,35 @@ const LAND_SUBTYPE_WORDS: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mou
 function digGroup(
   clauses: readonly string[], at: number, name: string,
 ): { readonly read: ReadEffect; readonly consumed: number } | null {
+  /*
+    Thassa's Oracle (D853): "Look at the top X cards of your library, where X is your devotion to
+    blue. Put up to one of them on top of your library and the rest on the bottom of your library in
+    a random order. If X is greater than or equal to the number of cards in your library, you win
+    the game." The look counted live (`lookCount`), the one card kept on top a choice, and the win
+    asked after the cards are put back, of X counted again and the library as it then is.
+  */
+  const devoted = /^look at the top x cards of your library, where x is (your devotion to [a-z ]+)$/i.exec(clauses[at]!.trim().replace(/\.$/, ''));
+  const keepOne = clauses[at + 1]?.trim().replace(/\.$/, '');
+  if (devoted !== null && keepOne !== undefined
+    && /^put up to one of them on top of your library and the rest on the bottom of your library in a random order$/i.test(keepOne)) {
+    const count = devotionCount(devoted[1]!);
+    if (count === null) return null;
+    const lookCount = (state: GameState, seat: SeatIndex) => count({ state, controller: seat } as EffectContext);
+    const wins = /^if x is greater than or equal to the number of cards in your library, you win the game$/i
+      .test((clauses[at + 2] ?? '').trim().replace(/\.$/, ''));
+    return {
+      read: {
+        decisions: [{
+          who: 'controller', from: 'library-top', lookCount, min: 0, max: 1, chosenGoTo: 'top', restGoTo: 'bottom-random',
+          prompt: `${name}: choose up to one card to keep on top of your library`,
+        } as CardsDecisionSpec],
+        effect: (c: EffectContext) => (!wins || count(c) < listAt(c.state, zoneKey(c.controller, 'library')).length ? c.state
+          : c.state.seats.reduce((state, seat) => (seat.index === c.controller || seat.eliminated ? state : loseTheGame(state, seat.index)), c.state)),
+        ...(wins ? {} : { appliesNothing: true as const }),
+      },
+      consumed: wins ? 3 : 2,
+    };
+  }
   // "Reveal" as well as "look at" (D1075): Grisly Salvage, Commune with the Gods. The cards are seen
   // by everyone instead of one player; what is chosen from them, and where the rest go, is the same.
   const looks = /^(?:look at|reveal) the top ([a-z]+) cards of your library$/i.exec(clauses[at]!.trim());
@@ -32757,6 +33053,30 @@ function composeEffectsAsPrinted(
   let possessive = false;
   for (let at = 0; at < rest.length; at++) {
     const clause = rest[at]!;
+    // The edict with a forfeit (D858): see `edictOrDiscard`.
+    const forfeit = edictOrDiscard(clause, rest[at + 1]);
+    if (forfeit !== null) { parts.push(forfeit); at++; continue; }
+    // A discard round paid back in cards (D876): see `discardThenDraw`.
+    const syphon = discardThenDraw(clause, rest[at + 1]);
+    if (syphon !== null) { parts.push(syphon); at++; continue; }
+    // "Each opponent draws a card, then you draw a card for each opponent who drew a card this way" (D878).
+    if (/^each opponent draws a card$/i.test(clause.trim().replace(/\.$/, ''))
+      && /^(?:then )?you draw a card for each opponent who drew a card this way$/i.test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      parts.push({
+        effect: (c) => {
+          let state = c.state;
+          let drew = 0;
+          for (const seat of opponentsOf(state, c.controller)) {
+            const before = drawnThisTurn(state, seat);
+            state = draw(state, seat, 1);
+            if (drawnThisTurn(state, seat) > before) drew += 1;
+          }
+          return draw(state, c.controller, drew);
+        },
+      });
+      at++;
+      continue;
+    }
     // Two sentences that are one effect, wherever in the sequence they sit (D583).
     const impulse = impulseDraw(clause, rest[at + 1]);
     if (impulse !== null) { parts.push(impulse); at++; continue; }
@@ -33976,8 +34296,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const loyalty = /^([+\u2212-]?)(\d+)$/.exec(split[1]!.trim());
   if (loyalty !== null) {
     // A loyalty ability is activated from the battlefield, so that is where its subject is.
+    /*
+      And read as a spell's sentence when that fails (D854): an activated ability has no intervening
+      "if" (CR 603.4 is about triggers), so "Then if your library has no cards in it, you win the
+      game" is a condition asked as it resolves, exactly as on a sorcery. Jace, Wielder of Mysteries.
+    */
     const loyaltyReader = (text: string): ReadEffect | null =>
-      composeEffects(clausesOf(text), name, 'battlefield');
+      composeEffects(clausesOf(text), name, 'battlefield') ?? composeEffects(clausesOf(text), name, null);
     /*
       **A "you may" a loyalty ability offers** (D525) — Sarkhan, Fireblood's "+1: You may discard a
       card. If you do, draw a card." 25 legal loyalty lines begin with those two words and **4** of
@@ -34037,6 +34362,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesFromGraveyard = false;
   let energy = 0;
   let removes: { counter: string; amount: number } | null = null;
+  let puts: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
   let exilesCards: NonNullable<AbilityCost['exileFromGraveyard']> | null = null;
@@ -34178,6 +34504,15 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       number — "Remove X storage counters", "any number of", "all" are amounts chosen or counted
       as the cost is paid, and `removeCounter.amount` is fixed.
     */
+    // D879: "Put a -1/-1 counter on ~" as a cost (Devoted Druid).
+    const putOn = new RegExp(`^Put (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? on ${self}$`, 'i').exec(component);
+    if (putOn !== null) {
+      if (puts !== null) return null;
+      const amount = /^an?$/i.test(putOn[1]!) ? 1 : countFrom(putOn[1]!);
+      if (amount === null || amount <= 0) return null;
+      puts = { counter: putOn[2]!.toLowerCase(), amount };
+      continue;
+    }
     const removed = new RegExp(
       `^Remove (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? from ${self}$`, 'i',
     ).exec(component);
@@ -34350,7 +34685,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const anything = taps > 0 || untaps > 0 || mana.length > 0 || life > 0
     || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
-    || exilesSelf || energy > 0 || removes !== null || tapsOthers !== null || exilesCards !== null
+    || exilesSelf || energy > 0 || removes !== null || puts !== null || tapsOthers !== null || exilesCards !== null
     || discardsAtRandom || returnsSelf || returnsOthers !== null;
   // `{T}` and `{Q}` together is no printing, and each is one symbol at most.
   if (taps > 1 || untaps > 1 || (taps > 0 && untaps > 0) || !anything) return null;
@@ -34379,6 +34714,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
     ...(removes === null ? {} : { removeCounter: removes }),
+    ...(puts === null ? {} : { putCounter: puts }),
     ...(energy === 0 ? {} : { energy }),
     ...(exilesSelf ? { exileSelf: true as const } : {}),
     ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
@@ -34429,6 +34765,32 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   if ((cost.tapUntapped !== undefined || cost.untap === true || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
     || cost.returnSelf === true || cost.returnToHand !== undefined)
     && /^add\b/i.test(manaClause)) return null;
+  /*
+    The Urza lands (D867): "Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add
+    {C}{C}{C} instead." One colourless symbol made once, or as many times as the "instead" prints
+    while you control a land of each of the two subtypes, asked as the ability resolves.
+  */
+  const tron = /^add \{([WUBRGC])\}\. If you control an? ([A-Z][\w'-]*) ([A-Z][\w-]*) and an? ([A-Z][\w'-]*) ([A-Z][\w-]*), add ((?:\{[WUBRGC]\})+) instead$/i.exec(manaClause);
+  if (tron !== null) {
+    const symbol = tron[1]!.toUpperCase();
+    const more = tron[6]!.match(/\{([WUBRGC])\}/g) ?? [];
+    if (more.every((sym) => sym.slice(1, -1).toUpperCase() === symbol)) {
+      const wanted = [[tron[2]!, tron[3]!], [tron[4]!, tron[5]!]] as const;
+      const controls = (state: GameState, seat: SeatIndex, [first, second]: readonly [string, string]) =>
+        listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+          const inst = state.instances[id];
+          if (inst === undefined) return false;
+          const line = characteristicsOf(state, inst).typeLine;
+          return hasSubtype(line, first) && hasSubtype(line, second);
+        });
+      return {
+        abilities: [{
+          ...timing, cost, description: text, produces: [symbol as ManaType], ...only,
+          producesTimes: (state, _source, controller) => (wanted.every((pair) => controls(state, controller, pair)) ? more.length : 1),
+        }],
+      };
+    }
+  }
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
@@ -35726,6 +36088,7 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (new RegExp(`^(?:${self} is|it's) equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
   if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
+  if (/^your library has no cards in it$/i.test(text)) return { kind: 'controller-library', atMost: 0 };
   const hand = /^you have (\S+) or more cards in hand$/i.exec(text);
   if (hand !== null) {
     const atLeast = n(hand[1]!);
@@ -36032,6 +36395,71 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
   /*
+    "Nontoken creatures you control are Forest lands in addition to their other types" (D871, Ashaya,
+    Soul of the Wild), and "Creatures you control are artifacts / enchantments …": layer 4 on your
+    creatures, a basic land type bringing its mana ability with it (CR 305.6).
+  */
+  const retyped = /^(nontoken )?creatures you control are (?:(Plains|Island|Swamp|Mountain|Forest) )?(lands|artifacts|enchantments) in addition to their other types\.?$/i.exec(plain(line).trim());
+  if (retyped !== null) {
+    const type = { lands: 'Land', artifacts: 'Artifact', enchantments: 'Enchantment' }[retyped[3]!.toLowerCase() as 'lands']!;
+    if (retyped[2] !== undefined && type !== 'Land') return null;
+    const basic = retyped[2] === undefined ? undefined : retyped[2].charAt(0).toUpperCase() + retyped[2].slice(1).toLowerCase();
+    const typed: Partial<CardScript> = {
+      statics: [{
+        scope: 'controller-creatures',
+        effect: {
+          addTypes: [type], ...(basic === undefined ? {} : { addSubtypes: [basic] }),
+          ...(retyped[1] === undefined ? {} : { onlyNontoken: true as const }),
+        },
+      }],
+    };
+    if (basic === undefined) return typed;
+    /*
+      The basic land type's own mana ability (CR 305.6). The engine adds that ability to a printed land
+      as the card is compiled, not live, so it is granted here, to the same creatures, as the quoted
+      grant "… have "{T}: Add {G}."" reads.
+    */
+    const symbol = { Plains: 'W', Island: 'U', Swamp: 'B', Mountain: 'R', Forest: 'G' }[basic as 'Forest'];
+    const grant = lineScriptFor(`${retyped[1] === undefined ? 'Creatures' : 'Nontoken creatures'} you control have "{T}: Add {${symbol}}."`, '');
+    if (grant === null) return null;
+    const merged: Record<string, unknown> = { ...grant };
+    for (const [key, value] of Object.entries(typed)) {
+      const prior = merged[key];
+      merged[key] = Array.isArray(prior) && Array.isArray(value) ? [...value, ...prior] : value;
+    }
+    return merged as Partial<CardScript>;
+  }
+  // D868: Bloodletter of Aclazotz. See `lifeLossMultiplier`.
+  if (/^if an opponent would lose life during your turn, they lose twice that much life instead\.?$/i.test(plain(line).trim())) {
+    return { opponentsLoseDoubleOnYourTurn: true };
+  }
+  // D872: Torbran's "If a red source you control would deal damage to an opponent or a permanent an
+  // opponent controls, it deals that much damage plus 2 instead."
+  const plussed = /^if an? (white|blue|black|red|green) source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals that much damage plus (\d+) instead\.?$/i.exec(plain(line).trim());
+  if (plussed !== null) {
+    return {
+      damageMultiplier: {
+        factor: 1, plus: Number(plussed[3]),
+        colour: COLOUR_WORDS[plussed[1]!.toLowerCase()]!,
+        ...(/opponent/i.test(plussed[2]!) ? { opponents: true as const } : {}),
+      },
+    };
+  }
+  // D865: "If a source you control would deal damage to …, it deals double / triple that damage instead."
+  const multiplied = /^if a source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
+  if (multiplied !== null) {
+    return {
+      damageMultiplier: {
+        factor: multiplied[2]!.toLowerCase() === 'double' ? 2 : 3,
+        ...(/opponent/i.test(multiplied[1]!) ? { opponents: true as const } : {}),
+      },
+    };
+  }
+  // "If you would draw a card while your library has no cards in it, you win the game instead." (D852)
+  if (/^if you would draw a card while your library has no cards in it, you win the game instead\.?$/i.test(plain(line).trim())) {
+    return { winsOnEmptyDraw: true };
+  }
+  /*
     Land types added to lands (D699): "Each land is a Swamp in addition to its other land types."
     (Urborg, Tomb of Yawgmoth, Yavimaya's cousins) and "Lands you control are every basic land type
     in addition to their other types." (Dryad of the Ilysian Grove, Prismatic Omen's land half). The
@@ -36316,6 +36744,25 @@ const KIND_WORDS = 'white|blue|black|red|green|colorless|multicolored|monocolore
 
 function groupStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
+  /*
+    "Creatures you control with +1/+1 counters on them can't be blocked" (D874, Herald of Secret
+    Streams), "Each creature you control with a counter on it can't be blocked", and the plain
+    "[Other] creatures you control can't be blocked": `cantBeBlocked` on the group, with the counter
+    filter where printed.
+  */
+  const unblockable = /^(other )?(?:creatures you control|each creature you control)(?: with (?:an? )?(\+1\/\+1 )?counters? on (?:it|them))? can't be blocked$/i.exec(text);
+  if (unblockable !== null) {
+    const countered = /with (?:an? )?(?:\+1\/\+1 )?counters? on/i.test(text);
+    return {
+      statics: [{
+        scope: unblockable[1] === undefined ? 'controller-creatures' : 'other-controller-creatures',
+        effect: {
+          cantBeBlocked: true,
+          ...(countered ? { onlyWithCounter: unblockable[2] === undefined ? '*' : '+1/+1' } : {}),
+        },
+      }],
+    };
+  }
   type Scope = NonNullable<CardScript['statics']>[number]['scope'];
   let scope: Scope | null = null;
   let predicate = '';
@@ -36367,7 +36814,8 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     keyword deciding who gets a keyword.
   */
   const keyworded = /^(other )?creatures you control with ([a-z][a-z ]*?) get ([+-]\d+\/[+-]\d+)$/i.exec(text);
-  const countered = /^(?:each creature you control with an? \+1\/\+1 counter on it (gets|has)|creatures you control with \+1\/\+1 counters on them (get|have)) (.+)$/i.exec(text);
+  // And a counter of any kind (D870, Rishkar): "with a counter on it", `onlyWithCounter: '*'`.
+  const countered = /^(?:each creature you control with an? (\+1\/\+1 )?counter on it (gets|has)|creatures you control with (\+1\/\+1 )?counters on them (get|have)) (.+)$/i.exec(text);
   /*
     D735: your creatures of a colour or a kind — "Other green creatures you control get +1/+1",
     "Artifact creatures you control have flying", "Legendary creatures …", "Untapped creatures …",
@@ -36402,9 +36850,10 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     predicate = `${attacking[1]!.toLowerCase()} ${attacking[2]}`;
   } else if (countered !== null) {
     scope = 'controller-creatures';
-    filter = { onlyWithCounter: '+1/+1' };
+    const anyKind = countered[2] !== undefined ? countered[1] === undefined : countered[3] === undefined;
+    filter = { onlyWithCounter: anyKind ? '*' : '+1/+1' };
     // Either number of verb: the predicate is made singular below anyway.
-    predicate = `${(countered[1] ?? countered[2]!).toLowerCase()} ${countered[3]}`;
+    predicate = `${(countered[2] ?? countered[4]!).toLowerCase()} ${countered[5]}`;
   }
   if (scope !== null) {
     // Read above: a chosen type.
@@ -37829,20 +38278,25 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     have …". A triggered or an activated ability, on the scopes of the same names. "This artifact"
     in the quote is the holder, as "this creature" is for a creature lord's grant.
   */
-  const permanentGrant = /^(all artifacts|artifacts you control|all enchantments|other enchantments) have "([^"]+)"\.?$/i.exec(plain(line).trim());
+  // And "Tokens you control have …" (D873, Jaheira, Friend of the Forest): your permanents, tokens
+  // only, of any type; and "Permanents you control have …".
+  const permanentGrant = /^(all artifacts|artifacts you control|all enchantments|other enchantments|tokens you control|permanents you control) have "([^"]+)"\.?$/i.exec(plain(line).trim());
   if (permanentGrant !== null) {
     const scopes = {
       'all artifacts': 'all-artifacts', 'artifacts you control': 'artifacts-you-control',
       'all enchantments': 'all-enchantments', 'other enchantments': 'other-enchantments',
+      'tokens you control': 'permanents-you-control', 'permanents you control': 'permanents-you-control',
     } as const;
-    const scope = scopes[permanentGrant[1]!.toLowerCase() as keyof typeof scopes];
+    const which = permanentGrant[1]!.toLowerCase() as keyof typeof scopes;
+    const scope = scopes[which];
+    const tokensOnly = which === 'tokens you control' ? { onlyTokens: true as const } : {};
     const triggers = grantedTriggerFrom(permanentGrant[2]!, name);
     if (triggers !== null) {
-      return { statics: [{ scope, effect: { grants: triggers.map((_t, i) => i) } }], grantedTriggers: triggers };
+      return { statics: [{ scope, effect: { grants: triggers.map((_t, i) => i), ...tokensOnly } }], grantedTriggers: triggers };
     }
     const granted = grantedAbilityFrom(permanentGrant[2]!, name);
     if (granted !== null) {
-      return { statics: [{ scope, effect: { grantsAbilities: granted.map((_a, i) => i) } }], grantedAbilities: granted };
+      return { statics: [{ scope, effect: { grantsAbilities: granted.map((_a, i) => i), ...tokensOnly } }], grantedAbilities: granted };
     }
   }
   /*

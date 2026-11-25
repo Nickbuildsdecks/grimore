@@ -44794,3 +44794,456 @@ No assertion changed.
 The coverage below includes the other session's D847 to D850, merged in before this was measured.
 
 Coverage: 16,789 of 31,900 cards (+12 over D1226's 16,777), 39,316 of 59,888 lines (+12).
+## D851 — Becomes an artifact for the turn: Liquimetal Torque, Liquimetal Coating
+
+Most-played order: Liquimetal Torque (rank 512).
+
+**Reader.** "Target <permanent> becomes an artifact (or an enchantment) in addition to its other
+types until end of turn" becomes layer 4's `addTypes` (D93's field) on any permanent target, not
+only a creature.
+
+**Tests.** The Torque's tap ability makes the opponent's Bear an artifact creature, and it is only
+a creature again next turn. Faults injected by script: 1 of 1 real fault caught (the type not
+added). A second fault changed nothing and is not counted.
+
+## D852 — Winning on an empty draw: Laboratory Maniac, Jace, Wielder of Mysteries
+
+Most-played order: Laboratory Maniac (rank 550).
+
+**Engine.** `CardScript.winsOnEmptyDraw`, asked by `draw` of the drawing seat's permanents, live,
+honouring loss of abilities and face-down. A draw that finds the library empty wins the game
+instead (CR 614.1a, 104.2a: every opponent loses), and is not recorded as an empty draw
+(CR 704.5b).
+
+**Tests.** 4 engine tests:
+- with the Maniac, drawing two from an empty library wins;
+- without it, the same draw loses for 'library';
+- the opponent's Maniac does not save us;
+- a draw that finds cards is ordinary.
+
+Faults injected by script: 4 of 4 caught. These were: the check removed, any seat's Maniac
+counted, every player losing, and winning on any draw.
+
+## D853 — Thassa's Oracle
+
+Most-played order: Thassa's Oracle (rank 464).
+
+**Engine.** `CardsDecisionSpec.lookCount`: a `library-top` question whose number is counted live
+for the seat asked, in place of the printed `look`. It is used everywhere `look` was read: the
+candidates, the cards shown, and the put-back.
+
+**Reader.** "Look at the top X cards of your library, where X is your devotion to <colour>. Put up
+to one of them on top of your library and the rest on the bottom of your library in a random
+order. If X is greater than or equal to the number of cards in your library, you win the game."
+This is one question: up to one card is kept on top, and the rest go to the bottom at random.
+Then the win is asked of X counted again and of the library as it then is.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- devotion 2 over a two-card library wins;
+- devotion 2 over a three-card library does not win;
+- the top two are asked, the picked one stays on top, and the other goes to the bottom.
+
+Faults injected by script: 5 of 5 caught. These were: the live count ignored, an off-by-one in
+the win, always winning, the rest left on top, and the controller losing too.
+
+## D854 — A loyalty ability's "Then if …": Jace, Wielder of Mysteries
+
+**Reader.** A loyalty ability's text is read as a spell's sentence when the battlefield reading
+fails. An activated ability has no intervening "if" (CR 603.4 is about triggers), so "Then if
+your library has no cards in it, you win the game" is a condition asked on resolution, as on a
+sorcery. A new condition, `controller-library` ("your library has no cards in it"), was added.
+
+**Tests.** 4 engine tests:
+- the cards read;
+- a −8 that draws two over a two-card library wins;
+- over a three-card library it does not win;
+- Jace's own −8 over a three-card library wins through D852's replacement.
+
+Faults injected by script: 3 of 3 caught. These were: the fallback removed, the condition
+inverted, and the condition always true.
+
+## D855 — A noncreature artifact or noncreature enchantment: Haywire Mite
+
+Most-played order: Haywire Mite (rank 678).
+
+**Reader.** The target phrase "target noncreature artifact or noncreature enchantment" is either
+type, so long as the permanent is not also a creature.
+
+**Tests.** The Mite's sacrifice line reads. It may exile an opponent's Rock and not their
+artifact creature, and the Rock is exiled. Faults injected by script: 2 of 2 caught (creatures
+allowed, and enchantments only).
+
+## D856 — An Aura that remakes its host: Kenrith's Transformation
+
+Most-played order: Kenrith's Transformation (rank 760).
+
+**Reader.** "Enchanted creature loses all abilities and is a <colour> <type> creature with base
+power and toughness N/N". The host's abilities are lost (layer 6), its creature types are
+replaced (layer 4, CR 205.1b), its colour is replaced when one is printed (layer 5), and its
+base size is set (layer 7b).
+
+**Tests.** An opponent's 6/6 flying red Dragon becomes a 3/3 green Elk without flying, and the
+Aura's enter trigger draws a card. Faults injected by script: 4 of 4 caught (abilities kept,
+types added instead of replaced, colour kept, and the size wrong).
+
+## D857 — "That entered this turn": Oran-Rief, the Vastwood
+
+Most-played order: Oran-Rief, the Vastwood (rank 754).
+
+**Reader.** `massScope` takes "… that entered [the battlefield] this turn", read off
+`enteredTurn`.
+
+**Tests.** Only the green creature cast this turn gets the counter: not the green Bear that was
+already there, and not the black creature cast this turn. Faults injected by script: 2 of 2
+caught.
+
+## D858 — An edict with a forfeit: Plaguecrafter
+
+Most-played order: Plaguecrafter (rank 642).
+
+**Reader.** "Each player sacrifices a creature or planeswalker. Each player who can't discards a
+card." These are two questions round the table. The discard is offered only to a player who had
+nothing to sacrifice. Every question is asked before the effect applies, so "can't" is as of the
+resolution's start, as printed.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- an opponent with no creature discards a card while we sacrifice our Bear and are never asked
+  to discard;
+- an opponent with a creature sacrifices it and keeps their hand.
+
+Faults injected by script: 4 of 4 caught.
+
+## D859 — Exiled instead of leaving: Whip of Erebos
+
+Most-played order: Whip of Erebos (rank 716).
+
+**Engine.** The `EXILED_ON_LEAVING` marker, unearth's replacement made general. `replaceZoneChange`
+reads it off the `vanished` snapshot, so it holds however the permanent leaves and after the
+Whip itself is gone. A continuous effect was tried first. It ended with its source, before the
+replacement was asked, and a test caught that.
+
+**Reader.** "If it would leave the battlefield, exile it instead of putting it anywhere else",
+after a return, marks the card returned.
+
+**Tests.** 5 engine tests:
+- the Whip reads whole;
+- the returned creature, destroyed, goes to exile;
+- bounced, it goes to exile;
+- it is still exiled after the Whip has been destroyed;
+- a creature that was never whipped dies normally.
+
+Faults injected by script: 4 of 4 caught.
+
+## D860 — "In each graveyard": Rite of Flame
+
+Most-played order: Rite of Flame (rank 646).
+
+**Reader.** D1194's count of cards named ~ now takes "in each graveyard" as all of them. The rest
+of the card already read through the ", then" joiner. A dedicated mana reader was written first,
+but two of its faults went uncaught because the joiner reached the line before it, so it was
+removed as dead code.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- two mana with no Rites in any graveyard (the one resolving is not counted);
+- five with one Rite in ours and two in theirs.
+
+Faults injected by script: 1 of 1 caught (only our own graveyard counted).
+
+## D861 — For each attacker that shares a creature type: Shared Animosity
+
+Most-played order: Shared Animosity (rank 687).
+
+**Reader.** A new count, "other attacking creature that shares a creature type with it": the
+event's attacker against each other attacker, with creature types read live.
+
+**Tests.** A Goblin, a Goblin Warrior and an Elf Warrior attack together and get +1, +2 and +1.
+Faults injected by script: 3 of 3 caught (counting itself, no type test, and "it" taken as the
+enchantment).
+
+## D862 — Gain control of all of that player's artifacts: Hellkite Tyrant
+
+Most-played order: Hellkite Tyrant (rank 724).
+
+**Reader.** "Gain control of all <scope> that player controls" (and "they control", and the
+"defending player controls" that the hit trigger rewrites it to): the player hit (`attacked`),
+a player target, or the source's defender. It takes everything in the scope that player controls
+as it resolves.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- after the hit, their Rock and Golem are ours, their Bear is not, and our own Rock stays ours;
+- in a three-player pod, only the player hit loses their artifacts.
+
+Faults injected by script: 3 of 3 caught. The everyone's-artifacts fault is invisible in a
+two-player game, and the pod test was added for it.
+
+## D863 — "Whenever an opponent searches their library": Archivist of Oghma
+
+Most-played order: Archivist of Oghma (rank 707).
+
+**Engine.** A `searches` event, raised once per search of a library with the searching seat as
+the actor. It fires whether the question was asked or answered itself (a search that finds
+nothing is still a search). Trigger rows: "Whenever an opponent searches their library", "…
+you search your library", "… a player searches their library".
+
+**Tests.** 3 engine tests:
+- the card reads;
+- the opponent's Archivist gains 1 life and draws a card when we search;
+- our own Archivist does not trigger on our own search.
+
+Faults injected by script: 3 of 3 caught.
+
+## D864 — "That player" on a search, in two sentences: Ob Nixilis, Unshackled
+
+**Reader.** `searches` joins the player-action events, so "that player" is the seat that searched.
+"That player <A> and <B>" (sacrifices, loses, gains, draws, discards or mills) is read as two
+event-relative sentences about the same player, the second after the first, only when the second
+asks nothing.
+
+**Tests.** The card reads. Our search under their Ob Nixilis makes us sacrifice our Bear and lose
+10 life, and Ob Nixilis gets a +1/+1 counter from the death. Faults injected by script: 3 of 3
+caught.
+
+Gated together on d694dfa: full gate green (re-run after exempting `script winsOnEmptyDraw` and `trigger searches` in the deck-coverage test, with the runtime tests named as evidence). Coverage: 16,785 to 16,814 of 31,900 cards with every line read, and 39,313 to 39,347 of 59,888 lines. Card-by-card diff against 5eb4a32: 0 lost, 30 gained (including Frogify, Force of Despair and Eaten by Piranhas from the new readers).
+
+## D865 — Double and triple damage: Fiery Emancipation, City on Fire, Twinflame Tyrant
+
+Most-played order: Fiery Emancipation (rank 873), City on Fire (924), Twinflame Tyrant (757).
+
+**Engine.** `CardScript.damageMultiplier` (`factor`, and `opponents` for Twinflame's "to an
+opponent or a permanent an opponent controls"). It is asked by `dealDamage` of the source
+controller's permanents, live, as the damage is about to be dealt and before any prevention. Two
+of them multiply together. A redirect is a new event and is not multiplied again.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- City on Fire: our Shock deals 6 to the opponent and 6 to their Wall;
+- their Shock at us is not tripled by our City;
+- Twinflame: not doubled at our own Wall, doubled at the opponent, and six times with City as well;
+- combat damage too: an unblocked 2/2 under the City deals 6.
+
+Faults injected by script: 4 of 5 caught. The miss is the fallback to the source permanent's
+controller when none is passed. No test path reaches it, because combat and spells both pass a
+controller.
+
+## D866 — One more Treasure: Xorn
+
+Most-played order: Xorn (rank 874).
+
+**Engine.** A printed `treasure-plus` part, beside D652's token doubler: one more Treasure per
+Xorn on a creation of Treasures. It is added before the doubling, the order that gives its
+controller the most (CR 616.1).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- two Treasures become three with a Xorn, and (2 + 1) × 2 = 6 with Parallel Lives;
+- a Food is not a Treasure, and the opponent's Treasures are not ours to add to.
+
+Faults injected by script: 4 of 4 caught.
+
+## D867 — The Urza lands: Urza's Tower, Urza's Mine, Urza's Power Plant
+
+Most-played order: Urza's Tower (rank 836), Urza's Mine (843), Urza's Power Plant (845).
+
+**Reader.** "{T}: Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add {C}{C}{C}
+instead" becomes a mana ability that makes its symbol `producesTimes` times: as many as the
+"instead" prints while you control a land of each named pair of subtypes, else once, asked as it
+resolves. Mana lines are routed away from the general reader (the Coliseum failure). This shape
+is let through the same exception as D666's sacrifice, and only when the result is a counted
+mana ability.
+
+**Tests.** 3 engine tests:
+- all three read;
+- assembled, the Tower makes three and the Mine and the Power-Plant two each;
+- with one piece missing, each makes one.
+
+Faults injected by script: 4 of 4 caught.
+
+## D868 — Twice the life loss on your turn: Bloodletter of Aclazotz
+
+Most-played order: Bloodletter of Aclazotz (rank 871).
+
+**Engine.** `CardScript.opponentsLoseDoubleOnYourTurn`, read by `lifeLossMultiplier`: two for
+each such permanent the active player controls when the seat losing life is not the active
+player. Damage to a player is life lost, so `dealDamage` asks it too. The damage itself
+(lifelink, the commander tally) is not doubled.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- on our turn, a Shock costs the opponent 4, and a drain costs them 2 while we lose only 1;
+- on their turn nothing is doubled, neither their Shock at us nor the 2 life they pay;
+- in a pod, on a third player's turn, our Bloodletter doubles nothing.
+
+Faults injected by script: 4 of 4 caught. The pod test was added after the any-turn fault was
+missed in two-player.
+
+## D869 — Removed from combat and untapped: Reconnaissance
+
+Most-played order: Reconnaissance (rank 876).
+
+**Reader.** "Remove target <creature> from combat [and untap it]", through the engine's
+`removeFromCombat` (CR 506.4).
+
+**Tests.** The card reads. Our blocked Bear leaves combat untapped and alive, the blocking Ogre
+takes no damage, and the Bear is gone from the attack list. Faults injected by script: 2 of 2
+caught.
+
+## D870 — A grant to creatures with a counter of any kind: Rishkar, Peema Renegade
+
+Most-played order: Rishkar, Peema Renegade (rank 901).
+
+**Reader.** D1169's "each creature you control with a +1/+1 counter on it has …" now takes "with
+a counter on it" and "with counters on them" of any kind, as `onlyWithCounter: '*'`. The counter
+kinds the engine keeps for itself (kicked, evoked, regeneration and the rest) do not count. The
+marker list belongs to `effects.ts` and is registered in `characteristics.ts` as it loads.
+
+**Tests.** The card reads. A creature with a +1/+1 counter or an oil counter is offered the mana
+ability and taps for {G}. One with no counter, or with only a kicked marker, is not. Faults
+injected by script: 3 of 3 caught.
+
+## D871 — Creatures that are Forest lands: Ashaya, Soul of the Wild
+
+Most-played order: Ashaya, Soul of the Wild (rank 848).
+
+**Engine.** `ContinuousEffect.onlyNontoken`.
+
+**Reader.** "[Nontoken] creatures you control are [<basic type>] lands / artifacts / enchantments
+in addition to their other types" is layer 4 on your creatures. A basic land type brings its mana
+ability (CR 305.6). The engine adds that ability to printed lands at compile time, not live, so
+the reader also grants "{T}: Add {G}" to the same creatures, through the quoted-grant reader.
+
+**Tests.** The card reads. Our nontoken Bear is a Forest land creature and taps for {G}. A
+non-sick token gets neither the type nor the ability, and the opponent's Bear is untouched.
+Faults injected by script: 4 of 4 caught. The first run missed the token's grant, because the
+token was summoning sick; the test now uses an old token.
+
+Gated together on b9cafe7: full gate green, engine tests 6601. Coverage: 16,814 to 16,832 of 31,900 cards with every line read, and 39,347 to 39,369 of 59,888 lines. Card-by-card diff (D865–D870) against b9cafe7: 0 lost, 17 gained (including Angrath's Marauders, Hollowhenge Spirit, Labyrinth of Skophos).
+
+## D872 — Plus 2 from a red source: Torbran, Thane of Red Fell
+
+Most-played order: Torbran, Thane of Red Fell (rank 1010).
+
+**Engine.** D865's `damageMultiplier` gains `plus` and `colour`. A source of the colour, read live,
+gets the addition after every factor, the order that gives its controller the most
+(CR 616.1).
+
+**Tests.** 4 engine tests:
+- the card reads;
+- our red Shock deals 4 to the opponent and 4 to their Wall, and 2 to our own Wall;
+- a green Bear's combat damage stays 2;
+- with City on Fire as well, a Shock deals 2 × 3 + 2 = 8.
+
+Faults injected by script: 4 of 4 caught.
+
+## D873 — A grant to every token you control: Jaheira, Friend of the Forest
+
+Most-played order: Jaheira, Friend of the Forest (rank 955).
+
+**Engine.** `ContinuousEffect.onlyTokens`.
+
+**Reader.** D1104's quoted grant takes "Tokens you control have …" (your permanents, tokens only,
+of any type) and "Permanents you control have …".
+
+**Tests.** The card reads. A Saproling and a Clue are each offered the granted "{T}: Add {G}", and
+the Clue makes {G}. The nontoken Bear is not offered it. Faults injected by script: 3 of 3 caught.
+
+## D874 — Unblockable while countered: Herald of Secret Streams
+
+Most-played order: Herald of Secret Streams (rank 1046).
+
+**Reader.** "[Other] creatures you control [with (+1/+1) counters on them] can't be blocked", and
+"each creature you control with a counter on it …", is `cantBeBlocked` on the group, with the
+counter filter where printed.
+
+**Tests.** The card reads. Our Bear with a +1/+1 counter can't be blocked by their Wall, and our
+Elk with none can. Faults injected by script: 2 of 2 caught.
+
+## D875 — A keyword list with a scripted keyword: Apex Devastator
+
+Most-played order: Apex Devastator (rank 1044).
+
+**Reader.** A comma list of keywords where a part needs a script is read part by part. A printed
+keyword needs nothing, and trigger lists concatenate, so "Cascade, cascade, cascade, cascade" is
+four cascade triggers, each its own (CR 702.85c), and "Flying, cascade" is the printed keyword
+plus the script. Any other part, or any other field set twice, refuses the list.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- casting the Devastator puts four cascade triggers on the stack, four offers are taken, and
+  four Bears come in;
+- "Flying, cascade" cascades once.
+
+Faults injected by script: 3 of 3 caught.
+
+## D876 — A discard round paid back in cards: Syphon Mind
+
+Most-played order: Syphon Mind (rank 1043).
+
+**Reader.** "Each other player [or each opponent] discards a card. You draw a card for each card
+discarded this way." Each discarding player chooses from their own hand, and then one card is
+drawn for each card actually discarded.
+
+**Tests.** The card reads. In a three-player pod, one opponent discards, the other has an empty
+hand, and we draw one. Faults injected by script: 3 of 3 caught.
+
+## D877 — A base size for the whole team: Mirror Entity
+
+Most-played order: Mirror Entity (rank 1016).
+
+**Reader.** "Until end of turn, creatures you control have base power and toughness X/X [and gain
+all creature types]", with a number or the X paid. Layer 7b, and every creature type where
+printed, applies to each creature you control as it resolves (CR 611.2c).
+
+**Tests.** The card reads. With X = 4, our Bear and the Entity are 4/4 and the Bear has every
+creature type; the opponent's Bear is unchanged; and it wears off next turn. Faults injected by
+script: 3 of 3 caught.
+
+## D878 — A card for each opponent who drew one: Cut a Deal
+
+Most-played order: Cut a Deal (rank 948).
+
+**Reader.** "Each opponent draws a card, then you draw a card for each opponent who drew a card this
+way". Each opponent draws, and those whose draw found a card are counted; an empty library is not.
+Then you draw that many.
+
+**Tests.** The card reads. In a three-player pod, both opponents draw and we draw two. With one
+opponent's library empty, we draw one. Faults injected by script: 3 of 3 caught.
+
+## D879 — A counter put on as a cost: Devoted Druid
+
+Most-played order: Devoted Druid (rank 963).
+
+**Engine.** `AbilityCost.putCounter`, paid on the source as the cost is paid, beside
+`removeCounter`, before the ability is on the stack. A Druid that dies of it still untaps
+(CR 602.2), and the cost is always payable.
+
+**Reader.** "Put a -1/-1 counter on ~" as a cost component.
+
+**Tests.** The card reads. Tap for {G}, untap for a -1/-1 counter, and tap again for two {G} in
+all. The second untap kills the 0/2. Faults injected by script: 3 of 3 caught.
+
+## D880 — One target of each kind: Decimate
+
+Most-played order: Decimate (rank 1009).
+
+**Reader.** "Destroy target A, target B, target C, and target D", and two targets joined by "and".
+Each phrase is one target of its own kind, and all of them are destroyed as it resolves. The bot's
+removal flag is set only when a creature is among them.
+
+**Tests.** The card reads. Their Rock, Bear, enchantment and Mountain are all destroyed, and a
+creature offered in the artifact slot is refused. Faults injected by script: 2 of 2 caught.
+
+Two compile.test pins were retargeted by D875 and are recorded here. Forked-Branch Garami's
+"Soulshift 4, soulshift 4" was refused because its reminder text merges the two into one
+ability. Each instance of soulshift triggers separately (CR 702.46b), and the two triggers return
+the same cards, so it is now pinned as two triggers. "Flanking, rampage 2" reads now, since both
+parts read, so the D554 pin moved to "Flanking, bands with other Dinosaurs", which still does not.
+
+Gated together on 02d07b5: full gate green (re-run after the two pins), engine tests 6622.
+Coverage: 16,832 to 16,853 of 31,900 cards with every line read, and 39,369 to 39,399 of 59,888
+lines. Card-by-card diffs: D872–D875 against 02d07b5, 0 lost and 6 gained (including Maelstrom
+Wanderer and Forked-Branch Garami); D876–D880 against that, 0 lost and 16 gained (including
+Fumarole, Plague Spores, Netherborn Altar and Biomass Mutation).

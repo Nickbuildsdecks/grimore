@@ -1601,6 +1601,15 @@ export type TriggerEvent =
       readonly subject?: string;
     }
   /**
+   * "Whenever an opponent searches their library" (D863, Archivist of Oghma, Ob Nixilis, Unshackled):
+   * raised as a search of a library is answered or answers itself, once per search, the searching
+   * seat the actor. `by` is whose search, `you` by default.
+   */
+  | {
+      readonly kind: 'searches';
+      readonly by?: 'you' | 'opponent' | 'any';
+    }
+  /**
    * "Whenever you scry", "… surveil", "… scry or surveil" (D991): raised as a scry or surveil
    * question is answered, once per scry, whoever's ability asked it. `what` is which keyword the
    * trigger listens for (`either` for both); the engine sets `did` to the one that happened.
@@ -2007,6 +2016,11 @@ export interface CardsDecisionSpec {
    * question whose answer is a sequence rather than a set, and no card in the pool turns on it.
    */
   readonly look?: number;
+  /**
+   * For `library-top`: the number looked at when it is not printed (D853), "the top X cards of your
+   * library, where X is your devotion to blue" — counted live for the seat asked, in place of `look`.
+   */
+  readonly lookCount?: (state: GameState, seat: SeatIndex) => number;
   /**
    * For `library-top`: where the cards the chooser picks go. `'bottom'` by default (D452).
    *
@@ -2745,6 +2759,12 @@ export interface AbilityCost {
    */
   readonly removeCounter?: { readonly counter: string; readonly amount: number };
   /**
+   * "Put a -1/-1 counter on ~:" (D879, Devoted Druid): counters put on the source as the cost is paid,
+   * before the ability is on the stack, so a Druid that dies of it still untaps itself (CR 602.2).
+   * Always payable.
+   */
+  readonly putCounter?: { readonly counter: string; readonly amount: number };
+  /**
    * "Pay {E}{E}:" — energy, which is a counter on the **player** rather than on a permanent
    * (CR 122.1, CR 107.17).
    *
@@ -3299,6 +3319,7 @@ export interface CardScript {
    */
   readonly noMaxHandSize?: true;
   /**
+<<<<<<< HEAD
    * "Creatures entering don't cause abilities to trigger." (D1227): Torpor Orb, Tocatli Honor Guard,
    * Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull). The kinds whose entry
    * fires nothing while this permanent is on the battlefield with its abilities: no "when this
@@ -3307,6 +3328,30 @@ export interface CardScript {
   readonly entriesDontTrigger?: readonly ('creature' | 'artifact')[];
   /** "… or dying don't cause abilities to trigger" (D1227): Hushbringer. A creature's death fires nothing. */
   readonly deathsDontTrigger?: true;
+=======
+   * "If you would draw a card while your library has no cards in it, you win the game instead."
+   * (D852, CR 614.1a, 104.2a) — Laboratory Maniac, Jace, Wielder of Mysteries. Asked by `draw` of
+   * the drawing seat's permanents, live: a draw that finds the library empty wins instead of being
+   * recorded as an empty draw (CR 704.5b).
+   */
+  readonly winsOnEmptyDraw?: true;
+  /** "If an opponent would lose life during your turn, they lose twice that much life instead" (D868). See `lifeLossMultiplier`. */
+  readonly opponentsLoseDoubleOnYourTurn?: true;
+  /**
+   * "If a source you control would deal damage to a permanent or player, it deals triple that damage
+   * instead" (D865, Fiery Emancipation, City on Fire), and Twinflame Tyrant's double "to an opponent or
+   * a permanent an opponent controls" (`opponents`). Asked by `dealDamage` of the source's controller's
+   * permanents, live; two of them multiply together (CR 616.1, each applied once).
+   */
+  readonly damageMultiplier?: {
+    readonly factor: number;
+    readonly opponents?: true;
+    /** Torbran's "that much damage plus 2" (D872): added after every factor, once per such permanent. */
+    readonly plus?: number;
+    /** Only a source of this colour (D872, "a red source you control"), read live. */
+    readonly colour?: Color;
+  };
+>>>>>>> 76324f69f2bf2d9082389ba41ef7dd5b04b53912
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,

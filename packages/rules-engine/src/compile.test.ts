@@ -12925,19 +12925,22 @@ describe('Soulshift N (D510)', () => {
     expect(read.script?.triggers?.[0]?.description).toContain('mana value 8 or less');
   });
 
-  it('refuses Forked-Branch Garami\'s doubled printing', () => {
+  it('reads Forked-Branch Garami\'s doubled printing as two soulshift triggers (D875)', () => {
     /*
-      "Soulshift 4, soulshift 4" with reminder text that merges the two into **one ability with two
-      targets** — which is a different rule from two copies of this one, so it is refused rather
-      than read as either (D487). The only card in the corpus that prints it.
+      "Soulshift 4, soulshift 4". This pinned a refusal until D875: the reminder text merges the two
+      into one ability with two targets, and that was taken for a different rule. It is not one: each
+      instance of soulshift triggers separately (CR 702.46b), and two triggers that each return up to
+      one Spirit return the same cards as the reminder's one ability with two. D875's comma-list
+      reader reads each part alone, so this is two triggers.
     */
     const read = spirit('Soulshift 4, soulshift 4 (When this creature dies, you may return up to '
       + 'two target Spirit cards with mana value 4 or less from your graveyard to your hand.)',
     'Forked-Branch Garami', '{3}{G}{G}', 5);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual(['Soulshift 4, soulshift 4']);
-    expect(read.script?.triggers ?? []).toEqual([]);
+    expect(read.unread).toEqual([]);
+    expect(read.script?.triggers ?? []).toHaveLength(2);
+    expect(read.script?.triggers?.[1]?.description).toContain('mana value 4 or less');
   });
 
   it('refuses a soulshift with no number, which no card prints', () => {
@@ -17500,11 +17503,13 @@ describe('the Flanking keyword line (D554)', () => {
       with several things in it this engine cannot read. A line is read whole or not at all (D487),
       so the whole line is reported rather than mined for the one word it recognises.
     */
-    expect(printedKeywords('Flanking, rampage 2')).toEqual([]);
-    const read = flanker('Flanking, rampage 2');
+    // "Flanking, rampage 2" reads since D875, which reads a list part by part when every part reads
+    // (both do). A part that does not ("bands with other Dinosaurs") still leaves the whole line unread.
+    expect(printedKeywords('Flanking, bands with other Dinosaurs')).toEqual([]);
+    const read = flanker('Flanking, bands with other Dinosaurs');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual(['Flanking, rampage 2']);
+    expect(read.unread.map((u) => u.line)).toEqual(['Flanking, bands with other Dinosaurs']);
   });
 });
 

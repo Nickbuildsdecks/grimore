@@ -510,6 +510,8 @@ type PrintedPart =
    * A replacement on the controller's token creation, read off the printed card by `tokenMultiplier`.
    */
   | { readonly kind: 'token-doubler' }
+  /** "… instead create those tokens plus an additional Treasure token" (D866, Xorn). */
+  | { readonly kind: 'treasure-plus' }
   /**
    * "If one or more +1/+1 counters would be put on a creature you control, that many plus one … are
    * put on it instead" (Hardened Scales), "… twice that many …" (Corpsejack Menace), and Doubling
@@ -756,6 +758,7 @@ function printedParts(
     // A level band and everything under it: not this card's abilities. See `LEVEL_BAND_HEADER`.
     if (LEVEL_BAND_HEADER.test(line)) break;
     if (TOKEN_DOUBLER.test(line)) { found.push({ kind: 'token-doubler' }); continue; }
+    if (TREASURE_PLUS.test(line)) { found.push({ kind: 'treasure-plus' }); continue; }
     const replaced = counterReplacementLine(line, name);
     if (replaced !== null) { found.push(replaced); continue; }
     const combat = printedCombatLine(line, name);
@@ -805,12 +808,37 @@ function printedParts(
  * reported as unread lines on cards the engine was already playing correctly.
  */
 const TOKEN_DOUBLER = /^If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead\.?$/i;
+const TREASURE_PLUS = /^If you would create one or more Treasure tokens, instead create those tokens plus an additional Treasure token\.?$/i;
+
+/**
+ * How many extra Treasures this seat's Xorns add to a creation of Treasures (D866, CR 614.1a): one
+ * each, face up and with their abilities. Added before any doubling, the order that gives its
+ * controller the most (CR 616.1 lets them choose).
+ */
+export function treasureBonus(state: GameState, seat: SeatIndex): number {
+  let extra = 0;
+  for (const id of state.zones?.[zoneKey(seat, 'battlefield')] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+    const def = state.cardDefs[inst.defKey];
+    extra += printedParts(def?.oracleText, def?.name).filter((part) => part.kind === 'treasure-plus').length;
+  }
+  return extra;
+}
 
 /**
  * How many times over a token this seat would create is made (D652, CR 614.1a): two for each
  * token doubler it controls — face up and with its abilities — so two Parallel Lives make four.
  * Read live from the board each time, like every other printed ability here.
  */
+/**
+ * The counter kinds the engine keeps for itself (regeneration shields, kicked, evoked …), which are
+ * not "a counter" to a card that asks for one (D870). `effects.ts` owns the list and registers it here
+ * as it loads, because this module does not import that one.
+ */
+let COUNTER_MARKERS: ReadonlySet<string> = new Set();
+export function registerCounterMarkers(markers: ReadonlySet<string>): void { COUNTER_MARKERS = markers; }
+
 export function tokenMultiplier(state: GameState, seat: SeatIndex): number {
   let times = 1;
   for (const id of state.zones?.[zoneKey(seat, 'battlefield')] ?? []) {
@@ -1815,6 +1843,10 @@ export interface ContinuousEffect {
    * creature is in it exactly while it attacks, or while it has the counter.
    */
   readonly onlyAttacking?: true;
+  /** Nontoken permanents only (D871, Ashaya's "Nontoken creatures you control"). */
+  readonly onlyNontoken?: true;
+  /** Tokens only, of any type (D873, Jaheira's "Tokens you control have …"). */
+  readonly onlyTokens?: true;
   readonly onlyWithCounter?: string;
   /**
    * "Other creatures you control **with flying** get +1/+1" (D1126): the creature's own keyword,
@@ -2165,6 +2197,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'source-auras'; readonly atLeast: number }
     /** Hellbent and its cousins: "you have no cards in hand", "N or more cards in hand". */
     | { readonly kind: 'controller-hand'; readonly atLeast?: number; readonly atMost?: number }
+    /** "Your library has no cards in it" (D854, Jace, Wielder of Mysteries): the controller's library size. */
+    | { readonly kind: 'controller-library'; readonly atMost: number }
     /** "You control a Plains", "… a Gate": a printed subtype among your permanents. */
     | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
     /** "You have N or more life". */
@@ -2641,6 +2675,9 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     }
     return attached >= cond.atLeast;
   }
+  if (cond.kind === 'controller-library') {
+    return (state.zones[zoneKey(effect.controller, 'library')] ?? []).length <= cond.atMost;
+  }
   if (cond.kind === 'controller-hand') {
     const held = (state.zones[zoneKey(effect.controller, 'hand')] ?? []).length;
     return held >= (cond.atLeast ?? 0) && held <= (cond.atMost ?? Infinity);
@@ -2768,7 +2805,12 @@ function effectApplies(
   if (effect.duration === 'permanent' && state.instances[effect.source]?.zone === 'phased') return false;
   // And the per-creature filters a group static can carry (D941): attacking, or with a counter.
   if (effect.onlyAttacking === true && !state.combat.attacks.some(({ attacker }) => attacker === instance.id)) return false;
-  if (effect.onlyWithCounter !== undefined && (instance.counters[effect.onlyWithCounter] ?? 0) <= 0) return false;
+  if (effect.onlyNontoken === true && instance.isToken === true) return false;
+  if (effect.onlyTokens === true && instance.isToken !== true) return false;
+  if (effect.onlyWithCounter !== undefined && (effect.onlyWithCounter === '*'
+    // '*' is any kind (D870), the markers the engine keeps for itself excepted.
+    ? !Object.entries(instance.counters).some(([kind, n]) => (n ?? 0) > 0 && !COUNTER_MARKERS.has(kind))
+    : (instance.counters[effect.onlyWithCounter] ?? 0) <= 0)) return false;
   // A keyword (D1126), from the creature's characteristics computed without the keyword-filtered
   // statics: they change size alone, so the keywords come out the same (see `onlyWithKeyword`).
   if (effect.onlyWithKeyword !== undefined) {

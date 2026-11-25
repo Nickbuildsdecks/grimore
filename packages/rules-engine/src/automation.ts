@@ -41,7 +41,7 @@ import {
   SURGED,
   SQUADDED,
   createToken,
-  DASHED, EVOKED, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
+  DASHED, EVOKED, EXILED_ON_LEAVING, IMPENDED, KICKED, KICKED_FIRST, KICKED_SECOND, MARKERS, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs, putOntoBattlefield,
   counterSpell, destroy,
   recordExpiry,
   draw,
@@ -1551,6 +1551,12 @@ function triggerMatches(
       // "Another land" (D835): the watcher's own play is not one.
       if (want.kind === 'land-played' && want.other === true && isSubject) return false;
       const by = want.kind === 'land-played' ? want.by ?? 'you' : 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
+    case 'searches': {
+      const by = want.kind === 'searches' ? want.by ?? 'you' : 'you';
       if (by === 'any') return true;
       if (actorSeat === undefined) return false;
       return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
@@ -4021,6 +4027,14 @@ function replaceZoneChange(
       graveyard **from the battlefield**, and the wider `to-graveyard` wording would catch a
       discard.
     */
+    // D859: "if it would leave the battlefield, exile it instead", the same floating shape for any exit.
+    if (on === 'leaves-battlefield' && ((next.vanished[id] ?? inst).counters[EXILED_ON_LEAVING] ?? 0) > 0) {
+      const named = next.cardDefs[inst.defKey]?.name ?? 'a card';
+      next = exileCard(next, id);
+      next = { ...next, replacements: [...next.replacements, `${named}: exiled instead of leaving the battlefield`] };
+      replaced.add(id);
+      continue;
+    }
     if (on === 'dies' && next.effects.some(
       (fx) => fx.exiledInsteadOfDying === true
         && fx.scope.kind === 'cards' && fx.scope.ids.includes(id),
@@ -5666,6 +5680,11 @@ export function proliferateCandidates(state: GameState): string[] {
  * comes back, and every other reader — the `auto:decide` check, the bot's `pick`, the scry
  * resume, and `canIdentify`'s permission to read a hidden card — reads that stored list.
  */
+/** How many cards a `library-top` question looks at: `lookCount` live (D853), else `look`, else one. */
+function lookOf(state: GameState, spec: CardsDecisionSpec, seat: SeatIndex): number {
+  return spec.lookCount === undefined ? spec.look ?? 1 : spec.lookCount(state, seat);
+}
+
 export function decisionCandidates(
   state: GameState, spec: CardsDecisionSpec, chooser: SeatIndex, poolSeat?: SeatIndex,
 ): string[] {
@@ -5675,7 +5694,7 @@ export function decisionCandidates(
   // the answer is checked against, so taking the slice here is what stops a crafted answer
   // reaching the rest of the deck.
   const inZone = spec.from === 'library-top'
-    ? listAt(state, zoneKey(owner, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+    ? listAt(state, zoneKey(owner, 'library')).slice(0, Math.max(0, lookOf(state, spec, owner)))
     // The cards a resolution revealed to the table (D728), whoever is choosing among them.
     : spec.from === 'revealed'
       ? [...(state.revealed ?? [])]
@@ -5967,7 +5986,7 @@ function askOrFinish(
       exactly their candidates.
     */
     const looked = !isCountersDecision(spec) && spec.from === 'library-top' && spec.restGoTo !== undefined
-      ? listAt(state, zoneKey(entry.seat, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+      ? listAt(state, zoneKey(entry.seat, 'library')).slice(0, Math.max(0, lookOf(state, spec, entry.seat)))
       : undefined;
     /*
       **A dig with cards to show is asked even when none of them may be picked.** "You may reveal
@@ -5998,6 +6017,8 @@ function askOrFinish(
       if (!isCountersDecision(spec) && spec.from === 'library-top') {
         state = applyLibraryTop(state, spec, entry.seat, ids);
       }
+      // A search that answered itself is still a search (D863).
+      if (!isCountersDecision(spec) && spec.from === 'library') state = raise(state, { kind: 'searches' }, entry.seat);
       continue;
     }
     const asking: GameState = {
@@ -6049,7 +6070,7 @@ function applyLibraryTop(
 ): GameState {
   const key = zoneKey(seat, 'library');
   // Read before anything moves: the cards looked at are the top of the library *as it was asked*.
-  const looked = listAt(state, key).slice(0, Math.max(0, spec?.look ?? 1));
+  const looked = listAt(state, key).slice(0, Math.max(0, spec === undefined ? 1 : lookOf(state, spec, seat)));
   let next = state;
   if (picked.length > 0 && spec?.chosenGoTo === 'graveyard') {
     next = moveToGraveyard(next, picked);
@@ -6118,6 +6139,8 @@ export function answerDecision(
     next = replaceSeat(withZones(next, { [key]: shuffled(listAt(next, key), rng) }), pending.seat, {
       searching: false,
     });
+    // "Whenever an opponent searches their library" (D863).
+    next = raise(next, { kind: 'searches' }, pending.seat);
   }
   /*
     Scry and surveil: the cards chosen leave the top and the rest stay there, in the order they
