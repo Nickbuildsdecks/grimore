@@ -21227,6 +21227,18 @@ const TRIGGER_SHAPES: readonly ({
       { kind: 'discards', by: 'opponent', cardTypes: ['artifact', 'creature', 'enchantment', 'land', 'planeswalker', 'battle'] },
     ],
   },
+  /*
+    "Whenever you play a card from exile" (D1258, Prosper, Tome-Bound's Pact Boon): a spell cast from
+    exile or a land played from exile, so two events; "a land from exile" is the second alone.
+  */
+  {
+    prologue: () => /^Whenever you play a card from exile, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', fromZone: 'exile' }, { kind: 'land-played', by: 'you', fromExile: true }],
+  },
+  {
+    prologue: () => /^Whenever you play a land from exile, (.+)$/i,
+    on: [{ kind: 'land-played', by: 'you', fromExile: true }],
+  },
   // "One or more cards" (D993): the batch, once per discard however many cards.
   {
     prologue: () => /^Whenever you discard one or more cards, (.+)$/i,

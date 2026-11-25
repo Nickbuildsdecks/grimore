@@ -1641,6 +1641,9 @@ function triggerMatches(
     case 'land-played': {
       // "Another land" (D835): the watcher's own play is not one.
       if (want.kind === 'land-played' && want.other === true && isSubject) return false;
+      // Prosper (D1258): only a land played out of exile.
+      if (want.kind === 'land-played' && want.fromExile === true
+        && (event as Extract<TriggerEvent, { kind: 'land-played' }>).playedFromExile !== true) return false;
       const by = want.kind === 'land-played' ? want.by ?? 'you' : 'you';
       if (by === 'any') return true;
       if (actorSeat === undefined) return false;

@@ -1636,6 +1636,12 @@ export type TriggerEvent =
       readonly by?: 'you' | 'opponent' | 'any';
       /** "When you play **another** land" (D835, City of Traitors): not the watcher's own play. */
       readonly other?: true;
+      /**
+       * "Whenever you play a land / a card **from exile**" (D1258, Prosper): the question, and
+       * `playedFromExile` the engine's answer, set as it raises the event.
+       */
+      readonly fromExile?: true;
+      readonly playedFromExile?: boolean;
       /** Set by the engine (D835): the land that was played. */
       readonly subject?: string;
     }

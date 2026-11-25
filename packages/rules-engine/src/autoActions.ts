@@ -1913,7 +1913,7 @@ function playLand(
   next = { ...next, landsPlayed: { ...next.landsPlayed, [String(action.by)]: played + 1 } };
   // The play itself (D1187): "whenever an opponent plays a land". Its entry is raised by `settle`.
   // With the land as its subject (D835), for "another land".
-  next = raise(next, { kind: 'land-played' }, action.by, inst.id);
+  next = raise(next, { kind: 'land-played', playedFromExile: fromExile }, action.by, inst.id);
   /*
     No entry trigger raised here, and that is a fix rather than an omission.
 

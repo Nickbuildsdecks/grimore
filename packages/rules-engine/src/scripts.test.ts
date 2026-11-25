@@ -45602,6 +45602,47 @@ describe('Kinnan: a nonland permanent tapped for mana makes one more (D1257)', (
   });
 });
 
+describe('Prosper: whenever you play a card from exile (D1258)', () => {
+  const ROWS = [
+    { name: 'Test Prosper', type_line: 'Legendary Creature — Tiefling Warlock', oracle_text: 'Whenever you play a card from exile, create a Treasure token.', mana_cost: '{0}', cmc: 4, colors: ['B', 'R'], layout: 'normal', power: '1', toughness: '4' },
+    { name: 'Test Chaff', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1258', name: 'Prosper', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  /** Seat 0 with Prosper, a Forest and a Test Chaff in hand, and one of each exiled with a permission to play it. */
+  const table = () => {
+    const s0 = advanceTo(arena({
+      decks: { 0: 'd1258', 1: 'd1258' }, deckSpecs: { d1258: deck.deck }, hands: { 0: ['Forest', 'Test Chaff'] },
+      battlefield: { 0: ['Test Prosper'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    let s = s0;
+    for (const name of ['Forest', 'Test Chaff']) {
+      const id = ids(s, 0, 'library').find((x) => s.cardDefs[s.instances[x]!.defKey]?.name === name)!;
+      s = exileCard(s, id);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, playFromExile: { by: 0 as SeatIndex, grantedTurn: s.turn, through: 'this-turn' as const } } } };
+    }
+    return s;
+  };
+  const exiled = (s: GameState, name: string) => ids(s, 0, 'exile').find((x) => s.cardDefs[s.instances[x]!.defKey]?.name === name)!;
+  const treasures = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Treasure').length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a land played from exile makes a Treasure; one from hand does not', () => {
+    const s = table();
+    expect(treasures(drain(passBoth(apply(s, { type: 'auto:playLand', by: 0, card: exiled(s, 'Forest') } as Action)), 20))).toBe(1);
+    expect(treasures(drain(passBoth(apply(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') } as Action)), 20))).toBe(0);
+  });
+
+  it('a spell cast from exile makes a Treasure; one from hand does not', () => {
+    const s = table();
+    expect(treasures(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: exiled(s, 'Test Chaff'), targets: [] } as Action)), 20))).toBe(1);
+    expect(treasures(drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Chaff'), targets: [] } as Action)), 20))).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
