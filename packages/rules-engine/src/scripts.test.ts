@@ -44361,6 +44361,97 @@ describe('"enters or dies" as two triggers: Daxos, Blessed by the Sun (D3010)', 
   });
 });
 
+describe('"A creature destroyed this way can\'t be regenerated": Damn (D3013)', () => {
+  const ROWS = [
+    { name: 'Test Damn', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: "Destroy target creature. A creature destroyed this way can't be regenerated.\nOverload {2}{W}{W}" },
+    { name: 'Test Plain Damn', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target creature.' },
+  ];
+  const deck = customDeck({ id: 'd3013', name: 'Damn', entries: [{ name: 'Test Damn', count: 4 }, { name: 'Test Plain Damn', count: 4 }, { name: 'River Boa', count: 4 }, { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  const boaAfter = (spell: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3013', 1: 'd3013' }, deckSpecs: { d3013: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 1: ['River Boa'] }, turn: 5, firstSeat: 0,
+    } as never), 'precombat-main');
+    const boa = find(s, 1, 'battlefield', 'River Boa');
+    s = regenerate(s, boa);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell), targets: [{ kind: 'card', id: boa }] } as Action), 40);
+    return namesIn(s, 1, 'battlefield').includes('River Boa');
+  };
+
+  it('reads whole, and the rider is not a dropped sentence', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('kills a shielded River Boa, which the same destroy without the rider does not', () => {
+    expect(boaAfter('Test Plain Damn')).toBe(true);
+    expect(boaAfter('Test Damn')).toBe(false);
+  });
+});
+
+describe('"Those creatures gain indestructible", the counted group: Inspiring Call (D3013)', () => {
+  const ROWS = [
+    { name: 'Test Call', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal',
+      oracle_text: 'Draw a card for each creature you control with a +1/+1 counter on it. Those creatures gain indestructible until end of turn.' },
+    { name: 'Test Wrath', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', oracle_text: 'Destroy all creatures.' },
+  ];
+  const deck = customDeck({ id: 'd3013c', name: 'Call', entries: [{ name: 'Test Call', count: 4 }, { name: 'Test Wrath', count: 4 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Forest', count: 44 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('draws one for the one countered Bear, and only that Bear survives the wipe', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd3013c', 1: 'd3013c' }, deckSpecs: { d3013c: deck.deck },
+      hands: { 0: ['Test Call', 'Test Wrath'] }, battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears'] }, turn: 5, firstSeat: 0,
+    } as never), 'precombat-main');
+    const [marked, plain] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = addCounters(s, marked!, '+1/+1', 1);
+    const before = namesIn(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Call') } as Action)));
+    expect(namesIn(s, 0, 'hand').length).toBe(before - 1 + 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Wrath') } as Action)));
+    expect(ids(s, 0, 'battlefield')).toContain(marked);
+    expect(ids(s, 0, 'battlefield')).not.toContain(plain);
+  });
+});
+
+describe('"Each player sacrifices seven / thirteen creatures of their choice" (D3013)', () => {
+  const ROWS = [
+    { name: 'Test Seven', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each player sacrifices seven creatures of their choice.' },
+    { name: 'Test Thirteen', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each player sacrifices thirteen creatures of their choice.' },
+  ];
+  const deck = customDeck({ id: 'd3013e', name: 'Edict', entries: [{ name: 'Test Seven', count: 2 }, { name: 'Test Thirteen', count: 2 }, { name: 'Grizzly Bears', count: 16 }, { name: 'Swamp', count: 40 }], data: ROWS as never[] });
+  const left = (spell: string) => {
+    const bears = Array.from({ length: 8 }, () => 'Grizzly Bears');
+    let s = advanceTo(arena({
+      decks: { 0: 'd3013e', 1: 'd3013e' }, deckSpecs: { d3013e: deck.deck },
+      hands: { 0: [spell] }, battlefield: { 0: bears, 1: bears }, turn: 5, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell) } as Action)), 40);
+    // Each player picks which go, as many as asked or every creature they have when that is fewer.
+    for (let i = 0; i < 4 && s.pendingDecision != null; i++) {
+      const d = s.pendingDecision;
+      s = drain(passBoth(apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, d.max) } as Action)), 40);
+    }
+    return [0, 1].map((seat) => namesIn(s, seat as SeatIndex, 'battlefield').filter((n) => n === 'Grizzly Bears').length);
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('seven leaves each player one of eight Bears, and thirteen leaves none', () => {
+    expect(left('Test Seven')).toEqual([1, 1]);
+    expect(left('Test Thirteen')).toEqual([0, 0]);
+  });
+});
+
 describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   const ROWS = [
     { name: 'Test Knuckles', type_line: 'Legendary Creature — Echidna', oracle_text: 'Treasure Hunter — At the beginning of your upkeep, if you control thirty or more artifacts, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },

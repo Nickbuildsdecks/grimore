@@ -14112,7 +14112,7 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent|nontoken creature|nontoken permanent)s?$/i.exec(text);
+  const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|seven|thirteen|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent|nontoken creature|nontoken permanent)s?$/i.exec(text);
   if (edictMany !== null) {
     const subject = edictMany[1]!.toLowerCase();
     const who = subject === 'each player' ? 'each-player' as const
@@ -29992,7 +29992,7 @@ function readEffect(
       };
     }
   }
-  const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
+  const theirChoice = /^(.*\bsacrifices? (?:an?|one|two|three|four|five|six|seven|thirteen|x) [^.;]*?) of their choice\b(.*)$/i.exec(clause);
   if (theirChoice !== null) return readEffect(`${theirChoice[1]!}${theirChoice[2]!}`, name, where);
   /*
     "You may have creatures you control assign their combat damage this turn as though they weren't
@@ -31503,6 +31503,11 @@ function clausesOf(line: string): readonly string[] {
       Overwhelming Stampede): the duration moved to where the pump readers look for it, before the
       count. Only with a count; the plain "Until end of turn, …" sentence already reads.
     */
+    // Inspiring Call (D3013): "Draw a card for each creature you control with a +1/+1 counter on it.
+    // Those creatures gain indestructible until end of turn": "those creatures" is the counted group,
+    // spelt out again. The draw moves no counters, so the group is the same set when it is granted.
+    .replace(/(for each creature you control with an? ([+\-\w/]+) counter on it)\.\s+Those creatures gain ([^.]+?) until end of turn/gi,
+      (_m, head: string, kind: string, kw: string) => `${head}. Creatures you control with ${kind} counters on them gain ${kw} until end of turn`)
     // Karlach (D885): "untap all attacking creatures. They gain first strike until end of turn": "they"
     // are the attacking creatures just untapped.
     .replace(/untap all attacking creatures\.\s+They gain ([^.]+?) until end of turn/gi, (_m, kw: string) => `untap all attacking creatures. Attacking creatures gain ${kw} until end of turn`)
@@ -31543,7 +31548,7 @@ function clausesOf(line: string): readonly string[] {
     // Chaos Warp (D684): the reveal is the owner's, of the library just shuffled.
     .replace(/(shuffles it into their library),\s+then reveals the top card of their library\.\s+If it's a permanent card, they put it onto the battlefield/gi, '$1\u0008')
     // Bane of Progress (D682): the second sentence counts what the first destroyed.
-    .replace(/((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
+    .replace(/((?:you may )?destroy (?:all|each|up to \w+ target|target|\w+ target) [^.;]+)\.\s+((?![^.;]*can't be regenerated)(?:(?!can't be regenerated)[^.;])*(?:destroyed|put into a graveyard) this way[^.;]*)/gi, '$1\u0007$2')
     /*
       Victimize (D710): "Choose two target creature cards in your graveyard. Sacrifice a creature.
       If you do, return the chosen cards to the battlefield tapped." One clause, the sacrifice
@@ -32775,7 +32780,9 @@ function chosenDiscardPrefix(
  * "It" after a targeted destroy, "They" after a sweeper, and "that creature" / "those creatures"
  * where the printing spells the referent out. 134 legal cards print one of them.
  */
-const NO_REGENERATION = /^(?:it|they|that creature|those creatures) can['’]t be regenerated$/i;
+// And "A creature destroyed this way can't be regenerated" (D3013, Damn, Soul Rend), the same rider
+// with its referent spelt out once more.
+const NO_REGENERATION = /^(?:it|they|that creature|those creatures|a creature destroyed this way) can['’]t be regenerated$/i;
 
 /**
  * A composition whose last sentence is "It can't be regenerated", read as the rider it is (D535).

@@ -63630,3 +63630,28 @@ injected by script: 4 of 4 caught.
 **Not counted.** An "enters or attacks" joiner was written and then removed. Every such line it
 read already read through the existing self-trigger path, and the non-self ones ("another creature
 you control of the chosen type") fail on their halves, so it gained nothing.
+
+## D3013 — Damn, Inspiring Call, and edicts of seven and thirteen
+
+**Damn (rank 349).** "Destroy target creature. A creature destroyed this way can't be regenerated."
+The D535 rider now takes "a creature destroyed this way" as its subject. The "destroyed this way"
+joiner skips a sentence that is the rider; it used to glue it onto the destroy first, where nothing
+read it. Tests: a shielded River Boa survives the same destroy without the rider and dies to Damn.
+Faults injected by script: 3 of 3 caught.
+
+**Inspiring Call (rank 281).** "Draw a card for each creature you control with a +1/+1 counter on
+it. Those creatures gain indestructible until end of turn." "Those creatures" is spelt out again as
+the counted group in the clausesOf chain, so both sentences read with the readers they already had.
+The draw moves no counters, so it is the same set. Tests: one Bear with a counter and one without;
+the Call draws one, and a wipe after it kills only the unmarked Bear. Faults injected by script:
+2 of 2 caught.
+
+**Edicts of seven and thirteen.** The each-player edict and the "of their choice" strip now take
+"seven" and "thirteen". Tests: eight Bears each, "sacrifices seven" leaves one each and "thirteen"
+leaves none. Faults injected by script: 2 of 2 caught.
+
+**Deferred.** Blasphemous Edict's "You may pay {B} rather than pay this spell's mana cost if there
+are thirteen or more creatures on the battlefield" has nowhere to go: a conditional alternative mana
+cost is not a field yet. Bloom Tender and Faeburrow Elder ("for each color among permanents you
+control, add one mana of that color") make a set of colours that changes with the board, and about
+50 places read `produces` directly, so it is a change on its own.
