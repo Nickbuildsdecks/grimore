@@ -43466,6 +43466,188 @@ describe('countering a spell cast for no mana: Vexing Bauble (D893)', () => {
   });
 });
 
+describe('exiling the top of a library, and a return with a counter: Ulamog, Persist (D894)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Ulamog', 'Legendary Creature — Eldrazi', 'Indestructible\nWhenever Test Ulamog attacks, defending player exiles the top twenty cards of their library.', { colors: [], power: '10', toughness: '10' }),
+    R('Test Persist', 'Sorcery', 'Return target nonlegendary creature card from your graveyard to the battlefield with a -1/-1 counter on it.'),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd894', name: 'Ulamog', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+
+  it('reads both', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Ulamog attacks: the defending player exiles the top twenty of their library', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd894', 1: 'd894' }, deckSpecs: { d894: deck.deck }, battlefield: { 0: ['Test Ulamog'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const library = ids(s, 1, 'library');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Ulamog'), defender: 1 }] });
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect(ids(s, 1, 'library')).toEqual(library.slice(20));
+    expect(ids(s, 1, 'exile')).toEqual(expect.arrayContaining(library.slice(0, 20)));
+    expect(ids(s, 0, 'library').length).toBeGreaterThan(30);
+  });
+
+  it('Persist returns the Bear as a 1/1 with a -1/-1 counter', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd894', 1: 'd894' }, deckSpecs: { d894: deck.deck }, hands: { 0: ['Test Persist'] }, graveyard: { 0: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Persist'), targets: [{ kind: 'card', id: bear }] })));
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[bear]!.counters['-1/-1']).toBe(1);
+    expect(characteristicsOf(s, s.instances[bear]!).power).toBe(1);
+  });
+});
+
+describe('X counters on each creature you control: Ouroboroid (D895)', () => {
+  const C = (name: string, text = '', p = '2', t = '2') => ({ name, type_line: 'Creature — Snake', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: p, toughness: t });
+  const ROWS = [
+    C('Test Ouroboroid', "At the beginning of combat on your turn, put X +1/+1 counters on each creature you control, where X is this creature's power.", '2', '2'),
+    C('Test Bear'),
+  ];
+  const deck = customDeck({ id: 'd895', name: 'Ouro', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 54 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with power 2: two counters on each of our creatures, none on theirs', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd895', 1: 'd895' }, deckSpecs: { d895: deck.deck },
+      battlefield: { 0: ['Test Ouroboroid', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'begin-combat');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    const counters = (seat: 0 | 1, n: string) => s.instances[find(s, seat, 'battlefield', n)]!.counters['+1/+1'] ?? 0;
+    expect([counters(0, 'Test Ouroboroid'), counters(0, 'Test Bear'), counters(1, 'Test Bear')]).toEqual([2, 2, 0]);
+  });
+});
+
+describe('"sacrifice a creature. If you can\'t, sacrifice ~": Eldrazi Monument (D896)', () => {
+  const ROWS = [
+    { name: 'Test Monument', type_line: 'Artifact', oracle_text: "Creatures you control get +1/+1 and have flying and indestructible.\nAt the beginning of your upkeep, sacrifice a creature. If you can't, sacrifice Test Monument.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd896', name: 'Monument', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 54 }], data: ROWS as never[] });
+  const upkeep = (mine: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd896', 1: 'd896' }, deckSpecs: { d896: deck.deck }, battlefield: { 0: mine }, turn: 2, firstSeat: 1,
+    } as never), 'precombat-main');
+    s = nextTurn(s);
+    for (let i = 0; i < 10; i++) {
+      const d = s.pendingDecision;
+      if (d !== null) { s = apply(s, { type: 'auto:decide', by: d.seat, cards: d.candidates.slice(0, 1) } as Action); continue; }
+      if (s.stackOrder.length === 0) break;
+      s = passBoth(s);
+    }
+    return drain(s, 20);
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with a Bear, the Bear is sacrificed and the Monument stays; with none, the Monument goes', () => {
+    const fed = upkeep(['Test Monument', 'Test Bear']);
+    expect(namesIn(fed, 0, 'battlefield')).toEqual(['Test Monument']);
+    const starved = upkeep(['Test Monument']);
+    expect(namesIn(starved, 0, 'battlefield')).not.toContain('Test Monument');
+  });
+});
+
+describe('the card and the graveyard shuffled in: Elixir of Immortality (D897)', () => {
+  const ROWS = [
+    { name: 'Test Elixir', type_line: 'Artifact', oracle_text: "{2}, {T}: You gain 5 life. Shuffle Test Elixir and your graveyard into their owner's library.", mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd897', name: 'Elixir', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 54 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('5 life; the Elixir and both graveyard Bears go into the library', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd897', 1: 'd897' }, deckSpecs: { d897: deck.deck },
+      battlefield: { 0: ['Test Elixir'] }, graveyard: { 0: ['Test Bear', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 2 } } };
+    const elixir = find(s, 0, 'battlefield', 'Test Elixir');
+    const library = ids(s, 0, 'library').length;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: elixir, abilityIndex: 0 })));
+    expect(life(s, 0)).toBe(25);
+    expect(ids(s, 0, 'graveyard')).toHaveLength(0);
+    expect(s.instances[elixir]!.zone).toBe('library');
+    expect(ids(s, 0, 'library')).toHaveLength(library + 3);
+  });
+});
+
+describe('"if you control no creatures with decayed": Jadar, Ghoulcaller of Nephalia (D898)', () => {
+  const ROWS = [
+    { name: 'Test Jadar', type_line: 'Legendary Creature — Human Necromancer', oracle_text: 'At the beginning of your end step, if you control no creatures with decayed, create a 2/2 black Zombie creature token with decayed.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({ id: 'd898', name: 'Jadar', entries: [{ name: 'Test Jadar', count: 4 }, { name: 'Swamp', count: 56 }], data: ROWS as never[] });
+  const zombies = (s: GameState) => namesIn(s, 0, 'battlefield').filter((n) => n === 'Zombie').length;
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Zombie at the first end step, none at the next while it is still there', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd898', 1: 'd898' }, deckSpecs: { d898: deck.deck }, battlefield: { 0: ['Test Jadar'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect(zombies(s)).toBe(1);
+    // Kept from attacking, the decayed Zombie is still there at our next end step: no second one.
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(s, 'end');
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect(zombies(s)).toBe(1);
+  });
+});
+
+describe('attack triggers for tokens: Dreadhorde Invasion (D899)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Invasion', 'Enchantment', 'Whenever a Zombie token you control with power 6 or greater attacks, it gains lifelink until end of turn.'),
+    R('Test Makers', 'Sorcery', 'Create a 6/6 black Zombie creature token. Create a 2/2 black Zombie creature token.'),
+    R('Test Ghoul', 'Creature — Zombie', '', { power: '6', toughness: '6' }),
+  ];
+  const deck = customDeck({ id: 'd899', name: 'Invasion', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('only the 6/6 Zombie token gains lifelink: not the 2/2 token, not the nontoken 6/6', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd899', 1: 'd899' }, deckSpecs: { d899: deck.deck },
+      hands: { 0: ['Test Makers'] }, battlefield: { 0: ['Test Invasion', 'Test Ghoul'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Makers') })));
+    const tokens = ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.isToken);
+    for (const id of tokens) s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, enteredTurn: 0 } } };
+    const big = tokens.find((id) => characteristicsOf(s, s.instances[id]!).power === 6)!;
+    const small = tokens.find((id) => characteristicsOf(s, s.instances[id]!).power === 2)!;
+    const ghoul = find(s, 0, 'battlefield', 'Test Ghoul');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [big, small, ghoul].map((attacker) => ({ attacker, defender: 1 as SeatIndex })) });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    const lifelink = (id: string) => characteristicsOf(s, s.instances[id]!).keywords.has('lifelink');
+    expect([lifelink(big), lifelink(small), lifelink(ghoul)]).toEqual([true, false, false]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

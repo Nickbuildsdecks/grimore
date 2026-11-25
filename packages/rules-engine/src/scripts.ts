@@ -14373,6 +14373,26 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     The list of permanents is built once, before any counter lands, for the reason `destroy all
     creatures` gives: the clause acts on the board it saw.
   */
+  /*
+    "Put X +1/+1 counters on each creature you control, where X is this creature's power" (D895,
+    Ouroboroid), and any measure `whereXCount` reads: X counted once, as it resolves, then that many
+    on each permanent of the scope.
+  */
+  const eachX = /^put x (\+1\/\+1|-1\/-1) counters on each (.+?), where x is (.+)$/i.exec(text);
+  if (eachX !== null) {
+    const kind = eachX[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    const scope = massScope(eachX[2]!);
+    const measure = eachX[3]!.replace(/^this creature's /i, `${name}'s `);
+    const count = whereXCount(measure, name);
+    if (scope !== null && count !== null) {
+      return {
+        effect: (c) => {
+          const n = Math.max(0, count(c));
+          return n === 0 ? c.state : scope(c).reduce((state, id) => addCounters(state, id, kind, n), c.state);
+        },
+      };
+    }
+  }
   const eachCounter = /^put a (\+1\/\+1|-1\/-1) counter on each (.+)$/i.exec(text);
   if (eachCounter !== null) {
     const kind = eachCounter[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
@@ -21105,6 +21125,23 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a nontoken creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', nontoken: true }],
+  },
+  /*
+    "Whenever a Zombie token you control with power 6 or greater attacks" (D899, Dreadhorde Invasion),
+    and "a creature token you control attacks": tokens only, a subtype where printed, and any of
+    \`boardFilter\`'s filters.
+  */
+  {
+    prologue: () => /^Whenever an? (?:(?<sub>[A-Z][a-z]+) )?(?:creature )?token you control(?<filter> with [^,]+?)? attacks, (?<clause>.+)$/,
+    from: (matched) => {
+      const sub = matched.groups?.sub;
+      if (sub !== undefined && !isCreatureType(sub)) return null;
+      const filter = boardFilter(matched.groups?.filter ?? '');
+      return filter === null ? null : [{
+        kind: 'attacks' as const, who: 'any' as const, of: 'you' as const, token: true,
+        ...(sub === undefined ? {} : { ofSubtypes: [sub] }), ...filter,
+      } as TriggerDef['on']];
+    },
   },
   // "Whenever a creature you control with <filter> attacks" (D1008): \`boardFilter\`'s filters on the attacker.
   {
@@ -29298,6 +29335,70 @@ function readEffect(
 ): ReadEffect | null {
   const copied = abilityCopyEffect(clause);
   if (copied !== null) return copied;
+  /*
+    "Shuffle ~ and your graveyard into their owner's library" (D897, Elixir of Immortality): the card from
+    wherever it is (D1116's self-shuffle reads only from a graveyard) and the graveyard, then one shuffle.
+  */
+  const bothIn = new RegExp(`^shuffle (${selfRef(name)}) and your graveyard into their owner's library$`, 'i').exec(clause.trim().replace(/\.$/, ''));
+  if (bothIn !== null) {
+    return {
+      effect: (c) => {
+        const card = c.state.instances[c.source];
+        const owner = card?.owner ?? c.controller;
+        // The card from wherever it is (the battlefield, for an ability), then the graveyard, then one shuffle.
+        const withCard = card === undefined || card.zone === 'library' ? c.state : putOnTopOfLibrary(c.state, c.source);
+        const yard = listAt(withCard, zoneKey(c.controller, 'graveyard'));
+        return shuffleLibrary(yard.reduce((state, id) => putOnTopOfLibrary(state, id), withCard), owner);
+      },
+    };
+  }
+  /*
+    "Return target … card from your graveyard to the battlefield with a -1/-1 counter on it" (D894,
+    Persist the spell): the return as it reads without the counter, then the counter on the card it
+    returned, if it arrived.
+  */
+  // Only the two size counters: a finality counter has a rule of its own (CR 122.1i) the return does
+  // not carry, and D527 pins that refusal.
+  const withCounter = /^(return .+? to the battlefield(?: under your control)?) with an? (\+1\/\+1|-1\/-1) counter on it$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (withCounter !== null) {
+    const inner = readEffect(withCounter[1]!, name, where);
+    if (inner !== null && (inner.targets ?? []).length === 1 && inner.decisions === undefined && inner.beforeDecisions === undefined) {
+      const kind = withCounter[2]!.toLowerCase();
+      return {
+        ...inner,
+        effect: (c) => {
+          const next = inner.effect(c);
+          const id = firstCardTarget(c);
+          return id !== null && next.instances[id]?.zone === 'battlefield' ? addCounters(next, id, kind, 1) : next;
+        },
+      };
+    }
+  }
+  /*
+    "Exile the top N cards of your library", and "target player / each opponent / each player exiles
+    the top N cards of their library" (D894; Ulamog, the Ceaseless Hunger's "defending player" comes
+    here as a target player, D963). Face up, gone; nothing is played from among them.
+  */
+  // "Defending player" arrives here as "target player", pointed at the defender by D963's swap.
+  const exileTop = /^(?:(you|target player|each opponent|each player) )?exiles? the top (\w+) cards? of (your|their) library$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (exileTop !== null) {
+    const who = (exileTop[1] ?? 'you').toLowerCase();
+    const n = /^a$|^one$/i.test(exileTop[2]!) ? 1 : WORD_NUMBERS[exileTop[2]!.toLowerCase()] ?? (/^\d+$/.test(exileTop[2]!) ? Number(exileTop[2]) : undefined);
+    if (n !== undefined && n > 0 && ((who === 'you') === (exileTop[3]!.toLowerCase() === 'your'))) {
+      const fromTop = (state: GameState, seat: SeatIndex) => listAt(state, zoneKey(seat, 'library')).slice(0, n)
+        .reduce((next, id) => exileCard(next, id), state);
+      const seatsOf = (c: EffectContext): SeatIndex[] => {
+        if (who === 'you') return [c.controller];
+        if (who === 'target player') { const seat = firstPlayerTarget(c); return seat === null ? [] : [seat]; }
+        if (who === 'each opponent') return opponentsOf(c.state, c.controller);
+        return c.state.seats.filter((x) => !x.eliminated).map((x) => x.index);
+      };
+      return {
+        ...(who === 'target player' ? { targets: [TARGET_PLAYER] } : {}),
+        effect: (c) => seatsOf(c).reduce((state, seat) => fromTop(state, seat), c.state),
+      };
+    }
+  }
   if (xAnnounced === 0 && /\bwhere X is\b/i.test(clause)) {
     xAnnounced += 1;
     try { return readEffect(clause, name, where); } finally { xAnnounced -= 1; }
@@ -33200,6 +33301,27 @@ function composeEffectsAsPrinted(
           const drawn = draw(c.state, seat, Math.ceil(listAt(c.state, zoneKey(seat, 'library')).length / 2));
           const lifeNow = drawn.seats[seat]?.life ?? 0;
           return loseLife(drawn, seat, Math.ceil(Math.max(0, lifeNow) / 2));
+        },
+      });
+      at++;
+      continue;
+    }
+    /*
+      Eldrazi Monument (D896): "Sacrifice a creature. If you can't, sacrifice ~." The controller chooses
+      a creature of theirs; with none to choose, the source goes instead.
+    */
+    const upkeepEdict = /^sacrifice an? (creature|artifact|land|enchantment|permanent)$/i.exec(clause.trim().replace(/\.$/, ''));
+    if (upkeepEdict !== null && new RegExp(`^if you can't, sacrifice (?:${selfRef(name)}|this (?:artifact|creature|enchantment|permanent))$`, 'i').test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      const kind = upkeepEdict[1]!.toLowerCase();
+      const fits = (state: GameState, id: string) => {
+        const inst = state.instances[id];
+        return inst !== undefined && (kind === 'permanent' || hasType(characteristicsOf(state, inst).typeLine, kind));
+      };
+      parts.push({
+        decisions: [{ who: 'controller', from: 'battlefield', prompt: `Sacrifice a ${kind}`, min: 1, max: 1, filter: (state: GameState, id: string) => fits(state, id) }],
+        effect: (c) => {
+          const chosen = c.decisions.flatMap((answer) => answer.ids).filter((id) => c.state.instances[id]?.zone === 'battlefield');
+          return chosen.length > 0 ? sacrifice(c.state, chosen) : sacrifice(c.state, [c.source]);
         },
       });
       at++;
@@ -38186,7 +38308,12 @@ function interveningConditionRows(
   const none = /^you control no (.+)$/i.exec(text);
   if (none !== null) {
     const count = countOfThing(`${none[1]!} you control`, name, 'plural');
-    return count === null ? null : (c) => count(c) === 0;
+    if (count !== null) return (c) => count(c) === 0;
+    // "No creatures with decayed" (D898, Jadar): the qualifier after the controller, as `massScope`
+    // reads "creatures you control with flying".
+    const qualified = /^(.+?) (with .+)$/i.exec(none[1]!);
+    const scope = qualified === null ? null : massScope(`${qualified[1]!} you control ${qualified[2]!}`);
+    return scope === null ? null : (c) => scope(c).length === 0;
   }
   const there = /^there are (\w+) or more (.+)$/i.exec(text);
   if (there !== null) {
