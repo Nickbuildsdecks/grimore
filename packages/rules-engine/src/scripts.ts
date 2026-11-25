@@ -37720,6 +37720,44 @@ export function modalTriggerFor(
   };
 }
 
+/**
+ * A **modal activated ability** (D843): "{1}, Sacrifice Cankerbloom: Choose one —" and the bullets
+ * under it (Cankerbloom, Breya, Bow of Nylea, Cayth, Balm of Restoration, Breya's Apprentice).
+ *
+ * Read as one ability per mode, each with the whole cost: to activate a "choose one" ability is to
+ * pay the cost and choose a mode as it is put on the stack (CR 602.2b, 700.2), which is exactly
+ * what choosing one of these abilities is. The client shows a button per mode and the bot weighs
+ * them as it weighs any abilities, with nothing new in the engine.
+ *
+ * Only where that is the same card. "Choose one" alone (not two, not "one or more", not an
+ * escalate or entwine), and no activation limit on the line ("Activate only once each turn" would
+ * become a limit per mode). Each bullet must read, as the cost and that mode, into exactly one
+ * ability, or the whole line is refused.
+ */
+export function modalAbilityFor(
+  lines: readonly string[], name: string,
+): { readonly fragment: Partial<CardScript>; readonly claimed: readonly string[] } | null {
+  const at = lines.findIndex((line) => /^[^"]+: choose one\s*[—-]$/i.test(plain(line).trim()));
+  if (at < 0) return null;
+  const cost = /^([^"]+): choose one\s*[—-]$/i.exec(plain(lines[at]!).trim())![1]!;
+  if (/^(?:when|whenever|at)\b/i.test(cost)) return null;
+  const bullets: string[] = [];
+  for (let i = at + 1; i < lines.length && /^[•\u2022]/.test(plain(lines[i]!).trim()); i++) bullets.push(lines[i]!);
+  if (bullets.length < 2) return null;
+  // A limit printed after the bullets ("Activate only once each turn.") is shared by the modes.
+  const after = lines[at + 1 + bullets.length];
+  if (after !== undefined && /^activate only\b/i.test(plain(after).trim())) return null;
+  const abilities: AbilityDef[] = [];
+  for (const bullet of bullets) {
+    const printed = plain(bullet).trim().replace(/^[•\u2022]\s*/, '').trim();
+    if (/\bactivate only\b/i.test(printed)) return null;
+    const read = lineScriptFor(`${cost}: ${printed}`, name);
+    if (read === null || Object.keys(read).some((key) => key !== 'abilities') || read.abilities?.length !== 1) return null;
+    abilities.push(read.abilities[0]!);
+  }
+  return { fragment: { abilities }, claimed: [lines[at]!, ...bullets] };
+}
+
 function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef; kicker?: CardScript['kicker'] } | null {
   if (lines.length < 3) return null;
   /*

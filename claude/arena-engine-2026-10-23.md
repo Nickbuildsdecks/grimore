@@ -44297,3 +44297,38 @@ fallback off, and the "you" verbs off).
 
 - engine tests: 6477, all passing (on 4e24061)
 - Coverage: 16,670 to 16,690 of 31,900 cards with every line read, and 39,139 to 39,165 of 59,888 lines, against 4e24061.
+
+## D843 — A modal activated ability as one ability per mode: Cankerbloom
+
+Most-played order: Cankerbloom (in the top 2000), with Breya, Etherium Shaper, Breya's
+Apprentice, Balm of Restoration, Insidious Fungus, Phoenix Down, Disciple of the Ring and Tea,
+Earl Grey, Hot. About 36 legal lines print "<cost>: Choose one —" over bullets.
+
+`ModalDef` is a spell's (and since D757 a trigger's); an activated ability had no modes, so these
+lines did not read.
+
+**Reading.** `modalAbilityFor`, a whole-card reader beside D757's `modalTriggerFor`: the header
+"<cost>: Choose one —" and its bullets become one ability per mode, each with the whole cost
+(`lineScriptFor("<cost>: <mode>")`, which must give exactly one ability). To activate a "choose
+one" ability is to pay its cost and choose a mode as it goes on the stack (CR 602.2b, 700.2), and
+that is what choosing one of these abilities is. The client shows a button per mode, and the bot
+weighs them as it weighs any abilities, so nothing changes in the engine.
+
+**Only where that is the same card.**
+- "Choose one" alone: "choose two", "one or more", escalate and entwine stay unread.
+- No activation limit: "Activate only once each turn", after the bullets or in one, would become
+  a limit per mode, so the line is refused.
+- A bullet that does not read refuses the whole line.
+
+**Tests.** 2 engine tests:
+- the Bloom reads as three abilities with the whole cost, and a modal ability with "Activate only
+  once each turn" keeps its header unread;
+- the enchantment mode, activated alone, destroys the opponent's enchantment, sacrifices the
+  Bloom, and leaves their artifact.
+
+Faults injected by script: 3 of 3 caught. They cover the limit ignored (missed at first: the
+limit line is unread on its own either way, so the test now asserts the header itself is unread),
+the reader not registered, and the cost dropped from the modes.
+
+- engine tests: 6483, all passing (on 946f080)
+- Coverage: 16,705 to 16,713 of 31,900 cards with every line read, and 39,181 to 39,228 of 59,888 lines, against 946f080. The line count rises by more than the card count: the modal header and its bullets are claimed on cards still short of another line, Umezawa's Jitte among them.
