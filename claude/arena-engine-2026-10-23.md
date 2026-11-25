@@ -46453,3 +46453,39 @@ Faults injected by hand: 4, all caught.
 - The bot's library choice skipped.
 
 Coverage: 17,015 of 31,900 cards (+2 over D1246's 17,013), 39,638 of 59,888 lines (+2).
+
+## D1248 — Exchanging control
+
+"Exchange control of A and B" (CR 701.12), `exchangeControl`: each permanent goes to the other's
+controller, for good. Nothing happens unless both are still on the battlefield under different
+controllers (CR 701.12b). Three shapes are read:
+- "two target creatures / lands / artifacts …" (Switcheroo, Vedalken Plotter's kin);
+- "target X you control and target Y an opponent controls" (Trade the Helm, Political Trickery,
+  Shrewd Negotiation);
+- "~ and target X" (Phyrexian Infiltrator, Avarice Totem, Eyes Everywhere).
+
+"That share a card type" (Shifting Loyalties, Role Reversal) and "another target permanent that
+shares one of those types" (Legerdemain) are not read. Gilded Drake's "If you don't or can't make an
+exchange, sacrifice ~" is left too.
+
+Two compile tests used "Exchange control of two target creatures." as their example of a sentence
+nothing reads. It reads now, so they use Mindslaver's "You control target player during that
+player's next turn." instead. The property they pin is unchanged.
+
+Read whole now, by the probe: Switcheroo, Trade the Helm, Political Trickery, Phyrexian Infiltrator,
+Avarice Totem, Eyes Everywhere, Vedalken Plotter, Shrewd Negotiation.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- Two target creatures under different controllers change sides.
+- Two of the same player's creatures: nothing changes.
+- Mine for theirs, and the Infiltrator's ability for a creature.
+
+Faults injected by hand: 3.
+- Only one half of the exchange made: caught.
+- The Infiltrator's own half dropped: caught.
+- The same-controller check removed: not caught, and correctly so. Moving a permanent to the seat
+  that already controls it changes nothing, so the check is a shortcut, not a rule the result
+  depends on.
+
+Coverage: 17,024 of 31,900 cards (+9 over D1247's 17,015), 39,650 of 59,888 lines (+12).
