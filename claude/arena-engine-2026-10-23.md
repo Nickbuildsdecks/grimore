@@ -46614,3 +46614,25 @@ Faults injected by hand: 3, all caught.
 - No land paid at all.
 
 Coverage: 17,054 of 31,900 cards (+11 over D1251's 17,043), 39,700 of 59,888 lines (+22).
+
+## D1253 — A cost change counted: Animar
+
+D940's printed cost modifiers, with "for each <thing>": "Creature spells you cast cost {1} less to
+cast for each +1/+1 counter on Animar", "… for each artifact you control". `costModifiers` entries
+carry an optional `per`, counted as the cost is computed, so the price follows the board. The count
+is the one `forEachCount` reads elsewhere, asked of the permanent's controller's board. 14 legal
+cards print the shape.
+
+Read whole now, by the probe (4): Animar, Soul of Elements; Hamza, Guardian of Arashin; Magnus the
+Red; Mindsplice Apparatus.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- One less per counter: nothing with no counters, three less with three.
+- The kind of spell is honoured: an artifact reduction does not touch a creature spell.
+
+Faults injected by hand: 2, all caught.
+- The count ignored (always one).
+- The kind of spell ignored.
+
+Coverage: 17,058 of 31,900 cards (+4 over D1252's 17,054), 39,705 of 59,888 lines (+5).
