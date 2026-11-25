@@ -3201,6 +3201,26 @@ export function stealUntilEndOfTurn(
   };
 }
 
+/**
+ * An Aura already on the battlefield moved onto another permanent (D3015, Felidar Umbra's "Attach ~ to
+ * target creature you control"). What it grants was installed as it resolved, scoped to the
+ * creature it enchanted (`addAuraEffect`), so every effect from this Aura scoped to the old host is
+ * re-pointed at the new one, its conditional parts with it. Effects scoped to anything else, its
+ * own statics included, stay where they are.
+ */
+export function moveAura(state: GameState, auraId: string, hostId: string): GameState {
+  const aura = state.instances[auraId];
+  const host = state.instances[hostId];
+  if (aura === undefined || host === undefined || host.zone !== 'battlefield') return state;
+  const old = aura.attachedTo;
+  if (old === hostId) return state;
+  const effects = old === null ? state.effects : state.effects.map((e) => (
+    e.source === auraId && e.scope.kind === 'cards' && e.scope.ids.includes(old)
+      ? { ...e, scope: { ...e.scope, ids: e.scope.ids.map((id) => (id === old ? hostId : id)) } }
+      : e));
+  return withInstance({ ...state, effects }, auraId, { attachedTo: hostId });
+}
+
 export function attachTo(state: GameState, auraId: string, hostId: string): GameState {
   const aura = state.instances[auraId];
   const host = state.instances[hostId];
