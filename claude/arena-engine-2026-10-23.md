@@ -45909,3 +45909,40 @@ Faults injected by hand: 3, all caught.
 The coverage below includes the other session's D900 to D904, merged in before this was measured.
 
 Coverage: 16,949 of 31,900 cards (+9 over D1235's 16,940), 39,516 of 59,888 lines (+10).
+
+## D1237 — "As ~ enters, choose a card name", and Pithing Needle
+
+Pithing Needle ("As Pithing Needle enters, choose a card name. Activated abilities of sources with
+the chosen name can't be activated unless they're mana abilities.") and Phyrexian Revoker ("…
+choose a nonland card name. … can't be activated."). A third kind of entry choice beside a creature
+type and a colour (D641): the answer is kept on the permanent (`chosen.name`), and a static whose
+scope is `CHOSEN_NAME` is filled in with it as it is installed, over every permanent with that name
+(a new `named` scope; a face-down permanent has no name).
+
+**Which names are offered** is the decision worth recording. The game state holds every card in
+every deck, and offering all of them would tell a player what an opponent's library contains. So
+the question offers the cards anybody can see: on the battlefield face up, in a graveyard, face up
+in exile, on the stack. A name nobody has seen yet cannot be chosen, which is this reading's one
+limit. The bot names the opponents' permanent with an activated ability and the highest mana value.
+
+Also: only permanents are stopped, so a named card's ability from another zone (cycling from a
+hand, say) is not; the abilities a Needle usually meets are on the battlefield.
+
+Read whole now (2): Phyrexian Revoker, Pithing Needle. Voidstone Gargoyle reads this line and waits
+on "Spells with the chosen name can't be cast"; Sorcerous Spyglass waits on its look at a hand.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- The question offers the cards on the table, and the answer is kept on the Needle.
+- The named card's ability is refused; a named mana rock still taps; an unnamed card is untouched.
+- Revoker's version stops the named rock's mana, and offers no land name.
+- The bot names the opponent's permanent with an ability and the highest mana value.
+
+Faults injected by hand: 5, all caught.
+- The named scope matching nothing.
+- Every reading stopping mana abilities too.
+- Land names offered for "a nonland card name".
+- The bot naming the first card in the list.
+- The answer not kept.
+
+Coverage: 16,951 of 31,900 cards (+2 over D1236's 16,949), 39,535 of 59,888 lines (+19).
