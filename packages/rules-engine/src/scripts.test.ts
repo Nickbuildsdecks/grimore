@@ -44838,6 +44838,58 @@ describe('Tergrid: an opponent sacrifices a nontoken permanent or discards a per
   });
 });
 
+describe('a three-way punisher: "unless they sacrifice a nonland permanent or discard a card" (D1244)', () => {
+  const LANTERN = { name: 'Test Lantern', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Each opponent loses 3 life unless they sacrifice a nonland permanent or discard a card.' };
+  const ROCK = { name: 'Test Rock', type_line: 'Artifact', mana_cost: '{0}', cmc: 1, colors: [], layout: 'normal', oracle_text: '{T}: Add {C}.' };
+  const ROWS = [LANTERN, ROCK];
+  const deck = customDeck({ id: 'd1244', name: 'Lantern', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 52 }], data: ROWS as never[] });
+  const table = (theirHand: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1244', 1: 'd1244' }, deckSpecs: { d1244: deck.deck },
+    hands: { 0: ['Test Lantern'], 1: theirHand }, battlefield: { 0: ['Swamp'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Seat 1 answers `answer`, and its first candidate for any card question. */
+  const play = (s0: GameState, answer: string) => {
+    let s = drain(passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Test Lantern') } as Action)), 30);
+    let offered: readonly string[] | undefined;
+    for (let i = 0; i < 12 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      const p = s.pendingDecision;
+      if (p === null) { s = drain(passBoth(s)); continue; }
+      if ((p.options ?? []).length > 0) {
+        offered = p.options!;
+        s = apply(s, { type: 'auto:decide', by: p.seat, cards: [], option: answer } as Action);
+      } else {
+        s = apply(s, { type: 'auto:decide', by: p.seat, cards: p.candidates.slice(0, 1) } as Action);
+      }
+    }
+    return { s, offered };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LANTERN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('all three are offered, and each costs what it says', () => {
+    const before = table(['Swamp'], ['Test Rock', 'Swamp']);
+    const lost = play(before, 'Lose 3 life');
+    expect(lost.offered).toEqual(['Lose 3 life', 'Sacrifice a nonland permanent', 'Discard a card']);
+    expect(life(lost.s, 1)).toBe(17);
+    const sac = play(before, 'Sacrifice a nonland permanent').s;
+    expect(life(sac, 1)).toBe(20);
+    expect(namesIn(sac, 1, 'graveyard')).toEqual(['Test Rock']);
+    expect(namesIn(sac, 1, 'battlefield')).toEqual(['Swamp']);
+    const tossed = play(before, 'Discard a card').s;
+    expect(life(tossed, 1)).toBe(20);
+    expect(ids(tossed, 1, 'hand')).toHaveLength(0);
+    expect(namesIn(tossed, 1, 'battlefield').sort()).toEqual(['Swamp', 'Test Rock']);
+  });
+
+  it('a land is not a nonland permanent, and an empty hand has nothing to discard', () => {
+    expect(play(table([], ['Swamp']), 'Lose 3 life').offered).toBeUndefined();
+    expect(play(table([], ['Test Rock']), 'Lose 3 life').offered).toEqual(['Lose 3 life', 'Sacrifice a nonland permanent']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

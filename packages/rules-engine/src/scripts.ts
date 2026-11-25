@@ -30389,11 +30389,12 @@ function readEffect(
   }
   if (clause.trim().toLowerCase() === 'you may draw two additional cards and put back two cards drawn this turn unless you pay 4 life for each') return sylvanLibrary();
   // "Each player loses 2 life unless they discard a card" and its kin (D1162): see `punisherOnce`.
-  const once = /^(each player|each opponent|target player|target opponent) loses (\d+|one|two|three|four|five|six|seven) life unless (?:they|that player) (discards? a card|sacrifices? (.+))$/i.exec(clause.trim().replace(/\.$/, ''));
+  // And three ways (D1244, Tergrid's Lantern): "… unless they sacrifice a nonland permanent or discard a card".
+  const once = /^(each player|each opponent|target player|target opponent) loses (\d+|one|two|three|four|five|six|seven) life unless (?:they|that player) (discards? a card|sacrifices? (.+?)( or discards? a card)?)$/i.exec(clause.trim().replace(/\.$/, ''));
   if (once !== null) {
     const life = countFrom(once[2]!);
     const kinds = once[4] === undefined ? 'discard' : sacrificeKinds(once[4]);
-    if (life !== null && life > 0 && kinds !== null) return punisherOnce(once[1]!.toLowerCase(), life, kinds, once[4]);
+    if (life !== null && life > 0 && kinds !== null) return punisherOnce(once[1]!.toLowerCase(), life, kinds, once[4], once[5] !== undefined);
   }
   // Torment of Hailfire and Perforating Artist (D730): see `punisherRounds`.
   const punish = /^(repeat the following process X times: )?each opponent loses (\d+) life unless that player sacrifices a nonland permanent(?: of their choice)? or discards a card$/i.exec(clause.trim());
@@ -31873,7 +31874,7 @@ function sacrificeKinds(words: string): ((state: GameState, id: string) => boole
   const parts = words.trim().replace(/\.$/, '').split(/,\s*(?:or\s+)?|\s+or\s+/i).map((p) => p.trim()).filter((p) => p !== '');
   const tests: ((state: GameState, id: string) => boolean)[] = [];
   for (const part of parts) {
-    const m = /^an? (nontoken )?(artifact|creature|enchantment|land|planeswalker|permanent)$/i.exec(part);
+    const m = /^an? (nontoken )?(nonland permanent|artifact|creature|enchantment|land|planeswalker|permanent)$/i.exec(part);
     if (m === null) return null;
     const nontoken = m[1] !== undefined;
     const kind = m[2]!.toLowerCase();
@@ -31882,6 +31883,8 @@ function sacrificeKinds(words: string): ((state: GameState, id: string) => boole
       if (inst === undefined || inst.zone !== 'battlefield') return false;
       if (nontoken && inst.isToken) return false;
       const ch = characteristicsOf(state, inst);
+      // "A nonland permanent" (D1244).
+      if (kind === 'nonland permanent') return !hasType(ch.typeLine, 'land');
       return kind === 'permanent' || (kind === 'creature' ? ch.isCreature : hasType(ch.typeLine, kind));
     });
   }
@@ -31900,10 +31903,19 @@ function sacrificeKinds(words: string): ((state: GameState, id: string) => boole
  */
 function punisherOnce(
   who: string, life: number, alt: 'discard' | ((state: GameState, id: string) => boolean), printed?: string,
+  orDiscard = false,
 ): ReadEffect {
   const LOSE = `Lose ${life} life`;
   const discards = alt === 'discard';
   const OTHER = discards ? 'Discard a card' : `Sacrifice ${printed!.trim().replace(/\.$/, '')}`;
+  /*
+    A third way (D1244): "sacrifice a nonland permanent or discard a card". The discard is its own
+    option and its own card question from the hand, asked only of a player who chose it.
+  */
+  const DISCARD = 'Discard a card';
+  const third = !discards && orDiscard;
+  const fitsHand = (state: GameState, id: string, chooser: SeatIndex): boolean => state.instances[id]?.zone === 'hand' && state.instances[id]?.zoneSeat === chooser;
+  const canDiscard = (state: GameState, chooser: SeatIndex): boolean => third && listAt(state, zoneKey(chooser, 'hand')).length > 0;
   const asked: ChoiceDecisionSpec['who'] = who === 'each player' ? 'each-player' : who === 'each opponent' ? 'each-opponent' : 'target-player';
   const fits = (state: GameState, id: string, chooser: SeatIndex): boolean => (discards
     ? state.instances[id]?.zone === 'hand' && state.instances[id]?.zoneSeat === chooser
@@ -31916,8 +31928,9 @@ function punisherOnce(
     decisions: [
       {
         who: asked, prompt: `${LOSE}, or ${OTHER.charAt(0).toLowerCase()}${OTHER.slice(1)}?`, options: [LOSE, OTHER],
-        optionsFor: (state, chooser) => [LOSE, ...(canDo(state, chooser) ? [OTHER] : [])],
-        best: (state, chooser) => ((state.seats[chooser]?.life ?? 0) > 9 || !canDo(state, chooser) ? LOSE : OTHER),
+        optionsFor: (state, chooser) => [LOSE, ...(canDo(state, chooser) ? [OTHER] : []), ...(canDiscard(state, chooser) ? [DISCARD] : [])],
+        best: (state, chooser) => ((state.seats[chooser]?.life ?? 0) > 9 ? LOSE
+          : canDiscard(state, chooser) ? DISCARD : canDo(state, chooser) ? OTHER : LOSE),
       } as ChoiceDecisionSpec,
       {
         who: asked, from: discards ? 'hand' : 'battlefield', prompt: OTHER, min: 1, max: 1,
@@ -31932,19 +31945,30 @@ function punisherOnce(
           return best === undefined ? [] : [best];
         },
       },
+      ...(third ? [{
+        who: asked, from: 'hand' as const, prompt: DISCARD, min: 1, max: 1,
+        filter: (state: GameState, id: string, chooser: SeatIndex) => state.punisher?.chose[String(chooser)] === DISCARD && fitsHand(state, id, chooser),
+        pick: (state: GameState, _chooser: SeatIndex, candidates: readonly string[]) => {
+          const best = [...candidates].sort((a, b) => worth(state, a) - worth(state, b))[0];
+          return best === undefined ? [] : [best];
+        },
+      }] : []),
     ],
     effect: (c) => {
       const chose = new Map<SeatIndex, string>();
       const cards = new Map<SeatIndex, readonly string[]>();
       for (const a of c.decisions) {
         if (a.option !== undefined) chose.set(a.seat, a.option);
-        else if (a.ids.length > 0) cards.set(a.seat, a.ids);
+        else if (a.ids.length > 0) cards.set(a.seat, [...(cards.get(a.seat) ?? []), ...a.ids]);
       }
       let next = c.state;
       for (const [seat, option] of chose) {
         const picked = (cards.get(seat) ?? []).filter((id) => fits(next, id, seat));
+        const tossed = third ? (cards.get(seat) ?? []).filter((id) => fitsHand(next, id, seat)) : [];
         if (option === OTHER && picked.length > 0) {
           next = discards ? moveToGraveyard(next, picked) : sacrifice(next, picked);
+        } else if (third && option === DISCARD && tossed.length > 0) {
+          next = moveToGraveyard(next, tossed);
         } else {
           next = loseLife(next, seat, life);
         }
