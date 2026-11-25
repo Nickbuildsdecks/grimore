@@ -44126,3 +44126,36 @@ Faults injected by hand: 2, both caught.
 The coverage below includes the other session's D839, merged in before this was measured.
 
 Coverage: 16,648 of 31,900 cards (+17 over D1215's 16,631), 39,109 of 59,888 lines (+27).
+
+## D1217 — an Aura that exiles its host, and "target opponent gains control of ~"
+
+Two small readers:
+- **"Exile enchanted creature"** as an Aura's ability (the Pacifism upgrades: Dreadful Apathy,
+  Cooped Up, Redemption Arc, Sigarda's Imprisonment), and "destroy" or "return … to its owner's
+  hand" the same way. The host is the Aura's `attachedTo`, as "tap enchanted creature" reads it
+  (D939).
+- **"Target opponent gains control of ~"** (Jinxed Idol, Jinxed Ring, Humble Defector, Avarice
+  Amulet): for good; the card moves to that player's battlefield.
+
+A new flag, `costSacrificesSource`, is set from an activated ability's cost as `xPayable` is
+(D1055): an Aura that sacrifices itself to pay ("{3}{W}{W}, Sacrifice ~: Exile enchanted
+creature", Choking Restraints) is in the graveyard and attached to nothing by the time the ability
+resolves, so the host reader refuses there rather than doing nothing. Today the cost parser already
+refuses an Aura sacrificing itself, so the flag is a safeguard for when it does not.
+
+Read whole now (12): Act of Authority, Avarice Amulet, Cooped Up, Dreadful Apathy, Drooling Ogre,
+Humble Defector, Jinxed Idol, Jinxed Ring, Measure of Wickedness, Redemption Arc, Sigarda's
+Imprisonment, Starke of Rath.
+
+**Tests.** 3 engine tests:
+- The Aura and the Idol read whole, and the Aura that sacrifices itself stays unread.
+- "{0}: Exile enchanted creature": the opponent's creature the Aura is on is exiled.
+- "Target opponent gains control of ~": the Idol is on the opponent's battlefield.
+
+Faults injected by hand: 3, 2 caught.
+- Exile read as a bounce: caught.
+- The control change dropped: caught.
+- The sacrifice guard removed: not caught, because the cost parser refuses the line first (see
+  above).
+
+Coverage: 16,664 of 31,900 cards (+16 over D1216's 16,648), 39,132 of 59,888 lines (+23).
