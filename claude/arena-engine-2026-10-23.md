@@ -45877,3 +45877,35 @@ Card-by-card diff for D900–D904 against c998c8e: 0 lost, 8 gained (including L
 and Magus of the Library from D901's exact hand size, and Mandate of Abaddon from D903).
 
 Gated together on efdda8a: full gate green, engine tests 6704. Coverage: 16,938 to 16,946 of 31,900 cards with every line read, and 39,504 to 39,513 of 59,888 lines.
+
+## D1236 — Ragavan: the top card of that player's library, to cast this turn
+
+"Whenever Ragavan, Nimble Pilferer deals combat damage to a player, create a Treasure token and
+exile the top card of that player's library. Until end of turn, you may cast that card." Three
+pieces the impulse draw (D583) did not have:
+- **Another player's library.** `exileTopToPlay` takes whose library, and the card goes to its
+  owner's exile, as every exiled card does.
+- **Offered from any exile zone.** The impulse offers read only the player's own exile, so a card
+  taken from an opponent was never offered. They now read every exile zone for cards this player
+  has been given.
+- **"Cast", not "play".** `playFromExile.castOnly`: a land taken this way is never a land drop.
+
+The trigger's whole sentence is read for a combat-damage trigger, with the player it hit from the
+event; "you may play that card" is the same without the land restriction.
+
+Read whole now (1): Ragavan, Nimble Pilferer.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- It connects: a Treasure, and the defender's top card in the defender's exile, offered to and cast
+  by the attacker in the second main phase.
+- A land taken this way is offered as nothing.
+
+Faults injected by hand: 3, all caught.
+- The attacker's own library taken from.
+- Only the player's own exile offered.
+- The land offered as a land drop.
+
+The coverage below includes the other session's D900 to D904, merged in before this was measured.
+
+Coverage: 16,949 of 31,900 cards (+9 over D1235's 16,940), 39,516 of 59,888 lines (+10).
