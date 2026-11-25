@@ -44666,3 +44666,78 @@ Faults injected by hand: 4, all caught.
 The coverage below includes the other session's D846, merged in before this was measured.
 
 Coverage: 16,777 of 31,900 cards (+15 over D1225's 16,762), 39,304 of 59,888 lines (+22).
+## D847 — "Until end of turn, creatures you control get +X/+X, where X is …": Overwhelming Stampede
+
+Most-played order: Overwhelming Stampede. The same rewrite finishes Elspeth, Undaunted Hero
+as well.
+
+**Reader.** A leading "Until end of turn," moves to the end of its sentence when the sentence
+ends in a "where X is …" count, so "Until end of turn, creatures you control gain trample and get
++X/+X, where X is the greatest power among creatures you control" reaches the pump reader as
+"Creatures you control gain trample and get +X/+X until end of turn, where X is …". X is counted
+once, as the spell resolves.
+
+**Tests.** 1 engine test: Overwhelming Stampede makes a 2/2 Bear 6/6 and a 4/4 Ogre 8/7 (the
+Ogre's power, counted once), both with trample. The opponent's creature is unchanged.
+
+Faults injected by script: 1 of 1 caught (the rewrite removed).
+
+## D848 — A bite at any target, and at everything: Chandra's Ignition
+
+**Reader.** D546's bite ("target creature you control deals damage equal to its power to target
+creature …") now also takes "any target" and "target player" as the second target. The damage
+goes to whatever was chosen, player or permanent, from the creature. "Target creature you control
+deals damage equal to its power to each other creature and each opponent" (Chandra's Ignition),
+and either half alone, is new. The power is read once, before any damage is dealt. The damage
+comes from the creature, so deathtouch and lifelink apply. "Any other target" stays unread,
+because the target reader cannot yet exclude the biter.
+
+**Tests.** 3 engine tests:
+- the cards read;
+- Ignition with a 4-power Ogre kills both players' Bears, takes 4 from the opponent, and
+  leaves the Ogre undamaged and our life unchanged;
+- the "any target" bite can hit the opponent for the creature's power.
+
+Faults injected by script: 5 of 5 caught. These were: "any target" refused, the biter hitting
+itself, no opponents, every player treated as an opponent, and only our own creatures hit. A
+sixth fault changed nothing and was dropped.
+
+## D849 — Protection outside your commander's identity: Commander's Plate
+
+Most-played order: Commander's Plate (rank 474).
+
+**Engine.** `ContinuousEffect.protectionOutsideIdentity`, beside D1190's `protectionFromChosen`:
+the colours outside the effect controller's commander identity (`commanderIdentity`, CR 903.4),
+read live in layer 6. A seat with no commander gets protection from every colour.
+
+**Reader.** "Equipped creature … has protection from each color that's not in your commander's
+color identity", after the +3/+3.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- with a green commander: +3/+3 and protection from white, blue, black and red, not green;
+- with a black commander: green is shielded, black is not;
+- with no commander: protection from every colour.
+
+Faults injected by script: 4 of 4 caught. These were: the identity ignored, the identity
+inverted, the opponent's commander used, and the flag dropped in `staticEffect`.
+
+## D850 — Weaker creatures can't block yours: Champion of Lambholt
+
+Most-played order: Champion of Lambholt (rank 592).
+
+**Engine.** A new printed combat static, `weakerCantBlockYours`, beside D943's `weakerCantBlock`.
+`canBlock` refuses a blocker whose power is less than that of a creature with it controlled by
+the attacker's controller, compared as they are now. Losing all abilities clears it, like D943's.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- with the 3-power Champion out, a 2-power Bear cannot block our attacking 1/1, and a 4-power
+  Ogre can;
+- without the Champion, the Bear blocks;
+- the opponent's Champion does not restrict our blocks.
+
+Faults injected by script: 3 of 3 real faults caught: the check removed, the comparison against
+the attacker's power, and the line left unread. A fourth fault broke the syntax and is not counted.
+
+Gated together on c07922b: engine tests 6526, all passing; full gate green. Coverage: 16,759 to 16,766 of 31,900 cards with every line read, and 39,281 to 39,288 of 59,888 lines. Card-by-card diff for D847: 0 lost, 2 gained.

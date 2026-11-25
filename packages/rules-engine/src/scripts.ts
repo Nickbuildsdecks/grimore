@@ -17777,6 +17777,10 @@ function attachmentRider(text: string): { bonus: PumpOptions; harmful: boolean }
   */
   // "Has protection from the chosen color" (D1190): see `ContinuousEffect.protectionFromChosen`.
   if (/^has protection from the chosen colou?r$/i.test(rider)) return { bonus: { protectionFromChosen: true }, harmful: false };
+  // "Has protection from each color that's not in your commander's color identity" (D849).
+  if (/^has protection from each colou?r that's not in your commander's colou?r identity$/i.test(rider)) {
+    return { bonus: { protectionOutsideIdentity: true }, harmful: false };
+  }
   const shielded = /^has protection from (white|blue|black|red|green)(?:,? and from (white|blue|black|red|green))?$/i.exec(rider);
   if (shielded !== null) {
     const colours = [shielded[1]!, shielded[2]].filter((w): w is string => w !== undefined)
@@ -27270,27 +27274,64 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   const bite = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?) deals damage equal to its power to `
-    + `(${TARGET_QUANTIFIER_PREFIX}target .+?)$`,
+    + `(${TARGET_QUANTIFIER_PREFIX}target .+?|any target)$`,
     'i',
   ).exec(text);
   if (bite !== null) {
     const biter = targetSpecFrom(bite[1]!, /\byou control\b/i.test(bite[1]!));
     const bitten = targetSpecFrom(bite[2]!, false);
+    /*
+      And at "any target" or "target player" (D848): the second target is whatever was chosen, a
+      player as well as a permanent, damaged the same way.
+    */
+    const atAnything = bitten !== null && (bitten.kind === 'any' || bitten.kind === 'player');
     if (biter !== null && bitten !== null
-      && biter.kind === 'creature' && pointsAtAPermanent(bitten)
+      && biter.kind === 'creature' && (pointsAtAPermanent(bitten) || atAnything)
       && (biter.count ?? 1) === 1 && (bitten.count ?? 1) === 1) {
       return {
         targets: [biter, bitten],
         effect: (c) => {
-          const [mine, theirs] = cardTargets(c);
-          if (mine === undefined || theirs === undefined) return c.state;
-          const inst = c.state.instances[mine];
+          const [first, second] = c.targets;
+          if (first === undefined || second === undefined || first.kind !== 'card') return c.state;
+          if (second.kind !== 'card' && second.kind !== 'player') return c.state;
+          const inst = c.state.instances[first.id];
           if (inst === undefined) return c.state;
           const power = characteristicsOf(c.state, inst).power;
           return power > 0
-            ? dealDamage(c.state, { kind: 'card', id: theirs }, power,
-              { controller: c.controller, source: mine })
+            ? dealDamage(c.state, second, power, { controller: c.controller, source: first.id })
             : c.state;
+        },
+      };
+    }
+  }
+  /*
+    "Target creature you control deals damage equal to its power to each other creature and each
+    opponent" (D848, Chandra's Ignition), and either half alone. The power read once, before any of
+    it is dealt; the damage from the creature, so its deathtouch and lifelink apply.
+  */
+  const biteAll = new RegExp(
+    `^(target creature you control) deals damage equal to its power to (each other creature and each opponent|each other creature|each opponent)$`, 'i',
+  ).exec(text);
+  if (biteAll !== null) {
+    const biter = targetSpecFrom(biteAll[1]!, true);
+    const scope = biteAll[2]!.toLowerCase();
+    if (biter !== null && biter.kind === 'creature') {
+      return {
+        targets: [biter],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          const inst = id === null ? undefined : c.state.instances[id];
+          if (id === null || inst === undefined || inst.zone !== 'battlefield') return c.state;
+          const power = characteristicsOf(c.state, inst).power;
+          if (power <= 0) return c.state;
+          const hit: Exclude<Target, { kind: 'ability' }>[] = [];
+          if (scope.includes('creature')) {
+            for (const seat of c.state.seats.map((_, i) => i as SeatIndex)) {
+              for (const other of creaturesControlledBy(c.state, seat)) if (other !== id) hit.push({ kind: 'card', id: other });
+            }
+          }
+          if (scope.includes('opponent')) for (const seat of opponentsOf(c.state, c.controller)) hit.push({ kind: 'player', seat });
+          return hit.reduce((state, target) => dealDamage(state, target, power, { controller: c.controller, source: id }), c.state);
         },
       };
     }
@@ -30841,6 +30882,12 @@ function clausesOf(line: string): readonly string[] {
     // "For each land you control, create a Treasure token" (D822, Brass's Bounty): the count put
     // after the tokens, where the counted-token reader looks for it. Not "for each of …" (targets).
     .replace(/(^|[.;]\s+)For each (?!of\b)([^,.;]+?), create ([^.;]+?)(?=$|\.)/gi, '$1Create $3 for each $2')
+    /*
+      "Until end of turn, creatures you control gain trample and get +X/+X, where X is …" (D847,
+      Overwhelming Stampede): the duration moved to where the pump readers look for it, before the
+      count. Only with a count; the plain "Until end of turn, …" sentence already reads.
+    */
+    .replace(/(^|\.\s+)Until end of turn, ([^.]+?), (where X is [^.]+)/gi, (_m, lead: string, body: string, count: string) => `${lead}${body.charAt(0).toUpperCase()}${body.slice(1)} until end of turn, ${count}`)
     // The Enduring cycle (D837): "It's an enchantment" is about the card the return just brought back.
     .replace(/(return (?:it|that card) to the battlefield(?: tapped)? under its owner's control)\.\s+It's an enchantment\b/gi, '$1 as an enchantment')
     // Creeping Bloodsucker (D831): the life gained is the damage the first sentence dealt.
