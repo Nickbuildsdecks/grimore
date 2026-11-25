@@ -64374,3 +64374,25 @@ Faults injected by hand: 3, all caught (the third once Kalemne's test was in).
 - The static size count read as nothing.
 
 Coverage: 17,094 of 31,900 cards (+1 over D1262's 17,093), 39,765 of 59,888 lines (+10).
+
+## D1264 — Meren of Clan Nel Toth
+
+"At the beginning of your end step, choose target creature card in your graveyard. If that card's
+mana value is less than or equal to the number of experience counters you have, return it to the
+battlefield. Otherwise, put it into your hand." The three sentences are read as one: the target, a
+comparison made as it resolves with the counters the player has then (D1263's count), and the two
+destinations. A card no longer in the graveyard does nothing (CR 400.7). With D1263's "you get an
+experience counter", Meren reads whole.
+
+Read whole now (1): Meren of Clan Nel Toth.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- Mana value 3 with three experience counters: to the battlefield.
+- With two: to the hand.
+
+Faults injected by hand: 2, all caught.
+- "Less than or equal" read as "less than".
+- Always to the battlefield.
+
+Coverage: 17,095 of 31,900 cards (+1 over D1263's 17,094), 39,766 of 59,888 lines (+1).
