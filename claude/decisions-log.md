@@ -62008,3 +62008,33 @@ library unread).
 
 - engine tests: 6500, all passing (on 8444c77)
 - Coverage: 16,734 to 16,737 of 31,900 cards with every line read, and 39,252 to 39,255 of 59,888 lines, against 8444c77.
+
+## D1224 — counters of two or three kinds in one sentence
+
+"Put a +1/+1 counter and a lifelink counter on target creature" (Unexpected Fangs), "Put a flying
+counter, a deathtouch counter, and a lifelink counter on target creature" (Qarsi Revenant), "Put a
++1/+1 counter, a reach counter, and a deathtouch counter on target creature. Untap it." (Gift of the
+Viper), Champion of Dusan's renew. `clausesOf` splits the sentence into one per kind, the first on
+what was printed and the rest on the same object: "it" after a target, so no second target is
+asked for and the referent machinery hands each the one creature; the printed words again for
+anything else ("~", "that creature"). Each kind is then read by the counter readers that already
+exist, keyword counters (D1032) among them.
+
+Read whole now (4): Champion of Dusan, Gift of the Viper, Qarsi Revenant, Unexpected Fangs.
+
+**Tests.** 4 engine tests:
+- The test cards read whole, with one target.
+- Two kinds on the one target, and the keyword counter grants its keyword.
+- Three kinds and the untap after them, all on the same creature.
+- "On ~", on an activated ability: both kinds on itself.
+
+Faults injected by hand: 3, all caught.
+- The printed object repeated for every kind (a second target asked for).
+- The middle kinds dropped.
+- The first kind replaced by the last.
+
+Pod sweep 82001 (100 games, D1221 build): 100 finished, no throw, no stall.
+
+The coverage below includes the other session's D845, merged in before this was measured.
+
+Coverage: 16,754 of 31,900 cards (+7 over D1223's 16,747), 39,271 of 59,888 lines (+7).
