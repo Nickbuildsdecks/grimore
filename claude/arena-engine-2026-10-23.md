@@ -46831,3 +46831,28 @@ Faults injected by hand: 3.
   the command zone between the trigger and its resolution, and no test moves it there.
 
 Coverage: 17,089 of 31,900 cards (+1 over D1259's 17,088), 39,748 of 59,888 lines (+2).
+
+## D1261 — "Whenever one or more Dragons you control attack, draw that many cards"
+
+The attack declaration (`attack-declared`, D442) now carries each attacker's subtypes as declared.
+A trigger can ask for one creature type, `withSubtype`: "Whenever one or more Dragons / Elves /
+Wizards you control attack", with the type read from its plural. "That many" after such a trigger is
+how many attackers had the type, or how many attacked at all for the plain "one or more creatures".
+The declaration joins the events whose "that many" is the event's amount (D903). 19 legal cards print
+a typed form.
+
+Read whole now, by the probe (3): General Kreat, the Boltbringer; Poetic Ingenuity; Soaring
+Thought-Thief. The Ur-Dragon's line reads up to its "then you may put a permanent card from your hand
+onto the battlefield", and its eminence cost line is still unread.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- Two Dragons and a Bear attack: two cards.
+- Only a Bear attacks: it does not trigger at all.
+
+Faults injected by hand: 2, all caught (the first after the test was made to check that nothing
+triggered, not only that nothing was drawn).
+- The creature type not checked.
+- "That many" counting every attacker.
+
+Coverage: 17,092 of 31,900 cards (+3 over D1260's 17,089), 39,753 of 59,888 lines (+5).
