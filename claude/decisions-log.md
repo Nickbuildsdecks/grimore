@@ -64346,3 +64346,31 @@ Faults injected by hand: 3, all caught (the second after the command-zone test w
 - The kind of spell, and "other", ignored.
 
 Coverage: 17,093 of 31,900 cards (+1 over D1261's 17,092), 39,755 of 59,888 lines (+2).
+
+## D1263 — Experience counters
+
+A player's experience counters (CR 122.1), on `Seat.counters`, which has carried named player
+counters since energy (D603) but had no general way to add one:
+- `addSeatCounters`, the energy arithmetic for any kind;
+- "you get an experience counter" (and "two", "three") as an effect;
+- the counts "for each experience counter you have" and "the number of experience counters you
+  have", for a cost change (D1253, Mizzix's), a "where X is", and a static size (Kalemne's
+  `player-counters`).
+
+16 legal cards print experience counters. Most of the commanders that use them have a second line
+of their own still unread: Mizzix's cast trigger, Meren's end step, Ezuri's combat.
+
+Read whole now, by the probe (2): Kalemne, Disciple of Iroas; Katara, Waterbending Master.
+
+**Tests.** 4 engine tests:
+- The test cards read whole.
+- Another creature entering gives an experience counter.
+- A creature gets +1/+1 for each experience counter.
+- A spell costs one less for each experience counter.
+
+Faults injected by hand: 3, all caught (the third once Kalemne's test was in).
+- No counter given.
+- The cost count read as nothing.
+- The static size count read as nothing.
+
+Coverage: 17,094 of 31,900 cards (+1 over D1262's 17,093), 39,765 of 59,888 lines (+10).
