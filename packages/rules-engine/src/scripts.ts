@@ -20855,6 +20855,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever (?:enchanted|equipped) creature deals damage, (.+)$/i,
     on: [{ kind: 'deals-damage', who: 'attached', to: 'any' }],
   },
+  // And "deals combat damage", to anything (D844, Umezawa's Jitte): the same events, combat only.
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals combat damage, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'any', combatOnly: true }],
+  },
+  {
+    prologue: () => /^Whenever (?:enchanted|equipped) creature deals combat damage, (.+)$/i,
+    on: [{ kind: 'deals-damage', who: 'attached', to: 'any', combatOnly: true }],
+  },
   /*
     **Discarding and cycling as events** (D567).
 

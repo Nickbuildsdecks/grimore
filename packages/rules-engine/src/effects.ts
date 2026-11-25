@@ -740,10 +740,15 @@ function recordDamage(
   const hosted = to.kind === 'card'
     ? Object.values(state.instances).filter((inst) => inst.zone === 'battlefield' && inst.attachedTo === to.id).map((inst) => inst.id)
     : [];
+  // And on the source (D844), for "equipped creature deals combat damage" when it dies of it.
+  const sourceHosted = source === null || !sourceInPlay
+    ? []
+    : Object.values(state.instances).filter((inst) => inst.zone === 'battlefield' && inst.attachedTo === source).map((inst) => inst.id);
   let next: GameState = {
     ...state,
     damageDealt: [...(state.damageDealt ?? []), {
       to, source, sourceInPlay, amount, ...(hosted.length === 0 ? {} : { hosted }),
+      ...(sourceHosted.length === 0 ? {} : { sourceHosted }),
       ...(controller === undefined ? {} : { controller }),
     }],
   };

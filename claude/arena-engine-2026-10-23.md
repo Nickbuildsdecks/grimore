@@ -44363,3 +44363,38 @@ the reader not registered, and the cost dropped from the modes.
 
 - engine tests: 6483, all passing (on 946f080)
 - Coverage: 16,705 to 16,713 of 31,900 cards with every line read, and 39,181 to 39,228 of 59,888 lines, against 946f080. The line count rises by more than the card count: the modal header and its bullets are claimed on cards still short of another line, Umezawa's Jitte among them.
+
+## D844 — "Whenever equipped creature deals combat damage": Umezawa's Jitte, and the Equipment that sees it even when its creature dies
+
+Most-played order: Umezawa's Jitte. D843 read its modal ability; this reads its trigger. The same
+rows finish Lost Jitte, Banshee's Blade, Drinker of Sorrow and Sunhome Enforcer.
+
+**Reader.** Two rows beside D904's "Whenever ~ / equipped creature deals damage" (to anything):
+"deals **combat** damage", on the same events with `combatOnly`. D904 raises one event per source
+for its combat damage in a step, so a creature that hits a blocker and a player triggers it once.
+
+**An engine bug, found by the test.** A Jitte on a creature that died in the combat it dealt damage
+in got nothing. The trigger asked "is the Jitte attached to the source?" when the event was raised,
+after state-based actions had killed the creature and `relocate` had detached the Jitte. The
+damage happened while it was attached, and that is the moment the rules ask about (CR 603.10a's
+look-back for leave-the-battlefield abilities is the same idea, and a trigger on the damage event
+sees the game as the damage was dealt).
+
+The fix follows D994, which solved the same problem for "enchanted creature is dealt damage":
+- each damage record notes what was attached to its **source** as it was dealt (`sourceHosted`,
+  in `recordDamage`, before state-based actions);
+- the "deals damage to anything" events carry that as `attachments`;
+- `wasAttached` already prefers the event's answer to the board's.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- the equipped creature's noncombat ping puts no counters, and its combat damage to a blocking
+  wall puts two;
+- blocked by a 3/3, the equipped creature dies, and the Jitte still gets its two counters;
+- a counter pays for a mode (you gain 2 life) and is gone.
+
+Faults injected by script: 3 of 3 caught (`combatOnly` dropped, `sourceHosted` not recorded, and
+the combat raise not carrying it).
+
+- engine tests: 6492, all passing (on 3c56540)
+- Coverage: 16,723 to 16,730 of 31,900 cards with every line read, and 39,239 to 39,247 of 59,888 lines, against 3c56540.

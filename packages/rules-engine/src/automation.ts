@@ -4458,11 +4458,14 @@ function settle(state: GameState, before: GameState): GameState {
         dealtInCombat.set(record.source, (dealtInCombat.get(record.source) ?? 0) + record.amount);
         continue;
       }
-      next = raise(next, { kind: 'deals-damage', anything: true, amount: record.amount },
+      const hostedBy = record.sourceHosted ?? [];
+      next = raise(next, { kind: 'deals-damage', anything: true, amount: record.amount, ...(hostedBy.length === 0 ? {} : { attachments: hostedBy }) },
         (next.vanished[record.source] ?? next.instances[record.source])?.zoneSeat, record.source);
     }
     for (const [source, amount] of dealtInCombat) {
-      next = raise(next, { kind: 'deals-damage', anything: true, amount, combat: true },
+      // What was on the source as it dealt it (D844), the union over its records in this pass.
+      const hostedBy = [...new Set(landed.filter((r) => r.source === source && r.combat === true).flatMap((r) => r.sourceHosted ?? []))];
+      next = raise(next, { kind: 'deals-damage', anything: true, amount, combat: true, ...(hostedBy.length === 0 ? {} : { attachments: hostedBy }) },
         (next.vanished[source] ?? next.instances[source])?.zoneSeat, source);
     }
     /*
