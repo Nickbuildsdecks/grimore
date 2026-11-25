@@ -46234,3 +46234,37 @@ are thirteen or more creatures on the battlefield" has nowhere to go: a conditio
 cost is not a field yet. Bloom Tender and Faeburrow Elder ("for each color among permanents you
 control, add one mana of that color") make a set of colours that changes with the board, and about
 50 places read `produces` directly, so it is a change on its own.
+
+## D1242 — "Exile it instead", and something done as well: Kalitas and kin
+
+D1239's "a creature an opponent controls would die" line, with a second half the permanent's
+controller does as the creature is exiled:
+- "instead exile that card and create a 2/2 black Zombie creature token" (Kalitas);
+- "instead exile it and you gain 2 life" (The Darkness Crystal);
+- "exile it instead. When you do, create a 2/2 green Wolf creature token" (Head of the Hunt, and
+  Nemata's Saproling).
+
+The second half is read as any other effect is. It is accepted only when it aims at nothing and asks
+nothing: "When you do" is a reflexive trigger (CR 603.12) and strictly goes on the stack, and done at
+once it could only be wrong if somebody could have answered it or a choice was owed. Valentin's
+"you may pay {2}. If you do" asks one, and is refused.
+
+Not done: a creature token is not exiled by these when the line says "a creature" rather than "a
+nontoken creature". It dies as usual and nothing follows. A token has ceased to exist by the time
+the replacement is asked, so there is no exile for the second half to follow, and Head of the
+Hunt's Wolf for an opponent's token is the case this misses.
+
+Read whole now (2): Head of the Hunt, Nemata, Primeval Warden. The line is read on Kalitas and The
+Darkness Crystal, each of which has an activated ability left (Kalitas has a hand-written script).
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- An opponent's creature is exiled and leaves a Zombie; mine dies and leaves nothing.
+- "And you gain 2 life" gains 2, and "When you do, create a Wolf" makes one.
+
+Faults injected by hand: 3, all caught.
+- The second half never done.
+- The "When you do" form not read.
+- The second half run on the state before the exile.
+
+Coverage: 16,987 of 31,900 cards (+4 over D1241's 16,983), 39,603 of 59,888 lines (+8).
