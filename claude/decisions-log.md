@@ -63579,3 +63579,25 @@ Faults injected by hand: 6, all caught.
 Not covered by a test: a stolen creature (the snapshot's controller rather than the owner).
 
 Coverage: 16,969 of 31,900 cards (+15 over D1238's 16,954), 39,564 of 59,888 lines (+26).
+
+## D3012 — "Players can't gain life" and "Damage can't be prevented" as statics
+
+Erebos, God of the Dead, Leyline of Punishment, Rampaging Ferocidon, Sunspine Lynx, Havoc Festival,
+Tibalt, Rakish Instigator and Giant Cindermaw.
+
+**Readers.** "Players can't gain life." and "Your opponents can't gain life." are the D1127
+"gains no life instead" row (`lifeGainReplacement`, becomes `none`), with whose as printed. The
+rules call it a prohibition rather than a replacement (CR 119.7), but at the table they are the same:
+a gain that cannot happen gains nothing and triggers nothing, and the row already wins over every
+other life-gain replacement. "Damage can't be prevented." is a new `CardScript.damageUnpreventable`,
+which `dealDamage` checks across every seat's battlefield next to Skullcrack's turn flag. So every
+prevention is skipped, protection's included.
+
+**Tests.** A "each player gains 3 life" spell: both gain with nothing out, neither gains with
+"players" on either side, and only the controller gains with "your opponents". A red sweep leaves a
+protection-from-red Knight alive, and kills it while either player has the Leyline out. Faults
+injected by script: 4 of 4 caught.
+
+**Not counted.** An "enters or attacks" joiner was written and then removed. Every such line it
+read already read through the existing self-trigger path, and the non-self ones ("another creature
+you control of the chosen type") fail on their halves, so it gained nothing.

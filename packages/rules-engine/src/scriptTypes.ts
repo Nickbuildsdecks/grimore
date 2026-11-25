@@ -4356,6 +4356,12 @@ export interface CardScript {
    * life instead" (Erebos's kin). `whose` is the gaining player, seen from this permanent's
    * controller.
    */
+  /**
+   * "Damage can't be prevented." as a static (D3012): Leyline of Punishment, Sunspine Lynx. While the
+   * permanent is on the battlefield with its abilities, every prevention `dealDamage` would apply is
+   * skipped, the same as Skullcrack's turn.
+   */
+  readonly damageUnpreventable?: true;
   readonly lifeGainReplacement?: {
     readonly whose: 'you' | 'opponents' | 'players';
     readonly becomes: 'twice' | 'none' | 'loss' | { readonly plus: number };

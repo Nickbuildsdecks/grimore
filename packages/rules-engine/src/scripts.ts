@@ -37191,6 +37191,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   // The top of the library (D649): Courser of Kruphix, Oracle of Mul Daya.
   if (/^play with the top card of your library revealed\.?$/i.test(plain(line).trim())) return { topRevealed: true };
   if (/^you may play lands from the top of your library\.?$/i.test(plain(line).trim())) return { landsFromTop: true };
+  // "Damage can't be prevented." (D3012): see `CardScript.damageUnpreventable`.
+  if (/^damage can't be prevented\.?$/i.test(plain(line).trim())) return { damageUnpreventable: true };
   // "Your life total can't change." (D733): Platinum Emperion.
   if (/^your life total can't change\.?$/i.test(plain(line).trim())) return { lifeTotalCantChange: true };
   // The replacements on gaining life (D1127): see `CardScript.lifeGainReplacement`.
@@ -37207,6 +37209,14 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     }
     if (loss) return { lifeGainReplacement: { whose: 'opponents', becomes: 'loss' } };
     if (none !== null) return { lifeGainReplacement: { whose: /player/i.test(none[1]!) ? 'players' : 'opponents', becomes: 'none' } };
+    /*
+      "Players can't gain life." / "Your opponents can't gain life." (D3012, Erebos, Leyline of
+      Punishment, Rampaging Ferocidon): a prohibition rather than a replacement (CR 119.7), and the
+      same thing at the table, because a gain that cannot happen gains nothing and triggers
+      nothing. So it is the "gains no life" row above, which also wins over every other row.
+    */
+    const cant = /^(players|your opponents) can't gain life$/i.exec(said);
+    if (cant !== null) return { lifeGainReplacement: { whose: /^players$/i.test(cant[1]!) ? 'players' : 'opponents', becomes: 'none' } };
   }
   // "You have hexproof." / "You have shroud." (D1126): see `CardScript.controllerHas`.
   const shielded = /^you have (hexproof|shroud)\.?$/i.exec(plain(line).trim());
