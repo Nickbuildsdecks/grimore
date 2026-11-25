@@ -493,7 +493,8 @@ export function dealDamage(
     prevention below is skipped — protection's included (CR 702.16e), and a shield counter's, which
     is a prevention too (CR 122.1c) — and a redirect still applies, since it is not one.
   */
-  const unpreventable = next.damageUnpreventableThisTurn === true || next.damageUnpreventableNow === true;
+  const unpreventable = next.damageUnpreventableThisTurn === true || next.damageUnpreventableNow === true
+    || preventionSwitchedOff(next);
   // Protection from the source's colour prevents the damage entirely (CR 702.16b). Asked before
   // anything is marked, because prevention is not something that can be undone afterwards.
   if (!unpreventable && target.kind === 'card' && protectedFrom(next, target.id, opts.source)) return next;
@@ -1277,6 +1278,20 @@ export function scriptOfCard(def: CardDef | undefined): CardScript | undefined {
  * Whether a player's life total can't change right now (D733): Teferi's Protection's effect, or a
  * permanent of theirs with `CardScript.lifeTotalCantChange` (Platinum Emperion).
  */
+/**
+ * "Damage can't be prevented." printed on a permanent (D3012, `CardScript.damageUnpreventable`):
+ * Leyline of Punishment, Sunspine Lynx. Every seat's battlefield, since it says all damage.
+ */
+function preventionSwitchedOff(state: GameState): boolean {
+  if (scriptLookup === null) return false;
+  const lookup = scriptLookup;
+  return state.seats.some((row) => !row.eliminated && listAt(state, zoneKey(row.index, 'battlefield')).some((id) => {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
+    return lookup(state.cardDefs[inst.defKey])?.damageUnpreventable === true;
+  }));
+}
+
 export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
   if (state.effects.some((e) => e.lifeLocked === true && e.scope.kind === 'seat' && e.scope.seat === seat)) return true;
   if (scriptLookup === null) return false;

@@ -8117,6 +8117,9 @@ describe('deck coverage', () => {
       'script opponentsMaxHandSizeReduction',
       // D3009: Platinum Angel; driven by "at 0 life we are still in". No pool deck plays one.
       'script cantLose',
+      // D3012: Leyline of Punishment, Sunspine Lynx; driven by "protection prevents a red sweep". No pool
+      // deck plays one.
+      'script damageUnpreventable',
     ]);
 
     const declared = [
@@ -44381,6 +44384,53 @@ describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   it('thirty artifacts at our upkeep win; twenty-nine do not', () => {
     expect(upkeep(30)).toEqual([30, true]);
     expect(upkeep(29)).toEqual([29, false]);
+  });
+});
+describe('"Players can\'t gain life" and "Damage can\'t be prevented" as statics (D3012)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Ferocidon', 'Creature — Dinosaur', "Players can't gain life.", { power: '3', toughness: '3' }),
+    R('Test Erebos', 'Legendary Enchantment', "Your opponents can't gain life."),
+    R('Test Leyline', 'Enchantment', "Damage can't be prevented."),
+    R('Test Salve', 'Instant', 'Each player gains 3 life.', { colors: ['W'] }),
+    R('Test Knight', 'Creature — Knight', 'Protection from red', { colors: ['W'], power: '2', toughness: '2' }),
+    R('Test Pyre', 'Instant', 'Test Pyre deals 2 damage to each creature.'),
+  ];
+  const deck = customDeck({ id: 'd3012', name: 'NoGain', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[], hand: string[]) => advanceTo(arena({
+    decks: { 0: 'd3012', 1: 'd3012' }, deckSpecs: { d3012: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+  const cast = (s0: GameState, name: string, targets?: unknown[]) => {
+    let s = drain(passBoth(apply(s0, { type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', name), ...(targets === undefined ? {} : { targets }) } as Action)));
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('no one gains with "players"; only the controller gains with "your opponents"; both gain without', () => {
+    const gains = (mine: string[], theirs: string[]) => { const s = cast(table(mine, theirs, ['Test Salve']), 'Test Salve'); return [life(s, 0), life(s, 1)]; };
+    expect(gains([], [])).toEqual([23, 23]);
+    expect(gains(['Test Ferocidon'], [])).toEqual([20, 20]);
+    expect(gains([], ['Test Ferocidon'])).toEqual([20, 20]);
+    expect(gains(['Test Erebos'], [])).toEqual([23, 20]);
+    expect(gains([], ['Test Erebos'])).toEqual([20, 23]);
+  });
+
+  it('protection prevents a red sweep, and does not while either player has the Leyline out', () => {
+    const shot = (mine: string[], theirs: string[]) => {
+      const s = cast(table(mine, ['Test Knight', ...theirs], ['Test Pyre']), 'Test Pyre');
+      return namesIn(s, 1, 'battlefield').includes('Test Knight');
+    };
+    expect(shot([], [])).toBe(true);
+    expect(shot(['Test Leyline'], [])).toBe(false);
+    expect(shot([], ['Test Leyline'])).toBe(false);
   });
 });
 
