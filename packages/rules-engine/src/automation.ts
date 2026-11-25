@@ -850,6 +850,8 @@ function advanceStep(state: GameState): GameState {
       prints one; the way a trigger really gets into a cleanup step is a discard to hand size, and
       `discard` and `finishCleanup` are where that rule lives (D568).
     */
+    // D885: how many combat phases have begun this turn, for "if it's the first combat phase of the turn".
+    if (step === 'begin-combat') next = { ...next, combatsThisTurn: (next.combatsThisTurn ?? 0) + 1 };
     next = raise(next, { kind: 'step', step }, next.activeSeat);
     // And anything that was scheduled for this step, after the step's own turn-based action: an
     // "at end of combat" ability goes on the stack in the end-of-combat step and is responded to
@@ -1294,6 +1296,8 @@ export function endTurnCleanup(state: GameState): GameState {
     // And D564's four: who attacked, what died, what left and who gained life.
     attackedThisTurn: {},
     attackersThisTurn: [],
+    // And the combat phases begun (D885).
+    combatsThisTurn: 0,
     // And which permanents were dealt damage (D759).
     permanentsDamagedThisTurn: [],
     // And who dealt combat damage to a player (D935), prowl's and freerunning's fact.
@@ -2433,7 +2437,9 @@ function fireTrigger(
         || event.kind === 'discards'
         // And the permanent a board watcher saw targeted (D1021), for "that creature gets +3/+3".
         || (event.kind === 'targeted' && trigger.on.kind === 'targeted'
-          && (trigger.on.who === 'any' || trigger.on.who === 'another')))
+          && (trigger.on.who === 'any' || trigger.on.who === 'another'))
+        // And the permanent that untapped or tapped (D884), for "that permanent's controller".
+        || event.kind === 'becomes-untapped' || event.kind === 'becomes-tapped')
       ? {}
       : { subject }),
     // The attacker a block was against, for "that creature". Its own field rather than the
@@ -2695,7 +2701,9 @@ function raise(
       // And the card that was cycled (D567), and the permanent that was sacrificed (D570).
       || event.kind === 'cycles' || event.kind === 'sacrifices'
       // And the card that was discarded (D719), and the land that was played (D835).
-      || event.kind === 'discards' || event.kind === 'land-played')) {
+      || event.kind === 'discards' || event.kind === 'land-played'
+      // And the permanent that untapped or tapped (D884): Mesmeric Orb's "that permanent's controller".
+      || event.kind === 'becomes-untapped' || event.kind === 'becomes-tapped')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.

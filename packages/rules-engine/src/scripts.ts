@@ -19986,6 +19986,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever one or more \\+1/\\+1 counters are put on ${self}, (.+)$`, 'i'),
     on: [{ kind: 'counters-put', counter: '+1/+1' }],
   },
+  /*
+    "Whenever you put one or more +1/+1 counters on this creature" (D881, Exemplar of Light): the same
+    event. The event does not record who put the counters, so an opponent's effect putting them on it
+    would trigger it too; no common card does that to another player's creature.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever you put one or more \\+1/\\+1 counters on ${self}, (.+)$`, 'i'),
+    on: [{ kind: 'counters-put', counter: '+1/+1' }],
+  },
   {
     prologue: () => /^Whenever one or more \+1\/\+1 counters are put on (another )(creature|permanent) you control, (?<clause>.+)$/i,
     from: (matched) => [{
@@ -23184,6 +23193,27 @@ function eventRelativeEffect(
     reader's sentences about the same player, each read alone, the second after the first. Only when
     the second asks nothing, so the first's questions are the composition's.
   */
+  /*
+    "That permanent's controller mills a card" (D884, Mesmeric Orb), and "… loses N life": the player
+    who controls the event's permanent, or controlled it as it last was. Only on an event that has a
+    permanent as its subject.
+  */
+  const theirController = /^that (?:permanent|creature)'s controller (mills (a card|\w+ cards)|loses (\d+) life)$/i.exec(text);
+  if (theirController !== null && events.length > 0
+    && events.every((one) => ['becomes-untapped', 'becomes-tapped', 'etb', 'dies', 'attacks'].includes(one.kind))) {
+    const millCount = theirController[2] === undefined ? null
+      : /^a card$/i.test(theirController[2]) ? 1 : WORD_NUMBERS[theirController[2].split(' ')[0]!.toLowerCase()] ?? null;
+    const lifeLost = theirController[3] === undefined ? null : Number(theirController[3]);
+    if (millCount !== null || lifeLost !== null) {
+      return {
+        effect: (c) => {
+          const subject = c.subject === undefined ? undefined : c.state.instances[c.subject] ?? c.state.vanished[c.subject];
+          if (subject === undefined) return c.state;
+          return millCount !== null ? mill(c.state, subject.zoneSeat, millCount) : loseLife(c.state, subject.zoneSeat, lifeLost!);
+        },
+      };
+    }
+  }
   const bothHalves = aboutAPlayer || aboutTheHitPlayer
     ? /^that player (.+?) and ((?:loses|gains|draws|discards|sacrifices|mills) .+)$/i.exec(text) : null;
   if (bothHalves !== null) {
@@ -24132,7 +24162,9 @@ function triggerRestriction(text: string): { readonly rest: string; readonly onc
       sentence's flag does (`fireTrigger` spends it when the trigger fires). Only where no "if"
       follows: a condition would let a later event fire it after the first one did not.
     */
-    const first = /^((?:When|Whenever) [^,]*?) for the first time (?:each|this) turn, (?!if\b)(.+)$/i.exec(text);
+    // The event may run past a comma in the card's own name (D885, "Whenever Aurelia, the Warleader
+    // attacks for the first time each turn"), so it is anything up to the phrase, not to a comma.
+    const first = /^((?:When|Whenever) .*?) for the first time (?:each|this) turn, (?!if\b)(.+)$/i.exec(text);
     if (first !== null) return { rest: `${first[1]!}, ${first[2]!}`, onceEachTurn: true };
     return { rest: text };
   }
@@ -26195,6 +26227,30 @@ const dividesAQuantity = (read: ReadEffect): boolean =>
 
 function damageEffect(clause: string, name: string): ReadEffect | null {
   const self = selfRef(name);
+  /*
+    "~ deals 4 damage to any target and 3 damage to each of up to two other targets" (D887, Drakuseth,
+    Maw of Flames' attack), and "~ deals N damage to each of up to two targets". Each target is its own
+    (the engine keeps the targets of one object distinct), the second group optional.
+  */
+  const spread = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (?:any target and (\\d+) damage to )?each of up to (one|two|three) (other )?targets$`, 'i')
+    .exec(clause.trim().replace(/\.$/, ''));
+  // The conjunction is split before this reader sees it, so "… and 3 damage to each of up to two other
+  // targets" arrives as its own clause: "other" then means other than the first clause's target, which
+  // the engine's one-object-one-target rule keeps.
+  if (spread !== null) {
+    const upTo = WORD_NUMBERS[spread[3]!.toLowerCase()]!;
+    const first = spread[2] === undefined ? null : Number(spread[1]);
+    const each = Number(spread[2] ?? spread[1]);
+    const group: TargetSpec = { kind: 'any', description: `each of up to ${spread[3]!.toLowerCase()} ${first === null ? '' : 'other '}targets`, count: upTo, optional: true };
+    return {
+      targets: first === null ? [group] : [ANY_TARGET, group],
+      effect: (c) => c.targets.reduce((state, target, i) => {
+        if (target.kind !== 'card' && target.kind !== 'player') return state;
+        const amount = first !== null && i === 0 ? first : each;
+        return dealDamage(state, target, amount, { controller: c.controller, source: c.source });
+      }, c.state),
+    };
+  }
 
   /*
     Damage divided as you choose, announced at cast time (#119): "Arc Lightning deals 3 damage
@@ -28682,15 +28738,20 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     "Target nonland permanent becomes an artifact in addition to its other types until end of turn"
     (D851, Liquimetal Torque and Liquimetal Coating): layer 4's `addTypes`, on any permanent.
   */
-  const typed = /^(target .+?) becomes an? (artifact|enchantment) in addition to its other types until end of turn$/i.exec(text);
+  // And a creature type, for good when no duration is printed (D883, Tyrite Sanctum's "becomes a God").
+  const typed = /^(target .+?) becomes an? (artifact|enchantment|[a-z]+) in addition to its other types( until end of turn)?$/i.exec(text);
   if (typed !== null) {
     const spec = targetSpecFrom(typed[1]!, false);
-    const type = typed[2]!.charAt(0).toUpperCase() + typed[2]!.slice(1).toLowerCase();
-    if (spec !== null && pointsAtAPermanent(spec)) {
+    const word = typed[2]!.charAt(0).toUpperCase() + typed[2]!.slice(1).toLowerCase();
+    const cardType = /^(artifact|enchantment)$/i.test(typed[2]!);
+    const lasting = typed[3] === undefined;
+    if (spec !== null && pointsAtAPermanent(spec) && (cardType || isCreatureType(word))) {
+      const opts: PumpOptions = cardType ? { addTypes: [word] } : { addSubtypes: [word] };
       return {
         targets: [spec],
-        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], c.source, c.controller, { addTypes: [type] })),
-        spellFlags: { expiresAtEndOfTurn: true },
+        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], lasting ? id : c.source, c.controller,
+          { ...opts, ...(lasting ? { duration: 'permanent' as const } : {}) })),
+        ...(lasting ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
       };
     }
   }
@@ -31108,6 +31169,9 @@ function clausesOf(line: string): readonly string[] {
       Overwhelming Stampede): the duration moved to where the pump readers look for it, before the
       count. Only with a count; the plain "Until end of turn, …" sentence already reads.
     */
+    // Karlach (D885): "untap all attacking creatures. They gain first strike until end of turn": "they"
+    // are the attacking creatures just untapped.
+    .replace(/untap all attacking creatures\.\s+They gain ([^.]+?) until end of turn/gi, (_m, kw: string) => `untap all attacking creatures. Attacking creatures gain ${kw} until end of turn`)
     .replace(/(^|\.\s+)Until end of turn, ([^.]+?), (where X is [^.]+)/gi, (_m, lead: string, body: string, count: string) => `${lead}${body.charAt(0).toUpperCase()}${body.slice(1)} until end of turn, ${count}`)
     // The Enduring cycle (D837): "It's an enchantment" is about the card the return just brought back.
     .replace(/(return (?:it|that card) to the battlefield(?: tapped)? under its owner's control)\.\s+It's an enchantment\b/gi, '$1 as an enchantment')
@@ -33070,6 +33134,42 @@ function composeEffectsAsPrinted(
     // The edict with a forfeit (D858): see `edictOrDiscard`.
     const forfeit = edictOrDiscard(clause, rest[at + 1]);
     if (forfeit !== null) { parts.push(forfeit); at++; continue; }
+    /*
+      Ram Through (D886): "Target creature you control deals damage equal to its power to target creature
+      you don't control. If the creature you control has trample, excess damage is dealt to that
+      creature's controller instead." Lethal damage to the creature is what it needs to die (toughness
+      less damage already marked, or 1 from a deathtouch source, CR 702.2c), and the rest goes to its
+      controller, only when the biter has trample as it resolves.
+    */
+    const ramThrough = /^target creature you control deals damage equal to its power to (target creature you don't control|target creature an opponent controls)$/i.exec(clause.trim().replace(/\.$/, ''));
+    if (ramThrough !== null && /^if the creature you control has trample, excess damage is dealt to that creature's controller instead$/i.test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      const biter = targetSpecFrom('target creature you control', true);
+      const bitten = targetSpecFrom(ramThrough[1]!, false);
+      if (biter !== null && bitten !== null) {
+        parts.push({
+          targets: [biter, bitten],
+          effect: (c) => {
+            const [first, second] = c.targets;
+            if (first?.kind !== 'card' || second?.kind !== 'card') return c.state;
+            const mine = c.state.instances[first.id];
+            const theirs = c.state.instances[second.id];
+            if (mine === undefined || theirs === undefined || mine.zone !== 'battlefield' || theirs.zone !== 'battlefield') return c.state;
+            const ch = characteristicsOf(c.state, mine);
+            const power = ch.power;
+            if (power <= 0) return c.state;
+            const lethal = ch.keywords.has('deathtouch') ? 1 : Math.max(0, characteristicsOf(c.state, theirs).toughness - (theirs.damage ?? 0));
+            const excess = ch.keywords.has('trample') ? Math.max(0, power - lethal) : 0;
+            const toCreature = power - excess;
+            const owner = theirs.zoneSeat;
+            const hit = dealDamage(c.state, second, toCreature, { controller: c.controller, source: first.id });
+            return excess > 0 ? dealDamage(hit, { kind: 'player', seat: owner }, excess, { controller: c.controller, source: first.id }) : hit;
+          },
+          spellFlags: { removesACreature: true },
+        });
+        at++;
+        continue;
+      }
+    }
     // A discard round paid back in cards (D876): see `discardThenDraw`.
     const syphon = discardThenDraw(clause, rest[at + 1]);
     if (syphon !== null) { parts.push(syphon); at++; continue; }
@@ -36103,6 +36203,7 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
   if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
   if (/^your library has no cards in it$/i.test(text)) return { kind: 'controller-library', atMost: 0 };
+  if (/^it's the first combat phase of the turn$/i.test(text)) return { kind: 'first-combat-phase' };
   const hand = /^you have (\S+) or more cards in hand$/i.exec(text);
   if (hand !== null) {
     const atLeast = n(hand[1]!);
@@ -38176,6 +38277,19 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
 }
 
 function lineScriptForWhole(line: string, name: string): Partial<CardScript> | null {
+  /*
+    "When ~ enters and whenever you cast a spell with mana value 5 or greater, draw a card" (D882, Up the
+    Beanstalk): two triggers with one effect. Each half read as its own line; both must be triggers
+    and nothing else.
+  */
+  const twoTriggers = /^(When .+?) and (whenever .+?), (.+)$/i.exec(plain(line).trim());
+  if (twoTriggers !== null && !/,/.test(twoTriggers[1]!)) {
+    const first = lineScriptFor(`${twoTriggers[1]!}, ${twoTriggers[3]!}`, name);
+    const second = lineScriptFor(`${twoTriggers[2]!.charAt(0).toUpperCase()}${twoTriggers[2]!.slice(1)}, ${twoTriggers[3]!}`, name);
+    const onlyTriggers = (read: Partial<CardScript> | null) => read !== null && Object.keys(read).every((key) => key === 'triggers')
+      && (read.triggers ?? []).length === 1;
+    if (onlyTriggers(first) && onlyTriggers(second)) return { triggers: [...first!.triggers!, ...second!.triggers!] };
+  }
   /*
     Two tribes in one lord (D828): "Skeletons you control and other Zombies you control get +1/+1
     and have deathtouch" (Death Baron), "Goblins you control and Elementals you control have

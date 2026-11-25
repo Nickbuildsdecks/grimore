@@ -43001,6 +43001,221 @@ describe('three cost lines on one card, and Reality Shift (D1229)', () => {
   });
 });
 
+describe('"whenever you put counters on this creature", once a turn: Exemplar of Light (D881)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Exemplar', 'Creature — Angel', 'Flying\nWhenever you put one or more +1/+1 counters on this creature, draw a card. This ability triggers only once each turn.', { power: '3', toughness: '3' }),
+    R('Test Growth', 'Instant', 'Put a +1/+1 counter on target creature.', { colors: ['G'] }),
+  ];
+  const deck = customDeck({ id: 'd881', name: 'Exemplar', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 52 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two counters in one turn draw one card', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd881', 1: 'd881' }, deckSpecs: { d881: deck.deck },
+      hands: { 0: ['Test Growth', 'Test Growth'] }, battlefield: { 0: ['Test Exemplar'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const exemplar = find(s, 0, 'battlefield', 'Test Exemplar');
+    const hand = ids(s, 0, 'hand').length;
+    for (let i = 0; i < 2; i++) {
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Growth'), targets: [{ kind: 'card', id: exemplar }] })));
+      for (let j = 0; j < 4 && s.stackOrder.length > 0; j++) s = drain(passBoth(s));
+    }
+    expect(s.instances[exemplar]!.counters['+1/+1']).toBe(2);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 2 + 1);
+  });
+});
+
+describe('two triggers with one effect: Up the Beanstalk (D882)', () => {
+  const R = (name: string, type: string, text: string, cmc: number, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Beanstalk', 'Enchantment', 'When Test Beanstalk enters and whenever you cast a spell with mana value 5 or greater, draw a card.', 1),
+    R('Test Giant', 'Creature — Giant', '', 5, { power: '5', toughness: '5' }),
+    R('Test Ogre', 'Creature — Ogre', '', 4, { power: '4', toughness: '4' }),
+  ];
+  const deck = customDeck({ id: 'd882', name: 'Beanstalk', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a card as it enters, a card for the 5-drop, none for the 4-drop', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd882', 1: 'd882' }, deckSpecs: { d882: deck.deck },
+      hands: { 0: ['Test Beanstalk', 'Test Giant', 'Test Ogre'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const hand = () => ids(s, 0, 'hand').length;
+    const cast = (n: string) => {
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', n) })));
+      for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    };
+    let before = hand(); cast('Test Beanstalk'); expect(hand()).toBe(before - 1 + 1);
+    before = hand(); cast('Test Giant'); expect(hand()).toBe(before - 1 + 1);
+    before = hand(); cast('Test Ogre'); expect(hand()).toBe(before - 1);
+  });
+});
+
+describe('a creature type for good: Tyrite Sanctum (D883)', () => {
+  const ROWS = [
+    { name: 'Test Sanctum', type_line: 'Land', oracle_text: '{T}: Add {C}.\n{2}, {T}: Target legendary creature becomes a God in addition to its other types. Put a +1/+1 counter on it.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Hero', type_line: 'Legendary Creature — Human Warrior', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd883', name: 'Sanctum', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the legendary Hero becomes a God with a counter, still a God next turn; the Bear is refused', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd883', 1: 'd883' }, deckSpecs: { d883: deck.deck },
+      battlefield: { 0: ['Test Sanctum', 'Test Hero', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 2 } } };
+    const sanctum = find(s, 0, 'battlefield', 'Test Sanctum');
+    const hero = find(s, 0, 'battlefield', 'Test Hero');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: sanctum, abilityIndex: 1, targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }] })).toThrow();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: sanctum, abilityIndex: 1, targets: [{ kind: 'card', id: hero }] })));
+    expect(characteristicsOf(s, s.instances[hero]!).typeLine.subtypes).toContain('God');
+    expect(s.instances[hero]!.counters['+1/+1']).toBe(1);
+    s = nextTurn(nextTurn(s));
+    expect(characteristicsOf(s, s.instances[hero]!).typeLine.subtypes).toContain('God');
+  });
+});
+
+describe('"that permanent\'s controller mills a card": Mesmeric Orb (D884)', () => {
+  const ROWS = [
+    { name: 'Test Orb', type_line: 'Artifact', oracle_text: "Whenever a permanent becomes untapped, that permanent's controller mills a card.", mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd884', name: 'Orb', entries: [{ name: 'Test Orb', count: 4 }, { name: 'Island', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our two tapped lands untap in our untap step: we mill two, the opponent none', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd884', 1: 'd884' }, deckSpecs: { d884: deck.deck },
+      battlefield: { 0: ['Island', 'Island'], 1: ['Test Orb', 'Island'] }, turn: 3, firstSeat: 1,
+    } as never), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } } };
+    const graves = () => [ids(s, 0, 'graveyard').length, ids(s, 1, 'graveyard').length];
+    const before = graves();
+    s = drain(nextTurn(s), 20);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 20);
+    expect(s.activeSeat).toBe(0);
+    const after = graves();
+    expect([after[0]! - before[0]!, after[1]! - before[1]!]).toEqual([2, 0]);
+  });
+});
+
+describe('"if it\'s the first combat phase of the turn": Karlach, Fury of Avernus (D885)', () => {
+  const ROWS = [
+    { name: 'Test Karlach', type_line: 'Legendary Creature — Tiefling Barbarian', oracle_text: "Whenever you attack, if it's the first combat phase of the turn, untap all attacking creatures. They gain first strike until end of turn. After this phase, there is an additional combat phase.", mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '5', toughness: '4' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd885', name: 'Karlach', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 54 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the first attack untaps the attackers with first strike and adds a combat; the second attack stays tapped', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd885', 1: 'd885' }, deckSpecs: { d885: deck.deck },
+      battlefield: { 0: ['Test Karlach', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const karlach = find(s, 0, 'battlefield', 'Test Karlach');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [karlach, bear].map((attacker) => ({ attacker, defender: 1 as SeatIndex })) });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect([s.instances[karlach]!.tapped, s.instances[bear]!.tapped]).toEqual([false, false]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('first strike')).toBe(true);
+    // Through the first combat's damage and into the additional combat's declaration.
+    for (let i = 0; i < 20 && !(s.step === 'declare-attackers' && (s.combatsThisTurn ?? 0) === 2); i++) s = drain(passBoth(s), 10);
+    expect([s.step, s.combatsThisTurn, life(s, 1)]).toEqual(['declare-attackers', 2, 13]);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 as SeatIndex }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect(s.instances[bear]!.tapped).toBe(true);
+  });
+});
+
+describe('a bite whose excess tramples over: Ram Through (D886)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Ram', 'Instant', "Target creature you control deals damage equal to its power to target creature you don't control. If the creature you control has trample, excess damage is dealt to that creature's controller instead."),
+    R('Test Wurm', 'Creature — Wurm', 'Trample', { power: '5', toughness: '5' }),
+    R('Test Ogre', 'Creature — Ogre', '', { power: '5', toughness: '5' }),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd886', name: 'Ram', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const ram = (mine: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd886', 1: 'd886' }, deckSpecs: { d886: deck.deck },
+      hands: { 0: ['Test Ram'] }, battlefield: { 0: [mine], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ram'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', mine) }, { kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }] })));
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 5/5 trampler kills the 2/2 and 3 goes to its controller', () => {
+    const s = ram('Test Wurm');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(life(s, 1)).toBe(17);
+  });
+
+  it('without trample, all 5 go to the Bear and none to the player', () => {
+    const s = ram('Test Ogre');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(life(s, 1)).toBe(20);
+  });
+});
+
+describe('4 to one target and 3 to each of up to two others: Drakuseth, Maw of Flames (D887)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Breath', 'Sorcery', 'Test Breath deals 4 damage to any target and 3 damage to each of up to two other targets.'),
+    R('Test Drakuseth', 'Legendary Creature — Dragon', 'Flying\nWhenever Test Drakuseth attacks, it deals 4 damage to any target and 3 damage to each of up to two other targets.', { power: '7', toughness: '7' }),
+    R('Test Wall', 'Creature — Wall', 'Defender', { colors: ['W'], power: '0', toughness: '9' }),
+  ];
+  const deck = customDeck({ id: 'd887', name: 'Breath', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }], data: ROWS as never[] });
+
+  it('reads both', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('4 to the opponent and 3 to each of their two Walls; one other target is enough', () => {
+    const table = () => advanceTo(arena({
+      decks: { 0: 'd887', 1: 'd887' }, deckSpecs: { d887: deck.deck },
+      hands: { 0: ['Test Breath'] }, battlefield: { 1: ['Test Wall', 'Test Wall'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    let s = table();
+    const [a, b] = ids(s, 1, 'battlefield');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Breath'), targets: [{ kind: 'player', seat: 1 }, { kind: 'card', id: a! }, { kind: 'card', id: b! }] })));
+    expect([life(s, 1), s.instances[a!]!.damage, s.instances[b!]!.damage]).toEqual([16, 3, 3]);
+    let t = table();
+    const [c] = ids(t, 1, 'battlefield');
+    t = drain(passBoth(apply(t, { type: 'auto:cast', by: 0, card: find(t, 0, 'hand', 'Test Breath'), targets: [{ kind: 'card', id: c! }, { kind: 'player', seat: 1 }] })));
+    expect([t.instances[c!]!.damage, life(t, 1)]).toEqual([4, 17]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
