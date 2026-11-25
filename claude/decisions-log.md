@@ -61763,3 +61763,35 @@ fallback off, and the "you" verbs off).
 
 - engine tests: 6477, all passing (on 4e24061)
 - Coverage: 16,670 to 16,690 of 31,900 cards with every line read, and 39,139 to 39,165 of 59,888 lines, against 4e24061.
+
+## D1220 — "that spell's controller" on a targeted trigger, and "a spell or ability you control"
+
+Bonecrusher Giant: "Whenever ~ becomes the target of a spell, ~ deals 2 damage to that spell's
+controller." The `targeted` event is raised with the targeting object's controller as its actor, so
+on a trigger whose every event is `targeted` the possessive "that spell's controller" (and "that
+spell or ability's controller") is the acting player, read through the same referent swap as "that
+player" on a cast or discard trigger. When the spell was the Giant's own controller's, the trigger
+carries no actor (it drops the watcher's own seat) and the damage goes to that controller, which is
+what the card does. On any other event the possessive still names nobody and stays unread.
+
+And the self-named targeted prologue with "a spell or ability you control" (`by: 'you'`), which
+D1117's "for the first time each turn" leaves behind on the Valiant cards that name themselves.
+Beta Ray Bill, Flowerfoot Swordmaster and Whiskervale Forerunner now read their trigger and wait on
+their effects.
+
+Read whole now (1): Bonecrusher Giant.
+
+**Tests.** 5 engine tests:
+- Every test card reads whole; the possessive on an attack trigger stays unread.
+- An opponent's spell aimed at the Giant: the opponent takes 2.
+- Its controller's own spell: the controller takes 2.
+- "That spell or ability's controller" reads the same player.
+- Valiant: two of its controller's spells in a turn give one counter; an opponent's spell gives none.
+
+Faults injected by hand: 4, all caught.
+- The damaged player always the trigger's controller.
+- `by: 'you'` widened to anybody.
+- The possessive offered on every event, not only `targeted`.
+- The once-a-turn flag dropped from "for the first time each turn".
+
+Coverage: 16,714 of 31,900 cards (+30 over D1219's 16,684), 39,190 of 59,888 lines (+37).
