@@ -32417,6 +32417,41 @@ function copyTargetSpell(clauses: readonly string[]): ReadEffect | null {
 /** Set while `composeEffects` retries with the subject distributed (D842), so it retries once. */
 let distributing = 0;
 
+/**
+ * A clause about **every** object an earlier clause aimed at (D1223): "those creatures", "they" as
+ * its subject, or "them" as its object. The clause is read with "target creature" in the pronoun's
+ * place (the verb made singular to agree), which must ask for exactly that one target and nothing
+ * else, and its effect is then run once for each chosen object with that object as its target.
+ * Nothing new is targeted: the objects are the ones the earlier clause chose. Refused where the rest
+ * of the clause has a pronoun of its own, which could mean either the group or one of them.
+ */
+const PLURAL_VERBS: Readonly<Record<string, string>> = {
+  gain: 'gains', get: 'gets', have: 'has', lose: 'loses', deal: 'deals', become: 'becomes',
+  "can't": "can't", 'can\u2019t': 'can\u2019t', fight: 'fights', attack: 'attacks', block: 'blocks',
+};
+function pluralReferent(
+  clause: string, kind: 'creature' | 'permanent', reader: (text: string) => ReadEffect | null,
+): ReadEffect | null {
+  const text = clause.trim().replace(/\.$/, '');
+  const one = `target ${kind}`;
+  const subject = /^(?:those (?:creatures|permanents)|they) (\S+)(.*)$/i.exec(text);
+  const object = /^(goad|tap|untap|exile|destroy) (?:them|those (?:creatures|permanents))$/i.exec(text);
+  const verb = subject === null ? undefined : PLURAL_VERBS[subject[1]!.toLowerCase()];
+  const swapped = verb !== undefined ? `${one} ${verb}${subject![2]!}`
+    : object !== null ? `${object[1]!} ${one}` : null;
+  if (swapped === null || /\b(?:they|them|their|those|it|its)\b/i.test(subject?.[2] ?? '')) return null;
+  const read = reader(swapped);
+  const specs = read?.targets ?? [];
+  if (read === null || specs.length !== 1 || specs[0]!.kind !== kind || (specs[0]!.count ?? 1) !== 1) return null;
+  if ((read.decisions ?? []).length > 0 || read.beforeDecisions !== undefined || read.immediate !== undefined) return null;
+  return {
+    effect: (c) => cardTargets(c).reduce((state, id) => {
+      const target: Target = { kind: 'card', id };
+      return read.effect({ ...c, state, targets: [target], targetSlots: [target] });
+    }, c.state),
+  };
+}
+
 function composeEffects(
   printedClauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -32718,6 +32753,22 @@ function composeEffectsAsPrinted(
         .test(clause.trim())) {
       parts.push({ effect: (c) => foldCardTargets(c, freezeNextUntap) });
       continue;
+    }
+    /*
+      **The plural referent** (D1223): "~ deals 1 damage to each of up to two target creatures. Those
+      creatures can't block this turn." (Sparkmage's Gambit, Wrap in Flames), "Up to three target
+      creatures can't block this turn. Goad them." (Coronation of Chaos). The freeze above for any
+      clause: read once with one target in the pronoun's place, then done to every object the one
+      earlier targeting clause chose. See `pluralReferent`.
+    */
+    if (aimed !== null && (aimed.kind === 'creature' || aimed.kind === 'permanent')
+      && (aimed.count ?? 1) > 1
+      && parts.filter((part) => part.targets !== undefined).length === 1) {
+      const each = pluralReferent(clause, aimed.kind, (swapped) => readEffect(swapped, name, where));
+      if (each !== null) {
+        parts.push(each);
+        continue;
+      }
     }
     const offered = aimed === null ? [] : REFERENT_PRONOUNS.filter(
       ([, kind, supply]) => (supply === 'controller'

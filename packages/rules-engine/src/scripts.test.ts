@@ -41199,6 +41199,62 @@ describe('"when that creature dies this turn" (D1222)', () => {
   });
 });
 
+describe('"those creatures", "they" and "them" after a clause that aimed at several (D1223)', () => {
+  const I = (name: string, text: string) => ({ name, type_line: 'Instant', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' });
+  const ROWS = [
+    I('Test Gambit', 'Test Gambit deals 1 damage to each of up to two target creatures. Those creatures get -2/-0 until end of turn.'),
+    I('Test Rally', 'Up to two target creatures each get +1/+0 until end of turn. They gain flying until end of turn.'),
+    I('Test Crown', 'Up to three target creatures can\'t block this turn. Goad them.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '4', toughness: '4' },
+    { name: 'Test Ox', type_line: 'Creature — Ox', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({ id: 'd1223', name: 'Plurals', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 42 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const goadedBy = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).goadedBy;
+  /** Seat 1 holds a Bear, a Giant and an Ox; seat 0 casts `card` at the named ones. */
+  const castAt = (card: string, at: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1223', 1: 'd1223' }, deckSpecs: { d1223: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: ['Mountain'], 1: ['Test Bear', 'Test Giant', 'Test Ox'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const t = settle(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: at.map((name) => ({ kind: 'card', id: find(s, 1, 'battlefield', name) })),
+    } as Action));
+    return { t, id: (name: string) => find(t, 1, 'battlefield', name) };
+  };
+
+  it('reads whole; a pronoun of its own in the rest stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const mixed = compileCard(I('Test Mixed', 'Up to two target creatures each get +1/+0 until end of turn. They gain flying until their controller\'s next turn.') as never);
+    expect(mixed.ok && mixed.unread.length).toBe(1);
+  });
+
+  it('"those creatures" is each of the two chosen, and not the third', () => {
+    const { t, id } = castAt('Test Gambit', ['Test Giant', 'Test Ox']);
+    expect(power(t, id('Test Giant'))).toBe(2);
+    expect(power(t, id('Test Ox'))).toBe(1);
+    expect(power(t, id('Test Bear'))).toBe(2);
+  });
+
+  it('"they gain flying": both chosen, after their own pump', () => {
+    const { t, id } = castAt('Test Rally', ['Test Bear', 'Test Ox']);
+    expect(power(t, id('Test Bear'))).toBe(3);
+    expect(characteristicsOf(t, t.instances[id('Test Bear')]!).keywords).toContain('flying');
+    expect(characteristicsOf(t, t.instances[id('Test Ox')]!).keywords).toContain('flying');
+    expect(characteristicsOf(t, t.instances[id('Test Giant')]!).keywords).not.toContain('flying');
+  });
+
+  it('"goad them": every one chosen, with one target or three', () => {
+    const three = castAt('Test Crown', ['Test Bear', 'Test Giant', 'Test Ox']);
+    for (const name of ['Test Bear', 'Test Giant', 'Test Ox']) expect(goadedBy(three.t, three.id(name))).toEqual([0]);
+    const one = castAt('Test Crown', ['Test Giant']);
+    expect(goadedBy(one.t, one.id('Test Giant'))).toEqual([0]);
+    expect(goadedBy(one.t, one.id('Test Bear'))).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
