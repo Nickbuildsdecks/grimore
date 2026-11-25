@@ -63412,3 +63412,26 @@ Faults injected by hand: 5, all caught.
 - The answer not kept.
 
 Coverage: 16,951 of 31,900 cards (+2 over D1236's 16,949), 39,535 of 59,888 lines (+19).
+
+## D1238 — "Spells with the chosen name can't be cast"
+
+Meddling Mage, Nevermore and Voidstone Gargoyle, on D1237's chosen name. A casting limit beside the
+others (D788), `chosen-name`: the limits in play are now read off each permanent rather than off its
+card, so each carries the name that permanent chose, and the spell being cast is checked against it
+by name. The bot, for a name chosen to stop spells, names the dearest nonland card an opponent has
+shown in a graveyard or on the battlefield, where Pithing Needle's default names a permanent with an
+activated ability.
+
+Read whole now (3): Meddling Mage, Nevermore, Voidstone Gargoyle.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- With the name chosen, that spell is refused to the opponent and another spell is not.
+- The bot names the opponent's dearest card shown, not the first name in the list.
+
+Faults injected by hand: 3, all caught.
+- The name never checked.
+- The spell's name not passed to the check.
+- The bot's Pithing Needle answer used for a spell-stopping name.
+
+Coverage: 16,954 of 31,900 cards (+3 over D1237's 16,951), 39,538 of 59,888 lines (+3).
