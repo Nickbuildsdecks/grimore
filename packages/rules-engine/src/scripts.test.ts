@@ -45468,6 +45468,50 @@ describe('Reveal cards until you reveal a kind of card: Hermit Druid (D1254)', (
   });
 });
 
+describe('Kaalia: put a creature from hand onto the battlefield tapped and attacking (D1255)', () => {
+  const ROWS = [
+    { name: 'Test Kaalia', type_line: 'Legendary Creature — Human Cleric', oracle_text: 'Flying\nWhenever Test Kaalia attacks an opponent, you may put an Angel, Demon, or Dragon creature card from your hand onto the battlefield tapped and attacking that opponent.', mana_cost: '{0}', cmc: 3, colors: ['R', 'W', 'B'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Angel', type_line: 'Creature — Angel', oracle_text: 'Flying', mana_cost: '{0}', cmc: 6, colors: ['W'], layout: 'normal', power: '5', toughness: '5' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1255', name: 'Kaalia', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  /** Kaalia attacks seat 1, and the trigger's question is answered with `pick` (a card name, or none). */
+  const attack = (hand: string[], pick: string | null) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1255', 1: 'd1255' }, deckSpecs: { d1255: deck.deck }, hands: { 0: hand },
+      battlefield: { 0: ['Test Kaalia'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Kaalia'), defender: 1 }] });
+    let asked: GameState['pendingDecision'] = null;
+    for (let i = 0; i < 8 && (s.stackOrder.length > 0 || s.pendingDecision !== null); i++) {
+      if (s.pendingDecision !== null) {
+        asked = s.pendingDecision;
+        const card = pick === null ? [] : s.pendingDecision.candidates.filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === pick).slice(0, 1);
+        s = apply(s, { type: 'auto:decide', by: 0, cards: card } as Action);
+      } else s = passBoth(s);
+    }
+    return { s: drain(s, 10), asked };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Angel enters tapped and attacking the same opponent; a Bear is not offered', () => {
+    const { s, asked } = attack(['Test Angel', 'Test Bear'], 'Test Angel');
+    expect(asked?.candidates.map((id) => s.cardDefs[s.instances[id]!.defKey]?.name)).toEqual(['Test Angel']);
+    const angel = find(s, 0, 'battlefield', 'Test Angel');
+    expect(s.instances[angel]?.tapped).toBe(true);
+    expect(s.combat.attacks.find((a) => a.attacker === angel)?.defender).toBe(1);
+  });
+
+  it('declining puts nothing in', () => {
+    const { s } = attack(['Test Angel'], null);
+    expect(namesIn(s, 0, 'hand')).toContain('Test Angel');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

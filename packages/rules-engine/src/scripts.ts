@@ -15325,14 +15325,32 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
-  const fromHand = /^(you may )?put (a|an|up to one|up to two|any number of) (.+?) cards? from your hand onto the battlefield( tapped)?$/i.exec(text);
+  /*
+    And "tapped and attacking [that player / that opponent]" (D1255, Kaalia of the Vast, Preeminent
+    Captain's kin): on an attack trigger, the card enters attacking the player or planeswalker the
+    trigger's attack was aimed at (CR 508.4, it was never declared). Anywhere else there is no attack
+    to join, so it only enters tapped.
+  */
+  const fromHand = /^(you may )?put (a|an|up to one|up to two|any number of) (.+?) cards? from your hand onto the battlefield( tapped)?( and attacking(?: that (?:player|opponent))?)?$/i.exec(text);
   if (fromHand !== null) {
     const quantity = fromHand[2]!.toLowerCase();
-    const filter = libraryFilter(`a ${fromHand[3]!} card`, name);
+    // "An Angel, Demon, or Dragon creature card": the creature types as a list (D1255).
+    const tribes = /^((?:[A-Z][a-z]+, )*[A-Z][a-z]+,? or [A-Z][a-z]+) creature$/.exec(fromHand[3]!);
+    const tribeList = tribes === null ? null : tribes[1]!.split(/,? or |, /).map((t) => t.trim());
+    const filter = tribeList !== null && tribeList.every((t) => isCreatureType(t))
+      ? {
+        filter: ((state: GameState, id: string) => {
+          const line = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+          return hasType(line, 'creature') && tribeList.some((t) => hasSubtype(line, t));
+        }) as CardsDecisionSpec['filter'],
+        xBound: undefined,
+      }
+      : libraryFilter(`a ${fromHand[3]!} card`, name);
     if (filter !== null && filter.xBound !== true) {
       const max = quantity === 'up to two' ? 2 : quantity === 'any number of' ? ANY_NUMBER : 1;
       const optional = fromHand[1] !== undefined || quantity.startsWith('up to') || quantity === 'any number of';
-      const tapped = fromHand[4] !== undefined;
+      const attacking = fromHand[5] !== undefined;
+      const tapped = fromHand[4] !== undefined || attacking;
       return {
         decisions: [{
           who: 'controller', from: 'hand', prompt: `Put ${fromHand[2]!} ${fromHand[3]!} card from your hand onto the battlefield${tapped ? ' tapped' : ''}`,
@@ -15340,7 +15358,11 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
           ...(filter.filter === null ? {} : { filter: filter.filter }),
         }],
         effect: (c) => chosenCards(c).reduce(
-          (state, id) => (state.instances[id]?.zone === 'hand' ? putOntoBattlefield(state, id, c.controller, tapped ? { tapped: true } : {}) : state),
+          (state, id) => {
+            if (state.instances[id]?.zone !== 'hand') return state;
+            if (attacking && c.attacked !== undefined) return enterAttacking(state, id, c.controller, c.attacked);
+            return putOntoBattlefield(state, id, c.controller, tapped ? { tapped: true } : {});
+          },
           c.state,
         ),
       };
@@ -21276,7 +21298,8 @@ const TRIGGER_SHAPES: readonly ({
     Cruelties on the card.
   */
   {
-    prologue: (self) => new RegExp(`^Whenever ${self} attacks a player, (.+)$`, 'i'),
+    // And "attacks an opponent" (D1255, Kaalia): every player attacked is an opponent.
+    prologue: (self) => new RegExp(`^Whenever ${self} attacks (?:a player|an opponent), (.+)$`, 'i'),
     on: [{ kind: 'attacks', atPlayer: true }],
   },
   {
