@@ -2357,7 +2357,18 @@ function searchClause(text: string, name: string): ReadEffect | null {
   const printed = parsed[1]!.trim();
   const quantity = searchQuantity(printed);
   if (quantity === null) return null;
-  const filter = libraryFilter(quantity.singular, name);
+  /*
+    "…with mana value equal to 1 plus the sacrificed creature's mana value" (D1265): Birthing Pod,
+    Prime Speaker Vannifar, Repurposing Bay, Oswald Fiddlebender, Neoform. Only behind a sacrifice
+    paid as a cost (`withSacrificeInCost`), where the stack object carries what was sacrificed; the
+    bound is carried as a flag for the engine to apply as it asks, as the X bound is.
+  */
+  const climb = sacrificeInCost
+    ? /^(.+?) with mana value equal to (\w+) plus the sacrificed (?:creature|artifact|permanent)'s mana value$/i.exec(quantity.singular)
+    : null;
+  const climbBy = climb === null ? null : countFrom(climb[2]!);
+  if (climb !== null && climbBy === null) return null;
+  const filter = libraryFilter(climb === null ? quantity.singular : climb[1]!, name);
   if (filter === null) return null;
 
   const action = parsed[2]!.toLowerCase();
@@ -2382,6 +2393,7 @@ function searchClause(text: string, name: string): ReadEffect | null {
         quantity.max,
       ),
       ...(filter.xBound === true ? { manaValueAtMostX: true as const } : {}),
+      ...(climbBy === null ? {} : { manaValueSacrificedPlus: climbBy }),
     }],
     effect: (c) => {
       const found = chosenCards(c);

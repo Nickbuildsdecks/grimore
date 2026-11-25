@@ -6196,11 +6196,16 @@ function askOrFinish(
         ? (object.attacked === undefined ? undefined : { kind: 'player' as const, seat: object.attacked.defender })
         : undefined;
     // "With mana value X or less" (D686): bounded by the X this spell was cast with.
-    const bounded = !isCountersDecision(spec) && spec.manaValueAtMostX === true
+    // And "equal to 1 plus the sacrificed creature's mana value" (D1265), off what the cost sacrificed.
+    const climb = !isCountersDecision(spec) ? spec.manaValueSacrificedPlus : undefined;
+    const bounded = !isCountersDecision(spec) && (spec.manaValueAtMostX === true || climb !== undefined)
       ? {
         ...spec,
         filter: (s: GameState, id: string, chooser: SeatIndex) => (spec.filter === undefined || spec.filter(s, id, chooser))
-          && (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= Math.max(0, object.x ?? 0),
+          && (spec.manaValueAtMostX !== true
+            || (s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc ?? Infinity) <= Math.max(0, object.x ?? 0))
+          && (climb === undefined || (object.sacrificedStats !== undefined
+            && s.cardDefs[s.instances[id]?.defKey ?? '']?.cmc === object.sacrificedStats.manaValue + climb)),
       }
       : spec;
     // Stranglehold and Aven Mindcensor (D1232): what this searcher may find at all.

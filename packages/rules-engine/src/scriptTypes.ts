@@ -2117,6 +2117,13 @@ export interface CardsDecisionSpec {
    */
   readonly manaValueAtMostX?: true;
   /**
+   * "…with mana value equal to 1 plus the sacrificed creature's mana value" (D1265): Birthing Pod.
+   * Only a card whose printed mana value is exactly this much more than the permanent sacrificed to
+   * pay for the spell or ability qualifies; the engine reads that off the stack object as it asks,
+   * and with nothing recorded there no card does.
+   */
+  readonly manaValueSacrificedPlus?: number;
+  /**
    * Which cards the engine's own opponent picks, written by the card.
    *
    * The twin of `ChoiceDecisionSpec.best` and here for the same reason: only the card knows what

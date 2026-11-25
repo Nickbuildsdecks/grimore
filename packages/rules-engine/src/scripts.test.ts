@@ -45880,6 +45880,85 @@ describe('Meren of Clan Nel Toth: back to the battlefield or to hand by experien
   });
 });
 
+describe('Birthing Pod: a creature one mana value up from the one sacrificed (D1265)', () => {
+  /*
+    "Search your library for a creature card with mana value equal to 1 plus the sacrificed
+    creature's mana value". Only behind a sacrifice paid as a cost, where the stack object carries
+    what was sacrificed; a sacrifice in the effect (Vivien on the Hunt) is left unread.
+  */
+  const C = (name: string, cmc: number, mana: string) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: mana, cmc, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const POD = {
+    name: 'Test Pod', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal',
+    oracle_text: "{1}, {T}, Sacrifice a creature: Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put that card onto the battlefield, then shuffle. Activate only as a sorcery.",
+  };
+  const BIRTHING = {
+    name: 'Birthing Pod', type_line: 'Artifact', mana_cost: '{3}{G/P}', cmc: 4, colors: ['G'], layout: 'normal',
+    oracle_text: "({G/P} can be paid with either {G} or 2 life.)\n{1}{G/P}, {T}, Sacrifice a creature: Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put that card onto the battlefield, then shuffle. Activate only as a sorcery.",
+  };
+  const VANNIFAR = {
+    name: 'Prime Speaker Vannifar', type_line: 'Legendary Creature — Elf Ooze Wizard', mana_cost: '{2}{G}{U}', cmc: 4, colors: ['G', 'U'], layout: 'normal', power: '2', toughness: '4',
+    oracle_text: "{T}, Sacrifice another creature: Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put that card onto the battlefield, then shuffle. Activate only as a sorcery.",
+  };
+  const BAY = {
+    name: 'Repurposing Bay', type_line: 'Artifact', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal',
+    oracle_text: "{2}, {T}, Sacrifice another artifact: Search your library for an artifact card with mana value equal to 1 plus the sacrificed artifact's mana value, put that card onto the battlefield, then shuffle. Activate only as a sorcery.",
+  };
+  const VIVIEN = {
+    name: 'Test Vivien Line', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal',
+    oracle_text: "You may sacrifice a creature. If you do, search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put it onto the battlefield, then shuffle.",
+  };
+  const ROWS = [POD, C('Test Two', 2, '{1}{G}'), C('Test Three', 3, '{2}{G}'), C('Test Four', 4, '{3}{G}')];
+  const deck = customDeck({
+    id: 'd1265', name: 'Pod',
+    entries: [{ name: 'Test Pod', count: 2 }, { name: 'Test Two', count: 4 }, { name: 'Test Three', count: 4 }, { name: 'Test Four', count: 4 }, { name: 'Forest', count: 46 }],
+    data: ROWS as never[],
+  });
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  const pod = (fodder: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1265', 1: 'd1265' }, deckSpecs: { d1265: deck.deck },
+      battlefield: { 0: ['Test Pod', fodder, 'Forest', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const victim = find(s, 0, 'battlefield', fodder);
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pod'), abilityIndex: 0, sacrifice: victim } as Action);
+    return passBoth(s);
+  };
+
+  it('reads the cost-paid forms, and leaves the effect-paid one unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [POD, BIRTHING, VANNIFAR, BAY]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const vivien = compileCard(VIVIEN as never);
+    expect(vivien.ok && vivien.unread.length).toBeGreaterThan(0);
+    // With nothing sacrificed at all, there is no mana value to add 1 to.
+    const bare = compileCard({ ...VIVIEN, oracle_text: "Search your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put it onto the battlefield, then shuffle." } as never);
+    expect(bare.ok && bare.unread.length).toBeGreaterThan(0);
+  });
+
+  it('a mana value 2 creature sacrificed offers only mana value 3 creatures, and the one chosen enters', () => {
+    const s = pod('Test Two');
+    const offered = s.pendingDecision?.candidates ?? [];
+    expect(offered.length).toBe(ids(s, 0, 'library').filter((id) => nameOf(s, id) === 'Test Three').length);
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => nameOf(s, id) === 'Test Three')).toBe(true);
+    const t = drain(apply(s, { type: 'auto:decide', by: 0, cards: [offered[0]!] } as Action), 20);
+    expect(t.instances[offered[0]!]?.zone).toBe('battlefield');
+  });
+
+  it('a mana value 3 creature sacrificed offers the fours, not the threes', () => {
+    const s = pod('Test Three');
+    const offered = s.pendingDecision?.candidates ?? [];
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => nameOf(s, id) === 'Test Four')).toBe(true);
+  });
+
+  it('a mana value 4 creature sacrificed finds nothing in a library with no fives', () => {
+    const s = pod('Test Four');
+    expect(s.pendingDecision?.candidates ?? []).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
