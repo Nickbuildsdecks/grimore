@@ -4992,8 +4992,9 @@ export interface CardScript {
      * A token has ceased to exist by the time a replacement is asked (CR 111.7), so there is no
      * instance to hand `applies` or `instead`. What the rule changes for a token is only what it
      * did **not** do: it was exiled, so it did not reach a graveyard and did not die, and nothing
-     * watching for either sees it. Set only on a rule whose `applies` is unconditional, because
-     * for a token it is not consulted.
+     * watching for either sees it. `applies` is asked with the token's id all the same (D1239), and
+     * reads `state.vanished[subject]` for it: "your graveyard" and "a creature an opponent controls"
+     * are about whose token it was. `instead` is not run, because there is nothing left to move.
      */
     readonly tokens?: boolean;
   }[];

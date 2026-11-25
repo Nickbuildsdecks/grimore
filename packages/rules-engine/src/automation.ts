@@ -4116,8 +4116,14 @@ function replaceZoneChange(
     */
     const inst = next.instances[id];
     if (inst === undefined) {
+      /*
+        And the rule's own test, asked of the token's last state (D1239): Leyline of the Void's
+        "your graveyard" and Vren's "a creature an opponent controls" are about *whose* token, and
+        an unconditional answer here exiled a Necrodominance player's opponents' tokens as well.
+      */
       const holder = sources.find((source) => next.instances[source.id]?.zone === 'battlefield'
-        && (scriptOf(next, source.id)?.replaces ?? []).some((rule) => rule.on === on && rule.tokens === true));
+        && (scriptOf(next, source.id)?.replaces ?? []).some((rule) => rule.on === on && rule.tokens === true
+          && rule.applies({ state: next, subject: id, source: source.id, controller: source.controller, discarded: false })));
       if (holder === undefined) {
         survived.push(id);
         continue;

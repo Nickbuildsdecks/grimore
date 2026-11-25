@@ -39003,6 +39003,70 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       }],
     };
   }
+  /*
+    "If a card [or token] would be put into a graveyard [your graveyard | an opponent's graveyard]
+    from anywhere, exile it instead" (D1239): Rest in Peace, Leyline of the Void, Yawgmoth's Agenda,
+    Necrodominance, Festival of Embers, Emet-Selch, Forbidden Crypt; and "an instant or sorcery
+    card" (Dryad Militant). Whose graveyard is the card's **owner**, which is where a card goes
+    (CR 404.1): a stolen creature dying under Leyline of the Void's controller still goes to the
+    opponent's graveyard, so it is exiled. "Or token" is what makes a token exiled rather than
+    dying, and nothing else does — see `replaces[].tokens`.
+  */
+  const graveyardExile = /^if (a card(?: or token)?|an instant or sorcery card) would be put into (a|your|an opponent's) graveyard from anywhere, exile (?:it|that card) instead\.?$/i.exec(plain(line).trim());
+  if (graveyardExile !== null) {
+    const what = graveyardExile[1]!.toLowerCase();
+    const whose = graveyardExile[2]!.toLowerCase();
+    const spellsOnly = what.startsWith('an instant');
+    return {
+      replaces: [{
+        on: 'to-graveyard',
+        description: 'exile it instead',
+        applies: (ctx) => {
+          const card = ctx.state.instances[ctx.subject] ?? ctx.state.vanished[ctx.subject];
+          if (card === undefined) return false;
+          if (whose === 'your' && card.owner !== ctx.controller) return false;
+          if (whose === "an opponent's" && card.owner === ctx.controller) return false;
+          if (!spellsOnly) return true;
+          const types = characteristicsOf(ctx.state, card).typeLine.types;
+          return types.includes('Instant') || types.includes('Sorcery');
+        },
+        instead: (ctx) => exileCard(ctx.state, ctx.subject),
+        ...(what.includes('or token') ? { tokens: true } : {}),
+      }],
+    };
+  }
+  /*
+    "If a [nontoken] creature an opponent controls would die, exile it instead" (D1239): Vren, Gisa,
+    Liesa, Misery's Shadow, Stone of Erech, Garruk, Veiled Butcher; and "If a Warlock you control
+    would die" (Lorcan). Who controlled it is read off the snapshot `relocate` took as it left the
+    battlefield, not off the graveyard it reached — that is its owner's, and a creature an opponent
+    stole from you is one an opponent controls. Without "nontoken" a token is exiled too, which
+    matters only for what it did not do: it did not die, so nothing that watches deaths sees it.
+  */
+  const deathExile = /^if an? (nontoken )?(creature|[a-z]+) (you control|an opponent controls) would die, exile it instead\.?$/i.exec(plain(line).trim());
+  if (deathExile !== null) {
+    const nontoken = deathExile[1] !== undefined;
+    const kind = deathExile[2]!.toLowerCase();
+    const subtype = kind === 'creature' ? undefined : kind[0]!.toUpperCase() + kind.slice(1);
+    if (subtype !== undefined && !isCreatureType(subtype)) return null;
+    const yours = /^you/i.test(deathExile[3]!);
+    return {
+      replaces: [{
+        on: 'dies',
+        description: 'exile it instead',
+        applies: (ctx) => {
+          const was = ctx.state.vanished[ctx.subject] ?? ctx.state.instances[ctx.subject];
+          if (was === undefined) return false;
+          if (nontoken && was.isToken === true) return false;
+          if ((was.zoneSeat === ctx.controller) !== yours) return false;
+          const ch = characteristicsOf(ctx.state, was);
+          return ch.isCreature && (subtype === undefined || ch.typeLine.subtypes.includes(subtype));
+        },
+        instead: (ctx) => exileCard(ctx.state, ctx.subject),
+        ...(nontoken ? {} : { tokens: true }),
+      }],
+    };
+  }
   // Propaganda and Ghostly Prison (D780): see `CardScript.attackTax`.
   const taxed = /^creatures can't attack you unless their controller pays \{(\d+)\} for each creature they control that's attacking you\.?$/i.exec(plain(line).trim());
   if (taxed !== null) return { attackTax: Number(taxed[1]) };

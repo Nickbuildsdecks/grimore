@@ -44384,6 +44384,87 @@ describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   });
 });
 
+describe('"Exile it instead" of a graveyard or a death, for every permanent on the table (D1239)', () => {
+  const ROWS = [
+    { name: 'Test Leyline', type_line: 'Enchantment', oracle_text: "If a card would be put into an opponent's graveyard from anywhere, exile it instead.", mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Crypt', type_line: 'Enchantment', oracle_text: 'If a card or token would be put into your graveyard from anywhere, exile it instead.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' },
+    { name: 'Test Vren', type_line: 'Creature — Rat', oracle_text: 'If a creature an opponent controls would die, exile it instead.', mana_cost: '{0}', cmc: 0, colors: ['U', 'B'], layout: 'normal', power: '3', toughness: '4' },
+    { name: 'Test Lorcan', type_line: 'Creature — Devil Warlock', oracle_text: 'If a Warlock you control would die, exile it instead.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '6', toughness: '6' },
+    { name: 'Test Militant', type_line: 'Creature — Dryad Warrior', oracle_text: 'If an instant or sorcery card would be put into a graveyard from anywhere, exile it instead.', mana_cost: '{0}', cmc: 0, colors: ['G', 'W'], layout: 'normal', power: '2', toughness: '1' },
+    { name: 'Test Witness', type_line: 'Creature — Human', oracle_text: 'Whenever a creature dies, you gain 1 life.', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Warlock', type_line: 'Creature — Human Warlock', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 1 damage to any target.', mana_cost: '{0}', cmc: 1, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1239', name: 'Void', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 24 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[], hands: { 0?: string[]; 1?: string[] } = {}) => advanceTo(arena({
+    decks: { 0: 'd1239', 1: 'd1239' }, deckSpecs: { d1239: deck.deck }, hands: { 0: hands[0] ?? [], 1: hands[1] ?? [] },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, id: string) => drain(passBoth(engineSettle(sacrifice(s, [id]), s)), 20);
+  const where = (s: GameState, id: string) => s.instances[id]?.zone;
+  const token = (s: GameState, seat: SeatIndex) => {
+    const t = createToken(s, seat, { name: 'Soldier', typeLine: 'Token Creature — Soldier', colors: ['W'], power: '1', toughness: '1', oracleText: '' } as never);
+    return { s: t, id: ids(t, seat, 'battlefield').find((x) => t.instances[x]?.isToken === true)! };
+  };
+  const life = (s: GameState, seat: number) => s.seats[seat]!.life;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an opponent's graveyard: their creature is exiled, mine is not", () => {
+    const s = table(['Test Leyline', 'Test Bear'], ['Test Bear']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    expect(where(kill(s, theirs), theirs)).toBe('exile');
+    expect(where(kill(s, mine), mine)).toBe('graveyard');
+  });
+
+  it("a creature an opponent controls: exiled and not a death; mine still dies", () => {
+    const s = table(['Test Vren', 'Test Witness', 'Test Bear'], ['Test Bear']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const a = kill(s, theirs);
+    expect(where(a, theirs)).toBe('exile');
+    expect(life(a, 0)).toBe(life(s, 0));
+    const b = kill(s, mine);
+    expect(where(b, mine)).toBe('graveyard');
+    expect(life(b, 0)).toBe(life(s, 0) + 1);
+  });
+
+  it('a Warlock you control: only a Warlock, and only yours', () => {
+    const s = table(['Test Lorcan', 'Test Warlock', 'Test Bear'], ['Test Warlock']);
+    const mine = find(s, 0, 'battlefield', 'Test Warlock');
+    expect(where(kill(s, mine), mine)).toBe('exile');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    expect(where(kill(s, bear), bear)).toBe('graveyard');
+    const theirs = find(s, 1, 'battlefield', 'Test Warlock');
+    expect(where(kill(s, theirs), theirs)).toBe('graveyard');
+  });
+
+  it('"a card or token … your graveyard": my token is exiled and does not die, theirs still dies', () => {
+    const s = table(['Test Crypt', 'Test Witness'], []);
+    const mine = token(s, 0);
+    expect(life(kill(mine.s, mine.id), 0)).toBe(life(s, 0));
+    const theirs = token(s, 1);
+    expect(life(kill(theirs.s, theirs.id), 0)).toBe(life(s, 0) + 1);
+  });
+
+  it('an instant or sorcery card: a discarded Bolt is exiled, a Bear is not', () => {
+    const s = table(['Test Militant'], [], { 1: ['Test Bolt', 'Test Bear'] });
+    const bolt = find(s, 1, 'hand', 'Test Bolt');
+    const bear = find(s, 1, 'hand', 'Test Bear');
+    const moved = (id: string) => {
+      const t = engineSettle(relocate(s, s.instances[id]!, 'graveyard', 1 as SeatIndex, 'top'), s);
+      return where(t, id);
+    };
+    expect(moved(bolt)).toBe('exile');
+    expect(moved(bear)).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
