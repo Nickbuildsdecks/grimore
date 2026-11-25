@@ -45567,3 +45567,39 @@ Might: its "if an opponent controls at least four more creatures than you" was r
 gained 7, including Nix, Nether Void, Presence of the Master and Roiling Canopy.
 
 Gated together on b0a789e: full gate green (restarted once, for the Avatar of Might fix), engine tests 6656. Coverage: 16,886 to 16,900 of 31,900 cards with every line read, and 39,434 to 39,453 of 59,888 lines.
+
+## D1231 — Ethersworn Canonist, and a free grant the bot stops repeating
+
+"Each player who has cast a nonartifact spell this turn can't cast additional nonartifact spells."
+(Ethersworn Canonist): a casting limit beside Rule of Law's (D788), `each-one-nonartifact`, with
+the turn's tally of each seat's nonartifact spells kept beside its creature and noncreature counts.
+Artifact spells are neither counted nor stopped. A face-down spell is a colourless creature with no
+other types (CR 708.2), so it counts.
+
+And a loop pod sweep 84001 found: seed 84086 spent 2,000 moves in one main phase, 1,000 of them
+activating Mist Dragon's "{0}: Mist Dragon gains flying". The grant resolves each time and grants a
+flying the Dragon already has. The compiled grant to the card itself, by name, now tells the bot
+what it grants, as the shrinking pump has since D496 (`AbilityDef.selfShrink`), and the bot's
+existing rule declines it once the creature has every word. Only by name, because a bare "it" may
+be a target. The hand-written Skithiryx's "{B}: Skithiryx gains haste until end of turn" carries
+the same flag, so the compiled and written readings still agree. Seed 84086 now finishes in 196
+moves.
+
+Read whole now (1): Ethersworn Canonist.
+
+**Tests.** 3 engine tests:
+- Both test cards read whole.
+- Under the Canonist: an artifact spell, then a nonartifact one, then a second nonartifact one is
+  refused; without it, the second is allowed.
+- The bot grants its Drake flying once, and not again once it has it.
+
+Faults injected by hand: 3, all caught.
+- The nonartifact limit never applied.
+- Artifact spells counted as nonartifact.
+- The bot told nothing about the grant.
+
+Pod sweep 84001 (100 games, d694dfa): 99 finished, 1 looping (seed 84086, Mist Dragon; fixed here).
+
+The coverage below includes the other session's D888 to D893, merged in before this was measured.
+
+Coverage: 16,920 of 31,900 cards (+15 over D1230's 16,905), 39,474 of 59,888 lines (+20).
