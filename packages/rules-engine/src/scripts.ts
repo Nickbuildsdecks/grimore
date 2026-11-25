@@ -33274,6 +33274,43 @@ function chosenTypeSpell(clauses: readonly string[], name: string, where: Subjec
 }
 
 /**
+ * "Reveal cards from the top of your library until you reveal a <kind> card. Put that card into your
+ * hand [or onto the battlefield] and the rest into your graveyard [or on the bottom of your library
+ * in a random order]." (D1254): Hermit Druid, Mulch's kin, the Abundant Harvest family's half. The
+ * kind is a library-search phrase (`libraryFilter`). With no such card, every card revealed goes
+ * where the rest go (CR 701.20b), so a Hermit Druid with no basic land mills its whole library.
+ */
+function revealUntil(clauses: readonly string[], name: string): ReadEffect | null {
+  const text = clauses.map((c) => c.trim().replace(/\.$/, '')).join('. ').replace(/\s+/g, ' ');
+  const m = /^reveal cards from the top of your library until you reveal (an? .+? card)\. put that card (into your hand|onto the battlefield( tapped)?(?: under your control)?) and (?:the rest|all other cards revealed this way) (into your graveyard|on the bottom of your library in a random order)\.?$/i.exec(text);
+  if (m === null) return null;
+  const read = libraryFilter(m[1]!, name);
+  if (read === null || read.xBound === true) return null;
+  const filter = read.filter;
+  const toHand = /^into your hand$/i.test(m[2]!);
+  const tapped = m[3] !== undefined;
+  const toGraveyard = /graveyard/i.test(m[4]!);
+  return {
+    effect: (c) => {
+      let state = c.state;
+      const rest: string[] = [];
+      let hit: string | undefined;
+      for (const id of [...listAt(state, zoneKey(c.controller, 'library'))]) {
+        if (filter === null || filter === undefined || filter(state, id, c.controller)) {
+          hit = id;
+          break;
+        }
+        rest.push(id);
+      }
+      if (hit !== undefined) {
+        state = toHand ? moveToHand(state, [hit]) : putOntoBattlefield(state, hit, c.controller, tapped ? { tapped: true } : {});
+      }
+      return toGraveyard ? moveToGraveyard(state, rest) : bottomPile(state, rest);
+    },
+  };
+}
+
+/**
  * Gilded Drake (D1249): "exchange control of ~ and up to one target creature an opponent controls.
  * If you don't or can't make an exchange, sacrifice ~. This ability can't be countered except by
  * spells and abilities." The exchange is D1248's. Whether one was made is read off the board: the
@@ -33729,6 +33766,9 @@ function composeEffectsAsPrinted(
   // Gilded Drake (D1249): see `drakeExchange`.
   const drake = drakeExchange(clauses, name);
   if (drake !== null) return drake;
+  // "Reveal cards … until you reveal a <kind> card" (D1254): see `revealUntil`.
+  const revealed = revealUntil(clauses, name);
+  if (revealed !== null) return revealed;
   // "Choose a creature type." and what follows of that type (D1142): see `chosenTypeSpell`.
   const typed = chosenTypeSpell(clauses, name, where);
   if (typed !== null) return typed;

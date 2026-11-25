@@ -45410,6 +45410,64 @@ describe('A cost change counted: Animar (D1253)', () => {
   });
 });
 
+describe('Reveal cards until you reveal a kind of card: Hermit Druid (D1254)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' });
+  const ROWS = [
+    S('Test Druid', 'Reveal cards from the top of your library until you reveal a basic land card. Put that card into your hand and all other cards revealed this way into your graveyard.'),
+    S('Test Call', 'Reveal cards from the top of your library until you reveal a creature card. Put that card onto the battlefield and the rest on the bottom of your library in a random order.'),
+    S('Test Chaff', 'Draw a card.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1254', name: 'Druid', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 44 }], data: ROWS as never[] });
+  /** Seat 0's library laid out as `top` from the top; `noForests` drops every Forest from it. */
+  const table = (hand: string, top: string[], noForests = false) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1254', 1: 'd1254' }, deckSpecs: { d1254: deck.deck }, hands: { 0: [hand] },
+      battlefield: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const lib = [...ids(s, 0, 'library')];
+    const nameOf = (id: string) => s.cardDefs[s.instances[id]!.defKey]?.name;
+    const first: string[] = [];
+    for (const n of top) first.push(...lib.splice(lib.findIndex((id) => nameOf(id) === n), 1));
+    const rest = noForests ? lib.filter((id) => nameOf(id) !== 'Forest' && nameOf(id) !== 'Test Bear') : lib;
+    return { ...s, zones: { ...s.zones, '0:library': [...first, ...rest] } };
+  };
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [] } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the first basic land comes to hand, and the cards before it go to the graveyard', () => {
+    const s = table('Test Druid', ['Test Chaff', 'Test Chaff', 'Forest']);
+    const before = ids(s, 0, 'library').length;
+    const forests = namesIn(s, 0, 'hand').filter((n) => n === 'Forest').length;
+    const t = cast(s, 'Test Druid');
+    expect(namesIn(t, 0, 'hand').filter((n) => n === 'Forest')).toHaveLength(forests + 1);
+    expect(namesIn(t, 0, 'graveyard').filter((n) => n === 'Test Chaff')).toHaveLength(2);
+    expect(ids(t, 0, 'library')).toHaveLength(before - 3);
+  });
+
+  it('with no basic land left, the whole library goes to the graveyard', () => {
+    const s = table('Test Druid', [], true);
+    const hand = ids(s, 0, 'hand').length;
+    const t = cast(s, 'Test Druid');
+    expect(ids(t, 0, 'library')).toHaveLength(0);
+    // The Druid left the hand and nothing came back.
+    expect(ids(t, 0, 'hand')).toHaveLength(hand - 1);
+  });
+
+  it('a creature found goes onto the battlefield, and the rest under the library', () => {
+    const s = table('Test Call', ['Test Chaff', 'Test Bear']);
+    const before = ids(s, 0, 'library').length;
+    const t = cast(s, 'Test Call');
+    expect(namesIn(t, 0, 'battlefield')).toContain('Test Bear');
+    expect(ids(t, 0, 'library')).toHaveLength(before - 1);
+    expect(t.cardDefs[t.instances[ids(t, 0, 'library').at(-1)!]!.defKey]?.name).toBe('Test Chaff');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
