@@ -37054,6 +37054,31 @@ function costModifierFromLine(line: string, name: string): Partial<CardScript> |
       }],
     };
   }
+  /*
+    "… cost {1} less to cast for each <thing>" (D1253): Animar's "+1/+1 counter on Animar", and the
+    "for each artifact you control" kin. One kind of spell, and a count `forEachCount` reads, asked of
+    the permanent's controller's board as the cost is computed.
+  */
+  const counted = /^(.*?)spells( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast for each (.+)$/i.exec(printed);
+  if (counted !== null) {
+    const kind = spellKindTest(counted[1]!);
+    const count = forEachCount(counted[5]!, name);
+    if (kind === null || count === null) return null;
+    const whose = counted[2] === undefined ? 'everyone' as const : /opponents/i.test(counted[2]) ? 'opponents' as const : 'controller' as const;
+    const amount = Number(counted[3]);
+    return {
+      costModifiers: [{
+        whose,
+        applies: (_state, _caster, card) => kind(card),
+        generic: counted[4]!.toLowerCase() === 'less' ? -amount : amount,
+        per: (state, caster, source) => count({
+          state, source, controller: state.instances[source]?.zoneSeat ?? caster,
+          targets: [], x: 0, decisions: [], kicked: false,
+        }),
+        description: `${name} — ${printed.charAt(0).toLowerCase()}${printed.slice(1)}`,
+      }],
+    };
+  }
   const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
   if (m === null) return null;
   // A list of kinds (D803): "Aura and Equipment spells" (Danitha Capashen), "instant and sorcery spells".

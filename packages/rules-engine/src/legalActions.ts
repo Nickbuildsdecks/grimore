@@ -3273,8 +3273,11 @@ export function costChangeFor(
         if (mod.whose === 'controller' && !mine) continue;
         if (mod.whose === 'opponents' && mine) continue;
         if (!mod.applies(state, seat, def, id)) continue;
-        if (mod.generic >= 0) up += mod.generic;
-        else down -= mod.generic;
+        // "For each …" (D1253): counted now, so the cost follows the board.
+        const times = mod.per === undefined ? 1 : Math.max(0, mod.per(state, seat, id));
+        if (times === 0) continue;
+        if (mod.generic >= 0) up += mod.generic * times;
+        else down -= mod.generic * times;
         notes.push(mod.description);
       }
     }

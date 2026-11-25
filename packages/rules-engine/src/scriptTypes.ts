@@ -4738,6 +4738,11 @@ export interface CardScript {
     readonly applies: (state: GameState, caster: SeatIndex, card: CardDef, source?: string) => boolean;
     /** Generic mana added, or taken off when negative. */
     readonly generic: number;
+    /**
+     * "… for each <thing>" (D1253): `generic` is per one, and this is how many, counted as the cost
+     * is computed. Animar's "+1/+1 counter on Animar", "artifact you control".
+     */
+    readonly per?: (state: GameState, caster: SeatIndex, source: string) => number;
     /** Shown on the play when the cost changed: "costs {1} less". */
     readonly description: string;
   }[];

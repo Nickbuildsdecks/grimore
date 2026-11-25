@@ -45329,6 +45329,37 @@ describe('Alternatives paid in lands: Daze, Gush, Fireblast (D1252)', () => {
   });
 });
 
+describe('A cost change counted: Animar (D1253)', () => {
+  const ROWS = [
+    { name: 'Test Animar', type_line: 'Legendary Creature — Elemental', oracle_text: 'Creature spells you cast cost {1} less to cast for each +1/+1 counter on Test Animar.', mana_cost: '{0}', cmc: 3, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Foundry', type_line: 'Artifact', oracle_text: 'Artifact spells you cast cost {1} less to cast for each artifact you control.', mana_cost: '{0}', cmc: 2, colors: [], layout: 'normal' },
+    { name: 'Test Giant', type_line: 'Creature — Giant', oracle_text: '', mana_cost: '{5}{G}', cmc: 6, colors: ['G'], layout: 'normal', power: '6', toughness: '6' },
+  ];
+  const deck = customDeck({ id: 'd1253', name: 'Animar', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1253', 1: 'd1253' }, deckSpecs: { d1253: deck.deck }, hands: { 0: ['Test Giant'] },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const giantCost = (s: GameState) => costChangeFor(s, 0 as SeatIndex, s.cardDefs[s.instances[find(s, 0, 'hand', 'Test Giant')]!.defKey], find(s, 0, 'hand', 'Test Giant')).generic;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 2)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one less per counter: none, then three', () => {
+    const s = table(['Test Animar']);
+    expect(giantCost(s)).toBe(0);
+    const animar = find(s, 0, 'battlefield', 'Test Animar');
+    expect(giantCost(addCounters(s, animar, '+1/+1', 3))).toBe(-3);
+  });
+
+  it('a creature spell only, and the counted kind for the other', () => {
+    const s = table(['Test Foundry', 'Test Foundry']);
+    expect(giantCost(s)).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
