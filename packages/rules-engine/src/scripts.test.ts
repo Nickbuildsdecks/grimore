@@ -44703,6 +44703,48 @@ describe('Grafdigger\'s Cage and Containment Priest (D1241)', () => {
   });
 });
 
+describe('"Exile it instead", and something done as well: Kalitas and kin (D1242)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Vampire', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '4' });
+  const ROWS = [
+    C('Test Kalitas', 'If a nontoken creature an opponent controls would die, instead exile that card and create a 2/2 black Zombie creature token.'),
+    C('Test Crystal', 'If a nontoken creature an opponent controls would die, instead exile it and you gain 2 life.'),
+    C('Test Hunt', 'If a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.'),
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1242', name: 'Kalitas', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 44 }], data: ROWS as never[] });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1242', 1: 'd1242' }, deckSpecs: { d1242: deck.deck },
+    battlefield: { 0: [...mine, 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const kill = (s: GameState, id: string) => drain(passBoth(engineSettle(sacrifice(s, [id]), s)), 20);
+  const tokensOf = (s: GameState, name: string) => ids(s, 0, 'battlefield').filter((id) => s.instances[id]?.isToken === true
+    && s.cardDefs[s.instances[id]!.defKey]?.name === name).length;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("an opponent's creature is exiled and leaves a Zombie; mine dies and leaves nothing", () => {
+    const s = table(['Test Kalitas']);
+    const theirs = find(s, 1, 'battlefield', 'Test Bear');
+    const a = kill(s, theirs);
+    expect(a.instances[theirs]?.zone).toBe('exile');
+    expect(tokensOf(a, 'Zombie')).toBe(1);
+    const mine = find(s, 0, 'battlefield', 'Test Bear');
+    const b = kill(s, mine);
+    expect(b.instances[mine]?.zone).toBe('graveyard');
+    expect(tokensOf(b, 'Zombie')).toBe(0);
+  });
+
+  it('"and you gain 2 life", and "When you do, create a Wolf"', () => {
+    const crystal = table(['Test Crystal']);
+    expect(kill(crystal, find(crystal, 1, 'battlefield', 'Test Bear')).seats[0]!.life).toBe(crystal.seats[0]!.life + 2);
+    const hunt = table(['Test Hunt']);
+    expect(tokensOf(kill(hunt, find(hunt, 1, 'battlefield', 'Test Bear')), 'Wolf')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

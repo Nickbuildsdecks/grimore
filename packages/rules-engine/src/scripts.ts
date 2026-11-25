@@ -39078,13 +39078,25 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     stole from you is one an opponent controls. Without "nontoken" a token is exiled too, which
     matters only for what it did not do: it did not die, so nothing that watches deaths sees it.
   */
-  const deathExile = /^if an? (nontoken )?(creature|[a-z]+) (you control|an opponent controls) would die, exile it instead\.?$/i.exec(plain(line).trim());
+  /*
+    And with something done as well (D1242): "instead exile that card and create a 2/2 black Zombie
+    creature token" (Kalitas), "instead exile it and you gain 2 life" (The Darkness Crystal), and
+    "exile it instead. When you do, create a 2/2 green Wolf creature token" (Head of the Hunt,
+    Nemata). The second half is done by the permanent's controller as the creature is exiled. For
+    "When you do" that is a reflexive trigger (CR 603.12) and strictly goes on the stack; done at
+    once here, and only when it aims at nothing and asks nothing, so nobody could have answered it.
+  */
+  const deathExile = /^if an? (nontoken )?(creature|[a-z]+) (you control|an opponent controls) would die, (?:exile it instead|instead exile (?:it|that card) and (.+?)|exile it instead\. when you do, (.+?))\.?$/i.exec(plain(line).trim());
   if (deathExile !== null) {
     const nontoken = deathExile[1] !== undefined;
     const kind = deathExile[2]!.toLowerCase();
     const subtype = kind === 'creature' ? undefined : kind[0]!.toUpperCase() + kind.slice(1);
     if (subtype !== undefined && !isCreatureType(subtype)) return null;
     const yours = /^you/i.test(deathExile[3]!);
+    const tailText = deathExile[4] ?? deathExile[5];
+    const tail = tailText === undefined ? undefined : readEffect(tailText, name, null);
+    if (tail === null) return null;
+    if (tail !== undefined && ((tail.targets ?? []).length > 0 || (tail.decisions ?? []).length > 0 || (tail.reflexive ?? []).length > 0)) return null;
     return {
       replaces: [{
         on: 'dies',
@@ -39097,8 +39109,14 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
           const ch = characteristicsOf(ctx.state, was);
           return ch.isCreature && (subtype === undefined || ch.typeLine.subtypes.includes(subtype));
         },
-        instead: (ctx) => exileCard(ctx.state, ctx.subject),
-        ...(nontoken ? {} : { tokens: true }),
+        instead: (ctx) => {
+          const exiled = exileCard(ctx.state, ctx.subject);
+          return tail === undefined ? exiled : tail.effect({
+            state: exiled, source: ctx.source, controller: ctx.controller, targets: [], x: 0, decisions: [], kicked: false,
+          });
+        },
+        // A token has nothing left to exile, and so nothing for a second half to follow (D1242).
+        ...(nontoken || tail !== undefined ? {} : { tokens: true }),
       }],
     };
   }
