@@ -3696,7 +3696,7 @@ export interface CardScript {
    * conditional static and lives in `statics`, where a counter from any source turns it on, which
    * is what the card says.
    */
-  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color';
+  readonly entersChoice?: 'riot' | 'unleash' | 'creature-type' | 'color' | 'card-name';
   /**
    * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
    *
@@ -4564,7 +4564,9 @@ export interface CardScript {
        * Creatures of a colour (D643): a colour letter, or `CHOSEN_COLOR` for "of the chosen color",
        * filled in from what the permanent chose as it entered.
        */
-      | { readonly color: string; readonly other?: boolean; readonly everyone?: boolean };
+      | { readonly color: string; readonly other?: boolean; readonly everyone?: boolean }
+      /** Permanents with this card name (D1237): `CHOSEN_NAME`, filled in from the permanent's choice. */
+      | { readonly name: string };
     readonly effect: PumpOptions;
     /**
      * Filled in from the colour this permanent chose as it entered (D641): `protection` adds

@@ -51,7 +51,7 @@ import {
   gainControl, controlTermsHold, modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
-  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
+  chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
   staticEffect, takeInitiative, initiativeCard,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
@@ -5064,7 +5064,8 @@ function settle(state: GameState, before: GameState): GameState {
         the card's own `best`, the answer the bot would give; recorded under D641 and named in the
         player guide. A cast one already has its answer and keeps it.
       */
-      if ((arrivalScript?.entersChoice === 'creature-type' || arrivalScript?.entersChoice === 'color')
+      if ((arrivalScript?.entersChoice === 'creature-type' || arrivalScript?.entersChoice === 'color'
+        || arrivalScript?.entersChoice === 'card-name')
         && next.instances[id]?.chosen === undefined) {
         const spec = arrivalScript.decisions
           ?.flatMap((d) => (typeof d === 'function' ? [] : [d])).find(isChoiceDecision);
@@ -6931,7 +6932,7 @@ function completeResolution(
         permanent's from the moment it arrives, so the statics installed on arrival — which run
         after this — are filled in with it. Nothing installs them here.
       */
-      if (script?.entersChoice === 'creature-type' || script?.entersChoice === 'color') {
+      if (script?.entersChoice === 'creature-type' || script?.entersChoice === 'color' || script?.entersChoice === 'card-name') {
         const answer = chosenOption(ctx);
         const chosen = answer === null ? undefined : chosenRecord(script.entersChoice, answer);
         if (chosen !== undefined) next = withInstance(next, inst.id, { chosen });
@@ -7268,8 +7269,10 @@ function addBestowEffect(
 }
 
 /** A word answer as the record a permanent keeps (D641): a creature type, or a colour word as its letter. */
-function chosenRecord(kind: 'creature-type' | 'color', word: string): CardInstance['chosen'] {
+function chosenRecord(kind: 'creature-type' | 'color' | 'card-name', word: string): CardInstance['chosen'] {
   if (kind === 'creature-type') return { type: word };
+  // A card name (D1237), as printed.
+  if (kind === 'card-name') return { name: word };
   const letter = COLOUR_LETTERS[word.toLowerCase()];
   return letter === undefined ? undefined : { color: letter };
 }
@@ -7291,6 +7294,11 @@ export function withChosen(entry: StaticEntry, chosen: CardInstance['chosen']): 
   if (typeof scope === 'object' && 'color' in scope && scope.color === CHOSEN_COLOR) {
     if (chosen?.color === undefined) return null;
     next = { ...next, scope: { ...scope, color: chosen.color } };
+  }
+  // "The chosen name" (D1237).
+  if (typeof scope === 'object' && 'name' in scope && scope.name === CHOSEN_NAME) {
+    if (chosen?.name === undefined) return null;
+    next = { ...next, scope: { name: chosen.name } };
   }
   if (next.effect.addSubtypes?.includes(CHOSEN_TYPE) === true) {
     if (chosen?.type === undefined) return null;
@@ -7324,7 +7332,8 @@ function applyStatics(
     if (entry === null) continue;
     const seq = next.autoSeq + 1;
     const scope: ContinuousEffect['scope'] =
-      typeof entry.scope === 'object' && 'color' in entry.scope
+      typeof entry.scope === 'object' && 'name' in entry.scope ? { kind: 'named', name: entry.scope.name }
+      : typeof entry.scope === 'object' && 'color' in entry.scope
         ? {
             kind: 'controller-color', color: entry.scope.color as 'W' | 'U' | 'B' | 'R' | 'G',
             ...(entry.scope.other === true ? { other: true as const } : {}),

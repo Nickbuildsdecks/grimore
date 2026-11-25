@@ -37,7 +37,7 @@ import {
   counterUnlessPaid, createToken,
   IMPENDED, REGENERATION, dealDamage, destroy, discardAtRandom, draw, sacrifice, drawLater, exileCard, exileTopToPlay, firstCardTarget, stealWhile,
   firstPlayerTarget,
-  chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
@@ -7730,8 +7730,61 @@ export function enterChoiceDecision(
  * The bot's answer is aimed at the controller's own deck until `compileSingle` sees a line that
  * hurts the chosen tribe or protects from the colour.
  */
+/**
+ * "As ~ enters, choose a card name." (D1237): Pithing Needle, Phyrexian Revoker ("a nonland card
+ * name"). The names offered are the cards anybody can see — on the battlefield face up, in a
+ * graveyard, face up in exile, on the stack — and not every card in every deck, which the game state
+ * holds and which would tell a player what an opponent's library contains. A name no one has seen
+ * yet cannot be chosen; that is this reading's one limit. The bot names the opponents' permanent
+ * with an activated ability and the highest mana value.
+ */
+function cardNameDecision(nonland: boolean): ChoiceDecisionSpec {
+  const isLand = (state: GameState, id: string): boolean => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land');
+  const seen = (state: GameState): string[] => {
+    const ids = [
+      ...state.seats.flatMap((seat) => [
+        ...listAt(state, zoneKey(seat.index, 'battlefield')),
+        ...listAt(state, zoneKey(seat.index, 'graveyard')),
+        ...listAt(state, zoneKey(seat.index, 'exile')),
+      ]),
+      ...state.stackOrder.map((sid) => state.stackObjects[sid]?.source ?? ''),
+    ];
+    const names = new Set<string>();
+    for (const id of ids) {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.faceDown === true || (nonland && isLand(state, id))) continue;
+      const name = state.cardDefs[inst.defKey]?.name;
+      if (name !== undefined) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  };
+  return {
+    who: 'controller', prompt: nonland ? 'Choose a nonland card name' : 'Choose a card name', options: [],
+    optionsFor: (state) => seen(state),
+    best: (state, chooser) => {
+      let best: { name: string; value: number } | undefined;
+      for (const other of state.seats) {
+        if (other.index === chooser) continue;
+        for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+          const inst = state.instances[id];
+          if (inst === undefined || inst.faceDown === true || (nonland && isLand(state, id))) continue;
+          const def = state.cardDefs[inst.defKey];
+          if (def === undefined || (scriptOfCard(def)?.abilities ?? []).length === 0) continue;
+          const value = def.cmc ?? 0;
+          if (best === undefined || value > best.value) best = { name: def.name, value };
+        }
+      }
+      return best?.name ?? seen(state)[0];
+    },
+  };
+}
+
 function chooseAsEntersFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
+  const namedChoice = new RegExp(`^As (?:${selfRef(name)}|it) ${ENTERS}, choose an? (nonland )?card name$`, 'i').exec(text);
+  if (namedChoice !== null) {
+    return { entersChoice: 'card-name', decisions: [cardNameDecision(namedChoice[1] !== undefined)] };
+  }
   /*
     And the two-sentence land line (D642): "This land enters tapped. As it enters, choose a color."
     — Valgavoth's Lair, Night Market, Mirage Mesa — which is "enters tapped" and the choice at once.
@@ -38774,6 +38827,11 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       entriesDontTrigger: hushed[1]!.toLowerCase() === 'creatures' ? ['creature'] : ['artifact', 'creature'],
       ...(hushed[2] === undefined ? {} : { deathsDontTrigger: true as const }),
     };
+  }
+  // Pithing Needle's (D1237): the sources with the name chosen as it entered.
+  const needled = /^activated abilities of sources with the chosen name can't be activated( unless they're mana abilities)?\.?$/i.exec(plain(line).trim());
+  if (needled !== null) {
+    return { statics: [{ scope: { name: CHOSEN_NAME }, effect: needled[1] === undefined ? { cantActivate: true } : { cantActivateNonMana: true } }] };
   }
   const silenced = /^activated abilities of (.+?) can't be activated( unless they're mana abilities)?\.?$/i.exec(plain(line).trim());
   if (silenced !== null) {

@@ -237,7 +237,7 @@ export interface CardInstance {
    * from it as they are installed. Cleared when the card leaves, because the new object chooses
    * again (CR 400.7).
    */
-  readonly chosen?: { readonly type?: string; readonly color?: 'W' | 'U' | 'B' | 'R' | 'G' };
+  readonly chosen?: { readonly type?: string; readonly color?: 'W' | 'U' | 'B' | 'R' | 'G'; readonly name?: string };
   /**
    * The commander tax on **this** commander (D640, CR 903.8), for a deck with two commanders: each
    * partner pays for its own casts. A deck with one keeps the tax on the seat (`Seat.commanderTax`),

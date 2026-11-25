@@ -1617,6 +1617,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'other-artifacts-you-control' }
     /** Your opponents' artifacts or lands, and every planeswalker (D1226). */
     | { readonly kind: 'opponent-artifacts' } | { readonly kind: 'opponent-lands' } | { readonly kind: 'all-planeswalkers' }
+    /** Every permanent with this card name (D1237): Pithing Needle's. A face-down one has no name. */
+    | { readonly kind: 'named'; readonly name: string }
     /**
      * Every creature its controller has **except the one that made it**.
      *
@@ -2881,6 +2883,9 @@ function effectApplies(
       return instance.zone === 'battlefield' && hasType(typeLine, 'land') && instance.zoneSeat !== effect.controller;
     case 'all-planeswalkers':
       return instance.zone === 'battlefield' && hasType(typeLine, 'planeswalker');
+    case 'named':
+      return instance.zone === 'battlefield' && instance.faceDown !== true
+        && state.cardDefs[instance.defKey]?.name === effect.scope.name;
     case 'other-controller-creatures':
       return creature && instance.zoneSeat === effect.controller && instance.id !== effect.source;
     case 'controller-subtype':

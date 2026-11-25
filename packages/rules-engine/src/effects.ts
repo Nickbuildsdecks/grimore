@@ -4063,6 +4063,9 @@ export const CHOSEN_TYPE = 'the chosen type';
 /** "The chosen color" (D643), in a static scope's `color`: replaced on install, as `CHOSEN_TYPE` is. */
 export const CHOSEN_COLOR = 'the chosen color';
 
+/** "The chosen name" (D1237), in a static scope's `name`: replaced on install, as `CHOSEN_TYPE` is. */
+export const CHOSEN_NAME = 'the chosen name';
+
 export const chosenOption = (ctx: EffectContext, index = 0): string | null =>
   ctx.decisions[index]?.option ?? null;
 

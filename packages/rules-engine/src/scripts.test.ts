@@ -44079,6 +44079,65 @@ describe('Ragavan: "exile the top card of that player\'s library. Until end of t
   });
 });
 
+describe('"As ~ enters, choose a card name", and Pithing Needle (D1237)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    A('Test Needle', 'As Test Needle enters, choose a card name.\nActivated abilities of sources with the chosen name can\'t be activated unless they\'re mana abilities.'),
+    A('Test Revoker', 'As Test Revoker enters, choose a nonland card name.\nActivated abilities of sources with the chosen name can\'t be activated.'),
+    { ...A('Test Font', '{0}: You gain 1 life.'), cmc: 3, mana_cost: '{3}' },
+    A('Test Rock', '{T}: Add {C}.'),
+  ];
+  const deck = customDeck({ id: 'd1237', name: 'Needle', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (hand: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1237', 1: 'd1237' }, deckSpecs: { d1237: deck.deck }, hands: { 0: hand },
+      battlefield: { 0: ['Island'], 1: ['Test Font', 'Test Rock'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+  };
+  /** Casts `card`, answers its name question with `named`, and returns the state with priority handed to seat 1. */
+  const needle = (card: string, named: string) => {
+    let s = table([card]);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [] } as Action)), 30);
+    const asked = s.pendingDecision;
+    if (asked !== null) s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: named } as Action), 30);
+    return { s: { ...s, priority: 1 as SeatIndex }, asked };
+  };
+  const activate = (s: GameState, name: string): Action => ({ type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', name), abilityIndex: 0 } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the question offers the cards anybody can see, and the answer is kept', () => {
+    const { s, asked } = needle('Test Needle', 'Test Font');
+    expect(asked?.options).toEqual(expect.arrayContaining(['Test Font', 'Test Rock']));
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Needle')]!.chosen?.name).toBe('Test Font');
+  });
+
+  it('the named card\'s abilities are stopped, a mana ability is not, and other cards are not', () => {
+    const named = needle('Test Needle', 'Test Font').s;
+    expect(refusal(named, activate(named, 'Test Font'))).not.toBeNull();
+    const rock = needle('Test Needle', 'Test Rock').s;
+    expect(potentialMana(rock, 1).C).toBe(1);
+    expect(refusal(rock, activate(rock, 'Test Font'))).toBeNull();
+  });
+
+  it('without "unless they\'re mana abilities", the named rock taps for nothing; a nonland name only', () => {
+    const { s, asked } = needle('Test Revoker', 'Test Rock');
+    expect(potentialMana(s, 1).C).toBe(0);
+    expect(asked?.options).not.toContain('Island');
+  });
+
+  it('the bot names the opponent\'s permanent with an ability and the highest mana value', () => {
+    const s = table(['Test Needle']);
+    const asked = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Needle'), targets: [] } as Action)), 30);
+    const choice = botAction(asked, 0 as SeatIndex, {});
+    expect(choice).toMatchObject({ type: 'auto:decide', option: 'Test Font' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
