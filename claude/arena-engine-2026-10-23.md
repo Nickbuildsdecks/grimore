@@ -46113,3 +46113,33 @@ Faults injected by hand: 6, all caught.
 Not covered by a test: a stolen creature (the snapshot's controller rather than the owner).
 
 Coverage: 16,969 of 31,900 cards (+15 over D1238's 16,954), 39,564 of 59,888 lines (+26).
+
+## D1240 — "Look at an opponent's hand, then choose any card name": Sorcerous Spyglass
+
+D1237's card-name choice, with a look first. The name question for a Spyglass also offers the names
+of the cards in the hand looked at, and the bot weighs those cards alongside the opponent's
+permanents when it picks the dearest one with an activated ability. So a Spyglass can name what is
+coming as well as what is already on the table. Pithing Needle's question is unchanged.
+
+The hand looked at is the next opponent's in turn order, which is the only opponent in a two-player
+game. In a pod the printed card lets its controller pick the opponent; this does not ask. "Any card
+name" is still the names a player could know (D1237), now with that hand added.
+
+A correction to D1239's coverage line: its +15 was counted from D1238's figure, which was measured
+before the other session's D3005–D3011 were merged in. Five of the fifteen are D1239's own (the
+five it lists).
+
+Read whole now (1): Sorcerous Spyglass.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- The Spyglass question offers a card in the opponent's hand; a Needle's question does not.
+- The bot names the dearest card with an ability in that hand for a Spyglass, and the dearest one on
+  the battlefield for a Needle.
+
+Faults injected by hand: 3, all caught.
+- The hand never added to the options.
+- The hand left out of the bot's choice.
+- Every name choice looking at a hand.
+
+Coverage: 16,970 of 31,900 cards (+1 over D1239's 16,969), 39,566 of 59,888 lines (+2).
