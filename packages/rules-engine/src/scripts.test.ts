@@ -42958,6 +42958,49 @@ describe('"that ability triggers an additional time" (D1228)', () => {
   });
 });
 
+describe('three cost lines on one card, and Reality Shift (D1229)', () => {
+  const ARBITER = { name: 'Test Arbiter', type_line: 'Legendary Creature — Human Advisor', mana_cost: '{0}', cmc: 0, colors: ['W', 'U'], layout: 'normal', power: '2', toughness: '3', oracle_text: 'White spells you cast cost {1} less to cast.\nBlue spells you cast cost {1} less to cast.\nSpells your opponents cast cost {1} more to cast.' };
+  const SHIFT = { name: 'Test Shift', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', oracle_text: 'Exile target creature. Its controller manifests the top card of their library.' };
+  const ROWS = [
+    ARBITER, SHIFT,
+    { name: 'Test Wisp', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal' },
+    { name: 'Test Ray', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal' },
+    { name: 'Test Bolt', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{1}{R}', cmc: 2, colors: ['R'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1229', name: 'Arbiter', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 42 }], data: ROWS as never[] });
+  const seated = (mine: string[], theirs: string[] = [], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1229', 1: 'd1229' }, deckSpecs: { d1229: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const def = (s: GameState, name: string) => Object.values(s.cardDefs).find((d) => d.name === name)!;
+  const change = (s: GameState, seat: SeatIndex, name: string) => costChangeFor(s, seat, def(s, name)).generic;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of [ARBITER, SHIFT]) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('all three lines apply: white and blue cheaper for you, everything dearer for the opponent', () => {
+    const s = seated(['Test Arbiter']);
+    expect(change(s, 0, 'Test Wisp')).toBe(-1);
+    expect(change(s, 0, 'Test Ray')).toBe(-1);
+    expect(change(s, 0, 'Test Bolt')).toBe(0);
+    expect(change(s, 1, 'Test Bolt')).toBe(1);
+    expect(change(s, 1, 'Test Wisp')).toBe(1);
+  });
+
+  it('Reality Shift: the creature is exiled and its controller manifests', () => {
+    let s = seated(['Island'], ['Test Bear'], ['Test Shift']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shift'), targets: [{ kind: 'card', id: bear }] } as Action)), 30);
+    expect(s.instances[bear]!.zone).toBe('exile');
+    const faceDown = ids(s, 1, 'battlefield').filter((id) => s.instances[id]!.faceDown === true);
+    expect(faceDown).toHaveLength(1);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.faceDown === true)).toHaveLength(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

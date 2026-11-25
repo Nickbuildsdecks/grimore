@@ -178,8 +178,12 @@ export function fullyCompiled(result: Compilation): boolean {
  * the second line read correctly and was then reported as a `field-conflict` against the first.
  * `statics` is here for the same reason before a card needs it — a permanent with two printed
  * continuous abilities is ordinary, and nothing about the list says they must arrive together.
+ *
+ * And `costModifiers` (D1229), a list for the same reason: Grand Arbiter Augustin IV prints three
+ * of them on three lines ("White spells you cast cost {1} less", "Blue spells …", "Spells your
+ * opponents cast cost {1} more"), and the second was refused as a conflict with the first.
  */
-const ACCUMULATING = new Set(['triggers', 'abilities', 'statics']);
+const ACCUMULATING = new Set(['triggers', 'abilities', 'statics', 'costModifiers']);
 
 /**
  * Merges one line's fragment into the script being built.

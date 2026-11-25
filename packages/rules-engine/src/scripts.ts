@@ -16790,6 +16790,20 @@ function selfEffect(
     return { effect: (c) => incubate(c.state, c.controller, n) };
   }
 
+  /*
+    "Target player manifests the top card of their library" (D1229): the same, for the player aimed
+    at, which is how Reality Shift's "Its controller manifests the top card of their library" reads
+    once the referent has been swapped for a target.
+  */
+  if (/^target player manifests the top card of their library$/i.test(text)) {
+    return {
+      targets: [TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : manifestTop(c.state, seat);
+      },
+    };
+  }
   // Manifest (D1153, CR 701.40a): see `manifestTop`. "Manifest the top two cards" is that twice.
   const manifested = /^manifest the top (card|two cards|three cards) of your library$/i.exec(text);
   if (manifested !== null) {
