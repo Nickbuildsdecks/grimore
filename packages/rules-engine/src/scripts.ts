@@ -14148,6 +14148,46 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    Show and Tell (D1267): "Each player may put an artifact, creature, enchantment, or land card
+    from their hand onto the battlefield." One question per player, of their own hand, up to one
+    card; what everyone chose enters together as the spell resolves, each under its owner's
+    control. "Starting with you, … Repeat this process" (Eureka, Hypergenesis) is a loop of the same
+    question and is not read here. An instant or sorcery card can never be put onto the
+    battlefield, so a kind list naming one is refused.
+  */
+  const showAndTell = /^each player may put an? (.+?) card from their hand onto the battlefield$/i.exec(text);
+  if (showAndTell !== null) {
+    const PERMANENT_KINDS = ['artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker'];
+    const kinds = showAndTell[1]!.toLowerCase().split(/,\s*(?:or\s+)?|\s+or\s+/).map((k) => k.trim()).filter((k) => k !== '');
+    if (kinds.length > 0 && kinds.every((k) => k === 'permanent' || PERMANENT_KINDS.includes(k))) {
+      const wanted = kinds.includes('permanent') ? PERMANENT_KINDS : kinds;
+      const printedLine = (state: GameState, id: string) => parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+      return {
+        decisions: [{
+          who: 'each-player',
+          from: 'hand',
+          prompt: `You may put ${/^[aeiou]/i.test(showAndTell[1]!) ? 'an' : 'a'} ${showAndTell[1]!} card from your hand onto the battlefield`,
+          min: 0,
+          max: 1,
+          filter: (state: GameState, id: string) => wanted.some((kind) => hasType(printedLine(state, id), kind)),
+          // The engine's own player puts in the card that cost the most.
+          pick: (state, _chooser, candidates) => {
+            const cost = (id: string) => state.cardDefs[state.instances[id]?.defKey ?? '']?.cmc ?? 0;
+            const best = [...candidates].sort((a, b) => cost(b) - cost(a))[0];
+            return best === undefined ? [] : [best];
+          },
+        }],
+        effect: (c) => c.decisions.reduce(
+          (state, answer) => answer.ids.reduce(
+            (next, id) => (next.instances[id]?.zone === 'hand' ? putOntoBattlefield(next, id, next.instances[id]!.owner) : next),
+            state,
+          ),
+          c.state,
+        ),
+      };
+    }
+  }
   const edictMany = /^(each player|each opponent|defending player) sacrifices (a|an|one|two|three|four|five|six|seven|thirteen|\d+) (creature|permanent|artifact|land|enchantment|nonland permanent|nontoken creature|nontoken permanent)s?$/i.exec(text);
   if (edictMany !== null) {
     const subject = edictMany[1]!.toLowerCase();

@@ -45993,6 +45993,66 @@ describe('a flavour word or ability word in front of an activated ability comes 
   });
 });
 
+describe('Show and Tell: each player may put a permanent card from their hand onto the battlefield (D1267)', () => {
+  const SHOW = {
+    name: 'Show and Tell', type_line: 'Sorcery', mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal',
+    oracle_text: 'Each player may put an artifact, creature, enchantment, or land card from their hand onto the battlefield.',
+  };
+  const C = (name: string, cmc: number) => ({
+    name, type_line: 'Creature — Giant', oracle_text: '', mana_cost: `{${cmc}}`, cmc, colors: [], layout: 'normal', power: '5', toughness: '5',
+  });
+  const BOLT = { name: 'Test Bolt', type_line: 'Instant', oracle_text: 'Test Bolt deals 3 damage to any target.', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal' };
+  const ROWS = [SHOW, C('Test Titan', 8), C('Test Ogre', 3), BOLT];
+  const deck = customDeck({
+    id: 'd1267', name: 'Show',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Island', count: 52 }],
+    data: ROWS as never[],
+  });
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+  const table = (theirs: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1267', 1: 'd1267' }, deckSpecs: { d1267: deck.deck },
+    hands: { 0: ['Show and Tell', 'Test Titan', 'Test Bolt'], 1: [...theirs] },
+    battlefield: { 0: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole; "starting with you … repeat" (Hypergenesis) stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SHOW as never)).toMatchObject({ ok: true, unread: [] });
+    const loop = compileCard({ ...SHOW, oracle_text: 'Starting with you, each player may put an artifact, creature, enchantment, or land card from their hand onto the battlefield. Repeat this process until no one puts a card onto the battlefield.' } as never);
+    expect(loop.ok && loop.unread.length).toBeGreaterThan(0);
+  });
+
+  it('each player is asked of their own hand, an instant is not offered, and both cards enter under their owners', () => {
+    let s = table(['Test Ogre']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Show and Tell') } as Action)), 40);
+    const chosen: Record<number, string> = { 0: 'Test Titan', 1: 'Test Ogre' };
+    const asked: number[] = [];
+    for (let i = 0; i < 4 && s.pendingDecision !== null; i++) {
+      const seat = s.pendingDecision!.seat;
+      asked.push(seat);
+      const offered = s.pendingDecision!.candidates;
+      expect(offered.every((id) => s.instances[id]!.owner === seat && s.instances[id]!.zone === 'hand')).toBe(true);
+      expect(offered.map((id) => nameOf(s, id))).not.toContain('Test Bolt');
+      const pick = offered.find((id) => nameOf(s, id) === chosen[seat]);
+      s = drain(apply(s, { type: 'auto:decide', by: seat, cards: pick === undefined ? [] : [pick] } as Action), 40);
+    }
+    expect(asked.sort()).toEqual([0, 1]);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Test Titan');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Test Ogre');
+    expect(namesIn(s, 0, 'hand')).toContain('Test Bolt');
+  });
+
+  it('a player may decline', () => {
+    let s = table(['Test Ogre']);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Show and Tell') } as Action)), 40);
+    for (let i = 0; i < 4 && s.pendingDecision !== null; i++) {
+      s = drain(apply(s, { type: 'auto:decide', by: s.pendingDecision!.seat, cards: [] } as Action), 40);
+    }
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Titan');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Ogre');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
