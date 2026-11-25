@@ -46164,3 +46164,49 @@ injected by script: 4 of 4 caught.
 **Not counted.** An "enters or attacks" joiner was written and then removed. Every such line it
 read already read through the existing self-trigger path, and the non-self ones ("another creature
 you control of the chosen type") fail on their halves, so it gained nothing.
+
+## D1241 — Grafdigger's Cage and Containment Priest
+
+Three graveyard-hate statics.
+- **"Creature cards in graveyards [and libraries] can't enter the battlefield"**: Grafdigger's Cage,
+  Kunoros, Weathered Runestone ("Nonland permanent cards") and Soulless Jailer ("Permanent cards").
+  The card stays where it is. A reanimation spell resolves and does nothing, and a search that would
+  put a creature onto the battlefield leaves it in the library.
+- **"Players can't cast spells from graveyards [or libraries]"**: two new casting limits beside the
+  others (D788), checked against the zone the card is cast from, so flashback and escape are refused
+  under a Cage and still offered without one.
+- **"If a nontoken creature would enter and it wasn't cast, exile it instead"**: Containment Priest.
+  A creature card arriving from anywhere but the stack goes to exile instead: reanimated, put in
+  from a hand or a library, or coming back from a blink.
+
+Both arrival rules are asked in `relocate`, the one place a card changes zone, so no reanimation path
+can miss them. `cardActions` cannot read card scripts without an import cycle, so `automation`
+registers the check with `setArrivalBan`. Only on an automated table; a tabletop move means what the
+player said. Each refusal or redirect goes into the replacement log, so the player sees why the card
+did not arrive.
+
+Read whole now (4): Grafdigger's Cage, Containment Priest, Kunoros, Hound of Athreos, Weathered
+Runestone. Soulless Jailer's first two lines read; its "noncreature spells from graveyards or exile"
+does not yet.
+
+Not done: printed types decide the kind, so a manifested noncreature card is not seen as a creature
+by the Priest. Worms of the Earth's "Lands can't enter the battlefield" and Ashes of the Abhorrent's
+"or activate abilities of cards in graveyards" are not read.
+
+**Tests.** 5 engine tests:
+- The test cards read whole.
+- Under the Cage, a creature card stays in a graveyard and in a library, and an artifact card does
+  not; without it the creature enters.
+- "Permanent cards in graveyards" stops an artifact, and not a library.
+- Flashback is refused under the Cage and allowed without it.
+- Under the Priest, a creature put in from a graveyard is exiled, and one that was cast enters.
+
+Faults injected by hand: 6, all caught.
+- The Cage never stops anything.
+- "And libraries" dropped.
+- Every ban read as creatures only.
+- The cast check not told the zone.
+- The Priest exiling a creature that was cast.
+- A graveyard-only ban read as libraries too.
+
+Coverage: 16,983 of 31,900 cards (+13 over D1240's 16,970), 39,595 of 59,888 lines (+29).
