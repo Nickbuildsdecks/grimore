@@ -509,7 +509,7 @@ type PrintedPart =
    * those tokens instead." (D652) — Anointed Procession, Parallel Lives, Doubling Season's first line.
    * A replacement on the controller's token creation, read off the printed card by `tokenMultiplier`.
    */
-  | { readonly kind: 'token-doubler' }
+  | { readonly kind: 'token-doubler'; readonly everyone?: true }
   /** "… instead create those tokens plus an additional Treasure token" (D866, Xorn). */
   | { readonly kind: 'treasure-plus' }
   /**
@@ -758,6 +758,7 @@ function printedParts(
     // A level band and everything under it: not this card's abilities. See `LEVEL_BAND_HEADER`.
     if (LEVEL_BAND_HEADER.test(line)) break;
     if (TOKEN_DOUBLER.test(line)) { found.push({ kind: 'token-doubler' }); continue; }
+    if (TOKEN_DOUBLER_ALL.test(line)) { found.push({ kind: 'token-doubler', everyone: true }); continue; }
     if (TREASURE_PLUS.test(line)) { found.push({ kind: 'treasure-plus' }); continue; }
     const replaced = counterReplacementLine(line, name);
     if (replaced !== null) { found.push(replaced); continue; }
@@ -807,7 +808,9 @@ function printedParts(
  * `printedKeywords` alone, so River Boa's `Islandwalk` and Paladin en-Vec's protection were
  * reported as unread lines on cards the engine was already playing correctly.
  */
-const TOKEN_DOUBLER = /^If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead\.?$/i;
+const TOKEN_DOUBLER = /^If (?:an effect would create one or more tokens under your control, it creates twice that many of those tokens|one or more tokens would be created under your control, twice that many of those tokens are created) instead\.?$/i;
+/** Primal Vigor's (D888): "If one or more tokens would be created, twice that many …" — anybody's tokens. */
+const TOKEN_DOUBLER_ALL = /^If one or more tokens would be created, twice that many of those tokens are created instead\.?$/i;
 const TREASURE_PLUS = /^If you would create one or more Treasure tokens, instead create those tokens plus an additional Treasure token\.?$/i;
 
 /**
@@ -841,12 +844,17 @@ export function registerCounterMarkers(markers: ReadonlySet<string>): void { COU
 
 export function tokenMultiplier(state: GameState, seat: SeatIndex): number {
   let times = 1;
-  for (const id of state.zones?.[zoneKey(seat, 'battlefield')] ?? []) {
-    const inst = state.instances[id];
-    if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
-    const def = state.cardDefs[inst.defKey];
-    const doublers = printedParts(def?.oracleText, def?.name).filter((part) => part.kind === 'token-doubler').length;
-    times *= 2 ** doublers;
+  // Every battlefield, because Primal Vigor's doubles anybody's tokens (D888); the others only their
+  // controller's.
+  for (const other of state.seats ?? []) {
+    for (const id of state.zones?.[zoneKey(other.index, 'battlefield')] ?? []) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      const def = state.cardDefs[inst.defKey];
+      const doublers = printedParts(def?.oracleText, def?.name)
+        .filter((part) => part.kind === 'token-doubler' && (part.everyone === true || other.index === seat)).length;
+      times *= 2 ** doublers;
+    }
   }
   return times;
 }

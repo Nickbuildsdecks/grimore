@@ -22382,6 +22382,11 @@ function countOfThing(
     "For each other attacking creature that shares a creature type with it" (D861, Shared Animosity):
     "it" is the event's attacker, its creature types read live (a changeling has them all).
   */
+  // "For each 1 life your opponents have lost this turn" (D890, Neheb, the Eternal): the turn's record.
+  if (/^1 life your opponents have lost this turn$/i.test(text)) {
+    return (c) => opponentsOf(c.state, c.controller)
+      .reduce((sum, seat) => sum + Math.max(0, c.state.lifeLostThisTurn?.[String(seat)] ?? 0), 0);
+  }
   if (/^other attacking creature that shares a creature type with it$/i.test(text) && number === 'singular') {
     const kinds = (state: GameState, id: string): readonly string[] => {
       const inst = state.instances[id];
@@ -23199,6 +23204,16 @@ function eventRelativeEffect(
         },
       };
     }
+  }
+  // "Counter that spell" / "counter it" on a cast trigger (D893, Vexing Bauble, Boromir): the spell the
+  // trigger answers, if it is still on the stack.
+  if (events.length > 0 && events.every((one) => one.kind === 'spell-cast') && /^counter (?:it|that spell)$/i.test(text)) {
+    return {
+      effect: (c) => {
+        const id = c.answering;
+        return id === undefined || c.state.stackObjects[id]?.kind !== 'spell' ? c.state : counterSpell(c.state, id);
+      },
+    };
   }
   const bothHalves = aboutAPlayer || aboutTheHitPlayer
     ? /^that player (.+?) and ((?:loses|gains|draws|discards|sacrifices|mills) .+)$/i.exec(text) : null;
@@ -33156,6 +33171,26 @@ function composeEffectsAsPrinted(
         continue;
       }
     }
+    /*
+      Peer into the Abyss (D889): "Target player draws cards equal to half the number of cards in their
+      library and loses half their life. Round up each time." The draw first, half the library rounded
+      up; then half the life they have after it, rounded up.
+    */
+    if (/^target player draws cards equal to half the number of cards in their library and loses half their life$/i.test(clause.trim().replace(/\.$/, ''))
+      && /^round up each time$/i.test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      parts.push({
+        targets: [TARGET_PLAYER],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          if (seat === null) return c.state;
+          const drawn = draw(c.state, seat, Math.ceil(listAt(c.state, zoneKey(seat, 'library')).length / 2));
+          const lifeNow = drawn.seats[seat]?.life ?? 0;
+          return loseLife(drawn, seat, Math.ceil(Math.max(0, lifeNow) / 2));
+        },
+      });
+      at++;
+      continue;
+    }
     // A discard round paid back in cards (D876): see `discardThenDraw`.
     const syphon = discardThenDraw(clause, rest[at + 1]);
     if (syphon !== null) { parts.push(syphon); at++; continue; }
@@ -36530,6 +36565,10 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     }
     return merged as Partial<CardScript>;
   }
+  // D891: Notion Thief. See `CardScript.stealsExtraDraws`.
+  if (/^if an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card\.?$/i.test(plain(line).trim())) {
+    return { stealsExtraDraws: true };
+  }
   // D868: Bloodletter of Aclazotz. See `lifeLossMultiplier`.
   if (/^if an opponent would lose life during your turn, they lose twice that much life instead\.?$/i.test(plain(line).trim())) {
     return { opponentsLoseDoubleOnYourTurn: true };
@@ -37625,6 +37664,18 @@ function interveningConditionFor(
   printed: string, name: string,
 ): NonNullable<TriggerDef['condition']> | null {
   /*
+    "If no mana was spent to cast it" (D893, Vexing Bauble, Boromir): the cast spell's `manaSpent`, as
+    D1171's measure reads it. Asked again as the trigger resolves, with the spell it answers in hand.
+  */
+  if (/^no mana was spent to cast (?:it|that spell)$/i.test(printed.trim())) {
+    const spent = spellMeasure('the amount of mana spent to cast that spell')!;
+    return (c) => spent(c) === 0;
+  }
+  // "At least N" is "N or more" (D892, Valakut's "if you control at least five other Mountains").
+  // Not "at least four more creatures than you" (Avatar of Might), a comparison of its own.
+  const atLeast = /^(.*?)\bat least (\w+) (?!more\b)(.+)$/i.exec(printed.trim());
+  if (atLeast !== null) return interveningConditionFor(`${atLeast[1]!}${atLeast[2]!} or more ${atLeast[3]!}`, name);
+  /*
     The rows below first, which read the board live; then any condition a static can ask (D607),
     answered by `conditionHolds` exactly as the static would be: "if ~ is untapped", "if you have no
     cards in hand", "if there are four or more card types among cards in your graveyard", "if you
@@ -38079,6 +38130,31 @@ function interveningConditionRows(
     const count = countOfThing(`${theirs[2]!} you control`, name, 'plural');
     if (atLeast === undefined || atLeast < 1 || count === null) return null;
     return (c) => opponentsOf(c.state, c.controller).some((seat) => count({ ...c, controller: seat }) >= atLeast);
+  }
+  /*
+    "You control N or more other <permanents>" (D892, Valakut's "five other Mountains"): the permanents
+    the scope reads, less the event's own (the Mountain that entered), else less the source. It fell
+    through to the count below before, which reads "other Mountains" as nothing and was always false.
+  */
+  const severalOther = /^you control (\w+) or more other (.+)$/i.exec(text);
+  if (severalOther !== null) {
+    const atLeast = number(severalOther[1]!);
+    const noun = severalOther[2]!.trim();
+    // A subtype in the plural ("Mountains", "Plains", "Goblins"), counted by its singular.
+    const singular = /^plains$/i.test(noun) ? 'Plains' : noun.replace(/s$/, '');
+    const bySubtype = /^[A-Z]/.test(noun) && (BASIC_LAND_TYPES.includes(singular as never) || isCreatureType(singular));
+    const otherScope = bySubtype ? null : massScope(`${noun} you control`);
+    if (atLeast !== undefined && atLeast >= 1 && (bySubtype || otherScope !== null)) {
+      return (c) => {
+        const ids = bySubtype
+          ? listAt(c.state, zoneKey(c.controller, 'battlefield')).filter((id) => {
+            const inst = c.state.instances[id];
+            return inst !== undefined && hasSubtype(characteristicsOf(c.state, inst).typeLine, singular);
+          })
+          : otherScope!(c);
+        return ids.filter((id) => id !== (c.subject ?? c.source)).length >= atLeast;
+      };
+    }
   }
   const several = /^you control (\w+) or more (.+)$/i.exec(text);
   if (several !== null) {

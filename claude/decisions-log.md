@@ -62819,3 +62819,104 @@ X = 3 deals 3 to each of two targets. The gate was restarted once, because that 
 written into the test file while the first run was going.
 
 Gated together on f64cc0c: full gate green, engine tests 6642. Coverage: 16,858 to 16,886 of 31,900 cards with every line read, and 39,404 to 39,434 of 59,888 lines.
+
+## D888 — Token doublers in other words: Exalted Sunborn, Primal Vigor
+
+Most-played order: Exalted Sunborn (rank 1239), Primal Vigor (1255).
+
+**Engine.** D652's `token-doubler` part reads "If one or more tokens would be created under your
+control, twice that many …" (Exalted Sunborn) as well. Primal Vigor's "If one or more tokens
+would be created, …" is the `everyone` doubler, and `tokenMultiplier` now asks every battlefield
+for one.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- our Sunborn doubles our two Treasures to four, and theirs does not;
+- Primal Vigor doubles ours whichever side it is on.
+
+D866's Xorn tests still pass. Faults injected by script: 3 of 3 caught.
+
+## D889 — Half the library and half the life, rounded up: Peer into the Abyss
+
+Most-played order: Peer into the Abyss (rank 1307).
+
+**Reader.** "Target player draws cards equal to half the number of cards in their library and
+loses half their life. Round up each time." The draw comes first, half the library rounded up.
+Then the player loses half the life they have after it, rounded up.
+
+**Tests.** The card reads. With a library of 7 and 19 life, we draw 4, have 3 cards left and are
+at 9. Faults injected by script: 3 of 3 caught.
+
+Deferred: Balefire Dragon's "it deals that much damage to each creature that player controls".
+The hit trigger rewrites "that player" to "defending player", and the rewritten line is refused
+before the trigger reader is reached. The refusal was not found within the time this increment
+allowed.
+
+## D890 — Mana for each life the opponents lost: Neheb, the Eternal
+
+Most-played order: Neheb, the Eternal (rank 1215).
+
+**Reader.** A count, "1 life your opponents have lost this turn", read from the turn's
+`lifeLostThisTurn` record. The postcombat-main trigger and "add {R} for each" already read.
+
+**Tests.** The card reads. A Shock at the opponent before combat makes {R}{R} at the start of
+the postcombat main phase. Faults injected by script: 2 of 2 caught.
+
+## D891 — An opponent's extra draws are ours: Notion Thief
+
+Most-played order: Notion Thief (rank 1231).
+
+**Engine.** `CardScript.stealsExtraDraws`, asked by `draw` (CR 614.1a). Each card an opponent of
+the Thief's controller would draw, except the first in their own draw step, is skipped, and the
+Thief's controller draws one instead. "The first in their draw step" is the first card they
+actually draw this turn while it is their draw step; replaced draws were not theirs and do not
+count. The stolen card is drawn as it is and is not offered to another Thief. Two Thieves on
+opposite sides would otherwise pass one card back and forth without end, so this is a deliberate
+simplification.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- under our Thief, their draw-step card is theirs, and their Divination draws two cards for us;
+- our own draws are untouched by our Thief.
+
+Faults injected by script: 2 of 2 real faults caught. A third, letting the Thief take its own
+controller's draws, gives the same cards to the same player, so it is equivalent and not counted.
+
+## D892 — "At least five other Mountains": Valakut, the Molten Pinnacle
+
+Most-played order: Valakut, the Molten Pinnacle (rank 1287).
+
+**Reader.**
+- An intervening "at least N" is read as "N or more".
+- "You control N or more other <permanents>" now counts the scope less the event's own
+  permanent (the Mountain that entered), or less the source when there is no event. A subtype in
+  the plural ("Mountains", "Plains", "Goblins") is counted by its singular.
+- "You may have ~ deal 3 damage" already read, so a causative reader written for it was dead code
+  and was removed when its fault went uncaught.
+
+**Found on the way.** Before this, "you control N or more other Mountains" read as a count of
+nothing, so it was always false. It was silent, because the line was marked read.
+
+**Tests.** The card reads. With five other Mountains the sixth deals 3, and with four it does
+nothing. Faults injected by script: 2 of 2 caught.
+
+## D893 — Countering a spell cast for no mana: Vexing Bauble, Boromir
+
+Most-played order: Boromir, Warden of the Tower (rank 890), Vexing Bauble (1285).
+
+**Reader.**
+- A new condition, "if no mana was spent to cast it", read from D1171's measure of the cast
+  spell's `manaSpent`. It is asked again as the trigger resolves.
+- "Counter it" or "counter that spell" on a cast trigger counters the spell the trigger answers,
+  if it is still on the stack.
+
+**Tests.** The card reads. The opponent's free spell is countered, and the one paid for with {1}
+resolves. Faults injected by script: 2 of 2 caught.
+
+Card-by-card diffs: D888–D891 against b0a789e, 0 lost and 7 gained (including Mondrak, Glory
+Dominus, and Adrix and Nev). D892–D893 against that lost one card on the first run, Avatar of
+Might: its "if an opponent controls at least four more creatures than you" was rewritten to
+"four or more more". The rewrite now skips "at least N more", and the card reads again. That run
+gained 7, including Nix, Nether Void, Presence of the Master and Roiling Canopy.
+
+Gated together on b0a789e: full gate green (restarted once, for the Avatar of Might fix), engine tests 6656. Coverage: 16,886 to 16,900 of 31,900 cards with every line read, and 39,434 to 39,453 of 59,888 lines.
