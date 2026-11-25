@@ -44499,6 +44499,57 @@ describe('"Look at target player\'s hand.": Gitaxian Probe (D3014)', () => {
   });
 });
 
+describe('"{0}: Attach ~ to target creature you control": Cranial Plating, Felidar Umbra (D3015)', () => {
+  const ROWS = [
+    { name: 'Test Plating', type_line: 'Artifact — Equipment', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: 'Equipped creature gets +2/+0.\n{0}: Attach Test Plating to target creature you control.\nEquip {5}' },
+    { name: 'Test Umbra', type_line: 'Enchantment — Aura', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal',
+      oracle_text: 'Enchant creature\nEnchanted creature gets +2/+2.\n{0}: Attach Test Umbra to target creature you control.' },
+  ];
+  const deck = customDeck({ id: 'd3015', name: 'Plating', entries: [{ name: 'Test Plating', count: 2 }, { name: 'Test Umbra', count: 2 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Plains', count: 48 }], data: ROWS as never[] });
+  const attachIndex = (row: (typeof ROWS)[number]) => {
+    const read = compileCard(row as never);
+    return read.ok ? (read.script?.abilities ?? []).findIndex((a) => /attach/i.test(a.description)) : -1;
+  };
+  const table = (mine: string[], hand: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd3015', 1: 'd3015' }, deckSpecs: { d3015: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine }, turn: 5, firstSeat: 0,
+  } as never), 'precombat-main');
+  const bears = (s: GameState) => ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) {
+      expect(compileCard(row as never)).toMatchObject({ ok: true, unread: [] });
+      expect(attachIndex(row)).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('the Equipment goes onto a Bear and then onto the other, its bonus with it', () => {
+    let s = table(['Test Plating', 'Grizzly Bears', 'Grizzly Bears']);
+    const plate = find(s, 0, 'battlefield', 'Test Plating');
+    const [a, b] = bears(s);
+    const move = (to: string) => { s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: plate, abilityIndex: attachIndex(ROWS[0]!), targets: [{ kind: 'card', id: to }] } as Action))); };
+    move(a!);
+    expect(s.instances[plate]!.attachedTo).toBe(a);
+    expect([power(s, a!), power(s, b!)]).toEqual([4, 2]);
+    move(b!);
+    expect(s.instances[plate]!.attachedTo).toBe(b);
+    expect([power(s, a!), power(s, b!)]).toEqual([2, 4]);
+  });
+
+  it('the Aura moves from one Bear to the other, and what it grants follows it', () => {
+    let s = table(['Grizzly Bears', 'Grizzly Bears'], ['Test Umbra']);
+    const [a, b] = bears(s);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Umbra'), targets: [{ kind: 'card', id: a! }] } as Action)));
+    const umbra = find(s, 0, 'battlefield', 'Test Umbra');
+    expect([power(s, a!), power(s, b!)]).toEqual([4, 2]);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: umbra, abilityIndex: attachIndex(ROWS[1]!), targets: [{ kind: 'card', id: b! }] } as Action)));
+    expect(s.instances[umbra]!.attachedTo).toBe(b);
+    expect([power(s, a!), power(s, b!)]).toEqual([2, 4]);
+  });
+});
+
 describe('"thirty or more artifacts": Knuckles the Echidna (D3011)', () => {
   const ROWS = [
     { name: 'Test Knuckles', type_line: 'Legendary Creature — Echidna', oracle_text: 'Treasure Hunter — At the beginning of your upkeep, if you control thirty or more artifacts, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '3' },

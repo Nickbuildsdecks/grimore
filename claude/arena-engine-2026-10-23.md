@@ -46539,3 +46539,16 @@ Faults injected by hand: 2, all caught.
 - The lose-only form not read.
 
 Coverage: 17,029 of 31,900 cards (+4 over D1249's 17,025), 39,657 of 59,888 lines (+6).
+## D3015 — "{B}{B}: Attach ~ to target creature you control": Cranial Plating, Felidar Umbra
+
+**Reader.** The permanent moved onto a creature you control as an ability of its own, at whatever
+speed it is printed with (Cranial Plating's is instant speed, where equip is sorcery speed). An
+Equipment moves the way equip moves it, with its own `equipBonus`. An Aura is moved with the new
+`moveAura` (effects.ts). An Aura's grant is installed as it resolves, scoped to the creature it
+enchanted, so every effect from that Aura scoped to the old host is re-pointed at the new one, its
+conditional parts with it. Anything that is neither does nothing.
+
+**Tests.** An Equipment with "+2/+0" goes onto one Bear and then the other, and the bonus moves
+with it. An Aura with "+2/+2" is cast onto one Bear and moved to the other by its ability, and the
+bonus follows. Faults injected by script: 3 of 3 caught (the Aura moved without its grant, the
+Equipment moved without its bonus, the Aura treated as nothing).

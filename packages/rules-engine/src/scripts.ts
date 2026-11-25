@@ -42,7 +42,7 @@ import {
   createEmblem, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
-  putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
+  putOntoBattlefield, tap, equipTo, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, EXILED_ON_LEAVING, RENOWNED, MONSTROUS,
@@ -29961,6 +29961,32 @@ function readEffect(
           if (!hasSubtype(parseTypeLine(def?.typeLine), 'equipment')) return c.state;
           const bonus = scriptOfCard(def)?.equipBonus;
           return bonus === undefined ? c.state : equipTo(c.state, gear, host, c.controller, bonus);
+        },
+      };
+    }
+  }
+  /*
+    "{B}{B}: Attach ~ to target creature you control" (D3015, Cranial Plating, Felidar Umbra): this
+    permanent moved onto the target as an ability of its own, at any speed it is printed with. An
+    Equipment moves with its own equip bonus (`equipBonus`), the way equip moves it. An Aura (Felidar
+    Umbra) is moved with `moveAura`, which takes what it grants along; "target creature you control"
+    is a creature, so "Enchant creature" still holds.
+  */
+  if (where === 'battlefield' && new RegExp(`^attach (?:${selfRef(name)}|this equipment) to target creature you control$`, 'i').test(clause.trim())) {
+    const spec = targetSpecFrom('target creature you control', true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const host = firstCardTarget(c);
+          const inst = c.state.instances[c.source];
+          if (host === null || inst === undefined || inst.zone !== 'battlefield') return c.state;
+          const def = c.state.cardDefs[inst.defKey];
+          const line = parseTypeLine(def?.typeLine);
+          if (hasSubtype(line, 'aura')) return moveAura(c.state, c.source, host);
+          if (!hasSubtype(line, 'equipment')) return c.state;
+          const bonus = scriptOfCard(def)?.equipBonus;
+          return bonus === undefined ? c.state : equipTo(c.state, c.source, host, c.controller, bonus);
         },
       };
     }
