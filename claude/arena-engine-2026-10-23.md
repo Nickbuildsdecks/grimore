@@ -45247,3 +45247,109 @@ Coverage: 16,832 to 16,853 of 31,900 cards with every line read, and 39,369 to 3
 lines. Card-by-card diffs: D872–D875 against 02d07b5, 0 lost and 6 gained (including Maelstrom
 Wanderer and Forked-Branch Garami); D876–D880 against that, 0 lost and 16 gained (including
 Fumarole, Plague Spores, Netherborn Altar and Biomass Mutation).
+
+## D881 — "Whenever you put counters on this creature": Exemplar of Light
+
+Most-played order: Exemplar of Light (rank 1087).
+
+**Reader.** "Whenever you put one or more +1/+1 counters on ~" is D633's `counters-put` row, with
+the once-each-turn suffix read as before. The event does not record who put the counters, so an
+opponent's effect putting them on it would trigger it too. That gap is recorded here; no common
+card does that to another player's creature.
+
+**Tests.** The card reads. Two counters in one turn draw one card. Faults injected by script: 1 of
+1 caught.
+
+## D882 — Two triggers with one effect: Up the Beanstalk
+
+Most-played order: Up the Beanstalk (rank 1145).
+
+**Reader.** "When A and whenever B, <effect>": each half is read as its own line, and both must be
+a single trigger and nothing else.
+
+**Tests.** The card reads. It draws a card as it enters, a card for a mana value 5 spell, and
+none for a mana value 4 spell. Faults injected by script: 2 of 2 caught.
+
+## D883 — A creature type for good: Tyrite Sanctum
+
+Most-played order: Tyrite Sanctum (rank 1174).
+
+**Reader.** D851's "target … becomes a <type> in addition to its other types" takes a creature
+type as well (layer 4's `addSubtypes`). Without "until end of turn" it lasts for good, as its own
+source. The text arrives lowercased, so the type word is tested with `isCreatureType` rather
+than by its capital.
+
+**Tests.** The card reads. The legendary Hero becomes a God with a +1/+1 counter, and is still a
+God two turns later. A non-legendary Bear is refused. D851's Torque tests still pass. Faults
+injected by script: 3 of 3 caught.
+
+## D884 — "That permanent's controller mills a card": Mesmeric Orb
+
+Most-played order: Mesmeric Orb (rank 1099).
+
+**Engine.** The `becomes-untapped` and `becomes-tapped` events now carry their permanent as the
+trigger's subject, both in `raise` and in the subject list the trigger is pushed with. Before,
+"that permanent" on these events named nothing.
+
+**Reader.** "That permanent's (or creature's) controller mills N cards / loses N life", on an
+event about a permanent: its controller as it is, or as it last was.
+
+**Tests.** The card reads. Our two tapped lands untap in our untap step, so we mill two and the
+opponent mills none. D1121, D1124 and D994's tap and untap tests still pass. Faults injected by
+script: 2 of 2 caught.
+
+## D885 — "If it's the first combat phase of the turn": Karlach, Genji Glove, Aurelia
+
+Most-played order: Genji Glove (rank 1000), Karlach, Fury of Avernus (1076), Aurelia, the
+Warleader (804).
+
+**Engine.** `combatsThisTurn` counts the combat phases begun this turn, cleared with the turn.
+
+**Reader.**
+- A new condition, `first-combat-phase`.
+- Karlach's "untap all attacking creatures. They gain first strike until end of turn" reads "they"
+  as the attacking creatures.
+- D1117's "for the first time each turn" prologue now runs past a comma in the card's own name
+  ("Whenever Aurelia, the Warleader attacks …").
+
+**Tests.** The card reads. The first attack untaps both attackers, gives first strike and adds a
+combat phase. The opponent takes 7 in the first combat. In the second combat the attacker stays
+tapped. Faults injected by script: 3 of 3 caught.
+
+## D886 — A bite whose excess tramples over: Ram Through
+
+Most-played order: Ram Through (rank 1090).
+
+**Reader.** "Target creature you control deals damage equal to its power to target creature you
+don't control. If the creature you control has trample, excess damage is dealt to that
+creature's controller instead." Lethal damage to the creature is its toughness less the damage
+already marked, or 1 from a deathtouch source (CR 702.2c). The rest goes to its controller, and
+only when the biter has trample as the spell resolves.
+
+**Tests.** 3 engine tests:
+- the card reads;
+- a 5/5 trampler kills the 2/2 and 3 goes to its controller;
+- without trample, all 5 go to the Bear and none to the player.
+
+Faults injected by script: 3 of 3 caught.
+
+## D887 — 4 to one target and 3 to each of up to two others: Drakuseth, Maw of Flames
+
+Most-played order: Drakuseth, Maw of Flames (rank 1115).
+
+**Reader.** "~ deals N damage to each of up to K [other] targets", an optional group of targets.
+The conjunction splits "4 damage to any target and 3 damage to …" before this reader sees it, so
+"other" means other than the first clause's target, which the engine's one-object-one-target
+rule keeps.
+
+**Tests.** Both cards read. A sorcery with the same text deals 4 to the opponent and 3 to each of
+their two Walls, and one other target is enough. Faults injected by script: 3 of 3 caught.
+
+Card-by-card diffs: D881–D884 against 76324f6, 0 lost and 18 gained (including Olivia Voldaren,
+Memnarch and Captivating Vampire from the creature-type reader); D885–D887 against that, 0 lost
+and 10 gained (including Finest Hour, Hexplate Wallbreaker, Fall of the Titans and Jaya's
+Immolating Inferno). The X spells among them were checked at a table: Fall of the Titans with
+X = 3 deals 3 to each of two targets. The gate was restarted once, because that check was
+written into the test file while the first run was going.
+
+Gated together on f64cc0c: full gate green, engine tests 6642. Coverage: 16,858 to 16,886 of 31,900 cards with every line read, and 39,404 to 39,434 of 59,888 lines.

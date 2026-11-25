@@ -819,7 +819,7 @@ export type TriggerEvent =
    * becomes tapped", with `BoardSubjectFilter`'s words. `leaves` takes the same (D1121): "whenever
    * another creature you control leaves the battlefield".
    */
-  | ({ readonly kind: 'becomes-tapped'; readonly attachments?: readonly string[] } & BoardSubjectFilter)
+  | ({ readonly kind: 'becomes-tapped'; readonly attachments?: readonly string[]; readonly subject?: string } & BoardSubjectFilter)
   /**
    * "Whenever ~ becomes untapped" (D1124): inspired, Key to the City, Hollowsage — and the board's,
    * "whenever a permanent you control becomes untapped" (Wake Thrasher). Found the way a tap is,
@@ -827,7 +827,7 @@ export type TriggerEvent =
    * Muse all raise it without knowing it exists. In the untap step it waits for the upkeep, where
    * the first player gets priority (CR 502.4).
    */
-  | ({ readonly kind: 'becomes-untapped' } & BoardSubjectFilter)
+  | ({ readonly kind: 'becomes-untapped'; readonly subject?: string } & BoardSubjectFilter)
   /**
    * "Whenever ~ **is dealt damage**" — enrage, and every card printed before the word (D566).
    *

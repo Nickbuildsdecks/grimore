@@ -2199,6 +2199,8 @@ export interface ContinuousEffect {
     | { readonly kind: 'controller-hand'; readonly atLeast?: number; readonly atMost?: number }
     /** "Your library has no cards in it" (D854, Jace, Wielder of Mysteries): the controller's library size. */
     | { readonly kind: 'controller-library'; readonly atMost: number }
+    /** "It's the first combat phase of the turn" (D885, Karlach, Genji Glove): `combatsThisTurn` is one. */
+    | { readonly kind: 'first-combat-phase' }
     /** "You control a Plains", "… a Gate": a printed subtype among your permanents. */
     | { readonly kind: 'controller-subtype'; readonly subtype: string; readonly atLeast: number }
     /** "You have N or more life". */
@@ -2675,6 +2677,7 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     }
     return attached >= cond.atLeast;
   }
+  if (cond.kind === 'first-combat-phase') return (state.combatsThisTurn ?? 0) <= 1;
   if (cond.kind === 'controller-library') {
     return (state.zones[zoneKey(effect.controller, 'library')] ?? []).length <= cond.atMost;
   }

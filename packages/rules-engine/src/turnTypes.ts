@@ -1501,6 +1501,8 @@ export interface AutomationState {
    * "untap all creatures that attacked this turn". Cleared with the other turn facts.
    */
   readonly attackersThisTurn?: readonly string[];
+  /** How many combat phases have begun this turn (D885), for "if it's the first combat phase of the turn". */
+  readonly combatsThisTurn?: number;
   /**
    * Which permanents were dealt damage this turn (D759), as `id#objectSeq` for the reason
    * `attackersThisTurn` gives: "destroy target creature that was dealt damage this turn". Marked
