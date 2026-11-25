@@ -2595,9 +2595,53 @@ function fireDeathWatches(state: GameState, id: string): GameState {
   return next;
 }
 
+/**
+ * What Torpor Orb and Hushbringer silence (D1227): the kinds whose entry fires no ability, and whether
+ * a creature's death fires none, over every live permanent that says so. `null` when nothing does,
+ * which is nearly always, so `raise` pays one board walk and no characteristics for it.
+ */
+function triggerSilence(state: GameState): { readonly entering: ReadonlySet<string>; readonly dying: boolean } | null {
+  let entering: Set<string> | null = null;
+  let dying = false;
+  for (const seat of state.seats) {
+    for (const id of listAt(state, zoneKey(seat.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      const script = scriptForCard(state.cardDefs[inst.defKey]);
+      if (script?.entriesDontTrigger !== undefined) {
+        entering ??= new Set();
+        for (const kind of script.entriesDontTrigger) entering.add(kind);
+      }
+      if (script?.deathsDontTrigger === true) dying = true;
+    }
+  }
+  return entering === null && !dying ? null : { entering: entering ?? new Set(), dying };
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
+  /*
+    Torpor Orb and Hushbringer (D1227): an entry or a death of a silenced kind causes no ability to
+    trigger (CR 603.2), so the event is not announced at all — not to the permanent itself, not to
+    the board, not to a death watch (D1222). A batch of arrivals keeps only the ones not silenced.
+  */
+  const silence = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'creatures-died'
+    || event.kind === 'permanents-entered' ? triggerSilence(state) : null;
+  if (silence !== null) {
+    const was = subject === undefined ? undefined : state.vanished[subject] ?? state.instances[subject];
+    const ch = was === undefined ? undefined : characteristicsOf(state, was);
+    if (event.kind === 'etb' && ch !== undefined
+      && ((silence.entering.has('creature') && ch.isCreature) || (silence.entering.has('artifact') && hasType(ch.typeLine, 'artifact')))) {
+      return state;
+    }
+    if (silence.dying && ((event.kind === 'dies' && ch?.isCreature === true) || event.kind === 'creatures-died')) return state;
+    if (event.kind === 'permanents-entered' && silence.entering.size > 0) {
+      const kept = (event.entered ?? []).filter((entry) => !entry.types.some((type) => silence.entering.has(type)));
+      if (kept.length === 0) return state;
+      event = { ...event, entered: kept };
+    }
+  }
   let next = event.kind === 'dies' && subject !== undefined ? fireDeathWatches(state, subject) : state;
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'

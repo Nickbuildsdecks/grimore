@@ -37788,6 +37788,18 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     the mana-source list leaves it out. "Sources with the chosen name" (Pithing Needle) waits on a
     card-name choice as it enters.
   */
+  /*
+    "Creatures entering don't cause abilities to trigger." (D1227): Torpor Orb, Tocatli Honor Guard,
+    Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull); "Creatures entering or
+    dying …" (Hushbringer). See `CardScript.entriesDontTrigger`.
+  */
+  const hushed = /^(creatures|artifacts and creatures) entering( or dying)? don't cause abilities to trigger\.?$/i.exec(plain(line).trim());
+  if (hushed !== null) {
+    return {
+      entriesDontTrigger: hushed[1]!.toLowerCase() === 'creatures' ? ['creature'] : ['artifact', 'creature'],
+      ...(hushed[2] === undefined ? {} : { deathsDontTrigger: true as const }),
+    };
+  }
   const silenced = /^activated abilities of (.+?) can't be activated( unless they're mana abilities)?\.?$/i.exec(plain(line).trim());
   if (silenced !== null) {
     const SCOPES: Readonly<Record<string, 'all-artifacts' | 'all-creatures' | 'all-planeswalkers' | 'opponent-creatures' | 'opponent-artifacts' | 'opponent-lands'>> = {

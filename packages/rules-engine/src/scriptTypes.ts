@@ -3299,6 +3299,15 @@ export interface CardScript {
    */
   readonly noMaxHandSize?: true;
   /**
+   * "Creatures entering don't cause abilities to trigger." (D1227): Torpor Orb, Tocatli Honor Guard,
+   * Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull). The kinds whose entry
+   * fires nothing while this permanent is on the battlefield with its abilities: no "when this
+   * enters", no "whenever a creature enters", no batch trigger for those arrivals.
+   */
+  readonly entriesDontTrigger?: readonly ('creature' | 'artifact')[];
+  /** "… or dying don't cause abilities to trigger" (D1227): Hushbringer. A creature's death fires nothing. */
+  readonly deathsDontTrigger?: true;
+  /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,
    * like `noMaxHandSize`. `'artifacts'` and `'creatures'` (D797) are the narrower printings:

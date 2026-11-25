@@ -150,7 +150,7 @@ describe('a whole automated game', () => {
     expect(result.turns).toBeLessThan(200);
   });
 
-  it('reaches a winner from twenty different shuffles, whichever seat goes first', () => {
+  it('reaches a winner from twenty different shuffles, whichever seat goes first', async () => {
     const unfinished: string[] = [];
     for (let seed = 1; seed <= 20; seed++) {
       const first: SeatIndex = seed % 2 === 0 ? 1 : 0;
@@ -158,6 +158,8 @@ describe('a whole automated game', () => {
       if (!result.state.finished) {
         unfinished.push(`seed ${seed}: stopped on turn ${result.turns} at ${result.state.step} after ${result.actions} actions`);
       }
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     expect(unfinished).toEqual([]);
   });
@@ -173,8 +175,9 @@ describe('a whole automated game', () => {
         if (!result.state.finished) {
           unfinished.push(`${decks[0]} vs ${decks[1]} seed ${seed}: stopped on turn ${result.turns} at ${result.state.step}`);
         }
+        // Once a game, not once a matchup (D1227). See `breathe`.
+        await breathe();
       }
-      await breathe();
     }
     expect(unfinished).toEqual([]);
     // Twenty-one pairings, four shuffles each: eighty-four whole games, which is more than
@@ -242,7 +245,7 @@ describe('a whole automated game', () => {
     expect(loud.actions / loud.turns).toBeGreaterThan(10);
   });
 
-  it('mulligans the hands that deserve it, and not many more', () => {
+  it('mulligans the hands that deserve it, and not many more', async () => {
     // A hand with no land cannot be played and a hand that is all land cannot do anything. Over
     // forty games the rate should look like a player's, not like a bot that keeps everything or
     // one that throws hands away — neither of which would ever fail any other test here.
@@ -255,6 +258,8 @@ describe('a whole automated game', () => {
         hands += 1;
         mulligans += seat.mulligans;
       }
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     const rate = mulligans / hands;
     expect(rate).toBeGreaterThan(0.03);
@@ -285,7 +290,7 @@ describe('a whole automated game', () => {
     expect(sacrifices).toBeGreaterThan(0);
   });
 
-  it('fires entry triggers for a token and for a creature that was reanimated', () => {
+  it('fires entry triggers for a token and for a creature that was reanimated', async () => {
     // The companion to the death-trigger test, and the same bug: `etb` was announced at one call
     // site, so only a permanent *spell* finishing its resolution ever triggered. Asserted from
     // real games because the question is whether an arrival reaches its trigger from every
@@ -313,6 +318,8 @@ describe('a whole automated game', () => {
         expect(s.entered).toEqual([]);
       }
       expect(s.finished).toBe(true);
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     // Both routes come up in a Rot Harvest game: Izoni and Lotleth make tokens, Zombify
     // reanimates. If either stopped happening the claim above would be about nothing.
@@ -340,6 +347,7 @@ describe('a whole automated game', () => {
     for (let seed = 1; seed <= 8; seed++) {
       let s = table(seed * 1217, (seed % 2) as SeatIndex, ['ember-rush', 'verdant-guard']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s.stateVersion;
@@ -410,6 +418,7 @@ describe('a whole automated game', () => {
       const decks = [DECK_IDS[seed % 4]!, DECK_IDS[(seed + 1) % 4]!] as const;
       let s = table(seed * 5171, (seed % 2) as SeatIndex, decks);
       for (let i = 0; i < 9000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s;
@@ -469,6 +478,7 @@ describe('a whole automated game', () => {
       const isWalker = (state: GameState, id: string): boolean =>
         /planeswalker/i.test(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine ?? '');
       for (let i = 0; i < 9000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const version = s.stateVersion;
@@ -503,6 +513,7 @@ describe('a whole automated game', () => {
     for (let seed = 1; seed <= 10; seed++) {
       let s = table(seed * 821, (seed % 2) as SeatIndex, ['ember-rush', 'tidal-mind']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s.stateVersion;
@@ -537,6 +548,7 @@ describe('a whole automated game', () => {
     for (let seed = 1; seed <= 12; seed++) {
       let s = table(seed * 613, (seed % 2) as SeatIndex, ['verdant-guard', 'rot-harvest']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const before = s.stateVersion;
@@ -586,6 +598,7 @@ describe('a whole automated game', () => {
     for (let seed = 1; seed <= 24; seed++) {
       let s = table(seed * 911, (seed % 2) as SeatIndex, ['tidal-mind', 'hollow-tide']);
       for (let i = 0; i < 6000 && !s.finished; i++) {
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const pending = s.pendingDecision;
@@ -1211,6 +1224,8 @@ describe('a four-player Commander pod', () => {
     for (let seed = 1; seed <= 8; seed++) {
       let s = pod(seed * 1409, (seed % 4) as SeatIndex);
       for (let i = 0; i < 20000 && !s.finished; i++) {
+        // Within the game as well as between games (D1227): one game is seconds long. See `breathe`.
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const previous = s;
@@ -1975,6 +1990,8 @@ describe('the mana an answer in hand is waiting for', () => {
     for (let seed = 1; seed <= 4; seed++) {
       let s = table(seed * 7919, (seed % 2) as SeatIndex, ['tidal-mind', 'skyward-writ']);
       for (let i = 0; i < 9000 && !s.finished; i++) {
+        // Within the game as well as between games (D1227). See `breathe`.
+        if (i % 400 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const action = botAction(s, seat);
@@ -2771,6 +2788,8 @@ describe('the opponent cannot read your hand', () => {
       s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, HOST);
 
       for (let move = 0; move < 1200 && !s.finished; move += 1) {
+        // Within the game as well as between games (D1227). See `breathe`.
+        if (move % 200 === 0) await breathe();
         const seat = seatToAct(s);
         if (seat === null) break;
         const chosen = botAction(s, seat);

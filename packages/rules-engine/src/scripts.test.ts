@@ -12,12 +12,12 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   KEYWORDS, STEPS, applyAction,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock, evaluate,
   destroy, forcedAttackers,
-  characteristicsOf, commanderTaxFor, customDeck, devotionTo,
+  characteristicsOf, commanderTaxFor, customDeck as eagerDeck, devotionTo,
   hasType,
   lastLogEntry,
   legalActions,
@@ -38,6 +38,44 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS, PEST_TOKEN, TREASURE_TOKEN, soleTargetSpecOf } from './scripts.js';
+
+/**
+ * `customDeck`, built on first use rather than as the file is collected (D1227).
+ *
+ * Hundreds of describe blocks here build a deck at their top, and vitest runs every describe body
+ * synchronously while it collects the file. That had grown to 25 seconds on an idle machine, and
+ * under the gate's load past the worker's 60-second RPC timeout: `Timeout calling "onTaskUpdate"`,
+ * with every test passing (see `vitest.config.ts`). Each deck is now built by the first test that
+ * reads it, between tests, where the worker gets to answer the reporter. The result is the same
+ * object `customDeck` returns, read through getters.
+ */
+/*
+  **And a turn of the event loop every hundred tests** (D1227). Every test in this file is
+  synchronous, and vitest runs synchronous tests one after another without returning to the event
+  loop, so the whole file is one unbroken stretch of work. Once that passed 60 seconds (76 by now),
+  the worker's pending reporter call timed out before it could read the answer that was already
+  waiting: `Timeout calling "onTaskUpdate"`, every test passing, reproduced by this file alone. The
+  same cause and the same cure as `breathe` in `playout.test.ts`, applied between tests instead of
+  inside one.
+*/
+let testsSinceYield = 0;
+afterEach(async () => {
+  testsSinceYield += 1;
+  if (testsSinceYield < 100) return;
+  testsSinceYield = 0;
+  await new Promise<void>((resolve) => { setImmediate(resolve); });
+});
+
+const customDeck = (input: Parameters<typeof eagerDeck>[0]): ReturnType<typeof eagerDeck> => {
+  let made: ReturnType<typeof eagerDeck> | undefined;
+  const built = (): ReturnType<typeof eagerDeck> => (made ??= eagerDeck(input));
+  return {
+    get deck() { return built().deck; },
+    get unknown() { return built().unknown; },
+    get fromData() { return built().fromData; },
+    get partnerRefused() { return built().partnerRefused; },
+  };
+};
 import { REGENERATION, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
 import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
 import { attackTaxFor, costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
@@ -8040,6 +8078,9 @@ describe('deck coverage', () => {
       'trigger land-played',
       // D1164: "Whenever you complete a dungeon" (Varis); no pool deck plays one.
       'trigger dungeon-completed',
+      // D1227: Torpor Orb and Hushbringer; no pool deck plays one. Driven at runtime by
+      // "creatures entering don't cause abilities to trigger" (D1227).
+      'script entriesDontTrigger', 'script deathsDontTrigger',
     ]);
 
     const declared = [
@@ -41673,6 +41714,58 @@ describe('weaker creatures can\'t block yours: Champion of Lambholt (D850)', () 
     const elf = find(s, 1, 'battlefield', 'Test Elf');
     s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: elf, defender: 0 }] }), 12), 'declare-blockers');
     expect(canBlock(s, find(s, 0, 'battlefield', 'Test Bear'), elf, 0)).toBeNull();
+  });
+});
+
+describe('"creatures entering don\'t cause abilities to trigger" (D1227)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Cleric', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [
+    A('Test Orb', 'Creatures entering don\'t cause abilities to trigger.'),
+    A('Test Thrull', 'Artifacts and creatures entering don\'t cause abilities to trigger.'),
+    A('Test Hush', 'Creatures entering or dying don\'t cause abilities to trigger.'),
+    C('Test Healer', 'When this creature enters, you gain 2 life.'),
+    A('Test Relic', 'When this artifact enters, you gain 2 life.'),
+    A('Test Warden', 'Whenever a creature enters, you gain 1 life.'),
+    A('Test Crowd', 'Whenever one or more creatures you control enter, you gain 1 life.'),
+    A('Test Artist', 'Whenever a creature dies, you gain 1 life.'),
+    { name: 'Test Ping', type_line: 'Instant', oracle_text: 'Test Ping deals 1 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd1227', name: 'Hush', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 33 }], data: ROWS as never[] });
+  const settle = (s: GameState) => { let t = drain(s, 30); for (let i = 0; i < 8 && t.stackOrder.length > 0; i++) t = drain(passBoth(t), 30); return t; };
+  const table = (hand: string[], mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1227', 1: 'd1227' }, deckSpecs: { d1227: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: ['Plains', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, card: string, targets: Target[] = []) => settle(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('without it, the creature and the watchers all trigger', () => {
+    expect(life(cast(table(['Test Healer'], ['Test Warden', 'Test Crowd']), 'Test Healer'), 0)).toBe(24);
+  });
+
+  it('Torpor: a creature entering fires nothing, its own or the board\'s or the batch\'s; an artifact still does', () => {
+    expect(life(cast(table(['Test Healer'], ['Test Orb', 'Test Warden', 'Test Crowd']), 'Test Healer'), 0)).toBe(20);
+    expect(life(cast(table(['Test Relic'], ['Test Orb']), 'Test Relic'), 0)).toBe(22);
+  });
+
+  it('"artifacts and creatures": the artifact is silenced too', () => {
+    expect(life(cast(table(['Test Relic'], ['Test Thrull']), 'Test Relic'), 0)).toBe(20);
+  });
+
+  it('"or dying": a death fires nothing, where it did without', () => {
+    const kill = (mine: string[]) => {
+      const s = table(['Test Ping'], ['Test Healer', ...mine]);
+      return cast(s, 'Test Ping', [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Healer') }]);
+    };
+    expect(life(kill(['Test Artist']), 0)).toBe(21);
+    const hushed = kill(['Test Artist', 'Test Hush']);
+    expect(namesIn(hushed, 0, 'graveyard')).toContain('Test Healer');
+    expect(life(hushed, 0)).toBe(20);
   });
 });
 
