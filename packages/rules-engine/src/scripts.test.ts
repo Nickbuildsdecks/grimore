@@ -43910,6 +43910,130 @@ describe('"each nonland card in your graveyard has escape" (D1235)', () => {
   });
 });
 
+describe('double damage from creatures only: Gratuitous Violence (D900)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Violence', 'Enchantment', 'If a creature you control would deal damage to a permanent or player, it deals double that damage to that permanent or player instead.'),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.'),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd900', name: 'Violence', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our Bear connects for 4; our Shock, not a creature, still deals 2', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd900', 1: 'd900' }, deckSpecs: { d900: deck.deck },
+      hands: { 0: ['Test Shock'] }, battlefield: { 0: ['Test Violence', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Shock'), targets: [{ kind: 'player', seat: 1 }] })));
+    expect(life(s, 1)).toBe(18);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Bear'), defender: 1 }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(life(s, 1)).toBe(14);
+  });
+});
+
+describe('"if you have exactly 13 cards in your hand": Triskaidekaphile (D901)', () => {
+  const ROWS = [
+    { name: 'Test Trisk', type_line: 'Creature — Human Wizard', oracle_text: 'You have no maximum hand size.\nAt the beginning of your upkeep, if you have exactly 13 cards in your hand, you win the game.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '3' },
+  ];
+  const deck = customDeck({ id: 'd901', name: 'Trisk', entries: [{ name: 'Test Trisk', count: 4 }, { name: 'Island', count: 56 }], data: ROWS as never[] });
+  const upkeep = (cards: number) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd901', 1: 'd901' }, deckSpecs: { d901: deck.deck },
+      hands: { 0: Array.from({ length: cards }, () => 'Island') }, battlefield: { 0: ['Test Trisk'] }, turn: 2, firstSeat: 1,
+    } as never), 'precombat-main');
+    s = { ...s, zones: { ...s.zones, '0:hand': ids(s, 0, 'hand').slice(0, cards) } };
+    s = nextTurn(s);
+    for (let i = 0; i < 4 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    return s.seats[1]!.eliminated;
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('thirteen cards at our upkeep wins; twelve or fourteen does not', () => {
+    expect([upkeep(13), upkeep(12), upkeep(14)]).toEqual([true, false, false]);
+  });
+});
+
+describe('two target players each draw a card: Gleaming Splendor (D902)', () => {
+  const ROWS = [
+    { name: 'Test Splendor', type_line: 'Artifact', oracle_text: '{0}: Two target players each draw a card.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd902', name: 'Splendor', entries: [{ name: 'Test Splendor', count: 4 }, { name: 'Plains', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('in a pod: the two players chosen draw one each, the third does not', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd902', 1: 'd902', 2: 'd902' }, deckSpecs: { d902: deck.deck },
+      battlefield: { 0: ['Test Splendor'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const hands = () => [0, 1, 2].map((seat) => ids(s, seat as SeatIndex, 'hand').length);
+    const before = hands();
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Splendor'), abilityIndex: 0, targets: [{ kind: 'player', seat: 0 }, { kind: 'player', seat: 2 }] })), 20);
+    const after = hands();
+    expect(after.map((n, i) => n - before[i]!)).toEqual([1, 0, 1]);
+  });
+});
+
+describe('a wipe measured against a target: Fell the Mighty (D903)', () => {
+  const C = (name: string, p: string) => ({ name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: p, toughness: '9' });
+  const ROWS = [
+    { name: 'Test Fell', type_line: 'Sorcery', oracle_text: "Destroy all creatures with power greater than target creature's power.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    C('Test Mouse', '1'), C('Test Bear', '2'), C('Test Ogre', '4'),
+  ];
+  const deck = customDeck({ id: 'd903', name: 'Fell', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 48 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('aimed at our 2-power Bear: their Ogre dies; the Bear and our Mouse live', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd903', 1: 'd903' }, deckSpecs: { d903: deck.deck },
+      hands: { 0: ['Test Fell'] }, battlefield: { 0: ['Test Mouse', 'Test Bear'], 1: ['Test Ogre', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fell'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Bear') }] })));
+    expect(namesIn(s, 0, 'battlefield').sort()).toEqual(['Test Bear', 'Test Mouse']);
+    expect(namesIn(s, 1, 'battlefield')).toEqual(['Test Bear']);
+  });
+});
+
+describe('half X, rounded down: Hydroid Krasis (D904)', () => {
+  const ROWS = [
+    { name: 'Test Krasis', type_line: 'Creature — Jellyfish Hydra Beast', oracle_text: 'When you cast this spell, you gain half X life and draw half X cards. Round down each time.\nFlying, trample\nTest Krasis enters with X +1/+1 counters on it.', mana_cost: '{X}', cmc: 0, colors: ['G', 'U'], layout: 'normal', power: '0', toughness: '0' },
+  ];
+  const deck = customDeck({ id: 'd904', name: 'Krasis', entries: [{ name: 'Test Krasis', count: 4 }, { name: 'Forest', count: 56 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('cast for X = 5: we gain 2 and draw 2, and it enters with five counters', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd904', 1: 'd904' }, deckSpecs: { d904: deck.deck }, hands: { 0: ['Test Krasis'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = { ...s, pools: { ...s.pools, '0': { W: 0, U: 0, B: 0, R: 0, G: 0, C: 5 } } };
+    const hand = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Krasis'), x: 5 } as Action);
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s), 10);
+    expect(life(s, 0)).toBe(22);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 2);
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Krasis')]!.counters['+1/+1']).toBe(5);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

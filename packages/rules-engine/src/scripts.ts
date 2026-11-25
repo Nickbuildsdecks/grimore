@@ -29376,6 +29376,48 @@ function readEffect(
   const copied = abilityCopyEffect(clause);
   if (copied !== null) return copied;
   /*
+    "Destroy all creatures with power greater than target creature's power" (D903, Fell the Mighty), and
+    "… less than …": the target's power as it resolves against each creature's, the target spared by the
+    comparison itself.
+  */
+  const fell = /^destroy all creatures with power (greater|less) than target creature's power$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (fell !== null) {
+    const greater = fell[1]!.toLowerCase() === 'greater';
+    return {
+      targets: [{ kind: 'creature', description: 'target creature' }],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        const target = id === null ? undefined : c.state.instances[id];
+        if (target === undefined || target.zone !== 'battlefield') return c.state;
+        const bar = characteristicsOf(c.state, target).power;
+        const doomed = c.state.seats.flatMap((seat) => creaturesControlledBy(c.state, seat.index)).filter((other) => {
+          const p = characteristicsOf(c.state, c.state.instances[other]!).power;
+          return greater ? p > bar : p < bar;
+        });
+        return doomed.reduce((state, other) => destroy(state, other), c.state);
+      },
+      spellFlags: { removesACreature: true },
+    };
+  }
+  /*
+    "Two target players each draw a card" (D902, Gleaming Splendor), "… each gain N life", "… each lose N
+    life": two distinct players chosen as it is cast or activated, each doing it.
+  */
+  const twoPlayers = /^(two|up to two) target players each (draw a card|draw (\w+) cards|gain (\d+) life|lose (\d+) life)$/i.exec(clause.trim().replace(/\.$/, ''));
+  if (twoPlayers !== null) {
+    const verb = twoPlayers[2]!.toLowerCase();
+    const many = twoPlayers[3] === undefined ? 1 : WORD_NUMBERS[twoPlayers[3].toLowerCase()];
+    if (many !== undefined) {
+      const act = (state: GameState, seat: SeatIndex): GameState => (verb.startsWith('draw') ? draw(state, seat, many)
+        : verb.startsWith('gain') ? gainLife(state, seat, Number(twoPlayers[4])) : loseLife(state, seat, Number(twoPlayers[5])));
+      return {
+        targets: [{ kind: 'player', description: `${twoPlayers[1]!.toLowerCase()} target players`, count: 2,
+          ...(/^up to/i.test(twoPlayers[1]!) ? { optional: true } : {}) } as TargetSpec],
+        effect: (c) => c.targets.reduce((state, t) => (t.kind === 'player' ? act(state, t.seat) : state), c.state),
+      };
+    }
+  }
+  /*
     "Shuffle ~ and your graveyard into their owner's library" (D897, Elixir of Immortality): the card from
     wherever it is (D1116's self-shuffle reads only from a graveyard) and the graveyard, then one shuffle.
   */
@@ -33367,6 +33409,21 @@ function composeEffectsAsPrinted(
       at++;
       continue;
     }
+    /*
+      Hydroid Krasis (D904): "You gain half X life and draw half X cards. Round down each time." The X
+      paid, halved and rounded down for each.
+    */
+    if (/^you gain half x life and draw half x cards$/i.test(clause.trim().replace(/\.$/, ''))
+      && /^round down each time$/i.test((rest[at + 1] ?? '').trim().replace(/\.$/, ''))) {
+      parts.push({
+        effect: (c) => {
+          const half = Math.floor(Math.max(0, c.x ?? 0) / 2);
+          return half === 0 ? c.state : draw(gainLife(c.state, c.controller, half), c.controller, half);
+        },
+      });
+      at++;
+      continue;
+    }
     // A discard round paid back in cards (D876): see `discardThenDraw`.
     const syphon = discardThenDraw(clause, rest[at + 1]);
     if (syphon !== null) { parts.push(syphon); at++; continue; }
@@ -36399,6 +36456,12 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (new RegExp(`^(?:${self} is|it's) equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
   if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
+  // "You have exactly 13 cards in your hand" (D901, Triskaidekaphile): both bounds at N.
+  const exactHand = /^you have exactly (\S+) cards? in (?:your )?hand$/i.exec(text);
+  if (exactHand !== null) {
+    const count = n(exactHand[1]!);
+    return count === null ? null : { kind: 'controller-hand', atLeast: count, atMost: count };
+  }
   if (/^your library has no cards in it$/i.test(text)) return { kind: 'controller-library', atMost: 0 };
   if (/^it's the first combat phase of the turn$/i.test(text)) return { kind: 'first-combat-phase' };
   const hand = /^you have (\S+) or more cards in hand$/i.exec(text);
@@ -36762,12 +36825,14 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     };
   }
   // D865: "If a source you control would deal damage to …, it deals double / triple that damage instead."
-  const multiplied = /^if a source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
+  // And "a creature you control" (D900, Gratuitous Violence): creature sources only.
+  const multiplied = /^if a (source|creature) you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
   if (multiplied !== null) {
     return {
       damageMultiplier: {
-        factor: multiplied[2]!.toLowerCase() === 'double' ? 2 : 3,
-        ...(/opponent/i.test(multiplied[1]!) ? { opponents: true as const } : {}),
+        factor: multiplied[3]!.toLowerCase() === 'double' ? 2 : 3,
+        ...(/opponent/i.test(multiplied[2]!) ? { opponents: true as const } : {}),
+        ...(multiplied[1]!.toLowerCase() === 'creature' ? { creatures: true as const } : {}),
       },
     };
   }
