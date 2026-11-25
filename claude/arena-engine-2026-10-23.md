@@ -46424,3 +46424,32 @@ Faults injected by hand: 6, all caught (two after tests were added for them).
 - Song's colour left on.
 
 Coverage: 17,013 of 31,900 cards (+9 over D1245's 17,004), 39,636 of 59,888 lines (+10).
+
+## D1247 — Demonic Consultation
+
+"Choose a card name. Exile the top six cards of your library, then reveal cards from the top of
+your library until you reveal a card with the chosen name. Put that card into your hand and exile all
+other cards revealed this way." The name is asked as the spell resolves, on D1237's card-name
+question with a third aim, `own-library`. A player knows their own deck, so the options are the names
+anyone can see plus every name in the caster's library. The bot names the dearest nonland card left
+in its library. Nobody knows which cards are in the top six.
+
+A name that is not found (or is only in the top six) exiles the whole library. That is how the card
+is played with Thassa's Oracle; the caster loses only when they next draw (CR 704.5b).
+
+Read whole now (1): Demonic Consultation.
+
+**Tests.** 4 engine tests:
+- The test card reads whole.
+- The named card below the top six comes to hand. The six and the card revealed before it are
+  exiled, and the rest of the library stays.
+- A name in the top six (or nowhere) exiles the whole library.
+- The bot names the dearest nonland card left in its library.
+
+Faults injected by hand: 4, all caught.
+- The caster's library missing from the options.
+- The top six not exiled.
+- The named card exiled instead of put into the hand.
+- The bot's library choice skipped.
+
+Coverage: 17,015 of 31,900 cards (+2 over D1246's 17,013), 39,638 of 59,888 lines (+2).
