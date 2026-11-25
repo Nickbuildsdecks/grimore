@@ -64457,3 +64457,29 @@ Faults injected by hand: 2, all caught.
 - "Max speed" let through as a label.
 
 Coverage: 17,130 of 31,900 cards (+32 over D1265's 17,098), 39,820 of 59,888 lines (+51).
+
+## D1267 — Show and Tell
+
+"Each player may put an artifact, creature, enchantment, or land card from their hand onto the
+battlefield." One question per player (`who: 'each-player'`), of their own hand, up to one card;
+everything chosen enters as the spell resolves, each card under its **owner's** control. The kind
+list is card types only, with "permanent" for all six permanent types; a list naming an instant or
+sorcery is refused, because neither can be put onto the battlefield. The engine's own player puts in
+the card in its hand that cost the most.
+
+"Starting with you, each player may put … Repeat this process until no one puts a card onto the
+battlefield" (Eureka, Hypergenesis) is a loop of the same question and stays unread.
+
+Read whole now (1): Show and Tell.
+
+**Tests.** 3 engine tests:
+- It reads whole; the Hypergenesis loop stays unread.
+- Each player is asked of their own hand, an instant is not offered, and both chosen cards enter under their owners.
+- A player may decline.
+
+Faults injected by hand: 3, all caught.
+- Every card entering under the caster's control.
+- The kind filter dropped (any card offered).
+- Only the first player's answer used.
+
+Coverage: 17,131 of 31,900 cards (+1 over D1266's 17,130), 39,821 of 59,888 lines (+1).
