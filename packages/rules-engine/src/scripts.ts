@@ -20731,6 +20731,12 @@ const TRIGGER_SHAPES: readonly ({
       new RegExp(`^Whenever ${self} or another creature you control dies, (.+)$`, 'i'),
     on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
   },
+  // And "or planeswalker" (D840, Cruel Celebrant): the same, a planeswalker of yours too.
+  {
+    prologue: (self) =>
+      new RegExp(`^Whenever ${self} or another creature or planeswalker you control dies, (.+)$`, 'i'),
+    on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature-or-planeswalker' }],
+  },
   {
     prologue: () => /^Whenever another creature dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'another', of: 'any', what: 'creature' }],
@@ -20938,6 +20944,14 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
+  },
+  // "One or more [land/creature] cards are put into your graveyard from anywhere" (D841, The Gitrog Monster).
+  {
+    prologue: () => /^Whenever one or more (?<kind>land |creature |artifact |enchantment )?cards are put into your graveyard from anywhere, (?<clause>.+)$/i,
+    from: (matched) => {
+      const kind = matched.groups?.kind?.trim().toLowerCase() as 'land' | 'creature' | 'artifact' | 'enchantment' | undefined;
+      return [{ kind: 'to-graveyard' as const, who: 'any' as const, into: 'yours' as const, batch: true as const, ...(kind === undefined ? {} : { what: kind }) }];
+    },
   },
   // "Whenever an opponent plays a land" (D1187), and "you play a land or cast a spell".
   {

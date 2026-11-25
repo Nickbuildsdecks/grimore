@@ -40676,6 +40676,102 @@ describe('an Aura that exiles its host, and "target opponent gains control of ~"
   });
 });
 
+describe('"~ or another creature or planeswalker you control dies", Cruel Celebrant (D840)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Celebrant', 'Creature — Vampire', 'Whenever Test Celebrant or another creature or planeswalker you control dies, each opponent loses 1 life and you gain 1 life.', { power: '1', toughness: '2' }),
+    R('Test Walker', 'Legendary Planeswalker — Tester', '+1: You gain 1 life.', { loyalty: '3' }),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Purge', 'Instant', 'Destroy target creature or planeswalker.'),
+  ];
+  const deck = customDeck({ id: 'd840', name: 'Celebrant', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  /** Seat 1 destroys `victim` (seat `side`'s); seat 0 has the Celebrant. Life changes [0, 1]. */
+  const kill = (victim: string, side: 0 | 1) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd840', 1: 'd840' }, deckSpecs: { d840: deck.deck },
+      hands: { 1: ['Test Purge'] }, battlefield: { 0: ['Test Celebrant', 'Test Walker', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 1,
+    } as never), 'precombat-main');
+    const before = [life(s, 0), life(s, 1)];
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Test Purge'), targets: [{ kind: 'card', id: find(s, side, 'battlefield', victim) }] });
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    return [life(s, 0) - before[0]!, life(s, 1) - before[1]!];
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our planeswalker dying drains one; so does our creature; so does the Celebrant itself', () => {
+    expect(kill('Test Walker', 0)).toEqual([1, -1]);
+    expect(kill('Test Bear', 0)).toEqual([1, -1]);
+    expect(kill('Test Celebrant', 0)).toEqual([1, -1]);
+  });
+
+  it("the opponent's creature dying does nothing", () => {
+    expect(kill('Test Bear', 1)).toEqual([0, 0]);
+  });
+});
+
+describe('"whenever one or more land cards are put into your graveyard", once per batch (D841)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Gitrog', 'Creature — Frog Horror', 'Whenever one or more land cards are put into your graveyard from anywhere, draw a card.', { power: '6', toughness: '6' }),
+    R('Test Mill', 'Sorcery', 'Target player mills three cards.'),
+    R('Test Ox', 'Creature — Ox', '', { power: '2', toughness: '2' }),
+    R('Test Counter', 'Enchantment', 'Whenever a card is put into your graveyard from anywhere, you gain 1 life.'),
+  ];
+  const deck = customDeck({ id: 'd841', name: 'Gitrog', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Swamp', count: 48 }], data: ROWS as never[] });
+  /** Seat 0 has the Gitrog; seat `who`'s library gets `top` on top; seat 0 mills `who` for three. */
+  const mill = (who: 0 | 1, top: string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd841', 1: 'd841' }, deckSpecs: { d841: deck.deck },
+      hands: { 0: ['Test Mill'] }, battlefield: { 0: ['Test Gitrog'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const used = new Set<string>();
+    for (const name of [...top].reverse()) {
+      const id = ids(s, who, 'library').find((card) => nameOf(s, card) === name && !used.has(card))!;
+      used.add(id);
+      s = putOnTopOfLibrary(s, id);
+    }
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mill'), targets: [{ kind: 'player', seat: who }] } as Action);
+    const hand = ids(s, 0, 'hand').length;
+    for (let i = 0; i < 6 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    return ids(s, 0, 'hand').length - hand;
+  };
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two lands and an Ox milled at once: one card, not two', () => {
+    expect(mill(0, ['Swamp', 'Test Ox', 'Swamp'])).toBe(1);
+  });
+
+  it('no land among them: nothing', () => {
+    expect(mill(0, ['Test Ox', 'Test Ox', 'Test Ox'])).toBe(0);
+  });
+
+  it("lands into the opponent's graveyard: nothing", () => {
+    expect(mill(1, ['Swamp', 'Swamp', 'Swamp'])).toBe(0);
+  });
+
+  it('a per-card watcher still counts cards, and does not hear the batch', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd841', 1: 'd841' }, deckSpecs: { d841: deck.deck },
+      hands: { 0: ['Test Mill'] }, battlefield: { 0: ['Test Counter'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const before = life(s, 0);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Mill'), targets: [{ kind: 'player', seat: 0 }] } as Action);
+    for (let i = 0; i < 8 && s.stackOrder.length > 0; i++) s = drain(passBoth(s));
+    // Three milled, and the Mill itself: four cards, four life, not one more for each batch.
+    expect(life(s, 0) - before).toBe(4);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
