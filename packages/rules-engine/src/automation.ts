@@ -52,7 +52,7 @@ import {
   spendRegeneration, spendUmbraArmor, untapAll, phaseIn, phaseOut, emblemsOf, putOnTopOfLibrary, shuffleLibrary,
   type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, ENTERS_COUNTER_OPTION, dayNightAfter, establishDayNight, matchDayNight,
-  staticEffect, takeInitiative, initiativeCard,
+  staticEffect, takeInitiative, initiativeCard, cantLoseTheGame,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -175,7 +175,17 @@ export function maxHandSize(state: GameState, seat: SeatIndex): number {
     if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
     if (scriptForCard(state.cardDefs[inst.defKey])?.noMaxHandSize === true) return Number.POSITIVE_INFINITY;
   }
-  return MAX_HAND_SIZE;
+  // D3007: each opponent's Jin-Gitaxias takes its number off.
+  let reduction = 0;
+  for (const other of state.seats) {
+    if (other.index === seat || other.eliminated) continue;
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined || isFaceDownPermanent(inst) || allAbilitiesLost(state, inst)) continue;
+      reduction += scriptForCard(state.cardDefs[inst.defKey])?.opponentsMaxHandSizeReduction ?? 0;
+    }
+  }
+  return Math.max(0, MAX_HAND_SIZE - reduction);
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────────────────────────────
@@ -3732,7 +3742,7 @@ export function stateBasedActions(state: GameState): GameState {
       if (seat.eliminated) continue;
       // Said as what it is: an empty library, not zero life (CR 704.5b). It used to say `life`,
       // which put "out (life)" on a table beside a nineteen.
-      if (next.drewFromEmpty.includes(seat.index)) {
+      if (next.drewFromEmpty.includes(seat.index) && !cantLoseTheGame(next, seat.index)) {
         next = replaceSeat(next, seat.index, { eliminated: true, eliminatedReason: 'library' });
         changed = true;
       }
@@ -7126,7 +7136,7 @@ interface Resolvable {
 function triggerX(state: GameState, object: StackObject): number {
   if (object.kind !== 'triggered') return 0;
   /*
-    A spell's own cast trigger (D904, "When you cast this spell, you gain half X life"): the X is the
+    A spell's own cast trigger (D3004, "When you cast this spell, you gain half X life"): the X is the
     spell's, still on the stack, and the permanent's `castX` is not written until it resolves.
   */
   const answered = object.answering === undefined ? undefined : state.stackObjects[object.answering];

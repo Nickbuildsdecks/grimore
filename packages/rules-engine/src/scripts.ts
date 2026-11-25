@@ -12816,6 +12816,8 @@ const WORD_NUMBERS: Readonly<Record<string, number>> = {
     because a word nobody prints is a row nobody can test.
   */
   eleven: 11, twelve: 12, thirteen: 13, fifteen: 15, twenty: 20,
+  // Knuckles the Echidna's "thirty or more artifacts" (D3011).
+  thirty: 30,
 };
 
 /** A printed count, or `null` when it is a word this does not know. */
@@ -15654,6 +15656,15 @@ function massScope(phrase: string): ((c: EffectContext) => readonly string[]) | 
         : measure === 'power' ? characteristicsOf(state, inst).power : characteristicsOf(state, inst).toughness;
       return atMost ? value <= limit : value >= limit;
     };
+  }
+  // "That aren't enchanted" (D3005, Winds of Rath): no Aura attached to it as it resolves.
+  const unenchanted = /\s+that (?:aren't|are not) enchanted$/i.exec(rest);
+  if (unenchanted !== null) {
+    rest = rest.slice(0, unenchanted.index);
+    const before = bound;
+    bound = (state, inst) => (before === null || before(state, inst)) && !Object.values(state.instances).some((other) =>
+      other.zone === 'battlefield' && other.attachedTo === inst.id
+      && hasSubtype(characteristicsOf(state, other).typeLine, 'Aura'));
   }
   // "That entered this turn" (D857): Oran-Rief, the Vastwood. Arrived on this turn (`enteredTurn`).
   const arrived = /\s+that entered (?:the battlefield )?this turn$/i.exec(rest);
@@ -21397,6 +21408,15 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When(?:ever)? ${self} becomes monstrous, (.+)$`, 'i'),
     on: [{ kind: 'counters-put', counter: MONSTROUS }],
   },
+  // "Whenever a creature [you control] is exiled from the battlefield" (D3008): Soulherder's event, read.
+  {
+    prologue: () => /^Whenever (?:a|another) (creature|permanent)(?<of> you control| an opponent controls)? is exiled from the battlefield, (?<clause>.+)$/i,
+    from: (matched) => [{
+      kind: 'to-exile' as const, from: 'battlefield' as const,
+      what: matched[1]!.toLowerCase() === 'creature' ? 'creature' as const : 'any' as const,
+      whose: matched.groups?.of === undefined ? 'any' as const : /you control/i.test(matched.groups.of) ? 'you' as const : 'opponent' as const,
+    }],
+  },
   // "Whenever an opponent searches their library" (D863): the `searches` event.
   {
     prologue: () => /^Whenever an opponent searches their library, (.+)$/i,
@@ -22389,6 +22409,15 @@ function countOfThing(
   }
   if (/^creature cards? in all graveyards$/i.test(text)) {
     return (c) => creatureCardsInAllGraveyards(c.state);
+  }
+  // "Black creature card in your graveyard" (D3006, Crypt of Agadeem): by the printed colours.
+  const colouredInGraveyard = /^(white|blue|black|red|green) creature cards? in your graveyard$/i.exec(text);
+  if (colouredInGraveyard !== null) {
+    const colour = COLOUR_WORDS[colouredInGraveyard[1]!.toLowerCase()]!;
+    return (c) => listAt(c.state, zoneKey(c.controller, 'graveyard')).filter((id) => {
+      const def = c.state.cardDefs[c.state.instances[id]?.defKey ?? ''];
+      return def !== undefined && hasType(parseTypeLine(def.typeLine), 'creature') && (def.colors ?? []).includes(colour);
+    }).length;
   }
   /*
     D746: more of the turn and the graveyard, each a record the engine already keeps.
@@ -29376,7 +29405,7 @@ function readEffect(
   const copied = abilityCopyEffect(clause);
   if (copied !== null) return copied;
   /*
-    "Destroy all creatures with power greater than target creature's power" (D903, Fell the Mighty), and
+    "Destroy all creatures with power greater than target creature's power" (D3003, Fell the Mighty), and
     "… less than …": the target's power as it resolves against each creature's, the target spared by the
     comparison itself.
   */
@@ -29400,7 +29429,7 @@ function readEffect(
     };
   }
   /*
-    "Two target players each draw a card" (D902, Gleaming Splendor), "… each gain N life", "… each lose N
+    "Two target players each draw a card" (D3002, Gleaming Splendor), "… each gain N life", "… each lose N
     life": two distinct players chosen as it is cast or activated, each doing it.
   */
   const twoPlayers = /^(two|up to two) target players each (draw a card|draw (\w+) cards|gain (\d+) life|lose (\d+) life)$/i.exec(clause.trim().replace(/\.$/, ''));
@@ -33410,7 +33439,7 @@ function composeEffectsAsPrinted(
       continue;
     }
     /*
-      Hydroid Krasis (D904): "You gain half X life and draw half X cards. Round down each time." The X
+      Hydroid Krasis (D3004): "You gain half X life and draw half X cards. Round down each time." The X
       paid, halved and rounded down for each.
     */
     if (/^you gain half x life and draw half x cards$/i.test(clause.trim().replace(/\.$/, ''))
@@ -36456,7 +36485,7 @@ function staticCondition(printed: string, name: string): NonNullable<PumpOptions
   if (new RegExp(`^(?:${self} is|it's) equipped$`, 'i').test(text)) return { kind: 'source-equipment', atLeast: 1 };
   if (new RegExp(`^${self} is enchanted$`, 'i').test(text)) return { kind: 'source-auras', atLeast: 1 };
   if (/^you have no cards in hand$/i.test(text)) return { kind: 'controller-hand', atMost: 0 };
-  // "You have exactly 13 cards in your hand" (D901, Triskaidekaphile): both bounds at N.
+  // "You have exactly 13 cards in your hand" (D3001, Triskaidekaphile): both bounds at N.
   const exactHand = /^you have exactly (\S+) cards? in (?:your )?hand$/i.exec(text);
   if (exactHand !== null) {
     const count = n(exactHand[1]!);
@@ -36769,6 +36798,12 @@ function damageToSelfFromLine(line: string, name: string): Partial<CardScript> |
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  // D3007: "Each opponent's maximum hand size is reduced by seven."
+  const handShrink = /^each opponent's maximum hand size is reduced by (\w+)\.?$/i.exec(plain(line).trim());
+  if (handShrink !== null) {
+    const by = WORD_NUMBERS[handShrink[1]!.toLowerCase()] ?? (/^\d+$/.test(handShrink[1]!) ? Number(handShrink[1]) : undefined);
+    if (by !== undefined && by > 0) return { opponentsMaxHandSizeReduction: by };
+  }
   /*
     "Nontoken creatures you control are Forest lands in addition to their other types" (D871, Ashaya,
     Soul of the Wild), and "Creatures you control are artifacts / enchantments …": layer 4 on your
@@ -36804,6 +36839,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     }
     return merged as Partial<CardScript>;
   }
+  // D3009: Platinum Angel. See `CardScript.cantLose`.
+  if (/^you can't lose the game and your opponents can't win the game\.?$/i.test(plain(line).trim())) return { cantLose: true };
   // D891: Notion Thief. See `CardScript.stealsExtraDraws`.
   if (/^if an opponent would draw a card except the first one they draw in each of their draw steps, instead that player skips that draw and you draw a card\.?$/i.test(plain(line).trim())) {
     return { stealsExtraDraws: true };
@@ -36825,7 +36862,7 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     };
   }
   // D865: "If a source you control would deal damage to …, it deals double / triple that damage instead."
-  // And "a creature you control" (D900, Gratuitous Violence): creature sources only.
+  // And "a creature you control" (D3000, Gratuitous Violence): creature sources only.
   const multiplied = /^if a (source|creature) you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
   if (multiplied !== null) {
     return {
@@ -38592,6 +38629,16 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     Beanstalk): two triggers with one effect. Each half read as its own line; both must be triggers
     and nothing else.
   */
+  // "Whenever another creature you control enters or dies, you gain 1 life" (D3010, Daxos): the two
+  // events as two triggers, each read as its own line.
+  const entersOrDies = /^(Whenever .+?) enters or dies, (.+)$/i.exec(plain(line).trim());
+  if (entersOrDies !== null) {
+    const enters = lineScriptFor(`${entersOrDies[1]!} enters, ${entersOrDies[2]!}`, name);
+    const dies = lineScriptFor(`${entersOrDies[1]!} dies, ${entersOrDies[2]!}`, name);
+    const one = (read: Partial<CardScript> | null) => read !== null && Object.keys(read).every((key) => key === 'triggers')
+      && (read.triggers ?? []).length === 1;
+    if (one(enters) && one(dies)) return { triggers: [...enters!.triggers!, ...dies!.triggers!] };
+  }
   const twoTriggers = /^(When .+?) and (whenever .+?), (.+)$/i.exec(plain(line).trim());
   if (twoTriggers !== null && !/,/.test(twoTriggers[1]!)) {
     const first = lineScriptFor(`${twoTriggers[1]!}, ${twoTriggers[3]!}`, name);

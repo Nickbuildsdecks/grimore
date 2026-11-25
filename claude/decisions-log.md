@@ -63281,7 +63281,7 @@ The new field is listed among the mechanics the compiler reads that no built-in 
 runtime block above as its evidence.
 
 Coverage: 16,940 of 31,900 cards (+1 over D1234's 16,939), 39,506 of 59,888 lines (+1).
-## D900 — Double damage from creatures only: Gratuitous Violence
+## D3000 — Double damage from creatures only: Gratuitous Violence
 
 Most-played order: Gratuitous Violence (rank 1517).
 
@@ -63293,7 +63293,7 @@ source, read live.
 **Tests.** The card reads. Our Shock, which is not a creature, still deals 2, and our Bear connects
 for 4. D865's and D872's tests still pass. Faults injected by script: 2 of 2 caught.
 
-## D901 — "If you have exactly 13 cards in your hand": Triskaidekaphile
+## D3001 — "If you have exactly 13 cards in your hand": Triskaidekaphile
 
 Most-played order: Triskaidekaphile (rank 1479).
 
@@ -63304,7 +63304,7 @@ at N.
 Faults injected by script: 2 of 2 caught. The fourteen-card case was added when the
 at-least-only fault went uncaught.
 
-## D902 — Two target players each draw a card: Gleaming Splendor
+## D3002 — Two target players each draw a card: Gleaming Splendor
 
 Most-played order: Gleaming Splendor (rank 1568).
 
@@ -63314,7 +63314,7 @@ life": two distinct players chosen as it is activated or cast, each doing it.
 **Tests.** The card reads. In a three-player pod, the two players chosen each draw one and the
 third draws nothing. Faults injected by script: 2 of 2 caught.
 
-## D903 — A wipe measured against a target: Fell the Mighty
+## D3003 — A wipe measured against a target: Fell the Mighty
 
 Most-played order: Fell the Mighty (rank 1526).
 
@@ -63325,7 +63325,7 @@ spared by the comparison itself.
 **Tests.** The card reads. Aimed at our 2-power Bear, it kills their 4-power Ogre, and our Bear,
 our Mouse and their 2-power Bear live. Faults injected by script: 2 of 2 caught.
 
-## D904 — Half X, rounded down: Hydroid Krasis
+## D3004 — Half X, rounded down: Hydroid Krasis
 
 Most-played order: Hydroid Krasis (rank 1560).
 
@@ -63339,7 +63339,103 @@ shape, not only this one.
 **Tests.** The card reads. Cast for X = 5, we gain 2, draw 2, and it enters with five counters.
 Faults injected by script: 3 of 3 caught.
 
-Card-by-card diff for D900–D904 against c998c8e: 0 lost, 8 gained (including Library of Alexandria
-and Magus of the Library from D901's exact hand size, and Mandate of Abaddon from D903).
+Card-by-card diff for D3000–D3004 against c998c8e: 0 lost, 8 gained (including Library of Alexandria
+and Magus of the Library from D3001's exact hand size, and Mandate of Abaddon from D3003).
 
 Gated together on efdda8a: full gate green, engine tests 6704. Coverage: 16,938 to 16,946 of 31,900 cards with every line read, and 39,504 to 39,513 of 59,888 lines.
+
+
+## Numbering note (2026-11-25)
+
+The five increments pushed in bc3eace as D900–D904 reused numbers the other session had already
+used (its D900–D999, from before its D1000 range). They are renumbered D3000–D3004, in the code
+comments, the test names and the entries above. This session numbers from D3005 on.
+
+
+## D3005 — "Destroy all creatures that aren't enchanted": Winds of Rath
+
+Most-played order: Winds of Rath (rank 1718).
+
+**Reader.** `massScope` takes "… that aren't enchanted": no Aura is attached to the creature as
+the spell resolves. "They can't be regenerated" already read.
+
+**Tests.** The card reads. Our Bear wearing the Halo lives, and the bare Bears on both sides die.
+Faults injected by script: 2 of 2 caught.
+
+## D3006 — "For each black creature card in your graveyard": Crypt of Agadeem
+
+Most-played order: Crypt of Agadeem (rank 1691).
+
+**Reader.** A count, "<colour> creature card in your graveyard", by the card's printed colours.
+The line is Cabal Coffers' counted mana, an ability that resolves.
+
+**Tests.** The card reads. With two black Zombies and a green Bear in the graveyard, it makes
+{B}{B}. Faults injected by script: 2 of 2 caught.
+
+## D3007 — "Each opponent's maximum hand size is reduced by seven": Jin-Gitaxias, Core Augur
+
+Most-played order: Jin-Gitaxias, Core Augur (rank 1705).
+
+**Engine.** `CardScript.opponentsMaxHandSizeReduction`, asked by `maxHandSize` of every other
+seat's permanents, live, and never below zero.
+
+**Tests.** The card reads. The opponent's maximum hand size is 0 and ours stays 7, and it is back
+to 7 once Jin is gone. Faults injected by script: 2 of 2 caught.
+
+## D3008 — "Whenever a creature is exiled from the battlefield", compiled
+
+Soulherder (rank 1717) is hand-written and already plays. This reads its line for every other
+card that prints it.
+
+**Reader.** "Whenever a [another] creature / permanent [you control / an opponent controls] is
+exiled from the battlefield" is D576's `to-exile` event, from the battlefield, with whose it was.
+
+**Tests.** A compiled copy of the line reads. Exiling their Bear grows it, and destroying one
+does not. Faults injected by script: 2 of 2 caught.
+
+**Compiled against hand-written.** Soulherder now compiles in full, so the compiled-against-
+hand-written check compares it. The two spell "you may" differently: yes or no over a required
+target when compiled, and "up to one target" when hand-written. Both are correct and both blink
+the same creature. It is on the DISAGREE list with that note, and the hand-written script stays
+the one played.
+
+## D3009 — "You can't lose the game and your opponents can't win the game": Platinum Angel
+
+Most-played order: Platinum Angel (rank 1772).
+
+**Engine.** `CardScript.cantLose`, asked by `cantLoseTheGame`. It is checked in the rules'
+eliminations (life, poison and commander damage in `engine.ts`, and an empty library in
+`automation.ts`) and in "you lose the game" (`loseTheGame`). An opponent winning is every other
+player losing, so one flag covers both halves. A concession is not stopped.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- shocked to 0 life we are still in, and we are out once the Angel dies;
+- only its controller is protected: the opponent, shocked to 0 by us, is out;
+- the opponent's "you win the game" takes nobody out.
+
+Faults injected by script: 3 of 3 caught, after two first went uncaught and the tests were
+strengthened. The empty-library check uses the same function and has no test of its own.
+
+## D3010 — "Enters or dies" as two triggers: Daxos, Blessed by the Sun
+
+Most-played order: Daxos, Blessed by the Sun (rank 1745).
+
+**Reader.** "Whenever <subject> enters or dies, <effect>" is the two events, each read as its own
+line, and each must be a single trigger.
+
+**Tests.** The card reads. A Bear entering gains 1, and its death gains another 1. Faults injected
+by script: 2 of 2 caught.
+
+## D3011 — "Thirty or more artifacts": Knuckles the Echidna
+
+Most-played order: Knuckles the Echidna (rank 1752).
+
+**Reader.** `WORD_NUMBERS` gains "thirty", the one word this card needed.
+
+**Tests.** The card reads. Thirty artifacts at our upkeep win, and twenty-nine do not. Faults
+injected by script: 2 of 2 caught.
+
+Card-by-card diffs: D3005–D3006 against bc3eace, 0 lost and 2 gained; D3007–D3011 against that,
+0 lost and 8 gained (including Gnat Miser and Locust Miser from D3007, and Herald of Eternal Dawn
+from D3009).
