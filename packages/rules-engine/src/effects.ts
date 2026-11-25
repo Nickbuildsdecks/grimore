@@ -3088,6 +3088,21 @@ export function preparedCopyOf(
  * this module sits below the one that holds them. A flag on a permanent with no echo trigger is
  * inert: the only thing in the game that reads `echoDue` is an echo trigger's own condition.
  */
+/**
+ * "Exchange control of A and B" (D1248, CR 701.12): each goes to the other's controller, for good.
+ * Nothing happens unless both are still on the battlefield under different controllers
+ * (CR 701.12b): an exchange of two of the same player's permanents changes nothing.
+ */
+export function exchangeControl(state: GameState, a: string, b: string): GameState {
+  const first = state.instances[a];
+  const second = state.instances[b];
+  if (first === undefined || second === undefined || first.zone !== 'battlefield' || second.zone !== 'battlefield') return state;
+  if (first.zoneSeat === second.zoneSeat) return state;
+  const toSecond = second.zoneSeat;
+  const toFirst = first.zoneSeat;
+  return gainControl(gainControl(state, a, toSecond), b, toFirst);
+}
+
 export function gainControl(state: GameState, id: string, seat: SeatIndex): GameState {
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'battlefield') return state;

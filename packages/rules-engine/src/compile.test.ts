@@ -1152,14 +1152,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
           rather than borrowing a card's: a sentence nothing reads today is a moving target, and the
           property is about the two kinds of unread line rather than about any particular one.
         */
-        oracle_text: 'Kicker {4}\nExchange control of two target creatures.',
+        oracle_text: 'Kicker {4}\nYou control target player during that player\'s next turn.',
       });
       expect(half.ok).toBe(true);
       if (!half.ok) return;
       expect(half.script).toBeUndefined();
       expect(half.unread).toEqual([
         { line: 'Kicker {4}', why: 'unimplemented-keyword' },
-        { line: 'Exchange control of two target creatures.', why: 'no-reader' },
+        { line: 'You control target player during that player\'s next turn.', why: 'no-reader' },
       ]);
     });
 
@@ -6121,13 +6121,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const walker = compileCard({
         name: 'Made Up Walker', type_line: 'Legendary Planeswalker — Test', mana_cost: '{2}{G}',
         cmc: 3, colors: ['G'], loyalty: '3',
-        oracle_text: '+1: Exchange control of two target creatures.\n'
+        oracle_text: '+1: You control target player during that player\'s next turn.\n'
           + '\u22122: Create a 3/3 green Beast creature token.\n'
           + '\u22127: You gain 5 life.',
       });
       expect(walker.ok).toBe(true);
       if (!walker.ok) return;
-      expect(walker.unread.map((u) => u.line)).toEqual(['+1: Exchange control of two target creatures.']);
+      expect(walker.unread.map((u) => u.line)).toEqual(['+1: You control target player during that player\'s next turn.']);
       // The two that read are still read, in printed order.
       expect(abilitiesOf(walker.script).map((a) => a.description)).toEqual([
         '\u22122: Create a 3/3 green Beast creature token.',

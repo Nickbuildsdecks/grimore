@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_NAME, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
+  createEmblem, exchangeControl, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent, drawnThisTurn,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -57,7 +57,7 @@ import type {
   CountersDecisionSpec, DecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
   SpendRestriction, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
-import { isCardsDecision } from './scriptTypes.js';
+import { isCardsDecision, targetCount } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
 import type { EffectFn, TokenCopyProfile } from './effects.js';
@@ -30284,6 +30284,57 @@ function readEffect(
           .reduce((state, id) => gainControl(state, id, c.controller), c.state);
       },
     };
+  }
+  /*
+    Exchanging control (D1248, CR 701.12): "Exchange control of two target creatures" (Switcheroo,
+    Shifting Borders), "… of target artifact or creature you control and target creature an
+    opponent controls" (Trade the Helm, Political Trickery), and "… of ~ and target creature"
+    (Phyrexian Infiltrator, Avarice Totem). Both must still be there as it resolves, under different
+    controllers, or nothing changes (see `exchangeControl`). "That share a type" and "another
+    target" are not read.
+  */
+  const exchanges = /^exchange control of (.+?)\.?$/i.exec(clause.trim().replace(/\s*\(this effect lasts indefinitely\.\)$/i, ''));
+  if (exchanges !== null && !/\bshares?\b|\banother target\b/i.test(exchanges[1]!)) {
+    const what = exchanges[1]!;
+    const cardsOf = (c: EffectContext): string[] => c.targets.flatMap((t) => (t.kind === 'card' ? [t.id] : []));
+    const pair = /^two target .+$/i.test(what) ? targetSpecFrom(what, false) : null;
+    if (pair !== null && pointsAtAPermanent(pair) && targetCount(pair) === 2 && pair.optional !== true) {
+      return {
+        targets: [pair],
+        effect: (c) => {
+          const [a, b] = cardsOf(c);
+          return a === undefined || b === undefined ? c.state : exchangeControl(c.state, a, b);
+        },
+      };
+    }
+    const selfAnd = new RegExp(`^(?:${selfRef(name)}|this (?:creature|artifact|enchantment|permanent)) and (target .+)$`, 'i').exec(what);
+    if (selfAnd !== null) {
+      const spec = targetSpecFrom(selfAnd[1]!, false);
+      if (spec !== null && pointsAtAPermanent(spec) && targetCount(spec) === 1 && spec.optional !== true) {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const [b] = cardsOf(c);
+            return b === undefined ? c.state : exchangeControl(c.state, c.source, b);
+          },
+        };
+      }
+    }
+    const twoSpecs = /^(target .+?) and (target .+)$/i.exec(what);
+    if (twoSpecs !== null) {
+      const first = targetSpecFrom(twoSpecs[1]!, false);
+      const second = targetSpecFrom(twoSpecs[2]!, false);
+      if (first !== null && second !== null && pointsAtAPermanent(first) && pointsAtAPermanent(second)
+        && targetCount(first) === 1 && targetCount(second) === 1 && first.optional !== true && second.optional !== true) {
+        return {
+          targets: [first, second],
+          effect: (c) => {
+            const [a, b] = cardsOf(c);
+            return a === undefined || b === undefined ? c.state : exchangeControl(c.state, a, b);
+          },
+        };
+      }
+    }
   }
   const takes = /^gain control of (target .+)$/i.exec(clause.trim());
   if (takes !== null && !/\b(?:until end of turn|for as long as)\b/i.test(takes[1]!)) {

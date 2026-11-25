@@ -45049,6 +45049,61 @@ describe('Demonic Consultation (D1247)', () => {
   });
 });
 
+describe('Exchanging control (D1248)', () => {
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const ROWS = [
+    S('Test Swap', 'Exchange control of two target creatures.'),
+    S('Test Trade', 'Exchange control of target creature you control and target creature an opponent controls.'),
+    { name: 'Test Infiltrator', type_line: 'Creature — Phyrexian Shapeshifter', oracle_text: '{0}: Exchange control of Test Infiltrator and target creature. (This effect lasts indefinitely.)', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Wolf', type_line: 'Creature — Wolf', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3' },
+  ];
+  const deck = customDeck({ id: 'd1248', name: 'Swap', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 40 }], data: ROWS as never[] });
+  const table = (hand: string[], mine: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1248', 1: 'd1248' }, deckSpecs: { d1248: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, targets: string[]) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: targets.map((id) => ({ kind: 'card', id })),
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two target creatures under different controllers change sides', () => {
+    const s = table(['Test Swap'], ['Test Bear'], ['Test Wolf']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const wolf = find(s, 1, 'battlefield', 'Test Wolf');
+    const t = cast(s, 'Test Swap', [bear, wolf]);
+    expect(t.instances[bear]?.zoneSeat).toBe(1);
+    expect(t.instances[wolf]?.zoneSeat).toBe(0);
+  });
+
+  it('two of the same player\'s creatures: nothing changes', () => {
+    const s = table(['Test Swap'], [], ['Test Bear', 'Test Wolf']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const wolf = find(s, 1, 'battlefield', 'Test Wolf');
+    const t = cast(s, 'Test Swap', [bear, wolf]);
+    expect(t.instances[bear]?.zoneSeat).toBe(1);
+    expect(t.instances[wolf]?.zoneSeat).toBe(1);
+  });
+
+  it('mine for theirs, and the Infiltrator for a creature', () => {
+    const s = table(['Test Trade'], ['Test Bear'], ['Test Wolf']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const wolf = find(s, 1, 'battlefield', 'Test Wolf');
+    const t = cast(s, 'Test Trade', [bear, wolf]);
+    expect([t.instances[bear]?.zoneSeat, t.instances[wolf]?.zoneSeat]).toEqual([1, 0]);
+    const i = table([], ['Test Infiltrator'], ['Test Wolf']);
+    const inf = find(i, 0, 'battlefield', 'Test Infiltrator');
+    const theirs = find(i, 1, 'battlefield', 'Test Wolf');
+    const u = drain(passBoth(apply(i, { type: 'auto:activate', by: 0, card: inf, abilityIndex: 0, targets: [{ kind: 'card', id: theirs }] } as Action)), 30);
+    expect([u.instances[inf]?.zoneSeat, u.instances[theirs]?.zoneSeat]).toEqual([1, 0]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
