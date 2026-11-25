@@ -64145,3 +64145,29 @@ Faults injected by hand: 3, all caught.
 - The first card taken whatever its kind.
 
 Coverage: 17,080 of 31,900 cards (+22 over D1253's 17,058), 39,735 of 59,888 lines (+30).
+
+## D1255 — Kaalia of the Vast: a creature put in tapped and attacking
+
+Two readings, both small and both what Kaalia needed:
+- "Whenever ~ attacks **an opponent**" reads as "attacks a player" (D1090), since every player an
+  attack is declared against is an opponent.
+- "Put a … creature card from your hand onto the battlefield tapped and attacking [that player /
+  that opponent]": on an attack trigger, the card enters attacking whatever the trigger's attack was
+  aimed at (CR 508.4: it was never declared as an attacker). Anywhere without an attack to join, it
+  only enters tapped.
+
+The card words also read as a list of creature types, "an Angel, Demon, or Dragon creature card",
+for the hand question.
+
+Read whole now, by the probe (2): Kaalia of the Vast, Preeminent Captain.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- The Angel enters tapped and attacking the same opponent, and a Bear is not offered.
+- Declining puts nothing in.
+
+Faults injected by hand: 2, all caught.
+- The card entering without joining the attack.
+- The creature types not checked.
+
+Coverage: 17,082 of 31,900 cards (+2 over D1254's 17,080), 39,737 of 59,888 lines (+2).
