@@ -454,7 +454,7 @@ export function shortName(name: string): string | null {
 
 /** A combat restriction or requirement a creature can have printed on it as a bare statement. */
 type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack' | 'doesntUntap' | 'mustBlock' | 'mustBeBlocked' | 'lure'
-  | 'blockedByOne' | 'weakerCantBlock' | 'assignsAsUnblocked';
+  | 'blockedByOne' | 'weakerCantBlock' | 'weakerCantBlockYours' | 'assignsAsUnblocked';
 
 /**
  * The three one-line combat statics, each spelled exactly as cards print it.
@@ -633,6 +633,11 @@ function printedCombatLine(line: string, name: string | undefined): PrintedPart 
   const weaker = /^creatures with power less than (.+)'s power can't block it$/.exec(low);
   if (weaker !== null) {
     return selfSubjects(name).includes(weaker[1]!) ? { kind: 'combat-static', statics: ['weakerCantBlock'] } : null;
+  }
+  // D850: "... can't block creatures you control" (Champion of Lambholt).
+  const weakerYours = /^creatures with power less than (.+)'s power can't block creatures you control$/.exec(low);
+  if (weakerYours !== null) {
+    return selfSubjects(name).includes(weakerYours[1]!) ? { kind: 'combat-static', statics: ['weakerCantBlockYours'] } : null;
   }
   // "You may have ~ assign its combat damage as though it weren't blocked" (D770, CR 510.1c).
   const unblocked = /^you may have (.+) assign its combat damage as though it weren't blocked$/.exec(low);
@@ -984,7 +989,7 @@ export function printedCombatStatics(
 function printedCombatFlags(oracleText: string | null | undefined, name?: string): Record<CombatStatic, boolean> {
   const found: Record<CombatStatic, boolean> = {
     cantBlock: false, cantBeBlocked: false, mustAttack: false, doesntUntap: false,
-    mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false, weakerCantBlock: false,
+    mustBlock: false, mustBeBlocked: false, lure: false, blockedByOne: false, weakerCantBlock: false, weakerCantBlockYours: false,
     assignsAsUnblocked: false,
   };
   for (const part of printedParts(oracleText, name)) {
@@ -1771,6 +1776,12 @@ export interface ContinuousEffect {
    */
   readonly protectionFromChosen?: true;
   /**
+   * "Protection from each color that's not in your commander's color identity" (D849, Commander's
+   * Plate): the colours outside the effect controller's commander identity, read live. No commander,
+   * every colour.
+   */
+  readonly protectionOutsideIdentity?: true;
+  /**
    * **Triggered abilities this effect hands the permanents in scope** (CR 113.6, 603.2) — the
    * indices of entries in the *source card's* `grantedTriggers`.
    *
@@ -2386,6 +2397,11 @@ export interface Characteristics {
   readonly blockedByOne: boolean;
   /** "Creatures with power less than ~'s power can't block it" (D943), compared in `canBlock`. */
   readonly weakerCantBlock: boolean;
+  /**
+   * "Creatures with power less than ~'s power can't block creatures you control" (D850, Champion of
+   * Lambholt): the same comparison against this creature's power, for every attacker its controller has.
+   */
+  readonly weakerCantBlockYours: boolean;
   /**
    * "You may have ~ assign its combat damage as though it weren't blocked" (D770, CR 510.1c): when
    * it is blocked, its controller chooses, with the damage order, to send all of it to the player
@@ -3373,6 +3389,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let lure = printedCombat.lure;
   let blockedByOne = printedCombat.blockedByOne;
   let weakerCantBlock = printedCombat.weakerCantBlock;
+  let weakerCantBlockYours = printedCombat.weakerCantBlockYours;
   let assignsAsUnblocked = printedCombat.assignsAsUnblocked;
   let cantActivate = false;
   let cantActivateNonMana = false;
@@ -3461,6 +3478,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       lure = false;
       blockedByOne = false;
       weakerCantBlock = false;
+      weakerCantBlockYours = false;
       assignsAsUnblocked = false;
       attacksOnlyIfDefenderHas = null;
       extraBlocks = 0;
@@ -3530,12 +3548,15 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // D1190: the source's chosen colour, as if printed in `protectionFrom`.
     const chosenColour = effect.protectionFromChosen === true
       ? state.instances[effect.source]?.chosen?.color as Color | undefined : undefined;
-    for (const colour of chosenColour === undefined ? effect.protectionFrom ?? [] : [...(effect.protectionFrom ?? []), chosenColour]) {
+    // D849: every colour outside the controller's commander identity.
+    const outside = effect.protectionOutsideIdentity === true
+      ? (['W', 'U', 'B', 'R', 'G'] as Color[]).filter((c) => !commanderIdentity(state, effect.controller).includes(c)) : [];
+    for (const colour of [...(effect.protectionFrom ?? []), ...(chosenColour === undefined ? [] : [chosenColour]), ...outside]) {
       protectionFrom ??= [];
       if (!protectionFrom.includes(colour)) protectionFrom.push(colour);
       if (effect.protectionSparesSource !== true && !unspared.includes(colour)) unspared.push(colour);
     }
-    if (effect.protectionSparesSource === true && ((effect.protectionFrom ?? []).length > 0 || chosenColour !== undefined)) spares.push(effect.source);
+    if (effect.protectionSparesSource === true && ((effect.protectionFrom ?? []).length > 0 || chosenColour !== undefined || outside.length > 0)) spares.push(effect.source);
     // Layer 5 (CR 613.1d), which only has to be in effect order to be right: two effects that both
     // set a colour resolve last-one-wins, the same way two that set power do.
     if (effect.setColors !== undefined) setColors = effect.setColors;
@@ -3588,6 +3609,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     lure,
     blockedByOne,
     weakerCantBlock,
+    weakerCantBlockYours,
     assignsAsUnblocked,
     cantActivate,
     cantActivateNonMana,

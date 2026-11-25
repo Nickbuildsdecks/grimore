@@ -41341,6 +41341,170 @@ describe('"attacks this turn if able", Bident of Thassa (D846)', () => {
   });
 });
 
+describe('"Until end of turn, …, where X is …", Overwhelming Stampede (D847)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Stampede', 'Sorcery', 'Until end of turn, creatures you control gain trample and get +X/+X, where X is the greatest power among creatures you control.'),
+    R('Test Bear', 'Creature — Bear', '', { power: '2', toughness: '2' }),
+    R('Test Ogre', 'Creature — Ogre', '', { power: '4', toughness: '3' }),
+  ];
+  const deck = customDeck({ id: 'd847', name: 'Stampede', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+
+  it('reads', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('greatest power 4: our Bear is a 6/6 trampler and our Ogre an 8/7, until end of turn; theirs is untouched', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd847', 1: 'd847' }, deckSpecs: { d847: deck.deck },
+      hands: { 0: ['Test Stampede'] }, battlefield: { 0: ['Test Bear', 'Test Ogre'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Stampede') })));
+    const of = (seat: 0 | 1, name: string) => { const c = characteristicsOf(s, s.instances[find(s, seat, 'battlefield', name)]!); return [c.power, c.toughness, c.keywords.has('trample')]; };
+    expect(of(0, 'Test Bear')).toEqual([6, 6, true]);
+    expect(of(0, 'Test Ogre')).toEqual([8, 7, true]);
+    expect(of(1, 'Test Bear')).toEqual([2, 2, false]);
+  });
+});
+
+describe('a bite at a player or at everything, Chandra\'s Ignition (D848)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Ignition', 'Sorcery', 'Target creature you control deals damage equal to its power to each other creature and each opponent.'),
+    R('Test Fling', 'Instant', 'Target creature you control deals damage equal to its power to any target.'),
+    R('Test Ogre', 'Creature — Ogre', '', { power: '4', toughness: '4' }),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+  ];
+  const deck = customDeck({ id: 'd848', name: 'Ignition', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const table = (spell: string) => advanceTo(arena({
+    decks: { 0: 'd848', 1: 'd848' }, deckSpecs: { d848: deck.deck },
+    hands: { 0: [spell] }, battlefield: { 0: ['Test Ogre', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  } as never), 'precombat-main');
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Ignition with the 4-power Ogre: both Bears die, the opponent loses 4, and the Ogre is unhurt', () => {
+    let s = table('Test Ignition');
+    const ogre = find(s, 0, 'battlefield', 'Test Ogre');
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Ignition'), targets: [{ kind: 'card', id: ogre }] })));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Test Bear');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('Test Bear');
+    expect(life(s, 1)).toBe(before - 4);
+    expect(s.instances[ogre]!.zone).toBe('battlefield');
+    expect(s.instances[ogre]!.damage).toBe(0);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('a bite at any target can be a player: the Ogre deals 4 to the opponent', () => {
+    let s = table('Test Fling');
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fling'), targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Test Ogre') }, { kind: 'player', seat: 1 }] })));
+    expect(life(s, 1)).toBe(before - 4);
+  });
+});
+
+describe('protection from each color outside your commander\'s identity: Commander\'s Plate (D849)', () => {
+  const ROWS = [
+    { name: 'Test Plate', type_line: 'Artifact — Equipment', oracle_text: "Equipped creature gets +3/+3 and has protection from each color that's not in your commander's color identity.\nEquip {0}", mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Imp', type_line: 'Creature — Imp', oracle_text: '', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({ id: 'd849', name: 'Plate', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+  const table = (commander: string | null): { s: GameState; bear: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd849', 1: 'd849' }, deckSpecs: { d849: deck.deck },
+      battlefield: { 0: ['Test Bear', 'Test Plate', 'Test Imp'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const plate = find(s, 0, 'battlefield', 'Test Plate');
+    if (commander !== null) {
+      const id = find(s, 0, 'battlefield', commander);
+      s = { ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, isCommander: true } } };
+    }
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === plate)!;
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: plate, abilityIndex: play.abilityIndex ?? 0, targets: [{ kind: 'card', id: bear }] })));
+    expect(s.instances[plate]!.attachedTo).toBe(bear);
+    return { s, bear };
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with a green commander: +3/+3 and protection from white, blue, black and red, not green', () => {
+    const { s, bear } = table('Test Bear');
+    const ch = characteristicsOf(s, s.instances[bear]!);
+    expect([ch.power, ch.toughness]).toEqual([5, 5]);
+    expect([...ch.protectionFrom].sort()).toEqual(['B', 'R', 'U', 'W']);
+  });
+
+  it('with a black commander, green is shielded and black is not', () => {
+    const { s, bear } = table('Test Imp');
+    const prot = characteristicsOf(s, s.instances[bear]!).protectionFrom;
+    expect([prot.includes('G'), prot.includes('B')]).toEqual([true, false]);
+  });
+
+  it('with no commander, protection from every colour', () => {
+    const { s, bear } = table(null);
+    expect([...characteristicsOf(s, s.instances[bear]!).protectionFrom].sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+  });
+});
+
+describe('weaker creatures can\'t block yours: Champion of Lambholt (D850)', () => {
+  const C = (name: string, text: string, power = '2', toughness = '2') => ({
+    name, type_line: 'Creature — Human', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const ROWS = [
+    C('Test Champion', "Creatures with power less than Test Champion's power can't block creatures you control.\nWhenever another creature you control enters, put a +1/+1 counter on Test Champion.", '3', '3'),
+    C('Test Ogre', '', '4', '4'),
+    C('Test Bear', ''),
+    C('Test Elf', '', '1', '1'),
+  ];
+  const deck = customDeck({ id: 'd850', name: 'Champion', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const attackWith = (mine: string[], theirs: string[], attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd850', 1: 'd850' }, deckSpecs: { d850: deck.deck },
+      battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const id = find(s, 0, 'battlefield', attacker);
+    s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] }), 12), 'declare-blockers');
+    return { s, id };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with the 3-power Champion out, a 2-power Bear cannot block our attacking Elf, and a 4-power Ogre can', () => {
+    const { s, id } = attackWith(['Test Champion', 'Test Elf'], ['Test Bear', 'Test Ogre'], 'Test Elf');
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Bear'), id, 1)?.reason).toMatch(/less power than Test Champion/);
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Ogre'), id, 1)).toBeNull();
+  });
+
+  it('without the Champion, the Bear blocks the Elf', () => {
+    const { s, id } = attackWith(['Test Elf'], ['Test Bear'], 'Test Elf');
+    expect(canBlock(s, find(s, 1, 'battlefield', 'Test Bear'), id, 1)).toBeNull();
+  });
+
+  it('only creatures its controller has: their Champion does not stop our Bear blocking their Elf', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd850', 1: 'd850' }, deckSpecs: { d850: deck.deck },
+      battlefield: { 0: ['Test Bear', 'Test Champion'], 1: ['Test Elf'] }, turn: 3, firstSeat: 1,
+    } as never), 'declare-attackers');
+    const elf = find(s, 1, 'battlefield', 'Test Elf');
+    s = advanceTo(drain(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: elf, defender: 0 }] }), 12), 'declare-blockers');
+    expect(canBlock(s, find(s, 0, 'battlefield', 'Test Bear'), elf, 0)).toBeNull();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

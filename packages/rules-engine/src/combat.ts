@@ -254,6 +254,13 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   if (attacker.ch.weakerCantBlock && blocker.ch.power < attacker.ch.power) {
     return { card: blockerId, reason: `${blocker.ch.name} has less power than ${attacker.ch.name}` };
   }
+  // D850: a Champion of Lambholt its controller has, compared against the Champion's power.
+  for (const id of listAt(state, zoneKey(attacker.inst.zoneSeat, 'battlefield'))) {
+    const champion = creatureOf(state, id);
+    if (champion !== null && champion.ch.weakerCantBlockYours && blocker.ch.power < champion.ch.power) {
+      return { card: blockerId, reason: `${blocker.ch.name} has less power than ${champion.ch.name}` };
+    }
+  }
   // The one piece of evasion in this pool that is not a keyword, so it is read off the attacker
   // rather than compared keyword to keyword. Wall is a creature type, not an ability: a Wall of
   // Air stopped by this is stopped for what it *is*.
