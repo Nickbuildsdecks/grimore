@@ -44482,3 +44482,37 @@ as the spell finishes.
 The coverage below includes the other session's D844, merged in before this was measured.
 
 Coverage: 16,742 of 31,900 cards (+16 over D1221's 16,726), 39,259 of 59,888 lines (+17).
+
+## D1223 — "those creatures", "they" and "them" after a clause that aimed at several
+
+Sparkmage's Gambit and Wrap in Flames ("~ deals 1 damage to each of up to two/three target
+creatures. Those creatures can't block this turn."), Coronation of Chaos ("Up to three target
+creatures can't block this turn. Goad them."), Leo's Guidance ("Put a +1/+1 counter on each of up to
+three target creatures. Untap them."), Bretagard Stronghold ("… They gain vigilance and lifelink
+until end of turn."). The singular referent (D530) supplies one object, and D946's plural freeze
+read one sentence; this is the plural for any clause. The clause is read with "target creature" in
+the pronoun's place, the verb made singular to agree, and must then ask for exactly that one target
+and no question; its effect is run once for each object the one earlier targeting clause chose, with
+that object as its target. Nothing new is targeted.
+
+Refused where the rest of the clause has a pronoun of its own ("they", "their", "it", "its"), since
+it could mean the group or one of them, and where more than one earlier clause aimed at something.
+
+Read whole now (5): Bretagard Stronghold, Coronation of Chaos, Leo's Guidance, Sparkmage's Gambit,
+Wrap in Flames.
+
+**Tests.** 4 engine tests:
+- The test cards read whole; a mixed sentence ("until their controller's next turn") stays unread.
+- "Those creatures get -2/-0": each of the two chosen, and not the third creature.
+- "They gain flying": both chosen, after their own pump; the third does not.
+- "Goad them": all three chosen with three targets, only the one with one target.
+
+Faults injected by hand: 4, 2 caught.
+- The effect done to the first object only: caught.
+- The object not handed to the effect as its target: caught.
+- The rest-of-clause pronoun guard dropped: not caught. The mixed sentence in the test is refused
+  by the reader it is handed to as well, and no printed line was found that only the guard refuses.
+- The verb left plural ("gain"): not caught, because the grant reader already reads "gain" as
+  "gains"; the agreement matters for the other verbs.
+
+Coverage: 16,747 of 31,900 cards (+5 over D1222's 16,742), 39,264 of 59,888 lines (+5).
