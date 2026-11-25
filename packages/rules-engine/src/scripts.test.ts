@@ -8046,6 +8046,12 @@ describe('deck coverage', () => {
       // D863: Archivist of Oghma, Ob Nixilis, Unshackled; driven by "the opponent's Archivist: our
       // search gains them 1 life and a card" and D864's Ob Nixilis test. No pool deck plays one.
       'trigger searches',
+      // D865: Fiery Emancipation, City on Fire, Twinflame Tyrant; driven by "City on Fire: our Shock
+      // deals 6 to the opponent". No pool deck plays one.
+      'script damageMultiplier',
+      // D868: Bloodletter of Aclazotz; driven by "on our turn: a Shock costs the opponent 4". No pool
+      // deck plays one.
+      'script opponentsLoseDoubleOnYourTurn',
     ]);
 
     const declared = [
@@ -42210,6 +42216,281 @@ describe('"that player" on a search, and two sentences about them: Ob Nixilis, U
     expect(life(s, 0)).toBe(10);
     expect(life(s, 1)).toBe(20);
     expect(s.instances[find(s, 1, 'battlefield', 'Test Ob')]!.counters['+1/+1']).toBe(1);
+  });
+});
+
+describe('double and triple damage: City on Fire, Twinflame Tyrant (D865)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test City', 'Enchantment', 'If a source you control would deal damage to a permanent or player, it deals triple that damage instead.'),
+    R('Test Tyrant', 'Creature — Dragon', 'Flying\nIf a source you control would deal damage to an opponent or a permanent an opponent controls, it deals double that damage instead.', { power: '3', toughness: '6' }),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.'),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    R('Test Wall', 'Creature — Wall', 'Defender', { colors: ['W'], power: '0', toughness: '9' }),
+  ];
+  const deck = customDeck({ id: 'd865', name: 'City', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 45 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[], hand: string[], seat: 0 | 1 = 0) => advanceTo(arena({
+    decks: { 0: 'd865', 1: 'd865' }, deckSpecs: { d865: deck.deck },
+    hands: { [seat]: hand }, battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: seat,
+  } as never), 'precombat-main');
+  const shock = (s: GameState, by: 0 | 1, target: Target) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', 'Test Shock'), targets: [target] })));
+
+  it('reads them', () => {
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('City on Fire: our Shock deals 6 to the opponent, and 6 to their Wall', () => {
+    let s = table(['Test City'], ['Test Wall'], ['Test Shock', 'Test Shock']);
+    s = shock(s, 0, { kind: 'player', seat: 1 });
+    expect(life(s, 1)).toBe(14);
+    const wall = find(s, 1, 'battlefield', 'Test Wall');
+    s = shock(s, 0, { kind: 'card', id: wall });
+    expect(s.instances[wall]!.damage).toBe(6);
+  });
+
+  it('their Shock at us is not tripled by our City', () => {
+    const s = shock(table(['Test City'], [], ['Test Shock'], 1), 1, { kind: 'player', seat: 0 });
+    expect(life(s, 0)).toBe(18);
+  });
+
+  it('Twinflame: doubled at the opponent, not at our own Wall; with City as well, six times', () => {
+    let s = table(['Test Tyrant', 'Test Wall'], [], ['Test Shock', 'Test Shock']);
+    const wall = find(s, 0, 'battlefield', 'Test Wall');
+    s = shock(s, 0, { kind: 'card', id: wall });
+    expect(s.instances[wall]!.damage).toBe(2);
+    s = shock(s, 0, { kind: 'player', seat: 1 });
+    expect(life(s, 1)).toBe(16);
+    let both = table(['Test Tyrant', 'Test City'], [], ['Test Shock']);
+    both = shock(both, 0, { kind: 'player', seat: 1 });
+    expect(life(both, 1)).toBe(8);
+  });
+
+  it('combat damage too: an unblocked 2/2 Bear under the City deals 6', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd865', 1: 'd865' }, deckSpecs: { d865: deck.deck },
+      battlefield: { 0: ['Test City', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: find(s, 0, 'battlefield', 'Test Bear'), defender: 1 }] });
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(life(s, 1)).toBe(14);
+  });
+});
+
+describe('one more Treasure: Xorn (D866)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Xorn', 'Creature — Elemental', 'Haste\nIf you would create one or more Treasure tokens, instead create those tokens plus an additional Treasure token.', { power: '3', toughness: '2' }),
+    R('Test Lives', 'Enchantment', 'If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.', { colors: ['G'] }),
+    R('Test Loot', 'Sorcery', 'Create two Treasure tokens.'),
+    R('Test Snack', 'Sorcery', 'Create a Food token.'),
+  ];
+  const deck = customDeck({ id: 'd866', name: 'Xorn', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 48 }], data: ROWS as never[] });
+  const cast = (mine: string[], spell: string, seat: 0 | 1 = 0) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd866', 1: 'd866' }, deckSpecs: { d866: deck.deck },
+      hands: { [seat]: [spell] }, battlefield: { 0: mine }, turn: 3, firstSeat: seat,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: seat, card: find(s, seat, 'hand', spell) })));
+    return (n: string, who: 0 | 1 = seat) => namesIn(s, who, 'battlefield').filter((x) => x === n).length;
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('two Treasures become three with a Xorn, and (2 + 1) x 2 = 6 with Parallel Lives too', () => {
+    expect(cast(['Test Xorn'], 'Test Loot')('Treasure')).toBe(3);
+    expect(cast(['Test Xorn', 'Test Lives'], 'Test Loot')('Treasure')).toBe(6);
+  });
+
+  it('a Food is not a Treasure, and the opponent\'s Treasures are not ours to add to', () => {
+    const food = cast(['Test Xorn'], 'Test Snack');
+    expect([food('Food'), food('Treasure')]).toEqual([1, 0]);
+    expect(cast(['Test Xorn'], 'Test Loot', 1)('Treasure', 1)).toBe(2);
+  });
+});
+
+describe('the Urza lands (D867)', () => {
+  const L = (name: string, sub: string, text: string) => ({ name, type_line: `Land — Urza's ${sub}`, oracle_text: text, mana_cost: '', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    L('Test Tower', 'Tower', "{T}: Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add {C}{C}{C} instead."),
+    L('Test Mine', 'Mine', "{T}: Add {C}. If you control an Urza's Power-Plant and an Urza's Tower, add {C}{C} instead."),
+    L('Test Plant', 'Power-Plant', "{T}: Add {C}. If you control an Urza's Mine and an Urza's Tower, add {C}{C} instead."),
+  ];
+  const deck = customDeck({ id: 'd867', name: 'Tron', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Wastes', count: 48 }], data: ROWS as never[] });
+  const tap = (mine: string[], which: string): number => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd867', 1: 'd867' }, deckSpecs: { d867: deck.deck }, battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', which), abilityIndex: 0 });
+    return s.pools['0']!.C;
+  };
+
+  it('reads all three', () => {
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('assembled: the Tower makes three, the Mine and the Power-Plant two each', () => {
+    const tron = ['Test Tower', 'Test Mine', 'Test Plant'];
+    expect([tap(tron, 'Test Tower'), tap(tron, 'Test Mine'), tap(tron, 'Test Plant')]).toEqual([3, 2, 2]);
+  });
+
+  it('with one piece missing, each makes one', () => {
+    expect([tap(['Test Tower', 'Test Mine'], 'Test Tower'), tap(['Test Tower', 'Test Mine'], 'Test Mine')]).toEqual([1, 1]);
+  });
+});
+
+describe('twice the life loss on your turn: Bloodletter of Aclazotz (D868)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Bloodletter', 'Creature — Vampire Demon', 'Flying\nIf an opponent would lose life during your turn, they lose twice that much life instead.', { power: '2', toughness: '4' }),
+    R('Test Shock', 'Instant', 'Test Shock deals 2 damage to any target.', { colors: ['R'] }),
+    R('Test Drain', 'Sorcery', 'Each opponent loses 1 life. You lose 1 life.'),
+    R('Test Pact', 'Sorcery', 'You lose 2 life.'),
+  ];
+  const deck = customDeck({ id: 'd868', name: 'Bloodletter', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const cast = (spell: string, by: 0 | 1, target?: Target) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd868', 1: 'd868' }, deckSpecs: { d868: deck.deck },
+      hands: { [by]: [spell] }, battlefield: { 0: ['Test Bloodletter'] }, turn: 3, firstSeat: by,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by, card: find(s, by, 'hand', spell), ...(target === undefined ? {} : { targets: [target] }) })));
+    return [life(s, 0), life(s, 1)];
+  };
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('on our turn: a Shock costs the opponent 4, a drain 2 while we lose only 1', () => {
+    expect(cast('Test Shock', 0, { kind: 'player', seat: 1 })).toEqual([20, 16]);
+    expect(cast('Test Drain', 0)).toEqual([19, 18]);
+  });
+
+  it('on their turn, nothing is doubled: not their Shock at us, nor the 2 life they pay under our Bloodletter', () => {
+    expect(cast('Test Shock', 1, { kind: 'player', seat: 0 })).toEqual([18, 20]);
+    expect(cast('Test Pact', 1)).toEqual([20, 18]);
+  });
+
+  it('in a pod, on a third player\'s turn, our Bloodletter doubles nothing', () => {
+    let s = advanceTo(arena({
+      format: 'pod', seats: 3, decks: { 0: 'd868', 1: 'd868', 2: 'd868' }, deckSpecs: { d868: deck.deck },
+      hands: { 2: ['Test Drain'] }, battlefield: { 0: ['Test Bloodletter'] }, turn: 3, firstSeat: 2,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 2, card: find(s, 2, 'hand', 'Test Drain') })));
+    expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([39, 39, 39]);
+  });
+});
+
+describe('removed from combat and untapped: Reconnaissance (D869)', () => {
+  const R = (name: string, type: string, text: string, extra: Record<string, unknown> = {}) => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', ...extra,
+  });
+  const ROWS = [
+    R('Test Recon', 'Enchantment', '{0}: Remove target attacking creature you control from combat and untap it.'),
+    R('Test Bear', 'Creature — Bear', '', { colors: ['G'], power: '2', toughness: '2' }),
+    R('Test Ogre', 'Creature — Ogre', '', { colors: ['R'], power: '4', toughness: '4' }),
+  ];
+  const deck = customDeck({ id: 'd869', name: 'Recon', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Plains', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the blocked Bear leaves combat untapped and alive, and deals and takes no damage', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd869', 1: 'd869' }, deckSpecs: { d869: deck.deck },
+      battlefield: { 0: ['Test Recon', 'Test Bear'], 1: ['Test Ogre'] }, turn: 3, firstSeat: 0,
+    } as never), 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const ogre = find(s, 1, 'battlefield', 'Test Ogre');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] });
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: ogre, attacker: bear }] });
+    expect(s.instances[bear]!.tapped).toBe(true);
+    const recon = find(s, 0, 'battlefield', 'Test Recon');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: recon, abilityIndex: 0, targets: [{ kind: 'card', id: bear }] })));
+    expect(s.combat.attacks.some((a) => a.attacker === bear)).toBe(false);
+    expect(s.instances[bear]!.tapped).toBe(false);
+    s = drain(advanceTo(s, 'postcombat-main'), 20);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(s.instances[ogre]!.damage).toBe(0);
+  });
+});
+
+describe('a grant to creatures with a counter of any kind: Rishkar, Peema Renegade (D870)', () => {
+  const C = (name: string, text = '') => ({ name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Rishkar', 'Each creature you control with a counter on it has "{T}: Add {G}."'),
+    C('Test Bear'), C('Test Elk'), C('Test Ox'), C('Test Yak'),
+  ];
+  const deck = customDeck({ id: 'd870', name: 'Rishkar', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 45 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a +1/+1 counter or an oil counter gives the ability; no counter, or only a kicked marker, does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd870', 1: 'd870' }, deckSpecs: { d870: deck.deck },
+      battlefield: { 0: ['Test Rishkar', 'Test Bear', 'Test Elk', 'Test Ox', 'Test Yak'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    const id = (n: string) => find(s, 0, 'battlefield', n);
+    const set = (n: string, counters: Record<string, number>) => {
+      const k = id(n);
+      s = { ...s, instances: { ...s.instances, [k]: { ...s.instances[k]!, counters } } };
+    };
+    set('Test Bear', { '+1/+1': 1 });
+    set('Test Elk', { oil: 2 });
+    set('Test Yak', { kicked: 1 });
+    const offered = (n: string) => legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === id(n));
+    expect(['Test Bear', 'Test Elk', 'Test Ox', 'Test Yak'].map(offered)).toEqual([true, true, false, false]);
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === id('Test Elk'))!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: id('Test Elk'), abilityIndex: play.abilityIndex ?? 0, grantedBy: play.grantedBy } as Action);
+    expect(s.pools['0']!.G).toBe(1);
+  });
+});
+
+describe('creatures that are Forest lands: Ashaya, Soul of the Wild (D871)', () => {
+  const C = (name: string, text = '') => ({ name, type_line: 'Creature — Elemental', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' });
+  const ROWS = [
+    C('Test Ashaya', 'Nontoken creatures you control are Forest lands in addition to their other types.'),
+    C('Test Bear'),
+    { name: 'Test Saproling Maker', type_line: 'Sorcery', oracle_text: 'Create a 1/1 green Saproling creature token.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' },
+  ];
+  const deck = customDeck({ id: 'd871', name: 'Ashaya', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('our nontoken Bear is a Forest land creature that taps for {G}; a token and their Bear are not lands', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd871', 1: 'd871' }, deckSpecs: { d871: deck.deck },
+      hands: { 0: ['Test Saproling Maker'] }, battlefield: { 0: ['Test Ashaya', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    } as never), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Saproling Maker') })));
+    const types = (seat: 0 | 1, n: string) => characteristicsOf(s, s.instances[find(s, seat, 'battlefield', n)]!).typeLine;
+    const mine = types(0, 'Test Bear');
+    expect([mine.types.includes('Land'), mine.types.includes('Creature'), mine.subtypes.includes('Forest')]).toEqual([true, true, true]);
+    expect(types(0, 'Saproling').types).not.toContain('Land');
+    expect(types(1, 'Test Bear').types).not.toContain('Land');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === bear);
+    expect(play).toBeDefined();
+    const sap = find(s, 0, 'battlefield', 'Saproling');
+    // Not summoning sick, so a granted tap ability would be offered if it had one.
+    s = { ...s, instances: { ...s.instances, [sap]: { ...s.instances[sap]!, enteredTurn: 0 } } };
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === sap)).toBe(false);
+    s = apply(s, { type: 'auto:activate', by: 0, card: bear, abilityIndex: play!.abilityIndex ?? 0, ...(play!.grantedBy === undefined ? {} : { grantedBy: play!.grantedBy }) } as Action);
+    expect(s.pools['0']!.G).toBe(1);
   });
 });
 

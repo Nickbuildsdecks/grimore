@@ -44956,3 +44956,116 @@ asks nothing.
 caught.
 
 Gated together on d694dfa: full gate green (re-run after exempting `script winsOnEmptyDraw` and `trigger searches` in the deck-coverage test, with the runtime tests named as evidence). Coverage: 16,785 to 16,814 of 31,900 cards with every line read, and 39,313 to 39,347 of 59,888 lines. Card-by-card diff against 5eb4a32: 0 lost, 30 gained (including Frogify, Force of Despair and Eaten by Piranhas from the new readers).
+
+## D865 — Double and triple damage: Fiery Emancipation, City on Fire, Twinflame Tyrant
+
+Most-played order: Fiery Emancipation (rank 873), City on Fire (924), Twinflame Tyrant (757).
+
+**Engine.** `CardScript.damageMultiplier` (`factor`, and `opponents` for Twinflame's "to an
+opponent or a permanent an opponent controls"). It is asked by `dealDamage` of the source
+controller's permanents, live, as the damage is about to be dealt and before any prevention. Two
+of them multiply together. A redirect is a new event and is not multiplied again.
+
+**Tests.** 5 engine tests:
+- the cards read;
+- City on Fire: our Shock deals 6 to the opponent and 6 to their Wall;
+- their Shock at us is not tripled by our City;
+- Twinflame: not doubled at our own Wall, doubled at the opponent, and six times with City as well;
+- combat damage too: an unblocked 2/2 under the City deals 6.
+
+Faults injected by script: 4 of 5 caught. The miss is the fallback to the source permanent's
+controller when none is passed. No test path reaches it, because combat and spells both pass a
+controller.
+
+## D866 — One more Treasure: Xorn
+
+Most-played order: Xorn (rank 874).
+
+**Engine.** A printed `treasure-plus` part, beside D652's token doubler: one more Treasure per
+Xorn on a creation of Treasures. It is added before the doubling, the order that gives its
+controller the most (CR 616.1).
+
+**Tests.** 3 engine tests:
+- the card reads;
+- two Treasures become three with a Xorn, and (2 + 1) × 2 = 6 with Parallel Lives;
+- a Food is not a Treasure, and the opponent's Treasures are not ours to add to.
+
+Faults injected by script: 4 of 4 caught.
+
+## D867 — The Urza lands: Urza's Tower, Urza's Mine, Urza's Power Plant
+
+Most-played order: Urza's Tower (rank 836), Urza's Mine (843), Urza's Power Plant (845).
+
+**Reader.** "{T}: Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add {C}{C}{C}
+instead" becomes a mana ability that makes its symbol `producesTimes` times: as many as the
+"instead" prints while you control a land of each named pair of subtypes, else once, asked as it
+resolves. Mana lines are routed away from the general reader (the Coliseum failure). This shape
+is let through the same exception as D666's sacrifice, and only when the result is a counted
+mana ability.
+
+**Tests.** 3 engine tests:
+- all three read;
+- assembled, the Tower makes three and the Mine and the Power-Plant two each;
+- with one piece missing, each makes one.
+
+Faults injected by script: 4 of 4 caught.
+
+## D868 — Twice the life loss on your turn: Bloodletter of Aclazotz
+
+Most-played order: Bloodletter of Aclazotz (rank 871).
+
+**Engine.** `CardScript.opponentsLoseDoubleOnYourTurn`, read by `lifeLossMultiplier`: two for
+each such permanent the active player controls when the seat losing life is not the active
+player. Damage to a player is life lost, so `dealDamage` asks it too. The damage itself
+(lifelink, the commander tally) is not doubled.
+
+**Tests.** 4 engine tests:
+- the card reads;
+- on our turn, a Shock costs the opponent 4, and a drain costs them 2 while we lose only 1;
+- on their turn nothing is doubled, neither their Shock at us nor the 2 life they pay;
+- in a pod, on a third player's turn, our Bloodletter doubles nothing.
+
+Faults injected by script: 4 of 4 caught. The pod test was added after the any-turn fault was
+missed in two-player.
+
+## D869 — Removed from combat and untapped: Reconnaissance
+
+Most-played order: Reconnaissance (rank 876).
+
+**Reader.** "Remove target <creature> from combat [and untap it]", through the engine's
+`removeFromCombat` (CR 506.4).
+
+**Tests.** The card reads. Our blocked Bear leaves combat untapped and alive, the blocking Ogre
+takes no damage, and the Bear is gone from the attack list. Faults injected by script: 2 of 2
+caught.
+
+## D870 — A grant to creatures with a counter of any kind: Rishkar, Peema Renegade
+
+Most-played order: Rishkar, Peema Renegade (rank 901).
+
+**Reader.** D1169's "each creature you control with a +1/+1 counter on it has …" now takes "with
+a counter on it" and "with counters on them" of any kind, as `onlyWithCounter: '*'`. The counter
+kinds the engine keeps for itself (kicked, evoked, regeneration and the rest) do not count. The
+marker list belongs to `effects.ts` and is registered in `characteristics.ts` as it loads.
+
+**Tests.** The card reads. A creature with a +1/+1 counter or an oil counter is offered the mana
+ability and taps for {G}. One with no counter, or with only a kicked marker, is not. Faults
+injected by script: 3 of 3 caught.
+
+## D871 — Creatures that are Forest lands: Ashaya, Soul of the Wild
+
+Most-played order: Ashaya, Soul of the Wild (rank 848).
+
+**Engine.** `ContinuousEffect.onlyNontoken`.
+
+**Reader.** "[Nontoken] creatures you control are [<basic type>] lands / artifacts / enchantments
+in addition to their other types" is layer 4 on your creatures. A basic land type brings its mana
+ability (CR 305.6). The engine adds that ability to printed lands at compile time, not live, so
+the reader also grants "{T}: Add {G}" to the same creatures, through the quoted-grant reader.
+
+**Tests.** The card reads. Our nontoken Bear is a Forest land creature and taps for {G}. A
+non-sick token gets neither the type nor the ability, and the opponent's Bear is untouched.
+Faults injected by script: 4 of 4 caught. The first run missed the token's grant, because the
+token was summoning sick; the test now uses an old token.
+
+Gated together on b9cafe7: full gate green, engine tests 6601. Coverage: 16,814 to 16,832 of 31,900 cards with every line read, and 39,347 to 39,369 of 59,888 lines. Card-by-card diff (D865–D870) against b9cafe7: 0 lost, 17 gained (including Angrath's Marauders, Hollowhenge Spirit, Labyrinth of Skophos).

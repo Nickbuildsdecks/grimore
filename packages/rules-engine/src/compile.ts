@@ -1241,11 +1241,15 @@ function compileSingle(row: CardDataRow): Compilation {
       that comes back makes mana and nothing else came back, so the Coliseum failure cannot recur.
     */
     if (isManaAbilityLine(line)) {
-      const sacrificing = /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
+      // And the Urza lands' "If you control an Urza's Mine and an Urza's Power-Plant, add {C}{C}{C}
+      // instead" (D867), which the general reader makes as a counted mana ability (`producesTimes`).
+      const urza = /^\{T\}: Add \{[WUBRGC]\}\. If you control an? [^,]+ and an? [^,]+, add (?:\{[WUBRGC]\})+ instead\.?$/i.test(line.trim());
+      const sacrificing = urza || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
         ? lineScriptFor(line, def.name) : null;
       const makesMana = sacrificing !== null && Object.keys(sacrificing).every((key) => key === 'abilities')
         && (sacrificing.abilities ?? []).length > 0
-        && (sacrificing.abilities ?? []).every((ability) => (ability.produces ?? []).length > 0 && ability.cost.sacrifice !== undefined);
+        && (sacrificing.abilities ?? []).every((ability) => (ability.produces ?? []).length > 0
+          && (ability.cost.sacrifice !== undefined || (urza && ability.producesTimes !== undefined)));
       if (!makesMana) { unread.push({ line, why: 'no-reader' }); continue; }
       if (merge(built, sacrificing!) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
       compiled.push(line);

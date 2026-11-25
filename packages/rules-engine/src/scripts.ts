@@ -39,7 +39,7 @@ import {
   firstPlayerTarget,
   chosenOption, CHOSEN_COLOR, CHOSEN_TYPE, shuffleLibrary, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
-  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, untapPermanent,
+  createEmblem, temptWithRing, amass, flipCoin, manifestTop, rollDie, incubate, collectEvidence, ventureInto, takeInitiative, completeDungeon, nextRooms, inDungeon, DUNGEONS, VENTURE_DUNGEONS, THE_INITIATIVE, INITIATIVE_TEXT, UNDERCITY, createTappedTokens, gainControl, gainLife, givePoison, goad, lockLife, loseLife, phaseOut, protectPlayer, mill, moveCounter, moveToGraveyard, moveToHand, opponentsOf, pump, removeFromCombat, untapPermanent,
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
@@ -27362,6 +27362,25 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     chosen. Supplying one of two is a real extension to the borrow rather than a phrase to match, so
     it is the next increment and not a rider on this one.
   */
+  /*
+    "Remove target attacking creature you control from combat and untap it" (D869, Reconnaissance), and
+    without the untap. `removeFromCombat`: it stops attacking or blocking, and deals and is dealt no
+    combat damage (CR 506.4).
+  */
+  const removed = /^remove (target .+?) from combat( and untap it)?$/i.exec(text);
+  if (removed !== null) {
+    const spec = targetSpecFrom(removed[1]!, /\byou control\b/i.test(removed[1]!));
+    if (spec !== null && spec.kind === 'creature') {
+      const untaps = removed[2] !== undefined;
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => {
+          const out = removeFromCombat(state, id);
+          return untaps ? untapPermanent(out, id) : out;
+        }),
+      };
+    }
+  }
   const bite = new RegExp(
     `^(${TARGET_QUANTIFIER_PREFIX}target .+?) deals damage equal to its power to `
     + `(${TARGET_QUANTIFIER_PREFIX}target .+?|any target)$`,
@@ -34630,6 +34649,32 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   if ((cost.tapUntapped !== undefined || cost.untap === true || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
     || cost.returnSelf === true || cost.returnToHand !== undefined)
     && /^add\b/i.test(manaClause)) return null;
+  /*
+    The Urza lands (D867): "Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add
+    {C}{C}{C} instead." One colourless symbol made once, or as many times as the "instead" prints
+    while you control a land of each of the two subtypes, asked as the ability resolves.
+  */
+  const tron = /^add \{([WUBRGC])\}\. If you control an? ([A-Z][\w'-]*) ([A-Z][\w-]*) and an? ([A-Z][\w'-]*) ([A-Z][\w-]*), add ((?:\{[WUBRGC]\})+) instead$/i.exec(manaClause);
+  if (tron !== null) {
+    const symbol = tron[1]!.toUpperCase();
+    const more = tron[6]!.match(/\{([WUBRGC])\}/g) ?? [];
+    if (more.every((sym) => sym.slice(1, -1).toUpperCase() === symbol)) {
+      const wanted = [[tron[2]!, tron[3]!], [tron[4]!, tron[5]!]] as const;
+      const controls = (state: GameState, seat: SeatIndex, [first, second]: readonly [string, string]) =>
+        listAt(state, zoneKey(seat, 'battlefield')).some((id) => {
+          const inst = state.instances[id];
+          if (inst === undefined) return false;
+          const line = characteristicsOf(state, inst).typeLine;
+          return hasSubtype(line, first) && hasSubtype(line, second);
+        });
+      return {
+        abilities: [{
+          ...timing, cost, description: text, produces: [symbol as ManaType], ...only,
+          producesTimes: (state, _source, controller) => (wanted.every((pair) => controls(state, controller, pair)) ? more.length : 1),
+        }],
+      };
+    }
+  }
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(manaClause);
   if (adding !== null) {
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
@@ -36233,6 +36278,55 @@ function damageToSelfFromLine(line: string, name: string): Partial<CardScript> |
 function staticFromLine(line: string): Partial<CardScript> | null {
   // "You have no maximum hand size." (D646): see `CardScript.noMaxHandSize`.
   if (/^you have no maximum hand size\.?$/i.test(plain(line).trim())) return { noMaxHandSize: true };
+  /*
+    "Nontoken creatures you control are Forest lands in addition to their other types" (D871, Ashaya,
+    Soul of the Wild), and "Creatures you control are artifacts / enchantments …": layer 4 on your
+    creatures, a basic land type bringing its mana ability with it (CR 305.6).
+  */
+  const retyped = /^(nontoken )?creatures you control are (?:(Plains|Island|Swamp|Mountain|Forest) )?(lands|artifacts|enchantments) in addition to their other types\.?$/i.exec(plain(line).trim());
+  if (retyped !== null) {
+    const type = { lands: 'Land', artifacts: 'Artifact', enchantments: 'Enchantment' }[retyped[3]!.toLowerCase() as 'lands']!;
+    if (retyped[2] !== undefined && type !== 'Land') return null;
+    const basic = retyped[2] === undefined ? undefined : retyped[2].charAt(0).toUpperCase() + retyped[2].slice(1).toLowerCase();
+    const typed: Partial<CardScript> = {
+      statics: [{
+        scope: 'controller-creatures',
+        effect: {
+          addTypes: [type], ...(basic === undefined ? {} : { addSubtypes: [basic] }),
+          ...(retyped[1] === undefined ? {} : { onlyNontoken: true as const }),
+        },
+      }],
+    };
+    if (basic === undefined) return typed;
+    /*
+      The basic land type's own mana ability (CR 305.6). The engine adds that ability to a printed land
+      as the card is compiled, not live, so it is granted here, to the same creatures, as the quoted
+      grant "… have "{T}: Add {G}."" reads.
+    */
+    const symbol = { Plains: 'W', Island: 'U', Swamp: 'B', Mountain: 'R', Forest: 'G' }[basic as 'Forest'];
+    const grant = lineScriptFor(`${retyped[1] === undefined ? 'Creatures' : 'Nontoken creatures'} you control have "{T}: Add {${symbol}}."`, '');
+    if (grant === null) return null;
+    const merged: Record<string, unknown> = { ...grant };
+    for (const [key, value] of Object.entries(typed)) {
+      const prior = merged[key];
+      merged[key] = Array.isArray(prior) && Array.isArray(value) ? [...value, ...prior] : value;
+    }
+    return merged as Partial<CardScript>;
+  }
+  // D868: Bloodletter of Aclazotz. See `lifeLossMultiplier`.
+  if (/^if an opponent would lose life during your turn, they lose twice that much life instead\.?$/i.test(plain(line).trim())) {
+    return { opponentsLoseDoubleOnYourTurn: true };
+  }
+  // D865: "If a source you control would deal damage to …, it deals double / triple that damage instead."
+  const multiplied = /^if a source you control would deal damage to (an opponent or a permanent an opponent controls|a permanent or player), it deals (double|triple) that damage(?: to that (?:permanent or player|player or permanent))? instead\.?$/i.exec(plain(line).trim());
+  if (multiplied !== null) {
+    return {
+      damageMultiplier: {
+        factor: multiplied[2]!.toLowerCase() === 'double' ? 2 : 3,
+        ...(/opponent/i.test(multiplied[1]!) ? { opponents: true as const } : {}),
+      },
+    };
+  }
   // "If you would draw a card while your library has no cards in it, you win the game instead." (D852)
   if (/^if you would draw a card while your library has no cards in it, you win the game instead\.?$/i.test(plain(line).trim())) {
     return { winsOnEmptyDraw: true };
@@ -36573,7 +36667,8 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     keyword deciding who gets a keyword.
   */
   const keyworded = /^(other )?creatures you control with ([a-z][a-z ]*?) get ([+-]\d+\/[+-]\d+)$/i.exec(text);
-  const countered = /^(?:each creature you control with an? \+1\/\+1 counter on it (gets|has)|creatures you control with \+1\/\+1 counters on them (get|have)) (.+)$/i.exec(text);
+  // And a counter of any kind (D870, Rishkar): "with a counter on it", `onlyWithCounter: '*'`.
+  const countered = /^(?:each creature you control with an? (\+1\/\+1 )?counter on it (gets|has)|creatures you control with (\+1\/\+1 )?counters on them (get|have)) (.+)$/i.exec(text);
   /*
     D735: your creatures of a colour or a kind — "Other green creatures you control get +1/+1",
     "Artifact creatures you control have flying", "Legendary creatures …", "Untapped creatures …",
@@ -36608,9 +36703,10 @@ function groupStaticFromLine(line: string, name: string): Partial<CardScript> | 
     predicate = `${attacking[1]!.toLowerCase()} ${attacking[2]}`;
   } else if (countered !== null) {
     scope = 'controller-creatures';
-    filter = { onlyWithCounter: '+1/+1' };
+    const anyKind = countered[2] !== undefined ? countered[1] === undefined : countered[3] === undefined;
+    filter = { onlyWithCounter: anyKind ? '*' : '+1/+1' };
     // Either number of verb: the predicate is made singular below anyway.
-    predicate = `${(countered[1] ?? countered[2]!).toLowerCase()} ${countered[3]}`;
+    predicate = `${(countered[2] ?? countered[4]!).toLowerCase()} ${countered[5]}`;
   }
   if (scope !== null) {
     // Read above: a chosen type.

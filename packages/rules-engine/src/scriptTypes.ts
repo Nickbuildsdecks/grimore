@@ -3319,6 +3319,15 @@ export interface CardScript {
    * recorded as an empty draw (CR 704.5b).
    */
   readonly winsOnEmptyDraw?: true;
+  /** "If an opponent would lose life during your turn, they lose twice that much life instead" (D868). See `lifeLossMultiplier`. */
+  readonly opponentsLoseDoubleOnYourTurn?: true;
+  /**
+   * "If a source you control would deal damage to a permanent or player, it deals triple that damage
+   * instead" (D865, Fiery Emancipation, City on Fire), and Twinflame Tyrant's double "to an opponent or
+   * a permanent an opponent controls" (`opponents`). Asked by `dealDamage` of the source's controller's
+   * permanents, live; two of them multiply together (CR 616.1, each applied once).
+   */
+  readonly damageMultiplier?: { readonly factor: number; readonly opponents?: true };
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,

@@ -15,7 +15,7 @@
  */
 import type { CardScript } from './scriptTypes.js';
 import {
-  allAbilitiesLost, characteristicsOf, THE_RING, countersAfterReplacement, effectReaches, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, type ContinuousEffect,
+  allAbilitiesLost, characteristicsOf, THE_RING, countersAfterReplacement, effectReaches, type CreatureKindWord, hasType, parseTypeLine, playerProtected, printedColors, protectedFrom, tokenMultiplier, treasureBonus, registerCounterMarkers, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -485,6 +485,9 @@ export function dealDamage(
   */
   if (target.kind === 'ability') return state;
   let next = state;
+  // D865: doubled or tripled first, as the damage is about to be dealt, before any prevention takes
+  // from it. A redirect is a new event and is not multiplied again.
+  if ((opts.redirectDepth ?? 0) === 0) amount = multipliedDamage(next, target, amount, opts.controller, opts.source);
   /*
     Damage that can't be prevented (D1212): Skullcrack's turn, or Combust's own damage. Every
     prevention below is skipped — protection's included (CR 702.16e), and a shield counter's, which
@@ -645,8 +648,8 @@ export function dealDamage(
       : lifeLocked(next, target.seat)
         ? replaceSeat(next, target.seat, { ...tally, ...dealt })
         : recordLifeLost(
-          replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt }),
-          target.seat, left,
+          replaceSeat(next, target.seat, { life: clampValue(seat.life - left * lifeLossMultiplier(next, target.seat)), ...tally, ...dealt }),
+          target.seat, left * lifeLossMultiplier(next, target.seat),
         );
     // After both branches, because both dealt damage: poison or life is what it *did* (D558).
     next = recordDamaged(next, target.seat, left);
@@ -880,7 +883,26 @@ export function loseLife(state: GameState, seat: SeatIndex, amount: number): Gam
   if (lifeLocked(state, seat)) return state;
   const s = state.seats[seat];
   if (s === undefined) return state;
-  return recordLifeLost(replaceSeat(state, seat, { life: clampValue(s.life - amount) }), seat, amount);
+  const lost = amount * lifeLossMultiplier(state, seat);
+  return recordLifeLost(replaceSeat(state, seat, { life: clampValue(s.life - lost) }), seat, lost);
+}
+
+/**
+ * "If an opponent would lose life during your turn, they lose twice that much life instead" (D868,
+ * Bloodletter of Aclazotz): two for each such permanent the active player controls, face up and with
+ * its abilities, when `seat` is that player's opponent. Damage to a player is life lost too, so
+ * `dealDamage` asks it as well; the damage itself (lifelink, the commander tally) is not doubled.
+ */
+export function lifeLossMultiplier(state: GameState, seat: SeatIndex): number {
+  if (scriptLookup === null || state.activeSeat === seat) return 1;
+  const lookup = scriptLookup;
+  let times = 1;
+  for (const id of listAt(state, zoneKey(state.activeSeat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+    if (lookup(state.cardDefs[inst.defKey])?.opponentsLoseDoubleOnYourTurn === true) times *= 2;
+  }
+  return times;
 }
 
 /**
@@ -1080,6 +1102,7 @@ export const IMPENDED = 'impended';
 export const KICKED_FIRST = 'kicked-first';
 export const KICKED_SECOND = 'kicked-second';
 export const MARKERS: ReadonlySet<string> = new Set([REGENERATION, UNEARTHED, EXILED_ON_LEAVING, EVOKED, DASHED, KICKED, MYRIAD, RENOWNED, SQUADDED, SURGED, BLITZED, MONSTROUS, IMPENDED, KICKED_FIRST, KICKED_SECOND]);
+registerCounterMarkers(MARKERS);
 
 /**
  * "The next time this creature would be destroyed this turn, instead..." (CR 701.15).
@@ -1263,6 +1286,29 @@ export function lifeLocked(state: GameState, seat: SeatIndex): boolean {
     if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) return false;
     return lookup(state.cardDefs[inst.defKey])?.lifeTotalCantChange === true;
   });
+}
+
+/**
+ * The damage after every multiplier its source's controller has (D865, `CardScript.damageMultiplier`).
+ * The controller is the one passed, else the source permanent's. A multiplier scoped to opponents
+ * applies only to an opponent of that controller, or to a permanent one of them controls.
+ */
+function multipliedDamage(state: GameState, target: Target, amount: number, controller: SeatIndex | undefined, source: string | null): number {
+  if (scriptLookup === null || target.kind === 'ability') return amount;
+  const seat = controller ?? (source === null ? undefined : state.instances[source]?.zoneSeat);
+  if (seat === undefined) return amount;
+  const lookup = scriptLookup;
+  const victim = target.kind === 'player' ? target.seat : state.instances[target.id]?.zoneSeat;
+  let total = amount;
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.faceDown || allAbilitiesLost(state, inst)) continue;
+    const rule = lookup(state.cardDefs[inst.defKey])?.damageMultiplier;
+    if (rule === undefined) continue;
+    if (rule.opponents === true && (victim === undefined || victim === seat)) continue;
+    total *= rule.factor;
+  }
+  return total;
 }
 
 /** See `CardScript.winsOnEmptyDraw` (D852): a permanent of the seat's that wins it the game instead. */
@@ -2840,7 +2886,9 @@ export function addTokens(
   let seq = state.instanceSeq;
   const created: string[] = [];
   // Doubled for each Parallel Lives the creating seat controls (D652).
-  const made = Math.max(0, count) * tokenMultiplier(state, seat);
+  // And one more Treasure for each Xorn (D866), before the doubling.
+  const plus = count > 0 && def.name === 'Treasure' ? treasureBonus(state, seat) : 0;
+  const made = (Math.max(0, count) + plus) * tokenMultiplier(state, seat);
   for (let i = 0; i < made; i++) {
     seq += 1;
     const id = `t${seat}_${seq}`;
@@ -3179,6 +3227,8 @@ export interface PumpOptions {
   readonly encodedCard?: string;
   /** See `ContinuousEffect.onlyAttacking` (D941). */
   readonly onlyAttacking?: true;
+  /** See `ContinuousEffect.onlyNontoken` (D871). */
+  readonly onlyNontoken?: true;
   readonly onlyWithCounter?: string;
   /** See `ContinuousEffect.onlyWithKeyword` (D1126). */
   readonly onlyWithKeyword?: Keyword;
@@ -3267,6 +3317,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.grantsAbilities ? { grantsAbilities: [...opts.grantsAbilities] } : {}),
     ...(opts.encodedCard ? { encodedCard: opts.encodedCard } : {}),
     ...(opts.onlyAttacking ? { onlyAttacking: true as const } : {}),
+    ...(opts.onlyNontoken ? { onlyNontoken: true as const } : {}),
     ...(opts.onlyWithCounter ? { onlyWithCounter: opts.onlyWithCounter } : {}),
     ...(opts.onlyWithKeyword ? { onlyWithKeyword: opts.onlyWithKeyword } : {}),
     ...(opts.onlyKind !== undefined && opts.onlyKind.length > 0 ? { onlyKind: [...opts.onlyKind] } : {}),
