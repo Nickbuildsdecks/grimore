@@ -63134,3 +63134,89 @@ The new field is listed among the mechanics the compiler reads that no built-in 
 runtime block above as its evidence.
 
 Coverage: 16,924 of 31,900 cards (+1 over D1232's 16,923), 39,484 of 59,888 lines (+5).
+## D894 — Exiling the top of a library, and a return with a counter: Ulamog, the Ceaseless Hunger, Persist
+
+Most-played order: Ulamog, the Ceaseless Hunger (rank 1335), Persist (1350).
+
+**Reader.**
+- "[You / target player / each opponent / each player] exile[s] the top N cards of your / their
+  library": face up and gone, with nothing played from among them. Ulamog's "defending player"
+  reaches it as a target player pointed at the defender (D963's swap). A branch of its own for
+  the defending player was written first, went uncaught by its fault, and was removed.
+- "Return … to the battlefield with a <kind> counter on it": the return as it reads without the
+  counter, then the counter on the card it returned, if it arrived.
+
+**Tests.** 3 engine tests:
+- both cards read;
+- Ulamog attacks, and the defending player exiles exactly the top twenty cards of their library
+  while ours is untouched;
+- Persist returns the Bear as a 1/1 with a -1/-1 counter.
+
+Faults injected by script: 3 of 3 caught.
+
+## D895 — X counters on each creature you control: Ouroboroid
+
+Most-played order: Ouroboroid (rank 1448).
+
+**Reader.** "Put X +1/+1 (or -1/-1) counters on each <scope>, where X is <measure>", with "this
+creature's power" read as the card's own. X is counted once, as it resolves, and then that many
+counters go on each permanent of the scope.
+
+**Tests.** The card reads. With power 2, two counters go on each of our creatures and none on
+theirs. Faults injected by script: 2 of 2 caught. One is X recounted after each counter, which
+would give the Bear four once the Snake had grown.
+
+## D896 — "Sacrifice a creature. If you can't, sacrifice ~": Eldrazi Monument
+
+Most-played order: Eldrazi Monument (rank 1468).
+
+**Reader.** The two sentences together. The controller chooses a creature (or artifact, land,
+enchantment, permanent) of theirs, and with none to choose the source goes instead.
+
+**Tests.** The card reads. At our upkeep, with a Bear out, the Bear is sacrificed and the Monument
+stays; with no creature, the Monument is sacrificed. Faults injected by script: 2 of 2 caught.
+
+## D897 — The card and the graveyard shuffled in: Elixir of Immortality
+
+Most-played order: Elixir of Immortality (rank 1473).
+
+**Reader.** "Shuffle ~ and your graveyard into their owner's library": the card from wherever it
+is, then the graveyard, then one shuffle. D1116's self-shuffle reads only from a graveyard, which
+an activated ability on the battlefield never is. Composing the two existing sentences was tried
+first, and the test caught the Elixir left on the battlefield.
+
+**Tests.** The card reads. We gain 5, the Elixir and both graveyard Bears go into the library,
+and the graveyard is empty. Faults injected by script: 2 of 2 caught.
+
+## D898 — "If you control no creatures with decayed": Jadar, Ghoulcaller of Nephalia
+
+Most-played order: Jadar, Ghoulcaller of Nephalia (rank 1320).
+
+**Reader.** "You control no <permanents> with <quality>" falls back to `massScope`'s word order,
+"<permanents> you control with <quality>", when the count reader refuses it.
+
+**Tests.** The card reads. Jadar makes a decayed Zombie at our first end step, and none at the
+next while that Zombie is still there. Faults injected by script: 2 of 2 caught.
+
+## D899 — Attack triggers for tokens: Dreadhorde Invasion
+
+Most-played order: Dreadhorde Invasion (rank 1322).
+
+**Engine.** The `token` filter, on entries since D706, now applies to attacks as well.
+
+**Reader.** "Whenever a [<creature type>] [creature] token you control [with <filter>] attacks":
+tokens only, a subtype where printed, and any of `boardFilter`'s filters.
+
+**Tests.** The card reads. Attacking with a 6/6 Zombie token, a 2/2 Zombie token and a nontoken
+6/6 Zombie, only the 6/6 token gains lifelink. Faults injected by script: 2 of 2 caught.
+
+Card-by-card diffs: D894–D896 against 4eff15a, 0 lost and 15 gained (including Voja, Jaws of the
+Conclave, Sire of Stagnation, Unbreakable Bond and Grim Reaper's Scythe); D897–D899 against that,
+0 lost and 3 gained.
+
+The first gate failed on D527's pin "refuses a rider the move does not carry": "… to the
+battlefield with a finality counter on it". D894's wrapper had taken any counter kind, and a
+finality counter carries a rule of its own (CR 122.1i) that the wrapper does not apply. D894
+now reads only +1/+1 and -1/-1 counters, and the pin stands.
+
+Gated together on 580ac9b: full gate green (re-run after the D527 fix), engine tests 6684. Coverage: 16,920 to 16,938 of 31,900 cards with every line read, and 39,475 to 39,499 of 59,888 lines.
