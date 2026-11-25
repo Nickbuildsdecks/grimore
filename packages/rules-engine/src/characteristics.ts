@@ -1866,6 +1866,13 @@ export interface ContinuousEffect {
    */
   readonly preventsDamageTo?: true;
   readonly preventsDamageFrom?: true;
+  /**
+   * `preventsDamageTo` for damage from a source of one kind only (D1218): "Prevent all damage that
+   * would be dealt to ~ by creatures" (every type in `types`), "by artifact sources", "by creatures
+   * with first strike" (`keyword`), "by enchanted creatures" (`enchanted`: an Aura on it). Asked of
+   * the source as it deals the damage.
+   */
+  readonly preventsDamageBy?: { readonly types: readonly string[]; readonly keyword?: string; readonly enchanted?: true };
   readonly preventsCombatOnly?: true;
   /** "Prevent all **noncombat** damage that would be dealt to …" (D752): the other half of the line. */
   readonly preventsNoncombatOnly?: true;

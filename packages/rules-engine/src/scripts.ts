@@ -35519,7 +35519,22 @@ type EffectScope = NonNullable<Parameters<typeof preventDamageThisTurn>[3]['scop
  * the flags have no source filter.
  */
 function preventionStaticFromLine(line: string, name: string): Partial<CardScript> | null {
-  const text = plain(line).trim().replace(/\.\s*$/, '');
+  const whole = plain(line).trim().replace(/\.\s*$/, '');
+  /*
+    Damage from one kind of source (D1218): "… dealt to ~ by creatures" (Ophidian Eye's kin, Wall
+    of Glare), "by artifact creatures" (Argothian Pixies), "by artifact sources", "by creatures with
+    first strike", "by enchanted creatures". Only on the card itself, the one subject read with it.
+  */
+  const bySource = new RegExp(`^(.+ dealt to ${selfRef(name)}) by (creatures|artifact creatures|artifact sources|enchanted creatures|creatures with ([a-z]+(?: [a-z]+)?))$`, 'i').exec(whole);
+  const kinds: Readonly<Record<string, { readonly types: readonly string[]; readonly enchanted?: true }>> = {
+    creatures: { types: ['creature'] }, 'artifact creatures': { types: ['artifact', 'creature'] },
+    'artifact sources': { types: ['artifact'] }, 'enchanted creatures': { types: ['creature'], enchanted: true },
+  };
+  const keywordWord = bySource?.[3]?.toLowerCase();
+  if (keywordWord !== undefined && !isKeyword(keywordWord)) return null;
+  const by = bySource === null ? undefined
+    : keywordWord !== undefined ? { types: ['creature'], keyword: keywordWord } : kinds[bySource[2]!.toLowerCase()];
+  const text = bySource === null ? whole : bySource[1]!;
   const read = new RegExp(`^prevent all (combat |noncombat )?damage that would be dealt (to and dealt by|to|by) (.+)$`, 'i').exec(text);
   if (read === null) return null;
   const kind = read[1]?.trim().toLowerCase();
@@ -35531,6 +35546,7 @@ function preventionStaticFromLine(line: string, name: string): Partial<CardScrip
     ...(which === 'by' ? {} : { preventsDamageTo: true as const }),
     ...(which === 'to' ? {} : { preventsDamageFrom: true as const }),
     ...timing,
+    ...(by === undefined ? {} : { preventsDamageBy: by }),
   };
   type Scope = NonNullable<CardScript['statics']>[number]['scope'];
   /*

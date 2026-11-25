@@ -1305,6 +1305,23 @@ export function canPayLife(state: GameState, seat: SeatIndex, amount: number): b
 }
 
 /**
+ * Whether the damage's source is of the kind a prevention names (D1218, `preventsDamageBy`). No
+ * kind named is every source. A source the engine cannot see is not of any kind.
+ */
+function sourceIsOfKind(
+  state: GameState, from: CardInstance | undefined, kind: ContinuousEffect['preventsDamageBy'],
+): boolean {
+  if (kind === undefined) return true;
+  if (from === undefined) return false;
+  const ch = characteristicsOf(state, from);
+  if (!kind.types.every((type) => hasType(ch.typeLine, type))) return false;
+  if (kind.keyword !== undefined && !ch.keywords.has(kind.keyword as never)) return false;
+  if (kind.enchanted === true && !Object.values(state.instances).some((other) => other.attachedTo === from.id
+    && other.zone === 'battlefield' && hasType(characteristicsOf(state, other).typeLine, 'enchantment'))) return false;
+  return true;
+}
+
+/**
  * Whether a "prevent all damage" effect stops this damage (D738): one to the damaged permanent or
  * player, or one from the source. A combat-only effect lets other damage through.
  */
@@ -1317,7 +1334,8 @@ function damagePrevented(state: GameState, target: Target, source: string | null
       && (effect.preventsDamageToPlayers === 'all' || effect.controller === target.seat)) return true;
     if (effect.preventsDamageTo === true && target.kind === 'card') {
       const inst = state.instances[target.id];
-      if (inst !== undefined && inst.zone === 'battlefield' && effectReaches(state, effect, inst)) return true;
+      if (inst !== undefined && inst.zone === 'battlefield' && effectReaches(state, effect, inst)
+        && sourceIsOfKind(state, from, effect.preventsDamageBy)) return true;
     }
     if (effect.preventsDamageFrom === true && from !== undefined && from.zone === 'battlefield'
       && effectReaches(state, effect, from)) return true;
@@ -3048,6 +3066,8 @@ export interface PumpOptions {
    */
   readonly preventsDamageTo?: true;
   readonly preventsDamageFrom?: true;
+  /** See `ContinuousEffect.preventsDamageBy` (D1218). */
+  readonly preventsDamageBy?: ContinuousEffect['preventsDamageBy'];
   readonly preventsCombatOnly?: true;
   readonly preventsNoncombatOnly?: true;
   readonly preventsDamageToPlayers?: 'controller' | 'all';
@@ -3177,6 +3197,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.assignsNoCombatDamage ? { assignsNoCombatDamage: true } : {}),
     ...(opts.preventsDamageTo ? { preventsDamageTo: true as const } : {}),
     ...(opts.preventsDamageFrom ? { preventsDamageFrom: true as const } : {}),
+    ...(opts.preventsDamageBy === undefined ? {} : { preventsDamageBy: opts.preventsDamageBy }),
     ...(opts.preventsCombatOnly ? { preventsCombatOnly: true as const } : {}),
     ...(opts.preventsNoncombatOnly ? { preventsNoncombatOnly: true as const } : {}),
     ...(opts.preventsDamageToPlayers === undefined ? {} : { preventsDamageToPlayers: opts.preventsDamageToPlayers }),

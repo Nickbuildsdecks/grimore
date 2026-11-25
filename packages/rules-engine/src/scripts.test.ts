@@ -40772,6 +40772,38 @@ describe('"whenever one or more land cards are put into your graveyard", once pe
   });
 });
 
+describe('"prevent all damage that would be dealt to ~ by <a kind of source>" (D1218)', () => {
+  const ROWS = [
+    { name: 'Test Pixies', type_line: 'Creature — Faerie', oracle_text: 'Prevent all damage that would be dealt to Test Pixies by artifact creatures.', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Golem', type_line: 'Artifact Creature — Golem', oracle_text: '{0}: Test Golem deals 1 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '1', toughness: '1' },
+    { name: 'Test Pinger', type_line: 'Creature — Human Wizard', oracle_text: '{0}: Test Pinger deals 1 damage to target creature.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1' },
+  ];
+  const deck = customDeck({
+    id: 'd1218', name: 'By source',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 48 }],
+    data: ROWS as never[],
+  });
+  const ping = (pinger: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1218', 1: 'd1218' }, deckSpecs: { d1218: deck.deck },
+      battlefield: { 0: [pinger], 1: ['Test Pixies'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const pixies = find(s, 1, 'battlefield', 'Test Pixies');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', pinger), abilityIndex: 0, targets: [{ kind: 'card', id: pixies }] })), 30);
+    return s.instances[pixies]!.zone;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an artifact creature\'s damage is prevented; another creature\'s is not', () => {
+    expect(ping('Test Golem')).toBe('battlefield');
+    expect(ping('Test Pinger')).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
