@@ -63220,3 +63220,33 @@ finality counter carries a rule of its own (CR 122.1i) that the wrapper does not
 now reads only +1/+1 and -1/-1 counters, and the pin stands.
 
 Gated together on 580ac9b: full gate green (re-run after the D527 fix), engine tests 6684. Coverage: 16,920 to 16,938 of 31,900 cards with every line read, and 39,475 to 39,499 of 59,888 lines.
+
+## D1234 — "That player sacrifices a permanent for each soot counter on ~"
+
+Smokestack's second line, "At the beginning of each player's upkeep, that player sacrifices a
+permanent for each soot counter on Smokestack", and the same counted edict for each player or
+target player: "Each player sacrifices a land for each card in your hand" (Thoughts of Ruin),
+"Target opponent sacrifices a creature for each …". The count is read as the effect resolves, as
+D1195's counted discard is, so a soot counter put on in the same upkeep counts; "that player" is
+the D1196 swap, which re-aims a counted question at the player whose upkeep it is. A count about
+"they" or "their" stays unread for each player, since it would be a different number per seat.
+
+Read whole now (2): Smokestack, Thoughts of Ruin.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- Two soot counters: in the next player's upkeep they sacrifice two permanents.
+- "Each player … for each card in your hand": both seats sacrifice that many lands.
+
+Faults injected by hand: 3, all caught.
+- The count fixed at one.
+- "Each player" read as each opponent.
+- Nothing sacrificed.
+
+And `playout.test.ts`'s "reaches a winner in every pairing" (84 whole games, 53 seconds alone) is
+given its own 180-second limit, as D1003 gave its neighbour: it passed 60 when the gate ran beside a
+coverage measurement, with every assertion passing.
+
+The coverage below includes the other session's D894 to D899, merged in before this was measured.
+
+Coverage: 16,939 of 31,900 cards (+15 over D1233's 16,924), 39,505 of 59,888 lines (+21).
