@@ -17027,6 +17027,41 @@ function selfEffect(
     };
   }
 
+  /*
+    "Exile enchanted creature" (D1217): the Pacifism upgrades' second half, "{2}{W}: Exile enchanted
+    creature" (Dreadful Apathy, Cooped Up, Redemption Arc, Sigarda's Imprisonment), and "destroy" or
+    "return … to its owner's hand" the same way. The host is the source's `attachedTo`, as for the
+    tap above. Not when the cost sacrifices the Aura: it would be attached to nothing by then.
+  */
+  const hostGone = /^(destroy|exile) (?:enchanted|equipped) (?:creature|permanent|artifact|land)$|^(return) (?:enchanted|equipped) (?:creature|permanent) to its owner's hand$/i.exec(text);
+  if (hostGone !== null && !costSacrificesSource) {
+    const verb = (hostGone[1] ?? hostGone[2])!.toLowerCase();
+    return {
+      effect: (c) => {
+        const host = c.state.instances[c.source]?.attachedTo ?? undefined;
+        if (host === undefined || c.state.instances[host]?.zone !== 'battlefield') return c.state;
+        return verb === 'destroy' ? destroy(c.state, host) : verb === 'exile' ? exileCard(c.state, host) : bounceToHand(c.state, host);
+      },
+    };
+  }
+  /*
+    "Target opponent gains control of ~" (D1217): Jinxed Idol, Witch Engine, Humble Defector. For
+    good: the card moves to that player's battlefield, as an exchange or a donation does.
+  */
+  const donated = new RegExp(`^(target opponent|target player) gains control of (?:${self}|this (?:artifact|creature|enchantment|permanent))$`, 'i').exec(text);
+  if (donated !== null) {
+    const spec = targetSpecFrom(donated[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null || seat === c.controller ? c.state : gainControl(c.state, c.source, seat);
+        },
+      };
+    }
+  }
+
   const grown = new RegExp(
     `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z', ]*?))? until end of turn$`,
     'i',
@@ -28795,6 +28830,14 @@ let xAnnounced = 0;
  */
 let xPayable = false;
 
+/**
+ * Whether the ability being read sacrifices its own source as a cost (D1217): "{3}{W}{W}, Sacrifice
+ * ~: Exile enchanted creature". The Aura is in the graveyard by the time the ability resolves and
+ * attached to nothing, so a reader that finds the host through `attachedTo` would find none and do
+ * nothing; such a reader refuses while this is set. `abilityFromLine` sets it from the cost.
+ */
+let costSacrificesSource = false;
+
 /** Runs `read` with `xPayable` set, for `compileCard`. */
 export function withXPayable<T>(payable: boolean, read: () => T): T {
   const was = xPayable;
@@ -33462,6 +33505,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     const was = xPayable;
     xPayable = paysX;
     try { return abilityFromLine(line, name); } finally { xPayable = was; }
+  }
+  // And whether the cost sacrifices the source itself (D1217). See `costSacrificesSource`.
+  const sacrificesItsSource = new RegExp(`\\bsacrifice (?:${selfRef(name)}|this (?:aura|enchantment|equipment|artifact|creature|permanent))\\b`, 'i').test(split[1]!);
+  if (costSacrificesSource !== sacrificesItsSource) {
+    const was = costSacrificesSource;
+    costSacrificesSource = sacrificesItsSource;
+    try { return abilityFromLine(line, name); } finally { costSacrificesSource = was; }
   }
   /*
     "Activate only as a sorcery." — a timing restriction, taken off the end before the effect is

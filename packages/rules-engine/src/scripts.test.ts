@@ -40634,6 +40634,48 @@ describe('targets "from a single graveyard" (D1216)', () => {
   });
 });
 
+describe('an Aura that exiles its host, and "target opponent gains control of ~" (D1217)', () => {
+  const ROWS = [
+    { name: 'Test Apathy', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block.\n{0}: Exile enchanted creature.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Restraints', type_line: 'Enchantment — Aura', oracle_text: "Enchant creature\nEnchanted creature can't attack or block.\n{0}, Sacrifice Test Restraints: Exile enchanted creature.", mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' },
+    { name: 'Test Idol', type_line: 'Artifact', oracle_text: '{0}: Target opponent gains control of Test Idol.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Cub', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({
+    id: 'd1217', name: 'Hosts',
+    entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 44 }],
+    data: ROWS as never[],
+  });
+  const table = (hand: string[], mine: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1217', 1: 'd1217' }, deckSpecs: { d1217: deck.deck },
+    hands: { 0: hand }, battlefield: { 0: mine, 1: ['Test Cub'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads the Aura and the Idol whole, and leaves the Aura that sacrifices itself unread', () => {
+    for (const row of [ROWS[0], ROWS[2]]) expect(compileCard(row as never), row!.name).toMatchObject({ ok: true, unread: [] });
+    const restraints = compileCard(ROWS[1] as never);
+    expect(restraints.ok && restraints.unread.length).toBe(1);
+  });
+
+  it('"{0}: Exile enchanted creature": the creature it is on is exiled', () => {
+    let s = table(['Test Apathy']);
+    const cub = find(s, 1, 'battlefield', 'Test Cub');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Apathy'), targets: [{ kind: 'card', id: cub }] } as Action)), 30);
+    const aura = find(s, 0, 'battlefield', 'Test Apathy');
+    expect(s.instances[aura]?.attachedTo).toBe(cub);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: aura, abilityIndex: 0 })), 30);
+    expect(s.instances[cub]?.zone).toBe('exile');
+  });
+
+  it('"target opponent gains control of ~": the Idol changes sides for good', () => {
+    let s = table([], ['Test Idol']);
+    const idol = find(s, 0, 'battlefield', 'Test Idol');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: idol, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }] })), 30);
+    expect(s.instances[idol]?.zoneSeat).toBe(1);
+    expect(s.instances[idol]?.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
