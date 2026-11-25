@@ -3319,7 +3319,6 @@ export interface CardScript {
    */
   readonly noMaxHandSize?: true;
   /**
-<<<<<<< HEAD
    * "Creatures entering don't cause abilities to trigger." (D1227): Torpor Orb, Tocatli Honor Guard,
    * Hushwing Gryff; "Artifacts and creatures entering …" (Doorkeeper Thrull). The kinds whose entry
    * fires nothing while this permanent is on the battlefield with its abilities: no "when this
@@ -3328,7 +3327,7 @@ export interface CardScript {
   readonly entriesDontTrigger?: readonly ('creature' | 'artifact')[];
   /** "… or dying don't cause abilities to trigger" (D1227): Hushbringer. A creature's death fires nothing. */
   readonly deathsDontTrigger?: true;
-=======
+  /**
    * "If you would draw a card while your library has no cards in it, you win the game instead."
    * (D852, CR 614.1a, 104.2a) — Laboratory Maniac, Jace, Wielder of Mysteries. Asked by `draw` of
    * the drawing seat's permanents, live: a draw that finds the library empty wins instead of being
@@ -3351,7 +3350,6 @@ export interface CardScript {
     /** Only a source of this colour (D872, "a red source you control"), read live. */
     readonly colour?: Color;
   };
->>>>>>> 76324f69f2bf2d9082389ba41ef7dd5b04b53912
   /**
    * "Untap all permanents you control during each other player's untap step." (D661, Seedborn Muse,
    * Prophet of Kruphix's first line). Asked in every other seat's untap step by `onEnterStep`, live,
