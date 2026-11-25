@@ -46345,3 +46345,30 @@ Faults injected by hand: 3, all caught.
 - The discard offered to an empty hand.
 
 Coverage: 17,001 of 31,900 cards (+4 over D1243's 16,997), 39,623 of 59,888 lines (+4).
+
+## D1245 — Orcish Bowmasters
+
+"Whenever an opponent draws a card except the first one they draw in each of their draw steps": the
+opponent-draw trigger with a flag, `exceptDrawStepFirst`. The engine answers it as it raises each
+draw event. A draw counts as the draw step's own card when it is the seat's first card this turn,
+drawn in its own draw step. That is the reading Notion Thief's exemption uses (D891), so the two
+cards agree on which draw is exempt. The rest of the card (the enter trigger, 1 damage to any target,
+amass Orcs 1) was already read, and "When ~ enters and whenever …" already made two triggers of it
+(D882).
+
+Not exact: a card drawn earlier in the same turn (in the upkeep, say) makes the draw step's card the
+second of the turn. Bowmasters then fires on it, where the printed card would not.
+
+Read whole now (1): Orcish Bowmasters.
+
+**Tests.** 3 engine tests:
+- The test card reads whole.
+- An opponent's draw on my turn triggers it.
+- The first card of their own draw step does not; a second card in that step does.
+
+Faults injected by hand: 3, all caught.
+- The exception never checked.
+- Every draw in their draw step treated as exempt.
+- The first draw of the turn treated as exempt in any step.
+
+Coverage: 17,004 of 31,900 cards (+3 over D1244's 17,001), 39,626 of 59,888 lines (+3).
