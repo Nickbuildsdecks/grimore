@@ -55,7 +55,7 @@ import { AWAKEN_LAND, FORETELL_COST, MORPH_COST, isChoiceDecision, producedBy, t
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
+  abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
@@ -215,6 +215,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const script = scriptForCard(def);
   const flashback = action.flashback === true;
   const escape = action.escape === true;
+  // Its escape (D1235): its own or an Underworld Breach's, read while it is still in the graveyard.
+  const escaping = escape ? escapeOf(state, inst.id) : undefined;
   // Retrace (D599): from the graveyard, for the printed cost and a land card discarded.
   const retrace = action.retrace === true;
   /*
@@ -367,15 +369,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       `graveyardFodder` rather than of the zone, because that function is what will choose the
       cards a few dozen lines down and the two must not be able to disagree.
     */
-    if (script?.escape === undefined) {
+    if (escaping === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no escape`);
     }
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
-    if (graveyardFodder(state, action.by, inst.id, script.escape.exile).length < script.escape.exile) {
+    if (graveyardFodder(state, action.by, inst.id, escaping.exile).length < escaping.exile) {
       throw new EngineError('RULE_NOT_APPLICABLE',
-        `escape asks for ${script.escape.exile} other cards in your graveyard`);
+        `escape asks for ${escaping.exile} other cards in your graveyard`);
     }
   } else if (retrace) {
     if (script?.retrace !== true) {
@@ -842,7 +844,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ? flashbackCostOf(state, inst.id)
     // Escape replaces it too, and the cards it also costs are paid below rather than here: this
     // chain is about mana, and the mana half of an escape cost is all of what `payFrom` sees.
-    : escape ? script?.escape?.cost
+    : escape ? escaping?.cost
       // Foretell replaces the printed cost, like flashback, which is why it is in the same chain
       // rather than beside the kicker: a foretold spell is cast for one cost and not for two.
       : foretold ? script?.foretell?.cost
@@ -1093,8 +1095,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     asked of the state the payment is happening in — and asked with the escaping card excluded,
     which is the "other" in "exile three other cards".
   */
-  const exiling = escape && script?.escape !== undefined
-    ? graveyardFodder(next, action.by, inst.id, script.escape.exile)
+  const exiling = escaping !== undefined
+    ? graveyardFodder(next, action.by, inst.id, escaping.exile)
     : delved;
   for (const id of exiling) {
     const card = next.instances[id];
@@ -1224,7 +1226,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     left. Delve is in the same string for the same reason — a Gurmag Angler cast for {B} looks
     like a misprint until the stack says where the other six mana went.
   */
-  const escapedText = escape ? ` (escaped, ${script?.escape?.exile ?? 0} cards)` : '';
+  const escapedText = escape ? ` (escaped, ${escaping?.exile ?? 0} cards)` : '';
   const delveText = delved.length > 0 ? ` (delved ${delved.length})` : '';
   // And foretell, for the fourth time and the same reason: a spell coming out of exile for a
   // cheaper cost is a spell the player deciding whether to answer it should be able to read as one.

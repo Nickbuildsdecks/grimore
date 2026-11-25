@@ -8093,6 +8093,9 @@ describe('deck coverage', () => {
       // D1233: Narset's and Spirit of the Labyrinth's draw limit; no pool deck plays one. Driven at
       // runtime by "each opponent can't draw more than one card each turn" (D1233).
       'script drawLimit',
+      // D1235: Underworld Breach; no pool deck plays one. Driven at runtime by "each nonland card in
+      // your graveyard has escape" (D1235).
+      'script grantsEscape',
       // D852: Laboratory Maniac, Jace, Wielder of Mysteries; driven by "with the Maniac out, drawing
       // from an empty library wins". No pool deck plays one.
       'script winsOnEmptyDraw',
@@ -43866,6 +43869,44 @@ describe('"sacrifices a permanent for each soot counter on ~" (D1234)', () => {
     }
     expect(namesIn(s, 0, 'battlefield').filter((x) => x === 'Mountain')).toHaveLength(5 - n);
     expect(namesIn(s, 1, 'battlefield').filter((x) => x === 'Mountain')).toHaveLength(5 - n);
+  });
+});
+
+describe('"each nonland card in your graveyard has escape" (D1235)', () => {
+  const ROWS = [
+    { name: 'Test Breach', type_line: 'Enchantment', oracle_text: 'Each nonland card in your graveyard has escape. The escape cost is equal to the card\'s mana cost plus exile three other cards from your graveyard.\nAt the beginning of the end step, sacrifice Test Breach.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' },
+    { name: 'Test Insight', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1235', name: 'Breach', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  /** Seat 0 with `mine` out, and Test Insight, a land and three Bears in its graveyard. */
+  const table = (mine: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1235', 1: 'd1235' }, deckSpecs: { d1235: deck.deck },
+      battlefield: { 0: ['Island', ...mine], 1: [] }, graveyard: { 0: ['Test Insight', 'Island', 'Test Bear', 'Test Bear', 'Test Bear'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return s;
+  };
+  const escapes = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.kind === 'cast' && (p as { escape?: boolean }).escape === true).map((p) => nameOf(s, (p as { card: string }).card));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('with it, the nonland cards are offered by escape, the land is not; without it, nothing is', () => {
+    expect([...new Set(escapes(table(['Test Breach'])))].sort()).toEqual(['Test Insight']);
+    expect(escapes(table([]))).toEqual([]);
+  });
+
+  it('cast by escape: its own mana cost, three other cards exiled, and it resolves', () => {
+    let s = table(['Test Breach']);
+    const insight = find(s, 0, 'graveyard', 'Test Insight');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: insight, targets: [], escape: true } as Action)), 30);
+    expect(ids(s, 0, 'exile').length).toBe(3);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
   });
 });
 

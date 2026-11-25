@@ -38661,6 +38661,9 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     return { searchLimit: { who: 'opponents', topN: { two: 2, three: 3, four: 4, five: 5 }[censor[1]!.toLowerCase() as 'two' | 'three' | 'four' | 'five'] } };
   }
   if (/^if an opponent would begin an extra turn, that player skips that turn instead$/i.test(searchText)) return { opponentsSkipExtraTurns: true };
+  // Underworld Breach (D1235): see `CardScript.grantsEscape` and `escapeOf`.
+  const breach = /^each nonland card in your graveyard has escape\. the escape cost is equal to the card's mana cost plus exile (two|three|four|five) other cards from your graveyard$/i.exec(searchText);
+  if (breach !== null) return { grantsEscape: { exile: { two: 2, three: 3, four: 4, five: 5 }[breach[1]!.toLowerCase() as 'two' | 'three' | 'four' | 'five'] } };
   // Narset, Spirit of the Labyrinth, Omen Machine (D1233): see `CardScript.drawLimit`.
   const drawCap = /^(each opponent|each player|players|you) can't draw (more than one card each turn|cards)$/i.exec(searchText);
   if (drawCap !== null) {

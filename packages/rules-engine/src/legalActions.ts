@@ -800,6 +800,27 @@ function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readon
  * Why this seat may not cast this spell now because of a permanent's casting limit (D788), or null.
  * `offered` is a cast an effect makes mid-resolution (cascade), which no timing limit reaches.
  */
+/**
+ * A card's escape (D1235): its own, or the one an Underworld Breach on its owner's battlefield gives
+ * each nonland card in that graveyard, at the card's own mana cost. A card with no mana cost is
+ * given none: what it would cost is not something its printing says.
+ */
+export function escapeOf(state: GameState, id: string): CardScript['escape'] {
+  const inst = state.instances[id];
+  const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+  const own = scriptForCard(def)?.escape;
+  if (own !== undefined || inst === undefined || def === undefined || inst.zone !== 'graveyard') return own;
+  if (hasType(parseTypeLine(def.typeLine), 'land') || (def.manaCost ?? '') === '') return undefined;
+  let exile: number | undefined;
+  for (const pid of listAt(state, zoneKey(inst.owner, 'battlefield'))) {
+    const p = state.instances[pid];
+    if (p === undefined || isFaceDownPermanent(p) || allAbilitiesLost(state, p)) continue;
+    const grant = scriptForCard(state.cardDefs[p.defKey])?.grantsEscape;
+    if (grant !== undefined) exile = Math.min(exile ?? grant.exile, grant.exile);
+  }
+  return exile === undefined ? undefined : { cost: def.manaCost!, exile };
+}
+
 export function castProhibition(
   state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean, fromHand = true, isArtifact = false,
 ): string | null {
@@ -1089,7 +1110,7 @@ export function graveyardCostPlan(
     const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
     if (!cost.matches(def?.typeLine ?? '')) continue;
     const script = scriptForCard(def);
-    if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
+    if (script?.flashback !== undefined || escapeOf(state, id) !== undefined) useful.push(id);
     else spare.push(id);
   }
   // Collect evidence N (D1158): see `evidencePlan`.
@@ -1107,7 +1128,7 @@ export function graveyardFodder(
   for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
     if (id === exclude) continue;
     const script = scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? '']);
-    if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
+    if (script?.flashback !== undefined || escapeOf(state, id) !== undefined) useful.push(id);
     else spare.push(id);
   }
   return [...spare, ...useful].slice(0, want);
@@ -1721,7 +1742,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       offered twice, which is what the rules say happens.
     */
     ...listAt(state, zoneKey(seat, 'graveyard'))
-      .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.escape !== undefined)
+      .filter((id) => escapeOf(state, id) !== undefined)
       .map((id) => ({
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
         fromAdventure: false, impulse: false, offered: false,
@@ -2273,7 +2294,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         // Escape replaces the printed cost like flashback and foretell, which is why it is in the
         // same chain: the mana half of "Escape—{2}{R}{R}, Exile three other cards" is the whole of
         // what this spell costs in mana, and the card half is counted separately below.
-        : escape ? script?.escape?.cost ?? ''
+        : escape ? escapeOf(state, id)?.cost ?? ''
           : foretold ? script?.foretell?.cost ?? ''
             : def?.manaCost ?? '';
     const printed = parseManaCost(costShown);
@@ -2357,11 +2378,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       rather than the zone being counted, because the two can differ — it excludes the card doing
       the escaping, which is what makes "three *other* cards" mean what it says.
     */
-    const escapeFodder = escape && script?.escape !== undefined
-      ? graveyardFodder(state, seat, id, script.escape.exile)
+    const escaping = escape ? escapeOf(state, id) : undefined;
+    const escapeFodder = escaping !== undefined
+      ? graveyardFodder(state, seat, id, escaping.exile)
       : [];
-    if (escape && script?.escape !== undefined && escapeFodder.length < script.escape.exile) {
-      why(id, `escape asks for ${script.escape.exile} other cards in your graveyard`);
+    if (escaping !== undefined && escapeFodder.length < escaping.exile) {
+      why(id, `escape asks for ${escaping.exile} other cards in your graveyard`);
       continue;
     }
     // The tax is generic mana on top of the printed cost (CR 903.8), and it only applies to a
@@ -2451,8 +2473,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       cost. Which cards they are is left out on purpose: they are recomputed as the spell is cast,
       and an offer that named them would be promising something the payment is not bound to.
     */
-    const exilesOn = escape && script?.escape !== undefined
-      ? { escape: true as const, exiles: script.escape.exile }
+    const exilesOn = escaping !== undefined
+      ? { escape: true as const, exiles: escaping.exile }
       : delved !== null && delved.exiled.length > 0 ? { exiles: delved.exiled.length } : {};
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
     // Only when it actually moved the number: a Thalia taxing a creature spell changes nothing,
@@ -2595,7 +2617,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         : escape
           // The cards as well as the mana, because the mana is the cheap half: a player reading
           // "escape {2}{R}{R}" and nothing else would not know the graveyard is about to empty.
-          ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${script?.escape?.exile ?? 0})`
+          ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${escapeOf(state, id)?.exile ?? 0})`
           : retrace
             ? `Cast ${ch.name} from your graveyard (retrace ${costShown}, discarding a land card)`
           : foretold

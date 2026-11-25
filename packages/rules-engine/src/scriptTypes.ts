@@ -3355,6 +3355,12 @@ export interface CardScript {
    */
   readonly drawLimit?: { readonly who: 'opponents' | 'everyone' | 'you'; readonly perTurn: number };
   /**
+   * "Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana
+   * cost plus exile three other cards from your graveyard." (D1235, Underworld Breach). Read by
+   * `escapeOf`, which every escape question asks.
+   */
+  readonly grantsEscape?: { readonly exile: number };
+  /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to
    * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's
    * dying, Isshin's attacking. Which event, and which kinds of permanent it is about (none: any
