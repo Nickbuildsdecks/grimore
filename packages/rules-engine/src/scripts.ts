@@ -7738,10 +7738,23 @@ export function enterChoiceDecision(
  * yet cannot be chosen; that is this reading's one limit. The bot names the opponents' permanent
  * with an activated ability and the highest mana value.
  */
-export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' = 'abilities'): ChoiceDecisionSpec {
+export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' = 'abilities', peek = false): ChoiceDecisionSpec {
   const isLand = (state: GameState, id: string): boolean => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), 'land');
-  const seen = (state: GameState): string[] => {
+  /*
+    "Look at an opponent's hand, then choose any card name" (D1240, Sorcerous Spyglass): the hand
+    looked at is the next opponent's in turn order, which is the only one in a two-player game. In
+    a pod the printed card lets its controller pick the opponent; this does not ask, and says so.
+  */
+  const peeked = (state: GameState, chooser: SeatIndex | undefined): string[] => {
+    if (!peek || chooser === undefined) return [];
+    const order = state.seats.map((seat) => seat.index);
+    const at = order.indexOf(chooser);
+    const next = [...order.slice(at + 1), ...order.slice(0, at)].find((seat) => state.seats[seat]?.eliminated !== true);
+    return next === undefined ? [] : [...listAt(state, zoneKey(next, 'hand'))];
+  };
+  const seen = (state: GameState, chooser?: SeatIndex): string[] => {
     const ids = [
+      ...peeked(state, chooser),
       ...state.seats.flatMap((seat) => [
         ...listAt(state, zoneKey(seat.index, 'battlefield')),
         ...listAt(state, zoneKey(seat.index, 'graveyard')),
@@ -7760,7 +7773,7 @@ export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' =
   };
   return {
     who: 'controller', prompt: nonland ? 'Choose a nonland card name' : 'Choose a card name', options: [],
-    optionsFor: (state) => seen(state),
+    optionsFor: (state, chooser) => seen(state, chooser),
     best: (state, chooser) => {
       let best: { name: string; value: number } | undefined;
       /*
@@ -7778,11 +7791,13 @@ export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' =
             if (best === undefined || (def.cmc ?? 0) > best.value) best = { name: def.name, value: def.cmc ?? 0 };
           }
         }
-        return best?.name ?? seen(state)[0];
+        return best?.name ?? seen(state, chooser)[0];
       }
       for (const other of state.seats) {
         if (other.index === chooser) continue;
-        for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+        // And the cards in the hand looked at (D1240): a Spyglass names what is coming as readily as what is here.
+        const inHand = peeked(state, chooser).filter((id) => state.instances[id]?.zoneSeat === other.index);
+        for (const id of [...listAt(state, zoneKey(other.index, 'battlefield')), ...inHand]) {
           const inst = state.instances[id];
           if (inst === undefined || inst.faceDown === true || (nonland && isLand(state, id))) continue;
           const def = state.cardDefs[inst.defKey];
@@ -7791,16 +7806,16 @@ export function cardNameDecision(nonland: boolean, aim: 'abilities' | 'spells' =
           if (best === undefined || value > best.value) best = { name: def.name, value };
         }
       }
-      return best?.name ?? seen(state)[0];
+      return best?.name ?? seen(state, chooser)[0];
     },
   };
 }
 
 function chooseAsEntersFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim().replace(/\.\s*$/, '');
-  const namedChoice = new RegExp(`^As (?:${selfRef(name)}|it) ${ENTERS}, choose an? (nonland )?card name$`, 'i').exec(text);
+  const namedChoice = new RegExp(`^As (?:${selfRef(name)}|it) ${ENTERS}, (look at an opponent's hand, then )?choose (?:an? (nonland )?|any )card name$`, 'i').exec(text);
   if (namedChoice !== null) {
-    return { entersChoice: 'card-name', decisions: [cardNameDecision(namedChoice[1] !== undefined)] };
+    return { entersChoice: 'card-name', decisions: [cardNameDecision(namedChoice[2] !== undefined, 'abilities', namedChoice[1] !== undefined)] };
   }
   /*
     And the two-sentence land line (D642): "This land enters tapped. As it enters, choose a color."

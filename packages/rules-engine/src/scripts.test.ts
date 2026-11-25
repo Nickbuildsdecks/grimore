@@ -44465,6 +44465,40 @@ describe('"Exile it instead" of a graveyard or a death, for every permanent on t
   });
 });
 
+describe('"Look at an opponent\'s hand, then choose any card name": Sorcerous Spyglass (D1240)', () => {
+  const A = (name: string, text: string) => ({ name, type_line: 'Artifact', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal' });
+  const ROWS = [
+    A('Test Spyglass', 'As Test Spyglass enters, look at an opponent\'s hand, then choose any card name.\nActivated abilities of sources with the chosen name can\'t be activated unless they\'re mana abilities.'),
+    A('Test Needle', 'As Test Needle enters, choose a card name.\nActivated abilities of sources with the chosen name can\'t be activated unless they\'re mana abilities.'),
+    { ...A('Test Wand', '{0}: You gain 1 life.'), cmc: 4, mana_cost: '{4}' },
+    { ...A('Test Font', '{0}: You gain 1 life.'), cmc: 2, mana_cost: '{2}' },
+  ];
+  const deck = customDeck({ id: 'd1240', name: 'Spyglass', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const asked = (card: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1240', 1: 'd1240' }, deckSpecs: { d1240: deck.deck }, hands: { 0: [card], 1: ['Test Wand'] },
+      battlefield: { 0: ['Island'], 1: ['Test Font'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [] } as Action)), 30);
+    return s;
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(ROWS[0] as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the question offers the opponent\'s hand as well; a Needle\'s does not', () => {
+    expect(asked('Test Spyglass').pendingDecision?.options).toEqual(expect.arrayContaining(['Test Wand', 'Test Font']));
+    expect(asked('Test Needle').pendingDecision?.options).not.toContain('Test Wand');
+  });
+
+  it('the bot names the dearest card with an ability in that hand', () => {
+    expect(botAction(asked('Test Spyglass'), 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Wand' });
+    expect(botAction(asked('Test Needle'), 0 as SeatIndex, {})).toMatchObject({ type: 'auto:decide', option: 'Test Font' });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
