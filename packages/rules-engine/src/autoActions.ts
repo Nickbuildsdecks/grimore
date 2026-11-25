@@ -105,9 +105,12 @@ const statsAsItLeaves = (state: GameState, inst: CardInstance): SacrificedStats 
  */
 function countCast(
   state: GameState, seat: SeatIndex, kind: 'creature' | 'noncreature', instantOrSorcery = false,
+  nonartifact = true,
 ): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy' | 'spellsCastThisTurnByKind'> {
   const key = String(seat);
   const byKind = `${seat}:${kind}`;
+  // And nonartifact spells (D1231), for Ethersworn Canonist.
+  const byNonartifact = `${seat}:nonartifact`;
   // And instants and sorceries together (D1114): "your first instant or sorcery spell each turn".
   const bySorcery = `${seat}:instant-or-sorcery`;
   return {
@@ -120,6 +123,7 @@ function countCast(
       ...(state.spellsCastThisTurnByKind ?? {}),
       [byKind]: (state.spellsCastThisTurnByKind?.[byKind] ?? 0) + 1,
       ...(instantOrSorcery ? { [bySorcery]: (state.spellsCastThisTurnByKind?.[bySorcery] ?? 0) + 1 } : {}),
+      ...(nonartifact ? { [byNonartifact]: (state.spellsCastThisTurnByKind?.[byNonartifact] ?? 0) + 1 } : {}),
     },
   };
 }
@@ -426,7 +430,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} can only be cast in your main phase with an empty stack`);
   }
   // A permanent's casting limit (D788), asked where the cast is offered as well.
-  const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered, inst.zone === 'hand');
+  const prohibited = castProhibition(state, action.by, characteristics.isCreature, offered, inst.zone === 'hand',
+    hasType(characteristics.typeLine, 'artifact'));
   if (prohibited !== null) throw new EngineError('RULE_NOT_APPLICABLE', prohibited);
 
   const cost = parseManaCost(def?.manaCost);
@@ -1339,7 +1344,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // there with its costs paid (CR 601.2i) — and *after* the object has taken its snapshot, so a
     // storm spell never counts itself. See `countCast`.
     ...countCast(next, action.by, !bestowed && characteristics.isCreature ? 'creature' : 'noncreature',
-      hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery')),
+      hasType(characteristics.typeLine, 'instant') || hasType(characteristics.typeLine, 'sorcery'),
+      !hasType(characteristics.typeLine, 'artifact')),
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a

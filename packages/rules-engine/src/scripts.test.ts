@@ -43466,6 +43466,57 @@ describe('countering a spell cast for no mana: Vexing Bauble (D893)', () => {
   });
 });
 
+describe('Ethersworn Canonist, and a free grant to itself the bot stops repeating (D1231)', () => {
+  const S = (name: string, type = 'Sorcery') => ({ name, type_line: type, oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: type === 'Artifact' ? [] : ['U'], layout: 'normal' });
+  const ROWS = [
+    { name: 'Test Canonist', type_line: 'Artifact Creature — Human Cleric', oracle_text: 'Each player who has cast a nonartifact spell this turn can\'t cast additional nonartifact spells.', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2' },
+    { name: 'Test Drake', type_line: 'Creature — Dragon', oracle_text: '{0}: Test Drake gains flying.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '4', toughness: '4' },
+    S('Test Peek'), S('Test Glance'), S('Test Trinket', 'Artifact'),
+  ];
+  const deck = customDeck({ id: 'd1231', name: 'Canonist', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 45 }], data: ROWS as never[] });
+  const table = (mine: string[], hand: string[]) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1231', 1: 'd1231' }, deckSpecs: { d1231: deck.deck }, hands: { 0: hand },
+      battlefield: { 0: ['Island', ...mine], 1: [] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { ...s, instances: Object.fromEntries(Object.entries(s.instances).map(([id, inst]) => [id, { ...inst, enteredTurn: 0 }])) };
+  };
+  const cast = (s: GameState, card: string): Action => ({ type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card), targets: [] } as Action);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 2)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one nonartifact spell a turn; artifact spells are not counted and not stopped', () => {
+    let s = table(['Test Canonist'], ['Test Trinket', 'Test Peek', 'Test Glance']);
+    s = drain(passBoth(apply(s, cast(s, 'Test Trinket'))), 30);
+    s = drain(passBoth(apply(s, cast(s, 'Test Peek'))), 30);
+    expect(refusal(s, cast(s, 'Test Glance'))).toMatch(/nonartifact/);
+    const free = table([], ['Test Peek', 'Test Glance']);
+    const after = drain(passBoth(apply(free, cast(free, 'Test Peek'))), 30);
+    expect(refusal(after, cast(after, 'Test Glance'))).toBeNull();
+  });
+
+  it('the bot grants its Drake flying once, and not again once it has it', () => {
+    let s = table(['Test Drake'], []);
+    const drake = find(s, 0, 'battlefield', 'Test Drake');
+    const mine = (state: GameState) => botAction(state, 0 as SeatIndex, {});
+    let chose = false;
+    for (let i = 0; i < 8 && !chose; i += 1) {
+      const next = mine(s);
+      if (next === null) break;
+      if (next.type === 'auto:activate' && next.card === drake) { chose = true; break; }
+      s = apply(s, next);
+    }
+    expect(chose).toBe(true);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: drake, abilityIndex: 0 } as Action)), 20);
+    expect(characteristicsOf(s, s.instances[drake]!).keywords.has('flying')).toBe(true);
+    const after = mine(s);
+    expect(after?.type === 'auto:activate' && after.card === drake).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

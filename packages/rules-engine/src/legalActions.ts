@@ -800,13 +800,16 @@ function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readon
  * Why this seat may not cast this spell now because of a permanent's casting limit (D788), or null.
  * `offered` is a cast an effect makes mid-resolution (cascade), which no timing limit reaches.
  */
-export function castProhibition(state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean, fromHand = true): string | null {
+export function castProhibition(
+  state: GameState, seat: SeatIndex, isCreature: boolean, offered: boolean, fromHand = true, isArtifact = false,
+): string | null {
   // Silence and Orim's Chant (D791): barred for the rest of this turn.
   if (state.castBannedTurn?.[String(seat)] === state.turn) return "you can't cast spells this turn";
   // Ranger-Captain of Eos (D803): noncreature spells only.
   if (!isCreature && state.noncreatureBannedTurn?.[String(seat)] === state.turn) return "you can't cast noncreature spells this turn";
   const cast = state.spellsCastThisTurnBy[String(seat)] ?? 0;
   const noncreature = state.spellsCastThisTurnByKind?.[`${seat}:noncreature`] ?? 0;
+  const nonartifact = state.spellsCastThisTurnByKind?.[`${seat}:nonartifact`] ?? 0;
   for (const { limit, from, name } of castLimitsInPlay(state)) {
     const theirs = from !== seat;
     if (limit === 'each-one-spell' && cast >= 1) return `${name}: no more than one spell each turn`;
@@ -818,6 +821,7 @@ export function castProhibition(state: GameState, seat: SeatIndex, isCreature: b
     }
     if (limit === 'opponents-no-spells-your-turn' && theirs && state.activeSeat === from) return `${name}: no spells during its controller's turn`;
     if (limit === 'opponents-hand-only' && theirs && !fromHand) return `${name}: you can cast spells only from your hand`;
+    if (limit === 'each-one-nonartifact' && !isArtifact && nonartifact >= 1) return `${name}: no more than one nonartifact spell each turn`;
   }
   return null;
 }
@@ -1966,7 +1970,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       continue;
     }
     // A permanent's casting limit (D788): Rule of Law, Teferi, Grand Abolisher.
-    const prohibited = castProhibition(state, seat, ch.isCreature, offered, inst.zone === 'hand');
+    const prohibited = castProhibition(state, seat, ch.isCreature, offered, inst.zone === 'hand', hasType(ch.typeLine, 'artifact'));
     if (prohibited !== null) {
       why(id, prohibited);
       continue;

@@ -10486,6 +10486,8 @@ const SKITHIRYX: CardScript = {
       cost: { mana: '{B}' },
       description: '{B}: Skithiryx gains haste until end of turn.',
       effect: (c) => pump(c.state, [c.source], c.source, c.controller, { keywords: ['haste'] }),
+      // D1231: what the compiled reading says too — a second activation grants nothing.
+      selfShrink: { grants: ['haste'] },
     },
     {
       cost: { mana: '{B}{B}' },
@@ -17198,6 +17200,14 @@ function selfEffect(
           return pump(c.state, [id], lasting ? id : c.source, c.controller,
             { keywords: [word], ...(lasting ? { duration: 'permanent' as const } : {}) });
         },
+        /*
+          A grant to the card itself, by name, makes it no bigger, so the bot is told what it grants
+          (D1231) as the shrinking pump above does: a second activation of Mist Dragon's "{0}: Mist
+          Dragon gains flying" grants nothing, and pod seed 84086 activated it a thousand times.
+          Only by name, because a bare "it" may be a target, which the source's keywords say nothing
+          about. See `AbilityDef.selfShrink`.
+        */
+        ...(named === undefined ? {} : { abilityFlags: { selfShrink: { grants: [word as Keyword] } } }),
       };
     }
   }
@@ -36811,6 +36821,8 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     [/^each opponent can cast spells only any time they could cast a sorcery$/i, ['opponents-sorcery-speed']],
     [/^your opponents can't cast spells during your turn$/i, ['opponents-no-spells-your-turn']],
     [/^your opponents can't cast spells from anywhere other than their hands$/i, ['opponents-hand-only']],
+    // Ethersworn Canonist (D1231).
+    [/^each player who has cast a nonartifact spell this turn can't cast additional nonartifact spells$/i, ['each-one-nonartifact']],
     [/^during your turn, your opponents can't cast spells or activate abilities of artifacts, creatures, or enchantments$/i,
       ['opponents-no-spells-your-turn', 'opponents-no-abilities-your-turn']],
   ];

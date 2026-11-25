@@ -3172,7 +3172,12 @@ export type CastLimit =
   | 'each-one-spell' | 'each-one-noncreature' | 'you-one-spell' | 'own-turn-only'
   | 'opponents-sorcery-speed' | 'opponents-no-spells-your-turn' | 'opponents-no-abilities-your-turn'
   /** "Your opponents can't cast spells from anywhere other than their hands" (D803): Drannith Magistrate. */
-  | 'opponents-hand-only';
+  | 'opponents-hand-only'
+  /**
+   * "Each player who has cast a nonartifact spell this turn can't cast additional nonartifact
+   * spells" (D1231): Ethersworn Canonist. Artifact spells are never limited.
+   */
+  | 'each-one-nonartifact';
 
 export interface CardScript {
   /** Matched case-insensitively against the card's printed name. */
