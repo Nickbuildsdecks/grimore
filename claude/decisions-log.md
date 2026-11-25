@@ -64050,3 +64050,33 @@ Faults injected by hand: 4, all caught.
 - The printed mana cost charged instead of the alternative.
 
 Coverage: 17,043 of 31,900 cards (+14 over D1250's 17,029), 39,678 of 59,888 lines (+21).
+
+## D1252 — Alternatives paid in lands: Daze, Gush, Fireblast
+
+D1251's `altCost` with lands: "You may return an Island you control to its owner's hand" (Daze),
+"return two Islands you control to their owner's hand" (Gush, Ensnare), "sacrifice two Mountains"
+(Fireblast, Pulverize), "sacrifice a Mountain" (Crash, Thunderclap), each "rather than pay this
+spell's mana cost". Which lands go is the planner's choice, `landCostPlan`: tapped ones first, then
+the cheapest, as for an ability's "return a land you control" (D615). A land tapped for mana and then
+returned is the trick these cards are played for. It is offered only while there are enough of
+them, and paid as the spell is cast.
+
+Not asked: the player does not choose which Islands. The planner's tapped-first order is what a
+player would choose almost always, and a choice can be added where it matters.
+
+Read whole now, by the probe: Daze, Gush, Fireblast, Tidal Bore, Crash, Thunderclap, Pulverize,
+Ensnare.
+
+**Tests.** 3 engine tests:
+- The test cards read whole.
+- A tapped Island goes back to hand instead of the mana and the spell resolves; without an Island it
+  is not offered.
+- Two Mountains are sacrificed instead of the mana and the damage is dealt; one Mountain is not
+  enough to offer it.
+
+Faults injected by hand: 3, all caught.
+- The land count not checked in the offer.
+- Islands sacrificed instead of returned.
+- No land paid at all.
+
+Coverage: 17,054 of 31,900 cards (+11 over D1251's 17,043), 39,700 of 59,888 lines (+22).
