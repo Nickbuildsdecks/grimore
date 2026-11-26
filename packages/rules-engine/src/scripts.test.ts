@@ -49019,6 +49019,44 @@ describe('"Ward—Discard a card." (D1327)', () => {
   });
 });
 
+describe('"Morph—Reveal a blue card in your hand." (D1328)', () => {
+  const SAVANT = { name: 'Test Savant', type_line: 'Creature — Human Wizard', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '0', toughness: '6',
+    oracle_text: 'Morph—Reveal a blue card in your hand. (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.)' };
+  const deck = customDeck({ id: 'd1328', name: 'Savants', entries: [{ name: 'Test Savant', count: 4 }, { name: 'Island', count: 28 }, { name: 'Mountain', count: 28 }], data: [SAVANT] as never[] });
+  const faceDown = (hand: readonly string[]): { s: GameState; savant: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1328', 1: 'd1328' }, deckSpecs: { d1328: deck.deck },
+      hands: { 0: ['Test Savant', ...hand] }, battlefield: { 0: ['Island', 'Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // Only the hand asked for.
+    for (const id of ids(s, 0, 'hand').slice(1 + hand.length)) s = relocate(s, s.instances[id]!, 'library', 0, 'bottom');
+    const savant = ids(s, 0, 'hand')[0]!;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: savant, faceDown: true } as Action)), 4);
+    return { s, savant };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SAVANT as never)).toMatchObject({ ok: true, unread: [], script: { morph: { cost: { revealColour: 'U' } } } });
+  });
+
+  it('turns face up for nothing but a blue card shown', () => {
+    let { s, savant } = faceDown(['Test Savant']);
+    expect(s.instances[savant]!.faceDown).toBe(true);
+    const offer = legalActions(s, 0).plays.find((p) => p.kind === 'turnUp' && p.card === savant);
+    expect(offer?.description).toMatch(/reveal a blue card in your hand/);
+    s = apply(s, { type: 'auto:turnUp', by: 0, card: savant } as Action);
+    expect(s.instances[savant]!.faceDown).toBe(false);
+    expect(ids(s, 0, 'hand').length).toBe(1);
+  });
+
+  it('with no blue card in hand it is not offered, and refused', () => {
+    const { s, savant } = faceDown(['Mountain']);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'turnUp' && p.card === savant)).toBe(false);
+    expect(() => apply(s, { type: 'auto:turnUp', by: 0, card: savant } as Action)).toThrow(/no card of that colour/);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

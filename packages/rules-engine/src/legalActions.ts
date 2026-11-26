@@ -25,7 +25,7 @@ import {
 import { canPayLife, energyOf, evidencePlan, lifeLocked, paymentWords, poolOf, preparedCopyOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost, reducedCostText,
-  type ManaCost, type ManaPool, type ManaType,
+  type Color, type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
 import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
@@ -3351,6 +3351,10 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       a cost you may choose to pay.
     */
     if (morph.cost.life !== undefined && !canPayLife(state, seat, morph.cost.life)) continue;
+    // A card of the colour to reveal (D1328).
+    const revealColour = morph.cost.revealColour;
+    if (revealColour !== undefined && !listAt(state, zoneKey(seat, 'hand')).some((card) => state.instances[card] !== undefined
+      && characteristicsOf(state, state.instances[card]!).colors.includes(revealColour))) continue;
     const word = morph.word;
     out.push({
       kind: 'turnUp', card: id, name: def?.name ?? 'that card',
@@ -3749,7 +3753,7 @@ export { MAIN_STEPS };
  */
 export function turnUpCostOf(
   state: GameState, inst: CardInstance,
-): { readonly cost: { readonly mana?: string; readonly life?: number }; readonly mega?: true; readonly word: string } | null {
+): { readonly cost: { readonly mana?: string; readonly life?: number; readonly revealColour?: Color }; readonly mega?: true; readonly word: string } | null {
   const def = state.cardDefs[inst.defKey];
   const morph = scriptForCard(def)?.morph;
   if (morph !== undefined) {

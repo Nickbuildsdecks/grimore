@@ -12285,6 +12285,12 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   }
 
   // ── Morph, megamorph and echo, through the reader the whole-card path uses ─────────────────────
+  // "Morph—Reveal a blue card in your hand." (D1328): see `AbilityCost.revealColour`.
+  const revealMorph = /^morph\s*[—-]\s*reveal an? (white|blue|black|red|green) card in your hand\.?$/i.exec(text);
+  if (revealMorph !== null) {
+    const LETTER: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+    return { morph: { cost: { revealColour: LETTER[revealMorph[1]!.toLowerCase()]! } } };
+  }
   const costed = keywordWithCost(text);
   if (costed !== null) {
     if (costed.field === 'echo') {

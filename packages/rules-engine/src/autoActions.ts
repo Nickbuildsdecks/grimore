@@ -1829,8 +1829,18 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
         `you do not have ${script.morph.cost.life} life to pay`);
     }
   }
+  // A card of the colour, shown (D1328): "Morph—Reveal a blue card in your hand."
+  const revealColour = script.morph.cost.revealColour;
+  const shown = revealColour === undefined ? undefined : listAt(state, zoneKey(action.by, 'hand'))
+    .find((id) => state.instances[id] !== undefined && characteristicsOf(state, state.instances[id]!).colors.includes(revealColour));
+  if (revealColour !== undefined && shown === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'you have no card of that colour in your hand to reveal');
+  }
   const paid = payFrom(state, action.by, script.morph.cost.mana, 0, 0);
   let next = withInstance(paid.state, inst.id, { faceDown: false, manifested: undefined });
+  if (shown !== undefined) {
+    next = { ...next, replacements: [...next.replacements, `${seatName(state, action.by)} reveals ${state.cardDefs[state.instances[shown]!.defKey]?.name ?? 'a card'} to turn ${def?.name ?? 'it'} face up`] };
+  }
   if (script.morph.cost.life !== undefined) {
     next = loseLife(next, action.by, script.morph.cost.life);
   }

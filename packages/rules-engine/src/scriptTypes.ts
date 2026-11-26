@@ -2837,6 +2837,12 @@ export interface AbilityCost {
    */
   readonly putCounter?: { readonly counter: string; readonly amount: number };
   /**
+   * "Reveal a blue card in your hand" (D1328): a morph cost (Dragon's Eye Savants, Horde Ambusher,
+   * Watcher of the Roost). Payable only with a card of that colour in hand. Revealing spends nothing,
+   * so the engine shows one of them and the turn-up goes ahead.
+   */
+  readonly revealColour?: Color;
+  /**
    * "Pay {E}{E}:" — energy, which is a counter on the **player** rather than on a permanent
    * (CR 122.1, CR 107.17).
    *
@@ -5277,6 +5283,11 @@ export function morphCostText(cost: AbilityCost): string {
   const parts: string[] = [];
   if (cost.mana !== undefined && cost.mana !== '') parts.push(cost.mana);
   if (cost.life !== undefined) parts.push(`pay ${cost.life} life`);
+  // D1328: "reveal a blue card in your hand".
+  if (cost.revealColour !== undefined) {
+    const WORDS: Readonly<Record<string, string>> = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
+    parts.push(`reveal a ${WORDS[cost.revealColour] ?? cost.revealColour} card in your hand`);
+  }
   return parts.length === 0 ? 'nothing' : parts.join(', ');
 }
 

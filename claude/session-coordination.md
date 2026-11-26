@@ -244,3 +244,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1324 pushed in cf6c18c. D1325 the en-Kor redirects (scripts.ts selfEffect, preventDamage with redirectTo).
 - D1325 pushed in 657227a. D1326 a source of your choice, the Circles (DecisionZone 'source', nextDamageFrom, preventNextDamageFrom): turnTypes, automation, bot, characteristics, effects, scripts.ts; web StackPanel decidable, ArenaBar hint.
 - D1326 pushed in 140e262; checkpoint at D1326 committed. D1327 ward paid by discarding (pendingPayment.discard, auto:pay discarded): turnTypes, effects, scripts, automation, autoActions, legalActions, bot; web ArenaBar ward buttons.
+- D1327 pushed in df1319e with the D1326 checkpoint. D1328 reveal-a-colour morph (AbilityCost.revealColour): scripts.ts, scriptTypes.ts, autoActions turnUp, legalActions offer.
