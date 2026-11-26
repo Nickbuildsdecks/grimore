@@ -65006,3 +65006,36 @@ Faults injected by hand: 2, all caught.
 - The count dropped, one counter placed.
 
 Coverage: 17,235 of 31,900 cards (+7 over D1283's 17,228), 39,976 of 59,888 lines (+9).
+
+## D1285 — Others enter with an additional +1/+1 counter
+
+"Each other creature you control enters with an additional +1/+1 counter on it" (Renata, Called to
+the Hunt), "Each other non-Human creature you control …" (Grumgully, the Generous), "Each other
+Warrior creature you control …" (Bramblewood Paragon), "Each Dragon you control …" (Dragonstorm
+Globe). A replacement one permanent makes on other permanents' arrival under its controller
+(CR 614.1c). Nothing applied it before.
+
+- `CardScript.othersEnterWith {counter, amount, fits}`. The arrival pass gives each arriving
+  permanent the counters every other permanent its controller already has on the battlefield adds,
+  when the arrival fits that permanent's description. The arriving permanent's own `entersWith`
+  still applies too.
+- Not from a permanent arriving in the same batch (CR 614.12): Metallic Mimic and a creature
+  returned beside it do not see each other. Never to itself.
+- The kind is a permanent description, or "<creature type> creature", read off the live type line.
+
+Read whole now: Renata, Grumgully, Bramblewood Paragon, Oona's Blackguard, Dragonstorm Globe.
+Sage of Fables and Slinza stop on another line; Oath of Gideon's loyalty counter and Master
+Biomancer's "a number of additional … equal to its power" are not read.
+
+**Tests.** 4 engine tests:
+- It reads.
+- A Warrior entering gets the counter; an Ox does not; the Paragon itself does not.
+- A Warrior returned at the same time as the Paragon gets nothing (CR 614.12).
+- An opponent's Warrior gets nothing.
+
+Faults injected by hand: 3, all caught.
+- The same-batch rule dropped.
+- The description not asked.
+- Every player's permanents consulted, not the controller's.
+
+Coverage: 17,240 of 31,900 cards (+5 over D1284's 17,235), 39,984 of 59,888 lines (+8).
