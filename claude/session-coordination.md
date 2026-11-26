@@ -238,3 +238,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1318 pushed in f13b82e. D1319 adamant (spentByType on payFrom, the stack object and castPermanents; condition row; leading-if enters-with): automation.ts, autoActions.ts, turnTypes.ts, scripts.ts.
 - D1319 pushed in 315c969. D1320 the Clockworks' end-of-combat counter (builtin 'remove-plus-one'): scripts.ts selfEffect, automation BUILTIN_DELAYED, unions.
 - D1320 pushed in 2cca3d9. D1321 Frostwielder's exile-instead (CardScript.exilesWhatItDamaged, damagedByAnExiler): automation.ts, scripts.ts staticFromLine.
+- D1321 pushed in 835bb6c. D1322 the Gustcloaks, untap and remove from combat (scripts.ts selfEffect).

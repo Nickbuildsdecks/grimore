@@ -48768,6 +48768,43 @@ describe('"If a creature dealt damage by ~ this turn would die, exile it instead
   });
 });
 
+describe('"you may untap it and remove it from combat": the Gustcloaks (D1322)', () => {
+  const RUNNER = { name: 'Test Gustcloak', type_line: 'Creature — Human Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Whenever Test Gustcloak becomes blocked, you may untap it and remove it from combat.' };
+  const deck = customDeck({ id: 'd1322', name: 'Gustcloak', entries: [{ name: 'Test Gustcloak', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 52 }], data: [RUNNER] as never[] });
+  const blocked = (answer: 'Yes' | 'No'): { s: GameState; runner: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1322', 1: 'd1322' }, deckSpecs: { d1322: deck.deck },
+      battlefield: { 0: ['Test Gustcloak'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const runner = find(s, 0, 'battlefield', 'Test Gustcloak');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: runner, defender: 1 }] } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: runner }] } as Action);
+    s = passBoth(s);
+    s = drain(passBoth(say(s, 0, answer)), 4);
+    return { s: advanceTo(s, 'end-combat'), runner };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(RUNNER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('said yes, it untaps and leaves combat, and the Bears never hit it', () => {
+    const { s, runner } = blocked('Yes');
+    expect(s.instances[runner]!.zone).toBe('battlefield');
+    expect(s.instances[runner]!.tapped).toBe(false);
+    expect(s.combat.attacks.some((a) => a.attacker === runner)).toBe(false);
+  });
+
+  it('said no, it stays in and dies to the Bears', () => {
+    const { s, runner } = blocked('No');
+    expect(s.instances[runner]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -17044,6 +17044,23 @@ function selfEffect(
     next, whether or not the permanent is still there (CR 603.7c).
   */
   /*
+    "Untap it and remove it from combat" (D1322): the Gustcloaks' "Whenever ~ becomes blocked, you may
+    untap it and remove it from combat", Gustcloak Savior's "that creature", Melee's "it". The
+    creature the trigger is about, else the source: untapped (CR 122.1d's stun replacement and all,
+    `untapPermanent`), then out of combat (CR 506.4), so it deals and is dealt no combat damage and
+    its blockers stay blocking nothing.
+  */
+  const sidestep = new RegExp(`^untap (?:(${self}|this creature)|it|that creature) and remove it from combat$`, 'i').exec(text);
+  if (sidestep !== null) {
+    return {
+      effect: (c) => {
+        const id = sidestep[1] !== undefined ? c.source : itMeans(undefined, c);
+        if (c.state.instances[id]?.zone !== 'battlefield') return c.state;
+        return removeFromCombat(untapPermanent(c.state, id), id);
+      },
+    };
+  }
+  /*
     "Remove a +1/+1 counter from it at end of combat" (D1320): Clockwork Beetle, Condor, Dragon,
     Steed. After "whenever ~ attacks or blocks", "it" is the Clockwork; the engine-known delayed
     ability takes one off at this combat's end, from the object as it is now (CR 400.7).
