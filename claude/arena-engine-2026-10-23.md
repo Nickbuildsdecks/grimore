@@ -49227,3 +49227,36 @@ Faults injected by hand: 4, all caught.
 The scripts tests, compile tests and pins: 6459 of 6459 pass. Web: typecheck clean, 279 of 279.
 
 Coverage: 17,490 of 31,900 cards (+6 over D1326's 17,484), 40,309 of 59,888 lines (+13).
+
+## D1328 — "Morph—Reveal a blue card in your hand."
+
+The Legions reveal-morphs had no reader: Dragon's Eye Savants, Horde Ambusher, Ruthless Ripper,
+Temur Charger and Watcher of the Roost. Their turn-up cost is showing a card of one colour from
+hand (CR 702.37a lets a morph cost be anything).
+
+`AbilityCost.revealColour` holds the colour; a morph cost has been an `AbilityCost` since Zombie
+Cutthroat's life.
+- `legalActions` offers the turn-up only with a card of that colour in hand.
+- `turnUp` refuses without one, and otherwise shows one through the replacement notes, so the
+  table sees what was revealed.
+- `morphCostText` says "reveal a blue card in your hand" on the play.
+
+**Stated simplification:** the engine reveals the first card of the colour in hand rather than
+asking which. Revealing spends nothing, so the only difference is which card the opponent sees.
+
+Still unread on the morph list: "Return two Islands …", "Discard a card", "Sacrifice another
+creature", "Sacrifice two Mountains".
+
+**Tests.** 3 tests:
+- The fixture reads whole, with `revealColour` U.
+- Cast face down, with a blue card in hand: the turn-up is offered with the reveal in its words,
+  and turns it face up with the hand unchanged.
+- With only a Mountain in hand: not offered, and refused.
+
+Faults injected by hand: 2, both caught.
+- Turned up without a card.
+- Offered without a card.
+
+The scripts tests, compile tests and pins: 6462 of 6462 pass.
+
+Coverage: 17,495 of 31,900 cards (+5 over D1327's 17,490), 40,314 of 59,888 lines (+5).
