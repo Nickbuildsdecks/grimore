@@ -47252,3 +47252,34 @@ Faults injected by hand: 3; 2 caught.
   reads to two targets and is refused by the one-target check. The guard was redundant and is gone.
 
 Coverage: 17,191 of 31,900 cards (+9 over D1273's 17,182), 39,901 of 59,888 lines (+15).
+
+## D1275 — The Confluences: choose three, and a mode may come again
+
+"Choose three. You may choose the same mode more than once." (CR 700.2d): Mystic Confluence, Fiery
+Confluence and the rest of the cycle, and Planewide Celebration's "Choose four". `ModalDef` gains
+`repeats`. `modeCombinations` then counts combinations with repetition, three modes giving ten,
+and no longer caps the picks at the number of modes. The engine already resolved chosen modes by
+index, each with the next targets in the list, so a mode picked twice resolves twice with its own
+target each time. The header reads the bullets as "Choose one" would and sets exactly that many
+picks. A mode with a first half before its question is refused, as under any header that picks
+more than one (D955).
+
+Read whole now: Mystic Confluence, Fiery Confluence, and other Confluences whose modes read.
+Still unread:
+- Brokers Confluence: a phasing mode.
+- Planewide Celebration: a mode not read yet.
+- Doomsday Confluence: "Choose X".
+- The Seasons: "{P} worth of modes".
+
+**Tests.** 3 engine tests:
+- It reads as three picks with repeats: ten combinations of three modes, including the same mode
+  three times; two modes with three picks give the four combinations.
+- The damage mode twice, each with its own target, then the life.
+- Three draws, and two picks are refused.
+
+Faults injected by hand: 3, all caught.
+- No repeats in the combinations.
+- The picks capped at the number of modes again.
+- "Choose three" read as one to three picks.
+
+Coverage: 17,197 of 31,900 cards (+6 over D1274's 17,191), 39,925 of 59,888 lines (+24).
