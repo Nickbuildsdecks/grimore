@@ -46677,6 +46677,41 @@ describe('"a Blood token": a subtype before "token" (D1278)', () => {
   });
 });
 
+describe('"Whenever you attack with one or more …" (D1279)', () => {
+  const C = (name: string, type: string, text = '') => ({
+    name, type_line: `Creature — ${type}`, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const ANY = C('Test Herald', 'Human', 'Whenever you attack with one or more creatures, you gain 1 life.');
+  const ELVISH = C('Test Elfwatch', 'Human', 'Whenever you attack with one or more Elves, you gain 2 life.');
+  const ELF = C('Test Elf', 'Elf');
+  const OX = C('Test Ox', 'Ox');
+  const deck = customDeck({ id: 'd1279', name: 'Attack with', entries: [ANY, ELVISH, ELF, OX].map((r) => ({ name: r.name, count: 3 })).concat([{ name: 'Forest', count: 48 }]), data: [ANY, ELVISH, ELF, OX] as never[] });
+  const swing = (attacker: string) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1279', 1: 'd1279' }, deckSpecs: { d1279: deck.deck },
+      battlefield: { 0: ['Test Herald', 'Test Elfwatch', attacker] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const before = life(s, 0);
+    const id = find(s, 0, 'battlefield', attacker);
+    s = drain(passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] } as Action)), 20);
+    s = drain(passBoth(s), 20);
+    return life(s, 0) - before;
+  };
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [ANY, ELVISH]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an Elf attacking: both trigger', () => {
+    expect(swing('Test Elf')).toBe(3);
+  });
+
+  it('an Ox attacking: only the one about any creature', () => {
+    expect(swing('Test Ox')).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

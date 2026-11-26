@@ -21605,11 +21605,20 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever one or more creatures you control attack, (.+)$/i,
     on: [{ kind: 'attack-declared', by: 'you' }],
   },
-  // "Whenever one or more Dragons you control attack" (D1261): a creature type, in the plural.
+  /*
+    "Whenever you attack with one or more creatures" (D1279): the same declaration as the row above,
+    in the other word order (Amazing Alliance's kin). And "… with one or more Elves" below.
+  */
   {
-    prologue: () => /^Whenever one or more (?<tribe>[A-Z][a-z]+) you control attack, (?<clause>.+)$/,
+    prologue: () => /^Whenever you attack with one or more creatures, (.+)$/i,
+    on: [{ kind: 'attack-declared', by: 'you' }],
+  },
+  // "Whenever one or more Dragons you control attack" (D1261): a creature type, in the plural.
+  // "Whenever you attack with one or more Elves" (D1279) is the same row in the other order.
+  {
+    prologue: () => /^Whenever (?:one or more (?<tribe>[A-Z][a-z]+) you control attack|you attack with one or more (?<tribe2>[A-Z][a-z]+)), (?<clause>.+)$/,
     from: (m: RegExpExecArray) => {
-      const plural = m.groups?.tribe ?? '';
+      const plural = m.groups?.tribe ?? m.groups?.tribe2 ?? '';
       const single = [plural.replace(/ves$/, 'f'), plural.replace(/ies$/, 'y'), plural.replace(/es$/, ''), plural.replace(/s$/, '')]
         .find((word) => word !== plural && isCreatureType(word));
       return single === undefined ? [] : [{ kind: 'attack-declared' as const, by: 'you' as const, withSubtype: single }];

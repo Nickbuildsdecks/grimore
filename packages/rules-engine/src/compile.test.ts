@@ -8425,6 +8425,12 @@ describe('the declaration, read off the prologue', () => {
     ['Whenever you attack'],
     // The longer spelling of the same sentence, which is 5 legal lines.
     ['Whenever one or more creatures you control attack'],
+    /*
+      And the third spelling (D1279). It was in the refusals below as a restriction the event could
+      not express, but there is none: the rules read "whenever you attack" as one or more creatures
+      declared as attackers, which is what this says in full.
+    */
+    ['Whenever you attack with one or more creatures'],
   ])('%s becomes the declaration trigger', (prologue) => {
     const read = creature(`${prologue}, you gain 2 life.`);
     expect(read.ok).toBe(true);
@@ -8440,7 +8446,6 @@ describe('the declaration, read off the prologue', () => {
     // the bare declaration each would be a wrong reading of a real card (D362), so each stays
     // unread — and these rows fail if a prologue row is ever widened to swallow one.
     // "With three / two or more creatures" read since D631, on `attack-declared.atLeast`.
-    ['Whenever you attack with one or more creatures'],         // 3
     // Retargeted by D1118: 'Whenever you attack a player' reads, as `attack-declared.atAPlayer`.
     ['Whenever you attack with your commander'],                // 2
     ['Whenever two or more creatures you control attack a player'], // 2
