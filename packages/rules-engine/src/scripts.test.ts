@@ -8104,6 +8104,9 @@ describe('deck coverage', () => {
       // D1285: Renata, Grumgully and the tribal lords; no pool deck plays one. Driven at runtime by
       // "others enter with an additional +1/+1 counter (D1285)".
       'script othersEnterWith',
+      // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
+      // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
+      'script castsFromGraveyard',
       // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
       // alternative of mana or life: Snuff Out, the Bringers (D1251)".
       'script altCost',
@@ -47007,6 +47010,79 @@ describe('Metallic Mimic: others of the chosen type enter with an additional cou
     const goblin = find(s, 0, 'hand', 'Test Goblin');
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: goblin } as Action)), 20);
     expect(s.instances[goblin]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+});
+
+describe('"During each of your turns, you may cast a creature spell from your graveyard" (D1287)', () => {
+  /*
+    Karador, Gisa and Geralf, Danitha: one spell a turn through each permanent, of the kind it names,
+    for its printed cost at its normal timing, on its controller's own turn.
+  */
+  const C = (name: string, type: string, text = '', cost = '{1}') => ({
+    name, type_line: type, oracle_text: text, mana_cost: cost, cmc: 1, colors: ['G'], layout: 'normal',
+    ...(type.includes('Creature') ? { power: '2', toughness: '2' } : {}),
+  });
+  const KARADOR = C('Test Karador', 'Legendary Creature — Centaur Spirit', 'During each of your turns, you may cast a creature spell from your graveyard.', '{0}');
+  const BEAR = C('Test Bear', 'Creature — Bear');
+  const OTHER = C('Test Other Bear', 'Creature — Bear');
+  const GROWTH = C('Test Growth', 'Instant', 'Target creature gets +3/+3 until end of turn.');
+  const ROWS = [KARADOR, BEAR, OTHER, GROWTH];
+  const deck = customDeck({ id: 'd1287', name: 'Karador', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (firstSeat: SeatIndex) => advanceTo(arena({
+    decks: { 0: 'd1287', 1: 'd1287' }, deckSpecs: { d1287: deck.deck },
+    battlefield: { 0: ['Test Karador', 'Forest', 'Forest'], 1: ['Forest'] },
+    graveyard: { 0: ['Test Bear', 'Test Other Bear', 'Test Growth'] }, turn: 3, firstSeat,
+  }), 'precombat-main');
+  const yardPlays = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.yardBy !== undefined);
+
+  it('reads', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(KARADOR as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offers the creature cards in the graveyard and not the instant; cast one, it enters, and no second is offered', () => {
+    let s = table(0);
+    const karador = find(s, 0, 'battlefield', 'Test Karador');
+    const offered = yardPlays(s);
+    expect(offered.map((p) => p.name).sort()).toEqual(['Test Bear', 'Test Other Bear']);
+    expect(offered.every((p) => p.yardBy === karador)).toBe(true);
+    const bear = find(s, 0, 'graveyard', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear, yardBy: karador } as Action)), 20);
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect(yardPlays(s)).toEqual([]);
+    const other = find(s, 0, 'graveyard', 'Test Other Bear');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: other, yardBy: karador } as Action)).toContain('cannot be cast from your graveyard');
+  });
+
+  it("not on an opponent's turn, even for an instant cast while holding priority there", () => {
+    const KESS = C('Test Kess', 'Legendary Creature — Human Wizard', 'During each of your turns, you may cast an instant spell from your graveyard.', '{0}');
+    const both = customDeck({ id: 'd1287b', name: 'Kess', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Test Kess', count: 2 }, { name: 'Forest', count: 46 }], data: [...ROWS, KESS] as never[] });
+    const at = (firstSeat: SeatIndex) => advanceTo(arena({
+      decks: { 0: 'd1287b', 1: 'd1287b' }, deckSpecs: { d1287b: both.deck },
+      battlefield: { 0: ['Test Kess', 'Test Bear', 'Forest', 'Forest'], 1: ['Forest'] },
+      graveyard: { 0: ['Test Growth'] }, turn: 3, firstSeat,
+    }), 'precombat-main');
+    // Theirs: the active player passes, and seat 0 holds priority with an instant it could cast.
+    let theirs = at(1);
+    theirs = apply(theirs, { type: 'auto:pass', by: 1 } as Action);
+    expect(theirs.priority).toBe(0);
+    expect(yardPlays(theirs)).toEqual([]);
+    // Its own turn: offered.
+    expect(yardPlays(at(0)).map((p) => p.name)).toEqual(['Test Growth']);
+  });
+
+  it('the bot sends the permission with the cast, and the next turn offers it again', () => {
+    let s = table(0);
+    // With nothing in hand, the bot's play is the graveyard creature, and it names the permission.
+    let empty = s;
+    for (const id of ids(empty, 0, 'hand')) empty = apply(empty, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' } as Action);
+    const chosen = botAction(empty, 0) as { type: string; yardBy?: string } | null;
+    expect(chosen?.type).toBe('auto:cast');
+    expect(chosen?.yardBy).toBe(find(s, 0, 'battlefield', 'Test Karador'));
+    const karador = find(s, 0, 'battlefield', 'Test Karador');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', 'Test Bear'), yardBy: karador } as Action)), 20);
+    s = { ...s, turn: s.turn + 2 };
+    expect(yardPlays(s).map((p) => p.name)).toEqual(['Test Other Bear']);
   });
 });
 

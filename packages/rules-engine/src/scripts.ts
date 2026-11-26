@@ -39905,6 +39905,23 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       } };
     }
   }
+  /*
+    "During each of your turns, you may cast a creature spell from your graveyard" (D1287): Karador,
+    Gisa and Geralf, Rivaz; "Once during each of your turns …" (Danitha) is the same permission, one
+    spell a turn either way; Lurrus's "one permanent spell with mana value 2 or less". The kind is
+    read as the library search reads "a … card", off the printed type line. See
+    `CardScript.castsFromGraveyard`.
+  */
+  const yardCast = /^(?:once )?during each of your turns, you may cast (?:an?|one) (.+?) spell( with mana value \d+ or (?:less|greater))? from your graveyard\.?$/i
+    .exec(plain(line).trim());
+  if (yardCast !== null) {
+    const kind = yardCast[1]!.trim();
+    const read = libraryFilter(`${/^[aeiou]/i.test(kind) ? 'an' : 'a'} ${kind} card${yardCast[2] ?? ''}`, name);
+    if (read !== null && read.xBound !== true) {
+      const fits = read.filter;
+      return { castsFromGraveyard: { fits: (state, id, seat) => fits === null || fits === undefined || fits(state, id, seat) } };
+    }
+  }
   // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
   if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
     return { opponentsEntriesDontTrigger: true };

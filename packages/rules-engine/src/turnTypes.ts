@@ -1454,6 +1454,12 @@ export interface AutomationState {
    */
   readonly combatDamagedThisTurn?: Readonly<Record<string, true>>;
   /**
+   * The turn each graveyard-casting permission was last used (D1287), keyed by the permanent giving
+   * it: "during each of your turns, you may cast …" is one spell a turn through each. Keyed by id,
+   * so a permanent that left and came back in the same turn is still counted as having used it.
+   */
+  readonly yardCastsUsed?: Readonly<Record<string, number>>;
+  /**
    * Four more facts about **this turn**, each one a condition printed on a card (D564).
    *
    * | field | the card asks | written by |
@@ -1965,6 +1971,8 @@ export interface AutoCastAction {
   readonly escape?: boolean;
   /** Cast from the graveyard by retrace (D599), discarding the land card named in `discarded`. */
   readonly retrace?: boolean;
+  /** Cast from the graveyard under this permanent's permission (D1287, `CardScript.castsFromGraveyard`). */
+  readonly yardBy?: string;
   /** The permanent sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
   /** The card discarded for an additional cost, when the spell asks for one (D585). */

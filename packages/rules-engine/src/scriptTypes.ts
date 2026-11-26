@@ -3432,6 +3432,14 @@ export interface CardScript {
    */
   readonly grantsEscape?: { readonly exile: number };
   /**
+   * "During each of your turns, you may cast a creature spell from your graveyard" (D1287): Karador,
+   * Gisa and Geralf, Danitha ("Once during each of your turns … an Aura or Equipment spell"), Rivaz,
+   * Lurrus. One spell a turn through each such permanent, of the kind `fits` names (read off the
+   * printed type line of the card in the graveyard), cast for its printed cost at its normal timing,
+   * on its controller's own turn. Recorded in `GameState.yardCastsUsed`.
+   */
+  readonly castsFromGraveyard?: { readonly fits: (state: GameState, id: string, seat: SeatIndex) => boolean };
+  /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to
    * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's
    * dying, Isshin's attacking. Which event, and which kinds of permanent it is about (none: any

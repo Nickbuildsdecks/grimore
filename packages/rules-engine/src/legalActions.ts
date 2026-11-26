@@ -191,6 +191,8 @@ export interface LegalPlay {
    * travel as `discardOptions`. It goes back to the graveyard when it resolves, as escape's does.
    */
   readonly retrace?: boolean;
+  /** Cast out of the graveyard under a permanent's permission (D1287): that permanent's id. */
+  readonly yardBy?: string;
   /**
    * How many cards this play would exile from your graveyard to pay for itself: escape's fixed
    * count, or the number delve worked out (CR 702.112, CR 702.139).
@@ -835,6 +837,23 @@ function castLimitsInPlay(state: GameState): { readonly limit: CastLimit; readon
  * Why this seat may not cast this spell now because of a permanent's casting limit (D788), or null.
  * `offered` is a cast an effect makes mid-resolution (cascade), which no timing limit reaches.
  */
+/**
+ * The permanent letting `seat` cast this graveyard card now (D1287), or null: one of the seat's own
+ * permanents with `castsFromGraveyard` whose kind the card fits and whose permission is unused this
+ * turn, on the seat's own turn, the card in the seat's own graveyard.
+ */
+export function yardPermission(state: GameState, seat: SeatIndex, id: string): string | null {
+  if (state.activeSeat !== seat) return null;
+  const inst = state.instances[id];
+  if (inst === undefined || inst.zone !== 'graveyard' || inst.zoneSeat !== seat) return null;
+  for (const source of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const permit = scriptForCard(state.cardDefs[state.instances[source]?.defKey ?? ''])?.castsFromGraveyard;
+    if (permit === undefined || state.yardCastsUsed?.[source] === state.turn) continue;
+    if (permit.fits(state, id, seat)) return source;
+  }
+  return null;
+}
+
 /**
  * A card's escape (D1235): its own, or the one an Underworld Breach on its owner's battlefield gives
  * each nonland card in that graveyard, at the card's own mana cost. A card with no mana cost is
@@ -1804,6 +1823,18 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
         fromAdventure: false, impulse: false, offered: false,
       })),
+    /*
+      And a card a permanent of this seat lets it cast out of the graveyard (D1287): "During each of
+      your turns, you may cast a creature spell from your graveyard". Its own turn only, one spell a
+      turn through each permanent, the first permanent whose kind fits. See `yardPermission`.
+    */
+    ...listAt(state, zoneKey(seat, 'graveyard'))
+      .map((id) => ({ id, by: yardPermission(state, seat, id) }))
+      .filter((entry) => entry.by !== null)
+      .map(({ id, by }) => ({
+        id, fromCommand: false, flashback: false, escape: false, foretold: false,
+        fromAdventure: false, impulse: false, offered: false, yardBy: by!,
+      })),
     // And the third: retrace (D599), the printed cost and a land card from hand.
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.retrace === true)
@@ -1905,7 +1936,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   for (const entry of castable) {
     const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } = entry;
     const tax = fromCommand ? commanderTaxFor(state, id) : 0;
-    const retrace = 'retrace' in entry && entry.retrace === true;
+    const yardBy = 'yardBy' in entry && typeof entry.yardBy === 'string' ? entry.yardBy : undefined;
+    // A permission's cast is retrace's shape for every question below but the land card (D1287).
+    const retrace = ('retrace' in entry && entry.retrace === true) || yardBy !== undefined;
     const landOnly = 'landOnly' in entry && entry.landOnly === true;
     const inst = state.instances[id];
     if (inst === undefined) continue;
@@ -2406,12 +2439,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       || (flashback === true && script?.flashback?.discard === true);
     // Retrace's discard is a land card (D599); with a printed discard as well it would be two, which
     // nothing prints and nothing here can ask.
-    if (retrace && discardAsked) continue;
-    const pitches = retrace
+    if (retrace && yardBy === undefined && discardAsked) continue;
+    const pitches = retrace && yardBy === undefined
       ? listAt(state, zoneKey(seat, 'hand')).filter((card) =>
         hasType(parseTypeLine(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine), 'land'))
       : discardAsked ? discardOptions(state, seat, id) : [];
-    if (retrace && pitches.length === 0) continue;
+    if (retrace && yardBy === undefined && pitches.length === 0) continue;
     if (discardAsked && pitches.length === 0) {
       why(id, 'it asks you to discard a card, and you have no other card in hand');
       continue;
@@ -2425,7 +2458,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     };
     const pitchOn = {
       ...(pitches.length === 0 ? {} : { discardOptions: pitches }), ...eats,
-      ...(retrace ? { retrace: true as const } : {}),
+      ...(retrace && yardBy === undefined ? { retrace: true as const } : {}),
+      ...(yardBy === undefined ? {} : { yardBy }),
     };
     const lifeAsked = script?.additionalCost !== undefined && 'life' in script.additionalCost
       ? script.additionalCost.life
@@ -2691,6 +2725,8 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           // The cards as well as the mana, because the mana is the cheap half: a player reading
           // "escape {2}{R}{R}" and nothing else would not know the graveyard is about to empty.
           ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${escapeOf(state, id)?.exile ?? 0})`
+          : yardBy !== undefined
+            ? `Cast ${ch.name} from your graveyard for ${costShown} (${state.cardDefs[state.instances[yardBy]?.defKey ?? '']?.name ?? 'a permission'})`
           : retrace
             ? `Cast ${ch.name} from your graveyard (retrace ${costShown}, discarding a land card)`
           : foretold

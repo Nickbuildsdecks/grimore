@@ -2540,6 +2540,8 @@ function candidateActions(
             // to discard rides along on what the engine reads as a cast from hand, and the card
             // is in a graveyard. Sweep 46821 threw on exactly that, with Glamerdye.
             ...(play.retrace === true ? { retrace: true } : {}),
+            // And a graveyard permission (D1287): sent without it, the card is cast "from hand".
+            ...(play.yardBy === undefined ? {} : { yardBy: play.yardBy }),
             // And casualty (D923): sent without it, the chosen sacrifice rides on a spell with no
             // additional cost, which the engine refuses.
             ...(play.casualty === true ? { casualty: true } : {}),

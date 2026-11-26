@@ -56,7 +56,7 @@ import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetS
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
   abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
-  withCostChange, type TapToPayRule,
+  withCostChange, yardPermission, type TapToPayRule,
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
@@ -219,6 +219,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const escaping = escape ? escapeOf(state, inst.id) : undefined;
   // Retrace (D599): from the graveyard, for the printed cost and a land card discarded.
   const retrace = action.retrace === true;
+  // Under a permanent's permission (D1287): see `yardPermission`.
+  const yardBy = action.yardBy;
   /*
     An adventurer being cast as its creature half, out of exile, because its adventure resolved.
 
@@ -378,6 +380,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (graveyardFodder(state, action.by, inst.id, escaping.exile).length < escaping.exile) {
       throw new EngineError('RULE_NOT_APPLICABLE',
         `escape asks for ${escaping.exile} other cards in your graveyard`);
+    }
+  } else if (yardBy !== undefined) {
+    if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
+    }
+    if (yardPermission(state, action.by, inst.id) !== yardBy) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} cannot be cast from your graveyard that way now`);
     }
   } else if (retrace) {
     if (script?.retrace !== true) {
@@ -640,7 +649,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       not that one — and a card that has dash and not evoke would otherwise be refused for the
       keyword it does not have rather than for the two it was sent.
     */
-    if (flashback || escape || retrace || foretold || offered || kicked || boughtBack
+    if (flashback || escape || retrace || yardBy !== undefined || foretold || offered || kicked || boughtBack
       || [evoked, dashed, bestowed, spectacled, overloaded, commanderFree, pitchCast, awakened, prototyped, impended, altCast].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
@@ -1062,6 +1071,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay, undefined,
     { spell: characteristics.typeLine, commander: inst.isCommander === true }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
+  // The permission is spent (D1287): one spell a turn through each permanent.
+  if (yardBy !== undefined) next = { ...next, yardCastsUsed: { ...(next.yardCastsUsed ?? {}), [yardBy]: next.turn } };
   /*
     Cavern of Souls and Delighted Halfling (D783): "Spend this mana only to cast …, and that spell
     can't be countered". The spell can't be countered when a source tapped for it made mana its

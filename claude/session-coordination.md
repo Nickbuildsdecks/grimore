@@ -203,3 +203,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1283 pushed in 5257a6a. D1284 enters with X counters, where X is … / a number of counters equal to … (entersWith.per) (done).
 - D1284 pushed in 27c1c54. D1285 CardScript.othersEnterWith, applied in the arrival pass (automation.ts), with CR 614.12 batch rule (done).
 - D1285 pushed in f1761aa. D1286 Metallic Mimic: othersEnterWith.fits takes the source; of the chosen type (done).
+- D1286 pushed in aaecd6f. D1287 cast from graveyard by permission (CardScript.castsFromGraveyard, yardPermission in legalActions, yardBy on the cast action, GameState.yardCastsUsed; bot.ts passes yardBy) (done).
