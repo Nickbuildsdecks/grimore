@@ -65258,3 +65258,52 @@ Read whole now: Neoform.
 Faults injected by hand: 1, caught: the counter dropped.
 
 Coverage: 17,254 of 31,900 cards (+1 over D1290's 17,253), 40,005 of 59,888 lines (+1).
+
+## D1292 — A sacrifice made by the effect, then a search one mana value up: Enigmatic Incarnation, Vivien on the Hunt
+
+"At the beginning of your end step, you may sacrifice another enchantment. If you do, search your
+library for a creature card with mana value equal to 1 plus the sacrificed enchantment's mana
+value, put that card onto the battlefield, then shuffle." Vivien on the Hunt's +2 is the same with a
+creature.
+
+D1265 reads the climb only behind a sacrifice paid as a cost, where the stack object records what
+was sacrificed. Here the sacrifice is X of "you may X. If you do, Y". That reader refused the shape
+because X and Y both ask a question, and Y's question cannot be held back on X's answer being
+empty. This Y needs no holding back. Its candidates are measured from X's answer, so an empty
+answer leaves nothing to find, and Y's effect still runs only if X happened.
+
+The changes:
+- `CardsDecisionSpec.climbFromFirstAnswer`: the climb measured from the first card an answer of this
+  resolution named (still on the battlefield when the search is asked). The first answer that names
+  a card, not `answers[0]`: a "you may" asks its yes-or-no ahead of the sacrifice, and that answer
+  names nothing.
+- The "If you do" reader reads Y with the cost-sacrifice flag on, for this alone: X must be a
+  sacrifice asking once, every question Y asks must be a climb, and Y may name "sacrificed" only
+  once. A Y that also says "the sacrificed creature's power" would read that from a stack object
+  that recorded nothing, a silent 0, so it is not read this way.
+- Y's effect reads its own answers, which come after X's. Without this, Y's search took X's answer
+  as the card found, and returned the sacrificed enchantment from the graveyard to the battlefield.
+  The exploratory test caught it before any assertion was written.
+- The climb also takes "the sacrificed enchantment's".
+
+Pin updated: D1265 pinned a made-up effect-paid Vivien line as unread. It now reads whole, and the
+bare search with nothing sacrificed at all still does not.
+
+Read whole now: Enigmatic Incarnation. Vivien on the Hunt's +2 reads; its +1 does not yet. Iron
+Man's attack trigger ("create a Treasure token, then you may sacrifice …") is not read yet.
+
+**Tests.** 5 engine tests, and the D1265 pin changed:
+- It reads whole.
+- A 2 sacrificed offers only the threes; the one picked enters, and the enchantment is in the
+  graveyard.
+- "No" sacrifices nothing and finds nothing.
+- With no other enchantment, "Yes" sacrifices nothing, so nothing is offered or found.
+- Vivien's +2 reads, and a Y that also names the sacrificed creature's power does not.
+
+Faults injected by hand: 4, all caught.
+- The flag ignored, so the climb is measured from the empty stack record.
+- `answers[0]` instead of the first answer naming a card.
+- Y reading X's answers.
+- The "sacrificed only once" guard dropped.
+
+Coverage: 17,255 of 31,900 cards (+1 over D1291's 17,254), 40,007 of 59,888 lines (+2).
