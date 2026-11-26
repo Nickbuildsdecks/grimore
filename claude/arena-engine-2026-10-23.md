@@ -48136,3 +48136,36 @@ Faults injected by hand: 9 in the engine, all caught.
   Steaming Sauna fixture was added so that it fails).
 
 Coverage: 17,255 of 31,900 cards (+0 over D1297's 17,255), 40,008 of 59,888 lines (+0).
+
+## D1299 — Eerie, and fully unlocking a Room
+
+"Eerie — Whenever an enchantment you control enters and whenever you fully unlock a Room, <effect>."
+Seventeen legal cards from Duskmourn: Balemurk Leech, Entity Tracker, Gremlin Tamer and kin.
+
+- A Room is fully unlocked when its last locked door is unlocked. `unlockDoor` raises
+  `room-fully-unlocked` then, after the door's own event. Every permanent sees it, and "you" is
+  whoever unlocked the door.
+- The reader takes the line without "and whenever you fully unlock a Room". It reads the rest as
+  the enchantment-enters trigger it is, then gives the same trigger again on the second moment. Two
+  triggers with one effect, as D635's "enters or is turned face up" is: `TriggerDef.on` is one
+  event.
+- **A misfiled word, found on the way:** "eerie" was on the keyword list (`KEYWORD_ABILITY_NAMES`),
+  so its label was never taken off the line, and every Eerie trigger was unread whatever came after
+  it. Eerie is an ability word (CR 207.2c), like Magecraft, and comes off that list.
+
+Read whole now: 12 of the 17. The other five have another unread part: "Whenever ~ or another
+enchantment …", a convoke grant, a first-and-second-time count, an "as though it didn't have
+defender", and a choice on entering.
+
+**Tests.** 4 engine tests:
+- It reads whole, as two triggers: an enchantment entering, and a Room fully unlocked.
+- An enchantment of yours entering: each opponent loses 1.
+- A Room's first door unlocked does nothing; its last door does.
+- An opponent fully unlocking their own Room is not "you".
+
+Faults injected by hand: 3, all caught.
+- "You" not checked.
+- Raised on every unlock, not only the last.
+- The second trigger dropped.
+
+Coverage: 17,267 of 31,900 cards (+12 over D1298's 17,255), 40,021 of 59,888 lines (+13).
