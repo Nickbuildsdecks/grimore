@@ -704,6 +704,15 @@ export function dealDamage(
         // state-based actions the only place something actually dies.
         ...(deadly ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
       });
+    /*
+      And infect's and wither's counters are put on (D1300): written above rather than through
+      `addCounters`, so they were never announced, and no "-1/-1 counters are put on" trigger saw
+      them. Put by the source's controller (CR 702.80c).
+    */
+    if ((infect || withers) && left > 0 && inst.zone === 'battlefield') {
+      const putter = opts.source === null ? undefined : next.instances[opts.source]?.zoneSeat;
+      next = { ...next, countersPut: [...(next.countersPut ?? []), { card: inst.id, counter: '-1/-1', amount: left, ...(putter === undefined ? {} : { by: putter }) }] };
+    }
   }
   if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
   return recordDamage(next, target, left, opts.source, opts.controller);
@@ -2592,8 +2601,15 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
     as putting them on (CR 122.6).
   */
   // And becoming monstrous (D992), for "When ~ becomes monstrous".
-  if (amount > 0 && inst.zone === 'battlefield' && (key === '+1/+1' || key === '-1/-1' || key === 'loyalty' || key === MONSTROUS)) {
-    return { ...placed, countersPut: [...(placed.countersPut ?? []), { card: id, counter: key }] };
+  /*
+    And every other kind a card can name (D1300): "Whenever you put one or more counters on a
+    creature" is any kind, and Kate Stewart's are time counters. Not the engine's own markers.
+  */
+  if (amount > 0 && inst.zone === 'battlefield' && (!MARKERS.has(key) || key === MONSTROUS)) {
+    return {
+      ...placed,
+      countersPut: [...(placed.countersPut ?? []), { card: id, counter: key, amount, ...(state.countersBy === undefined ? {} : { by: state.countersBy }) }],
+    };
   }
   return placed;
 }

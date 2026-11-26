@@ -1710,7 +1710,12 @@ function triggerMatches(
       if (on === 'self' && !isSubject) return false;
       if (on === 'another' && isSubject) return false;
       if (want.of === 'you' && e.subjectSeat !== sourceSeat) return false;
+      // "A creature you don't control" (D1300).
+      if (want.of === 'not-you' && e.subjectSeat === sourceSeat) return false;
       if (want.what === 'creature' && e.subjectIsCreature !== true) return false;
+      if (want.what === 'planeswalker' && e.subjectIsPlaneswalker !== true) return false;
+      // "Whenever **you** put" (D1300): the seat that put them.
+      if (want.byYou === true && actorSeat !== sourceSeat) return false;
       return true;
     }
     case 'attack-declared': {
@@ -2542,6 +2547,9 @@ function fireTrigger(
     // And a batch of discards, how many cards (D1271): Marauding Mako's "that many +1/+1 counters".
     ...(event.kind === 'discards' && event.batch === true && trigger.on.kind === 'discards' && trigger.on.batch === true
       && event.amount !== undefined
+      ? { eventAmount: event.amount } : {}),
+    // And how many counters were put (D1300): Nest of Scarabs' "that many", Terrasymbiosis's.
+    ...(event.kind === 'counters-put' && event.amount !== undefined
       ? { eventAmount: event.amount } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
     ...(event.kind === 'attacks' && event.opponentsAttacked !== undefined
@@ -4964,13 +4972,17 @@ function settle(state: GameState, before: GameState): GameState {
       if (inst === undefined) continue;
       next = raise(next, { kind: 'explores', subjectSeat: inst.zoneSeat }, inst.zoneSeat, card);
     }
-    for (const { card, counter } of countered) {
+    for (const { card, counter, by, amount } of countered) {
       const inst = next.instances[card];
       if (inst === undefined || inst.zone !== 'battlefield') continue;
+      const ch = characteristicsOf(next, inst);
+      // Who put them (D1300): recorded where they were put; the permanent's controller otherwise.
       next = raise(next, {
         kind: 'counters-put', counter, subjectSeat: inst.zoneSeat,
-        subjectIsCreature: characteristicsOf(next, inst).isCreature,
-      }, inst.zoneSeat, card);
+        subjectIsCreature: ch.isCreature,
+        subjectIsPlaneswalker: hasType(ch.typeLine, 'planeswalker'),
+        ...(amount === undefined ? {} : { amount }),
+      }, by ?? inst.zoneSeat, card);
     }
     /*
       And sacrifices (D570), before the deaths below: the sacrifice is the act and the death is
@@ -6728,7 +6740,19 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
 }
 
 /** Finishes a resolution: the effect runs, and a permanent arrives on the battlefield. */
+/**
+ * Every stack object's resolution, with its controller recorded as the one putting any counters it
+ * puts (D1300, `GameState.countersBy`), and the record cleared after.
+ */
 function completeResolution(
+  state: GameState, object: StackObject, answers: readonly DecisionAnswer[],
+): { state: GameState; message: string } {
+  const done = resolveObject({ ...state, countersBy: object.controller }, object, answers);
+  const { countersBy: _put, ...rest } = done.state;
+  return { ...done, state: rest };
+}
+
+function resolveObject(
   state: GameState, object: StackObject, answers: readonly DecisionAnswer[],
 ): { state: GameState; message: string } {
   let next = popStack({ ...state, pendingDecision: null }, object.id);

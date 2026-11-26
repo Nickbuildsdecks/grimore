@@ -1170,7 +1170,19 @@ export interface AutomationState {
    * counters are put on", which is one event however many counters the call added. Drained by
    * `settle` into `counters-put`. Optional, so a game saved before it existed loads.
    */
-  readonly countersPut?: readonly { readonly card: string; readonly counter: string }[];
+  readonly countersPut?: readonly {
+    readonly card: string; readonly counter: string;
+    /** Who put them (D1300): the controller of what was resolving, or of a wither or infect source. */
+    readonly by?: SeatIndex;
+    /** How many (D1300), after Hardened Scales and its kin: "that many". */
+    readonly amount?: number;
+  }[];
+  /**
+   * Who is putting counters right now (D1300): the controller of the stack object resolving, set by
+   * `completeResolution` for the length of it and cleared after. `addCounters` writes it onto each
+   * `countersPut` entry, for "Whenever **you** put one or more counters on …".
+   */
+  readonly countersBy?: SeatIndex;
   /**
    * Creatures that explored and were not yet announced (D1119), in order. `settle` raises one
    * `explores` event for each, for "Whenever a creature you control explores" (Lurking Chupacabra).

@@ -1690,13 +1690,18 @@ export type TriggerEvent =
       readonly counter?: string;
       /** `self` (the default): this permanent. `another`: anything else. `any`: either. */
       readonly countersOn?: 'self' | 'another' | 'any';
-      /** Whose permanent, from the watcher's seat. Absent: anybody's. */
-      readonly of?: 'you';
-      /** `creature`: only a creature. Absent: any permanent. */
-      readonly what?: 'creature';
-      /** Set by the engine: the permanent's controller, and whether it is a creature. */
+      /** Whose permanent, from the watcher's seat. Absent: anybody's. `not-you` (D1300): somebody else's. */
+      readonly of?: 'you' | 'not-you';
+      /** `creature`: only a creature. `planeswalker` (D1300): only a planeswalker. Absent: any permanent. */
+      readonly what?: 'creature' | 'planeswalker';
+      /** "Whenever **you** put one or more counters on" (D1300): only counters the watcher's controller put. */
+      readonly byYou?: true;
+      /** Set by the engine: the permanent's controller, and whether it is a creature or a planeswalker. */
       readonly subjectSeat?: SeatIndex;
       readonly subjectIsCreature?: boolean;
+      readonly subjectIsPlaneswalker?: boolean;
+      /** Set by the engine (D1300): how many were put, for "that many". */
+      readonly amount?: number;
     }
   /**
    * "Whenever you draw a card" (CR 121.2), and the opponents' half of it.

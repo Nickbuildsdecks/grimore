@@ -47837,6 +47837,71 @@ describe('Eerie: an enchantment entering, and fully unlocking a Room (D1299)', (
   });
 });
 
+describe('"Whenever you put one or more counters on …": who put them, and how many (D1300)', () => {
+  const C = (name: string, text: string, p = '1', t = '1') => ({ name, type_line: 'Creature — Snake', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: p, toughness: t });
+  const S = (name: string, text: string) => ({ name, type_line: 'Sorcery', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal' });
+  const ROWS = [
+    C('Test Hapatra', 'Whenever you put one or more -1/-1 counters on a creature, create a 1/1 green Snake creature token with deathtouch.'),
+    C('Test Nest', 'Whenever you put one or more -1/-1 counters on a creature, create that many 1/1 black Insect creature tokens.'),
+    C('Test Patron', "Whenever you put one or more counters on a creature you don't control, draw a card."),
+    C('Test Withering', 'Wither\n{T}: Test Withering deals 1 damage to target creature.'),
+    C('Test Ox', '', '4', '4'),
+    S('Test Shrivel', 'Put two -1/-1 counters on target creature.'),
+    S('Test Feed', 'Put a +1/+1 counter on target creature.'),
+  ];
+  const deck = customDeck({ id: 'd1300', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 39 }], data: ROWS as never[] });
+  const table = (opts: { hand?: string[]; mine?: string[]; theirs?: string[]; theirHand?: string[]; first?: SeatIndex }) => advanceTo(arena({
+    decks: { 0: 'd1300', 1: 'd1300' }, deckSpecs: { d1300: deck.deck },
+    hands: { 0: opts.hand ?? [], 1: opts.theirHand ?? [] },
+    battlefield: { 0: ['Swamp', ...(opts.mine ?? [])], 1: ['Swamp', 'Test Ox', ...(opts.theirs ?? [])] }, turn: 3, firstSeat: opts.first ?? 0,
+  }), 'precombat-main');
+  const count = (s: GameState, seat: SeatIndex, name: string) => ids(s, seat, 'battlefield').filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === name).length;
+  const cast = (s: GameState, by: SeatIndex, name: string, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by, card: find(s, by, 'hand', name), targets: [{ kind: 'card', id: target }],
+  } as Action)), 20);
+
+  it('reads them', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS.slice(0, 3)) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('your spell putting -1/-1 counters on their creature: a Snake', () => {
+    let s = table({ hand: ['Test Shrivel'], mine: ['Test Hapatra'] });
+    s = cast(s, 0, 'Test Shrivel', find(s, 1, 'battlefield', 'Test Ox'));
+    expect(count(s, 0, 'Snake')).toBe(1);
+  });
+
+  it('their spell putting -1/-1 counters on your creature is not you: no Snake', () => {
+    let s = table({ mine: ['Test Hapatra', 'Test Ox'], theirHand: ['Test Shrivel'], first: 1 });
+    s = cast(s, 1, 'Test Shrivel', find(s, 0, 'battlefield', 'Test Ox'));
+    expect(s.instances[find(s, 0, 'battlefield', 'Test Ox')]!.counters['-1/-1']).toBe(2);
+    expect(count(s, 0, 'Snake')).toBe(0);
+  });
+
+  it('wither damage puts its counters on, and they are yours', () => {
+    let s = table({ mine: ['Test Hapatra', 'Test Withering'] });
+    const ox = find(s, 1, 'battlefield', 'Test Ox');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Withering'), abilityIndex: 0, targets: [{ kind: 'card', id: ox }] } as Action)), 20);
+    expect(s.instances[ox]!.counters['-1/-1']).toBe(1);
+    expect(count(s, 0, 'Snake')).toBe(1);
+  });
+
+  it('"that many": two counters, two Insects', () => {
+    let s = table({ hand: ['Test Shrivel'], mine: ['Test Nest'] });
+    s = cast(s, 0, 'Test Shrivel', find(s, 1, 'battlefield', 'Test Ox'));
+    expect(count(s, 0, 'Insect')).toBe(2);
+  });
+
+  it('"a creature you don\'t control": theirs draws, yours does not', () => {
+    let s = table({ hand: ['Test Feed', 'Test Feed'], mine: ['Test Patron', 'Test Ox'] });
+    const hand = ids(s, 0, 'hand').length;
+    s = cast(s, 0, 'Test Feed', find(s, 0, 'battlefield', 'Test Ox'));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+    s = cast(s, 0, 'Test Feed', find(s, 1, 'battlefield', 'Test Ox'));
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

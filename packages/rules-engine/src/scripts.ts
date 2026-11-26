@@ -20330,12 +20330,38 @@ const TRIGGER_SHAPES: readonly ({
   },
   /*
     "Whenever you put one or more +1/+1 counters on this creature" (D881, Exemplar of Light): the same
-    event. The event does not record who put the counters, so an opponent's effect putting them on it
-    would trigger it too; no common card does that to another player's creature.
+    event. Since D1300 the event records who put the counters, so only yours.
   */
   {
     prologue: (self) => new RegExp(`^Whenever you put one or more \\+1/\\+1 counters on ${self}, (.+)$`, 'i'),
-    on: [{ kind: 'counters-put', counter: '+1/+1' }],
+    on: [{ kind: 'counters-put', counter: '+1/+1', byYou: true }],
+  },
+  /*
+    "Whenever you put one or more [kind] counters on <a permanent>" (D1300): Hapatra, Vizier of Poisons
+    ("-1/-1 counters on a creature"), Ant-Man and Knight of Wundagore ("a +1/+1 counter on [another]
+    creature"), Generous Patron ("counters on a creature you don't control"), Inspired Tethermage
+    ("loyalty counters on a planeswalker"), Kate Stewart ("time counters on a permanent you
+    control"). One event per placement, as D633's.
+  */
+  {
+    prologue: () => /^Whenever you put (?:a|one or more) (?:(?<kind>[+-]\d+\/[+-]\d+|loyalty|time|lore|oil|shield|stun) )?counters? on (?<subject>a creature|another creature|a creature you control|another creature you control|a creature you don't control|a permanent you control|a planeswalker), (?<clause>.+)$/i,
+    from: (matched) => {
+      const kind = matched.groups?.['kind']?.toLowerCase();
+      const subject = matched.groups!['subject']!.toLowerCase();
+      return [{
+        kind: 'counters-put' as const,
+        ...(kind === undefined ? {} : { counter: kind }),
+        countersOn: subject.startsWith('another') ? 'another' as const : 'any' as const,
+        ...(subject.includes('planeswalker') ? { what: 'planeswalker' as const } : subject.includes('creature') ? { what: 'creature' as const } : {}),
+        ...(subject.endsWith("you don't control") ? { of: 'not-you' as const } : subject.endsWith('you control') ? { of: 'you' as const } : {}),
+        byYou: true as const,
+      }];
+    },
+  },
+  // And on itself, any kind (D1300): "Whenever you put one or more -1/-1 counters on ~".
+  {
+    prologue: (self) => new RegExp(`^Whenever you put (?:a|one or more) ([+-]\\d+/[+-]\\d+|loyalty|time|lore) counters? on ${self}, (.+)$`, 'i'),
+    from: (matched) => [{ kind: 'counters-put' as const, counter: matched[1]!.toLowerCase(), byYou: true as const }],
   },
   {
     prologue: () => /^Whenever one or more \+1\/\+1 counters are put on (another )(creature|permanent) you control, (?<clause>.+)$/i,
@@ -25041,7 +25067,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       // And how many attacked (D1261): "Whenever one or more Dragons you control attack, draw that many cards".
       || k.kind === 'attack-declared'
       // And how many cards a batch discarded (D1271): "Whenever you discard one or more cards, … that many".
-      || (k.kind === 'discards' && k.batch === true))
+      || (k.kind === 'discards' && k.batch === true)
+      // And how many counters (D1300): "Whenever you put one or more -1/-1 counters on a creature, … that many".
+      || k.kind === 'counters-put')
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
