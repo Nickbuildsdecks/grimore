@@ -31,7 +31,7 @@ import {
   BLITZED,
   SURGED,
   SQUADDED,
-  addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard,
+  addCounters, addToPool, addTokens, grantExtraTurns, battlefield, copyCardInExile, bounceToHand, cardTargets, chosenCard, MARKERS,
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
@@ -31863,6 +31863,8 @@ function readEffect(
     // `where` goes only here and to the conjunction below: see `SubjectZone`.
     ?? selfEffect(clause, name, where)
     ?? targetedEffect(clause, name)
+    // Counters taken off as an effect (D1302).
+    ?? removeCountersEffect(clause, name)
     // Last, and the docblock on `conjoinedEffect` is about why: a conjunction any reader above
     // understands as one clause must keep that reading.
     ?? conjoinedEffect(clause, name, where)
@@ -31871,6 +31873,42 @@ function readEffect(
     ?? anotherPlayersMay(clause, name, where)
     ?? xAsPaid(clause, name, where)
     ?? null;
+}
+
+/**
+ * Counters taken off as an effect rather than as a cost (D1302): "remove a time counter from ~",
+ * "remove all -1/-1 counters from ~", "{1}: Remove a -1/-1 counter from target creature", "you may
+ * remove a slumber counter from ~", "remove all counters from target permanent". The cost form has
+ * read since D558; the effect had no reader at all.
+ *
+ * A number or "all", of one named kind, or "all counters" of every kind. A bare "a counter", which
+ * leaves the kind to the player, stays unread. Fewer than asked comes off when fewer are there, and
+ * none when none are. The engine's own markers (a regeneration shield, "kicked") are not counters,
+ * so "all counters" leaves them.
+ */
+function removeCountersEffect(clause: string, name: string): ReadEffect | null {
+  const m = new RegExp(`^remove (a|an|one|two|three|four|five|six|\\d+|all) (?:([+-]\\d+/[+-]\\d+|[a-z]+) )?counters? from (${selfRef(name)}|target .+)$`, 'i')
+    .exec(plain(clause).trim().replace(/\.$/, ''));
+  if (m === null) return null;
+  const word = m[1]!.toLowerCase();
+  const kind = m[2]?.toLowerCase();
+  if (kind === undefined && word !== 'all') return null;
+  const count = word === 'all' ? Infinity : countFrom(word);
+  if (count === null) return null;
+  const take = (state: GameState, id: string): GameState => {
+    const inst = state.instances[id];
+    if (inst === undefined) return state;
+    if (kind === undefined) {
+      const kept = Object.fromEntries(Object.entries(inst.counters).filter(([key]) => MARKERS.has(key)));
+      return withInstance(state, id, { counters: kept });
+    }
+    const off = Math.min(inst.counters[kind] ?? 0, count);
+    return off > 0 ? addCounters(state, id, kind, -off) : state;
+  };
+  if (!/^target /i.test(m[3]!)) return { effect: (c) => take(c.state, c.source) };
+  const spec = targetSpecFrom(m[3]!, /\byou control\b/i.test(m[3]!));
+  if (spec === null || !pointsAtAPermanent(spec)) return null;
+  return { targets: [spec], effect: (c) => foldCardTargets(c, take) };
 }
 
 /**

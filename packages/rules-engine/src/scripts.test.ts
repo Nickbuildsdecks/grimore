@@ -47949,6 +47949,55 @@ describe('"Do this only once each turn" (D1301)', () => {
   });
 });
 
+describe('counters removed as an effect (D1302)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Artifact Creature — Golem', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '4', toughness: '4' });
+  const ROWS = [
+    C('Test Cleanser', '{T}: Remove a -1/-1 counter from target creature.'),
+    C('Test Purger', '{T}: Remove all +1/+1 counters from Test Purger.'),
+    C('Test Wiper', '{T}: Remove all counters from target permanent.'),
+  ];
+  const deck = customDeck({ id: 'd1302', name: 'Remove', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (mine: string[], theirs: string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1302', 1: 'd1302' }, deckSpecs: { d1302: deck.deck },
+    battlefield: { 0: mine, 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const use = (s: GameState, card: string, target?: string) => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card, abilityIndex: 0, ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action)), 20);
+
+  it('reads them; a bare "a counter" stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const bare = compileCard(C('Test Vague', '{T}: Remove a counter from target permanent.') as never);
+    expect(bare.ok && bare.unread.length).toBeGreaterThan(0);
+  });
+
+  it('one -1/-1 counter off a target, of two', () => {
+    let s = table(['Test Cleanser', 'Test Purger']);
+    const target = find(s, 0, 'battlefield', 'Test Purger');
+    s = addCounters(s, target, '-1/-1', 2);
+    s = use(s, find(s, 0, 'battlefield', 'Test Cleanser'), target);
+    expect(s.instances[target]!.counters['-1/-1']).toBe(1);
+  });
+
+  it('all of one kind off itself, the other kinds kept', () => {
+    let s = table(['Test Purger']);
+    const self = find(s, 0, 'battlefield', 'Test Purger');
+    s = addCounters(addCounters(s, self, '+1/+1', 3), self, 'oil', 2);
+    s = use(s, self);
+    expect(s.instances[self]!.counters['+1/+1']).toBeUndefined();
+    expect(s.instances[self]!.counters['oil']).toBe(2);
+  });
+
+  it('all counters off a target, every kind', () => {
+    let s = table(['Test Wiper'], ['Test Purger']);
+    const target = find(s, 1, 'battlefield', 'Test Purger');
+    s = addCounters(addCounters(s, target, '+1/+1', 3), target, 'oil', 2);
+    s = use(s, find(s, 0, 'battlefield', 'Test Wiper'), target);
+    expect(Object.keys(s.instances[target]!.counters)).toEqual([]);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

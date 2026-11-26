@@ -218,3 +218,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1298 pushed in 250fa9d. D1299 Eerie: room-fully-unlocked event (scriptTypes.ts, automation.ts triggerMatches, autoActions.ts unlockDoor), the Eerie reader in triggerFromLine, 'eerie' off KEYWORD_ABILITY_NAMES (scripts.ts).
 - D1299 pushed in f496296, checkpoint 5e9ad12. D1300 counters put by you: GameState.countersBy (completeResolution wrapper), countersPut by/amount (effects.ts addCounters and infect/wither damage), counters-put byYou/not-you/planeswalker (automation.ts, scriptTypes.ts), readers (scripts.ts).
 - D1300 pushed in b9b7ae7. D1301 "do this only once each turn": triggerRestriction and the trigger's condition/effect (scripts.ts).
+- D1301 pushed in 25b29fb. D1302 counters removed as an effect: removeCountersEffect in the readEffect chain (scripts.ts).
