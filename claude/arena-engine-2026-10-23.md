@@ -47050,3 +47050,44 @@ Faults injected by hand: 3, all caught.
 - "N plus" back to "the number of …" only.
 
 Coverage: 17,135 of 31,900 cards (+4 over D1267's 17,131), 39,825 of 59,888 lines (+4).
+
+## D1269 — Five more counts: life total, permanent cards in a graveyard, different powers, players with more lands, a commander's mana value
+
+`boardCount` (and through it every "where X is …" reader) takes five more measures, each counted
+from the board as the effect runs (`moreMeasures`):
+- "your life total" (Storm Herd, Ajani, Caller of the Pride, Death's Shadow);
+- "the number of permanent cards in your graveyard", by the printed type line;
+- "the number of different powers among creatures you control" (Celebrate the Harvest);
+- "the number of players who control [at least two] more lands than you" (Oreskos Explorer,
+  Surveyor's Scope), opponents only, eliminated seats not counted;
+- "the greatest mana value of a commander you own on the battlefield or in the command zone", 0
+  with none there.
+
+`countTailOf`'s list of announced measures gains the two that do not begin "the number of".
+
+Read whole now include Storm Herd, Ajani, Caller of the Pride, Celebrate the Harvest, Surveyor's
+Scope and Oreskos Explorer. Cloudkill and Majestic Genesis print the commander measure on readers
+that do not take a where-X tail yet and stay unread.
+
+**Pins.** Ajani, Caller of the Pride left the D577 table of planeswalkers whose printed ultimate is
+unread: all three abilities now agree with the hand-written card in cost and description, in a test
+of its own. Reading whole, it is compared by `compiled-vs-written` for the first time, which finds
+one difference: the compiled +1 target carries a `filter` function the hand-written one leaves out.
+Added to `DISAGREE` with that reason; the hand-written script is the one played.
+
+**Tests.** 6 engine tests:
+- All six phrasings read whole.
+- Your life total: the life gained equals the life the player had.
+- Permanent cards in the graveyard: a creature and a land count, an instant does not.
+- Different powers: two 2s and a 5 are two.
+- Players with more lands, and with at least two more, both ways.
+- A commander's mana value: a 5 and a 2 as commanders give 5, none gives 0.
+
+Faults injected by hand: 5, all caught.
+- An instant counted as a permanent card.
+- Different powers counted with duplicates.
+- "At least two more" read as "more".
+- A commander of mana value 5 or more ignored.
+- The life total off by one.
+
+Coverage: 17,142 of 31,900 cards (+7 over D1268's 17,135), 39,833 of 59,888 lines (+8).
