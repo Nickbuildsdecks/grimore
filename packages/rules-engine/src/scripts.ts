@@ -37954,8 +37954,11 @@ function costModifierFromLine(line: string, name: string): Partial<CardScript> |
       }],
     };
   }
-  const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+)\} (less|more) to cast$/i.exec(printed);
+  const m = /^(.*?)spells(?: and (.+?) spells)?( you cast| your opponents cast)? cost \{(\d+|[WUBRG])\} (less|more) to cast$/i.exec(printed);
   if (m === null) return null;
+  // A coloured symbol only as an increase (D1313): the Leeches. Nothing prints "{W} less".
+  const colouredUp = /^[WUBRG]$/i.test(m[4]!) ? m[4]!.toUpperCase() as ManaType : null;
+  if (colouredUp !== null && m[5]!.toLowerCase() !== 'more') return null;
   // A list of kinds (D803): "Aura and Equipment spells" (Danitha Capashen), "instant and sorcery spells".
   const listed = m[1]!.trim() === '' ? [] : m[1]!.trim().split(/\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+/);
   const kinds = listed.length > 1 ? listed.map((part) => spellKindTest(part)) : null;
@@ -37964,12 +37967,13 @@ function costModifierFromLine(line: string, name: string): Partial<CardScript> |
   const second = m[2] === undefined ? null : spellKindTest(m[2]);
   if (first === null || (m[2] !== undefined && second === null)) return null;
   const whose = m[3] === undefined ? 'everyone' as const : /opponents/i.test(m[3]) ? 'opponents' as const : 'controller' as const;
-  const amount = Number(m[4]);
+  const amount = colouredUp === null ? Number(m[4]) : 0;
   return {
     costModifiers: [{
       whose,
       applies: (_state, _caster, card) => first(card) || (second !== null && second(card)),
       generic: m[5]!.toLowerCase() === 'less' ? -amount : amount,
+      ...(colouredUp === null ? {} : { coloured: [colouredUp] }),
       description: `${name} — ${printed.charAt(0).toLowerCase()}${printed.slice(1)}`,
     }],
   };

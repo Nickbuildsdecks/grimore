@@ -84,6 +84,11 @@ export interface LegalPlay {
    * shows the printed cost and this beside it, with `costNote` saying which permanent is doing it.
    */
   readonly costChange?: number;
+  /**
+   * Coloured mana the table adds to this spell's cost (D1313): a Leech's "{W}". Shown beside the
+   * printed cost, as `costChange` is, so the play does not read cheaper than it is.
+   */
+  readonly costExtra?: string;
   /** "Instant and sorcery spells you cast cost {1} less", in the card's own words. */
   readonly costNote?: string;
   /**
@@ -2430,7 +2435,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ];
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def, id);
-      const altCost = withCostChange(parseManaCost(alternative.cost), altChange.generic);
+      const altCost = withCostChange(parseManaCost(alternative.cost), altChange);
       const altTargets = playableTargets(state, alternative.specs, seat, id);
       if (altCost.unsupported !== undefined || !altTargets.ok
         || !canAfford(poolOf(state, seat), altCost, sources)) continue;
@@ -2461,7 +2466,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       const emergeChange = costChangeFor(state, seat, def, id);
       const emergeTargets = playableTargets(state, specsFor(script), seat, id);
       const fodder = emergeTargets.ok
-        ? emergeOptions(state, seat, id, script.emerge.cost, (text) => canAfford(poolOf(state, seat), withCostChange(parseManaCost(text), emergeChange.generic), sources))
+        ? emergeOptions(state, seat, id, script.emerge.cost, (text) => canAfford(poolOf(state, seat), withCostChange(parseManaCost(text), emergeChange), sources))
         : [];
       if (fodder.length > 0) {
         out.push({
@@ -2600,7 +2605,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       ? undefined
       : playableTargets(state, specsFor(script), seat, id).candidates.flat();
     const change = costChangeFor(state, seat, def, id, aimable);
-    const cost: ManaCost = withCostChange(taxed, change.generic);
+    const cost: ManaCost = withCostChange(taxed, change);
     /*
       Delve, which takes generic mana off the cost and pays for it out of the graveyard
       (CR 702.112).
@@ -2674,9 +2679,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const taxOn = fromCommand && tax > 0 ? { commanderTax: tax } : {};
     // Only when it actually moved the number: a Thalia taxing a creature spell changes nothing,
     // and a note saying so would be noise on every card in the deck.
-    const changeOn = cost.generic === taxed.generic
-      ? {}
-      : { costChange: cost.generic - taxed.generic, costNote: change.notes[0] ?? '' };
+    const changeOn = {
+      ...(cost.generic === taxed.generic ? {} : { costChange: cost.generic - taxed.generic }),
+      // And a Leech's coloured surcharge (D1313).
+      ...((change.coloured ?? []).length === 0 ? {} : { costExtra: change.coloured!.map((type) => `{${type}}`).join('') }),
+      ...(cost.generic === taxed.generic && (change.coloured ?? []).length === 0 ? {} : { costNote: change.notes[0] ?? '' }),
+    };
     /*
       X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
       {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
@@ -2744,7 +2752,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         const withEntwine = parseManaCost(`${def?.manaCost ?? ''}${entwine.cost}`);
         const entwinedCost: ManaCost = withCostChange(
           fromCommand && tax > 0 ? { ...withEntwine, generic: withEntwine.generic + tax } : withEntwine,
-          change.generic,
+          change,
         );
         if (ok && withEntwine.unsupported === undefined && canAfford(poolOf(state, seat), entwinedCost, sources)) {
           out.push({
@@ -2777,7 +2785,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     if (earns !== undefined && !offered && aimable !== undefined) {
       const full = costChangeFor(state, seat, def, id, []);
       const fullAffordable = full.generic === change.generic || (script?.delve !== true && tapRule === null
-        && canAfford(poolOf(state, seat), withCostChange(taxed, full.generic), restrictedMana
+        && canAfford(poolOf(state, seat), withCostChange(taxed, full), restrictedMana
           ? manaSources(state, seat, payingFor(state, id, def))
           : sources));
       const at = fullAffordable ? -1 : open.findIndex((list) => list.some((t) => earns(state, seat, t, id)));
@@ -2910,7 +2918,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         fromCommand && tax > 0
           ? { ...withKicker, generic: withKicker.generic + tax }
           : withKicker,
-        change.generic,
+        change,
       );
       // A multikicker paid more times than the mana covers is not offered, nor any count above it.
       if (kicking.count !== undefined && !(withKicker.unsupported === undefined && canAfford(poolOf(state, seat), kickedCost, sources))) break;
@@ -2966,7 +2974,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         fromCommand && tax > 0
           ? { ...withBuyback, generic: withBuyback.generic + tax }
           : withBuyback,
-        change.generic,
+        change,
       );
       if (withBuyback.unsupported === undefined
         && canAfford(poolOf(state, seat), boughtCost, sources)) {
@@ -3000,7 +3008,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         if (parsed.unsupported !== undefined) break;
         const cost = withCostChange(
           fromCommand && tax > 0 ? { ...parsed, generic: parsed.generic + tax } : parsed,
-          change.generic,
+          change,
         );
         if (!canAfford(poolOf(state, seat), cost, sources)) break;
         out.push({
@@ -3414,11 +3422,13 @@ export function costChangeFor(
    * when one of these passes it, and never when this is absent.
    */
   aimedAt?: readonly Target[],
-): { readonly generic: number; readonly notes: readonly string[] } {
+): CostChange {
   if (def === undefined) return { generic: 0, notes: [] };
   let up = 0;
   let down = 0;
   const notes: string[] = [];
+  // Coloured mana added (D1313): the Leeches.
+  const coloured: ManaType[] = [];
   for (const other of state.seats) {
     // And a commander in its command zone, for the modifiers eminence marks (D1262).
     const commanding = listAt(state, zoneKey(other.index, 'command'))
@@ -3438,6 +3448,7 @@ export function costChangeFor(
         if (times === 0) continue;
         if (mod.generic >= 0) up += mod.generic * times;
         else down -= mod.generic * times;
+        for (let i = 0; i < times; i += 1) coloured.push(...(mod.coloured ?? []));
         notes.push(mod.description);
       }
     }
@@ -3483,15 +3494,33 @@ export function costChangeFor(
     else down -= amount;
     if (amount !== 0) notes.push(conditional.per === undefined ? conditional.description : `${conditional.description}: {${Math.abs(amount)}} ${amount < 0 ? 'less' : 'more'}`);
   }
-  if (up === 0 && down === 0) return { generic: 0, notes: [] };
-  return { generic: up - down, notes };
+  if (up === 0 && down === 0 && coloured.length === 0) return { generic: 0, notes: [] };
+  return { generic: up - down, notes, ...(coloured.length === 0 ? {} : { coloured }) };
+}
+
+/**
+ * What the table does to one spell's cost (CR 601.2f): generic up or down, and the coloured mana a
+ * Leech adds (D1313). `withCostChange` applies both.
+ */
+export interface CostChange {
+  readonly generic: number;
+  readonly notes: readonly string[];
+  readonly coloured?: readonly ManaType[];
 }
 
 /** Applies a cost change to a parsed cost, taking generic down to nought and no further. */
-export function withCostChange(cost: ManaCost, change: number): ManaCost {
-  if (change === 0) return cost;
-  const generic = Math.max(0, cost.generic + change);
-  return generic === cost.generic ? cost : { ...cost, generic };
+export function withCostChange(cost: ManaCost, change: number | CostChange): ManaCost {
+  const by = typeof change === 'number' ? change : change.generic;
+  const coloured = typeof change === 'number' ? [] : change.coloured ?? [];
+  const generic = Math.max(0, cost.generic + by);
+  let out = generic === cost.generic ? cost : { ...cost, generic };
+  // And the coloured mana added (D1313), one symbol each.
+  if (coloured.length > 0) {
+    const colors = { ...out.colors };
+    for (const type of coloured) colors[type] = (colors[type] ?? 0) + 1;
+    out = { ...out, colors };
+  }
+  return out;
 }
 
 /** Everything `seat` may do in the current state. */

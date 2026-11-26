@@ -1000,9 +1000,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let convoked: readonly string[] = [];
   let toPay: string | ManaCost | undefined = costText;
   let taxToPay = surcharge;
-  if (change.generic !== 0) {
+  if (change.generic !== 0 || (change.coloured ?? []).length > 0) {
     const printed = parseManaCost(costText);
-    toPay = withCostChange(surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed, change.generic);
+    toPay = withCostChange(surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed, change);
     // The tax is inside `toPay` now, so adding it again in `payFrom` would charge it twice.
     taxToPay = 0;
   }
@@ -1022,7 +1022,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (script?.delve === true && !offered) {
     const printed = parseManaCost(costText);
     const taxed = surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed;
-    const full = withCostChange(taxed, change.generic);
+    const full = withCostChange(taxed, change);
     const plan = delvePlan(state, action.by, full, manaSources(state, action.by));
     if (plan === null) {
       throw new EngineError('RULE_NOT_APPLICABLE',
@@ -1043,7 +1043,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (tapRule !== null && !offered) {
     const printed = parseManaCost(costText);
     const taxed = surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed;
-    const full = withCostChange(taxed, change.generic);
+    const full = withCostChange(taxed, change);
     const plan = tapToPayPlan(state, action.by, full, manaSources(state, action.by), tapRule);
     if (plan === null) {
       throw new EngineError('RULE_NOT_APPLICABLE',

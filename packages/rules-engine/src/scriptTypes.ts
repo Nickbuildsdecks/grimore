@@ -4874,6 +4874,11 @@ export interface CardScript {
     /** Generic mana added, or taken off when negative. */
     readonly generic: number;
     /**
+     * Coloured mana added (D1313): the Leeches' "White spells you cast cost {W} more to cast". An
+     * increase only; `generic` is 0 beside it.
+     */
+    readonly coloured?: readonly ManaType[];
+    /**
      * "… for each <thing>" (D1253): `generic` is per one, and this is how many, counted as the cost
      * is computed. Animar's "+1/+1 counter on Animar", "artifact you control".
      */

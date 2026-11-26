@@ -148,6 +148,16 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                       {play.costChange > 0 ? `+{${play.costChange}}` : `−{${-play.costChange}}`}
                     </span>
                   ) : null}
+                  {/* And coloured mana the table adds (D1313): a Leech's {W}. Not under `play-` either. */}
+                  {play.costExtra !== undefined ? (
+                    <span
+                      data-testid={`cost-extra-${slug}`}
+                      title={play.costNote}
+                      className="ml-1 font-mono text-[10px] text-[var(--g-text-muted)]"
+                    >
+                      +{play.costExtra}
+                    </span>
+                  ) : null}
                   {targetsWanted(play) > 0 ? (
                     <span className="ml-1 text-[10px] uppercase opacity-70">needs a target</span>
                   ) : null}

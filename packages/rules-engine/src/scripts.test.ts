@@ -19411,7 +19411,9 @@ describe('printed cost modifiers: "<kind> spells you cast cost {N} less to cast"
   it('reads whole, and leaves a coloured or face-down change unread', () => {
     expect(deck.unknown).toEqual([]);
     for (const row of ROWS.slice(0, 5)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
-    expect(compileCard(C('Test Tax', 'Black spells you cast cost {B} more to cast.') as never)).toMatchObject({ ok: true, unread: [{ line: 'Black spells you cast cost {B} more to cast.' }] });
+    // A coloured increase reads since D1313 (the Leeches); a coloured reduction is printed nowhere and stays unread.
+    expect(compileCard(C('Test Tax', 'Black spells you cast cost {B} more to cast.') as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(C('Test Rebate', 'Black spells you cast cost {B} less to cast.') as never)).toMatchObject({ ok: true, unread: [{ line: 'Black spells you cast cost {B} less to cast.' }] });
     expect(compileCard(C('Test Mask', 'Face-down creature spells you cast cost {1} less to cast.') as never)).toMatchObject({ ok: true, unread: [{ line: 'Face-down creature spells you cast cost {1} less to cast.' }] });
   });
 
@@ -48399,6 +48401,47 @@ describe('"Add X mana of any one color" for X counters removed (D1312)', () => {
     s = apply(s, { type: 'auto:activate', by: 0, card: baku, abilityIndex: blue.abilityIndex!, x: 2 } as Action);
     expect(poolOf(s, 0).U).toBe(2);
     expect(s.instances[baku]!.counters['ki'] ?? 0).toBe(0);
+  });
+});
+
+describe('"White spells you cast cost {W} more to cast" (D1313)', () => {
+  const LEECH = { name: 'Alabaster Leech', type_line: 'Creature — Leech', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: 'White spells you cast cost {W} more to cast.' };
+  const LIGHT = { name: 'Test Light', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', oracle_text: 'You gain 1 life.' };
+  const GREY = { name: 'Test Grey', type_line: 'Instant', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', oracle_text: 'You gain 1 life.' };
+  const deck = customDeck({ id: 'd1313', name: 'Leech', entries: [{ name: 'Alabaster Leech', count: 4 }, { name: 'Test Light', count: 4 }, { name: 'Test Grey', count: 4 }, { name: 'Plains', count: 48 }], data: [LEECH, LIGHT, GREY] as never[] });
+  const board = (plains: number): GameState => advanceTo(arena({
+    decks: { 0: 'd1313', 1: 'd1313' }, deckSpecs: { d1313: deck.deck },
+    hands: { 0: ['Test Light', 'Test Grey'], 1: ['Test Light'] },
+    battlefield: { 0: ['Alabaster Leech', ...Array.from({ length: plains }, () => 'Plains')], 1: ['Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, as a white symbol added', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LEECH as never)).toMatchObject({ ok: true, unread: [], script: { costModifiers: [{ whose: 'controller', generic: 0, coloured: ['W'] }] } });
+  });
+
+  it('a white spell costs {W}{W}: not offered off one Plains, cast off two, and both are tapped', () => {
+    const one = board(1);
+    const light = find(one, 0, 'hand', 'Test Light');
+    expect(legalActions(one, 0).plays.some((p) => p.card === light && p.kind === 'cast')).toBe(false);
+    expect(() => apply(one, { type: 'auto:cast', by: 0, card: light } as Action)).toThrow();
+    // A colourless spell is not taxed.
+    expect(legalActions(one, 0).plays.some((p) => p.card === find(one, 0, 'hand', 'Test Grey') && p.kind === 'cast')).toBe(true);
+    let two = board(2);
+    // Offered with the surcharge said beside the printed cost.
+    expect(legalActions(two, 0).plays.find((p) => p.card === find(two, 0, 'hand', 'Test Light') && p.kind === 'cast'))
+      .toMatchObject({ manaCost: '{W}', costExtra: '{W}', costNote: 'Alabaster Leech — white spells you cast cost {W} more to cast' });
+    two = apply(two, { type: 'auto:cast', by: 0, card: find(two, 0, 'hand', 'Test Light') } as Action);
+    expect(ids(two, 0, 'battlefield').filter((id) => two.instances[id]!.tapped && nameOf(two, id) === 'Plains').length).toBe(2);
+  });
+
+  it("does not tax the opponent's white spell", () => {
+    let s = board(1);
+    s = drain(nextTurn(s), 4);
+    s = advanceTo(s, 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(legalActions(s, 1).plays.some((p) => p.card === find(s, 1, 'hand', 'Test Light') && p.kind === 'cast')).toBe(true);
   });
 });
 

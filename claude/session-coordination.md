@@ -229,3 +229,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1309 pushed in 3c867e5. D1310 delayed draw from a permanent's ability (builtin 'draw'): scripts.ts reader, automation BUILTIN_DELAYED, turnTypes/effects unions.
 - D1310 pushed in a336985. D1311 mana abilities with a second effect (CR 605.1a): scripts.ts lineScriptFor reader.
 - D1311 pushed in 3644577. D1312 "Add X mana of any one color" for X counters (scripts.ts storage mana reader).
+- D1312 pushed in 44a2ed3. D1313 coloured cost increase, the Leeches (costModifiers.coloured, CostChange, withCostChange takes the change): scripts.ts, legalActions.ts, autoActions.ts, web PlaySheet costExtra.
