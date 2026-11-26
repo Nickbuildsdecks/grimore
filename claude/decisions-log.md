@@ -65456,3 +65456,40 @@ sweep was paused again and the second gate's own result is the one used; the cov
 same either way, because only the test file changed between the two runs.
 
 Coverage: 17,255 of 31,900 cards (+0 over D1294's 17,255), 40,008 of 59,888 lines (+0).
+
+## D1296 — Aftermath
+
+"Aftermath (Cast this spell only from your graveyard. Then exile it.)" on a split card's second
+half: Cut // Ribbons, Never // Return, Commit // Memory. CR 702.127: the first half is cast from the
+hand as usual; the second only from the graveyard, and it is exiled as it leaves the stack.
+
+D1294 refused these cards, because offering the second half from the hand would have been a spell
+the card does not allow. Now:
+- The keyword reads on its half as `CardScript.aftermath`. `aftermathHalf` names which half that is.
+- From the hand, a split card with an aftermath half offers the other half only, and the aftermath
+  half is refused there ("cast only from your graveyard").
+- From the graveyard, it offers the aftermath half alone, for that half's own cost, with
+  `aftermath` on the cast. A cast with `aftermath` names that half or is refused.
+- The spell carries D1289's `yardExile` mark, so `spellLeavesStack` exiles it.
+- The bot sends `aftermath` with the play it picked.
+
+Of the legal split cards, 96 now compile (from 69) and 52 read whole (from 39). Only the 30 Rooms are
+still refused. As with D1294 and D1295, this corpus's split rows carry no legality data, so the
+legal-pool coverage line does not show these.
+
+**Tests.** 4 engine tests, and D1294's aftermath pin changed from refused to read:
+- It reads whole.
+- From the hand, only the first half is offered, and the aftermath half is refused.
+- From the graveyard, only the aftermath half is offered. The first half is refused there, and so is
+  `aftermath` naming the wrong half. Cast, it draws two and is exiled.
+- The first half cast from the hand goes to the graveyard, where the aftermath half is then offered.
+
+Faults injected by hand: 6, all caught.
+- The aftermath half offered from the hand.
+- Nothing offered from the graveyard.
+- The refusal from the hand dropped.
+- The exile dropped.
+- The half number not checked.
+- The keyword not read.
+
+Coverage: 17,255 of 31,900 cards (+0 over D1295's 17,255), 40,008 of 59,888 lines (+0).
