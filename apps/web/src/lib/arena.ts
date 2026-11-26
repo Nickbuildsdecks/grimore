@@ -522,9 +522,18 @@ function playAction(
     "prototyped",
     // A prepared permanent's spell, cast as a copy (D978).
     "preparedCopy",
+    /*
+      An impending cost (D1097), a printed mana or life alternative (D1251), both halves of a fuse
+      card (D1295), and a split card's aftermath half from the graveyard (D1296). The engine offered
+      all four while the table dropped the flag on the way back, so each was refused as a different
+      cast, or cast as the printed one (D1297).
+    */
+    "impended", "altCast", "fuse", "aftermath",
   ] as const
   const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
   for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true
+  // And a graveyard permission (D1287): the permanent that grants it, a string rather than a flag (D1297).
+  const withYardBy = play.yardBy === undefined ? {} : { yardBy: play.yardBy }
   /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
@@ -560,7 +569,7 @@ function playAction(
     // cost, so the table would have asked which card and then cast the spell without it.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withReplicate, ...withCostFlags,
+      ...withModes, ...withX, ...withReplicate, ...withCostFlags, ...withYardBy,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withDiscarded, ...withTargets,
     }

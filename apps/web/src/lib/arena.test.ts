@@ -367,6 +367,26 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends the cast flags the table had been dropping: fuse, aftermath, an alternative, impending, a graveyard permission (D1297)", () => {
+    /*
+      D113's shape five times over. The engine offered each of these plays and refused the action
+      the table sent back for it, because the flag that says which cast it is was not on the list.
+    */
+    const cases: { extra: Record<string, unknown>; sent: Record<string, unknown> }[] = [
+      { extra: { fuse: true }, sent: { fuse: true } },
+      { extra: { aftermath: true, half: 1 }, sent: { aftermath: true, half: 1 } },
+      { extra: { altCast: true }, sent: { altCast: true } },
+      { extra: { impended: true }, sent: { impended: true } },
+      { extra: { yardBy: "c9" }, sent: { yardBy: "c9" } },
+    ]
+    for (const { extra, sent } of cases) {
+      const offered = play({ name: "Test Spell", manaCost: "{1}", targetSpecs: [], candidates: [], ...extra })
+      expect(arenaReducer(IDLE, { kind: "choosePlay", play: offered }).action).toEqual({
+        type: "auto:cast", card: "c1", ...sent,
+      })
+    }
+  })
+
   it("sends the flashback flag when the play came out of the graveyard", () => {
     /*
       The flag the client forgot, and the reason this test exists rather than a comment.

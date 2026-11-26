@@ -213,3 +213,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1293 pushed in 288540a. D1294 split cards from card data: compileSplit in compile.ts, derive.ts round trip for split faces.
 - D1294 pushed in 27f753a. D1295 fuse: CardScript.fused, fusedScript in compile.ts, fuse on the cast action (turnTypes.ts, legalActions.ts, autoActions.ts, bot.ts).
 - D1295 pushed in 36b3a20. D1296 aftermath: CardScript.aftermath, aftermathHalf (legalActions.ts), the graveyard cast with aftermath (autoActions.ts, bot.ts), compileSplit no longer refuses it.
+- D1296 pushed in 0ac7b96, checkpoint db380ea. D1297 web table: COST_FLAGS gains impended, altCast, fuse, aftermath; yardBy forwarded (apps/web/src/lib/arena.ts).
