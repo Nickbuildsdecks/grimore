@@ -48526,6 +48526,32 @@ describe('"becomes the color of your choice until end of turn" (D1315)', () => {
   });
 });
 
+describe('"becomes the creature type of your choice until end of turn" (D1316)', () => {
+  const DREAMER = { name: 'Test Dreamer', type_line: 'Creature — Illusion', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '2', toughness: '1',
+    oracle_text: 'Flying\n{0}: Test Dreamer becomes the creature type of your choice until end of turn.' };
+  const deck = customDeck({ id: 'd1316', name: 'Mistform', entries: [{ name: 'Test Dreamer', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Island', count: 52 }], data: [DREAMER] as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(DREAMER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('becomes only the type chosen, out of those the table can see, until the turn ends', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1316', 1: 'd1316' }, deckSpecs: { d1316: deck.deck },
+      battlefield: { 0: ['Test Dreamer'], 1: ['Raging Goblin'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const dreamer = find(s, 0, 'battlefield', 'Test Dreamer');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: dreamer, abilityIndex: 0 } as Action));
+    // Raging Goblin's Berserker: a type on the table, though not in the fallback list.
+    expect(s.pendingDecision?.options).toContain('Berserker');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Berserker' } as Action), 4);
+    expect(characteristicsOf(s, s.instances[dreamer]!).typeLine.subtypes).toEqual(['Berserker']);
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[dreamer]!).typeLine.subtypes).toEqual(['Illusion']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

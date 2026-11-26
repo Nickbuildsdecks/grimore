@@ -29385,6 +29385,35 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       };
     }
   }
+  /*
+    **"~ becomes the creature type of your choice until end of turn"** (D1316): the Mistform cycle,
+    Mistform Mask's "enchanted creature", Mistform Warchief's "target creature". Layer 4: the chosen
+    type replaces its creature types (`setCreatureTypes`), until the turn ends. The question offers
+    the types this table can see, as every "choose a creature type" here does (D641,
+    `creatureTypeOptions`).
+  */
+  const retyped = new RegExp(`^(${selfRef(name)}|it|enchanted creature|(?:another |up to one )?target [^,]+?) becomes the creature type of your choice until end of turn$`, 'i').exec(text);
+  if (retyped !== null) {
+    const who = retyped[1]!;
+    const targeted = /\btarget\b/i.test(who);
+    const aimed = targeted ? targetSpecFrom(who, false) : null;
+    const spec = aimed !== null && aimed.kind === 'creature' ? aimed : null;
+    if (!targeted || spec !== null) {
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        decisions: [{ who: 'controller' as const, prompt: 'Choose a creature type', options: CHOOSABLE_TYPES, optionsFor: creatureTypeOptions }],
+        effect: (c) => {
+          const type = chosenOption(c);
+          const id = spec !== null ? firstCardTarget(c)
+            : /^it$/i.test(who) ? itMeans(undefined, c)
+              : /^enchanted creature$/i.test(who) ? c.state.instances[c.source]?.attachedTo ?? null
+                : c.source;
+          if (type === null || id === null || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+          return pump(c.state, [id], c.source, c.controller, { setCreatureTypes: [type] });
+        },
+      };
+    }
+  }
   // Any one target creature (D1031).
   const stripped = /^((?:another |up to one (?:other )?)?target [^,]+?) loses ([a-z][a-z', ]*?) until end of turn$/i
     .exec(text);
