@@ -48035,6 +48035,60 @@ describe('"remove … counters from it" (D1303)', () => {
   });
 });
 
+describe('exiling chosen cards from your graveyard (D1304)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Spirit', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '1' });
+  const SCULPTOR = C('Test Sculptor', 'When Test Sculptor enters, you may exile two cards from your graveyard. If you do, draw a card.');
+  const EATER = C('Test Eater', 'When Test Eater enters, exile two cards from your graveyard.');
+  const FILLER = { name: 'Test Filler', type_line: 'Sorcery', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' };
+  const ROWS = [SCULPTOR, EATER, FILLER];
+  const deck = customDeck({ id: 'd1304', name: 'Yard', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (hand: string, yard: string[]) => advanceTo(arena({
+    decks: { 0: 'd1304', 1: 'd1304' }, deckSpecs: { d1304: deck.deck },
+    hands: { 0: [hand] }, graveyard: { 0: yard }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  /** Cast the creature and resolve it, to its enters trigger's first question. */
+  const arrive = (s: GameState, name: string) => {
+    let t = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) } as Action));
+    for (let i = 0; i < 4 && !t.pendingDecision; i++) t = passBoth(t);
+    return t;
+  };
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [SCULPTOR, EATER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('"you may exile two … If you do": two exiled, and a card drawn', () => {
+    let s = say(arrive(table('Test Sculptor', ['Test Filler', 'Test Filler', 'Test Filler']), 'Test Sculptor'), 0, 'Yes');
+    expect(s.pendingDecision?.min).toBe(2);
+    const two = s.pendingDecision!.candidates.slice(0, 2);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: two } as Action), 20);
+    for (const id of two) expect(s.instances[id]!.zone).toBe('exile');
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+  });
+
+  it('with one card there it is not done: nothing exiled and nothing drawn', () => {
+    const start = table('Test Sculptor', ['Test Filler']);
+    const one = find(start, 0, 'graveyard', 'Test Filler');
+    let s = say(arrive(start, 'Test Sculptor'), 0, 'Yes');
+    const hand = ids(s, 0, 'hand').length;
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [one] } as Action);
+    s = drain(s, 20);
+    expect(s.instances[one]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+
+  it('a plain "exile two" with one card there exiles the one (as much as it can)', () => {
+    const start = table('Test Eater', ['Test Filler']);
+    const one = find(start, 0, 'graveyard', 'Test Filler');
+    let s = arrive(start, 'Test Eater');
+    if (s.pendingDecision !== null) s = apply(s, { type: 'auto:decide', by: 0, cards: [one] } as Action);
+    s = drain(s, 20);
+    expect(s.instances[one]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

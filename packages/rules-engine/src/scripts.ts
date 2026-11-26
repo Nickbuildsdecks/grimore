@@ -24502,6 +24502,10 @@ function optionalEffect(
     if (xAsks > 1) return null;
     if (xAsks === 1 && yAsks > 0 && !climbs) return null;
     const xEffect = x.immediate ?? x.effect;
+    // How many cards X's one question needs (D1304): its `min`, or one when it does not say.
+    const asked = (x.decisions ?? [])[0];
+    const xNeeds = asked !== undefined && typeof asked !== 'function' && 'min' in asked && typeof asked.min === 'number' && asked.min > 1
+      ? asked.min : 1;
     return {
       prompt: `${xText} — ${yText}`,
       read: {
@@ -24520,6 +24524,12 @@ function optionalEffect(
             it" when it has already left the graveyard returns the board untouched, and then Y
             must not happen either (CR 608.2c). An X that acted always returns a new board.
           */
+          /*
+            And an X that asked for a number of cards did it only with all of them (D1304): "you may
+            exile two cards from your graveyard. If you do" with one card there is not done, and
+            then X is not done either: you cannot choose to do what you cannot do in full.
+          */
+          if (xAsks === 1 && chosenCards(c).length < xNeeds) return c.state;
           const did = xAsks === 0 ? after !== c.state : chosenCards(c).length > 0;
           // A Y that asks too (D1292) reads its own answers, which come after X's one.
           return did ? y.effect({ ...c, state: after, ...(yAsks > 0 ? { decisions: c.decisions.slice(xAsks) } : {}) }) : after;
@@ -31421,6 +31431,28 @@ function readEffect(
           filter: (state: GameState, id: string, chooser: SeatIndex) => test === null || test === undefined || test(state, id, chooser),
         }],
         effect: (c) => moveToHand(c.state, chosenCards(c)),
+      };
+    }
+  }
+  /*
+    "Exile two cards from your graveyard", "exile a creature card from your graveyard" (D1304): chosen,
+    not targeted, so a question as it resolves. Exactly that many; with fewer there, as many as there
+    are (CR 609.3), except as the opener of a "you may X. If you do" (see `optionalEffect`).
+  */
+  const yardExile = /^exile (a|an|one|two|three|four|five) (.*?cards?) from your graveyard$/i.exec(clause.trim());
+  if (yardExile !== null) {
+    const n = /^an?$/i.test(yardExile[1]!) ? 1 : countFrom(yardExile[1]!);
+    const singular = `a ${yardExile[2]!.trim().replace(/\bcards\b/i, 'card')}`;
+    const kind = n === null ? null : libraryFilter(singular, name);
+    if (n !== null && n > 0 && kind !== null && kind.xBound !== true) {
+      const test = kind.filter;
+      return {
+        decisions: [{
+          who: 'controller', from: 'graveyard', min: n, max: n,
+          prompt: `Exile ${yardExile[1]!.toLowerCase()} ${yardExile[2]!.trim()} from your graveyard`,
+          filter: (state: GameState, id: string, chooser: SeatIndex) => test === null || test === undefined || test(state, id, chooser),
+        }],
+        effect: (c) => chosenCards(c).reduce((state, id) => exileCard(state, id), c.state),
       };
     }
   }

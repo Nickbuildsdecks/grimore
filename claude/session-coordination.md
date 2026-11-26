@@ -220,3 +220,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1300 pushed in b9b7ae7. D1301 "do this only once each turn": triggerRestriction and the trigger's condition/effect (scripts.ts).
 - D1301 pushed in 25b29fb. D1302 counters removed as an effect: removeCountersEffect in the readEffect chain (scripts.ts).
 - D1302 pushed in 5342f2a. D1303 "from it" in removeCountersEffect (scripts.ts).
+- D1303 pushed in f2ce782. D1304 exile chosen cards from your graveyard (scripts.ts reader), and the full-count rule for an If-you-do opener (optionalEffect).
