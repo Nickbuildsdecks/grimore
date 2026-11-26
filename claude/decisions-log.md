@@ -66245,3 +66245,38 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6419 of 6419 pass.
 
 Coverage: 17,381 of 31,900 cards (+5 over D1313's 17,376), 40,172 of 59,888 lines (+7).
+
+## D1315 — "Becomes the color of your choice until end of turn"
+
+Two families had no reader:
+- "~ becomes the color of your choice until end of turn": Rainbow Crow, Kavu Chameleon,
+  Spiritmonger, Caldera Kavu, Tidal Visionary's "target creature", Distorting Lens's "target
+  permanent", and Wild Mongrel's "gets +1/+1 and becomes the color of your choice";
+- a named colour, "Target creature becomes blue until end of turn": Fylamarid, Metathran
+  Transport, Aurora Griffin and Cloudchaser Kestrel's "target permanent".
+
+Both are layer 5 (`setColors`, CR 613.1d): the new colour replaces the printed colours (CR 105.3)
+until the turn ends, through `pump`. The colour of your choice is a question as the ability
+resolves, with the five colours. The subject is ~, "it", or one target creature or permanent. A
+"+N/+N and" in front rides on the same effect, so the size and the colour end together.
+
+"Target spell or permanent" (Blind Seer, Eight-and-a-Half-Tails, the Laces) stays unread, because
+an effect here cannot set the colour of a spell on the stack. So do "one or more target creatures"
+(Dwarven Song) and "gains flying and becomes blue" (Disciple of Kangee).
+
+**Tests.** 3 tests:
+- Compile: both fixtures read whole, and "target spell or permanent" is left unread.
+- The Mongrel, with a card discarded:
+  - it asks White/Blue/Black/Red/Green;
+  - answered Black, it is black and 3/3;
+  - next turn it is green again.
+- A named colour on the opponent's Bears asks nothing and makes it blue.
+
+Faults injected by hand: 3, all caught.
+- The answer ignored.
+- The size dropped.
+- Spells accepted.
+
+The scripts tests, compile tests and pins: 6422 of 6422 pass.
+
+Coverage: 17,396 of 31,900 cards (+15 over D1314's 17,381), 40,190 of 59,888 lines (+18).
