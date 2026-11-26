@@ -48915,6 +48915,56 @@ describe('"the next 1 damage that would be dealt to ~ this turn is dealt to targ
   });
 });
 
+describe('"the next time a red source of your choice would deal damage to you this turn, prevent that damage" (D1326)', () => {
+  const CIRCLE = { name: 'Test Circle', type_line: 'Enchantment', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal',
+    oracle_text: '{0}: The next time a red source of your choice would deal damage to you this turn, prevent that damage.' };
+  const BOLT = { name: 'Test Bolt', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Bolt deals 3 damage to any target.' };
+  const deck = customDeck({ id: 'd1326', name: 'Circle', entries: [{ name: 'Test Circle', count: 4 }, { name: 'Test Bolt', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 44 }], data: [CIRCLE, BOLT] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1326', 1: 'd1326' }, deckSpecs: { d1326: deck.deck },
+    hands: { 1: ['Test Bolt'] }, battlefield: { 0: ['Test Circle'], 1: ['Raging Goblin', 'Raging Goblin', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const you = { kind: 'player', seat: 0 } as const;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(CIRCLE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offers only red sources, and takes all of the chosen one\'s next damage, once', () => {
+    let s = board();
+    const [goblin, other] = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Raging Goblin');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Circle'), abilityIndex: 0 } as Action));
+    expect(s.pendingDecision?.candidates).toEqual(expect.arrayContaining([goblin, other]));
+    expect(s.pendingDecision?.candidates).not.toContain(bears);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [goblin] } as Action), 4);
+    const life = s.seats[0]!.life;
+    s = dealDamage(s, you, 5, { source: goblin, controller: 1 });
+    expect(s.seats[0]!.life).toBe(life);
+    s = dealDamage(s, you, 1, { source: goblin, controller: 1 });
+    expect(s.seats[0]!.life).toBe(life - 1);
+    // Another source was never covered, the other red one included.
+    s = dealDamage(s, you, 2, { source: other!, controller: 1 });
+    expect(s.seats[0]!.life).toBe(life - 3);
+  });
+
+  it('answers a red spell on the stack', () => {
+    let s = board();
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    const bolt = find(s, 1, 'hand', 'Test Bolt');
+    s = apply(s, { type: 'auto:cast', by: 1, card: bolt, targets: [you] } as Action);
+    s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Circle'), abilityIndex: 0 } as Action));
+    expect(s.pendingDecision?.candidates).toContain(bolt);
+    // The bot picks the spell it was activated against.
+    expect(botAction(s, 0 as SeatIndex)).toMatchObject({ type: 'auto:decide', cards: [bolt] });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [bolt] } as Action), 6);
+    expect(s.instances[bolt]!.zone).toBe('graveyard');
+    expect(s.seats[0]!.life).toBe(20);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

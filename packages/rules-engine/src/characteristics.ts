@@ -2003,6 +2003,13 @@ export interface ContinuousEffect {
    */
   readonly preventsDamageAmount?: number;
   /**
+   * "The next time a source of your choice would deal damage to you this turn, prevent that damage"
+   * (D1326, CR 615.7): the whole of the next damage event from this one source, as `id#seq`
+   * (`damageSourceRef`), to what the scope covers. Spent by that one event, all of it; with
+   * `redirectTo` it is dealt there instead (Beacon of Destiny).
+   */
+  readonly nextDamageFrom?: string;
+  /**
    * "You gain protection from everything until your next turn" (D718): The One Ring, Teferi's
    * Protection. On a `seat` scope: that player can't be targeted by any spell or ability and damage
    * that would be dealt to them is prevented (CR 702.16b, e). Read by `isLegalTarget` and

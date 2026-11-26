@@ -271,6 +271,24 @@ function decideCards(
     the way the search judges a creature — body plus keywords — rather than by mana value. A Clone
     copying the biggest thing on the table is also the whole reason the card is good.
   */
+  /*
+    "A source of your choice" (D1326): the one most likely to hurt. The spell on top of the stack, if
+    one is a candidate, since that is what the shield was activated against; else the opponent's
+    creature with the most power, attacking ones first.
+  */
+  if (ask.from === 'source') {
+    const onStack = ask.candidates.find((id) => state.instances[id]?.zone === 'stack');
+    if (onStack !== undefined) return [onStack];
+    const power = (id: string): number => {
+      const inst = state.instances[id];
+      if (inst === undefined || inst.zone !== 'battlefield') return -1;
+      const ch = characteristicsOf(state, inst);
+      const attacking = state.combat.attacks.some((attack) => attack.attacker === id) ? 100 : 0;
+      return (ch.isCreature ? ch.power : 0) + attacking + (inst.zoneSeat === seat ? -1000 : 0);
+    };
+    const best = [...ask.candidates].sort((a, b) => power(b) - power(a))[0];
+    return best === undefined || ask.max === 0 ? [] : [best];
+  }
   if (ask.from === 'any-battlefield') {
     return [...ask.candidates]
       .sort((a, b) => creatureValue(state, b) - creatureValue(state, a))

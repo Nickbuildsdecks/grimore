@@ -29,9 +29,15 @@ export interface StackPanelProps {
    * spell on the stack is a card and an ability is not, and the row already says which it is.
    */
   onPick?: (id: string, kind: "card" | "ability") => void
+  /**
+   * Spells a mid-resolution question offers (D1326, "a source of your choice"), by card id, and what
+   * tapping one does. Lit like a target.
+   */
+  decidable?: ReadonlySet<string>
+  onDecide?: (card: string) => void
 }
 
-export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
+export function StackPanel({ view, targetable, onPick, decidable, onDecide }: StackPanelProps) {
   const stack = view.automation?.stack ?? []
   /*
     And what is scheduled but not on the stack yet: a delayed trigger (CR 603.7).
@@ -55,7 +61,8 @@ export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
       ) : (
         <ol className="flex flex-col gap-1">
           {[...stack].reverse().map((object, index) => {
-            const canTarget = targetable?.has(object.id) === true
+            const canDecide = object.card !== null && decidable?.has(object.card) === true
+            const canTarget = canDecide || targetable?.has(object.id) === true
             return (
             <li
               key={object.id}
@@ -64,7 +71,9 @@ export function StackPanel({ view, targetable, onPick }: StackPanelProps) {
                 ? {
                   role: "button",
                   tabIndex: 0,
-                  onClick: () => onPick?.(object.id, object.kind === "spell" ? "card" : "ability"),
+                  onClick: () => (canDecide
+                    ? onDecide?.(object.card!)
+                    : onPick?.(object.id, object.kind === "spell" ? "card" : "ability")),
                 }
                 : {})}
               className={cn(

@@ -6026,6 +6026,14 @@ export function decisionCandidates(
     // order the table reads in. See `DecisionZone`.
     : spec.from === 'any-battlefield'
       ? state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield')))
+    // "A source of your choice" (D1326): permanents, and the spells waiting on the stack, top first.
+    : spec.from === 'source'
+      ? [
+        ...state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield'))),
+        ...[...state.stackOrder].reverse().map((id) => state.stackObjects[id])
+          .filter((object) => object !== undefined && object.kind === 'spell')
+          .map((object) => object!.source),
+      ]
       : listAt(state, zoneKey(owner, spec.from));
   return inZone.filter((id) => {
     if (state.instances[id] === undefined) return false;

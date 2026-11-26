@@ -43,7 +43,7 @@ import {
   stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, damagedThisTurn, moveAura, removeEffectsFrom, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageThisTurn, preventDamageToSide,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventNextDamageFrom, preventDamageThisTurn, preventDamageToSide,
   copyAsToken,
   becomeMonarch, freezeNextUntap, scheduleDelayed, scriptOfCard, loseTheGame, EVOKED, KICKED, KICKED_FIRST, KICKED_SECOND, UNEARTHED, EXILED_ON_LEAVING, RENOWNED, MONSTROUS,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
@@ -17043,6 +17043,46 @@ function selfEffect(
     'draw'`), scheduled as the ability resolves and drawn by its controller at whoever's upkeep comes
     next, whether or not the permanent is still there (CR 603.7c).
   */
+  /*
+    **"The next time a red source of your choice would deal damage to you this turn, prevent that
+    damage"** (D1326, CR 615.7): the Circles of Protection, Cho-Arrim Alchemist, Bone Mask's first
+    sentence; "… to target creature" (Charm Peddler), "… to any target" (Circle of Despair); and
+    Beacon of Destiny's "that damage is dealt to ~ instead". The source is chosen as the ability
+    resolves, from every battlefield and the spells on the stack (`DecisionZone` 'source'), of the
+    colour or type named; the shield takes all of that source's next damage this turn.
+  */
+  const chosenSource = new RegExp(`^the next time an? (?:(white|blue|black|red|green|artifact|creature) )?source of your choice would deal damage to (you|target creature|any target) this turn, (?:(prevent that damage)|that damage is dealt to (?:${self}|this creature) instead)$`, 'i').exec(text);
+  if (chosenSource !== null) {
+    const kind = chosenSource[1]?.toLowerCase();
+    const LETTER: Readonly<Record<string, Color>> = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' };
+    const colour = kind === undefined ? undefined : LETTER[kind];
+    const to = chosenSource[2]!.toLowerCase();
+    const spec = to === 'you' ? null : targetSpecFrom(to, false);
+    if (to === 'you' || spec !== null) {
+      const sendOn = chosenSource[3] === undefined;
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        decisions: [{
+          who: 'controller', from: 'source', min: 1, max: 1,
+          prompt: `Choose ${kind === undefined ? 'a' : /^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`} source`,
+          filter: (state, id) => {
+            const inst = state.instances[id];
+            if (inst === undefined) return false;
+            if (kind === undefined) return true;
+            const ch = characteristicsOf(state, inst);
+            return colour !== undefined ? ch.colors.includes(colour) : hasType(ch.typeLine, kind);
+          },
+        }],
+        effect: (c) => {
+          const from = c.decisions[0]?.ids[0];
+          if (from === undefined) return c.state;
+          const target = to === 'you' ? { kind: 'player' as const, seat: c.controller } : c.targets[0];
+          if (target === undefined) return c.state;
+          return preventNextDamageFrom(c.state, c.source, c.controller, target, from, sendOn ? { kind: 'card', id: c.source } : undefined);
+        },
+      };
+    }
+  }
   /*
     **"The next 1 damage that would be dealt to ~ this turn is dealt to target creature you control
     instead"** (D1325): the en-Kor cycle (Lancers, Nomads, Outrider, Shaman, Spirit, Warrior). And the

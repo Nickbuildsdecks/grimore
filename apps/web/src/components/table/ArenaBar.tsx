@@ -366,6 +366,9 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
               : mode.ask.from === "library" ? "tap a card in your library below"
                 : mode.ask.from === "revealed" ? "tap the revealed cards below"
                 : mode.ask.from === "library-top" ? libraryTopWords(mode.ask, mode.chosen.length).hint
+                // D1326: a permanent on any battlefield, or a spell on the stack.
+                : mode.ask.from === "source" ? "tap a permanent, or a spell on the stack"
+                : mode.ask.from === "any-battlefield" ? "tap a permanent on the battlefield"
                   : `tap a card in your ${mode.ask.from ?? "hand"}`}
           </span>
           )}

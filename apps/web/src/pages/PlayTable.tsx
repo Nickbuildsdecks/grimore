@@ -2065,6 +2065,9 @@ function Board({ table }: { table: UseTable }) {
           view={view}
           targetable={targetableCards}
           onPick={(id, kind) => dispatchArena({ kind: "pickTarget", target: { kind, id } })}
+          // A spell a question offers (D1326): "a source of your choice" may be one on the stack.
+          decidable={arenaMode.kind === "deciding" ? new Set(arenaMode.ask.candidates) : undefined}
+          onDecide={(card) => dispatchArena({ kind: "toggleDecision", card })}
         />
       ) : (
         <ZoneRow

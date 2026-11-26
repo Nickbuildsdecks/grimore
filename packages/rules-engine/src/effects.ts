@@ -364,6 +364,23 @@ function shieldCovers(state: GameState, effect: ContinuousEffect, target: Target
  * spent by the damage it absorbs, against any source rather than only combat, and able to sit on a
  * player as well as on a permanent. `dealDamage` is the only thing that reads it.
  */
+/**
+ * "The next time <source> would deal damage to <target> this turn, prevent that damage" (D1326): a
+ * shield keyed to one source, as the object it is now. See `ContinuousEffect.nextDamageFrom`.
+ */
+export function preventNextDamageFrom(
+  state: GameState, source: string, controller: SeatIndex, protectedTarget: Target, from: string, redirectTo?: Target,
+): GameState {
+  if (protectedTarget.kind === 'ability' || state.instances[from] === undefined) return state;
+  return pushEffect(state, {
+    source, controller,
+    scope: protectedTarget.kind === 'player' ? { kind: 'seat', seat: protectedTarget.seat } : { kind: 'cards', ids: [protectedTarget.id] },
+    nextDamageFrom: damageSourceRef(state, from),
+    ...(redirectTo === undefined ? {} : { redirectTo }),
+    duration: 'end-of-turn',
+  });
+}
+
 export function preventDamage(
   state: GameState, source: string, controller: SeatIndex, target: Target, amount: number,
   /**
@@ -509,6 +526,16 @@ export function dealDamage(
   }
   // And "prevent all damage that would be dealt to / by …" this turn (D738).
   if (!unpreventable && damagePrevented(next, target, opts.source, opts.combatFrom !== undefined || opts.combat === true)) return next;
+  // The next damage from a chosen source (D1326): all of this event, prevented or sent on.
+  if (!unpreventable && opts.source !== null && opts.source !== undefined) {
+    const ref = damageSourceRef(next, opts.source);
+    const shield = next.effects.find((effect) => effect.nextDamageFrom === ref && shieldCovers(next, effect, target));
+    if (shield !== undefined) {
+      next = { ...next, effects: next.effects.filter((effect) => effect !== shield) };
+      if (shield.redirectTo === undefined || (opts.redirectDepth ?? 0) >= MAX_REDIRECTS) return next;
+      return dealDamage(next, shield.redirectTo, amount, { ...opts, redirectDepth: (opts.redirectDepth ?? 0) + 1 });
+    }
+  }
   // A shield counter (D1033, CR 122.1c): the damage is replaced by removing one.
   if (!unpreventable && target.kind === 'card') {
     const shielded = spendShieldCounter(next, target.id);

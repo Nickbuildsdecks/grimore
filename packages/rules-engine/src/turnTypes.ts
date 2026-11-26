@@ -1831,6 +1831,8 @@ export interface AutomationState {
  */
 export type DecisionZone =
   | 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield' | 'any-battlefield'
+  // A damage source (D1326, "a source of your choice"): every battlefield, then the spells on the stack.
+  | 'source'
   // The cards a resolution has revealed to the table (D728, `AutomationState.revealed`).
   | 'revealed';
 
