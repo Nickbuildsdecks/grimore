@@ -79,7 +79,7 @@ const customDeck = (input: Parameters<typeof eagerDeck>[0]): ReturnType<typeof e
 };
 import { draw as drawCards } from './effects.js';
 import { REGENERATION, temptWithRing, becomeCopyOf, bounceToHand, copySpellOnStack, createToken, exileCard, dealDamage, equipTo, gainLife, lifeLocked, loseLife, moveToHand, poolOf, preparedCopyOf, putOnTopOfLibrary, sacrifice, spellLeavesStack, flipPermanent, untapPermanent } from './effects.js';
-import { hasAnyLegalTargets, preferredOption, settle as engineSettle } from './automation.js';
+import { hasAnyLegalTargets, modeCombinations, preferredOption, settle as engineSettle } from './automation.js';
 import { attackTaxFor, costChangeFor, tapManaEchoes, tapManaExtras } from './legalActions.js';
 import { canAfford, reducedCostText, solveTap } from './mana.js';
 import { ringBearerOf, ringLevel, colourIdentity, commanderIdentity, grantedAbilitiesOn, grantedTriggersOn, hasSubtype, playerProtected } from './characteristics.js';
@@ -46486,6 +46486,55 @@ describe('"… if it\'s <colour>": the colour asked as it resolves (D1274)', () 
       expect(s.activeSeat).toBe(0);
       expect(s.instances[id]!.counters['+1/+1'] ?? 0, wearer).toBe(counters);
     }
+  });
+});
+
+describe('the Confluences: "Choose three. You may choose the same mode more than once." (D1275)', () => {
+  const CONFLUENCE = {
+    name: 'Test Confluence', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    oracle_text: 'Choose three. You may choose the same mode more than once.\n• Test Confluence deals 2 damage to target creature.\n• You gain 1 life.\n• Draw a card.',
+  };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' };
+  const deck = customDeck({ id: 'd1275', name: 'Confluence', entries: [{ name: 'Test Confluence', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Mountain', count: 52 }], data: [CONFLUENCE, BEAR] as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1275', 1: 'd1275' }, deckSpecs: { d1275: deck.deck },
+    battlefield: { 1: ['Test Bear', 'Test Bear'] }, hands: { 0: ['Test Confluence'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads whole, as three picks with repeats: ten combinations of three modes', () => {
+    expect(deck.unknown).toEqual([]);
+    const compiled = compileCard(CONFLUENCE as never);
+    expect(compiled).toMatchObject({ ok: true, unread: [] });
+    const script = compiled.ok ? compiled.script : undefined;
+    expect(script?.modal).toMatchObject({ min: 3, max: 3, repeats: true });
+    const combos = modeCombinations(script);
+    expect(combos).toHaveLength(10);
+    expect(combos).toContainEqual([0, 0, 0]);
+    expect(combos).toContainEqual([0, 1, 2]);
+    // Two modes and three picks: more picks than modes, which only repeats make possible.
+    const pair = compileCard({ ...CONFLUENCE, oracle_text: 'Choose three. You may choose the same mode more than once.\n• You gain 1 life.\n• Draw a card.' } as never);
+    expect(modeCombinations(pair.ok ? pair.script : undefined)).toEqual([[0, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 1]]);
+  });
+
+  it('the damage mode twice, each with its own target, then the life', () => {
+    let s = table();
+    const [a, b] = ids(s, 1, 'battlefield');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Confluence'), modes: [0, 0, 1],
+      targets: [{ kind: 'card', id: a! }, { kind: 'card', id: b! }],
+    } as Action)), 20);
+    expect(s.instances[a!]!.zone).toBe('graveyard');
+    expect(s.instances[b!]!.zone).toBe('graveyard');
+    expect(life(s, 0)).toBe(before + 1);
+  });
+
+  it('three draws, and two picks are refused', () => {
+    let s = table();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Confluence'), modes: [1, 2] } as Action)).toContain('not a combination');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Confluence'), modes: [2, 2, 2] } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand - 1 + 3);
   });
 });
 

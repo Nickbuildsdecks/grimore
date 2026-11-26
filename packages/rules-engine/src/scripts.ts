@@ -40278,6 +40278,20 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     .test(plain(lines[0]!).trim());
   const header = willHeader ? ['', 'one'] as unknown as RegExpExecArray
     : /^choose (one|one or both|two|one or more)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
+  /*
+    The Confluences (D1275): "Choose three. You may choose the same mode more than once." — and
+    Planewide Celebration's four. Exactly that many picks, repeats allowed (`ModalDef.repeats`).
+  */
+  const repeated = willHeader || header !== null ? null
+    : /^choose (three|four)\. you may choose the same mode more than once\.?$/i.exec(plain(lines[0]!).trim());
+  if (repeated !== null) {
+    const picks = repeated[1]!.toLowerCase() === 'three' ? 3 : 4;
+    const rest = modalScriptFor([`Choose one —`, ...lines.slice(1)], name);
+    if (rest === null || rest.kicker !== undefined || rest.modal.modes.length < 2) return null;
+    // More than one mode resolves: the same refusal as any header that chooses more than one (D955).
+    if (rest.modal.modes.some((mode) => mode.beforeDecisions !== undefined)) return null;
+    return { modal: { modes: rest.modal.modes, min: picks, max: picks, repeats: true } };
+  }
   if (header === null) return null;
 
   const modes: ModeDef[] = [];

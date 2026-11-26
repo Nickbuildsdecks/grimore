@@ -5644,13 +5644,15 @@ export function modeCombinations(
   // The Will cycle (D668): more modes while the caster controls a commander on the battlefield.
   const commanded = modal.maxWithCommander !== undefined && state !== undefined && seat !== undefined
     && Object.values(state.instances).some((inst) => inst.isCommander && inst.zone === 'battlefield' && inst.zoneSeat === seat);
-  const max = Math.min(commanded ? modal.maxWithCommander! : modal.max ?? 1, total);
+  // Capped by the modes there are, unless a mode may be picked again (D1275).
+  const max = Math.min(commanded ? modal.maxWithCommander! : modal.max ?? 1, modal.repeats === true ? Infinity : total);
   const min = Math.min(Math.max(modal.min ?? 1, 1), max);
   const out: number[][] = [];
   const walk = (start: number, picked: number[]): void => {
     if (picked.length >= min) out.push([...picked]);
     if (picked.length >= max) return;
-    for (let i = start; i < total; i++) walk(i + 1, [...picked, i]);
+    // A mode may come again where the card says so (D1275), so the next pick starts at this one.
+    for (let i = start; i < total; i++) walk(modal.repeats === true ? i : i + 1, [...picked, i]);
   };
   walk(0, []);
   // Shortest first, so "choose one or both" offers the simple answers before the compound one.

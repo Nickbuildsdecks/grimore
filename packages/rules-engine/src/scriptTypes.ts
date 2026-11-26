@@ -3206,6 +3206,13 @@ export interface ModalDef {
    * modes already do, so each branch asks only for its own.
    */
   readonly kickerModes?: 'also' | 'instead';
+  /**
+   * "Choose three. You may choose the same mode more than once." (D1275, CR 700.2d): the
+   * Confluences. A mode may be picked as often as the count allows, and each pick is its own
+   * instance of the mode with its own targets; `modeCombinations` then counts combinations with
+   * repetition.
+   */
+  readonly repeats?: true;
 }
 
 /** One of `CardScript.castLimits` (D788). */
