@@ -48485,6 +48485,47 @@ describe('"Then if it has three or more +1/+1 counters on it, …": the Ordeals 
   });
 });
 
+describe('"becomes the color of your choice until end of turn" (D1315)', () => {
+  const MONGREL = { name: 'Test Mongrel', type_line: 'Creature — Dog', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Discard a card: Test Mongrel gets +1/+1 and becomes the color of your choice until end of turn.' };
+  const FYLAMARID = { name: 'Test Fylamarid', type_line: 'Creature — Squid', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: '{0}: Target creature becomes blue until end of turn.' };
+  const deck = customDeck({ id: 'd1315', name: 'Colours', entries: [{ name: 'Test Mongrel', count: 4 }, { name: 'Test Fylamarid', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 48 }], data: [MONGREL, FYLAMARID] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1315', 1: 'd1315' }, deckSpecs: { d1315: deck.deck },
+    hands: { 0: ['Forest'] }, battlefield: { 0: ['Test Mongrel', 'Test Fylamarid'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const colours = (s: GameState, id: string): readonly string[] => characteristicsOf(s, s.instances[id]!).colors;
+
+  it('reads whole, and leaves "target spell or permanent" unread', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(MONGREL as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(FYLAMARID as never)).toMatchObject({ ok: true, unread: [] });
+    const seer = compileCard({ ...FYLAMARID, name: 'Test Seer', oracle_text: '{0}: Target spell or permanent becomes the color of your choice until end of turn.' } as never);
+    expect(seer.ok && seer.unread.length).toBe(1);
+  });
+
+  it('the Mongrel grows and becomes the colour asked for, until the turn ends', () => {
+    let s = board();
+    const mongrel = find(s, 0, 'battlefield', 'Test Mongrel');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: mongrel, abilityIndex: 0, discarded: find(s, 0, 'hand', 'Forest') } as Action));
+    expect(s.pendingDecision?.options).toEqual(['White', 'Blue', 'Black', 'Red', 'Green']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Black' } as Action), 4);
+    expect(colours(s, mongrel)).toEqual(['B']);
+    expect(characteristicsOf(s, s.instances[mongrel]!).power).toBe(3);
+    s = nextTurn(s);
+    expect(colours(s, mongrel)).toEqual(['G']);
+  });
+
+  it('a named colour on a target, with no question', () => {
+    let s = board();
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Fylamarid'), abilityIndex: 0, targets: [{ kind: 'card', id: bears }] } as Action)), 4);
+    expect(s.pendingDecision).toBeNull();
+    expect(colours(s, bears)).toEqual(['U']);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

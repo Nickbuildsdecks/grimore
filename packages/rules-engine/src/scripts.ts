@@ -29354,6 +29354,37 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     "loses all abilities" riders; this is the same field on an until-end-of-turn effect. Aimed at
     the other side of the table by default, which is the only reason to print it.
   */
+  /*
+    **"~ becomes the color of your choice until end of turn"** (D1315): Wild Mongrel ("gets +1/+1 and
+    becomes …"), Rainbow Crow, Kavu Chameleon, Spiritmonger, Tidal Visionary's "target creature",
+    Distorting Lens's "target permanent"; and a named colour, "Target creature becomes blue until end
+    of turn" (Fylamarid, Metathran Transport, Aurora Griffin's "target permanent"). Layer 5
+    (`setColors`), replacing the printed colours (CR 105.3) until the turn ends. The colour of your
+    choice is a question as the ability resolves, with the five colours. "Target spell or permanent"
+    stays unread: a spell's colour on the stack is not something an effect here can set.
+  */
+  const recoloured = new RegExp(`^(${selfRef(name)}|it|(?:another |up to one )?target [^,]+?) (?:becomes|gets ([+-]\\d+)/([+-]\\d+) and becomes) (white|blue|black|red|green|the colou?r of your choice) until end of turn$`, 'i').exec(text);
+  if (recoloured !== null) {
+    const who = recoloured[1]!;
+    const targeted = /\btarget\b/i.test(who);
+    const aimed = targeted && !/\bspell\b/i.test(who) ? targetSpecFrom(who, false) : null;
+    const spec = aimed !== null && (aimed.kind === 'creature' || aimed.kind === 'permanent') ? aimed : null;
+    if (!targeted || spec !== null) {
+      const fixed = /^the\b/i.test(recoloured[4]!) ? null : TOKEN_COLOURS[recoloured[4]!.toLowerCase()] ?? null;
+      const sized = recoloured[2] === undefined ? {} : { power: Number(recoloured[2]), toughness: Number(recoloured[3]) };
+      const WORDS: Readonly<Record<string, Color>> = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G' };
+      return {
+        ...(spec === null ? {} : { targets: [spec] }),
+        ...(fixed === null ? { decisions: [{ who: 'controller' as const, prompt: 'Which color?', options: Object.keys(WORDS) }] } : {}),
+        effect: (c) => {
+          const colour = fixed ?? WORDS[chosenOption(c) ?? ''];
+          const id = spec !== null ? firstCardTarget(c) : /^it$/i.test(who) ? itMeans(undefined, c) : c.source;
+          if (colour === undefined || id === null || c.state.instances[id]?.zone !== 'battlefield') return c.state;
+          return pump(c.state, [id], c.source, c.controller, { ...sized, setColors: [colour] });
+        },
+      };
+    }
+  }
   // Any one target creature (D1031).
   const stripped = /^((?:another |up to one (?:other )?)?target [^,]+?) loses ([a-z][a-z', ]*?) until end of turn$/i
     .exec(text);
