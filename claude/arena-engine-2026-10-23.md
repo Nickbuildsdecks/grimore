@@ -47841,3 +47841,38 @@ Faults injected by hand: 4, all caught.
 - The "sacrificed only once" guard dropped.
 
 Coverage: 17,255 of 31,900 cards (+1 over D1291's 17,254), 40,007 of 59,888 lines (+2).
+
+## D1293 — "Activate only during combat", "during the declare blockers step", "as an instant"
+
+Three more clauses for the "Activate only …" sentence of an activated ability:
+- "During combat" (`ActivationTiming 'combat'`): any player's combat phase, from its beginning to its
+  end (CR 506.1), on anybody's turn. Unlike the three existing timings, this one is not about whose
+  turn it is, so `atActivationTiming` asks it before the active-seat check. Najeela, the
+  Blade-Blossom's "{W}{U}{B}{R}{G}: Untap all attacking creatures. After this phase, there is an
+  additional combat phase" is the line that matters.
+- "During the declare blockers step" (`'declare-blockers'`): that step, on anybody's turn.
+- "As an instant": every activated ability's own timing (CR 602.2), so nothing to add.
+
+The refusal names the clause, as the other timings do.
+
+Most cards that print these clauses still have another part unread: a compound timing ("during
+combat after blockers are declared"), a cost, or an effect. Najeela's trigger, "Whenever a Warrior
+attacks, you may have its controller create a 1/1 white Warrior creature token that's tapped and
+attacking", is not read yet. It watches any player's Warriors, and the token attacks for that
+player.
+
+Read whole now: none on its own. Najeela's untap line now reads.
+
+**Tests.** 3 engine tests:
+- Both test creatures read, and Najeela's untap line.
+- The combat one is refused in the main phase, with the clause named, and offered at the beginning
+  of combat on either player's turn.
+- The declare-blockers one is not offered in declare attackers. It is offered in declare blockers
+  once blockers are declared, and not at end of combat, where the combat one still is.
+
+Faults injected by hand: 3, all caught.
+- The combat check dropped.
+- The declare-blockers check dropped.
+- "During combat" read as "during your turn".
+
+Coverage: 17,255 of 31,900 cards (+0 over D1292's 17,255), 40,008 of 59,888 lines (+1).
