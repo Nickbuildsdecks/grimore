@@ -38318,6 +38318,15 @@ function staticFromLine(line: string): Partial<CardScript> | null {
     const kind = uncounterable[1]?.trim().toLowerCase() as 'creature' | 'noncreature' | undefined;
     return { spellsCantBeCountered: { whose: uncounterable[2] === undefined ? 'all' : 'you', ...(kind === undefined ? {} : { kind }) } };
   }
+  /*
+    "Each creature assigns combat damage equal to its toughness rather than its power" (D1318):
+    Doran, the Siege Tower; "each creature you control" (Belligerent Brontodon, Huatli, Rasaad). A
+    static on the creatures, as an anthem is. See `ContinuousEffect.assignsByToughness`.
+  */
+  const byToughness = /^each creature( you control)? assigns combat damage equal to its toughness rather than its power\.?$/i.exec(plain(line).trim());
+  if (byToughness !== null) {
+    return { statics: [{ scope: byToughness[1] === undefined ? 'all-creatures' : 'controller-creatures', effect: { assignsByToughness: true } }] };
+  }
   // Glacial Chasm (D716): see `CardScript.preventsDamageToYou`.
   if (/^prevent all damage that would be dealt to you\.?$/i.test(plain(line).trim())) return { preventsDamageToYou: true };
   // The Spheres, Urza's Armor, Guardian Seraph (D1308): see `CardScript.damageToYouReduced`.

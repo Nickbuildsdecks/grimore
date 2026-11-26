@@ -1752,6 +1752,12 @@ export interface ContinuousEffect {
   readonly blockedByOne?: boolean;
   /** "May assign its combat damage as though it weren't blocked", granted (D772). */
   readonly assignsAsUnblocked?: boolean;
+  /**
+   * "Assigns combat damage equal to its toughness rather than its power" (D1318, CR 510.1a): Doran,
+   * Belligerent Brontodon. Only the combat damage it assigns; its power is unchanged for anything
+   * else that reads it.
+   */
+  readonly assignsByToughness?: boolean;
   /** "Its activated abilities can't be activated" (D943): Arrest, mana abilities included. */
   readonly cantActivate?: boolean;
   /** "… unless they're mana abilities" (D944): Faith's Fetters, which leaves the mana abilities. */
@@ -2473,6 +2479,8 @@ export interface Characteristics {
    * or planeswalker it attacked. See `damageOrdersOwed`.
    */
   readonly assignsAsUnblocked: boolean;
+  /** See `ContinuousEffect.assignsByToughness` (D1318): read by combat through `combatDamageOf`. */
+  readonly assignsByToughness?: true;
   /**
    * "Its activated abilities can't be activated" (D943, Arrest's rider): none of them, mana
    * abilities included, is offered or accepted, and the permanent pays for nothing.
@@ -3519,6 +3527,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let weakerCantBlock = printedCombat.weakerCantBlock;
   let weakerCantBlockYours = printedCombat.weakerCantBlockYours;
   let assignsAsUnblocked = printedCombat.assignsAsUnblocked;
+  let assignsByToughness = false;
   let cantActivate = false;
   let cantActivateNonMana = false;
   let attacksOnlyIfDefenderHas: string | null = null;
@@ -3658,6 +3667,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.lure) lure = true;
     if (effect.blockedByOne) blockedByOne = true;
     if (effect.assignsAsUnblocked) assignsAsUnblocked = true;
+    if (effect.assignsByToughness) assignsByToughness = true;
     if (effect.cantActivate) cantActivate = true;
     if (effect.cantActivateNonMana) cantActivateNonMana = true;
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
@@ -3750,6 +3760,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     weakerCantBlock,
     weakerCantBlockYours,
     assignsAsUnblocked,
+    ...(assignsByToughness ? { assignsByToughness: true as const } : {}),
     cantActivate,
     cantActivateNonMana,
     attacksOnlyIfDefenderHas,

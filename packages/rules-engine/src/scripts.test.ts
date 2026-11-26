@@ -48602,6 +48602,53 @@ describe('endure N (D1317, CR 701.63)', () => {
   });
 });
 
+describe('combat damage equal to toughness rather than power (D1318)', () => {
+  const DORAN = { name: 'Test Doran', type_line: 'Creature — Treefolk Shaman', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '0', toughness: '5',
+    oracle_text: 'Each creature assigns combat damage equal to its toughness rather than its power.' };
+  const BRONTO = { name: 'Test Brontodon', type_line: 'Creature — Dinosaur', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '4', toughness: '6',
+    oracle_text: 'Each creature you control assigns combat damage equal to its toughness rather than its power.' };
+  const WALL = { name: 'Test Bulwark', type_line: 'Creature — Wall', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '0', toughness: '4', oracle_text: '' };
+  const BRUTE = { name: 'Test Brute', type_line: 'Creature — Ogre', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '3', toughness: '1', oracle_text: '' };
+  const deck = customDeck({ id: 'd1318', name: 'Doran', entries: [{ name: 'Test Doran', count: 4 }, { name: 'Test Brontodon', count: 4 }, { name: 'Test Bulwark', count: 4 }, { name: 'Test Brute', count: 4 }, { name: 'Forest', count: 44 }], data: [DORAN, BRONTO, WALL, BRUTE] as never[] });
+  const fight = (lord: string, block: boolean): { s: GameState; wall: string; bears: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1318', 1: 'd1318' }, deckSpecs: { d1318: deck.deck },
+      battlefield: { 0: [lord, 'Test Bulwark'], 1: ['Test Brute'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const wall = find(s, 0, 'battlefield', 'Test Bulwark');
+    const bears = find(s, 1, 'battlefield', 'Test Brute');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: wall, defender: 1 }] } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    s = apply(s, { type: 'auto:block', by: 1, blocks: block ? [{ blocker: bears, attacker: wall }] : [] } as Action);
+    s = advanceTo(s, 'end-combat');
+    return { s, wall, bears };
+  };
+
+  it('reads whole, both forms', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(DORAN as never)).toMatchObject({ ok: true, unread: [], script: { statics: [{ scope: 'all-creatures', effect: { assignsByToughness: true } }] } });
+    expect(compileCard(BRONTO as never)).toMatchObject({ ok: true, unread: [], script: { statics: [{ scope: 'controller-creatures' }] } });
+  });
+
+  it('a 0/4 under Doran hits for four, and its power is still nought', () => {
+    const { s, wall } = fight('Test Doran', false);
+    expect(s.seats[1]!.life).toBe(16);
+    expect(characteristicsOf(s, s.instances[wall]!).power).toBe(0);
+  });
+
+  it("Doran's is every creature's: the blocking 3/1 deals one, its toughness, and dies to four", () => {
+    const { s, wall, bears } = fight('Test Doran', true);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[wall]!.damage).toBe(1);
+  });
+
+  it("the Brontodon's is its controller's only: the 3/1 deals its power, three", () => {
+    const { s, wall, bears } = fight('Test Brontodon', true);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[wall]!.damage).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

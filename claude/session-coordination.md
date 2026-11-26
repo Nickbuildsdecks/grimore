@@ -234,3 +234,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1314 pushed in b898a3c. D1315 "becomes the color of your choice / a named colour until end of turn" (scripts.ts readEffect).
 - D1315 pushed in 8aab076. D1316 "becomes the creature type of your choice until end of turn" (scripts.ts readEffect).
 - D1316 pushed with the D1316 checkpoint in 97f9fa1. D1317 endure N (scripts.ts selfEffect).
+- D1317 pushed in 0b3fbcd. D1318 Doran, combat damage by toughness (assignsByToughness, combatDamageOf): characteristics, effects, combat.ts, scripts.ts reader.

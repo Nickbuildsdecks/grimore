@@ -158,11 +158,20 @@ export function legalDefenders(state: GameState, id: string, seat: SeatIndex): S
  * before anything gets past it (CR 702.19b), so it spends the budget here even though it will not
  * die. That makes the question "whose damage gets spent where", which is what the order is.
  */
+/**
+ * The combat damage a creature assigns (CR 510.1a): its power, or its toughness under a Doran
+ * (D1318, `assignsByToughness`). Every damage assignment in this file reads it; a comparison of
+ * power with power (a "weaker" creature can't block) still reads power.
+ */
+export function combatDamageOf(ch: { readonly power: number; readonly toughness: number; readonly assignsByToughness?: true }): number {
+  return ch.assignsByToughness === true ? ch.toughness : ch.power;
+}
+
 export function damageOrderChoice(state: GameState, attack: CombatAttack): string[] | null {
   const blockers = attack.blockers.filter((id) => creatureOf(state, id) !== null);
   if (blockers.length < 2) return null;
   const attacker = creatureOf(state, attack.attacker);
-  if (attacker === null || attacker.ch.power <= 0) return null;
+  if (attacker === null || combatDamageOf(attacker.ch) <= 0) return null;
   const deathtouch = attacker.ch.keywords.has('deathtouch');
   const costs = blockers.map((id) => {
     const blocker = creatureOf(state, id)!;
@@ -170,8 +179,8 @@ export function damageOrderChoice(state: GameState, attack: CombatAttack): strin
   });
   const total = costs.reduce((n, c) => n + c, 0);
   const cheapest = Math.min(...costs);
-  if (attacker.ch.power >= total) return null;
-  if (attacker.ch.power < cheapest) return null;
+  if (combatDamageOf(attacker.ch) >= total) return null;
+  if (combatDamageOf(attacker.ch) < cheapest) return null;
   return blockers;
 }
 
@@ -192,7 +201,7 @@ export function damageOrdersOwed(
     const blockers = damageOrderChoice(state, attack);
     const attacker = creatureOf(state, attack.attacker);
     const living = attack.blockers.filter((id) => creatureOf(state, id) !== null);
-    if (attacker !== null && attacker.ch.assignsAsUnblocked && attacker.ch.power > 0 && living.length > 0) {
+    if (attacker !== null && attacker.ch.assignsAsUnblocked && combatDamageOf(attacker.ch) > 0 && living.length > 0) {
       owed.push({ attacker: attack.attacker, blockers: blockers ?? living, mayGoUnblocked: true });
       continue;
     }
@@ -858,7 +867,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
   for (const [blockerId, attackers] of blocked) {
     const blocker = asItWas(blockerId);
     if (attackers.length < 2 || blocker === null) continue;
-    let left = Math.max(0, blocker.ch.power);
+    let left = Math.max(0, combatDamageOf(blocker.ch));
     const deathtouch = blocker.ch.keywords.has('deathtouch');
     attackers.forEach((attackerId, i) => {
       const target = asItWas(attackerId);
@@ -879,7 +888,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
     const livingBlockers = attack.blockers.filter((id) =>
       creatureOf(next, id) !== null && sameObject(next, id, attack.blockerSeqs?.[id]));
 
-    if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0
+    if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && combatDamageOf(attacker.ch) > 0
       && !prevented(attack.attacker) && !assignsNone(attack.attacker)) {
       /*
         Deathtouch is still read here, and only for the **arithmetic**: how much of an attacker's
@@ -894,11 +903,11 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
       // Assigned as though it weren't blocked (D770): all of it to what it attacked, none to blockers.
       if (attack.blockers.length === 0 || attack.asUnblocked === true) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
-        next = hit(next, defenderTarget(next, attack), attacker.ch.power, {
+        next = hit(next, defenderTarget(next, attack), combatDamageOf(attacker.ch), {
           controller, combatFrom: attack.attacker, source: attack.attacker,
         }, attack.attacker);
       } else {
-        let remaining = attacker.ch.power;
+        let remaining = combatDamageOf(attacker.ch);
         for (const blockerId of livingBlockers) {
           if (remaining <= 0) break;
           const blocker = asItWas(blockerId);
@@ -935,9 +944,9 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
 
     for (const blockerId of livingBlockers) {
       const blocker = asItWas(blockerId);
-      if (blocker === null || !dealsInStep(blocker.ch, firstStrike) || blocker.ch.power <= 0) continue;
+      if (blocker === null || !dealsInStep(blocker.ch, firstStrike) || combatDamageOf(blocker.ch) <= 0) continue;
       // A creature blocking several attackers splits its damage among them (D942); see `blockerShares`.
-      const share = shares.get(`${blockerId}>${attack.attacker}`) ?? blocker.ch.power;
+      const share = shares.get(`${blockerId}>${attack.attacker}`) ?? combatDamageOf(blocker.ch);
       // The attacker may already be gone; blockers deal damage only to something still there,
       // and not to a new permanent wearing the same id.
       if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
