@@ -64793,3 +64793,28 @@ Faults injected by hand: 3, all caught.
 - The self-return's counter dropped.
 
 Coverage: 17,205 of 31,900 cards (+8 over D1275's 17,197), 39,936 of 59,888 lines (+11).
+
+## D1277 — "Sacrifice it at end of combat"
+
+"Whenever Crumbling Colossus attacks or blocks, sacrifice it at end of combat" (Fog Elemental,
+Mardu Blazebringer, Runaway Carriage, Stoic Ephemera). The delayed self-sacrifice reader (D1166)
+took only "at the beginning of the next end step". It now takes "at end of combat" too, scheduling
+the same engine-known delayed ability for the end-of-combat step. That is this combat's step, the
+basilisks' timing (D969). The creature deals its combat damage first and is gone before the second
+main phase. Like the end-step version, it acts only on the creature as it is (CR 400.7).
+
+Read whole now: Crumbling Colossus, Fog Elemental, Mardu Blazebringer, Runaway Carriage, Stoic
+Ephemera. Wicker Warcrawler's "put a -1/-1 counter on it at end of combat" is not a built-in
+delayed action and stays unread.
+
+**Tests.** 3 engine tests:
+- It reads whole.
+- It attacks, is still there at combat damage, deals its 5, and is in the graveyard by the second
+  main phase.
+- As a blocker it goes too, after the combat it blocked in.
+
+Faults injected by hand: 2, all caught.
+- Scheduled for the end step instead.
+- Sacrificed at once.
+
+Coverage: 17,213 of 31,900 cards (+8 over D1276's 17,205), 39,946 of 59,888 lines (+10).
