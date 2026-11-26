@@ -82,7 +82,8 @@ function compilationFor(def: CardDef): Compilation {
       compiler that built it read every face.
     */
     ...(def.faces === undefined ? {} : {
-      card_faces: [def, ...def.faces.cards].map((face, at) => ({
+      // A split card's faces are its two halves and nothing else (D1294): the whole is not a face.
+      card_faces: (def.faces.kind === 'split' ? def.faces.cards : [def, ...def.faces.cards]).map((face, at) => ({
         name: face.name, type_line: face.typeLine,
         /*
           An adventurer's front, without the line that **quotes** its Adventure. The pool writes

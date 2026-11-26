@@ -210,3 +210,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1290 pushed in e2c41e3. D1291 Neoform: search destination onto the battlefield with an additional +1/+1 counter (scripts.ts searchClause).
 - D1291 pushed in 2a64dad. D1292 effect-paid climb: CardsDecisionSpec.climbFromFirstAnswer (automation.ts), the If-you-do reader's sacrifice-then-search (scripts.ts optionalEffect).
 - D1292 pushed in 27a9732, checkpoint d70b1bd. D1293 activation timings 'combat' and 'declare-blockers' (turnTypes.ts ActivationTiming, automation.ts atActivationTiming, autoActions.ts refusal, scripts.ts Activate-only splitter).
+- D1293 pushed in 288540a. D1294 split cards from card data: compileSplit in compile.ts, derive.ts round trip for split faces.

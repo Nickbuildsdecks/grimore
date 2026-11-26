@@ -47421,6 +47421,62 @@ describe('"Activate only during combat" and "during the declare blockers step" (
   });
 });
 
+describe('split cards from card data (D1294)', () => {
+  const face = (name: string, type: string, cost: string, text: string, colors: string[]) => ({ name, type_line: type, mana_cost: cost, oracle_text: text, colors });
+  const split = (a: ReturnType<typeof face>, b: ReturnType<typeof face>) => ({
+    name: a.name, type_line: a.type_line, oracle_text: a.oracle_text, mana_cost: a.mana_cost, cmc: 0, colors: a.colors, layout: 'split',
+    card_faces: [a, b],
+  });
+  const PAIR = split(face('Test Burn', 'Instant', '{R}', 'Test Burn deals 2 damage to any target.', ['R']), face('Test Study', 'Sorcery', '{1}{U}', 'Draw a card.', ['U']));
+  const AFTER = split(face('Test Before', 'Sorcery', '{R}', 'Draw a card.', ['R']), face('Test After', 'Sorcery', '{U}', 'Aftermath (Cast this spell only from your graveyard. Then exile it.)\nDraw a card.', ['U']));
+  const ROOM = split(face('Test Hall', 'Enchantment — Room', '{U}', 'When you unlock this door, draw a card.', ['U']), face('Test Den', 'Enchantment — Room', '{2}{U}', 'When you unlock this door, draw a card.', ['U']));
+  const FUSED = split(face('Test Left', 'Instant', '{R}', 'Test Left deals 1 damage to any target.\nFuse (You may cast one or both halves of this card from your hand.)', ['R']), face('Test Right', 'Instant', '{G}', 'You gain 2 life.\nFuse (You may cast one or both halves of this card from your hand.)', ['G']));
+
+  it('compiles as the split shape the engine plays: both halves, their costs added, their colours together', () => {
+    const read = compileCard(PAIR as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    if (!read.ok) return;
+    expect(read.def.name).toBe('Test Burn // Test Study');
+    expect(read.def.typeLine).toBe('Instant // Sorcery');
+    expect(read.def.manaCost).toBe('{R} // {1}{U}');
+    expect(read.def.cmc).toBe(3);
+    expect(read.def.colors).toEqual(['U', 'R']);
+    expect(read.def.faces?.kind).toBe('split');
+    expect(read.def.faces?.cards.map((c) => c.cmc)).toEqual([1, 2]);
+    // And read back from the def at play time, the halves are the faces and the whole is not one.
+    expect(unreadLines(read.def)).toEqual([]);
+    const fusedRead = compileCard(FUSED as never);
+    expect(unreadLines(fusedRead.ok ? fusedRead.def : undefined).length).toBeGreaterThan(0);
+  });
+
+  it('aftermath and Rooms are refused; Fuse is an unread line, and each half still reads', () => {
+    expect(compileCard(AFTER as never)).toMatchObject({ ok: false });
+    expect(compileCard(ROOM as never)).toMatchObject({ ok: false });
+    const fused = compileCard(FUSED as never);
+    expect(fused.ok).toBe(true);
+    if (!fused.ok) return;
+    expect(fused.unread.map((u) => u.line).every((line) => /^Fuse\b/.test(line))).toBe(true);
+    expect(fused.unread.length).toBeGreaterThan(0);
+  });
+
+  it('in a deck: each half is cast for its own cost, never the card as a whole, and the card goes to the graveyard', () => {
+    const deck = customDeck({ id: 'd1294', name: 'Split', entries: [{ name: 'Test Burn', count: 4 }, { name: 'Island', count: 56 }], data: [PAIR] as never[] });
+    expect(deck.unknown).toEqual([]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd1294', 1: 'd1294' }, deckSpecs: { d1294: deck.deck },
+      hands: { 0: ['Test Burn // Test Study'] }, battlefield: { 0: ['Island', 'Island'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Burn // Test Study');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card } as Action)).toContain('choose which half');
+    const halves = legalActions(s, 0).plays.filter((p) => p.card === card && p.kind === 'cast').map((p) => p.half);
+    expect(halves).toContain(1);
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 1 } as Action)), 20);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

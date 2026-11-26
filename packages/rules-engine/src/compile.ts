@@ -704,9 +704,81 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
   };
 }
 
+/**
+ * A split card (D1294, CR 708): two spells on one card, each cast as itself and never the card as a
+ * whole. Fire // Ice, Commit // Memory, Expansion // Explosion.
+ *
+ * Each half is compiled on its own, as a single card, and the whole is the hand-written split shape
+ * the engine already plays (`FIRE_ICE`): both names, both types and both costs joined with " // ",
+ * the halves' colours together, and their mana values added, which is the card's mana value
+ * everywhere but the stack (CR 708.4). The whole has no script of its own: a split card is only
+ * ever cast as one of its halves (`castableAsPrinted`).
+ *
+ * Two kinds of split card are refused rather than played wrongly:
+ * - **Aftermath** (CR 702.127): its second half may be cast only from the graveyard. Offered from
+ *   the hand like any other half, it would be a spell the card does not allow.
+ * - **Rooms** (CR 709.5): an enchantment with two doors, one unlocked as it is cast and the other
+ *   unlocked later. The engine has no doors yet.
+ *
+ * Fuse (CR 702.102), casting both halves together from the hand, is a keyword line each half prints.
+ * It stays unread: each half is still cast on its own, as the card allows.
+ */
+function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilation {
+  const named = faces.map((face) => (face.name ?? '').trim()).join(' // ');
+  if (faces.some((face) => /^aftermath\b/im.test(face.oracle_text ?? ''))) {
+    return { ok: false, why: `${named}: aftermath is not played yet` };
+  }
+  if (faces.some((face) => /\bRoom\b/.test(face.type_line ?? ''))) {
+    return { ok: false, why: `${named}: a Room's doors are not played yet` };
+  }
+  const halves: CardDef[] = [];
+  const compiled: string[] = [];
+  const unread: UnreadLine[] = [];
+  let scripted = false;
+  for (const face of faces) {
+    const half = compileCard({
+      name: face.name ?? null,
+      type_line: face.type_line ?? null,
+      oracle_text: face.oracle_text ?? null,
+      mana_cost: face.mana_cost ?? '',
+      cmc: costValue(parseManaCost(face.mana_cost ?? '')),
+      colors: face.colors ?? [],
+      power: face.power ?? null,
+      toughness: face.toughness ?? null,
+      loyalty: face.loyalty ?? null,
+      layout: 'normal',
+    });
+    if (!half.ok) return { ok: false, why: `${named}: its half ${face.name ?? '(unnamed)'} — ${half.why}` };
+    halves.push(half.def);
+    compiled.push(...half.compiled);
+    unread.push(...half.unread);
+    if (half.script !== undefined) scripted = true;
+  }
+  const colours = new Set(halves.flatMap((half) => half.colors));
+  return {
+    ok: true,
+    def: {
+      name: named,
+      typeLine: halves.map((half) => half.typeLine).join(' // '),
+      manaCost: halves.map((half) => half.manaCost).join(' // '),
+      cmc: halves.reduce((sum, half) => sum + half.cmc, 0),
+      oracleText: halves.map((half) => half.oracleText).join('\n'),
+      colors: ['W', 'U', 'B', 'R', 'G'].filter((c) => colours.has(c)),
+      faces: { kind: 'split', cards: halves },
+    },
+    compiled,
+    unread,
+    source: scripted ? 'lines' : 'printed-only',
+  };
+}
+
 /** The compilation itself. Called only by `compileCard`, which caches it. */
 function compileUncached(row: CardDataRow): Compilation {
   const layout = (row.layout ?? 'normal').trim().toLowerCase();
+  if (layout === 'split') {
+    const halves = faceRowsOf(row);
+    if (halves.length >= 2) return compileSplit(row, halves);
+  }
   const faceKind = FACE_LAYOUTS[layout];
   const faces = faceKind === undefined ? [] : faceRowsOf(row);
   if (faceKind !== undefined && faces.length >= 2) return compileFaces(row, faceKind, faces);
