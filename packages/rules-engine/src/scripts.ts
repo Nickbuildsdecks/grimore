@@ -17036,6 +17036,22 @@ function selfEffect(
     }
   }
 
+  /*
+    "Draw a card at the beginning of the next turn's upkeep" in a permanent's ability (D1310): Carrier
+    Pigeons' "When ~ enters, …", the Mirage cantrip creatures. A spell's has been read since D689 as
+    a delayed trigger on the card itself; an ability's is the engine-known delayed draw (`builtin:
+    'draw'`), scheduled as the ability resolves and drawn by its controller at whoever's upkeep comes
+    next, whether or not the permanent is still there (CR 603.7c).
+  */
+  if (/^draw a card at the beginning of the next turn's upkeep$/i.test(text)) {
+    return {
+      effect: (c) => scheduleDelayed(c.state, {
+        source: c.source, controller: c.controller, abilityIndex: -1, step: 'upkeep', of: 'any',
+        builtin: 'draw', description: 'draw a card',
+      }),
+    };
+  }
+
   // Incubate (D1155, CR 701.53a): see `incubate` and the `INCUBATOR` token.
   const incubated = /^incubate (\d+|one|two|three|four|five)$/i.exec(text);
   if (incubated !== null) {

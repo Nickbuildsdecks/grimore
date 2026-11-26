@@ -48296,6 +48296,34 @@ describe('"you may choose not to untap ~", answered by its controller (D1309)', 
   });
 });
 
+describe('a delayed draw from a permanent\'s ability (D1310)', () => {
+  const PIGEONS = { name: 'Test Pigeons', type_line: 'Creature — Bird', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: "Flying\nWhen Test Pigeons enters, draw a card at the beginning of the next turn's upkeep." };
+  const deck = customDeck({ id: 'd1310', name: 'Pigeons', entries: [{ name: 'Test Pigeons', count: 4 }, { name: 'Plains', count: 56 }], data: [PIGEONS] as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(PIGEONS as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it("draws for the Pigeons' controller at the next turn's upkeep, which is the opponent's, and only once", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1310', 1: 'd1310' }, deckSpecs: { d1310: deck.deck },
+      hands: { 0: ['Test Pigeons'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Pigeons') } as Action)), 20);
+    expect(s.delayed.filter((d) => d.builtin === 'draw' && d.controller === 0).length).toBe(1);
+    const held = ids(s, 0, 'hand').length;
+    // Nothing yet this turn.
+    s = advanceTo(s, 'end');
+    expect(ids(s, 0, 'hand').length).toBe(held);
+    s = advanceTo(nextTurn(s), 'draw');
+    expect(s.activeSeat).toBe(1);
+    expect(ids(s, 0, 'hand').length).toBe(held + 1);
+    expect(s.delayed.some((d) => d.builtin === 'draw')).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

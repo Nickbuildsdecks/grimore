@@ -2414,7 +2414,7 @@ export function scheduleDelayed(
     readonly of: 'you' | 'any';
     readonly subject?: string;
     readonly description: string;
-    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you';
+    readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw';
     readonly onDeath?: true;
   },
 ): GameState {

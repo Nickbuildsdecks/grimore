@@ -7261,12 +7261,14 @@ function resolveObject(
  * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
  * has no subject and nothing happens.
  */
-const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you', Resolvable>> = {
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw', Resolvable>> = {
   // The basilisks' "destroy that creature at end of combat" (D969). Only from the battlefield.
   destroy: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
       ? c.state : destroy(c.state, c.subject)),
   },
+  // "Draw a card at the beginning of the next turn's upkeep" from a permanent's ability (D1310).
+  draw: { effect: (c) => draw(c.state, c.controller, 1) },
   // Necropotence's card, exiled face down and put into its owner's hand (D719). Only from exile.
   'to-hand': {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'exile'

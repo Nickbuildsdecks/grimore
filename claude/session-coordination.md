@@ -226,3 +226,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1306 pushed in aa90189. D1307 counters removed as an X (AbilityCost.removeXCounters, AbilityDef.producesPerX): scripts.ts cost and mana readers, compile.ts mana-line route, autoActions activation, legalActions sources/xMax/potentialMana.
 - D1307 pushed in 45fe080; checkpoint at D1307 committed. D1308 the Spheres (CardScript.damageToYouReduced): scripts.ts static reader, effects.ts dealDamage.
 - D1308 pushed in 360b6de. D1309 keep-tapped choice (auto:keepTapped, CardInstance.keepTapped): turnTypes, autoActions, automation untap, cardActions relocate, view, compile.ts storage exclusion lifted; web PlaySheet toggle, PlayTable, arena.ts badge.
+- D1309 pushed in 3c867e5. D1310 delayed draw from a permanent's ability (builtin 'draw'): scripts.ts reader, automation BUILTIN_DELAYED, turnTypes/effects unions.
