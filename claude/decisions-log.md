@@ -64868,3 +64868,37 @@ Faults injected by hand: 2, all caught.
 - The plain form given a minimum of two attackers.
 
 Coverage: 17,218 of 31,900 cards (+3 over D1278's 17,215), 39,952 of 59,888 lines (+4).
+
+## D1280 — "That many" after an attack: mills, and a discard after the draw
+
+Two more readers behind the "that many" mark (D903):
+- "target player mills that many cards" (Screaming Swarm), aimed as the trigger goes on the stack;
+- "discard that many cards", the controller's own question, sized as it is asked from the event's
+  amount (D1195), as the hit player's discard already was (D1196).
+
+Together with D1279 these read Varina, Lich Queen's "Whenever you attack with one or more Zombies,
+draw that many cards, then discard that many cards".
+
+**An engine bug found on the way.** A trigger whose first half runs before its question
+(`beforeDecisions`, D955) ran that half with a context that left out the event's amount. So
+Varina's "draw that many" drew nothing, the discard question saw the old hand, and the engine
+answered it alone. The context now carries `eventAmount` as the asking context and the effect's
+context do.
+
+**A display fix.** A trigger with "that many" showed the reader's internal mark on the stack and
+in the log ("draw \u000e many cards … resolves"). Trigger descriptions now show the printed words,
+as D1271 did for the yes/no prompt.
+
+**Tests.** 3 engine tests:
+- Both forms read; "that many" with no amount behind it (an activated ability) stays unread.
+- Two Zombies attack: the stack shows the printed words. Two cards are drawn, and the discard of two
+  is asked from the hand with the new cards in it.
+- Three creatures attack: the target player mills three.
+
+Faults injected by hand: 4, all caught.
+- The event's amount left out of the first half's context again.
+- One card milled instead of that many.
+- One card discarded instead of that many.
+- The trigger description left with the mark in it.
+
+Coverage: 17,220 of 31,900 cards (+2 over D1279's 17,218), 39,956 of 59,888 lines (+4).
