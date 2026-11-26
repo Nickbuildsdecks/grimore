@@ -48635,3 +48635,53 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6408 of 6408 pass.
 
 Coverage: 17,368 of 31,900 cards (+5 over D1309's 17,363), 40,157 of 59,888 lines (+8).
+
+## D1311 — A mana ability with a second effect (CR 605.1a)
+
+Some abilities add mana and then do something else:
+- Chromatic Sphere's "{1}, {T}, Sacrifice ~: Add one mana of any color. Draw a card.";
+- the five Eggs' "Add {U}{B}. Draw a card.";
+- Barbed Sextant's delayed draw (D1310);
+- Pyramid of the Pantheon's "Put a brick counter on ~".
+
+Each could add mana, targets nothing and is not a loyalty ability, so each is a mana ability. It
+never uses the stack, and the rest happens as the mana is added. The clause vocabulary had read
+the whole line as an ability on the stack: the mana came from a colour question as it resolved,
+an opponent could respond to it, and it could not be used in the middle of paying.
+
+A measurement over the legal pool found 25 abilities that print "Add" and were read without
+`produces`. The others are loyalty abilities (Chandra, Koth, Ugin), which correctly use the stack,
+token makers, and two counted ones (Cabal Stronghold, Crypt of Agadeem) left for later.
+
+The new reader in `lineScriptFor` takes "Add <symbols>. <effect>" and "Add one mana of any color.
+<effect>":
+- fixed symbols make one mana ability; "any color" makes one per colour, as the choice reader does;
+- each carries the second effect as `effect`, which the activation's mana branch already runs
+  (D497's pain lands) and settles, so a deferred draw arrives at once;
+- only an effect with no target and no question, since a mana ability runs with neither;
+- only beside a mana cost. `manaSources` never offers an ability with a mana cost to the
+  auto-payer, which taps for mana and would not run the rest. Without the guard, "Sacrifice ~: Add
+  one mana of any color. Draw a card." would have been an auto-payer source that never draws.
+
+**Bot.** The bot does not press mana abilities for their own sake, so it no longer cracks a
+Chromatic Sphere just for the card, as it could when the line was a stack ability.
+
+**Tests.** 3 tests:
+- Compile:
+  - the Sphere is five mana abilities, one per colour;
+  - the Egg is one, making UB;
+  - the free-cost fixture is not read as a mana ability with an effect.
+- Chromatic Sphere:
+  - five rows are offered, all as mana abilities, and none is an auto-payer source;
+  - its blue row makes U and draws a card, with the stack empty and the Sphere in the graveyard.
+- The Egg makes U and B and a card, without the stack.
+
+Faults injected by hand: 3, all caught.
+- The reader off.
+- The effect dropped.
+- The mana-cost guard dropped. The first fixture missed this: a `{T}`-led line goes to the mana-line
+  parser and never reaches this reader. The fixture now uses a sacrifice-only cost.
+
+The scripts tests, compile tests and pins: 6411 of 6411 pass.
+
+Coverage: 17,368 of 31,900 cards (+0 over D1310's 17,368), 40,157 of 59,888 lines (+0).
