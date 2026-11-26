@@ -65635,3 +65635,57 @@ Faults injected by hand: 3, all caught.
 - The second trigger dropped.
 
 Coverage: 17,267 of 31,900 cards (+12 over D1298's 17,255), 40,021 of 59,888 lines (+13).
+
+## D1300 — "Whenever you put one or more counters on …": who put them, and how many
+
+Hapatra, Vizier of Poisons; Ant-Man, Colony Commander; Knight of Wundagore; Generous Patron; Nest of
+Scarabs; Obelisk Spider; Casey Jones; Mikey & Leo. 26 legal lines, and the phrase-gap measure's top
+row: 81 cards were one counter phrase from finished.
+
+**Who put them.** The `counters-put` event (D633) did not record who put the counters. D881 had
+stated this as a gap for Exemplar of Light. Now:
+- `GameState.countersBy` is the controller of the stack object resolving. `completeResolution`
+  sets it for the length of the resolution and clears it after.
+- `addCounters` writes it onto each placement.
+- The event is raised with that seat as its actor, falling back to the permanent's controller.
+- The matcher's new `byYou` asks for the watcher's controller.
+- Exemplar of Light's trigger now has `byYou` too.
+
+**A gap found on the way:** infect's and wither's damage wrote its -1/-1 counters straight onto
+the creature, so they were never announced. No "-1/-1 counters are put on" trigger saw them,
+Hapatra's included. They are announced now, as put by the damage source's controller (CR 702.80c).
+
+**Every kind.** Placements were recorded for +1/+1, -1/-1, loyalty and the monstrous marker only.
+"Whenever you put one or more counters on a creature" is any kind, and Kate Stewart's are time
+counters, so every kind but the engine's own markers is recorded now. Every existing counters-put
+trigger names its kind, so none of them sees more than before.
+
+**How many.** Each placement carries its amount after Hardened Scales and its kin, and the event's
+`eventAmount` and the "that many" mark take it: Nest of Scarabs' "create that many", Casey Jones'
+"that much damage".
+
+**The readers:**
+- "Whenever you put (a|one or more) [kind] counter(s) on" a creature, another creature, a creature
+  you (don't) control, a permanent you control, or a planeswalker.
+- The same "on ~" with any named kind.
+
+Read whole now: Ant-Man, Exemplar of Light, Generous Patron, Hapatra, Knight of Wundagore, Mikey &
+Leo, Nest of Scarabs, Obelisk Spider, Casey Jones, Stocking the Pantry. Terrasymbiosis and Chekov and
+McCoy are held by "Do this only once each turn".
+
+**Tests.** 6 engine tests:
+- The three test cards read.
+- Your spell putting -1/-1 counters on their creature makes a Snake.
+- Their spell putting -1/-1 counters on your creature is not you: no Snake.
+- Wither damage puts its counter on, and it is yours: a Snake.
+- "That many": two counters, two Insects.
+- "A creature you don't control": theirs draws, yours does not.
+
+Faults injected by hand: 5, all caught.
+- "You" not checked.
+- `countersBy` not set.
+- "You don't control" not checked.
+- The amount not carried.
+- Wither's counters not announced.
+
+Coverage: 17,278 of 31,900 cards (+11 over D1299's 17,267), 40,034 of 59,888 lines (+13).
