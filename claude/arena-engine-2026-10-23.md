@@ -48877,3 +48877,44 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6428 of 6428 pass.
 
 Coverage: 17,411 of 31,900 cards (+8 over D1316's 17,403), 40,211 of 59,888 lines (+8).
+
+## D1318 — Combat damage equal to toughness: Doran
+
+Doran, the Siege Tower prints "Each creature assigns combat damage equal to its toughness rather
+than its power." Belligerent Brontodon, Huatli, the Sun's Heart and Rasaad yn Bashir print it as
+"Each creature you control …". Neither had a reader, and combat had no way to say it.
+
+**The rule** (CR 510.1a): such a creature assigns its toughness as combat damage. Its power is
+unchanged for everything else.
+
+**The engine.** `ContinuousEffect.assignsByToughness` is gathered into the creature's
+characteristics like the other combat statics. `combat.ts` now asks `combatDamageOf(ch)` at every
+place it assigns damage:
+- the unblocked hit;
+- a blocked attacker's damage and its trample overflow;
+- a blocker's damage, and its split among several attackers;
+- the damage-order question.
+
+The power comparisons stay on power, because "a creature with lower power can't block it" is about
+power.
+
+**The reader.** It is a static on every creature, or on the controller's, as an anthem is.
+
+Still unread: Arcades, the Strategist and Assault Formation's "each creature you control with
+defender" form, and Assault Formation's defender line.
+
+**Tests.** 4 tests:
+- Compile: both forms read, with their scopes.
+- Under Doran:
+  - an unblocked 0/4 hits for four, and its power is still 0;
+  - a blocking 3/1 deals one, its toughness, and dies to four.
+- Under the Brontodon, the opponent's 3/1 deals three, its power, and still dies.
+
+Faults injected by hand: 3, all caught.
+- Power always used.
+- The controller's scope read as everyone's.
+- A blocked attacker's damage read from power.
+
+The scripts tests, compile tests, pins and combat tests: 6479 of 6479 pass.
+
+Coverage: 17,415 of 31,900 cards (+4 over D1317's 17,411), 40,219 of 59,888 lines (+8).
