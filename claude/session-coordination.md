@@ -194,3 +194,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1274 pushed in 5757a33. D1275 the Confluences: ModalDef.repeats, combinations with repetition (done).
 - D1275 pushed in bdaf9d2. D1276 finality counters: the rule in replaceZoneChange, readers for returns and self-returns with one, finality out of RULES_COUNTERS (done).
 - D1276 pushed in dbd8449. D1277 "sacrifice it at end of combat" (delayedSelf at end-combat) (done).
+- D1277 pushed in 80edb77. D1278 "a Blood token": a subtype before "token" in permanentDescribed (done).

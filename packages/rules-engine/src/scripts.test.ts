@@ -46651,6 +46651,32 @@ describe('"sacrifice it at end of combat" (D1277)', () => {
   });
 });
 
+describe('"a Blood token": a subtype before "token" (D1278)', () => {
+  /*
+    "Sacrifice a Blood token", "… a Map token": the subtype is the noun and "token" says what it is.
+    The description put "permanent" in front of the subtype and then took that off instead of the
+    subtype, so the phrase read as nothing.
+  */
+  const SPELL = { name: 'Test Bloodletting', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Sacrifice a Blood token.' };
+  const deck = customDeck({ id: 'd1278', name: 'Blood', entries: [{ name: 'Test Bloodletting', count: 4 }, { name: 'Swamp', count: 56 }], data: [SPELL] as never[] });
+  const token = (name: string, typeLine: string) => ({ name, typeLine, manaCost: '', cmc: 0, oracleText: '', colors: [], ...(typeLine.includes('Creature') ? { power: '1', toughness: '1' } : {}) });
+
+  it('reads, and offers only Blood tokens: not a Food, not a creature token', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SPELL as never)).toMatchObject({ ok: true, unread: [] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1278', 1: 'd1278' }, deckSpecs: { d1278: deck.deck }, hands: { 0: ['Test Bloodletting'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = createToken(s, 0, token('Blood', 'Token Artifact — Blood') as never, 2);
+    s = createToken(s, 0, token('Food', 'Token Artifact — Food') as never, 1);
+    s = createToken(s, 0, token('Bat', 'Token Creature — Bat') as never, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Bloodletting') } as Action)), 20);
+    const offered = s.pendingDecision?.candidates ?? [];
+    expect(offered).toHaveLength(2);
+    expect(offered.every((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Blood')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

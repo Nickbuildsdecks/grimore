@@ -13254,7 +13254,10 @@ const permanentDescribedOne = (
     token = true;
     words.pop();
     printedWords.pop();
-    if (words.length === 0 || !PERMANENT_TYPES.includes(words[words.length - 1]!)) words.push('permanent');
+    // A capitalised subtype before it ("a Blood token", "a Map token", D1278) is the subtype noun below:
+    // pushing "permanent" here made the subtype branch pop that instead of the subtype.
+    if (words.length === 0 || (!PERMANENT_TYPES.includes(words[words.length - 1]!)
+      && !/^[A-Z][a-z'-]*$/.test(printedWords[printedWords.length - 1] ?? ''))) words.push('permanent');
   }
   // D1173: a capitalised subtype as the noun, "a Vehicle", "an Equipment", "a Food".
   const subtypeNoun = basicNoun === undefined && /^[A-Z][a-z'-]*$/.test(printedWords[printedWords.length - 1] ?? '')
