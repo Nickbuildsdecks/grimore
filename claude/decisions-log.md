@@ -66535,3 +66535,34 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests, pins and combat tests: 6493 of 6493 pass.
 
 Coverage: 17,451 of 31,900 cards (+8 over D1322's 17,443), 40,262 of 59,888 lines (+8).
+
+## D1324 — Three more board conditions
+
+Grouping the cards one line short of finished by that line showed a long tail of conditional cost
+reductions, "This spell costs {1} less to cast if …", each held by a condition the vocabulary could
+not read. Three are plain board facts, now rows in the intervening-condition vocabulary, read live.
+That vocabulary is shared by cost reductions, a spell's guarded "if" and a trigger's intervening
+"if", so all three gain them:
+- "there is a land (creature, artifact, …) card in your graveyard" (Igneous Elemental);
+- "an opponent controls no basic lands" (Hagra Mauling's printing; the hand-written card has said
+  it since D578);
+- "an opponent controls a multicolored permanent / creature" (Ghostfire Slice).
+
+**Tests.** 3 tests, through `costChangeFor` on fixture sorceries:
+- All three read whole.
+- A land card put into the graveyard turns the first reduction on.
+- The basic-land condition:
+  - an opponent with a Mountain gives no reduction;
+  - one with only a two-colour creature, or with a nonbasic land and a Grizzly Bears, gives
+    {1} less.
+- The multicolored condition gives {1} less for the two-colour creature, and nothing for the Bears.
+
+Faults injected by hand: 3, all caught.
+- The hand read instead of the graveyard.
+- Any land taken for a basic one.
+- Any colour taken for multicolored. The first version of the test missed this and the previous
+  fault; the nonbasic-land and green-creature board was added for them.
+
+The scripts tests, compile tests and pins: 6449 of 6449 pass.
+
+Coverage: 17,454 of 31,900 cards (+3 over D1323's 17,451), 40,265 of 59,888 lines (+3).
