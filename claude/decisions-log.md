@@ -66752,3 +66752,45 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6465 of 6465 pass.
 
 Coverage: 17,500 of 31,900 cards (+5 over D1328's 17,495), 40,319 of 59,888 lines (+5).
+
+## D1330 — "Discard two cards" as a cost
+
+24 legal lines pay "Discard two cards" or "Discard three cards", and 17 were their card's only
+unread line: Ghoulsteed, Haunted Dead, Advanced Stitchwing and Geralf's Masterpiece returning from
+the graveyard, Latulla, Anurid Brushhopper, Alexi. D579's `discardACard` was a flag, and D580's
+pin refused a count it could not hold.
+
+**The cost.** `AbilityCost.discardCount`, beside `discardACard`, says how many. The player chooses
+all of them, sent as `ActivateAction.discards`, as D732's counted sacrifice sends `sacrifices`.
+- `activate` refuses anything but that many different cards, each one it may discard, and discards
+  them as the cost is paid.
+- `legalActions` offers the ability only with enough cards in hand, and says `discardCount` on the
+  play.
+- The web table collects the discards one tap at a time, as it does a counted sacrifice, and sends
+  them as `discards`.
+
+**The bot** does not use a counted discard: two cards is a price it cannot weigh against what it
+buys. Taking the guard out is harmless as it happens: the bot would offer a single `discarded`,
+which the engine refuses. So the guard keeps the candidate list honest rather than changing play.
+
+Two pins retired, D446-style: "Discard two cards" reads now. Their rows are now "Discard X cards",
+a count chosen as it is paid, which still has no field.
+
+**Tests.** 3 engine tests and 1 web test:
+- The fixture reads whole.
+- From the graveyard with three cards in hand:
+  - offered with `discardCount` 2;
+  - one card, or the same card twice, is refused;
+  - two different cards are discarded, and the creature returns tapped.
+- With one card in hand it is not offered, and the bot does not activate it.
+- Web: two taps collect two discards and send `discards: [a, c]`.
+
+Faults injected by hand: 4.
+- The count unchecked: caught.
+- Nothing discarded: caught.
+- Offered with one card: caught.
+- The bot's guard removed: not caught, for the reason given above.
+
+The scripts tests, compile tests and pins: 6468 of 6468 pass. Web: typecheck clean, 280 of 280.
+
+Coverage: 17,509 of 31,900 cards (+9 over D1329's 17,500), 40,331 of 59,888 lines (+12).
