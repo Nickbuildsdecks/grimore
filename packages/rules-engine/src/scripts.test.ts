@@ -46882,6 +46882,41 @@ describe('"~ or another creature you control enters, that creature …" (D1283)'
   });
 });
 
+describe('"enters with X +1/+1 counters on it, where X is …" and "a number of … equal to …" (D1284)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Zombie', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '0', toughness: '0',
+  });
+  const HORROR = C('Test Horror', 'Test Horror enters with X +1/+1 counters on it, where X is the number of creature cards in your graveyard.');
+  const BINDER = C('Test Binder', 'Test Binder enters with a number of +1/+1 counters on it equal to the number of other creatures you control.');
+  const BEAR = { ...C('Test Bear', ''), power: '2', toughness: '2' };
+  const ROWS = [HORROR, BINDER, BEAR];
+  const deck = customDeck({ id: 'd1284', name: 'Enters with', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Swamp', count: 51 }], data: ROWS as never[] });
+  const enter = (card: string, setup: { mine?: readonly string[]; yard?: readonly string[] }) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1284', 1: 'd1284' }, deckSpecs: { d1284: deck.deck },
+      hands: { 0: [card] }, battlefield: { 0: [...(setup.mine ?? [])] }, graveyard: { 0: [...(setup.yard ?? [])] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const id = find(s, 0, 'hand', card);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 20);
+    return s.instances[id]!.counters['+1/+1'] ?? 0;
+  };
+
+  it('reads both; a count the permanent would be in itself stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [HORROR, BINDER]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const own = compileCard(C('Test Own', 'Test Own enters with X +1/+1 counters on it, where X is the number of creatures you control.') as never);
+    expect(own.ok && own.unread.length).toBe(1);
+  });
+
+  it('two creature cards in the graveyard: two counters', () => {
+    expect(enter('Test Horror', { yard: ['Test Bear', 'Test Bear', 'Swamp'] })).toBe(2);
+  });
+
+  it('two other creatures: two counters, itself not counted', () => {
+    expect(enter('Test Binder', { mine: ['Test Bear', 'Test Bear'] })).toBe(2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

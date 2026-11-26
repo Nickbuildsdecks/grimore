@@ -38435,6 +38435,23 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     if (count === null || plainRead === null || fixed === undefined || fixed.amount === 'x' || Object.keys(plainRead).length !== 1) return null;
     return { entersWith: { ...fixed, per: count } };
   }
+  /*
+    And the same count announced (D1284): "~ enters with X +1/+1 counters on it, where X is the
+    number of instant and sorcery cards in all graveyards" (Academy Elite), and "~ enters with a
+    number of +1/+1 counters on it equal to the number of creature cards in your graveyard". Read
+    as one counter per thing counted, through the same guard as "for each": only a count the
+    arriving permanent cannot itself be in.
+  */
+  const flat = withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, '');
+  const announced = new RegExp(`^(.+ ${ENTERS}) with (?:X ((?:first |double )?[\\w+/-]+) counters? on it, where X is|a number of ((?:first |double )?[\\w+/-]+) counters? on it equal to) (.+)$`, 'i').exec(flat);
+  if (announced !== null) {
+    if (!/\bother\b|graveyard|died|your opponents control|an opponent controls/i.test(announced[4]!)) return null;
+    const count = whereXCount(announced[4]!, name);
+    const plainRead = count === null ? null : entersWithFromLine(`${announced[1]!} with a ${announced[2] ?? announced[3]!} counter on it`, name);
+    const fixed = plainRead?.entersWith;
+    if (count === null || plainRead === null || fixed === undefined || fixed.amount !== 1 || Object.keys(plainRead).length !== 1) return null;
+    return { entersWith: { ...fixed, per: count } };
+  }
   const conditioned = /^(.+) if (.+ this turn)$/i.exec(withoutAbilityWord(plain(line).trim()).replace(/\.\s*$/, ''));
   if (conditioned !== null) {
     const holds = interveningConditionFor(conditioned[2]!, name);
