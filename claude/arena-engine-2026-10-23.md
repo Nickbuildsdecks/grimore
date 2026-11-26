@@ -47091,3 +47091,41 @@ Faults injected by hand: 5, all caught.
 - The life total off by one.
 
 Coverage: 17,142 of 31,900 cards (+7 over D1268's 17,135), 39,833 of 59,888 lines (+8).
+
+## D1270 — Power/toughness counters other than +1/+1 and -1/-1
+
+"+2/+2", "+1/+2", "+1/+0", "-0/-1", "-0/-2" (CR 122.1a): Baron Sengir, the Chimeras, Fungus
+Elemental, Armor Thrull, Shield Sphere, Spirit Shackle and their kin. `characteristicsOf` now sums
+every power/toughness counter in layer 7c, each adding what its name says; only +1/+1 and -1/-1
+cancel as a state-based action (CR 704.5q), as before. The counter readers (on ~, on a target, on
+each of a set, on the enchanted or equipped creature, a counted number) take any such counter
+(`PT_COUNTER`) and keep the kind as printed. Before this, a "+" counter was normalised to "+1/+1"
+wherever it was read. A counter that lowers power and toughness on balance is aimed at somebody
+else's creature, as a -1/-1 counter is (`ptCounterHelps`).
+
+**A fix on the way.** `addCounters` refuses to put a +1/+1 or -1/-1 counter on a card that has left
+the battlefield (D566, CR 400.7). That guard now covers every power/toughness counter. Without it a
++2/+2 counter would have stayed on a graveyard card and come back with it.
+
+**Pins changed.**
+- D453 refused "put a +2/+2 counter on each creature you control" because nothing sized the
+  counter. It now reads.
+- D475's table kept "Whenever a creature you control dies, put a -1/-1 counter on that creature"
+  unread. It reads now, as the +1/+1 and stun versions of the same sentence already did: "that
+  creature" is the one that died, and the counter is not placed on the card in the graveyard. The
+  row became an engine test here.
+
+**Tests.** 5 engine tests:
+- Three forms read; the +2/+2 counter is aimed as a gift and the -0/-1 counter is not.
+- A +2/+2 counter makes a 2/2 a 4/4, kept under its printed name.
+- A -0/-1 counter takes toughness only.
+- A +1/+2 counter on itself; beside it a +1/+1 and a -1/-1 cancel and a +2/+2 does not.
+- No power/toughness counter lands on a card in a graveyard, and the dies sentence reads.
+
+Faults injected by hand: 4, all caught.
+- Characteristics summing only +1/+1 and -1/-1.
+- Every power/toughness counter aimed as a gift.
+- "+2/+2" normalised to "+1/+1" again.
+- The graveyard guard back to +1/+1 and -1/-1 only.
+
+Coverage: 17,154 of 31,900 cards (+12 over D1269's 17,142), 39,849 of 59,888 lines (+16).
