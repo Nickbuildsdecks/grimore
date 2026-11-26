@@ -66595,3 +66595,57 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6452 of 6452 pass.
 
 Coverage: 17,461 of 31,900 cards (+7 over D1324's 17,454), 40,273 of 59,888 lines (+8).
+
+## D1326 — "A source of your choice": the Circles of Protection
+
+44 legal lines print "The next time a [red] source of your choice would deal damage to …", and 42
+of them were their card's only unread line: the ten Circles of Protection, Cho-Arrim Alchemist,
+Charm Peddler, Circle of Despair, Beacon of Destiny and more. Two things were missing: a way to
+choose a source, and a shield that knows one.
+
+**The question.** A new decision zone, `'source'`, offers every permanent on every battlefield,
+then the spells on the stack, top first. A spell has to be there: the Circle's whole use is to be
+activated in response to a Lightning Bolt and name it. The answer is checked against the
+candidates, like every card question.
+- The web table lights the spells on the stack for it (`StackPanel`'s new `decidable`), alongside
+  the permanents on the board, and the hint says "tap a permanent, or a spell on the stack".
+- The bot names the top spell on the stack if one is offered. Otherwise it names the opponent's
+  most powerful creature, attacking ones first.
+
+**The shield.** `ContinuousEffect.nextDamageFrom` holds the chosen source as `id#seq`, the object
+it is now, with the protected player or creature as its scope (`preventNextDamageFrom`).
+`dealDamage` asks it before the amount shields, and it takes all of that source's next damage event
+there, then is gone. Damage that can't be prevented passes it. With `redirectTo`, the damage goes
+to the shield's source instead (Beacon of Destiny's "that damage is dealt to ~ instead").
+
+**The reader** takes:
+- an optional colour, or artifact, or creature;
+- "to you", "to target creature" or "to any target";
+- "prevent that damage" or "that damage is dealt to ~ instead".
+
+Still unread:
+- Cho-Arrim Alchemist and Bone Mask, for their second sentences;
+- Dark Sphere's "prevent half";
+- Shaman en-Kor and Jade Monolith's "target creature … dealt to ~ instead", which differ in where
+  the shield sits.
+
+**Tests.** 3 tests:
+- The fixture Circle reads whole.
+- Its question offers both of the opponent's red Goblins and not the green Bears. Answered with one
+  Goblin, that Goblin's next damage to you (five) is prevented whole, then the shield is gone (its
+  next one point lands), and the other Goblin was never covered.
+- In response to the opponent's red instant aimed at you:
+  - the question offers the spell;
+  - the bot names it;
+  - answered with it, the spell resolves and you lose nothing.
+
+Faults injected by hand: 5, all caught.
+- The shield ignored.
+- Never spent.
+- No stack spells offered.
+- Any colour offered.
+- The bot ignoring the stack.
+
+The scripts tests, compile tests and pins: 6455 of 6455 pass. Web: typecheck clean, 279 of 279.
+
+Coverage: 17,484 of 31,900 cards (+23 over D1325's 17,461), 40,296 of 59,888 lines (+23).
