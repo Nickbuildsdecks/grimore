@@ -48965,6 +48965,60 @@ describe('"the next time a red source of your choice would deal damage to you th
   });
 });
 
+describe('"Ward—Discard a card." (D1327)', () => {
+  const SNATCHER = { name: 'Test Snatcher', type_line: 'Creature — Spirit', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'Ward—Discard a card.' };
+  const SHOCK = { name: 'Test Shock', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', oracle_text: 'Test Shock deals 2 damage to any target.' };
+  const deck = customDeck({ id: 'd1327', name: 'Ward', entries: [{ name: 'Test Snatcher', count: 4 }, { name: 'Test Shock', count: 4 }, { name: 'Mountain', count: 52 }], data: [SNATCHER, SHOCK] as never[] });
+  const warded = (hand: readonly string[]): { s: GameState; snatcher: string; shock: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1327', 1: 'd1327' }, deckSpecs: { d1327: deck.deck },
+      hands: { 0: ['Test Shock', ...hand] }, battlefield: { 1: ['Test Snatcher'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    // Only the hand the test asked for, beside the Shock.
+    for (const id of ids(s, 0, 'hand').filter((id) => nameOf(s, id) !== 'Test Shock').slice(hand.length)) {
+      s = relocate(s, s.instances[id]!, 'library', 0, 'bottom');
+    }
+    const snatcher = find(s, 1, 'battlefield', 'Test Snatcher');
+    const shock = find(s, 0, 'hand', 'Test Shock');
+    s = apply(s, { type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'card', id: snatcher }] } as Action);
+    s = passBoth(s);
+    return { s, snatcher, shock };
+  };
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SNATCHER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('asks the caster for a card, and the card chosen is discarded and the spell goes on', () => {
+    let { s, snatcher, shock } = warded(['Mountain']);
+    expect(s.pendingPayment).toMatchObject({ seat: 0, discard: 1 });
+    expect(legalActions(s, 0).mustPay).toMatchObject({ discard: 1, cost: 'discard a card' });
+    const mountain = find(s, 0, 'hand', 'Mountain');
+    expect(() => apply(s, { type: 'auto:pay', by: 0, pay: true } as Action)).toThrow(/choose a card in your hand to discard/);
+    s = drain(apply(s, { type: 'auto:pay', by: 0, pay: true, discarded: [mountain] } as Action), 4);
+    expect(s.instances[mountain]!.zone).toBe('graveyard');
+    expect(s.instances[shock]!.zone).toBe('graveyard');
+    expect(s.instances[snatcher]!.damage).toBe(2);
+  });
+
+  it('declined, or with nothing in hand, the spell is countered', () => {
+    let { s, snatcher } = warded(['Mountain']);
+    s = drain(apply(s, { type: 'auto:pay', by: 0, pay: false } as Action), 4);
+    expect(s.instances[snatcher]!.damage).toBe(0);
+    const empty = warded([]);
+    expect(empty.s.pendingPayment).toBeNull();
+    expect(empty.s.instances[empty.snatcher]!.damage).toBe(0);
+  });
+
+  it('the bot pays with its least valuable card', () => {
+    const { s } = warded(['Mountain', 'Test Snatcher']);
+    // By `cardWorth`: a land is 2.5, a {0} card nothing, so the Snatcher goes and the land stays.
+    expect(botAction(s, 0 as SeatIndex)).toMatchObject({ type: 'auto:pay', pay: true, discarded: [find(s, 0, 'hand', 'Test Snatcher')] });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

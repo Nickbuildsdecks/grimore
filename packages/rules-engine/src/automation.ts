@@ -5509,7 +5509,9 @@ function settlePayment(state: GameState): GameState {
   */
   const lifeOwed = pending.life ?? 0;
   const lifeIsThere = lifeOwed === 0 || (state.seats[pending.seat]?.life ?? 0) > lifeOwed;
-  if (lifeIsThere
+  // And the cards, for a discard (D1327): a hand too small cannot pay.
+  const cardsAreThere = (pending.discard ?? 0) <= listAt(state, zoneKey(pending.seat, 'hand')).length;
+  if (lifeIsThere && cardsAreThere
     && canAfford(poolOf(state, pending.seat), cost, manaSources(state, pending.seat))) return state;
   /*
     And said in words, through the channel a replacement effect uses.

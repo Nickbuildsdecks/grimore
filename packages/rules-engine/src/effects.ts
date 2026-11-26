@@ -1990,14 +1990,14 @@ export function copySpellOnStack(
  * And a ward whose object has already left the stack does nothing at all: something else countered
  * the spell first, or it resolved, which is the ordinary "its target is gone" case one level up.
  */
-export function wardAsks(ctx: EffectContext, cost: string, name: string, life = 0): GameState {
+export function wardAsks(ctx: EffectContext, cost: string, name: string, life = 0, discard = 0): GameState {
   const { state } = ctx;
   const id = ctx.answering;
   if (id === undefined) return state;
   const object = state.stackObjects[id];
   if (object === undefined) return state;
   const payer = object.controller;
-  const words = paymentWords({ cost, life });
+  const words = paymentWords({ cost, life, discard });
   return {
     ...state,
     // Nobody holds priority while the question is outstanding, for the reason `pendingChoice` and
@@ -2009,7 +2009,8 @@ export function wardAsks(ctx: EffectContext, cost: string, name: string, life = 
       seat: payer,
       cost,
       ...(life > 0 ? { life } : {}),
-      prompt: `Pay ${words} or ${object.description} is countered by ${name}'s ward`,
+      ...(discard > 0 ? { discard } : {}),
+      prompt: `${discard > 0 && cost === '' && life <= 0 ? '' : 'Pay '}${discard > 0 && cost === '' && life <= 0 ? words.charAt(0).toUpperCase() + words.slice(1) : words} or ${object.description} is countered by ${name}'s ward`,
       counters: id,
       source: ctx.source,
       // The wording `settlePayment` used to build for itself. See `pendingPayment.unpaidNote`.
@@ -2025,7 +2026,14 @@ export function wardAsks(ctx: EffectContext, cost: string, name: string, life = 
  * paid or refused — and a cost said three ways is how one of them ends up naming only the mana.
  * A mana-only payment reads exactly as it did before life could be part of one.
  */
-export function paymentWords(payment: { readonly cost: string; readonly life?: number }): string {
+export function paymentWords(payment: { readonly cost: string; readonly life?: number; readonly discard?: number }): string {
+  // A discard (D1327): "discard a card", alone or after the rest.
+  const discard = payment.discard ?? 0;
+  if (discard > 0) {
+    const rest = paymentWords({ cost: payment.cost, life: payment.life ?? 0 });
+    const card = discard === 1 ? 'discard a card' : `discard ${discard} cards`;
+    return rest === '' ? card : `${rest} and ${card}`;
+  }
   const life = payment.life ?? 0;
   if (life <= 0) return payment.cost;
   return payment.cost === '' ? `${life} life` : `${payment.cost} and ${life} life`;

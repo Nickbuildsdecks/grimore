@@ -496,6 +496,8 @@ export interface LegalActions {
     readonly ward: string;
     /** The spell or ability that is countered by declining, in the words the stack uses. */
     readonly spell: string;
+    /** Cards to discard to pay (D1327), chosen from the hand and sent as `auto:pay`'s `discarded`. */
+    readonly discard?: number;
   } | null;
   /**
    * A draw this seat may replace with a dredge (CR 702.52a), and what it would cost.
@@ -3618,6 +3620,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
         cost: paymentWords(payment),
         ward: payment.source,
         spell: state.stackObjects[payment.counters]?.description ?? 'it',
+        ...((payment.discard ?? 0) > 0 ? { discard: payment.discard } : {}),
       }
     : null;
 

@@ -1311,6 +1311,8 @@ export interface AutomationState {
      * (16 "Pay N life", 3 "{N}, Pay N life"). Absent means none, so a payment raised before this
      * existed is exactly what it was. `paymentWords` is the one place the two are put into words.
      */
+    /** Cards to discard as the payment (D1327): "Ward—Discard a card." Chosen by the payer. */
+    readonly discard?: number;
     readonly life?: number;
     /** Shown to the player paying, in their own words. */
     readonly prompt: string;
@@ -2262,6 +2264,8 @@ export interface AutoDecideAction {
  */
 export interface AutoPayAction {
   readonly type: 'auto:pay'; readonly by: SeatIndex; readonly pay: boolean;
+  /** The cards discarded to pay (D1327), for a payment that asks for a discard: from the payer's hand. */
+  readonly discarded?: readonly string[];
 }
 /**
  * Answers a dredge (CR 702.52a): mill for it, or take the draw it would have replaced.

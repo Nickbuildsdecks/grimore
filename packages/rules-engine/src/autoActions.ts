@@ -3598,7 +3598,7 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
  * `settlePayment` has already ruled out the case where the cost cannot be met at all, so a refusal
  * here means the state moved underneath the table rather than that the player is short.
  */
-function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Outcome {
+function payWard(state: GameState, action: { by: SeatIndex; pay: boolean; discarded?: readonly string[] }): Outcome {
   requireAutomated(state);
   const pending = state.pendingPayment;
   if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'nothing is waiting to be paid');
@@ -3609,8 +3609,21 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
   const spell = object?.description ?? 'it';
 
   const words = paymentWords(pending);
+  // The cards, for a discard (D1327): exactly that many, all different, all in the payer's hand.
+  const owed = pending.discard ?? 0;
+  const thrown = action.pay && owed > 0 ? [...new Set(action.discarded ?? [])] : [];
+  if (action.pay && owed > 0) {
+    const hand = listAt(state, zoneKey(action.by, 'hand'));
+    if (thrown.length !== owed || (action.discarded ?? []).length !== owed || !thrown.every((id) => hand.includes(id))) {
+      throw new EngineError('RULE_NOT_APPLICABLE', owed === 1 ? 'choose a card in your hand to discard' : `choose ${owed} cards in your hand to discard`);
+    }
+  } else if ((action.discarded ?? []).length > 0) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'this payment discards nothing');
+  }
   let next: GameState = { ...state, pendingPayment: null };
   if (action.pay) {
+    // A discard like any other (D1327), so `settle` raises it for madness and anything watching.
+    for (const id of thrown) next = relocate(next, requireInstance(next, id), 'graveyard', requireInstance(next, id).owner, 'bottom');
     // Mana first and life second, which is the order the card prints them in ("{2}, Pay 2 life");
     // both are one payment, and nothing can happen between the halves.
     const paid = payFrom(next, action.by, pending.cost, 0);

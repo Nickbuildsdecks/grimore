@@ -3227,7 +3227,14 @@ function answerPending(state: GameState): Action | null {
     return ask === null ? null : decideAction(state, seat, ask);
   }
   if (state.pendingPayment !== null) {
-    return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
+    const payer = state.pendingPayment.seat;
+    // A discard ward (D1327): the least valuable cards, as the seat's own answer chooses them.
+    const owed = state.pendingPayment.discard ?? 0;
+    if (owed > 0) {
+      const hand = [...listAt(state, zoneKey(payer, 'hand'))].sort((a, b) => cardWorth(state, a) - cardWorth(state, b));
+      return { type: 'auto:pay', by: payer, pay: true, discarded: hand.slice(0, owed) };
+    }
+    return { type: 'auto:pay', by: payer, pay: true };
   }
   /*
     A dredge inside a simulated line, answered by the same rule the real seat uses.
@@ -5198,6 +5205,11 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     it is rather than evidence that it is right.
   */
   const ward = actions.mustPay;
+  // A discard ward (D1327): its least valuable cards, the way a discard cost is chosen.
+  if (ward !== null && (ward.discard ?? 0) > 0) {
+    const hand = [...listAt(state, zoneKey(seat, 'hand'))].sort((a, b) => cardWorth(state, a) - cardWorth(state, b));
+    return { type: 'auto:pay', by: seat, pay: true, discarded: hand.slice(0, ward.discard) };
+  }
   if (ward !== null) return { type: 'auto:pay', by: seat, pay: true };
 
   /*

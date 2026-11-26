@@ -8080,7 +8080,7 @@ export const DISGUISED_FACE_DOWN: CardScript = {
 };
 export const DISGUISE_GRANT = { card: '#disguised', index: 0 } as const;
 
-function ward(name: string, cost: string, life = 0): TriggerDef {
+function ward(name: string, cost: string, life = 0, discard = 0): TriggerDef {
   return {
     on: { kind: 'targeted', by: 'opponent' },
     /*
@@ -8088,10 +8088,12 @@ function ward(name: string, cost: string, life = 0): TriggerDef {
       with "Ward—{2}, Pay 2 life" for both (D578). The words after the dash are the cost exactly as
       the card states it, so the stack reads what the card reads.
     */
-    description: life <= 0
-      ? `Ward ${cost}`
-      : `Ward—${cost === '' ? '' : `${cost}, `}Pay ${life} life`,
-    effect: (c) => wardAsks(c, cost, name, life),
+    description: discard > 0
+      ? 'Ward—Discard a card'
+      : life <= 0
+        ? `Ward ${cost}`
+        : `Ward—${cost === '' ? '' : `${cost}, `}Pay ${life} life`,
+    effect: (c) => wardAsks(c, cost, name, life, discard),
   };
 }
 
@@ -12203,6 +12205,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     "Pay life equal to ~'s power" (2 lines) is refused by the digits: a number that is a fact about
     the board when the ward resolves is not one this reader can write down at compile time.
   */
+  // And paid with a card (D1327): "Ward—Discard a card." The payer chooses which.
+  if (/^ward\s*[—-]\s*discard a card\.?$/i.test(text)) return { triggers: [ward(name, '', 0, 1)] };
   const lifeWard = /^ward\s*[—-]\s*(?:((?:\{[^}]+\})+),\s*)?pay (\d+) life\.?$/i.exec(text);
   if (lifeWard !== null) {
     return { triggers: [ward(name, lifeWard[1] ?? '', Number(lifeWard[2]))] };

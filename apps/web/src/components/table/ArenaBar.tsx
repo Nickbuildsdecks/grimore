@@ -57,6 +57,9 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
   const auto = view.automation
   const you = auto?.you
   if (!auto || !you) return null
+  // The viewer's hand, for a discard ward's buttons (D1327).
+  const handCards = view.seat === null ? []
+    : (view.zones[`${view.seat}:hand`] ?? []).map((id) => view.cards[id]).filter((card): card is NonNullable<typeof card> => card !== undefined)
   const move = primaryMove(view)
   /**
    * The offered cast on offer, with the plays that would take it (CR 702.85a).
@@ -752,10 +755,24 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         <div data-testid="ward-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Shield className="size-3.5 text-[var(--g-gold-400)]" />
           <span className="font-semibold text-[var(--g-text-high)]">{you.mustPay.prompt}</span>
-          <span className="ml-auto flex gap-1.5">
-            <Button size="sm" data-testid="ward-pay" onClick={() => onAct({ type: "auto:pay", pay: true })}>
-              <Check className="size-3.5" /> Pay {you.mustPay.cost}
-            </Button>
+          <span className="ml-auto flex flex-wrap gap-1.5">
+            {/* A discard ward (D1327): one button per card in hand, which is the card discarded. */}
+            {(you.mustPay.discard ?? 0) > 0 ? (
+              handCards.map((card) => (
+                <Button
+                  key={card.id}
+                  size="sm"
+                  data-testid={`ward-discard-${card.id}`}
+                  onClick={() => onAct({ type: "auto:pay", pay: true, discarded: [card.id] })}
+                >
+                  <Check className="size-3.5" /> Discard {card.card?.name ?? "this card"}
+                </Button>
+              ))
+            ) : (
+              <Button size="sm" data-testid="ward-pay" onClick={() => onAct({ type: "auto:pay", pay: true })}>
+                <Check className="size-3.5" /> Pay {you.mustPay.cost}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
