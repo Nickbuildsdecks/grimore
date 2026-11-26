@@ -47086,6 +47086,53 @@ describe('"During each of your turns, you may cast a creature spell from your gr
   });
 });
 
+describe('Muldrotha: a permanent spell of each permanent type from your graveyard (D1288)', () => {
+  const MULDROTHA = {
+    name: 'Test Muldrotha', type_line: 'Legendary Creature — Elemental Avatar', mana_cost: '{0}', cmc: 0, colors: ['B', 'G', 'U'], layout: 'normal', power: '6', toughness: '6',
+    oracle_text: 'During each of your turns, you may play a land and cast a permanent spell of each permanent type from your graveyard. (If a card has multiple permanent types, choose one as you cast it.)',
+  };
+  const C = (name: string, type: string) => ({
+    name, type_line: type, oracle_text: '', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal',
+    ...(type.includes('Creature') ? { power: '1', toughness: '1' } : {}),
+  });
+  const ROWS = [MULDROTHA, C('Test Bear', 'Creature — Bear'), C('Test Other Bear', 'Creature — Bear'), C('Test Rock', 'Artifact'), C('Test Charm', 'Enchantment')];
+  const deck = customDeck({ id: 'd1288', name: 'Muldrotha', entries: [...ROWS.map((r) => ({ name: r.name, count: 2 })), { name: 'Forest', count: 50 }], data: ROWS as never[] });
+  const yardCasts = (s: GameState) => legalActions(s, 0).plays.filter((p) => p.yardBy !== undefined).map((p) => p.name).sort();
+  const cast = (s: GameState, name: string, by: string) =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'graveyard', name), yardBy: by } as Action)), 20);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(MULDROTHA as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('one of each type: a creature, then an artifact, then an enchantment, and no second creature', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1288', 1: 'd1288' }, deckSpecs: { d1288: deck.deck },
+      battlefield: { 0: ['Test Muldrotha'] }, graveyard: { 0: ['Test Bear', 'Test Other Bear', 'Test Rock', 'Test Charm', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const muldrotha = find(s, 0, 'battlefield', 'Test Muldrotha');
+    expect(yardCasts(s)).toEqual(['Test Bear', 'Test Charm', 'Test Other Bear', 'Test Rock']);
+    s = cast(s, 'Test Bear', muldrotha);
+    expect(yardCasts(s)).toEqual(['Test Charm', 'Test Rock']);
+    s = cast(s, 'Test Rock', muldrotha);
+    expect(yardCasts(s)).toEqual(['Test Charm']);
+    s = cast(s, 'Test Charm', muldrotha);
+    expect(yardCasts(s)).toEqual([]);
+    expect(namesIn(s, 0, 'battlefield')).toEqual(expect.arrayContaining(['Test Bear', 'Test Rock', 'Test Charm']));
+  });
+
+  it('and a land from the graveyard, as the turn’s land drop', () => {
+    const s = advanceTo(arena({
+      decks: { 0: 'd1288', 1: 'd1288' }, deckSpecs: { d1288: deck.deck },
+      battlefield: { 0: ['Test Muldrotha'] }, graveyard: { 0: ['Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const forest = find(s, 0, 'graveyard', 'Forest');
+    const t = apply(s, { type: 'auto:playLand', by: 0, card: forest } as Action);
+    expect(t.instances[forest]!.zone).toBe('battlefield');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

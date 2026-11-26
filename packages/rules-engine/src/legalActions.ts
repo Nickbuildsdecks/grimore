@@ -848,10 +848,23 @@ export function yardPermission(state: GameState, seat: SeatIndex, id: string): s
   if (inst === undefined || inst.zone !== 'graveyard' || inst.zoneSeat !== seat) return null;
   for (const source of listAt(state, zoneKey(seat, 'battlefield'))) {
     const permit = scriptForCard(state.cardDefs[state.instances[source]?.defKey ?? ''])?.castsFromGraveyard;
-    if (permit === undefined || state.yardCastsUsed?.[source] === state.turn) continue;
-    if (permit.fits(state, id, seat)) return source;
+    if (permit === undefined || !permit.fits(state, id, seat)) continue;
+    if (yardSlotFor(state, source, permit, id) !== null) return source;
   }
   return null;
+}
+
+/**
+ * The key a graveyard cast through `source` would spend (D1288): the permanent's own, or, for a
+ * permission with `slots`, the first type of the card's still unused this turn. Null when none is free.
+ */
+export function yardSlotFor(
+  state: GameState, source: string, permit: NonNullable<CardScript['castsFromGraveyard']>, id: string,
+): string | null {
+  if (permit.slots === undefined) return state.yardCastsUsed?.[source] === state.turn ? null : source;
+  const line = parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine);
+  const slot = permit.slots.find((type) => hasType(line, type) && state.yardCastsUsed?.[`${source}#${type}`] !== state.turn);
+  return slot === undefined ? null : `${source}#${slot}`;
 }
 
 /**

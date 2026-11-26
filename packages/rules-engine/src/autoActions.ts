@@ -56,7 +56,7 @@ import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetS
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
   abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
-  withCostChange, yardPermission, type TapToPayRule,
+  withCostChange, yardPermission, yardSlotFor, type TapToPayRule,
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
@@ -1072,7 +1072,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     { spell: characteristics.typeLine, commander: inst.isCommander === true }, sacrificed === null ? undefined : new Set([sacrificed]));
   let next = paid.state;
   // The permission is spent (D1287): one spell a turn through each permanent.
-  if (yardBy !== undefined) next = { ...next, yardCastsUsed: { ...(next.yardCastsUsed ?? {}), [yardBy]: next.turn } };
+  if (yardBy !== undefined) {
+    // The key is asked of the state before the cast, where the card was still in the graveyard (D1288).
+    const permit = scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard;
+    const key = permit === undefined ? yardBy : yardSlotFor(state, yardBy, permit, inst.id) ?? yardBy;
+    next = { ...next, yardCastsUsed: { ...(next.yardCastsUsed ?? {}), [key]: next.turn } };
+  }
   /*
     Cavern of Souls and Delighted Halfling (D783): "Spend this mana only to cast …, and that spell
     can't be countered". The spell can't be countered when a source tapped for it made mana its

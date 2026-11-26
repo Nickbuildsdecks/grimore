@@ -3438,7 +3438,14 @@ export interface CardScript {
    * printed type line of the card in the graveyard), cast for its printed cost at its normal timing,
    * on its controller's own turn. Recorded in `GameState.yardCastsUsed`.
    */
-  readonly castsFromGraveyard?: { readonly fits: (state: GameState, id: string, seat: SeatIndex) => boolean };
+  readonly castsFromGraveyard?: {
+    readonly fits: (state: GameState, id: string, seat: SeatIndex) => boolean;
+    /**
+     * Muldrotha's "a permanent spell of each permanent type" (D1288): one spell a turn per type
+     * named here rather than one in all. A card of two types uses the first of them still free.
+     */
+    readonly slots?: readonly string[];
+  };
   /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to
    * trigger, that ability triggers an additional time." (D1228): Panharmonicon, Teysa Karlov's

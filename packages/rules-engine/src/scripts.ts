@@ -39922,6 +39922,23 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
       return { castsFromGraveyard: { fits: (state, id, seat) => fits === null || fits === undefined || fits(state, id, seat) } };
     }
   }
+  /*
+    Muldrotha, the Gravetide (D1288): "During each of your turns, you may play a land and cast a
+    permanent spell of each permanent type from your graveyard." The land is the lands-from-graveyard
+    permission Crucible of Worlds gives, which the turn's land drops already limit; the spells are one
+    a turn per permanent type (`castsFromGraveyard.slots`).
+  */
+  if (/^during each of your turns, you may play a land and cast a permanent spell of each permanent type from your graveyard\.?$/i
+    .test(plain(line).replace(/\([^)]*\)/g, '').trim())) {
+    const SLOTS = ['artifact', 'battle', 'creature', 'enchantment', 'planeswalker'];
+    return {
+      landsFromGraveyard: true,
+      castsFromGraveyard: {
+        fits: (state, id) => SLOTS.some((type) => hasType(parseTypeLine(state.cardDefs[state.instances[id]?.defKey ?? '']?.typeLine), type)),
+        slots: SLOTS,
+      },
+    };
+  }
   // And Elesh Norn's second line (D1228): see `CardScript.opponentsEntriesDontTrigger`.
   if (/^permanents entering don't cause abilities of permanents your opponents control to trigger\.?$/i.test(plain(line).trim())) {
     return { opponentsEntriesDontTrigger: true };
