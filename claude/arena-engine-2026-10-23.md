@@ -47675,3 +47675,41 @@ Faults injected by hand: 3, all caught.
 - The land half dropped.
 
 Coverage: 17,245 of 31,900 cards (+1 over D1287's 17,244), 39,991 of 59,888 lines (+1).
+
+## D1289 — Graveyard permissions with riders: Kess, Edgar, Overflow Submatrix
+
+D1287's permission line now takes the sentence that follows it on three cards:
+- Kess, Dissident Mage: "If a spell cast this way would be put into your graveyard, exile it
+  instead." `castsFromGraveyard.exileAfter`; the cast marks the stack object `yardExile`, and
+  `spellLeavesStack` exiles it as it does a flashback spell.
+- Edgar, Master Machinist: "If you cast a spell this way, that artifact enters tapped."
+  `castsFromGraveyard.entersTapped`; the stack object's `yardTapped` taps the permanent as it
+  arrives.
+- Overflow Submatrix: "that artifact creature enters with a finality counter on it."
+  `castsFromGraveyard.entersWithFinality`; the stack object's `yardFinality` puts the counter on as
+  it arrives, and D1276's finality replacement exiles it when it would die. The reminder text in
+  parentheses is dropped before the line is matched.
+
+The marks are on the stack object rather than looked up at resolution, so a permission that leaves
+the battlefield while its spell is on the stack still applies its rider, as the rules want (the
+rider is part of how the spell was cast).
+
+Read whole now: Kess, Dissident Mage; Edgar, Master Machinist; Overflow Submatrix.
+
+**Tests.** 4 engine tests:
+- All three read whole.
+- A sorcery cast under Kess is exiled as it resolves; one cast from hand goes to the graveyard.
+- An artifact cast under Edgar enters tapped.
+- An artifact creature cast under Submatrix enters untapped with a finality counter, and is exiled
+  when destroyed.
+
+Faults injected by hand: 3, all caught.
+- The exile on leaving the stack dropped.
+- The tapped arrival dropped.
+- The finality counter dropped.
+
+Drafting note: the first draft read Overflow Submatrix's rider as "enters tapped". The probe showed
+the card unread, and its text is a finality counter; the reader and the test were corrected before
+the gate.
+
+Coverage: 17,248 of 31,900 cards (+3 over D1288's 17,245), 39,994 of 59,888 lines (+3).
