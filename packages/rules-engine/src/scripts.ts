@@ -2351,7 +2351,7 @@ function searchClause(text: string, name: string): ReadEffect | null {
     };
   }
   const parsed =
-    /^search your library for (.+?)(?:, reveal (?:it|that card|them|those cards))?, (?:and )?(put (?:it|that card|them|those cards) (?:into your hand|onto the battlefield tapped|onto the battlefield|into your graveyard)|exile (?:it|that card|them|those cards))$/i
+    /^search your library for (.+?)(?:, reveal (?:it|that card|them|those cards))?, (?:and )?(put (?:it|that card|them|those cards) (?:into your hand|onto the battlefield tapped|onto the battlefield with an additional \+1\/\+1 counter on it|onto the battlefield|into your graveyard)|exile (?:it|that card|them|those cards))$/i
       .exec(text.trim());
   if (parsed === null) return null;
   const printed = parsed[1]!.trim();
@@ -2403,10 +2403,18 @@ function searchClause(text: string, name: string): ReadEffect | null {
       if (destination === 'exile') {
         return found.reduce((state, id) => exileCard(state, id), c.state);
       }
+      /*
+        Neoform's "onto the battlefield with an additional +1/+1 counter on it" (D1291): put on as it
+        arrives, the way the arrival pass puts on an `entersWith` counter.
+      */
+      const counted = destination === 'onto the battlefield with an additional +1/+1 counter on it';
       return found.reduce(
-        (state, id) => putOntoBattlefield(state, id, c.controller, {
-          tapped: destination === 'onto the battlefield tapped',
-        }),
+        (state, id) => {
+          const placed = putOntoBattlefield(state, id, c.controller, {
+            tapped: destination === 'onto the battlefield tapped',
+          });
+          return counted ? addCounters(placed, id, '+1/+1', 1) : placed;
+        },
         c.state,
       );
     },

@@ -47267,6 +47267,38 @@ describe('A permanent made into a colorless land or artifact with one ability: I
   });
 });
 
+describe('Neoform: one mana value up, with an additional +1/+1 counter (D1291)', () => {
+  const C = (name: string, cmc: number) => ({
+    name, type_line: 'Creature — Beast', oracle_text: '', mana_cost: `{${cmc}}`, cmc, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const NEO = { name: 'Test Neoform', type_line: 'Sorcery', oracle_text: "As an additional cost to cast this spell, sacrifice a creature.\nSearch your library for a creature card with mana value equal to 1 plus the sacrificed creature's mana value, put that card onto the battlefield with an additional +1/+1 counter on it, then shuffle.", mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal' };
+  const ROWS = [NEO, C('Test Two', 2), C('Test Three', 3), C('Test Four', 4)];
+  const deck = customDeck({ id: 'd1291', name: 'Neoform', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const nameOf = (s: GameState, id: string) => s.cardDefs[s.instances[id]!.defKey]!.name;
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(NEO as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a 2 sacrificed offers only the threes, and the one found enters with a +1/+1 counter', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1291', 1: 'd1291' }, deckSpecs: { d1291: deck.deck },
+      hands: { 0: ['Test Neoform'] }, battlefield: { 0: ['Test Two'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const victim = find(s, 0, 'battlefield', 'Test Two');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Neoform'), sacrifice: victim } as Action));
+    const offered = s.pendingDecision!.candidates;
+    expect(offered.length).toBeGreaterThan(0);
+    expect(new Set(offered.map((id) => nameOf(s, id)))).toEqual(new Set(['Test Three']));
+    const pick = offered[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 20);
+    expect(s.instances[pick]!.zone).toBe('battlefield');
+    expect(s.instances[pick]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[victim]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

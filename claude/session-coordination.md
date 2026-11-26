@@ -207,3 +207,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1287 pushed in 0987ad8. D1288 Muldrotha: castsFromGraveyard.slots, yardSlotFor (legalActions), the cast records the slot (autoActions) (done).
 - D1288 pushed in 5abf660. D1289 graveyard permissions with riders: castsFromGraveyard.exileAfter / entersTapped / entersWithFinality, stack marks yardExile / yardTapped / yardFinality (automation.ts, effects.ts, autoActions.ts).
 - D1289 pushed in 3f5f95d. D1290 Imprisoned in the Moon: attachmentBonus retype-with-one-ability, grantedAbilitiesOn keeps an effect's own grant after its loss, manaSources / potentialMana / activation loop in legalActions.ts, Enchant line with commas (scripts.ts, characteristics.ts, legalActions.ts).
+- D1290 pushed in e2c41e3. D1291 Neoform: search destination onto the battlefield with an additional +1/+1 counter (scripts.ts searchClause).
