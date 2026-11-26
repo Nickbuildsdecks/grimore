@@ -1981,6 +1981,8 @@ export interface AutoCastAction {
   readonly retrace?: boolean;
   /** Cast from the graveyard under this permanent's permission (D1287, `CardScript.castsFromGraveyard`). */
   readonly yardBy?: string;
+  /** Both halves of a fuse split card, cast from the hand together (D1295, `CardScript.fused`). */
+  readonly fuse?: true;
   /** The permanent sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
   /** The card discarded for an additional cost, when the spell asks for one (D585). */

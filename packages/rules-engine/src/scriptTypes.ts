@@ -3345,6 +3345,12 @@ export interface CardScript {
   readonly beforeDecisions?: EffectFn;
   /** What happens when the spell resolves. A permanent enters the battlefield either way. */
   readonly onResolve?: EffectFn;
+  /**
+   * A fuse split card's two halves cast together (D1295, CR 702.102): the whole card's script, with
+   * both halves' targets and questions in order and the left half's effect before the right's. Cast
+   * only from the hand, with `fuse` on the cast.
+   */
+  readonly fused?: true;
   readonly aura?: AuraDef;
   /**
    * "Enters the battlefield tapped": a replacement effect (CR 614.1c) rather than a trigger, so

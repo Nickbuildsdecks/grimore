@@ -189,9 +189,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       throw new EngineError('RULE_NOT_APPLICABLE',
         `${printedDef?.name ?? 'that card'} has no face ${action.half}`);
     }
-  } else if (faces?.kind === 'split') {
+  } else if (faces?.kind === 'split' && action.fuse !== true) {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `choose which half of ${printedDef?.name ?? 'that card'} to cast`);
+  }
+  // Fuse (D1295, CR 702.102a): both halves together, only a fuse card's, and only from the hand.
+  if (action.fuse === true && (action.half !== undefined || faces?.kind !== 'split' || inst.zone !== 'hand'
+    || scriptForCard(printedDef)?.fused !== true)) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `only a card with fuse is cast as both halves, and only from your hand`);
   }
   // A prepare card's spell is cast only as a copy, while its permanent is prepared (D978).
   if (action.half !== undefined && faces?.kind === 'flip') {

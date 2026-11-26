@@ -721,7 +721,8 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
  *   unlocked later. The engine has no doors yet.
  *
  * Fuse (CR 702.102), casting both halves together from the hand, is a keyword line each half prints.
- * It stays unread: each half is still cast on its own, as the card allows.
+ * D1295 reads it when the two halves' scripts compose (`fusedScript`): the whole card's script is
+ * then the fused spell. Otherwise it stays unread, and each half is still cast on its own.
  */
 function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilation {
   const named = faces.map((face) => (face.name ?? '').trim()).join(' // ');
@@ -732,6 +733,7 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
     return { ok: false, why: `${named}: a Room's doors are not played yet` };
   }
   const halves: CardDef[] = [];
+  const scripts: (CardScript | undefined)[] = [];
   const compiled: string[] = [];
   const unread: UnreadLine[] = [];
   let scripted = false;
@@ -750,11 +752,23 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
     });
     if (!half.ok) return { ok: false, why: `${named}: its half ${face.name ?? '(unnamed)'} — ${half.why}` };
     halves.push(half.def);
+    scripts.push(half.script);
     compiled.push(...half.compiled);
     unread.push(...half.unread);
     if (half.script !== undefined) scripted = true;
   }
   const colours = new Set(halves.flatMap((half) => half.colors));
+  /*
+    Fuse (D1295): read when both halves print it and their scripts compose. The line is then read on
+    both halves, and the whole card's script is the fused spell.
+  */
+  const FUSE_LINE = /^Fuse\b/;
+  const fusePrinted = faces.length === 2 && unread.filter((u) => FUSE_LINE.test(u.line)).length === 2;
+  const fused = fusePrinted ? fusedScript(named, scripts[0], scripts[1]) : null;
+  if (fused !== null) {
+    for (const line of unread.filter((u) => FUSE_LINE.test(u.line))) compiled.push(line.line);
+    unread.splice(0, unread.length, ...unread.filter((u) => !FUSE_LINE.test(u.line)));
+  }
   return {
     ok: true,
     def: {
@@ -766,9 +780,69 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
       colors: ['W', 'U', 'B', 'R', 'G'].filter((c) => colours.has(c)),
       faces: { kind: 'split', cards: halves },
     },
+    ...(fused === null ? {} : { script: fused }),
     compiled,
     unread,
     source: scripted ? 'lines' : 'printed-only',
+  };
+}
+
+/** The script fields a fused half may have: a spell's targets, questions and effect, and two hints. */
+const FUSABLE_FIELDS = new Set(['name', 'targets', 'decisions', 'onResolve', 'expiresAtEndOfTurn', 'removesACreature']);
+/** The target kinds that can be a player, which a "target player" question would look for. */
+const PLAYER_KINDS = new Set(['player', 'any', 'player-or-planeswalker']);
+
+/**
+ * Two halves' scripts as one fused spell (D1295, CR 702.102d): the left half's targets, then the
+ * right's; the left half's questions, then the right's; and on resolution the left half's effect, then
+ * the right's, each with its own slice of the targets and answers.
+ *
+ * The targets are sliced by position, from `targetSlots` when one has gone, D953's rule for two
+ * targeting sentences in one line. So the left half's targets must be an exact number (an "up to"
+ * would move the right half's along). The fused spell is one spell: it is countered only when every
+ * target it has is gone, and otherwise each half runs with what it still has, its instructions that
+ * need no target included (CR 608.2b), as the parts of a D953 line do. Refused, and the Fuse line
+ * left unread:
+ * - a field other than a spell's targets, questions and effect;
+ * - a divided quantity;
+ * - a half whose question is about "target player …" when the other half can target a player too,
+ *   because the question finds its player on the whole spell's targets. A question about the caster
+ *   ("Discard a card") is not one of those.
+ */
+function fusedScript(name: string, left: CardScript | undefined, right: CardScript | undefined): CardScript | null {
+  if (left?.onResolve === undefined || right?.onResolve === undefined) return null;
+  const halves = [left, right];
+  if (halves.some((half) => Object.keys(half).some((key) => !FUSABLE_FIELDS.has(key)
+    && (half as unknown as Record<string, unknown>)[key] !== undefined))) return null;
+  if (halves.some((half) => (half.targets ?? []).some((spec) => spec.divided !== undefined))) return null;
+  if ((left.targets ?? []).some((spec) => spec.optional === true)) return null;
+  const canTargetPlayer = (half: CardScript): boolean => (half.targets ?? []).some((spec) => PLAYER_KINDS.has(spec.kind));
+  // A question that finds its player among the spell's targets; one built at play time might, so it counts.
+  const looksForPlayer = (half: CardScript): boolean => (half.decisions ?? []).some((spec) => typeof spec === 'function'
+    || ('who' in spec && spec.who === 'target-player') || ('fromSeat' in spec && spec.fromSeat === 'target-player'));
+  if ((looksForPlayer(left) && canTargetPlayer(right)) || (looksForPlayer(right) && canTargetPlayer(left))) return null;
+  const leftCount = (left.targets ?? []).reduce((sum, spec) => sum + Math.max(1, spec.count ?? 1), 0);
+  const leftAsks = (left.decisions ?? []).length;
+  const leftResolve = left.onResolve;
+  const rightResolve = right.onResolve;
+  return {
+    name,
+    fused: true,
+    targets: [...(left.targets ?? []), ...(right.targets ?? [])],
+    decisions: [...(left.decisions ?? []), ...(right.decisions ?? [])],
+    onResolve: (c) => {
+      const slots = c.targetSlots ?? c.targets;
+      const part = (from: number, to?: number) => {
+        const own = slots.slice(from, to);
+        return { own, live: own.filter((t): t is NonNullable<typeof t> => t !== null) };
+      };
+      const l = part(0, leftCount);
+      const afterLeft = leftResolve({ ...c, targets: l.live, targetSlots: l.own, decisions: c.decisions.slice(0, leftAsks) });
+      const r = part(leftCount);
+      return rightResolve({ ...c, state: afterLeft, targets: r.live, targetSlots: r.own, decisions: c.decisions.slice(leftAsks) });
+    },
+    ...(halves.some((half) => half.expiresAtEndOfTurn === true) ? { expiresAtEndOfTurn: true } : {}),
+    ...(halves.some((half) => half.removesACreature === true) ? { removesACreature: true } : {}),
   };
 }
 

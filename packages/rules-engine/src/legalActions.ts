@@ -193,6 +193,8 @@ export interface LegalPlay {
   readonly retrace?: boolean;
   /** Cast out of the graveyard under a permanent's permission (D1287): that permanent's id. */
   readonly yardBy?: string;
+  /** Both halves of a fuse split card together, from the hand (D1295). */
+  readonly fuse?: true;
   /**
    * How many cards this play would exile from your graveyard to pay for itself: escape's fixed
    * count, or the number delve worked out (CR 702.112, CR 702.139).
@@ -1951,8 +1953,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     if (faces.kind === 'prepare') return [{ ...entry, half: undefined as number | undefined }];
     // Nor is a flip card's flipped half, or a transforming card's back (D982): only the card is cast.
     if (faces.kind === 'flip') return [{ ...entry, half: undefined as number | undefined }];
+    /*
+      And a fuse card's two halves together (D1295, CR 702.102a): only from the hand, and only as a
+      plain cast from it. The whole card is the fused spell, with the whole's cost and types.
+    */
+    const fusable = faces.kind === 'split' && state.instances[entry.id]?.zone === 'hand' && !entry.offered
+      && scriptForCard(state.cardDefs[state.instances[entry.id]?.defKey ?? ''])?.fused === true;
     return faces.kind === 'split'
-      ? halves
+      ? [...halves, ...(fusable ? [{ ...entry, half: undefined as number | undefined, fuse: true as const }] : [])]
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
   });
 
@@ -1960,6 +1968,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } = entry;
     const tax = fromCommand ? commanderTaxFor(state, id) : 0;
     const yardBy = 'yardBy' in entry && typeof entry.yardBy === 'string' ? entry.yardBy : undefined;
+    const fuse = 'fuse' in entry && entry.fuse === true;
     // A permission's cast is retrace's shape for every question below but the land card (D1287).
     const retrace = ('retrace' in entry && entry.retrace === true) || yardBy !== undefined;
     const landOnly = 'landOnly' in entry && entry.landOnly === true;
@@ -2769,8 +2778,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
                   ? ` (delving ${delved.exiled.length})` : ''}`;
     out.push({
       kind: 'cast', card: id, name: ch.name,
-      description: castLabel,
-      manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
+      description: fuse ? `Cast ${ch.name} fused, both halves, for ${costShown.replace(/ \/\/ /g, '')}` : castLabel,
+      ...(fuse ? { fuse: true as const } : {}),
+      // The two halves' costs together, as one cost (CR 702.102c), rather than the card's "{R} // {G}".
+      manaCost: fuse ? costShown.replace(/ \/\/ /g, '') : costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
       targetSpecs: specs, candidates,
       ...(script?.extraTargetCost === undefined ? {} : { extraTargetCost: script.extraTargetCost }),
       ...(flashback ? { flashback: true } : {}),

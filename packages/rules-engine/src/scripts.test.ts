@@ -8104,6 +8104,9 @@ describe('deck coverage', () => {
       // D1285: Renata, Grumgully and the tribal lords; no pool deck plays one. Driven at runtime by
       // "others enter with an additional +1/+1 counter (D1285)".
       'script othersEnterWith',
+      // D1295: fuse split cards from card data; no pool deck plays one. Driven at runtime by
+      // "fuse: both halves of a split card cast together from the hand (D1295)".
+      'script fused',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -47430,7 +47433,8 @@ describe('split cards from card data (D1294)', () => {
   const PAIR = split(face('Test Burn', 'Instant', '{R}', 'Test Burn deals 2 damage to any target.', ['R']), face('Test Study', 'Sorcery', '{1}{U}', 'Draw a card.', ['U']));
   const AFTER = split(face('Test Before', 'Sorcery', '{R}', 'Draw a card.', ['R']), face('Test After', 'Sorcery', '{U}', 'Aftermath (Cast this spell only from your graveyard. Then exile it.)\nDraw a card.', ['U']));
   const ROOM = split(face('Test Hall', 'Enchantment — Room', '{U}', 'When you unlock this door, draw a card.', ['U']), face('Test Den', 'Enchantment — Room', '{2}{U}', 'When you unlock this door, draw a card.', ['U']));
-  const FUSED = split(face('Test Left', 'Instant', '{R}', 'Test Left deals 1 damage to any target.\nFuse (You may cast one or both halves of this card from your hand.)', ['R']), face('Test Right', 'Instant', '{G}', 'You gain 2 life.\nFuse (You may cast one or both halves of this card from your hand.)', ['G']));
+  // A fuse card whose halves do not compose (D1295): both can aim at a player, and the right asks "target player".
+  const FUSED = split(face('Test Left', 'Instant', '{R}', 'Test Left deals 1 damage to any target.\nFuse (You may cast one or both halves of this card from your hand.)', ['R']), face('Test Right', 'Instant', '{G}', 'Target player discards a card.\nFuse (You may cast one or both halves of this card from your hand.)', ['G']));
 
   it('compiles as the split shape the engine plays: both halves, their costs added, their colours together', () => {
     const read = compileCard(PAIR as never);
@@ -47474,6 +47478,126 @@ describe('split cards from card data (D1294)', () => {
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 1 } as Action)), 20);
     expect(s.instances[card]!.zone).toBe('graveyard');
     expect(ids(s, 0, 'hand').length).toBe(hand);
+  });
+});
+
+describe('fuse: both halves of a split card cast together from the hand (D1295)', () => {
+  const face = (name: string, type: string, cost: string, text: string, colors: string[]) => ({ name, type_line: type, mana_cost: cost, oracle_text: text, colors });
+  const FUSE = 'Fuse (You may cast one or both halves of this card from your hand.)';
+  const split = (a: ReturnType<typeof face>, b: ReturnType<typeof face>) => ({
+    name: a.name, type_line: a.type_line, oracle_text: a.oracle_text, mana_cost: a.mana_cost, cmc: 0, colors: a.colors, layout: 'split',
+    card_faces: [a, b],
+  });
+  const PAIR = split(face('Test Ping', 'Instant', '{R}', `Test Ping deals 2 damage to target creature.\n${FUSE}`, ['R']), face('Test Mend', 'Instant', '{G}', `You gain 3 life.\n${FUSE}`, ['G']));
+  const PLAIN = split(face('Test Fire', 'Instant', '{R}', 'Test Fire deals 1 damage to any target.', ['R']), face('Test Frost', 'Instant', '{U}', 'Draw a card.', ['U']));
+  // Both halves can aim at a player, and the right half asks "target player …": not fused.
+  const CLASH = split(face('Test Jab', 'Sorcery', '{B}', `Test Jab deals 1 damage to any target.\n${FUSE}`, ['B']), face('Test Rob', 'Sorcery', '{B}', `Target player discards a card.\n${FUSE}`, ['B']));
+  const deck = customDeck({ id: 'd1295', name: 'Fuse', entries: [{ name: 'Test Ping', count: 4 }, { name: 'Test Fire', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 24 }, { name: 'Mountain', count: 24 }],
+    data: [PAIR, PLAIN, { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' }] as never[] });
+  const WHOLE = 'Test Ping // Test Mend';
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1295', 1: 'd1295' }, deckSpecs: { d1295: deck.deck },
+    hands: { 0: [WHOLE, 'Test Fire // Test Frost'] }, battlefield: { 0: ['Mountain', 'Forest'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads the Fuse line when the halves compose; a plain split card is not fused; a clash stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(PAIR as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.fused).toBe(true);
+    const plain = compileCard(PLAIN as never);
+    expect(plain.ok && plain.script?.fused).toBeFalsy();
+    const clash = compileCard(CLASH as never);
+    expect(clash.ok && clash.unread.map((u) => u.line)).toEqual(['Fuse', 'Fuse']);
+  });
+
+  it('offered from the hand as both halves for the whole cost; the two effects in order', () => {
+    let s = table();
+    const card = find(s, 0, 'hand', WHOLE);
+    const fused = legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'cast' && p.fuse === true);
+    expect(fused?.manaCost).toBe('{R}{G}');
+    expect(legalActions(s, 0).plays.some((p) => p.card === find(s, 0, 'hand', 'Test Fire // Test Frost') && p.fuse === true)).toBe(false);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const before = life(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'card', id: bear }] } as Action)), 20);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    expect(life(s, 0 as SeatIndex)).toBe(before + 3);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('refused with a half, on a card without fuse, and from anywhere but the hand', () => {
+    const s = table();
+    const card = find(s, 0, 'hand', WHOLE);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, half: 0, fuse: true } as Action)).toContain('fuse');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Fire // Test Frost'), fuse: true } as Action)).toContain('fuse');
+    const yard = relocate(s, s.instances[card]!, 'graveyard', 0, 'top');
+    expect(refusal(yard, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Test Bear') }] } as Action)).toContain('fuse');
+  });
+
+  it('with its only target gone the fused spell is countered whole, both halves (CR 608.2b)', () => {
+    let s = table();
+    const card = find(s, 0, 'hand', WHOLE);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    const before = life(s, 0 as SeatIndex);
+    s = apply(s, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'card', id: bear }] } as Action);
+    s = relocate(s, s.instances[bear]!, 'hand', 1, 'top');
+    s = drain(passBoth(s), 20);
+    expect(life(s, 0 as SeatIndex)).toBe(before);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  /** Test Zap // Test Grow, each half with its own creature target: one creature each. */
+  const twoTargets = () => {
+    const TWO = split(face('Test Zap', 'Instant', '{R}', `Test Zap deals 2 damage to target creature.\n${FUSE}`, ['R']), face('Test Grow', 'Instant', '{G}', `Target creature gets +3/+3 until end of turn.\n${FUSE}`, ['G']));
+    const bear = { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' };
+    const deck2 = customDeck({ id: 'd1295b', name: 'Fuse 2', entries: [{ name: 'Test Zap', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Forest', count: 26 }, { name: 'Mountain', count: 26 }], data: [TWO, bear] as never[] });
+    const s = advanceTo(arena({
+      decks: { 0: 'd1295b', 1: 'd1295b' }, deckSpecs: { d1295b: deck2.deck },
+      hands: { 0: ['Test Zap // Test Grow'] }, battlefield: { 0: ['Mountain', 'Forest', 'Test Bear'], 1: ['Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    return { s, card: find(s, 0, 'hand', 'Test Zap // Test Grow'), theirs: find(s, 1, 'battlefield', 'Test Bear'), mine: find(s, 0, 'battlefield', 'Test Bear') };
+  };
+
+  it('each half acts on its own target: the left half\'s creature is zapped, the right half\'s grows', () => {
+    const { s: start, card, theirs, mine } = twoTargets();
+    const s = drain(passBoth(apply(start, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'card', id: theirs }, { kind: 'card', id: mine }] } as Action)), 20);
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+    expect(characteristicsOf(s, s.instances[mine]!).power).toBe(5);
+  });
+
+  it('each half reads its own answers: you discard for the left half, the opponent for the right', () => {
+    const ASKS = split(face('Test Loot', 'Sorcery', '{B}', `Discard a card.\n${FUSE}`, ['B']), face('Test Rip', 'Sorcery', '{B}', `Target opponent discards a card.\n${FUSE}`, ['B']));
+    expect(compileCard(ASKS as never)).toMatchObject({ ok: true, unread: [] });
+    const deck3 = customDeck({ id: 'd1295c', name: 'Fuse 3', entries: [{ name: 'Test Loot', count: 4 }, { name: 'Swamp', count: 56 }], data: [ASKS] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1295c', 1: 'd1295c' }, deckSpecs: { d1295c: deck3.deck },
+      hands: { 0: ['Test Loot // Test Rip', 'Swamp'], 1: ['Swamp', 'Swamp'] }, battlefield: { 0: ['Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const card = find(s, 0, 'hand', 'Test Loot // Test Rip');
+    const mine = ids(s, 0, 'hand').length;
+    const theirs = ids(s, 1, 'hand').length;
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'player', seat: 1 }] } as Action));
+    // The left half's question is the caster's, the right half's the opponent's.
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [find(s, 0, 'hand', 'Swamp')] } as Action);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = apply(s, { type: 'auto:decide', by: 1, cards: [s.pendingDecision!.candidates[0]!] } as Action);
+    s = drain(s, 20);
+    expect(ids(s, 0, 'hand').length).toBe(mine - 2);
+    expect(ids(s, 1, 'hand').length).toBe(theirs - 1);
+  });
+
+  it('with one half\'s target gone the spell still resolves, and the other half acts on its own', () => {
+    const { s: start, card, theirs, mine } = twoTargets();
+    let s = apply(start, { type: 'auto:cast', by: 0, card, fuse: true, targets: [{ kind: 'card', id: theirs }, { kind: 'card', id: mine }] } as Action);
+    s = relocate(s, s.instances[theirs]!, 'hand', 1, 'top');
+    s = drain(passBoth(s), 20);
+    expect(s.instances[theirs]!.zone).toBe('hand');
+    expect(characteristicsOf(s, s.instances[mine]!).power).toBe(5);
+    expect(s.instances[mine]!.zone).toBe('battlefield');
+    // The zap's target is gone, so it hits nothing: not the right half's creature.
+    expect(s.instances[mine]!.damage).toBe(0);
+    expect(s.instances[card]!.zone).toBe('graveyard');
   });
 });
 

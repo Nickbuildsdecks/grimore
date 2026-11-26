@@ -211,3 +211,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1291 pushed in 2a64dad. D1292 effect-paid climb: CardsDecisionSpec.climbFromFirstAnswer (automation.ts), the If-you-do reader's sacrifice-then-search (scripts.ts optionalEffect).
 - D1292 pushed in 27a9732, checkpoint d70b1bd. D1293 activation timings 'combat' and 'declare-blockers' (turnTypes.ts ActivationTiming, automation.ts atActivationTiming, autoActions.ts refusal, scripts.ts Activate-only splitter).
 - D1293 pushed in 288540a. D1294 split cards from card data: compileSplit in compile.ts, derive.ts round trip for split faces.
+- D1294 pushed in 27f753a. D1295 fuse: CardScript.fused, fusedScript in compile.ts, fuse on the cast action (turnTypes.ts, legalActions.ts, autoActions.ts, bot.ts).

@@ -2542,6 +2542,8 @@ function candidateActions(
             ...(play.retrace === true ? { retrace: true } : {}),
             // And a graveyard permission (D1287): sent without it, the card is cast "from hand".
             ...(play.yardBy === undefined ? {} : { yardBy: play.yardBy }),
+            // And fuse (D1295): sent without it, a split card with no half is refused.
+            ...(play.fuse === true ? { fuse: true } : {}),
             // And casualty (D923): sent without it, the chosen sacrifice rides on a spell with no
             // additional cost, which the engine refuses.
             ...(play.casualty === true ? { casualty: true } : {}),
