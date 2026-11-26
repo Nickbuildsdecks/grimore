@@ -49015,3 +49015,29 @@ The scripts tests, compile tests and pins: 6441 of 6441 pass. Deck coverage pass
 field listed as compiler-only.
 
 Coverage: 17,437 of 31,900 cards (+5 over D1320's 17,432), 40,247 of 59,888 lines (+5).
+
+## D1322 — "Untap it and remove it from combat": the Gustcloaks
+
+Six Gustcloaks (Runner, Harrier, Cavalier, Sentinel, Skirmisher, and Savior's "that creature")
+print "Whenever ~ becomes blocked, you may untap it and remove it from combat." The trigger and the
+"you may" read; the action did not.
+
+It is now one effect: the creature the trigger is about (or the card named) is untapped through
+`untapPermanent` (CR 122.1d's stun replacement included), then taken out of combat with
+`removeFromCombat` (CR 506.4). So it deals and is dealt no combat damage.
+
+Melee stays unread for its other lines. Disharmony's "target attacking creature" and the
+blocking-creature forms (Balduvian Warlord, False Orders) are separate readings, not done here.
+
+**Tests.** 3 tests:
+- The fixture reads whole.
+- Blocked by the Bears and answered Yes, it is untapped, out of combat, and alive at end of combat.
+- Answered No, it dies to the Bears.
+
+Faults injected by hand: 2, both caught.
+- Not untapped.
+- Left in combat.
+
+The scripts tests, compile tests and pins: 6444 of 6444 pass.
+
+Coverage: 17,443 of 31,900 cards (+6 over D1321's 17,437), 40,254 of 59,888 lines (+7).
