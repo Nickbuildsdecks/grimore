@@ -256,6 +256,10 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
 
   const attacker = creatureOf(state, attackerId);
   if (attacker === null) return { card: blockerId, reason: 'that attacker is gone' };
+  // "Target creature can't block ~ this turn" (D1323): that one attacker only.
+  if ((blocker.ch.cantBlockAttackers ?? []).includes(attackerId)) {
+    return { card: blockerId, reason: `${blocker.ch.name} can't block ${attacker.ch.name} this turn` };
+  }
   if (attacker.ch.keywords.has('flying') && !blocker.ch.keywords.has('flying') && !blocker.ch.keywords.has('reach')) {
     return { card: blockerId, reason: `${blocker.ch.name} can't block a flier` };
   }

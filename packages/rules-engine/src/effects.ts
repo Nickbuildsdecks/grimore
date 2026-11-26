@@ -3354,6 +3354,8 @@ export interface PumpOptions {
   /** See `ContinuousEffect.mustBlock` — the blocking requirements (CR 509.1c, D913). */
   readonly mustBlock?: boolean;
   readonly mustBlockAttacker?: string;
+  /** See `ContinuousEffect.cantBlockAttacker` (D1323). */
+  readonly cantBlockAttacker?: string;
   readonly mustBeBlocked?: boolean;
   readonly lure?: boolean;
   /** See `ContinuousEffect.blockedByOne` (D937). */
@@ -3491,6 +3493,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.mustBlock ? { mustBlock: true } : {}),
     ...(opts.mustBlockAttacker === undefined ? {} : { mustBlockAttacker: opts.mustBlockAttacker }),
+    ...(opts.cantBlockAttacker === undefined ? {} : { cantBlockAttacker: opts.cantBlockAttacker }),
     ...(opts.mustBeBlocked ? { mustBeBlocked: true } : {}),
     ...(opts.lure ? { lure: true } : {}),
     ...(opts.blockedByOne ? { blockedByOne: true } : {}),

@@ -17044,6 +17044,20 @@ function selfEffect(
     next, whether or not the permanent is still there (CR 603.7c).
   */
   /*
+    "Target creature can't block ~ this turn" (D1323): Kozilek's Pathfinder, Screeching Griffin,
+    Shrewd Hatchling. The target is barred from blocking this creature only, until the turn ends.
+  */
+  const barred = new RegExp(`^((?:up to one )?target [^,]+?) can't block (?:${self}|this creature) this turn$`, 'i').exec(text);
+  if (barred !== null) {
+    const aimed = targetSpecFrom(barred[1]!, false);
+    if (aimed !== null && aimed.kind === 'creature') {
+      return {
+        targets: [aimed],
+        effect: (c) => foldCardTargets(c, (state, id) => pump(state, [id], c.source, c.controller, { cantBlockAttacker: c.source })),
+      };
+    }
+  }
+  /*
     "Untap it and remove it from combat" (D1322): the Gustcloaks' "Whenever ~ becomes blocked, you may
     untap it and remove it from combat", Gustcloak Savior's "that creature", Melee's "it". The
     creature the trigger is about, else the source: untapped (CR 122.1d's stun replacement and all,

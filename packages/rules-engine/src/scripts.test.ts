@@ -48805,6 +48805,34 @@ describe('"you may untap it and remove it from combat": the Gustcloaks (D1322)',
   });
 });
 
+describe('"Target creature can\'t block ~ this turn" (D1323)', () => {
+  const PATH = { name: 'Test Pathfinder', type_line: 'Creature — Eldrazi', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: "{0}: Target creature can't block Test Pathfinder this turn." };
+  const deck = customDeck({ id: 'd1323', name: 'Pathfinder', entries: [{ name: 'Test Pathfinder', count: 4 }, { name: 'Grizzly Bears', count: 8 }, { name: 'Plains', count: 48 }], data: [PATH] as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(PATH as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the target cannot block the Pathfinder, and can still block anything else', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1323', 1: 'd1323' }, deckSpecs: { d1323: deck.deck },
+      battlefield: { 0: ['Test Pathfinder', 'Grizzly Bears'], 1: ['Grizzly Bears'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const path = find(s, 0, 'battlefield', 'Test Pathfinder');
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: path, abilityIndex: 0, targets: [{ kind: 'card', id: theirs }] } as Action)), 4);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: path, defender: 1 }, { attacker: mine, defender: 1 }] } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    expect(canBlock(s, theirs, path, 1)).toMatchObject({ reason: "Grizzly Bears can't block Test Pathfinder this turn" });
+    expect(canBlock(s, theirs, mine, 1)).toBeNull();
+    expect(() => apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: theirs, attacker: path }] } as Action)).toThrow();
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

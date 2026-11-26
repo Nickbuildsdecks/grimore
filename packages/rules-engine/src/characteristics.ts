@@ -1746,6 +1746,11 @@ export interface ContinuousEffect {
    */
   readonly mustBlock?: boolean;
   readonly mustBlockAttacker?: string;
+  /**
+   * "Target creature can't block ~ this turn" (D1323): Kozilek's Pathfinder, Screeching Griffin. The
+   * creature in scope can't block the attacker with this id; anything else it may.
+   */
+  readonly cantBlockAttacker?: string;
   readonly mustBeBlocked?: boolean;
   readonly lure?: boolean;
   /** "Can't be blocked by more than one creature" (D937, CR 509.1b). */
@@ -2459,6 +2464,8 @@ export interface Characteristics {
   /** The blocking requirements (CR 509.1c, D913). See `ContinuousEffect.mustBlock`. */
   readonly mustBlock: boolean;
   readonly mustBlockAttackers: readonly string[];
+  /** The attackers it can't block (D1323). See `ContinuousEffect.cantBlockAttacker`. */
+  readonly cantBlockAttackers?: readonly string[];
   readonly mustBeBlocked: boolean;
   readonly lure: boolean;
   /**
@@ -3537,6 +3544,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (part.kind === 'extra-blocks') extraBlocks += part.count;
   }
   const mustBlockAttackers: string[] = [];
+  const cantBlockAttackers: string[] = [];
   let cantBeBlockedByWalls = false;
   let cantBeBlocked = printedCombat.cantBeBlocked;
   /*
@@ -3670,6 +3678,9 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.assignsByToughness) assignsByToughness = true;
     if (effect.cantActivate) cantActivate = true;
     if (effect.cantActivateNonMana) cantActivateNonMana = true;
+    if (effect.cantBlockAttacker !== undefined && !cantBlockAttackers.includes(effect.cantBlockAttacker)) {
+      cantBlockAttackers.push(effect.cantBlockAttacker);
+    }
     if (effect.mustBlockAttacker !== undefined && !mustBlockAttackers.includes(effect.mustBlockAttacker)) {
       mustBlockAttackers.push(effect.mustBlockAttacker);
     }
@@ -3754,6 +3765,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     // And the blocking half: a creature that can't block is not required to (CR 509.1c).
     mustBlock: mustBlock && !cantBlock,
     mustBlockAttackers: cantBlock ? [] : mustBlockAttackers,
+    ...(cantBlockAttackers.length === 0 ? {} : { cantBlockAttackers }),
     mustBeBlocked,
     lure,
     blockedByOne,
