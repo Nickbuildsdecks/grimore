@@ -47645,3 +47645,33 @@ Faults injected by hand: 5, all caught.
 - The bot not sending `yardBy`.
 
 Coverage: 17,244 of 31,900 cards (+3 over D1286's 17,241), 39,990 of 59,888 lines (+5).
+
+## D1288 — Muldrotha, the Gravetide
+
+"During each of your turns, you may play a land and cast a permanent spell of each permanent type
+from your graveyard." D1287's permission with one spell a turn per permanent type rather than one in
+all: `castsFromGraveyard.slots` lists artifact, battle, creature, enchantment and planeswalker.
+`yardSlotFor` names the key a cast would spend: the permanent's own, or `<permanent>#<type>` for the
+first of the card's types still unused this turn. The cast records that key. The land half is the
+lands-from-graveyard permission Crucible of Worlds gives, which the turn's land drops already limit.
+
+Two simplifications, stated:
+- A card of two permanent types (an artifact creature) uses the first of its types still free, in
+  the order above. The rules let the player choose as it is cast.
+- With extra land drops, Crucible's permission plays more than one land from the graveyard;
+  Muldrotha's allows one.
+
+Read whole now: Muldrotha, the Gravetide.
+
+**Tests.** 3 engine tests:
+- It reads whole.
+- One of each type: a creature, then an artifact, then an enchantment, each from the graveyard, and
+  no second creature.
+- A land is played from the graveyard as the turn's land drop.
+
+Faults injected by hand: 3, all caught.
+- The slots not checked for use.
+- The cast recording the permanent's key rather than the slot's.
+- The land half dropped.
+
+Coverage: 17,245 of 31,900 cards (+1 over D1287's 17,244), 39,991 of 59,888 lines (+1).
