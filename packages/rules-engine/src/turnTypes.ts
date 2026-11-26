@@ -229,7 +229,7 @@ export interface DelayedTrigger {
    * (D1310) is Carrier Pigeons': "draw a card at the beginning of the next turn's upkeep", by the
    * ability's controller, with no subject.
    */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one';
   /**
    * Fires when `subject` dies, not at a step (D1222): "When that creature dies this turn, …". Only
    * during the turn it was made in (`createdTurn`), and only for the object it was made about
@@ -316,7 +316,7 @@ export interface StackObject {
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
   /** An engine-known delayed ability (D696); see `DelayedTrigger.builtin`. */
-  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw';
+  readonly builtin?: 'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one';
   /**
    * Where this triggered ability was **defined**, when the permanent that has it did not print it.
    *

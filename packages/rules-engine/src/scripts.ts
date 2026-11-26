@@ -17043,6 +17043,23 @@ function selfEffect(
     'draw'`), scheduled as the ability resolves and drawn by its controller at whoever's upkeep comes
     next, whether or not the permanent is still there (CR 603.7c).
   */
+  /*
+    "Remove a +1/+1 counter from it at end of combat" (D1320): Clockwork Beetle, Condor, Dragon,
+    Steed. After "whenever ~ attacks or blocks", "it" is the Clockwork; the engine-known delayed
+    ability takes one off at this combat's end, from the object as it is now (CR 400.7).
+  */
+  const clockwork = new RegExp(`^remove a \\+1/\\+1 counter from (?:it|${self}) at end of combat$`, 'i').exec(text);
+  if (clockwork !== null) {
+    return {
+      effect: (c) => {
+        const id = itMeans(undefined, c);
+        return c.state.instances[id]?.zone !== 'battlefield' ? c.state : scheduleDelayed(c.state, {
+          source: c.source, controller: c.controller, abilityIndex: -1, step: 'end-combat', of: 'any',
+          subject: id, builtin: 'remove-plus-one', description: `remove a +1/+1 counter from ${nameOfCard(c.state, id)}`,
+        });
+      },
+    };
+  }
   if (/^draw a card at the beginning of the next turn's upkeep$/i.test(text)) {
     return {
       effect: (c) => scheduleDelayed(c.state, {

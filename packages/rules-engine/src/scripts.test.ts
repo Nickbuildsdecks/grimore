@@ -48690,6 +48690,34 @@ describe('adamant: at least three mana of one colour spent (D1319)', () => {
   });
 });
 
+describe('"remove a +1/+1 counter from it at end of combat": the Clockworks (D1320)', () => {
+  // Toughness 1, so one placed on the battlefield by the test survives without its counters.
+  const BEETLE = { name: 'Test Beetle', type_line: 'Artifact Creature — Insect', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal', power: '0', toughness: '1',
+    oracle_text: 'Test Beetle enters with two +1/+1 counters on it.\nWhenever Test Beetle attacks or blocks, remove a +1/+1 counter from it at end of combat.' };
+  const deck = customDeck({ id: 'd1320', name: 'Clockwork', entries: [{ name: 'Test Beetle', count: 4 }, { name: 'Plains', count: 56 }], data: [BEETLE] as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(BEETLE as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('attacks as a 2/2 and is a 1/1 once combat ends', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1320', 1: 'd1320' }, deckSpecs: { d1320: deck.deck },
+      battlefield: { 0: ['Test Beetle'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const beetle = find(s, 0, 'battlefield', 'Test Beetle');
+    s = addCounters(s, beetle, '+1/+1', 2 - (s.instances[beetle]!.counters['+1/+1'] ?? 0));
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: beetle, defender: 1 }] } as Action);
+    s = drain(s, 4);
+    s = advanceTo(s, 'end-combat');
+    expect(s.seats[1]!.life).toBe(18);
+    s = drain(passBoth(s), 4);
+    expect(s.instances[beetle]!.counters['+1/+1']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

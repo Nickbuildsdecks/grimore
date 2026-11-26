@@ -7273,7 +7273,7 @@ function resolveObject(
  * if that object is still on the battlefield; one that left, or became a new object (CR 400.7),
  * has no subject and nothing happens.
  */
-const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw', Resolvable>> = {
+const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'destroy' | 'return-to-owner' | 'return-to-you' | 'draw' | 'remove-plus-one', Resolvable>> = {
   // The basilisks' "destroy that creature at end of combat" (D969). Only from the battlefield.
   destroy: {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
@@ -7281,6 +7281,13 @@ const BUILTIN_DELAYED: Readonly<Record<'sacrifice' | 'exile' | 'to-hand' | 'dest
   },
   // "Draw a card at the beginning of the next turn's upkeep" from a permanent's ability (D1310).
   draw: { effect: (c) => draw(c.state, c.controller, 1) },
+  // The Clockwork creatures' "remove a +1/+1 counter from it at end of combat" (D1320): from the
+  // object it was scheduled about, while it is on the battlefield and has one.
+  'remove-plus-one': {
+    effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'battlefield'
+      || (c.state.instances[c.subject]!.counters['+1/+1'] ?? 0) <= 0
+      ? c.state : addCounters(c.state, c.subject, '+1/+1', -1)),
+  },
   // Necropotence's card, exiled face down and put into its owner's hand (D719). Only from exile.
   'to-hand': {
     effect: (c) => (c.subject === undefined || c.state.instances[c.subject]?.zone !== 'exile'
