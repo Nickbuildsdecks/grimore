@@ -18036,6 +18036,35 @@ function attachmentBonus(
       harmful: true,
     };
   }
+  /*
+    "Enchanted permanent is a colorless land with "{T}: Add {C}" and loses all other card types and
+    abilities" (D1290, Imprisoned in the Moon), and the artifact ones: In Too Deep's Clue, Sugar
+    Coat's Food, Minimus Containment's Treasure. "Is a land", with no "in addition to its other
+    types", replaces its card types (CR 205.1a), and its creature types go with the creature type. A
+    land keeps its land types, but a basic land type's mana ability is an ability, and goes with the
+    rest (CR 305.6, 613.1f). The quoted ability is granted by the same effect, after the loss, so it
+    is the one ability left (`grantedAbilitiesOn`).
+  */
+  const imprisoned = /^is an? (colorless )?(?:(clue|food|treasure) )?(land|artifact) with "([^"]+?),?",? and (?:it )?loses all other (?:card types and )?abilities(?:\.\s*\([^)]*\))?$/i.exec(tail);
+  if (imprisoned !== null && /^enchanted permanent\b/i.test(plain(line).trim())) {
+    const granted = grantedAbilityFrom(imprisoned[4]!, name);
+    if (granted !== null) {
+      const kind = imprisoned[3]!.toLowerCase() === 'land' ? 'Land' : 'Artifact';
+      const sub = imprisoned[2];
+      return {
+        bonus: {
+          removeTypes: ['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'].filter((t) => t !== kind),
+          addTypes: [kind],
+          setCreatureTypes: [],
+          ...(sub === undefined ? {} : { addSubtypes: [sub.charAt(0).toUpperCase() + sub.slice(1).toLowerCase()] }),
+          ...(imprisoned[1] === undefined ? {} : { setColors: [] }),
+          losesAllAbilities: true,
+        },
+        harmful: true,
+        grantedAbilities: granted,
+      };
+    }
+  }
   const alone = attachmentRider(tail);
   if (alone !== null) return alone;
   /*
@@ -18341,8 +18370,9 @@ export function attachmentScriptFor(
       before this reader sees one (CR 207.2). The group was a second place doing a job one place
       already does, so it is gone and the test that covers it says what it is really covering.
     */
+    // Commas too (D1290): "Enchant creature, land, or planeswalker".
     const enchant = lines
-      .map((line) => /^enchant ([a-z][a-z' ]*)$/i.exec(plain(line).trim()))
+      .map((line) => /^enchant ([a-z][a-z', ]*)$/i.exec(plain(line).trim()))
       .find((m) => m !== null);
     if (enchant === undefined || enchant === null) return null;
     /*
@@ -18422,10 +18452,11 @@ export function attachmentScriptFor(
       vocabulary to exact phrases so the attachment machinery was not widened by accident; these are
       widened on purpose, each a kind of permanent an Aura is written onto and policed by CR 704.5m
       through this same spec, as "Enchant land" already is. Read with the printed capitals, which
-      are what make "Forest" a subtype.
+      are what make "Forest" a subtype. And (D1290) a list of three, "Enchant creature, land, or
+      planeswalker" (Imprisoned in the Moon), and "Enchant creature or Food" (Sugar Coat).
     */
     const printedThing = enchant[1]!.trim();
-    const WIDER_HOSTS = /^(?:(?:basic )?land you control|artifact you control|(?:Plains|Island|Swamp|Mountain|Forest|Desert)|planeswalker|Equipment|(?:artifact|creature|enchantment|land|planeswalker|Vehicle)(?: or (?:artifact|creature|enchantment|land|planeswalker|Vehicle))+)$/;
+    const WIDER_HOSTS = /^(?:(?:basic )?land you control|artifact you control|(?:Plains|Island|Swamp|Mountain|Forest|Desert)|planeswalker|Equipment|(?:artifact|creature|enchantment|land|planeswalker|Vehicle)(?: or (?:artifact|creature|enchantment|land|planeswalker|Vehicle|Food))+|(?:artifact|creature|land|planeswalker)(?:, (?:artifact|creature|land|planeswalker))+,? or (?:land|planeswalker|Clue))$/;
     const widened = WIDER_HOSTS.test(printedThing) ? targetSpecFrom(`target ${printedThing}`, kindly, true) : null;
     const host = targetSpecFrom(`target ${thing}`, kindly, false)
       ?? (parsedHost?.kind === 'creature' ? parsedHost : null)

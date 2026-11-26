@@ -3966,10 +3966,14 @@ export function grantedAbilitiesOn(
   for (const effect of state.effects ?? []) {
     if (effect.grantsAbilities === undefined && effect.losesAllAbilities !== true) continue;
     if (!effectApplies(state, effect, instance, creature, line)) continue;
-    // CR 613.1f: everything granted *before* this effect is gone, and later grants still land.
+    /*
+      CR 613.1f: everything granted *before* this effect is gone, and later grants still land. And
+      the effect's own grant (D1290): "is a colorless land with "{T}: Add {C}" and loses all other
+      abilities" takes the rest away and leaves that one.
+    */
     if (effect.losesAllAbilities === true) {
       out = null;
-      continue;
+      if (effect.grantsAbilities === undefined) continue;
     }
     const grantor = state.instances[effect.source];
     const defKey = grantor?.defKey;

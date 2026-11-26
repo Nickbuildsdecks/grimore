@@ -1431,8 +1431,13 @@ export function manaSources(
       taps for {R} and nothing else.
     */
     const retyped = landTypesSet(state, inst);
-    if ((allAbilitiesLost(state, inst) && !retyped) || characteristicsOf(state, inst).cantActivate) continue;
-    const script = retyped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
+    /*
+      And one whose abilities were taken away by an effect that then handed it one (D1290, Imprisoned
+      in the Moon): that one only, and no basic land type's mana either.
+    */
+    const stripped = allAbilitiesLost(state, inst) && !retyped;
+    if ((stripped && grantedAbilitiesOn(state, inst).length === 0) || characteristicsOf(state, inst).cantActivate) continue;
+    const script = retyped || stripped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     /*
       The permanent's own mana abilities, and the ones an effect handed it (CR 113.6): a
@@ -1455,7 +1460,7 @@ export function manaSources(
         types the land has now that its script does not make. Index -1: the solver's pick adds the
         mana itself, and nothing activates a source by index.
       */
-      ...(ch.isLand ? typeGrantedMana(ch.typeLine.subtypes)
+      ...(ch.isLand && !stripped ? typeGrantedMana(ch.typeLine.subtypes)
         .filter((granted) => !(script?.abilities ?? []).some((own) => own.cost.tap && own.cost.mana === undefined
           && (own.produces ?? []).length === 1 && own.produces![0] === granted.produces![0]))
         .map((ability) => ({ ability, index: -1 })) : []),
@@ -1660,8 +1665,13 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     // which is the point of both: one answer to "what can this seat pay". And Arrest's (D943).
     // And a land whose land types were set keeps only its new type's mana (D1246), as in `manaSources`.
     const retyped = landTypesSet(state, inst);
-    if ((allAbilitiesLost(state, inst) && !retyped) || characteristicsOf(state, inst).cantActivate) continue;
-    const script = retyped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
+    /*
+      And one whose abilities were taken away by an effect that then handed it one (D1290, Imprisoned
+      in the Moon): that one only, and no basic land type's mana either.
+    */
+    const stripped = allAbilitiesLost(state, inst) && !retyped;
+    if ((stripped && grantedAbilitiesOn(state, inst).length === 0) || characteristicsOf(state, inst).cantActivate) continue;
+    const script = retyped || stripped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     // The granted ones too, kept in step with `manaSources` above — the dimmed pips and the
     // auto-tapper answering different questions about the same board is what both docblocks warn
@@ -1675,7 +1685,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
         And the mana a basic land type gives a land only because an effect says so (D1246), which
         `manaSources` has counted since D699 and this had not: a Forest under Urborg lit no black pip.
       */
-      ...(ch.isLand ? typeGrantedMana(ch.typeLine.subtypes)
+      ...(ch.isLand && !stripped ? typeGrantedMana(ch.typeLine.subtypes)
         .filter((granted) => !(script?.abilities ?? []).some((own) => own.cost.tap && own.cost.mana === undefined
           && (own.produces ?? []).length === 1 && own.produces![0] === granted.produces![0])) : []),
     ]) {
@@ -2999,10 +3009,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       also walks the hand and the graveyard for cycling, unearth, embalm and ninjutsu, and a card
       there is not something a Turn to Frog has ever been pointed at.
     */
-    if (zone === 'battlefield' && allAbilitiesLost(state, inst)) continue;
+    // Except what the same effect handed it afterwards (D1290): only those, then.
+    const stripped = zone === 'battlefield' && allAbilitiesLost(state, inst);
+    if (stripped && grantedAbilitiesOn(state, inst).length === 0) continue;
     // "Its activated abilities can't be activated" (D943).
     if (zone === 'battlefield' && characteristicsOf(state, inst).cantActivate) continue;
-    const script = scriptForCard(state.cardDefs[inst.defKey]);
+    const script = stripped ? undefined : scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     /*
       The permanent's own abilities, and then the ones continuous effects have handed it (CR 113.6).

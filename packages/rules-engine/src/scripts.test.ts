@@ -47189,6 +47189,84 @@ describe('graveyard permissions with riders: Kess exiles, Edgar enters tapped, S
   });
 });
 
+describe('A permanent made into a colorless land or artifact with one ability: Imprisoned in the Moon (D1290)', () => {
+  const E = (name: string, text: string) => ({ name, type_line: 'Enchantment — Aura', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal' });
+  const ROWS = [
+    E('Test Prison', 'Enchant creature, land, or planeswalker\nEnchanted permanent is a colorless land with "{T}: Add {C}" and loses all other card types and abilities.'),
+    E('Test Deep', 'Enchant creature, planeswalker, or Clue\nEnchanted permanent is a colorless Clue artifact with "{2}, Sacrifice this artifact: Draw a card" and loses all other abilities. (It\'s no longer a creature or planeswalker.)'),
+    E('Test Coat', 'Flash\nEnchant creature or Food\nEnchanted permanent is a colorless Food artifact with "{2}, {T}, Sacrifice this artifact: You gain 3 life" and loses all other card types and abilities.'),
+    { name: 'Test Grove', type_line: 'Land', oracle_text: '{T}: Add {G}.\n{1}, {T}: Draw a card.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' },
+    { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: 'Flying', mana_cost: '{0}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2' },
+  ];
+  const deck = customDeck({ id: 'd1290', name: 'Prison', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Island', count: 36 }, { name: 'Forest', count: 4 }], data: ROWS as never[] });
+  const table = (hand: string[], theirs: string[]) => advanceTo(arena({
+    decks: { 0: 'd1290', 1: 'd1290' }, deckSpecs: { d1290: deck.deck }, hands: { 0: hand },
+    battlefield: { 0: ['Island'], 1: theirs }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string, target: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [{ kind: 'card', id: target }],
+  } as Action)), 30);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const row of ROWS.slice(0, 3)) expect(compileCard(row as never), row.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the enchanted creature is a colorless land with no creature type, no flying, and taps for {C}', () => {
+    const before = table(['Test Prison'], ['Test Bear']);
+    const bear = find(before, 1, 'battlefield', 'Test Bear');
+    expect(potentialMana(before, 1).C).toBe(0);
+    const s = cast(before, 'Test Prison', bear);
+    expect(s.instances[ids(s, 0, 'battlefield').find((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Test Prison')!]!.attachedTo).toBe(bear);
+    const ch = characteristicsOf(s, s.instances[bear]!);
+    expect(ch.isCreature).toBe(false);
+    expect(ch.isLand).toBe(true);
+    expect(ch.colors).toEqual([]);
+    expect(ch.keywords.has('flying')).toBe(false);
+    expect(ch.typeLine.subtypes).toEqual([]);
+    expect(potentialMana(s, 1).C).toBe(1);
+    expect(manaSources(s, 1 as SeatIndex).filter((e) => e.key === bear).flatMap((e) => e.produces)).toEqual(['C']);
+  });
+
+  it('an enchanted land taps for {C} and nothing else, and its own abilities are gone', () => {
+    const before = table(['Test Prison'], ['Test Grove']);
+    const grove = find(before, 1, 'battlefield', 'Test Grove');
+    const s = cast(before, 'Test Prison', grove);
+    expect(potentialMana(s, 1).G).toBe(0);
+    expect(potentialMana(s, 1).C).toBe(1);
+    expect(manaSources(s, 1 as SeatIndex).filter((e) => e.key === grove).flatMap((e) => e.produces)).toEqual(['C']);
+    const theirs = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    expect(refusal(theirs, { type: 'auto:activate', by: 1, card: grove, abilityIndex: 1 } as Action)).not.toBeNull();
+  });
+
+  it('an imprisoned Forest keeps its land type and loses its green', () => {
+    const before = table(['Test Prison'], ['Forest']);
+    const forest = find(before, 1, 'battlefield', 'Forest');
+    const s = cast(before, 'Test Prison', forest);
+    expect(characteristicsOf(s, s.instances[forest]!).typeLine.subtypes).toEqual(['Forest']);
+    expect(potentialMana(s, 1).G).toBe(0);
+    expect(potentialMana(s, 1).C).toBe(1);
+  });
+
+  /*
+    In Too Deep prints "Enchant creature, planeswalker, or Clue" for a reason: once the creature is a
+    Clue it is no longer a creature, and an Aura that could only enchant a creature would fall off
+    (CR 704.5m). The fixture prints the card's own list.
+  */
+  it('a creature made a Clue is an artifact with the one ability, offered to its controller', () => {
+    const before = table(['Test Deep'], ['Test Bear', 'Island', 'Island']);
+    const bear = find(before, 1, 'battlefield', 'Test Bear');
+    const s = cast(before, 'Test Deep', bear);
+    const ch = characteristicsOf(s, s.instances[bear]!);
+    expect(ch.isCreature).toBe(false);
+    expect(ch.typeLine.types.map((t) => t.toLowerCase())).toEqual(['artifact']);
+    expect(ch.typeLine.subtypes).toEqual(['Clue']);
+    const theirs = { ...s, activeSeat: 1 as SeatIndex, priority: 1 as SeatIndex };
+    const offered = legalActions(theirs, 1 as SeatIndex).plays.filter((p) => p.card === bear && p.kind === 'activate');
+    expect(offered.length).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
