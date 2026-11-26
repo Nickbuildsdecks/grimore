@@ -2062,7 +2062,11 @@ function activate(
       ? 'that ability can only be activated during your upkeep'
       : ability.timing === 'before-attackers'
         ? 'that ability can only be activated before attackers are declared'
-        : 'that ability can only be activated during your turn');
+        : ability.timing === 'combat'
+          ? 'that ability can only be activated during combat'
+          : ability.timing === 'declare-blockers'
+            ? 'that ability can only be activated during the declare blockers step'
+            : 'that ability can only be activated during your turn');
   }
   // A loyalty ability carries three restrictions with it, all from CR 606: sorcery speed, one
   // per planeswalker per turn, and a minus you can actually pay for. Checked here as well as in

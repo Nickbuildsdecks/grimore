@@ -35393,6 +35393,12 @@ function activationRestriction(
     } else if (clause === 'during your turn') {
       if (flags.timing !== undefined) return null;
       flags.timing = 'your-turn';
+    } else if (clause === 'during combat' || clause === 'during the declare blockers step') {
+      // D1293: see `atActivationTiming`.
+      if (flags.timing !== undefined) return null;
+      flags.timing = clause === 'during combat' ? 'combat' : 'declare-blockers';
+    } else if (clause === 'as an instant') {
+      // "Activate only as an instant" (D1293) is every activated ability's own timing (CR 602.2): nothing to add.
     } else if (clause.startsWith('if ')) {
       /*
         "Activate only if <condition>" (D623): the same conditions a trigger's "if" clause reads,

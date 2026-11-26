@@ -77,7 +77,7 @@ import {
   stillHasLegalTarget, stillTheObject, targetSeqsFor,
 } from './targeting.js';
 import {
-  EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
+  COMBAT_STEPS, EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
   type ActivationTiming,
   type AttackedTarget, type DecisionAnswer, type SacrificedStats, type StackObject, type Step, type Target,
 } from './turnTypes.js';
@@ -754,6 +754,9 @@ export function triggerFireKey(abilityIndex: number, grantedBy?: GrantedTriggerR
  *  - `'your-turn'` — the active seat is yours, and nothing else (8 cards).
  *  - `'your-upkeep'` — that, in the upkeep step (6 cards).
  *  - `'before-attackers'` — that, in any step strictly earlier than declare-attackers (18 cards).
+ *  - `'combat'` — "Activate only during combat" (D1293, Najeela): any player's combat phase, its
+ *    beginning to its end (CR 506.1), on anybody's turn.
+ *  - `'declare-blockers'` — "Activate only during the declare blockers step", on anybody's turn.
  *
  * **The step boundary is the right line for the last one** rather than an approximation of it: CR
  * 508.1 gives nobody priority in the declare-attackers step until attackers have been declared, so
@@ -764,6 +767,9 @@ export function triggerFireKey(abilityIndex: number, grantedBy?: GrantedTriggerR
 export function atActivationTiming(
   state: GameState, seat: SeatIndex, timing: ActivationTiming,
 ): boolean {
+  // The two that are not about whose turn it is (D1293).
+  if (timing === 'combat') return (COMBAT_STEPS as readonly string[]).includes(state.step);
+  if (timing === 'declare-blockers') return state.step === 'declare-blockers';
   if (state.activeSeat !== seat) return false;
   if (timing === 'your-turn') return true;
   if (timing === 'your-upkeep') return state.step === 'upkeep';

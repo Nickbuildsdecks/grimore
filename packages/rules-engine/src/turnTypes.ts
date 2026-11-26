@@ -40,7 +40,7 @@ export type Step = (typeof STEPS)[number];
  * (CR 602.5d, D509). See `atActivationTiming` for what each one asks and why none of them is
  * `atSorcerySpeed`, and `AbilityDef.timing` for why it is one field rather than three flags.
  */
-export type ActivationTiming = 'your-turn' | 'your-upkeep' | 'before-attackers';
+export type ActivationTiming = 'your-turn' | 'your-upkeep' | 'before-attackers' | 'combat' | 'declare-blockers';
 
 export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
   untap: 'Untap',

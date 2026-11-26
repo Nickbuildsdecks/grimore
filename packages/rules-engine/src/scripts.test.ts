@@ -47370,6 +47370,57 @@ describe('a sacrifice made by the effect, then a search one mana value up: Enigm
   });
 });
 
+describe('"Activate only during combat" and "during the declare blockers step" (D1293)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Human Warrior', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const FIGHTER = C('Test Fighter', '{0}: You gain 1 life. Activate only during combat.');
+  const GUARD = C('Test Guard', '{0}: You gain 1 life. Activate only during the declare blockers step.');
+  const ROWS = [FIGHTER, GUARD];
+  const deck = customDeck({ id: 'd1293', name: 'Combat', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Plains', count: 52 }], data: ROWS as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1293', 1: 'd1293' }, deckSpecs: { d1293: deck.deck },
+    battlefield: { 0: ['Test Fighter', 'Test Guard'], 1: ['Test Fighter'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const offered = (s: GameState, seat: SeatIndex, name: string) => legalActions(s, seat).plays
+    .some((p) => p.kind === 'activate' && p.card === find(s, seat, 'battlefield', name));
+
+  it('reads both, and Najeela\'s untap', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(C('Test Najeela', '{W}{U}{B}{R}{G}: Untap all attacking creatures. After this phase, there is an additional combat phase. Activate only during combat.') as never))
+      .toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('not in the main phase; in combat, on either player\'s turn', () => {
+    let s = table();
+    expect(offered(s, 0, 'Test Fighter')).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Fighter'), abilityIndex: 0 } as Action)).toContain('during combat');
+    s = advanceTo(s, 'begin-combat');
+    expect(s.priority).toBe(0);
+    expect(offered(s, 0, 'Test Fighter')).toBe(true);
+    expect(offered(s, 0, 'Test Guard')).toBe(false);
+    const theirs = { ...s, priority: 1 as SeatIndex };
+    expect(offered(theirs, 1, 'Test Fighter')).toBe(true);
+  });
+
+  it('the declare blockers one only in that step', () => {
+    let s = advanceTo(table(), 'declare-attackers');
+    expect(offered({ ...s, priority: 0 as SeatIndex }, 0, 'Test Guard')).toBe(false);
+    const fighter = find(s, 0, 'battlefield', 'Test Fighter');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: fighter, defender: 1 }] } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    expect(s.step).toBe('declare-blockers');
+    // Priority in this step comes once blockers are declared (CR 509.2).
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [] } as Action);
+    expect(s.step).toBe('declare-blockers');
+    expect(offered({ ...s, priority: 0 as SeatIndex }, 0, 'Test Guard')).toBe(true);
+    s = advanceTo(s, 'end-combat');
+    expect(offered({ ...s, priority: 0 as SeatIndex }, 0, 'Test Guard')).toBe(false);
+    expect(offered({ ...s, priority: 0 as SeatIndex }, 0, 'Test Fighter')).toBe(true);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

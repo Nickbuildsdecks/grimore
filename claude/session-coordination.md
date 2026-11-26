@@ -209,3 +209,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1289 pushed in 3f5f95d. D1290 Imprisoned in the Moon: attachmentBonus retype-with-one-ability, grantedAbilitiesOn keeps an effect's own grant after its loss, manaSources / potentialMana / activation loop in legalActions.ts, Enchant line with commas (scripts.ts, characteristics.ts, legalActions.ts).
 - D1290 pushed in e2c41e3. D1291 Neoform: search destination onto the battlefield with an additional +1/+1 counter (scripts.ts searchClause).
 - D1291 pushed in 2a64dad. D1292 effect-paid climb: CardsDecisionSpec.climbFromFirstAnswer (automation.ts), the If-you-do reader's sacrifice-then-search (scripts.ts optionalEffect).
+- D1292 pushed in 27a9732, checkpoint d70b1bd. D1293 activation timings 'combat' and 'declare-blockers' (turnTypes.ts ActivationTiming, automation.ts atActivationTiming, autoActions.ts refusal, scripts.ts Activate-only splitter).
