@@ -64595,3 +64595,38 @@ Faults injected by hand: 4, all caught.
 - The graveyard guard back to +1/+1 and -1/-1 only.
 
 Coverage: 17,154 of 31,900 cards (+12 over D1269's 17,142), 39,849 of 59,888 lines (+16).
+
+## D1271 — "That many" counters: a batch of discards, any counter kind, a target
+
+- **A batch of discards carries its count.** "Whenever you discard one or more cards, put that many
+  +1/+1 counters on this creature" (Marauding Mako, Scrounging Skyray). The batch event already
+  knew how many cards (D993). It now hands that number to the trigger as the event's amount, and
+  "that many" after it is marked as D903 marks it after damage.
+- **Any counter kind on the card itself**: "that many charge counters on ~" (Angelheart Vial),
+  "… incubation counters on it" (Drake Hatcher), and the power/toughness counters D1270 sizes. A
+  counter the rules give a meaning of their own (`RULES_COUNTERS`: lore, time, loyalty …) is
+  refused, as it is with a printed number.
+- **On a target**: "put that many +1/+1 counters on target Halfling or Treefolk" (Treebeard,
+  Gracious Host), aimed as a gift when the counter helps.
+
+**A fix on the way.** A "you may" around a "that many" clause asked the player in the reader's own
+mark for "that many" (an unprintable character) instead of the printed words. The question is now
+put as printed: "Put that many charge counters on Angelheart Vial?".
+
+Read whole now: Marauding Mako, Scrounging Skyray, Drake Hatcher, Angelheart Vial, Treebeard,
+Gracious Host. Voracious Brood's "one or more creature cards are put into your graveyard from
+anywhere" is an event not read yet.
+
+**Tests.** 3 engine tests:
+- Three forms read; "that many lore counters" stays unread.
+- Two cards discarded at once give two +1/+1 counters.
+- Three life gained gives three charge counters (after a "may" asked in the printed words) and three
+  +1/+1 counters on the creature targeted.
+
+Faults injected by hand: 4, all caught.
+- A discard batch's amount always 1.
+- A rules counter let through.
+- One counter on the target instead of that many.
+- The prompt left with the mark in it.
+
+Coverage: 17,162 of 31,900 cards (+8 over D1270's 17,154), 39,859 of 59,888 lines (+10).
