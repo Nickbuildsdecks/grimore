@@ -8101,6 +8101,9 @@ describe('deck coverage', () => {
       // D1241: Grafdigger's Cage and Containment Priest; no pool deck plays one. Driven at runtime by
       // "Grafdigger's Cage and Containment Priest (D1241)".
       'script enterBan', 'script exilesUncastCreatures',
+      // D1285: Renata, Grumgully and the tribal lords; no pool deck plays one. Driven at runtime by
+      // "others enter with an additional +1/+1 counter (D1285)".
+      'script othersEnterWith',
       // D1251: Snuff Out and the Bringers; no pool deck plays one. Driven at runtime by "A printed
       // alternative of mana or life: Snuff Out, the Bringers (D1251)".
       'script altCost',
@@ -46914,6 +46917,62 @@ describe('"enters with X +1/+1 counters on it, where X is …" and "a number of 
 
   it('two other creatures: two counters, itself not counted', () => {
     expect(enter('Test Binder', { mine: ['Test Bear', 'Test Bear'] })).toBe(2);
+  });
+});
+
+describe('others enter with an additional +1/+1 counter (D1285)', () => {
+  const C = (name: string, type: string, text = '') => ({
+    name, type_line: `Creature — ${type}`, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+  });
+  const PARAGON = C('Test Paragon', 'Elf Warrior', 'Each other Warrior creature you control enters with an additional +1/+1 counter on it.');
+  const WARRIOR = C('Test Warrior', 'Human Warrior');
+  const OX = C('Test Ox', 'Ox');
+  const ROWS = [PARAGON, WARRIOR, OX];
+  const deck = customDeck({ id: 'd1285', name: 'Paragon', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+  const cast = (s: GameState, name: string) => {
+    const id = find(s, 0, 'hand', name);
+    return { s: drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 20), id };
+  };
+
+  it('reads', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(PARAGON as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a Warrior entering gets the counter; an Ox does not; the Paragon itself does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1285', 1: 'd1285' }, deckSpecs: { d1285: deck.deck },
+      hands: { 0: ['Test Paragon', 'Test Warrior', 'Test Ox'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const paragon = cast(s, 'Test Paragon'); s = paragon.s;
+    expect(s.instances[paragon.id]!.counters['+1/+1'] ?? 0).toBe(0);
+    const warrior = cast(s, 'Test Warrior'); s = warrior.s;
+    expect(s.instances[warrior.id]!.counters['+1/+1']).toBe(1);
+    const ox = cast(s, 'Test Ox'); s = ox.s;
+    expect(s.instances[ox.id]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('a Warrior entering at the same time as the Paragon gets nothing (CR 614.12)', () => {
+    const RETURN = { name: 'Test Return', type_line: 'Sorcery', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Return all creature cards from your graveyard to the battlefield.' };
+    const both = customDeck({ id: 'd1285b', name: 'Together', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Test Return', count: 2 }, { name: 'Forest', count: 49 }], data: [...ROWS, RETURN] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1285b', 1: 'd1285b' }, deckSpecs: { d1285b: both.deck },
+      graveyard: { 0: ['Test Paragon', 'Test Warrior'] }, hands: { 0: ['Test Return'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const warrior = find(s, 0, 'graveyard', 'Test Warrior');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Return') } as Action)), 20);
+    expect(s.instances[warrior]!.zone).toBe('battlefield');
+    expect(s.instances[warrior]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it("an opponent's Warrior gets nothing", () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1285', 1: 'd1285' }, deckSpecs: { d1285: deck.deck },
+      battlefield: { 0: ['Test Paragon'] }, hands: { 1: ['Test Warrior'] }, turn: 3, firstSeat: 1,
+    }), 'precombat-main');
+    const id = find(s, 1, 'hand', 'Test Warrior');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: id } as Action)), 20);
+    expect(s.instances[id]!.counters['+1/+1'] ?? 0).toBe(0);
   });
 });
 

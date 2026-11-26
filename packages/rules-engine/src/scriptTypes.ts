@@ -3756,6 +3756,18 @@ export interface CardScript {
    */
   readonly bloodthirst?: number;
   /**
+   * "Each other <kind> you control enters with an additional +1/+1 counter on it" (D1285): Renata,
+   * Grumgully, Bramblewood Paragon, Sage of Fables, Oona's Blackguard. A replacement this permanent
+   * makes on other permanents' arrival under its controller (CR 614.1c), applied by the arrival pass
+   * beside the arriving permanent's own `entersWith`. Not to a permanent entering at the same time
+   * as this one (CR 614.12), and never to itself.
+   */
+  readonly othersEnterWith?: {
+    readonly counter: string;
+    readonly amount: number;
+    readonly fits: (state: GameState, id: string) => boolean;
+  };
+  /**
    * "If it's neither day nor night, it becomes day as ~ enters" (D593) — a replacement on the
    * arrival, so it is day before anything that watches the entry looks.
    */

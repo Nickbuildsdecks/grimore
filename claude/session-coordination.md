@@ -201,3 +201,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1281 pushed in f4e66be. D1282 "that creature" on the other side of a block via referentEffect (done).
 - D1282 pushed in 60d4edc. D1283 "~ or another creature you control enters, that creature …"; Gruul Ragebeast added to DISAGREE (done).
 - D1283 pushed in 5257a6a. D1284 enters with X counters, where X is … / a number of counters equal to … (entersWith.per) (done).
+- D1284 pushed in 27c1c54. D1285 CardScript.othersEnterWith, applied in the arrival pass (automation.ts), with CR 614.12 batch rule (done).

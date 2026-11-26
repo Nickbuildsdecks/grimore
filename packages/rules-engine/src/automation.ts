@@ -4491,6 +4491,18 @@ function arrivalReplacements(state: GameState, done: Set<string>): GameState {
       if (amount > 0) next = addCounters(next, id, arrives.counter, amount);
     }
     /*
+      And what its controller's other permanents add (D1285, `CardScript.othersEnterWith`): "Each
+      other Warrior creature you control enters with an additional +1/+1 counter on it". Only from a
+      permanent already there: one arriving in the same batch is not yet on the battlefield as far as
+      this arrival is concerned (CR 614.12).
+    */
+    for (const source of listAt(next, zoneKey(inst.zoneSeat, 'battlefield'))) {
+      if (source === id || state.entered.includes(source)) continue;
+      const adds = scriptOf(next, source)?.othersEnterWith;
+      if (adds === undefined || !adds.fits(next, id)) continue;
+      next = addCounters(next, id, adds.counter, adds.amount);
+    }
+    /*
       Bloodthirst (CR 702.54a): "if an opponent was dealt damage this turn, this creature enters
       with N +1/+1 counters on it".
 

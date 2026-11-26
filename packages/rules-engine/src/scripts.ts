@@ -38399,6 +38399,28 @@ const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice', 'shield'
 
 function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
   /*
+    Others' arrivals (D1285): "Each other creature you control enters with an additional +1/+1
+    counter on it" (Renata), "Each other Warrior creature you control …" (Bramblewood Paragon),
+    "Each other non-Human creature you control …" (Grumgully), "Each Dragon you control …"
+    (Dragonstorm Globe). The kind is a permanent description; see `CardScript.othersEnterWith`.
+  */
+  const others = /^each (other )?(.+?) you control enters with an additional (\+1\/\+1) counter on it$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (others !== null) {
+    // "A Warrior creature": a creature type before "creature", read off the live type line.
+    const tribal = /^([A-Z][a-z'-]+) creature$/.exec(others[2]!);
+    const describes = tribal !== null && isCreatureType(tribal[1]!)
+      ? (state: GameState, id: string) => {
+        const inst = state.instances[id];
+        if (inst === undefined) return false;
+        const line = characteristicsOf(state, inst).typeLine;
+        return hasType(line, 'creature') && hasSubtype(line, tribal[1]!.toLowerCase());
+      }
+      : permanentDescribed(others[2]!);
+    if (describes === null) return null;
+    return { othersEnterWith: { counter: others[3]!, amount: 1, fits: (state, id) => describes(state, id) } };
+  }
+  /*
     Converge's counters (D917): "~ enters with a +1/+1 counter on it for each color of mana spent to
     cast it" (Woodland Wanderer), or "two +1/+1 counters", with or without the ability word. See
     `CardScript.sunburst`.
