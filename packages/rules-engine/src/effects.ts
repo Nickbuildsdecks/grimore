@@ -2563,11 +2563,12 @@ export function addCounters(state: GameState, id: string, key: string, amount: n
     nothing on the table to say why. An effect that has lost its object does nothing to the new
     one (CR 400.7).
 
-    Only the two counters that mean something to a creature. Time counters on a suspended card in
+    Only the counters that mean something to a creature's size: +1/+1 and -1/-1, and since D1270
+    every other power/toughness counter ("+2/+2", "-0/-1"). Time counters on a suspended card in
     exile are counters on a card that is deliberately not a permanent, and they are added through
     this same function.
   */
-  if ((key === '+1/+1' || key === '-1/-1') && inst.zone !== 'battlefield') return state;
+  if (/^[+-]\d+\/[+-]\d+$/.test(key) && inst.zone !== 'battlefield') return state;
   /*
     Hardened Scales, Corpsejack Menace, Doubling Season (D652): counters put on a permanent are
     replaced by more. Not a marker the engine keeps as a counter (a regeneration shield, "kicked"),

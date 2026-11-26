@@ -3681,8 +3681,19 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
 
   // 7b, then 7c, then 7d: the base is whatever the last setting effect said (or the printed
   // value), every modification lands on top of it, and counters land on top of those.
-  const plus = instance.counters['+1/+1'] ?? 0;
-  const minus = instance.counters['-1/-1'] ?? 0;
+  /*
+    Every power/toughness counter (CR 122.1a, layer 7c): +1/+1 and -1/-1, and the older +2/+2,
+    +1/+2, +1/+0, -0/-1, -0/-2 … (D1270), each adding what its name says. Only +1/+1 and -1/-1
+    cancel as a state-based action (CR 704.5q); the rest simply add up.
+  */
+  let counterPower = 0;
+  let counterToughness = 0;
+  for (const [kind, n] of Object.entries(instance.counters)) {
+    const pt = /^([+-]\d+)\/([+-]\d+)$/.exec(kind);
+    if (pt === null || n === undefined || n <= 0) continue;
+    counterPower += Number(pt[1]) * n;
+    counterToughness += Number(pt[2]) * n;
+  }
   // 7a, then 7b, then 7c, then 7d: a defined size replaces the printed one, a setting effect
   // replaces either, every modification lands on top, and counters land on top of those.
   /*
@@ -3692,8 +3703,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const base = setPower ?? band?.power ?? definedPower ?? instance.prototype?.power ?? numeric(def?.power);
   const baseToughness = setToughness ?? band?.toughness ?? definedToughness ?? instance.prototype?.toughness ?? numeric(def?.toughness);
-  const summedPower = base + modPower + plus - minus;
-  const summedToughness = baseToughness + modToughness + plus - minus;
+  const summedPower = base + modPower + counterPower;
+  const summedToughness = baseToughness + modToughness + counterToughness;
   // Layer 7d (CR 613.4d): switched after everything else, counters included (D1211).
   const switched = switches % 2 === 1;
   const power = switched ? summedToughness : summedPower;

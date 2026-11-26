@@ -9552,16 +9552,15 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     expect(unreadLines(probe(text))).toEqual([]);
   });
 
-  it('refuses a counter key the engine does not read as size', () => {
+  it('reads a +2/+2 counter, which characteristicsOf sizes since D1270', () => {
     /*
-      `+1/+1` and `-1/-1` are the two keys the state-based actions pair off (CR 704.5q, D269) and
-      the two `characteristicsOf` adds to a creature's size. A "+2/+2 counter" is a real printed
-      thing on a handful of cards and would compile to counters that sit on the creature doing
-      nothing at all — so the clause refuses the key rather than the scope, and the line keeps its
-      badge.
+      `+1/+1` and `-1/-1` are the two keys the state-based actions pair off (CR 704.5q, D269). Until
+      D1270 they were also the only two `characteristicsOf` added to a creature's size, so a "+2/+2
+      counter" was refused here rather than placed doing nothing. Every power/toughness counter is
+      sized now, so the line reads; the counters still do not cancel each other.
     */
     const text = 'put a +2/+2 counter on each creature you control.';
-    expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
+    expect(unreadLines(probe(text))).toEqual([]);
   });
 });
 
@@ -10169,7 +10168,12 @@ describe('the block trigger, read off the prologue', () => {
       one (D475's rule, applied to a creature instead of a player).
     */
     ['Whenever a creature you control enters, Blocking Thing deals 1 damage to that creature'],
-    ['Whenever a creature you control dies, put a -1/-1 counter on that creature'],
+    /*
+      "Whenever a creature you control dies, put a -1/-1 counter on that creature" was the second
+      row until D1270. It reads now, as the +1/+1 and stun versions already did: "that creature" is
+      the one that died, and a power/toughness counter is not placed on a card that has left the
+      battlefield (CR 400.7, `addCounters`). Pinned as an engine test in scripts.test.ts (D1270).
+    */
     ['Whenever Blocking Thing attacks, that creature gets +1/+1 until end of turn'],
   ])('leaves "%s" unread: the event does not carry the other creature', (line) => {
     const read = creature(line);

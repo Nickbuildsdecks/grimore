@@ -186,3 +186,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1266 pushed in 1365e5c. D1267 Show and Tell: each player may put a permanent card from their hand onto the battlefield (done).
 - D1267 pushed in d3abbd1. D1268 searches bounded by "where X is ..." with the destination in the next sentence (searchWhereX; boardCount N plus any measure) (done).
 - D1268 pushed in dfb392e. D1269 five more counts in boardCount (life total, permanent cards in graveyard, different powers, players with more lands, commander mana value); Ajani, Caller of the Pride pins updated (done).
+- D1269 pushed in 3a8a0b3 (checkpoint 48dc0f0). D1270 power/toughness counters other than +1/+1 and -1/-1 (characteristics layer 7c, readers keep the printed kind, addCounters graveyard guard widened) (done).

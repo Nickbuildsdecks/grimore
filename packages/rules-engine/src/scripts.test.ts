@@ -46188,6 +46188,81 @@ describe('five more "where X is" measures (D1269)', () => {
   });
 });
 
+describe('power/toughness counters other than +1/+1 and -1/-1 (D1270)', () => {
+  /*
+    "+2/+2", "+1/+2", "-0/-1", "-0/-2" … (CR 122.1a): each adds what its name says in layer 7c. Only
+    +1/+1 and -1/-1 cancel (CR 704.5q). The kind is kept as printed, and a counter that lowers
+    power and toughness on balance is aimed at somebody else's creature, as a -1/-1 counter is.
+  */
+  const R = (name: string, text: string, power = '2', toughness = '2') => ({
+    name, type_line: 'Creature — Chimera', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power, toughness,
+  });
+  const CHIMERA = R('Test Chimera', 'Sacrifice Test Chimera: Put a +2/+2 counter on target creature.');
+  const SPHERE = R('Test Sphere', '{T}: Put a -0/-1 counter on target creature.');
+  const SELF = R('Test Grower', '{0}: Put a +1/+2 counter on Test Grower.');
+  const BEAR = R('Test Bear', '');
+  const ROWS = [CHIMERA, SPHERE, SELF, BEAR];
+  const deck = customDeck({ id: 'd1270', name: 'Counters', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 48 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], theirs: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1270', 1: 'd1270' }, deckSpecs: { d1270: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const size = (s: GameState, id: string) => {
+    const ch = characteristicsOf(s, s.instances[id]!);
+    return `${ch.power}/${ch.toughness}`;
+  };
+
+  it('reads all three, the helping counters aimed as gifts and the hurting one not', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [CHIMERA, SPHERE, SELF]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const aim = (r: typeof CHIMERA) => {
+      const compiled = compileCard(r as never);
+      return compiled.ok ? compiled.script?.abilities?.[0]?.targets?.[0]?.friendly : 'unread';
+    };
+    expect(aim(CHIMERA)).toBe(true);
+    expect(aim(SPHERE)).not.toBe(true);
+  });
+
+  it('a +2/+2 counter makes a 2/2 a 4/4, kept under its printed name', () => {
+    let s = table(['Test Chimera', 'Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Chimera'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 20);
+    expect(s.instances[bear]!.counters['+2/+2']).toBe(1);
+    expect(size(s, bear)).toBe('4/4');
+  });
+
+  it('a -0/-1 counter takes toughness only', () => {
+    let s = table(['Test Sphere'], ['Test Bear']);
+    const bear = find(s, 1, 'battlefield', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Sphere'), abilityIndex: 0, targets: [{ kind: 'card', id: bear }] } as Action)), 20);
+    expect(size(s, bear)).toBe('2/1');
+  });
+
+  it('a +1/+2 counter on itself, beside a +1/+1 and a -1/-1 that cancel and a +2/+2 that does not', () => {
+    let s = table(['Test Grower']);
+    const grower = find(s, 0, 'battlefield', 'Test Grower');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: grower, abilityIndex: 0 } as Action)), 20);
+    expect(size(s, grower)).toBe('3/4');
+    s = addCounters(addCounters(addCounters(s, grower, '+1/+1', 1), grower, '-1/-1', 1), grower, '+2/+2', 1);
+    s = engineSettle(s, s);
+    expect(s.instances[grower]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(s.instances[grower]!.counters['+2/+2']).toBe(1);
+    expect(size(s, grower)).toBe('5/6');
+  });
+
+  it('no power/toughness counter lands on a creature that has left the battlefield (CR 400.7)', () => {
+    let s = table(['Test Bear']);
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    s = destroy(s, bear);
+    expect(s.instances[bear]!.zone).toBe('graveyard');
+    s = addCounters(addCounters(s, bear, '+2/+2', 1), bear, '-1/-1', 1);
+    expect(s.instances[bear]!.counters).toEqual({});
+    // The printed sentence that used to be pinned unread: "that creature" is the one that died.
+    const died = compileCard(R('Test Mourner', 'Whenever a creature you control dies, put a -1/-1 counter on that creature.') as never);
+    expect(died).toMatchObject({ ok: true, unread: [] });
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -17522,7 +17522,7 @@ function selfEffect(
   */
   // A keyword counter ("a flying counter", CR 122.1b) grants its keyword since D1032
   // (`characteristicsOf`), so it is placed like any other; "first strike" and "double strike" are two words.
-  const kinded = new RegExp(`^put (an?|[\\w]+) ((?:first |double )?[a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
+  const kinded = new RegExp(`^put (an?|[\\w]+) (${PT_COUNTER}|(?:first |double )?[a-z]+) counters? on (?:(${self})|it)$`, 'i').exec(text);
   if (kinded !== null && !RULES_COUNTERS.includes(kinded[2]!.toLowerCase())) {
     const n = /^an?$/i.test(kinded[1]!) ? 1 : countFrom(kinded[1]!);
     if (n !== null && n > 0) {
@@ -17542,6 +17542,18 @@ function selfEffect(
  * player counters. Everything else is a name another line of the card reads, or, for stun
  * (D723, CR 122.1d), a counter `untapPermanent` already knows.
  */
+/**
+ * A power/toughness counter as printed (D1270, CR 122.1a): "+1/+1", "-1/-1", and the older "+2/+2",
+ * "+1/+2", "+1/+0", "-0/-1", "-0/-2". Kept as printed, which is the key `characteristicsOf` sums.
+ */
+const PT_COUNTER = String.raw`[+-]\d+\/[+-]\d+`;
+
+/** Whether a counter of this kind is one its creature is glad of: power and toughness up on balance. */
+function ptCounterHelps(kind: string): boolean {
+  const pt = /^([+-]\d+)\/([+-]\d+)$/.exec(kind);
+  return pt !== null && Number(pt[1]) + Number(pt[2]) > 0;
+}
+
 /** The keyword counters (D1032, CR 122.1b), as a regex alternation, two-word ones first. */
 const KEYWORD_COUNTER_WORDS = 'first strike|double strike|flying|deathtouch|hexproof|indestructible|lifelink|menace|reach|trample|vigilance|haste';
 
@@ -29384,11 +29396,10 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     <creature>" phrase is the plural set the team pump already reads (`massPumpSubject`), so the
     sets are the same ones, taken as the clause resolves; "with a <kind> counter on it" narrows them.
   */
-  const onEach = new RegExp(`^put (a|an|one|two|three|four|five|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on each (other )?(creature|[A-Z][a-z'-]+)( you control| target player controls| your opponents control)?( with an? ([+-]1\\/[+-]1|[a-z]+) counter on it)?$`, 'i').exec(text);
+  const onEach = new RegExp(`^put (a|an|one|two|three|four|five|\\d+) (${PT_COUNTER}|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on each (other )?(creature|[A-Z][a-z'-]+)( you control| target player controls| your opponents control)?( with an? ([+-]1\\/[+-]1|[a-z]+) counter on it)?$`, 'i').exec(text);
   if (onEach !== null) {
     const many = countFrom(onEach[1]!.toLowerCase() === 'an' ? 'a' : onEach[1]!);
-    const printedKind = onEach[2]!.toLowerCase();
-    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
+    const kind = onEach[2]!.toLowerCase();
     const noun = onEach[4]!;
     const whose = (onEach[5] ?? '').trim();
     const plural = noun === 'creature' ? 'creatures' : `${noun.toLowerCase()} creatures`;
@@ -29406,11 +29417,10 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
   // "Put a +1/+1 counter on enchanted / equipped creature" (D1037): the permanent the source is attached to.
-  const onHost = new RegExp(`^put (a|an|one|two|three|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (?:enchanted|equipped) creature$`, 'i').exec(text);
+  const onHost = new RegExp(`^put (a|an|one|two|three|\\d+) (${PT_COUNTER}|stun|shield|${KEYWORD_COUNTER_WORDS}) counters? on (?:enchanted|equipped) creature$`, 'i').exec(text);
   if (onHost !== null) {
     const many = countFrom(onHost[1]!.toLowerCase() === 'an' ? 'a' : onHost[1]!);
-    const printedKind = onHost[2]!.toLowerCase();
-    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
+    const kind = onHost[2]!.toLowerCase();
     if (many !== null && many > 0) {
       return {
         effect: (c) => {
@@ -29429,15 +29439,14 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   */
   const tail = countTailOf(text, name);
   const xBody = tail === null ? text.trim().replace(/\.$/, '') : tail.body;
-  const counting = new RegExp(`^put (x|a|an|one|two|three|\\d+) (\\+1\\/\\+1|-1\\/-1|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(xBody);
+  const counting = new RegExp(`^put (x|a|an|one|two|three|\\d+) (${PT_COUNTER}|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(xBody);
   const isX = counting !== null && counting[1]!.toLowerCase() === 'x';
   if (counting !== null && (tail !== null || isX)
     && (tail === null || (tail.grammar === 'announced') === isX)) {
     const word = counting[1]!.toLowerCase();
     const rate = isX ? 1 : /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word === 'an' ? 'a' : word];
-    const printedKind = counting[2]!.toLowerCase();
-    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind;
-    const spec = rate === undefined ? null : targetSpecFrom(counting[3]!, kind === '+1/+1' || isKeyword(kind));
+    const kind = counting[2]!.toLowerCase();
+    const spec = rate === undefined ? null : targetSpecFrom(counting[3]!, ptCounterHelps(kind) || isKeyword(kind));
     if (spec !== null && rate !== undefined) {
       const many = (c: EffectContext): number => rate * (tail === null ? c.x : tail.counted(c));
       return {
@@ -29452,14 +29461,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   // And the keyword counters (D1032, CR 122.1b): "put a flying counter on target creature".
   // And oil and charge on a target (D1079): counters other cards read ("for each oil counter on …"),
   // as their own lines read them on the card itself (D1078). Aimed as a gift, as a +1/+1 counter is.
-  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (\\+1\\/\\+1|-1\\/-1|stun|shield|oil|charge|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
+  const countered = new RegExp(`^put (a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+) (${PT_COUNTER}|stun|shield|oil|charge|${KEYWORD_COUNTER_WORDS}) counters? on (.+)$`, 'i').exec(text);
   if (countered !== null) {
     const word = countered[1]!.toLowerCase();
     const many = /^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word];
-    const printedKind = countered[2]!.toLowerCase();
-    const kind = printedKind.startsWith('+') ? '+1/+1' : printedKind === '-1/-1' ? '-1/-1' : printedKind;
+    const kind = countered[2]!.toLowerCase();
     // A keyword is a gift, as a +1/+1 counter is; a stun or -1/-1 counter is for somebody else's.
-    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1' || kind === 'shield' || kind === 'oil' || kind === 'charge' || isKeyword(kind));
+    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, ptCounterHelps(kind) || kind === 'shield' || kind === 'oil' || kind === 'charge' || isKeyword(kind));
     if (spec !== null && many !== undefined) {
       return {
         targets: [spec],
