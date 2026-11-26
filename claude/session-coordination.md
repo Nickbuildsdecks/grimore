@@ -241,3 +241,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1321 pushed in 835bb6c. D1322 the Gustcloaks, untap and remove from combat (scripts.ts selfEffect).
 - D1322 pushed in f1c2470. D1323 "target creature can't block ~ this turn" (cantBlockAttacker): characteristics, effects, combat canBlock, scripts.ts selfEffect.
 - D1323 pushed in 117257f. D1324 three board conditions in interveningConditionRows (scripts.ts).
+- D1324 pushed in cf6c18c. D1325 the en-Kor redirects (scripts.ts selfEffect, preventDamage with redirectTo).

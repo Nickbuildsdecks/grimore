@@ -48874,6 +48874,47 @@ describe('three more board conditions, as a cost reduction reads them (D1324)', 
   });
 });
 
+describe('"the next 1 damage that would be dealt to ~ this turn is dealt to target creature you control instead" (D1325)', () => {
+  const LANCERS = { name: 'Test Lancers', type_line: 'Creature — Kor Soldier', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: '{0}: The next 1 damage that would be dealt to Test Lancers this turn is dealt to target creature you control instead.' };
+  const DAUGHTER = { name: 'Test Daughter', type_line: 'Creature — Avatar', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '4',
+    oracle_text: '{0}: The next 1 damage that would be dealt to target creature this turn is dealt to Test Daughter instead.' };
+  const deck = customDeck({ id: 'd1325', name: 'en-Kor', entries: [{ name: 'Test Lancers', count: 4 }, { name: 'Test Daughter', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Plains', count: 48 }], data: [LANCERS, DAUGHTER] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1325', 1: 'd1325' }, deckSpecs: { d1325: deck.deck },
+    battlefield: { 0: ['Test Lancers', 'Test Daughter', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const activate = (s: GameState, card: string, target: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card, abilityIndex: 0, targets: [{ kind: 'card', id: target }],
+  } as Action)), 4);
+
+  it('reads both whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(LANCERS as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(DAUGHTER as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('twice activated, two of three damage to the Lancers go to the Bears instead', () => {
+    let s = board();
+    const lancers = find(s, 0, 'battlefield', 'Test Lancers');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = activate(activate(s, lancers, bears), lancers, bears);
+    s = dealDamage(s, { kind: 'card', id: lancers }, 3, { source: null, controller: 1 });
+    expect(s.instances[lancers]!.damage).toBe(1);
+    expect(s.instances[bears]!.damage).toBe(2);
+  });
+
+  it("the Daughter's runs the other way: the target's damage comes to her", () => {
+    let s = board();
+    const daughter = find(s, 0, 'battlefield', 'Test Daughter');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = activate(s, daughter, bears);
+    s = dealDamage(s, { kind: 'card', id: bears }, 2, { source: null, controller: 1 });
+    expect(s.instances[bears]!.damage).toBe(1);
+    expect(s.instances[daughter]!.damage).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

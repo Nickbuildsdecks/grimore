@@ -17044,6 +17044,33 @@ function selfEffect(
     next, whether or not the permanent is still there (CR 603.7c).
   */
   /*
+    **"The next 1 damage that would be dealt to ~ this turn is dealt to target creature you control
+    instead"** (D1325): the en-Kor cycle (Lancers, Nomads, Outrider, Shaman, Spirit, Warrior). And the
+    other way round, "… dealt to target white creature this turn is dealt to ~ instead" (Daughter of
+    Autumn). A redirecting shield (CR 615.9) on the protected one, as `preventDamage` builds it: it
+    takes the next N points this turn and deals them to the other.
+  */
+  const onward = new RegExp(`^the next (\\d+|one|two|three) damage that would be dealt to (?:(${self}|this creature)|((?:another )?target [^,]+?)) this turn is dealt to (?:(${self}|this creature)|((?:another )?target [^,]+?)) instead$`, 'i').exec(text);
+  if (onward !== null && (onward[2] === undefined) !== (onward[4] === undefined)) {
+    const n = /^\d+$/.test(onward[1]!) ? Number(onward[1]) : countFrom(onward[1]!) ?? 0;
+    const aimed = targetSpecFrom((onward[3] ?? onward[5])!, false);
+    if (n > 0 && aimed !== null && aimed.kind === 'creature') {
+      const fromSelf = onward[2] !== undefined;
+      return {
+        targets: [aimed],
+        effect: (c) => {
+          const other = firstCardTarget(c);
+          if (other === null) return c.state;
+          const self = { kind: 'card' as const, id: c.source };
+          const them = { kind: 'card' as const, id: other };
+          return fromSelf
+            ? preventDamage(c.state, c.source, c.controller, self, n, them)
+            : preventDamage(c.state, c.source, c.controller, them, n, self);
+        },
+      };
+    }
+  }
+  /*
     "Target creature can't block ~ this turn" (D1323): Kozilek's Pathfinder, Screeching Griffin,
     Shrewd Hatchling. The target is barred from blocking this creature only, until the turn ends.
   */
