@@ -64902,3 +64902,23 @@ Faults injected by hand: 4, all caught.
 - The trigger description left with the mark in it.
 
 Coverage: 17,220 of 31,900 cards (+2 over D1279's 17,218), 39,956 of 59,888 lines (+4).
+
+## D1281 — One context for a resolution's first half
+
+D1280 found that the part of a resolution run before its question (`beforeDecisions`, D955) was
+handed a context missing the event's amount. That context was a third hand-written copy of the
+field list, beside the asking context and the effect's own, and it had drifted in three more
+places:
+- a trigger's X (`triggerX`), so "When ~ enters, draw X cards, then discard a card" drew nothing
+  and asked the discard from the old hand;
+- the spell itself (`resolving`), which "if this spell was cast from a graveyard" reads;
+- the face its source showed (`sourceFace`, CR 701.28f).
+
+It now runs with `askingContext`, the context the questions are worked out from. That context
+gains `sourceFace`, so it matches the effect's own apart from the answers.
+
+**Tests.** 1 engine test, failing before the change and passing after:
+- A creature cast for X = 2 whose enters trigger draws X and then discards one: two cards are drawn
+  before the discard is asked.
+
+Coverage: 17,220 of 31,900 cards (+0 over D1280's 17,220), 39,956 of 59,888 lines (+0).
