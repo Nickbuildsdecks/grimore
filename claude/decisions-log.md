@@ -66446,3 +66446,38 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6437 of 6437 pass.
 
 Coverage: 17,432 of 31,900 cards (+4 over D1319's 17,428), 40,242 of 59,888 lines (+4).
+
+## D1321 — "If a creature dealt damage by ~ this turn would die, exile it instead"
+
+Frostwielder, Kumano, Master Yamabushi and Incendiary Oracle print this replacement (CR 614.1), and
+it had no reader. The engine already kept the turn's record of who damaged which permanent
+(`damagedBy`, D566), as the object each source is (`id#seq`).
+
+`CardScript.exilesWhatItDamaged` marks such a permanent. The dying replacement in `automation.ts`
+now also exiles a creature whose `damagedBy` names one:
+- the same object, by its `id#seq`;
+- still on the battlefield;
+- face up and with its abilities.
+
+It sits beside D539's floating "exile it instead" and is asked before anybody's other replacements,
+for that one's reason (CR 616.1).
+
+The reader takes the card's full or short name ("Kumano"), or "this creature".
+
+**Tests.** 4 tests:
+- The fixture reads whole, as the field.
+- A creature it pings to death is exiled.
+- A creature it only hurt is exiled when a spell kills it later that turn. One it never touched,
+  killed the same way, goes to the graveyard.
+- A creature killed by another permanent's ping goes to the graveyard, with Frostwielder on the
+  battlefield.
+
+Faults injected by hand: 2, both caught.
+- The replacement never asked.
+- Any battlefield source exiling. The first version of the test missed this; the plain-pinger case
+  was added for it.
+
+The scripts tests, compile tests and pins: 6441 of 6441 pass. Deck coverage passes with the new
+field listed as compiler-only.
+
+Coverage: 17,437 of 31,900 cards (+5 over D1320's 17,432), 40,247 of 59,888 lines (+5).
