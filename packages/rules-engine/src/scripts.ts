@@ -36358,6 +36358,18 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     const each = new RegExp(`^add \\{([WUBRGC])\\} for each ${kind} counter removed this way$`, 'i').exec(manaClause);
     const plus = new RegExp(`^add \\{([WUBRGC])\\}, then add an additional \\{([WUBRGC])\\} for each ${kind} counter removed this way$`, 'i').exec(manaClause);
     const toy = /^add an amount of \{([WUBRGC])\} equal to X plus one$/i.exec(manaClause);
+    /*
+      And "Add X mana of any one color" (D1312): Petalmane Baku, Haruspex. One ability per colour,
+      each making that colour once for each counter removed, as the runs of one colour are (D697).
+    */
+    if (/^add X mana of any one colou?r$/i.test(manaClause)) {
+      return {
+        abilities: COLOURS.map((colour) => ({
+          ...timing, cost, produces: [colour], producesPerX: 0, ...only,
+          description: `${split[1]!.trim()}: Add X {${colour}}.`,
+        })),
+      };
+    }
     const symbol = each?.[1] ?? (plus !== null && plus[1]!.toUpperCase() === plus[2]!.toUpperCase() ? plus[1] : undefined) ?? toy?.[1];
     if (symbol === undefined) return null;
     return {

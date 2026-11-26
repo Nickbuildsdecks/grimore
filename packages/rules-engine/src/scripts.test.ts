@@ -48375,6 +48375,33 @@ describe('a mana ability with a second effect (D1311, CR 605.1a)', () => {
   });
 });
 
+describe('"Add X mana of any one color" for X counters removed (D1312)', () => {
+  const BAKU = { name: 'Petalmane Baku', type_line: 'Creature — Spirit', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '1', toughness: '2',
+    oracle_text: 'Whenever you cast a Spirit or Arcane spell, you may put a ki counter on Petalmane Baku.\n{1}, Remove X ki counters from Petalmane Baku: Add X mana of any one color.' };
+  const deck = customDeck({ id: 'd1312', name: 'Baku', entries: [{ name: 'Petalmane Baku', count: 4 }, { name: 'Forest', count: 56 }], data: [BAKU] as never[] });
+
+  it('reads whole, one ability per colour', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(BAKU as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    expect(read.ok && read.script?.abilities?.filter((a) => a.produces !== undefined).map((a) => a.produces!.join(''))).toEqual(['W', 'U', 'B', 'R', 'G']);
+  });
+
+  it('makes two blue for two ki counters, after its {1}', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1312', 1: 'd1312' }, deckSpecs: { d1312: deck.deck },
+      battlefield: { 0: ['Petalmane Baku', 'Forest'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const baku = find(s, 0, 'battlefield', 'Petalmane Baku');
+    s = addCounters(s, baku, 'ki', 2);
+    const blue = legalActions(s, 0).plays.find((p) => p.card === baku && /Add X \{U\}/.test(p.description))!;
+    expect(blue).toMatchObject({ xMax: 2, isManaAbility: true });
+    s = apply(s, { type: 'auto:activate', by: 0, card: baku, abilityIndex: blue.abilityIndex!, x: 2 } as Action);
+    expect(poolOf(s, 0).U).toBe(2);
+    expect(s.instances[baku]!.counters['ki'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

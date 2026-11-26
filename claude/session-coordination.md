@@ -228,3 +228,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1308 pushed in 360b6de. D1309 keep-tapped choice (auto:keepTapped, CardInstance.keepTapped): turnTypes, autoActions, automation untap, cardActions relocate, view, compile.ts storage exclusion lifted; web PlaySheet toggle, PlayTable, arena.ts badge.
 - D1309 pushed in 3c867e5. D1310 delayed draw from a permanent's ability (builtin 'draw'): scripts.ts reader, automation BUILTIN_DELAYED, turnTypes/effects unions.
 - D1310 pushed in a336985. D1311 mana abilities with a second effect (CR 605.1a): scripts.ts lineScriptFor reader.
+- D1311 pushed in 3644577. D1312 "Add X mana of any one color" for X counters (scripts.ts storage mana reader).
