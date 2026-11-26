@@ -48324,6 +48324,57 @@ describe('a delayed draw from a permanent\'s ability (D1310)', () => {
   });
 });
 
+describe('a mana ability with a second effect (D1311, CR 605.1a)', () => {
+  const SPHERE = { name: 'Chromatic Sphere', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    oracle_text: '{1}, {T}, Sacrifice Chromatic Sphere: Add one mana of any color. Draw a card.' };
+  const EGG = { name: 'Darkwater Egg', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    oracle_text: '{2}, {T}, Sacrifice Darkwater Egg: Add {U}{B}. Draw a card.' };
+  const deck = customDeck({ id: 'd1311', name: 'Spheres', entries: [{ name: 'Chromatic Sphere', count: 4 }, { name: 'Darkwater Egg', count: 4 }, { name: 'Plains', count: 52 }], data: [SPHERE, EGG] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1311', 1: 'd1311' }, deckSpecs: { d1311: deck.deck },
+    battlefield: { 0: ['Chromatic Sphere', 'Darkwater Egg', 'Plains', 'Plains', 'Plains'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads each as mana abilities, one per colour for "any color"', () => {
+    expect(deck.unknown).toEqual([]);
+    const sphere = compileCard(SPHERE as never);
+    expect(sphere).toMatchObject({ ok: true, unread: [] });
+    expect(sphere.ok && sphere.script?.abilities?.map((a) => a.produces?.join(''))).toEqual(['W', 'U', 'B', 'R', 'G']);
+    expect(compileCard(EGG as never)).toMatchObject({ ok: true, unread: [], script: { abilities: [{ produces: ['U', 'B'] }] } });
+    // Not without a mana cost: the auto-payer would tap it for the mana and never run the draw.
+    const free = compileCard({ ...SPHERE, name: 'Test Free Sphere', oracle_text: 'Sacrifice Test Free Sphere: Add one mana of any color. Draw a card.' } as never);
+    expect(free.ok && (free.script?.abilities ?? []).some((a) => a.produces !== undefined && a.effect !== undefined)).toBe(false);
+  });
+
+  it('makes its mana and draws at once, without the stack, and is offered as a mana ability', () => {
+    let s = board();
+    const sphere = find(s, 0, 'battlefield', 'Chromatic Sphere');
+    const rows = legalActions(s, 0).plays.filter((p) => p.card === sphere && p.kind === 'activate');
+    expect(rows.length).toBe(5);
+    expect(rows.every((p) => p.isManaAbility)).toBe(true);
+    // Never the auto-payer's: it costs mana, and the rest of it is the player's to want.
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === sphere)).toBe(false);
+    const blue = rows.find((p) => /Add \{U\}/.test(p.description))!;
+    const held = ids(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:activate', by: 0, card: sphere, abilityIndex: blue.abilityIndex! } as Action);
+    expect(s.stackOrder.length).toBe(0);
+    expect(poolOf(s, 0).U).toBe(1);
+    expect(ids(s, 0, 'hand').length).toBe(held + 1);
+    expect(s.instances[sphere]!.zone).toBe('graveyard');
+  });
+
+  it('the Egg makes both of its colours and a card', () => {
+    let s = board();
+    const egg = find(s, 0, 'battlefield', 'Darkwater Egg');
+    const held = ids(s, 0, 'hand').length;
+    const row = legalActions(s, 0).plays.find((p) => p.card === egg && p.kind === 'activate')!;
+    s = apply(s, { type: 'auto:activate', by: 0, card: egg, abilityIndex: row.abilityIndex! } as Action);
+    expect(s.stackOrder.length).toBe(0);
+    expect(poolOf(s, 0)).toMatchObject({ U: 1, B: 1 });
+    expect(ids(s, 0, 'hand').length).toBe(held + 1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

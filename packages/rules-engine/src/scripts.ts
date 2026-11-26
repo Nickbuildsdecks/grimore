@@ -36457,6 +36457,36 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   }
 
   /*
+    **A mana ability with a second effect** (D1311, CR 605.1a): "{1}, {T}, Sacrifice ~: Add one mana of
+    any color. Draw a card." (Chromatic Sphere), the Eggs' "Add {U}{B}. Draw a card.", Barbed
+    Sextant's delayed draw, Pyramid of the Pantheon's brick counter. It could add mana, it targets
+    nothing and it is not a loyalty ability, so it is a mana ability: it never uses the stack, and
+    the rest of the ability happens as the mana is added. Until this reader the clause vocabulary
+    took the whole line as an ability on the stack.
+
+    One ability per colour for "one mana of any color", as above, each with the same effect. Only
+    an effect with no target and no question, since a mana ability is run with neither. And only
+    beside a mana cost: `manaSources` never offers such an ability to the auto-payer, which taps
+    for mana and would not run the rest of it, so the player presses it.
+  */
+  const withMore = /^(add (?:((?:\{[WUBRGC]\})+)|one mana of any colou?r))\.\s+(.+)$/i.exec(manaClause);
+  if (withMore !== null && restrictedTo === null && cost.mana !== undefined && cost.loyalty === undefined) {
+    const more = composeEffects(clausesOf(withMore[3]!), name, 'battlefield');
+    // `immediate` is the same clause done now, for a clause something comes after; this one is last.
+    if (more !== null && Object.keys(more).every((key) => key === 'effect' || key === 'immediate') && more.effect !== undefined) {
+      const fixed = withMore[2] === undefined ? null
+        : (withMore[2].match(/\{([WUBRGC])\}/g) ?? []).map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
+      const rows: readonly (readonly ManaType[])[] = fixed === null ? COLOURS.map((colour) => [colour]) : [fixed];
+      return {
+        abilities: rows.map((produces) => ({
+          ...timing, cost, produces, effect: more.effect,
+          description: fixed === null ? `${split[1]!.trim()}: Add {${produces[0]}}. ${withMore[3]!.trim()}` : text,
+        })),
+      };
+    }
+  }
+
+  /*
     The animation shape before the clause vocabulary, for the reason in `animateSelf`'s docblock: its
     two sentences are one reading, and the second decides what the first does. Only here and not in
     the loyalty branch above — a planeswalker animating itself is a sentence no card in the pool
