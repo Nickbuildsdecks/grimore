@@ -48315,3 +48315,37 @@ Unread lines with the phrase: 289, from 300.
 Faults injected by hand: 1, caught: "it" read as the card itself.
 
 Coverage: 17,312 of 31,900 cards (+8 over D1302's 17,304), 40,093 of 59,888 lines (+11).
+
+## D1304 — Exiling chosen cards from your graveyard
+
+"Exile two cards from your graveyard", "exile a creature card from your graveyard": chosen as the
+ability resolves, not targeted. 171 legal lines print the phrase; 68 were unread. Its main home is
+the opener of "you may X. If you do, Y": Aegis Sculptor's "you may exile two cards from your
+graveyard. If you do, put a +1/+1 counter on ~".
+
+- The reader asks for exactly that many cards of that kind, and exiles the ones chosen.
+- **A rule for "If you do" with a count, in `optionalEffect`:** an X whose question asks for N cards
+  is done only with all N. With fewer there, the engine's question lowers its minimum to what is
+  available, so the answer can be short. "If you do" is then false, and X is not done either: you
+  cannot choose to do what you cannot do in full. A plain "exile two cards from your graveyard"
+  still exiles as many as there are (CR 609.3).
+- The one-card openers ("sacrifice a creature", "discard a card") ask for one, so they read as
+  before.
+
+Unread lines with the phrase: 57, from 68.
+
+**Tests.** 4 engine tests:
+- Both test cards read.
+- "You may exile two … If you do, draw a card": two exiled, one card drawn.
+- The same with one card in the graveyard: nothing exiled and nothing drawn.
+- A plain "exile two" with one card there exiles that one.
+
+Faults injected by hand: 3, all caught.
+- The full-count rule dropped.
+- The count read as one.
+- The chosen cards not exiled.
+
+A test fixture error of mine on the way: a question with one possible answer is answered by the
+engine, so the card was already exiled when the test went looking for it in the graveyard.
+
+Coverage: 17,322 of 31,900 cards (+10 over D1303's 17,312), 40,104 of 59,888 lines (+11).
