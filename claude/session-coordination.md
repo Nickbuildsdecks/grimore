@@ -212,3 +212,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1292 pushed in 27a9732, checkpoint d70b1bd. D1293 activation timings 'combat' and 'declare-blockers' (turnTypes.ts ActivationTiming, automation.ts atActivationTiming, autoActions.ts refusal, scripts.ts Activate-only splitter).
 - D1293 pushed in 288540a. D1294 split cards from card data: compileSplit in compile.ts, derive.ts round trip for split faces.
 - D1294 pushed in 27f753a. D1295 fuse: CardScript.fused, fusedScript in compile.ts, fuse on the cast action (turnTypes.ts, legalActions.ts, autoActions.ts, bot.ts).
+- D1295 pushed in 36b3a20. D1296 aftermath: CardScript.aftermath, aftermathHalf (legalActions.ts), the graveyard cast with aftermath (autoActions.ts, bot.ts), compileSplit no longer refuses it.

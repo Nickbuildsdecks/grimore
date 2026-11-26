@@ -191,6 +191,8 @@ export interface LegalPlay {
    * travel as `discardOptions`. It goes back to the graveyard when it resolves, as escape's does.
    */
   readonly retrace?: boolean;
+  /** A split card's aftermath half, from the graveyard (D1296). */
+  readonly aftermath?: true;
   /** Cast out of the graveyard under a permanent's permission (D1287): that permanent's id. */
   readonly yardBy?: string;
   /** Both halves of a fuse split card together, from the hand (D1295). */
@@ -1395,6 +1397,13 @@ export function tapManaEchoes(state: GameState, tapped: string): number {
   return n;
 }
 
+/** Which half of a split card is its aftermath half (D1296), or null. */
+export function aftermathHalf(def: CardDef | undefined): number | null {
+  if (def?.faces?.kind !== 'split') return null;
+  const at = def.faces.cards.findIndex((face) => scriptForCard(face)?.aftermath === true);
+  return at < 0 ? null : at;
+}
+
 export function manaSources(
   state: GameState, seat: SeatIndex,
   /**
@@ -1860,6 +1869,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         id, fromCommand: false, flashback: false, escape: false, foretold: false,
         fromAdventure: false, impulse: false, offered: false, yardBy: by!,
       })),
+    // And a split card's aftermath half (D1296), for its own cost.
+    ...listAt(state, zoneKey(seat, 'graveyard'))
+      .filter((id) => aftermathHalf(state.cardDefs[state.instances[id]?.defKey ?? '']) !== null)
+      .map((id) => ({
+        id, fromCommand: false, flashback: false, escape: false, foretold: false,
+        fromAdventure: false, impulse: false, offered: false, aftermath: true as const,
+      })),
     // And the third: retrace (D599), the printed cost and a land card from hand.
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.retrace === true)
@@ -1957,6 +1973,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       And a fuse card's two halves together (D1295, CR 702.102a): only from the hand, and only as a
       plain cast from it. The whole card is the fused spell, with the whole's cost and types.
     */
+    // Aftermath (D1296): from the graveyard that half alone, and from anywhere else never that half.
+    const after = faces.kind === 'split' ? aftermathHalf(state.cardDefs[state.instances[entry.id]?.defKey ?? '']) : null;
+    if ('aftermath' in entry && entry.aftermath === true) {
+      return after === null ? [] : [{ ...entry, half: after as number | undefined }];
+    }
+    if (after !== null) {
+      return halves.filter((h) => h.half !== after);
+    }
     const fusable = faces.kind === 'split' && state.instances[entry.id]?.zone === 'hand' && !entry.offered
       && scriptForCard(state.cardDefs[state.instances[entry.id]?.defKey ?? ''])?.fused === true;
     return faces.kind === 'split'
@@ -1969,6 +1993,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const tax = fromCommand ? commanderTaxFor(state, id) : 0;
     const yardBy = 'yardBy' in entry && typeof entry.yardBy === 'string' ? entry.yardBy : undefined;
     const fuse = 'fuse' in entry && entry.fuse === true;
+    const aftermath = 'aftermath' in entry && entry.aftermath === true;
     // A permission's cast is retrace's shape for every question below but the land card (D1287).
     const retrace = ('retrace' in entry && entry.retrace === true) || yardBy !== undefined;
     const landOnly = 'landOnly' in entry && entry.landOnly === true;
@@ -2778,8 +2803,10 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
                   ? ` (delving ${delved.exiled.length})` : ''}`;
     out.push({
       kind: 'cast', card: id, name: ch.name,
-      description: fuse ? `Cast ${ch.name} fused, both halves, for ${costShown.replace(/ \/\/ /g, '')}` : castLabel,
+      description: fuse ? `Cast ${ch.name} fused, both halves, for ${costShown.replace(/ \/\/ /g, '')}`
+        : aftermath ? `Cast ${ch.name} from your graveyard (aftermath ${costShown}, then exiled)` : castLabel,
       ...(fuse ? { fuse: true as const } : {}),
+      ...(aftermath ? { aftermath: true as const } : {}),
       // The two halves' costs together, as one cost (CR 702.102c), rather than the card's "{R} // {G}".
       manaCost: fuse ? costShown.replace(/ \/\/ /g, '') : costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
       targetSpecs: specs, candidates,

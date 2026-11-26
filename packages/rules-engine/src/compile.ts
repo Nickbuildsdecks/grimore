@@ -714,11 +714,10 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
  * everywhere but the stack (CR 708.4). The whole has no script of its own: a split card is only
  * ever cast as one of its halves (`castableAsPrinted`).
  *
- * Two kinds of split card are refused rather than played wrongly:
- * - **Aftermath** (CR 702.127): its second half may be cast only from the graveyard. Offered from
- *   the hand like any other half, it would be a spell the card does not allow.
- * - **Rooms** (CR 709.5): an enchantment with two doors, one unlocked as it is cast and the other
- *   unlocked later. The engine has no doors yet.
+ * One kind of split card is refused rather than played wrongly: **Rooms** (CR 709.5), an
+ * enchantment with two doors, one unlocked as it is cast and the other unlocked later. The engine
+ * has no doors yet. Aftermath (CR 702.127), refused here first, is read since D1296: the keyword on
+ * its half (`CardScript.aftermath`), with the zone rule in `legalActions` and `castSpell`.
  *
  * Fuse (CR 702.102), casting both halves together from the hand, is a keyword line each half prints.
  * D1295 reads it when the two halves' scripts compose (`fusedScript`): the whole card's script is
@@ -726,9 +725,6 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
  */
 function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilation {
   const named = faces.map((face) => (face.name ?? '').trim()).join(' // ');
-  if (faces.some((face) => /^aftermath\b/im.test(face.oracle_text ?? ''))) {
-    return { ok: false, why: `${named}: aftermath is not played yet` };
-  }
   if (faces.some((face) => /\bRoom\b/.test(face.type_line ?? ''))) {
     return { ok: false, why: `${named}: a Room's doors are not played yet` };
   }

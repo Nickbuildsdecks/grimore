@@ -2544,6 +2544,8 @@ function candidateActions(
             ...(play.yardBy === undefined ? {} : { yardBy: play.yardBy }),
             // And fuse (D1295): sent without it, a split card with no half is refused.
             ...(play.fuse === true ? { fuse: true } : {}),
+            // And aftermath (D1296): sent without it, the half is refused as cast "from hand".
+            ...(play.aftermath === true ? { aftermath: true } : {}),
             // And casualty (D923): sent without it, the chosen sacrifice rides on a spell with no
             // additional cost, which the engine refuses.
             ...(play.casualty === true ? { casualty: true } : {}),

@@ -56,7 +56,7 @@ import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, legalTargets, targetS
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
   abilityManaText, abilityProhibition, turnUpCostOf, attackTaxFor, tapManaEchoes, tapManaExtras, bouncePlan, castProhibition, escapeOf, flashGranted, costChangeFor, crewPlan, delvePlan, graveyardCostPlan, controlsACommander, spectacleRefusal, usesLeftThisTurn, pitchOptions, altCostOpen, landCostPlan, flashbackCostOf, abilityLifeCost, graveyardFodder, landDropsFor, landsFromGraveyardFor, landsFromTopFor, spellsFromTopFor, legalActions, manaSources, tapCostPlan, tapToPayPlan,
-  withCostChange, yardPermission, yardSlotFor, type TapToPayRule,
+  aftermathHalf, withCostChange, yardPermission, yardSlotFor, type TapToPayRule,
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
@@ -227,6 +227,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   const retrace = action.retrace === true;
   // Under a permanent's permission (D1287): see `yardPermission`.
   const yardBy = action.yardBy;
+  // A split card's aftermath half (D1296): from the graveyard, and only that half.
+  const aftermath = action.aftermath === true;
+  const afterHalf = faces?.kind === 'split' ? aftermathHalf(printedDef) : null;
   /*
     An adventurer being cast as its creature half, out of exile, because its adventure resolved.
 
@@ -394,6 +397,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (yardPermission(state, action.by, inst.id) !== yardBy) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} cannot be cast from your graveyard that way now`);
     }
+  } else if (aftermath) {
+    if (afterHalf === null || action.half !== afterHalf) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${printedDef?.name ?? 'that card'} has no aftermath half by that number`);
+    }
+    if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
+    }
   } else if (retrace) {
     if (script?.retrace !== true) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no retrace`);
@@ -401,6 +411,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (inst.zone !== 'graveyard' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your graveyard');
     }
+  } else if (afterHalf !== null && action.half === afterHalf) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${face?.name ?? 'that half'} is cast only from your graveyard (aftermath)`);
   } else if (!foretold && !fromCommand && !fromAdventure && !offered && !fromTop
     && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', inst.zone === 'exile' && inst.onAdventure === true
@@ -1341,6 +1353,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
+    // Aftermath's "Then exile it" (D1296), Kess's mark.
+    ...(aftermath ? { yardExile: true as const } : {}),
     // A graveyard permission's riders (D1289): Kess's exile, Edgar's tapped arrival.
     ...(yardBy !== undefined && scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard?.exileAfter === true ? { yardExile: true as const } : {}),
     ...(yardBy !== undefined && scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard?.entersTapped === true ? { yardTapped: true as const } : {}),

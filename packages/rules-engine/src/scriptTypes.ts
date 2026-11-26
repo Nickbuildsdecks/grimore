@@ -4134,6 +4134,12 @@ export interface CardScript {
    * discard as the additional cost, narrowed to land cards.
    */
   readonly retrace?: true;
+  /**
+   * **Aftermath** (CR 702.127, D1296), on a split card's second half: "Cast this spell only from your
+   * graveyard. Then exile it." Never offered from the hand; offered from the graveyard with
+   * `aftermath` on the cast, and exiled as it leaves the stack.
+   */
+  readonly aftermath?: true;
   readonly escape?: {
     /** The mana half, in the printed `{2}{R}{R}` form. */
     readonly cost: string;

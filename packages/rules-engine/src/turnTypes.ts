@@ -1979,6 +1979,8 @@ export interface AutoCastAction {
   readonly escape?: boolean;
   /** Cast from the graveyard by retrace (D599), discarding the land card named in `discarded`. */
   readonly retrace?: boolean;
+  /** A split card's aftermath half, cast from the graveyard (D1296, `CardScript.aftermath`). */
+  readonly aftermath?: true;
   /** Cast from the graveyard under this permanent's permission (D1287, `CardScript.castsFromGraveyard`). */
   readonly yardBy?: string;
   /** Both halves of a fuse split card, cast from the hand together (D1295, `CardScript.fused`). */

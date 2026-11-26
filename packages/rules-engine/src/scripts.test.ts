@@ -8107,6 +8107,9 @@ describe('deck coverage', () => {
       // D1295: fuse split cards from card data; no pool deck plays one. Driven at runtime by
       // "fuse: both halves of a split card cast together from the hand (D1295)".
       'script fused',
+      // D1296: aftermath split cards from card data; no pool deck plays one. Driven at runtime by
+      // "aftermath: a split card's second half, cast from the graveyard and then exiled (D1296)".
+      'script aftermath',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -47453,8 +47456,9 @@ describe('split cards from card data (D1294)', () => {
     expect(unreadLines(fusedRead.ok ? fusedRead.def : undefined).length).toBeGreaterThan(0);
   });
 
-  it('aftermath and Rooms are refused; Fuse is an unread line, and each half still reads', () => {
-    expect(compileCard(AFTER as never)).toMatchObject({ ok: false });
+  // Aftermath was refused here until D1296, which reads it.
+  it('Rooms are refused; aftermath reads (D1296); Fuse is an unread line where the halves do not compose', () => {
+    expect(compileCard(AFTER as never)).toMatchObject({ ok: true, unread: [] });
     expect(compileCard(ROOM as never)).toMatchObject({ ok: false });
     const fused = compileCard(FUSED as never);
     expect(fused.ok).toBe(true);
@@ -47598,6 +47602,57 @@ describe('fuse: both halves of a split card cast together from the hand (D1295)'
     // The zap's target is gone, so it hits nothing: not the right half's creature.
     expect(s.instances[mine]!.damage).toBe(0);
     expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+});
+
+describe('aftermath: a split card\'s second half, cast from the graveyard and then exiled (D1296)', () => {
+  const face = (name: string, type: string, cost: string, text: string, colors: string[]) => ({ name, type_line: type, mana_cost: cost, oracle_text: text, colors });
+  const CARD = {
+    name: 'Test Before', type_line: 'Sorcery', oracle_text: 'You gain 2 life.', mana_cost: '{G}', cmc: 0, colors: ['G'], layout: 'split',
+    card_faces: [
+      face('Test Before', 'Sorcery', '{G}', 'You gain 2 life.', ['G']),
+      face('Test After', 'Sorcery', '{U}', 'Aftermath (Cast this spell only from your graveyard. Then exile it.)\nDraw two cards.', ['U']),
+    ],
+  };
+  const WHOLE = 'Test Before // Test After';
+  const deck = customDeck({ id: 'd1296', name: 'Aftermath', entries: [{ name: 'Test Before', count: 4 }, { name: 'Forest', count: 28 }, { name: 'Island', count: 28 }], data: [CARD] as never[] });
+  const table = (hand: string[], yard: string[]) => advanceTo(arena({
+    decks: { 0: 'd1296', 1: 'd1296' }, deckSpecs: { d1296: deck.deck },
+    hands: { 0: hand }, graveyard: { 0: yard }, battlefield: { 0: ['Forest', 'Island'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const halvesOffered = (s: GameState, card: string) => legalActions(s, 0).plays
+    .filter((p) => p.card === card && p.kind === 'cast').map((p) => ({ half: p.half, aftermath: p.aftermath === true }));
+
+  it('reads whole now', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(CARD as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('from the hand only the first half; the aftermath half is refused there', () => {
+    const s = table([WHOLE], []);
+    const card = find(s, 0, 'hand', WHOLE);
+    expect(halvesOffered(s, card)).toEqual([{ half: 0, aftermath: false }]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, half: 1 } as Action)).toContain('only from your graveyard');
+  });
+
+  it('from the graveyard only the aftermath half, which draws two and is then exiled', () => {
+    let s = table([], [WHOLE]);
+    const card = find(s, 0, 'graveyard', WHOLE);
+    expect(halvesOffered(s, card)).toEqual([{ half: 1, aftermath: true }]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)).not.toBeNull();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card, half: 0, aftermath: true } as Action)).toContain('aftermath');
+    const hand = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 1, aftermath: true } as Action)), 20);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 2);
+    expect(s.instances[card]!.zone).toBe('exile');
+  });
+
+  it('the first half from the hand goes to the graveyard, where the aftermath half is then offered', () => {
+    let s = table([WHOLE], []);
+    const card = find(s, 0, 'hand', WHOLE);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(halvesOffered(s, card)).toEqual([{ half: 1, aftermath: true }]);
   });
 });
 
