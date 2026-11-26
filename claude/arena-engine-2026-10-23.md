@@ -48223,3 +48223,43 @@ Faults injected by hand: 5, all caught.
 - Wither's counters not announced.
 
 Coverage: 17,278 of 31,900 cards (+11 over D1299's 17,267), 40,034 of 59,888 lines (+13).
+
+## D1301 — "Do this only once each turn"
+
+"Whenever you put one or more +1/+1 counters on Chekov and McCoy, you may draw that many cards. Do
+this only once each turn." 34 legal lines: Terrasymbiosis, Ancient Cornucopia, Corruption of
+Towashi, Cosmic Crucible.
+
+Not D532's "This ability triggers only once each turn". The ability triggers every time, and only
+the doing is limited, so a "no" to its "you may" does not spend the turn's one. Read in
+`triggerRestriction` (only after a "you may"). The trigger it builds keeps a record in the
+permanent's `abilityUsedTurn`, beside D532's, written when the effect changed the game.
+
+Once spent, the trigger's condition keeps it off the stack for the rest of the turn. The rules
+have it trigger and do nothing; nothing in the pool can tell the two apart, except a card that
+counts abilities triggering, and none of those prints this sentence. A condition is asked again as
+the ability resolves, so two that triggered together do it once.
+
+The first draft also checked the record inside the effect. That check could not fail any test,
+because the condition already does the job on resolution, so it is gone.
+
+Read whole now: 7 more of the 34. The rest have another unread part (connive, "copy it", "cast
+target … card").
+
+**Tests.** 4 engine tests:
+- It reads whole.
+- Done once, then not even asked again that turn.
+- A "no" does not spend it: the next "yes" does it.
+- Spent for this turn only: on a later turn it is done again.
+
+Faults injected by hand: 4, 3 caught, 1 removed as redundant.
+- The condition dropped.
+- The record written even when nothing happened.
+- The record read for any turn.
+- The check inside the effect, which the resolution condition makes redundant.
+
+On the way, two test-fixture errors of mine: the helper that passes priority answers a "you may"
+with no, and my first spell asked a scry question of its own. Each test now answers its question
+itself.
+
+Coverage: 17,285 of 31,900 cards (+7 over D1300's 17,278), 40,042 of 59,888 lines (+8).
