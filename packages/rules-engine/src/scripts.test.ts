@@ -46837,6 +46837,51 @@ describe('"that creature" on the other side of a block, by the borrow (D1282)', 
   });
 });
 
+describe('"~ or another creature you control enters, that creature …" (D1283)', () => {
+  const C = (name: string, text: string) => ({
+    name, type_line: 'Creature — Orc Shaman', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const SHAMAN = C('Test Shaman', 'Whenever Test Shaman or another creature you control enters, that creature gets +2/+2 until end of turn.');
+  const BEAR = C('Test Bear', '');
+  const deck = customDeck({ id: 'd1283', name: 'Or another', entries: [{ name: 'Test Shaman', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Swamp', count: 52 }], data: [SHAMAN, BEAR] as never[] });
+  const size = (s: GameState, id: string) => { const ch = characteristicsOf(s, s.instances[id]!); return `${ch.power}/${ch.toughness}`; };
+
+  it('reads', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(SHAMAN as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('the Shaman entering pumps itself; a Bear entering later pumps the Bear, not the Shaman', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1283', 1: 'd1283' }, deckSpecs: { d1283: deck.deck },
+      hands: { 0: ['Test Shaman', 'Test Bear'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const shaman = find(s, 0, 'hand', 'Test Shaman');
+    const bear = find(s, 0, 'hand', 'Test Bear');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: shaman } as Action)), 20);
+    expect(size(s, shaman)).toBe('4/4');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: bear } as Action)), 20);
+    expect(size(s, bear)).toBe('4/4');
+    expect(size(s, shaman)).toBe('4/4');
+  });
+
+  it('on a block, "that creature" is still the other creature, never ~', () => {
+    const WARDEN = C('Test Warden', 'Whenever Test Warden blocks a creature, that creature gets -1/-1 until end of turn.');
+    const both = customDeck({ id: 'd1283b', name: 'Warden', entries: [{ name: 'Test Warden', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Swamp', count: 52 }], data: [WARDEN, BEAR] as never[] });
+    let s = advanceTo(arena({
+      decks: { 0: 'd1283b', 1: 'd1283b' }, deckSpecs: { d1283b: both.deck },
+      battlefield: { 0: ['Test Bear'], 1: ['Test Warden'] }, turn: 3, firstSeat: 0,
+    }), 'declare-attackers');
+    const bear = find(s, 0, 'battlefield', 'Test Bear');
+    const warden = find(s, 1, 'battlefield', 'Test Warden');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: bear, defender: 1 }] } as Action), 20);
+    s = advanceTo(s, 'declare-blockers');
+    s = drain(passBoth(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: warden, attacker: bear }] } as Action)), 20);
+    expect(size(s, bear)).toBe('1/1');
+    expect(size(s, warden)).toBe('2/2');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

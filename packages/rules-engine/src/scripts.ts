@@ -25106,10 +25106,18 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       "That creature deals" damage is read too since D965, which made the damage reader's "it" the
       event's creature; D964 had excluded it while that reader dealt from the watching card.
     */
-    const aboutAnother = on.length > 0 && on.every((event) => {
-      const who = (event as { readonly who?: string }).who;
-      return who === 'any' || who === 'another';
-    });
+    /*
+      And "~ or another creature you control enters / dies" (D1283, Ambuscade Shaman): two events,
+      the card's own and another's. On an arrival or a death "that creature" is the one that arrived
+      or died either way, so the card's own event is allowed beside another's. Not on a block, where
+      "that creature" is the other one.
+    */
+    const whoOf = (event: (typeof on)[number]) => (event as { readonly who?: string }).who;
+    const aboutAnother = on.length > 0
+      && on.every((event) => {
+        const who = whoOf(event);
+        return who === 'any' || who === 'another' || (who === 'self' && (event.kind === 'etb' || event.kind === 'dies'));
+      });
     // And "that permanent" (D1021): Cloud Cover's "you may return that permanent to its owner's hand".
     const thatCreature = clause.search(/\bthat (?:creature|permanent)\b(?!['\u2019]s)/i);
     const asRead = aboutAnother && thatCreature >= 0

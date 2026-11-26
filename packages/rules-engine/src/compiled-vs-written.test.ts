@@ -249,6 +249,18 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     digest: 'f1b506d1',
   },
   /*
+    D1283: Gruul Ragebeast reads whole now that "that creature" after "~ or another creature you
+    control enters" is the creature that entered. The compiled reading is two triggers, the card's
+    own arrival and another creature's (D483's shape), where the hand-written card is one trigger
+    on any creature of yours; the same arrivals fire it and the creature that entered fights. The
+    hand-written script is the one played.
+  */
+  'Gruul Ragebeast': {
+    why: "the compiled reading is two events (D483); the hand-written one trigger on any creature you control",
+    keys: ['triggers'],
+    digest: 'c819b9a5',
+  },
+  /*
     D1269: Ajani, Caller of the Pride reads whole now that "where X is your life total" is a count, so
     it is compared for the first time. The −8 agrees. The +1's compiled target carries a `filter`
     function the hand-written target does not; both are "up to one target creature".
