@@ -66280,3 +66280,32 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests and pins: 6422 of 6422 pass.
 
 Coverage: 17,396 of 31,900 cards (+15 over D1314's 17,381), 40,190 of 59,888 lines (+18).
+
+## D1316 — "Becomes the creature type of your choice until end of turn"
+
+The Mistform cycle (Dreamer, Seaswift, Stalker, Wall's second line), Mistform Mask's "enchanted
+creature" and a target creature had no reader for "becomes the creature type of your choice until
+end of turn".
+
+It is layer 4: the chosen type replaces the creature's creature types (`setCreatureTypes`) until the
+turn ends, through `pump`. The question offers the types this table can see, as every "choose a
+creature type" here does (`creatureTypeOptions`, D641).
+
+Still unread on the cycle:
+- Mistform Wall's "has defender as long as it's a Wall";
+- Mistform Warchief's "share a creature type" cost reduction.
+
+**Tests.** 2 tests:
+- The fixture reads whole.
+- The question offers Berserker, a type on the opponent's Raging Goblin but not in the fallback
+  list. Answered Berserker, the creature's subtypes are exactly that, and next turn it is an
+  Illusion again.
+
+Faults injected by hand: 2, both caught.
+- The fallback list offered instead of the table's types. The first version of the test chose
+  Goblin, which is in the fallback list, so this fault slipped through; it now chooses Berserker.
+- The type added instead of set.
+
+The scripts tests, compile tests and pins: 6424 of 6424 pass.
+
+Coverage: 17,403 of 31,900 cards (+7 over D1315's 17,396), 40,203 of 59,888 lines (+13).
