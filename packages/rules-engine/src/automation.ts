@@ -2524,6 +2524,10 @@ function fireTrigger(
     // And for a declaration, how many attacked of the kind the trigger names (D1261): "draw that many cards".
     ...(event.kind === 'attack-declared' && trigger.on.kind === 'attack-declared'
       ? { eventAmount: trigger.on.withSubtype === undefined ? event.attackers ?? 0 : attackersOfType(event, trigger.on.withSubtype) } : {}),
+    // And a batch of discards, how many cards (D1271): Marauding Mako's "that many +1/+1 counters".
+    ...(event.kind === 'discards' && event.batch === true && trigger.on.kind === 'discards' && trigger.on.batch === true
+      && event.amount !== undefined
+      ? { eventAmount: event.amount } : {}),
     // And for an attack, how many opponents the declaration attacked, for melee (D912).
     ...(event.kind === 'attacks' && event.opponentsAttacked !== undefined
       ? { eventAmount: event.opponentsAttacked } : {}),

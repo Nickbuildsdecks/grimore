@@ -24478,8 +24478,9 @@ function optionalEffect(
   if (read.beforeDecisions !== undefined || !(read.decisions ?? []).every(gatable)) {
     return null;
   }
+  // "That many" is marked for the reader (D903); the player is asked in the printed words (D1271).
   const sentence = (text: string): string =>
-    `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '')}`;
+    `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '').replace(/\u000e/g, 'that')}`;
   const pricedCost = priced === null ? null : priced[1]!;
   if (pricedCost !== null) {
     const parsed = parseManaCost(pricedCost);
@@ -24904,7 +24905,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       // And a player dealt damage (D1115).
       || k.kind === 'player-damaged'
       // And how many attacked (D1261): "Whenever one or more Dragons you control attack, draw that many cards".
-      || k.kind === 'attack-declared')
+      || k.kind === 'attack-declared'
+      // And how many cards a batch discarded (D1271): "Whenever you discard one or more cards, … that many".
+      || (k.kind === 'discards' && k.batch === true))
       && !/\bX\b/.test(printedClause)
       ? printedClause.replace(/\bthat (many|much)\b/gi, '\u000e $1')
       : printedClause;
@@ -30815,11 +30818,30 @@ function readEffect(
     if (/^create \u000e many Treasure tokens$/i.test(text)) {
       return { effect: (c) => (n(c) === 0 ? c.state : createToken(c.state, c.controller, TREASURE_TOKEN, n(c))) };
     }
-    if (new RegExp(`^put \u000e many \\+1/\\+1 counters on (?:${selfRef(name)}|it)$`, 'i').test(text)) {
+    /*
+      And any counter (D1271): "put that many +1/+1 counters on this creature", "… that many charge
+      counters on ~" (Angelheart Vial), "… incubation counters on it" (Drake Hatcher). A counter the
+      rules give a meaning of their own (`RULES_COUNTERS`) is refused, as it is with a printed number.
+    */
+    const manyOnSelf = new RegExp(`^put \u000e many (${PT_COUNTER}|[a-z]+) counters on (?:${selfRef(name)}|it)$`, 'i').exec(text);
+    if (manyOnSelf !== null && !RULES_COUNTERS.includes(manyOnSelf[1]!.toLowerCase())) {
+      const kind = manyOnSelf[1]!.toLowerCase();
       return {
         effect: (c) => (c.state.instances[c.source]?.zone === 'battlefield' && n(c) > 0
-          ? addCounters(c.state, c.source, '+1/+1', n(c)) : c.state),
+          ? addCounters(c.state, c.source, kind, n(c)) : c.state),
       };
+    }
+    // On a target (D1271): "put that many +1/+1 counters on target Halfling or Treefolk" (Treebeard).
+    const manyOnTarget = new RegExp(`^put \u000e many (${PT_COUNTER}) counters on (.*\\btarget\\b.*)$`, 'i').exec(text);
+    if (manyOnTarget !== null) {
+      const kind = manyOnTarget[1]!.toLowerCase();
+      const spec = targetSpecFrom(manyOnTarget[2]!, ptCounterHelps(kind));
+      if (spec !== null && pointsAtAPermanent(spec)) {
+        return {
+          targets: [spec],
+          effect: (c) => (n(c) <= 0 ? c.state : cardTargets(c).reduce((state, id) => addCounters(state, id, kind, n(c)), c.state)),
+        };
+      }
     }
     return null;
   }

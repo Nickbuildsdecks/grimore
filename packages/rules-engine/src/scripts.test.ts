@@ -46263,6 +46263,55 @@ describe('power/toughness counters other than +1/+1 and -1/-1 (D1270)', () => {
   });
 });
 
+describe('"that many" counters: a batch of discards, any counter kind, a target (D1271)', () => {
+  const R = (name: string, text: string, type = 'Creature — Shark') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal',
+    ...(type.startsWith('Creature') ? { power: '1', toughness: '1' } : {}),
+  });
+  const MAKO = R('Test Mako', 'Whenever you discard one or more cards, put that many +1/+1 counters on this creature.');
+  const VIAL = R('Test Vial', 'Whenever you gain life, you may put that many charge counters on Test Vial.', 'Artifact');
+  const TREE = R('Test Treebeard', 'Whenever you gain life, put that many +1/+1 counters on target creature you control.');
+  const LORE = R('Test Lorekeeper', 'Whenever you gain life, put that many lore counters on Test Lorekeeper.', 'Artifact');
+  const RIP = { name: 'Test Rummage', type_line: 'Sorcery', oracle_text: 'Discard two cards, then draw two cards.', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal' };
+  const GAIN = { name: 'Test Salve', type_line: 'Instant', oracle_text: 'You gain 3 life.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' };
+  const ROWS = [MAKO, VIAL, TREE, RIP, GAIN];
+  const deck = customDeck({ id: 'd1271', name: 'That many', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Mountain', count: 45 }], data: ROWS as never[] });
+  const table = (mine: readonly string[], hand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'd1271', 1: 'd1271' }, deckSpecs: { d1271: deck.deck },
+    battlefield: { 0: [...mine] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads the three; a lore counter, whose meaning is the rules\', stays unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [MAKO, VIAL, TREE]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+    const lore = compileCard(LORE as never);
+    expect(lore.ok && lore.unread.length).toBeGreaterThan(0);
+  });
+
+  it('two cards discarded at once: two +1/+1 counters', () => {
+    let s = table(['Test Mako'], ['Test Rummage', 'Mountain', 'Mountain']);
+    const mako = find(s, 0, 'battlefield', 'Test Mako');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Rummage') } as Action));
+    for (let i = 0; i < 3 && s.pendingDecision !== null && s.pendingDecision.seat === 0 && s.pendingDecision.max === 2; i++) {
+      s = apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision.candidates.slice(0, 2) } as Action);
+    }
+    s = drain(s, 30);
+    expect(s.instances[mako]!.counters['+1/+1']).toBe(2);
+  });
+
+  it('three life gained: three charge counters, and three +1/+1 counters on the creature targeted', () => {
+    let s = table(['Test Vial', 'Test Treebeard'], ['Test Salve']);
+    const vial = find(s, 0, 'battlefield', 'Test Vial');
+    const tree = find(s, 0, 'battlefield', 'Test Treebeard');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Salve') } as Action)), 30);
+    // The may is asked in the printed words, not the reader's mark for "that many".
+    expect(s.pendingDecision?.prompt).toBe('Put that many charge counters on Test Vial?');
+    s = drain(say(s, 0, 'Yes'), 30);
+    expect(s.instances[vial]!.counters['charge']).toBe(3);
+    expect(s.instances[tree]!.counters['+1/+1']).toBe(3);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
