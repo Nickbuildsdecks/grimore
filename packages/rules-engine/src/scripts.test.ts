@@ -47998,6 +47998,43 @@ describe('counters removed as an effect (D1302)', () => {
   });
 });
 
+describe('"remove … counters from it" (D1303)', () => {
+  const C = (name: string, text: string) => ({ name, type_line: 'Creature — Beast', oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '3', toughness: '3' });
+  const ROWS = [
+    C('Test Shedder', '{T}: Remove all -1/-1 counters from it.'),
+    C('Test Healer', 'Whenever a creature you control attacks, remove a -1/-1 counter from it.'),
+  ];
+  const deck = customDeck({ id: 'd1303', name: 'From it', entries: [...ROWS.map((r) => ({ name: r.name, count: 4 })), { name: 'Forest', count: 52 }], data: ROWS as never[] });
+  const table = (mine: string[]) => advanceTo(arena({
+    decks: { 0: 'd1303', 1: 'd1303' }, deckSpecs: { d1303: deck.deck },
+    battlefield: { 0: mine }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of ROWS) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('an activated ability\'s "it" is the card itself', () => {
+    let s = table(['Test Shedder']);
+    const self = find(s, 0, 'battlefield', 'Test Shedder');
+    s = addCounters(s, self, '-1/-1', 2);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: self, abilityIndex: 0 } as Action)), 20);
+    expect(s.instances[self]!.counters['-1/-1']).toBeUndefined();
+  });
+
+  it('a trigger\'s "it" is the creature the event was about, not the card', () => {
+    let s = table(['Test Healer', 'Test Shedder']);
+    const healer = find(s, 0, 'battlefield', 'Test Healer');
+    const attacker = find(s, 0, 'battlefield', 'Test Shedder');
+    s = addCounters(addCounters(s, attacker, '-1/-1', 2), healer, '-1/-1', 1);
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] } as Action);
+    s = drain(s, 20);
+    expect(s.instances[attacker]!.counters['-1/-1']).toBe(1);
+    expect(s.instances[healer]!.counters['-1/-1']).toBe(1);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

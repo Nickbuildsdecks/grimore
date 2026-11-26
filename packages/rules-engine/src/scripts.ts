@@ -31887,7 +31887,7 @@ function readEffect(
  * so "all counters" leaves them.
  */
 function removeCountersEffect(clause: string, name: string): ReadEffect | null {
-  const m = new RegExp(`^remove (a|an|one|two|three|four|five|six|\\d+|all) (?:([+-]\\d+/[+-]\\d+|[a-z]+) )?counters? from (${selfRef(name)}|target .+)$`, 'i')
+  const m = new RegExp(`^remove (a|an|one|two|three|four|five|six|\\d+|all) (?:([+-]\\d+/[+-]\\d+|[a-z]+) )?counters? from (${selfRef(name)}|it|target .+)$`, 'i')
     .exec(plain(clause).trim().replace(/\.$/, ''));
   if (m === null) return null;
   const word = m[1]!.toLowerCase();
@@ -31905,6 +31905,8 @@ function removeCountersEffect(clause: string, name: string): ReadEffect | null {
     const off = Math.min(inst.counters[kind] ?? 0, count);
     return off > 0 ? addCounters(state, id, kind, -off) : state;
   };
+  // "From it" (D1303): the permanent the event was about, or the card itself with no event (`itMeans`).
+  if (/^it$/i.test(m[3]!)) return { effect: (c) => take(c.state, itMeans(undefined, c)) };
   if (!/^target /i.test(m[3]!)) return { effect: (c) => take(c.state, c.source) };
   const spec = targetSpecFrom(m[3]!, /\byou control\b/i.test(m[3]!));
   if (spec === null || !pointsAtAPermanent(spec)) return null;
