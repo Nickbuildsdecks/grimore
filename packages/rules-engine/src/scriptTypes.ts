@@ -2823,6 +2823,14 @@ export interface AbilityCost {
    */
   readonly removeCounter?: { readonly counter: string; readonly amount: number };
   /**
+   * "Remove X storage counters from ~" and "Remove any number of charge counters from ~" (D1307): the
+   * storage lands, the mana batteries, Brain in a Jar, Infused Arrows. As many counters of this kind
+   * as the X announced with the activation (`ActivateAction.x`), never more than the source has, taken
+   * off as the cost is paid. The X is the ability's X, so "Scry X" reads it, and a cost that also has
+   * {X} in its mana (Talon of Pain) pays the same X twice, as the card says.
+   */
+  readonly removeXCounters?: string;
+  /**
    * "Put a -1/-1 counter on ~:" (D879, Devoted Druid): counters put on the source as the cost is paid,
    * before the ability is on the stack, so a Druid that dies of it still untaps itself (CR 602.2).
    * Always payable.
@@ -2940,9 +2948,12 @@ export interface SpendRestriction {
  * when the ability has a count. A count below zero makes nothing (CR 107.1b).
  */
 export function producedBy(
-  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes'>, source: string, controller: SeatIndex,
+  state: GameState, ability: Pick<AbilityDef, 'produces' | 'producesTimes' | 'producesPerX'>, source: string, controller: SeatIndex,
+  x = 0,
 ): readonly ManaType[] {
   const once = ability.produces ?? [];
+  // Once per counter removed, and this many more (D1307).
+  if (ability.producesPerX !== undefined) return Array.from({ length: Math.max(0, x) + ability.producesPerX }, () => once).flat();
   if (ability.producesTimes === undefined) return once;
   const times = Math.max(0, Math.floor(ability.producesTimes(state, source, controller)));
   return Array.from({ length: times }, () => once).flat();
@@ -2972,6 +2983,13 @@ export interface AbilityDef {
    * counter on ~". Absent is once. `producedBy` is the one reader, so every caller sees the same count.
    */
   readonly producesTimes?: (state: GameState, source: string, controller: SeatIndex) => number;
+  /**
+   * With `AbilityCost.removeXCounters` (D1307): `produces` is made once for each counter removed, and
+   * this many times more. Dwarven Hold's "Add {R} for each storage counter removed this way" is 0;
+   * Red Mana Battery's "Add {R}, then add an additional {R} for each charge counter removed this way"
+   * and Kyren Toy's "an amount of {C} equal to X plus one" are 1.
+   */
+  readonly producesPerX?: number;
   /**
    * "Spend this mana only to …" (CR 106.6, D595): what the mana this ability makes may pay for.
    *

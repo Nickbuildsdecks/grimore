@@ -2177,6 +2177,11 @@ function activate(
         `${ch.name} does not have ${amount === 1 ? 'a' : amount} ${counter} counter${amount === 1 ? '' : 's'} to remove`);
     }
   }
+  // And X of them (D1307): no more than it has.
+  if (ability.cost.removeXCounters !== undefined && (action.x ?? 0) > (inst.counters[ability.cost.removeXCounters] ?? 0)) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `${ch.name} does not have ${action.x} ${ability.cost.removeXCounters} counters to remove`);
+  }
 
   /*
     And energy, which is the same rule about a pot the **seat** owns rather than the permanent
@@ -2371,7 +2376,8 @@ function activate(
     The X announced with it (D789, CR 602.2b): only on a cost that has one, a whole number, and paid
     with the rest. Absent on a cost with one, it is zero, as a spell's is.
   */
-  const paysX = parseManaCost(manaText).x;
+  // Or an X of counters removed (D1307), which is the ability's X as well.
+  const paysX = parseManaCost(manaText).x || ability.cost.removeXCounters !== undefined;
   if (action.x !== undefined && !paysX) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability has no X in its cost');
   }
@@ -2379,7 +2385,7 @@ function activate(
     throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, zero or more');
   }
   const xPaid = paysX ? action.x ?? 0 : undefined;
-  const paid = payFrom(state, action.by, manaText, xPaid ?? 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
+  const paid = payFrom(state, action.by, manaText, parseManaCost(manaText).x ? xPaid ?? 0 : 0, 0, action.card, { abilityOf: ch.typeLine }, spent);
   let next = paid.state;
   // Tapped as the cost is paid, which is also what makes a "becomes tapped" trigger fire at the
   // right moment — and what stops those creatures attacking this turn, which is the price.
@@ -2403,6 +2409,10 @@ function activate(
   if (ability.cost.removeCounter !== undefined) {
     next = addCounters(next, inst.id,
       ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
+  }
+  // D1307: X of them.
+  if (ability.cost.removeXCounters !== undefined && (xPaid ?? 0) > 0) {
+    next = addCounters(next, inst.id, ability.cost.removeXCounters, -(xPaid ?? 0));
   }
   // D879: a counter put on as the cost.
   if (ability.cost.putCounter !== undefined) {
@@ -2518,7 +2528,7 @@ function activate(
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what
     // makes tapping a land in response to something work at all.
     // A counted ability's mana is read now, before anything moves (D662): Gaea's Cradle.
-    const made = producedBy(state, ability, inst.id, action.by);
+    const made = producedBy(state, ability, inst.id, action.by, xPaid ?? 0);
     for (const type of made) next = addToPool(next, action.by, type, 1);
     // A Wild Growth on it, a Crypt Ghast beside it (D1088): read before the tap, as the mana is.
     if (ability.cost.tap) for (const type of tapManaExtras(state, inst.id)) next = addToPool(next, action.by, type, 1);

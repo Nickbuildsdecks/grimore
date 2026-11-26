@@ -1444,12 +1444,21 @@ function compileSingle(row: CardDataRow): Compilation {
       // And the Urza lands' "If you control an Urza's Mine and an Urza's Power-Plant, add {C}{C}{C}
       // instead" (D867), which the general reader makes as a counted mana ability (`producesTimes`).
       const urza = /^\{T\}: Add \{[WUBRGC]\}\. If you control an? [^,]+ and an? [^,]+, add (?:\{[WUBRGC]\})+ instead\.?$/i.test(line.trim());
-      const sacrificing = urza || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
+      /*
+        And the storage lands and mana batteries (D1307): an X of counters the mana parser does not
+        take. Not on a land that also says "You may choose not to untap ~" (Dwarven Hold, Bottomless
+        Vault): it charges only while its controller keeps it tapped, and the untap step answers that
+        choice by untapping it (D1041), so read whole it would be a land that never charges.
+      */
+      const storage = /^[^:]*\bRemove (?:X|any number of) [^:,]+ counters from [^:,]+:/i.test(line.trim())
+        && !/\bYou may choose not to untap\b/i.test(row.oracle_text ?? '');
+      const sacrificing = urza || storage || /^\{T\},\s*Sacrifice (?:an?|another) [^:,]+:/i.test(line.trim())
         ? lineScriptFor(line, def.name) : null;
       const makesMana = sacrificing !== null && Object.keys(sacrificing).every((key) => key === 'abilities')
         && (sacrificing.abilities ?? []).length > 0
         && (sacrificing.abilities ?? []).every((ability) => (ability.produces ?? []).length > 0
-          && (ability.cost.sacrifice !== undefined || (urza && ability.producesTimes !== undefined)));
+          && (ability.cost.sacrifice !== undefined || (urza && ability.producesTimes !== undefined)
+            || (storage && ability.cost.removeXCounters !== undefined && ability.producesPerX !== undefined)));
       if (!makesMana) { unread.push({ line, why: 'no-reader' }); continue; }
       if (merge(built, sacrificing!) === 'conflict') { unread.push({ line, why: 'field-conflict' }); continue; }
       compiled.push(line);

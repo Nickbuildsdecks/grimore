@@ -223,3 +223,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1303 pushed in f2ce782. D1304 exile chosen cards from your graveyard (scripts.ts reader), and the full-count rule for an If-you-do opener (optionalEffect).
 - D1304 pushed in 03a1745. D1305 Room door badges in the web table (apps/web/src/lib/arena.ts cardBadges).
 - D1305 pushed in 5062a79. D1306 two mana of any one color (scripts.ts mana-choice reader), and a permanent's mixed tap rows in manaSources and potentialMana (legalActions.ts).
+- D1306 pushed in aa90189. D1307 counters removed as an X (AbilityCost.removeXCounters, AbilityDef.producesPerX): scripts.ts cost and mana readers, compile.ts mana-line route, autoActions activation, legalActions sources/xMax/potentialMana.

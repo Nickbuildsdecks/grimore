@@ -35801,7 +35801,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const split = /^([^:]+):\s*(.+)$/.exec(text);
   if (split === null) return null;
   // An X in an activated ability is the one its own cost pays, or none (D1055). See `xPayable`.
-  const paysX = /\{X\}/i.test(split[1]!);
+  // Or removes X counters (D1307): Brain in a Jar's "Remove X charge counters from ~: Scry X".
+  const paysX = /\{X\}/i.test(split[1]!) || /\bRemove X \S+ counters from\b/i.test(split[1]!);
   if (xPayable !== paysX) {
     const was = xPayable;
     xPayable = paysX;
@@ -35913,6 +35914,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let exilesFromGraveyard = false;
   let energy = 0;
   let removes: { counter: string; amount: number } | null = null;
+  let removesX: string | null = null;
   let puts: { counter: string; amount: number } | null = null;
   let sacrifices: NonNullable<AbilityCost['sacrifice']> | null = null;
   let tapsOthers: NonNullable<AbilityCost['tapUntapped']> | null = null;
@@ -36064,12 +36066,22 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       puts = { counter: putOn[2]!.toLowerCase(), amount };
       continue;
     }
+    /*
+      "Remove X storage counters from ~", "Remove any number of charge counters from ~" (D1307): an
+      amount announced as the cost is paid. See `AbilityCost.removeXCounters`.
+    */
+    const removedX = new RegExp(`^Remove (?:X|any number of) (\\+1/\\+1|-1/-1|[a-z]+) counters from ${self}$`, 'i').exec(component);
+    if (removedX !== null) {
+      if (removes !== null || removesX !== null) return null;
+      removesX = removedX[1]!.toLowerCase();
+      continue;
+    }
     const removed = new RegExp(
       `^Remove (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? from ${self}$`, 'i',
     ).exec(component);
     if (removed !== null) {
       // One removal per cost, for the reason there is one sacrifice: the field holds one.
-      if (removes !== null) return null;
+      if (removes !== null || removesX !== null) return null;
       const amount = /^an?$/i.test(removed[1]!) ? 1 : countFrom(removed[1]!);
       if (amount === null || amount <= 0) return null;
       removes = { counter: removed[2]!.toLowerCase(), amount };
@@ -36265,6 +36277,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
     ...(removes === null ? {} : { removeCounter: removes }),
+    ...(removesX === null ? {} : { removeXCounters: removesX }),
     ...(puts === null ? {} : { putCounter: puts }),
     ...(energy === 0 ? {} : { energy }),
     ...(exilesSelf ? { exileSelf: true as const } : {}),
@@ -36316,6 +36329,27 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   if ((cost.tapUntapped !== undefined || cost.untap === true || cost.exileFromGraveyard !== undefined || cost.discardAtRandom === true
     || cost.returnSelf === true || cost.returnToHand !== undefined)
     && /^add\b/i.test(manaClause)) return null;
+  /*
+    The storage lands and the mana batteries (D1307): "Add {R} for each storage counter removed this
+    way", "Add {B}, then add an additional {B} for each charge counter removed this way", and Kyren
+    Toy's "Add an amount of {C} equal to X plus one". Only beside a cost that removes X of them (see
+    `AbilityCost.removeXCounters`), and pressed by the player with the X, never by the auto-payer.
+    "X mana in any combination of {W} and/or {U}" (Calciform Pools and its four cousins) is a second
+    choice on the activation, which an X alone does not answer, so it stays unread.
+  */
+  if (cost.removeXCounters !== undefined && /^add\b/i.test(manaClause)) {
+    const kind = cost.removeXCounters.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const each = new RegExp(`^add \\{([WUBRGC])\\} for each ${kind} counter removed this way$`, 'i').exec(manaClause);
+    const plus = new RegExp(`^add \\{([WUBRGC])\\}, then add an additional \\{([WUBRGC])\\} for each ${kind} counter removed this way$`, 'i').exec(manaClause);
+    const toy = /^add an amount of \{([WUBRGC])\} equal to X plus one$/i.exec(manaClause);
+    const symbol = each?.[1] ?? (plus !== null && plus[1]!.toUpperCase() === plus[2]!.toUpperCase() ? plus[1] : undefined) ?? toy?.[1];
+    if (symbol === undefined) return null;
+    return {
+      abilities: [{
+        ...timing, cost, description: text, produces: [symbol.toUpperCase() as ManaType], producesPerX: each === null ? 1 : 0, ...only,
+      }],
+    };
+  }
   /*
     The Urza lands (D867): "Add {C}. If you control an Urza's Mine and an Urza's Power-Plant, add
     {C}{C}{C} instead." One colourless symbol made once, or as many times as the "instead" prints

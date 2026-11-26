@@ -1532,6 +1532,8 @@ export function manaSources(
         is a play the player presses, as the Apprentice's is above.
       */
       if (ability.cost.tapUntapped !== undefined) continue;
+      // Nor one whose X of counters is the player's to announce (D1307): a storage land.
+      if (ability.cost.removeXCounters !== undefined) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
       // is a legal way to lose the game, so the engine stops one short of it.
@@ -1746,7 +1748,9 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
         two. Optimistic across kinds, as before, and summed for an ability that does not tap.
       */
       const made = new Map<ManaType, number>();
-      for (const type of producedBy(state, ability, id, seat)) made.set(type as ManaType, (made.get(type as ManaType) ?? 0) + 1);
+      // A storage land at its most (D1307): every counter it holds.
+      const held = ability.cost.removeXCounters === undefined ? 0 : inst.counters[ability.cost.removeXCounters] ?? 0;
+      for (const type of producedBy(state, ability, id, seat, held)) made.set(type as ManaType, (made.get(type as ManaType) ?? 0) + 1);
       for (const [type, n] of made) {
         if (!ability.cost.tap) { pool = addMana(pool, type, n); continue; }
         tapKinds.add(type);
@@ -3282,10 +3286,12 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         manaCost: manaNow ?? '', abilityIndex: i,
         // How high its X may go (D789), with what the rest of the cost spends kept out of the mana.
         ...(manaNow && parseManaCost(manaNow).x ? {
-          xMax: maxAffordableX(poolOf(state, seat), parseManaCost(manaNow),
+          xMax: Math.min(maxAffordableX(poolOf(state, seat), parseManaCost(manaNow),
             (restrictedMana ? manaSources(state, seat, { abilityOf: ch.typeLine }) : sources)
               .filter((source) => !(ability.cost.tap === true && source.key === id) && !(crew ?? []).includes(source.key) && !(tapped ?? []).includes(source.key))),
-        } : {}),
+          // And no more than the counters an X of them removes (D1307): Talon of Pain.
+          ability.cost.removeXCounters === undefined ? Infinity : inst.counters[ability.cost.removeXCounters] ?? 0),
+        } : ability.cost.removeXCounters !== undefined ? { xMax: inst.counters[ability.cost.removeXCounters] ?? 0 } : {}),
         // Which card defines it, when this permanent did not print it. See `LegalPlay.grantedBy`.
         ...(grantedBy === undefined ? {} : { grantedBy }),
         ...(zone === 'hand' ? { fromHand: true } : {}),

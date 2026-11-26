@@ -48118,6 +48118,78 @@ describe('"Add two mana of any one color", granted (D1306)', () => {
   });
 });
 
+describe('counters removed as an X, for mana and otherwise (D1307)', () => {
+  const HOLD = { name: 'Mercadian Bazaar', type_line: 'Land', oracle_text: 'Mercadian Bazaar enters tapped.\n{T}: Put a storage counter on Mercadian Bazaar.\n{T}, Remove any number of storage counters from Mercadian Bazaar: Add {R} for each storage counter removed this way.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' };
+  // A storage land that charges only while kept tapped, which the untap step does not offer (D1041).
+  const KEPT = { name: 'Dwarven Hold', type_line: 'Land', oracle_text: "Dwarven Hold enters tapped.\nYou may choose not to untap Dwarven Hold during your untap step.\nAt the beginning of your upkeep, if Dwarven Hold is tapped, put a storage counter on it.\n{T}, Remove any number of storage counters from Dwarven Hold: Add {R} for each storage counter removed this way.", mana_cost: '', cmc: 0, colors: [], layout: 'normal' };
+  const BATTERY = { name: 'Red Mana Battery', type_line: 'Artifact', oracle_text: '{2}, {T}: Put a charge counter on Red Mana Battery.\n{T}, Remove any number of charge counters from Red Mana Battery: Add {R}, then add an additional {R} for each charge counter removed this way.', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal' };
+  const TOY = { name: 'Kyren Toy', type_line: 'Artifact', oracle_text: '{1}, {T}: Put a charge counter on Kyren Toy.\n{T}, Remove X charge counters from Kyren Toy: Add an amount of {C} equal to X plus one.', mana_cost: '{3}', cmc: 3, colors: [], layout: 'normal' };
+  const ARROWS = { name: 'Infused Arrows', type_line: 'Artifact', oracle_text: 'Sunburst (This enters with a charge counter on it for each color of mana spent to cast it.)\n{T}, Remove X charge counters from Infused Arrows: Target creature gets -X/-X until end of turn.', mana_cost: '{4}', cmc: 4, colors: [], layout: 'normal' };
+  const POOLS = { name: 'Calciform Pools', type_line: 'Land', oracle_text: '{T}: Add {C}.\n{1}, {T}: Put a storage counter on Calciform Pools.\n{1}, Remove X storage counters from Calciform Pools: Add X mana in any combination of {W} and/or {U}.', mana_cost: '', cmc: 0, colors: [], layout: 'normal' };
+  const deck = customDeck({ id: 'd1307', name: 'Storage', entries: [{ name: 'Mercadian Bazaar', count: 4 }, { name: 'Red Mana Battery', count: 4 }, { name: 'Kyren Toy', count: 4 }, { name: 'Infused Arrows', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Mountain', count: 40 }], data: [HOLD, BATTERY, TOY, ARROWS] as never[] });
+
+  const board = (mine: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
+    decks: { 0: 'd1307', 1: 'd1307' }, deckSpecs: { d1307: deck.deck },
+    battlefield: { 0: [...mine], 1: [...theirs] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads the storage land, the battery and the toy whole, and leaves the any-combination pool and the kept-tapped land unread', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const card of [HOLD, BATTERY, TOY, ARROWS]) expect(compileCard(card as never)).toMatchObject({ ok: true, unread: [] });
+    // And an X of counters is an X the effect may read, as an {X} in the cost is.
+    const SADIST = { name: 'Cruel Sadist', type_line: 'Creature — Human Assassin', oracle_text: '{B}, {T}, Pay 1 life: Put a +1/+1 counter on Cruel Sadist.\n{2}{B}, {T}, Remove X +1/+1 counters from Cruel Sadist: It deals X damage to target creature.', mana_cost: '{B}', cmc: 1, colors: ['B'], power: '1', toughness: '1', layout: 'normal' };
+    expect(compileCard(SADIST as never)).toMatchObject({ ok: true, unread: [] });
+    expect(compileCard(KEPT as never)).toMatchObject({ ok: true, unread: [{ line: KEPT.oracle_text.split('\n')[3] }] });
+    const pools = compileCard(POOLS as never);
+    expect(pools.ok && pools.unread.map((u) => u.line)).toEqual(['{1}, Remove X storage counters from Calciform Pools: Add X mana in any combination of {W} and/or {U}.']);
+  });
+
+  it('Mercadian Bazaar makes one red for each storage counter the player chooses to remove, and no more than it has', () => {
+    let s = board(['Mercadian Bazaar']);
+    const hold = find(s, 0, 'battlefield', 'Mercadian Bazaar');
+    s = addCounters(s, hold, 'storage', 3);
+    const play = legalActions(s, 0).plays.find((p) => p.card === hold && p.kind === 'activate' && p.isManaAbility)!;
+    expect(play).toMatchObject({ xMax: 3 });
+    // Not the auto-payer's to spend: which X is the player's answer.
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === hold)).toBe(false);
+    // But the pips show what it could make.
+    expect(potentialMana(s, 0).R).toBe(3);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: hold, abilityIndex: play.abilityIndex!, x: 4 } as Action)).toThrow(/does not have 4 storage counters/);
+    const after = apply(s, { type: 'auto:activate', by: 0, card: hold, abilityIndex: play.abilityIndex!, x: 2 } as Action);
+    expect(poolOf(after, 0).R).toBe(2);
+    expect(after.instances[hold]!.counters['storage'] ?? 0).toBe(1);
+    expect(after.instances[hold]!.tapped).toBe(true);
+  });
+
+  it('a battery makes one more than it removes, and so does the toy, with none removed', () => {
+    let s = board(['Red Mana Battery', 'Kyren Toy']);
+    const battery = find(s, 0, 'battlefield', 'Red Mana Battery');
+    const toy = find(s, 0, 'battlefield', 'Kyren Toy');
+    s = addCounters(s, battery, 'charge', 2);
+    // Kept from the auto-payer as well, though zero is an X it could pay: how many is the player's.
+    expect(manaSources(s, 0 as SeatIndex).some((e) => e.key === battery)).toBe(false);
+    const index = (card: string): number => legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'activate' && p.isManaAbility)!.abilityIndex!;
+    const charged = apply(s, { type: 'auto:activate', by: 0, card: battery, abilityIndex: index(battery), x: 2 } as Action);
+    expect(poolOf(charged, 0).R).toBe(3);
+    expect(charged.instances[battery]!.counters['charge'] ?? 0).toBe(0);
+    const empty = apply(s, { type: 'auto:activate', by: 0, card: toy, abilityIndex: index(toy), x: 0 } as Action);
+    expect(poolOf(empty, 0).C).toBe(1);
+  });
+
+  it("an X of counters is the ability's X on the stack: Infused Arrows gives -2/-2 for two", () => {
+    let s = board(['Infused Arrows'], ['Grizzly Bears']);
+    const arrows = find(s, 0, 'battlefield', 'Infused Arrows');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = addCounters(s, arrows, 'charge', 3);
+    const play = legalActions(s, 0).plays.find((p) => p.card === arrows && p.kind === 'activate')!;
+    expect(play.xMax).toBe(3);
+    s = apply(s, { type: 'auto:activate', by: 0, card: arrows, abilityIndex: play.abilityIndex!, x: 2, targets: [{ kind: 'card', id: bears }] } as Action);
+    expect(s.instances[arrows]!.counters['charge'] ?? 0).toBe(1);
+    s = drain(passBoth(s), 4);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
