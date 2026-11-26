@@ -48297,3 +48297,21 @@ Faults injected by hand: 4, all caught.
 - A target's counters taken off the source.
 
 Coverage: 17,304 of 31,900 cards (+19 over D1301's 17,285), 40,082 of 59,888 lines (+40).
+
+## D1303 — "Remove … counters from it"
+
+D1302's reader takes "it" now: "Whenever ~ deals combat damage to a player, remove all -1/-1
+counters from it", "Whenever a creature you control attacks, remove a -1/-1 counter from it",
+"{T}: Remove all -1/-1 counters from it". "It" follows the engine's one rule for it (`itMeans`): the
+permanent the event was about, or the card itself when there is no event (an activated ability).
+
+Unread lines with the phrase: 289, from 300.
+
+**Tests.** 3 engine tests:
+- Both test cards read.
+- An activated ability's "it" is the card itself: its -1/-1 counters come off.
+- A trigger's "it" is the attacking creature: its counter comes off, and the watcher's own stays.
+
+Faults injected by hand: 1, caught: "it" read as the card itself.
+
+Coverage: 17,312 of 31,900 cards (+8 over D1302's 17,304), 40,093 of 59,888 lines (+11).
