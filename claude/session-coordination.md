@@ -205,3 +205,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1285 pushed in f1761aa. D1286 Metallic Mimic: othersEnterWith.fits takes the source; of the chosen type (done).
 - D1286 pushed in aaecd6f. D1287 cast from graveyard by permission (CardScript.castsFromGraveyard, yardPermission in legalActions, yardBy on the cast action, GameState.yardCastsUsed; bot.ts passes yardBy) (done).
 - D1287 pushed in 0987ad8. D1288 Muldrotha: castsFromGraveyard.slots, yardSlotFor (legalActions), the cast records the slot (autoActions) (done).
+- D1288 pushed in 5abf660. D1289 graveyard permissions with riders: castsFromGraveyard.exileAfter / entersTapped / entersWithFinality, stack marks yardExile / yardTapped / yardFinality (automation.ts, effects.ts, autoActions.ts).

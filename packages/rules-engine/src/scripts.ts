@@ -39912,14 +39912,28 @@ function lineScriptForWhole(line: string, name: string): Partial<CardScript> | n
     read as the library search reads "a … card", off the printed type line. See
     `CardScript.castsFromGraveyard`.
   */
-  const yardCast = /^(?:once )?during each of your turns, you may cast (?:an?|one) (.+?) spell( with mana value \d+ or (?:less|greater))? from your graveyard\.?$/i
-    .exec(plain(line).trim());
+  /*
+    And its two riders (D1289): Kess, Dissident Mage's "If a spell cast this way would be put into
+    your graveyard, exile it instead", Edgar, Master Machinist's "If you cast a spell this way, that
+    artifact enters tapped", and Overflow Submatrix's "that artifact creature enters with a finality
+    counter on it".
+  */
+  const yardCast = /^(?:once )?during each of your turns, you may cast (?:an?|one) (.+?) spell( with mana value \d+ or (?:less|greater))? from your graveyard\.(?: (if a spell cast this way would be put into your graveyard, exile it instead|if you cast a spell this way, that (?:artifact|artifact creature|creature|permanent) enters (?:tapped|with a finality counter on it))\.?)?$/i
+    .exec(plain(line).replace(/\([^)]*\)/g, '').trim().replace(/\.?$/, '.'));
   if (yardCast !== null) {
     const kind = yardCast[1]!.trim();
+    const rider = (yardCast[3] ?? '').toLowerCase();
     const read = libraryFilter(`${/^[aeiou]/i.test(kind) ? 'an' : 'a'} ${kind} card${yardCast[2] ?? ''}`, name);
     if (read !== null && read.xBound !== true) {
       const fits = read.filter;
-      return { castsFromGraveyard: { fits: (state, id, seat) => fits === null || fits === undefined || fits(state, id, seat) } };
+      return {
+        castsFromGraveyard: {
+          fits: (state, id, seat) => fits === null || fits === undefined || fits(state, id, seat),
+          ...(rider.startsWith('if a spell') ? { exileAfter: true as const } : {}),
+          ...(rider.endsWith('enters tapped') ? { entersTapped: true as const } : {}),
+          ...(rider.endsWith('finality counter on it') ? { entersWithFinality: true as const } : {}),
+        },
+      };
     }
   }
   /*

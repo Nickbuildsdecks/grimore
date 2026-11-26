@@ -3445,6 +3445,12 @@ export interface CardScript {
      * named here rather than one in all. A card of two types uses the first of them still free.
      */
     readonly slots?: readonly string[];
+    /** Kess's "If a spell cast this way would be put into your graveyard, exile it instead" (D1289). */
+    readonly exileAfter?: true;
+    /** Edgar's "If you cast a spell this way, that artifact enters tapped" (D1289). */
+    readonly entersTapped?: true;
+    /** Overflow Submatrix's "that artifact creature enters with a finality counter on it" (D1289). */
+    readonly entersWithFinality?: true;
   };
   /**
    * "If an artifact or creature entering causes a triggered ability of a permanent you control to

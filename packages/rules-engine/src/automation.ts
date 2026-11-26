@@ -6870,6 +6870,10 @@ function completeResolution(
     }
     if (isPermanent && inst !== undefined && !replacedArrival) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
+      // Edgar's "that artifact enters tapped" (D1289): it arrives tapped.
+      if (object.yardTapped === true) next = withInstance(next, inst.id, { tapped: true });
+      // Overflow Submatrix's "enters with a finality counter on it" (D1289).
+      if (object.yardFinality === true) next = addCounters(next, inst.id, 'finality', 1);
       /*
         And that it was cast, and from where (D607): see `GameState.castPermanents`. Before the
         arrival is announced, for the evoke marker's reason below — the intervening "if you cast it"

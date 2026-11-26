@@ -47133,6 +47133,62 @@ describe('Muldrotha: a permanent spell of each permanent type from your graveyar
   });
 });
 
+describe('graveyard permissions with riders: Kess exiles, Edgar enters tapped, Submatrix adds finality (D1289)', () => {
+  const C = (name: string, type: string, text = '') => ({
+    name, type_line: type, oracle_text: text, mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal',
+    ...(type.includes('Creature') ? { power: '2', toughness: '2' } : {}),
+  });
+  const KESS = C('Test Kess', 'Legendary Creature — Human Wizard', 'During each of your turns, you may cast an instant or sorcery spell from your graveyard. If a spell cast this way would be put into your graveyard, exile it instead.');
+  const EDGAR = C('Test Edgar', 'Legendary Creature — Human Artificer', 'Once during each of your turns, you may cast an artifact spell from your graveyard. If you cast a spell this way, that artifact enters tapped.');
+  const DRAW = C('Test Divination', 'Sorcery', 'Draw a card.');
+  const ROCK = C('Test Rock', 'Artifact');
+  const MATRIX = C('Test Submatrix', 'Artifact', 'Once during each of your turns, you may cast an artifact creature spell from your graveyard. If you cast a spell this way, that artifact creature enters with a finality counter on it. (If a creature with a finality counter on it would die, exile it instead.)');
+  const GOLEM = C('Test Golem', 'Artifact Creature — Golem');
+  const ROWS = [KESS, EDGAR, DRAW, ROCK, MATRIX, GOLEM];
+  const deck = customDeck({ id: 'd1289', name: 'Riders', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Island', count: 48 }], data: ROWS as never[] });
+  const table = (holder: string, yard: string, hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'd1289', 1: 'd1289' }, deckSpecs: { d1289: deck.deck },
+    battlefield: { 0: [holder] }, graveyard: { 0: [yard] }, hands: { 0: [...hand] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both', () => {
+    expect(deck.unknown).toEqual([]);
+    for (const r of [KESS, EDGAR, MATRIX]) expect(compileCard(r as never), r.name).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('a sorcery cast under Kess is exiled as it resolves; one cast from hand is not', () => {
+    let s = table('Test Kess', 'Test Divination', ['Test Divination']);
+    const kess = find(s, 0, 'battlefield', 'Test Kess');
+    const fromYard = find(s, 0, 'graveyard', 'Test Divination');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: fromYard, yardBy: kess } as Action)), 20);
+    expect(s.instances[fromYard]!.zone).toBe('exile');
+    const fromHand = find(s, 0, 'hand', 'Test Divination');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: fromHand } as Action)), 20);
+    expect(s.instances[fromHand]!.zone).toBe('graveyard');
+  });
+
+  it('an artifact cast under Edgar enters tapped', () => {
+    let s = table('Test Edgar', 'Test Rock');
+    const edgar = find(s, 0, 'battlefield', 'Test Edgar');
+    const rock = find(s, 0, 'graveyard', 'Test Rock');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: rock, yardBy: edgar } as Action)), 20);
+    expect(s.instances[rock]!.zone).toBe('battlefield');
+    expect(s.instances[rock]!.tapped).toBe(true);
+  });
+
+  it('an artifact creature cast under Submatrix enters untapped with a finality counter, and is exiled when it dies', () => {
+    let s = table('Test Submatrix', 'Test Golem');
+    const matrix = find(s, 0, 'battlefield', 'Test Submatrix');
+    const golem = find(s, 0, 'graveyard', 'Test Golem');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: golem, yardBy: matrix } as Action)), 20);
+    expect(s.instances[golem]!.zone).toBe('battlefield');
+    expect(s.instances[golem]!.tapped).not.toBe(true);
+    expect(s.instances[golem]!.counters['finality']).toBe(1);
+    s = engineSettle(destroy(s, golem), s);
+    expect(s.instances[golem]!.zone).toBe('exile');
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

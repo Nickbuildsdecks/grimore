@@ -485,6 +485,14 @@ export interface StackObject {
    */
   readonly flashback?: true;
   /**
+   * Cast under a graveyard permission that exiles it on its way to a graveyard (D1289, Kess), or that
+   * has the permanent enter tapped (Edgar), or with a finality counter (Overflow Submatrix). On the
+   * stack object for flashback's reason.
+   */
+  readonly yardExile?: true;
+  readonly yardTapped?: true;
+  readonly yardFinality?: true;
+  /**
    * Whether this spell was cast with escape (D577). On the stack object for flashback's reason:
    * "escapes with a +1/+1 counter" is asked as the permanent arrives, and by then the card is
    * not in a graveyard and nothing else remembers that it came from one.

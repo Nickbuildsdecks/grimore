@@ -1560,7 +1560,8 @@ export function spellLeavesStack(
   if (object.omen === true && resolved && object.flashback !== true) {
     return shuffleLibrary(relocate(state, inst, 'library', inst.owner, 'top'), inst.owner);
   }
-  return relocate(state, inst, object.flashback === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
+  // And Kess's exile (D1289), the same replacement for a spell cast under its permission.
+  return relocate(state, inst, object.flashback === true || object.yardExile === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
 }
 
 export function exileCard(state: GameState, id: string): GameState {

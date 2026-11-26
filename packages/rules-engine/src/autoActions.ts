@@ -1335,6 +1335,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
+    // A graveyard permission's riders (D1289): Kess's exile, Edgar's tapped arrival.
+    ...(yardBy !== undefined && scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard?.exileAfter === true ? { yardExile: true as const } : {}),
+    ...(yardBy !== undefined && scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard?.entersTapped === true ? { yardTapped: true as const } : {}),
+    ...(yardBy !== undefined && scriptForCard(state.cardDefs[state.instances[yardBy]?.defKey ?? ''])?.castsFromGraveyard?.entersWithFinality === true ? { yardFinality: true as const } : {}),
     ...(escape ? { escaped: true as const } : {}),
     // And the flag the permanent's own life depends on: a creature that arrives from an evoked
     // casting is marked as it lands, and nothing else remembers by then how it was paid for.
