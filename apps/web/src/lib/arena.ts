@@ -79,6 +79,8 @@ export type ArenaMode =
       returned?: string
       /** The card discarded to pay for it, when the cost says "Discard a card". */
       discarded?: string
+      /** The cards discarded for a counted cost (D1330), "Discard two cards". */
+      discards?: readonly string[]
       x?: number
       shares?: number[]
     }
@@ -422,7 +424,7 @@ export function feedOptions(mode: Extract<ArenaMode, { kind: "feeding" }>): read
 /** The action a completed play turns into. */
 function playAction(
   play: LegalPlay, targets: readonly Target[], sacrifice?: string | readonly string[], x?: number,
-  division?: readonly number[], returned?: string, discarded?: string,
+  division?: readonly number[], returned?: string, discarded?: string, discards?: readonly string[],
 ): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
   // The division, for a spell that has one. Sent only when the play's own spec asks for it, so a
@@ -437,7 +439,8 @@ function playAction(
   // creature back is not a sacrifice, and one field for both would make the engine guess.
   const withReturned = returned === undefined ? {} : { returned }
   // And a card discarded as a cost ("Discard a card"), in a field of its own for the same reason.
-  const withDiscarded = discarded === undefined ? {} : { discarded }
+  const withDiscarded = discards !== undefined ? { discards: [...discards] }
+    : discarded === undefined ? {} : { discarded }
   /*
     And which half of a two-faced card, for the fifth time and the same reason: a split card and an
     adventurer are each offered as two plays on one card, and a cast with no half is either the
@@ -638,15 +641,17 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         A counted sacrifice (D732): each tap adds a permanent or takes it back, and the play goes on
         once there are as many as the cost asks for.
       */
-      const count = mode.play.sacrificeCount ?? 1
+      const count = mode.cost === "discarded" ? mode.play.discardCount ?? 1 : mode.play.sacrificeCount ?? 1
       let many: readonly string[] | undefined
-      if (mode.cost === "sacrifice" && count > 1) {
+      // And a counted discard (D1330), "Discard two cards", collected the same way.
+      if ((mode.cost === "sacrifice" || mode.cost === "discarded") && count > 1) {
         const fed = mode.fed ?? []
         const next = fed.includes(event.card) ? fed.filter((id) => id !== event.card) : [...fed, event.card]
         if (next.length < count) return { mode: { ...mode, fed: next }, action: null }
         many = next
       }
-      const paid = many !== undefined ? { sacrifice: many }
+      const paid = many !== undefined && mode.cost === "discarded" ? { discards: many }
+        : many !== undefined ? { sacrifice: many }
         : mode.cost === "returned" ? { returned: event.card }
         : mode.cost === "discarded" ? { discarded: event.card }
           : { sacrifice: event.card }
@@ -654,7 +659,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         return {
           mode: IDLE,
           action: playAction(
-            mode.play, [], paid.sacrifice, undefined, undefined, paid.returned, paid.discarded,
+            mode.play, [], paid.sacrifice, undefined, undefined, paid.returned, paid.discarded, paid.discards,
           ),
         }
       }
@@ -710,7 +715,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         if (spread.reduce((n, d) => n + d, 0) >= amount) {
           return {
             mode: IDLE,
-            action: playAction(mode.play, picked, mode.sacrifice, mode.x, spread, mode.returned, mode.discarded),
+            action: playAction(mode.play, picked, mode.sacrifice, mode.x, spread, mode.returned, mode.discarded, mode.discards),
           }
         }
         return { mode: { ...mode, chosen: picked, shares: spread }, action: null }
@@ -736,7 +741,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (chosen.length >= targetsWanted(mode.play)) {
         return {
           mode: IDLE,
-          action: playAction(mode.play, chosen, mode.sacrifice, mode.x, undefined, mode.returned, mode.discarded),
+          action: playAction(mode.play, chosen, mode.sacrifice, mode.x, undefined, mode.returned, mode.discarded, mode.discards),
         }
       }
       return { mode: { ...mode, chosen }, action: null }
@@ -782,7 +787,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         return {
           mode: IDLE,
           action: playAction(
-            mode.play, mode.chosen, mode.sacrifice, mode.x, mode.shares, mode.returned, mode.discarded,
+            mode.play, mode.chosen, mode.sacrifice, mode.x, mode.shares, mode.returned, mode.discarded, mode.discards,
           ),
         }
       }

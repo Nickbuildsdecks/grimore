@@ -2681,6 +2681,11 @@ function candidateActions(
         The same shape as the sacrifice rule above it, for the same reason: the bot cannot tell
         when pitching its hand to a Psychatog is lethal, and guessing costs more than abstaining.
       */
+      /*
+        A counted discard (D1330), "Discard two cards", is not used: two cards is a price the bot
+        cannot weigh against what it buys, and declining is the safe direction to be wrong in.
+      */
+      if ((play.discardCount ?? 1) > 1) continue;
       if (play.discardOptions !== undefined && play.discardOptions.length > 0) {
         const paidFor = abilityBehind(state, play.card, play.abilityIndex, play.grantedBy);
         const pitch = cardToPitch(

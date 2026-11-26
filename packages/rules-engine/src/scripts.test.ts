@@ -49091,6 +49091,47 @@ describe('the Borderposts: {1} and a basic land back, rather than the mana cost 
   });
 });
 
+describe('"Discard two cards" as a cost (D1330)', () => {
+  const STEED = { name: 'Test Steed', type_line: 'Creature — Zombie Horse', mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: '{0}, Discard two cards: Return Test Steed from your graveyard to the battlefield tapped. Activate only as a sorcery.' };
+  const deck = customDeck({ id: 'd1330', name: 'Steed', entries: [{ name: 'Test Steed', count: 4 }, { name: 'Swamp', count: 56 }], data: [STEED] as never[] });
+  const board = (handSize: number): { s: GameState; steed: string } => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1330', 1: 'd1330' }, deckSpecs: { d1330: deck.deck },
+      hands: { 0: ['Test Steed', 'Swamp', 'Swamp', 'Swamp'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const steed = find(s, 0, 'hand', 'Test Steed');
+    s = relocate(s, s.instances[steed]!, 'graveyard', 0, 'top');
+    for (const id of ids(s, 0, 'hand').slice(handSize)) s = relocate(s, s.instances[id]!, 'library', 0, 'bottom');
+    return { s, steed };
+  };
+  const play = (s: GameState, steed: string) => legalActions(s, 0).plays.find((p) => p.card === steed && p.kind === 'activate');
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(STEED as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('offered with two cards to choose, and paid with exactly two', () => {
+    let { s, steed } = board(3);
+    expect(play(s, steed)).toMatchObject({ discardCount: 2 });
+    const [a, b] = ids(s, 0, 'hand');
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: steed, abilityIndex: 0, discarded: a } as Action)).toThrow(/choose 2 cards to discard/);
+    expect(() => apply(s, { type: 'auto:activate', by: 0, card: steed, abilityIndex: 0, discards: [a, a] } as Action)).toThrow(/choose 2 cards to discard/);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: steed, abilityIndex: 0, discards: [a, b] } as Action)), 4);
+    expect([s.instances[a]!.zone, s.instances[b]!.zone]).toEqual(['graveyard', 'graveyard']);
+    expect(s.instances[steed]!.zone).toBe('battlefield');
+    expect(s.instances[steed]!.tapped).toBe(true);
+  });
+
+  it('not offered with one card in hand, and the bot does not use it', () => {
+    const one = board(1);
+    expect(play(one.s, one.steed)).toBeUndefined();
+    const three = board(3);
+    expect(botAction(three.s, 0 as SeatIndex)?.type === 'auto:activate' && (botAction(three.s, 0 as SeatIndex) as { card?: string }).card === three.steed).toBe(false);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

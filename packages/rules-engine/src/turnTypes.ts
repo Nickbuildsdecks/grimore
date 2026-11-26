@@ -2186,6 +2186,8 @@ export interface AutoActivateAction {
   readonly returned?: string;
   /** The card **discarded** to pay for it, when the cost says "Discard a card" (D579). */
   readonly discarded?: string;
+  /** The cards discarded for a counted cost (D1330): "Discard two cards". */
+  readonly discards?: readonly string[];
   /**
    * The permanents sacrificed for a counted cost (D732): "Sacrifice two creatures", Bolas's
    * Citadel's ten. Exactly the count, all different, each one the cost can take; `sacrifice` is for

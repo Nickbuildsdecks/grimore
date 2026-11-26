@@ -1988,7 +1988,9 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       */
       for (const text of [
         'Remove X +1/+1 counters from Nonesuch: Draw a card.',
-        '{1}, Discard two cards: Draw a card.',
+        // Retired row (D1330): "Discard two cards" reads now, into `discardCount`; a discard whose
+        // count is chosen as it is paid still has no field.
+        '{1}, Discard X cards: Draw a card.',
       ]) {
         const refused = compileCard({
           name: 'Nonesuch', type_line: 'Creature — Horror', mana_cost: '{2}{B}', cmc: 3,
@@ -8772,7 +8774,8 @@ describe('an ability cost that is not mana, a tap or life', () => {
       'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],
     // The discards that are more than "a card" (D580): a count is still refused. A random pick and
     // a filter read since D614 (`discardAtRandom`, `discardKind`); a filter it cannot say does not.
-    ['two cards, which the flag cannot count', 'Discard two cards: Draw a card.'],        // 16 lines
+    // Retired row (D1330): "Discard two cards" reads now (`discardCount`). An X of cards does not.
+    ['an X of cards, which no count is printed for', 'Discard X cards: Draw a card.'],
     ['a filter the kind reader cannot say', 'Discard a nonland card: Draw a card.'],
     ['a random discard beside a chosen one', 'Discard a card at random, Discard a card: Draw a card.'],
     ['a chosen discard beside a random one', 'Discard a card, Discard a card at random: Draw a card.'],

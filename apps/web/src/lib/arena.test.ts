@@ -313,6 +313,17 @@ describe("paying for an ability by sacrificing something", () => {
     expect(result.action).toEqual({ type: "auto:activate", card: "c1", abilityIndex: 0, sacrifices: ["b", "c"] })
   })
 
+  it("collects a counted discard the same way, and sends it as discards (D1330)", () => {
+    const steed = outlet({ sacrificeOptions: [], discardOptions: ["a", "b", "c"], discardCount: 2 })
+    let mode = arenaReducer(IDLE, { kind: "choosePlay", play: steed }).mode
+    expect(mode.kind === "feeding" ? mode.cost : undefined).toBe("discarded")
+    let result = arenaReducer(mode, { kind: "feed", card: "a" })
+    expect(result.action).toBeNull()
+    mode = result.mode
+    result = arenaReducer(mode, { kind: "feed", card: "c" })
+    expect(result.action).toEqual({ type: "auto:activate", card: "c1", abilityIndex: 0, discards: ["a", "c"] })
+  })
+
   it("ignores a creature the engine did not offer", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: outlet() }).mode
     expect(arenaReducer(mode, { kind: "feed", card: "somebody-elses" }).action).toBeNull()

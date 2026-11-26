@@ -383,6 +383,8 @@ export interface LegalPlay {
    * lose". Absent for every other ability.
    */
   readonly discardOptions?: readonly string[];
+  /** A counted discard (D1330): this many of `discardOptions`, sent as `discards`. */
+  readonly discardCount?: number;
 }
 
 export interface BlockOption {
@@ -3236,7 +3238,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? discardOptions(state, seat, id).filter((card) => kind === undefined
           || kind.matches(state.cardDefs[state.instances[card]?.defKey ?? '']?.typeLine ?? ''))
         : [];
-      if (ability.cost.discardACard === true && pitches.length === 0) continue;
+      if (ability.cost.discardACard === true && pitches.length < (ability.cost.discardCount ?? 1)) continue;
       // "At random" (D614): offered to a hand with any other card in it; nobody picks.
       if (ability.cost.discardAtRandom === true && discardOptions(state, seat, id).length === 0) continue;
 
@@ -3320,6 +3322,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ...((ability.cost.sacrificeCount ?? 1) > 1 ? { sacrificeCount: ability.cost.sacrificeCount } : {}),
         ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
         ...(pitches.length === 0 ? {} : { discardOptions: pitches }),
+        ...((ability.cost.discardCount ?? 1) > 1 ? { discardCount: ability.cost.discardCount } : {}),
       });
     }
   }

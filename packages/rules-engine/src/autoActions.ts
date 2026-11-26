@@ -2031,6 +2031,7 @@ function activate(
     targets?: readonly Target[]; sacrifice?: string; returned?: string; discarded?: string;
     x?: number;
     sacrifices?: readonly string[];
+    discards?: readonly string[];
     grantedBy?: GrantedTriggerRef;
   },
 ): Outcome {
@@ -2300,6 +2301,7 @@ function activate(
     own half of the cost, and a card cannot pay twice.
   */
   let discarded: string | null = null;
+  let discardedMany: readonly string[] = [];
   if (ability.cost.discardACard === true) {
     const kind = ability.cost.discardKind;
     const options = discardOptions(state, action.by, inst.id).filter((card) => kind === undefined
@@ -2307,6 +2309,18 @@ function activate(
     if (options.length === 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'you have no card to discard for that');
     }
+    // A counted discard (D1330): exactly that many different cards, each one it may discard.
+    const count = ability.cost.discardCount ?? 1;
+    if (count > 1) {
+      const many = [...new Set(action.discards ?? [])];
+      if (many.length !== count || (action.discards ?? []).length !== count) {
+        throw new EngineError('RULE_NOT_APPLICABLE', `choose ${count} cards to discard`);
+      }
+      if (!many.every((card) => options.includes(card))) {
+        throw new EngineError('RULE_NOT_APPLICABLE', 'one of those cards cannot be discarded for this');
+      }
+      discardedMany = many;
+    } else {
     if (action.discarded === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'choose a card to discard');
     }
@@ -2314,6 +2328,7 @@ function activate(
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card cannot be discarded for this');
     }
     discarded = action.discarded;
+    }
   } else if (ability.cost.discardAtRandom === true) {
     // "Discard a card at random" (D614): the game's generator picks, so a replay picks the same.
     if (action.discarded !== undefined) {
@@ -2501,6 +2516,10 @@ function activate(
   // any other, so `settle` raises it for madness and for anything watching discards.
   if (discarded !== null) {
     next = relocate(next, requireInstance(next, discarded), 'graveyard', requireInstance(next, discarded).owner, 'bottom');
+  }
+  // And a counted discard's (D1330), each a discard like the one above.
+  for (const card of discardedMany) {
+    next = relocate(next, requireInstance(next, card), 'graveyard', requireInstance(next, card).owner, 'bottom');
   }
   // Discarded as the cost is paid, so the card is in the graveyard while its own ability is still
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from

@@ -2731,6 +2731,11 @@ export interface AbilityCost {
    */
   readonly discardACard?: true;
   /**
+   * "Discard two cards" (D1330): with `discardACard`, how many, all chosen by the player and sent as
+   * `ActivateAction.discards`. Absent is one.
+   */
+  readonly discardCount?: number;
+  /**
    * "Discard a creature card", "Discard a land card" (D614): narrows `discardACard` to cards whose
    * printed type line passes `matches`. The player still chooses which.
    */

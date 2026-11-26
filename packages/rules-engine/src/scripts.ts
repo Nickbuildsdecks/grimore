@@ -36147,6 +36147,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let sacrificesSelf = false;
   let discardsSelf = false;
   let discardsACard = false;
+  let discardCount = 1;
   let exilesSelf = false;
   let exilesFromGraveyard = false;
   let energy = 0;
@@ -36229,6 +36230,14 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (/^Discard a card$/i.test(component)) {
       if (discardsACard || discardKind !== null || discardsAtRandom) return null;
       discardsACard = true;
+      continue;
+    }
+    // "Discard two cards" (D1330): counted, all chosen. See `AbilityCost.discardCount`.
+    const discardMany = /^Discard (two|three) cards$/i.exec(component);
+    if (discardMany !== null) {
+      if (discardsACard || discardKind !== null || discardsAtRandom) return null;
+      discardsACard = true;
+      discardCount = countFrom(discardMany[1]!) ?? 1;
       continue;
     }
     // "Discard a creature card" and "Discard a card at random" (D614): a filter, and a random pick.
@@ -36510,6 +36519,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(sacrificesSelf ? { sacrificeSelf: true as const } : {}),
     ...(discardsSelf ? { discardSelf: true as const } : {}),
     ...(discardsACard ? { discardACard: true as const } : {}),
+    ...(discardCount > 1 ? { discardCount } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
     ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
     ...(sacrificeCount === 1 ? {} : { sacrificeCount }),
