@@ -47573,3 +47573,23 @@ Faults injected by hand: 3, all caught.
 - Every player's permanents consulted, not the controller's.
 
 Coverage: 17,240 of 31,900 cards (+5 over D1284's 17,235), 39,984 of 59,888 lines (+8).
+
+## D1286 — Metallic Mimic: others of the chosen type
+
+"Each other creature you control of the chosen type enters with an additional +1/+1 counter on it."
+The type is the one the Mimic chose as it entered (`chosen.type`, D641), so `othersEnterWith.fits`
+(D1285) is now handed the permanent making the replacement as well as the one arriving. With
+nothing chosen, nothing fits. The Mimic's other two lines already read, so it reads whole.
+
+Read whole now: Metallic Mimic.
+
+**Tests.** 2 engine tests:
+- It reads whole.
+- With Elf chosen, the Mimic gets no counter itself, an Elf entering gets one, and a Goblin does
+  not.
+
+Faults injected by hand: 2, all caught.
+- The chosen type not asked (any creature fits).
+- The type read off the arriving creature instead of the Mimic.
+
+Coverage: 17,241 of 31,900 cards (+1 over D1285's 17,240), 39,985 of 59,888 lines (+1).
