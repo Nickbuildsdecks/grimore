@@ -98,6 +98,9 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                 // And plot (D922), a fifth.
                 : play.kind === 'plot'
                 ? 'plot'
+                // And a Room's door (D1298): one row per locked door, told apart by which.
+                : play.kind === 'unlock'
+                ? `unlock-${play.door ?? 0}`
                 : play.faceDown === true
                 ? 'facedown'
                 : play.modes === undefined

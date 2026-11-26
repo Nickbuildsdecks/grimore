@@ -221,6 +221,13 @@ export interface CardInstance {
    */
   readonly classLevel?: number;
   /**
+   * A Room's doors (D1298, CR 709.5): which are unlocked, by face index. Set as a Room arrives from
+   * a cast door, which unlocks that door; absent means every door is locked, which is how a Room
+   * arrives any other way. Cleared when the card changes zone, because the new object starts again
+   * (CR 400.7).
+   */
+  readonly doors?: readonly boolean[];
+  /**
    * The turn an effect gave this card flashback "until end of turn" (D694): Snapcaster Mage,
    * Mission Briefing. The flashback cost is the card's mana cost. Cleared when the card changes
    * zone (CR 400.7), and only good for that turn.

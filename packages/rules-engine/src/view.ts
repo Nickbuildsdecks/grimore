@@ -48,6 +48,8 @@ export const VIEW_LOG_ENTRIES = 60;
 
 /** A card as one seat sees it. `card` is absent exactly when that seat may not know what it is. */
 export interface VisibleCard {
+  /** A Room's doors (D1298): which are unlocked, by face index. */
+  readonly doors?: readonly boolean[];
   readonly id: string;
   readonly owner: SeatIndex;
   readonly zoneSeat: SeatIndex;
@@ -584,6 +586,8 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     attachedTo: inst.attachedTo,
     ...(inst.exiledBy === undefined ? {} : { exiledBy: inst.exiledBy }),
     ...(inst.pairedWith === undefined ? {} : { pairedWith: inst.pairedWith }),
+    // A Room's doors (D1298): public, like a Class's level.
+    ...(inst.doors === undefined ? {} : { doors: inst.doors }),
     isToken: inst.isToken,
     isCommander: inst.isCommander,
   };

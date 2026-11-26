@@ -214,3 +214,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1294 pushed in 27f753a. D1295 fuse: CardScript.fused, fusedScript in compile.ts, fuse on the cast action (turnTypes.ts, legalActions.ts, autoActions.ts, bot.ts).
 - D1295 pushed in 36b3a20. D1296 aftermath: CardScript.aftermath, aftermathHalf (legalActions.ts), the graveyard cast with aftermath (autoActions.ts, bot.ts), compileSplit no longer refuses it.
 - D1296 pushed in 0ac7b96, checkpoint db380ea. D1297 web table: COST_FLAGS gains impended, altCast, fuse, aftermath; yardBy forwarded (apps/web/src/lib/arena.ts).
+- D1297 pushed in f3a152e. D1298 Rooms: CardInstance.doors, door-unlocked trigger, source-door-unlocked while, roomScript in compile.ts, auto:unlock (autoActions.ts, legalActions.ts, bot.ts, view.ts, apps/web arena.ts and PlaySheet.tsx).

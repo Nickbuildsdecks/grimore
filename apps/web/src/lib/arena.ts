@@ -562,6 +562,10 @@ function playAction(
   if (play.kind === "plot") {
     return { type: "auto:plot", card: play.card }
   }
+  // And unlocking a Room's door (D1298): the door's cost, no stack. Which door is the play's own.
+  if (play.kind === "unlock") {
+    return { type: "auto:unlock", card: play.card, door: play.door ?? 0 }
+  }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast. And so does a

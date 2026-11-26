@@ -2418,6 +2418,11 @@ function candidateActions(
       out.push({ action: { type: 'auto:plot', by: seat, card: play.card } });
       continue;
     }
+    // A Room's door (D1298): judged by what it does now, like any other play.
+    if (play.kind === 'unlock') {
+      out.push({ action: { type: 'auto:unlock', by: seat, card: play.card, door: play.door ?? 0 } });
+      continue;
+    }
     for (const aim of aimings(state, seat, play, opts)) {
       const targets = aim.targets;
       if (play.kind === 'cast') {

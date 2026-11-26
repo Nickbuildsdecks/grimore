@@ -510,6 +510,8 @@ export function relocate(
       everywhere else — including on the way to exile, which is where an adventure goes.
     */
     ...(toZone === 'stack' ? {} : { castAs: undefined }),
+    // And a Room's doors (D1298): a Room that changes zone is a new object, all locked (CR 400.7).
+    ...(inst.doors === undefined ? {} : { doors: undefined }),
     /*
       And a soulbond pair breaks as either member leaves (CR 702.95b).
 

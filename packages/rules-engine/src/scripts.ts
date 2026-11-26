@@ -20196,6 +20196,11 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When ${self} is turned face up, (.+)$`, 'i'),
     on: [{ kind: 'turned-face-up' }],
   },
+  // A Room's door (D1298): the door is set by the Room's merge in `compileSplit`.
+  {
+    prologue: () => /^When you unlock this door, (.+)$/i,
+    on: [{ kind: 'door-unlocked' }],
+  },
   // "When ~ enters or is turned face up" (D635): Efreet Weaponmaster's two moments, one ability.
   {
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or is turned face up, (.+)$`, 'i'),

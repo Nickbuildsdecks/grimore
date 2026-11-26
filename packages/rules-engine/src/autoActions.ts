@@ -60,7 +60,7 @@ import {
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
-  type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction, type AutoPlotAction,
+  type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction, type AutoPlotAction, type AutoUnlockAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -1667,6 +1667,41 @@ function foretell(state: GameState, action: AutoForetellAction): Outcome {
     // opponent can count it in exile without knowing what it is.
     message: `${seatName(state, action.by)} foretells a card`,
     data: { card: inst.id, tapped: [...paid.tapped], foretold: true },
+  };
+}
+
+/**
+ * Unlocking a Room's door (D1298, CR 709.5e): a special action, as a sorcery, paying the locked
+ * door's mana cost. No stack and no window, like turning a morph face up; what the door's own
+ * "When you unlock this door" triggers goes on the stack as any trigger does.
+ */
+function unlockDoor(state: GameState, action: AutoUnlockAction): Outcome {
+  requireAutomated(state);
+  requirePriority(state, action.by);
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'battlefield' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that is not a permanent you control');
+  }
+  const def = state.cardDefs[inst.defKey];
+  const door = def?.faces?.kind === 'split' ? def.faces.cards[action.door] : undefined;
+  if (door === undefined || !/\bRoom\b/.test(door.typeLine)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that permanent'} has no door by that number`);
+  }
+  if (inst.doors?.[action.door] === true) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${door.name} is already unlocked`);
+  }
+  if (!atSorcerySpeed(state, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'unlock a door only as a sorcery: your own main phase, with nothing on the stack');
+  }
+  const paid = payFrom(state, action.by, door.manaCost, 0, 0);
+  const doors = def!.faces!.cards.map((_face, i) => i === action.door || inst.doors?.[i] === true);
+  let next = withInstance(paid.state, inst.id, { doors });
+  next = raise(next, { kind: 'door-unlocked', door: action.door }, action.by, inst.id);
+  next = resetPriority(settle(next, state), action.by);
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} unlocks ${door.name}`,
+    data: { card: inst.id, door: action.door, tapped: [...paid.tapped] },
   };
 }
 
@@ -3989,6 +4024,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:foretell': return foretell(state, action);
     case 'auto:suspend': return suspend(state, action);
     case 'auto:plot': return plot(state, action);
+    case 'auto:unlock': return unlockDoor(state, action);
     case 'auto:dredge': return dredgeDraw(state, action);
     case 'auto:dredgeStops': return setDredgeStops(state, action);
     default: {

@@ -60,7 +60,9 @@ export interface LegalPlay {
    * is exactly why it is its own kind — it uses no stack, so a table that drew it as an ability
    * would be promising a window to respond that does not exist.
    */
-  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell' | 'suspend' | 'plot';
+  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell' | 'suspend' | 'plot' | 'unlock';
+  /** The Room door an `unlock` play opens (D1298): a face index. */
+  readonly door?: number;
   readonly card: string;
   readonly name: string;
   readonly description: string;
@@ -3315,6 +3317,28 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       manaCost: mana, targetSpecs: [], candidates: [],
       isManaAbility: false, sacrificeOptions: [],
     });
+  }
+  /*
+    A Room's locked doors (D1298, CR 709.5e): each a special action as a sorcery, for that door's
+    mana cost, offered when it can be paid.
+  */
+  if (sorcerySpeed) {
+    for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+      const inst = state.instances[id];
+      const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+      if (inst === undefined || def?.faces?.kind !== 'split') continue;
+      def.faces.cards.forEach((door, index) => {
+        if (!/\bRoom\b/.test(door.typeLine) || inst.doors?.[index] === true) return;
+        const cost = parseManaCost(door.manaCost);
+        if (cost.unsupported !== undefined || !canAfford(poolOf(state, seat), cost, sources)) return;
+        out.push({
+          kind: 'unlock', card: id, name: def.name, door: index,
+          description: `Unlock ${door.name} (${door.manaCost})`,
+          manaCost: door.manaCost, targetSpecs: [], candidates: [],
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      });
+    }
   }
   return out;
 }

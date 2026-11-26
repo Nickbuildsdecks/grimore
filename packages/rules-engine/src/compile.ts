@@ -725,9 +725,7 @@ function compileFaces(row: CardDataRow, kind: CardFaces['kind'], faces: readonly
  */
 function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilation {
   const named = faces.map((face) => (face.name ?? '').trim()).join(' // ');
-  if (faces.some((face) => /\bRoom\b/.test(face.type_line ?? ''))) {
-    return { ok: false, why: `${named}: a Room's doors are not played yet` };
-  }
+  const room = faces.some((face) => /\bRoom\b/.test(face.type_line ?? ''));
   const halves: CardDef[] = [];
   const scripts: (CardScript | undefined)[] = [];
   const compiled: string[] = [];
@@ -761,6 +759,9 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
   const FUSE_LINE = /^Fuse\b/;
   const fusePrinted = faces.length === 2 && unread.filter((u) => FUSE_LINE.test(u.line)).length === 2;
   const fused = fusePrinted ? fusedScript(named, scripts[0], scripts[1]) : null;
+  // A Room (D1298): both doors' abilities on the one permanent, each scoped to its door.
+  const doors = room ? roomScript(named, scripts) : null;
+  if (room && doors === null) return { ok: false, why: `${named}: a Room door with more than triggers, abilities and statics is not played yet` };
   if (fused !== null) {
     for (const line of unread.filter((u) => FUSE_LINE.test(u.line))) compiled.push(line.line);
     unread.splice(0, unread.length, ...unread.filter((u) => !FUSE_LINE.test(u.line)));
@@ -769,7 +770,9 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
     ok: true,
     def: {
       name: named,
-      typeLine: halves.map((half) => half.typeLine).join(' // '),
+      // A Room's doors share one type line, "Enchantment — Room" (D1298), and the permanent has it once.
+      typeLine: room && halves.every((half) => half.typeLine === halves[0]!.typeLine)
+        ? halves[0]!.typeLine : halves.map((half) => half.typeLine).join(' // '),
       manaCost: halves.map((half) => half.manaCost).join(' // '),
       cmc: halves.reduce((sum, half) => sum + half.cmc, 0),
       oracleText: halves.map((half) => half.oracleText).join('\n'),
@@ -777,9 +780,60 @@ function compileSplit(row: CardDataRow, faces: readonly CardFaceRow[]): Compilat
       faces: { kind: 'split', cards: halves },
     },
     ...(fused === null ? {} : { script: fused }),
+    ...(doors === null || doors === undefined ? {} : { script: doors }),
     compiled,
     unread,
     source: scripted ? 'lines' : 'printed-only',
+  };
+}
+
+/**
+ * A Room's two doors as one permanent's script (D1298, CR 709.5): each door's triggers, activated
+ * abilities and statics, scoped to that door being unlocked, the way D638 scopes a Class's levels
+ * (`readClassLevels`): abilities through `activateOnlyIf`, triggers through `condition`, statics
+ * through a `source-door-unlocked` `while`. A door's "When you unlock this door" is given the door it
+ * is printed on. A door with anything else (a grant, a replacement, a cost rule) refuses the Room,
+ * so a door whose rules could not be scoped is never active while locked.
+ */
+function roomScript(name: string, scripts: readonly (CardScript | undefined)[]): CardScript | null {
+  const triggers: TriggerDef[] = [];
+  const abilities: AbilityDef[] = [];
+  const statics: unknown[] = [];
+  for (let door = 0; door < scripts.length; door++) {
+    const script = scripts[door];
+    if (script === undefined) continue;
+    for (const key of Object.keys(script)) {
+      if ((script as unknown as Record<string, unknown>)[key] === undefined) continue;
+      if (!['name', 'triggers', 'abilities', 'statics'].includes(key)) return null;
+    }
+    const open = (state: GameState, id: string): boolean => {
+      const inst = state.instances[id];
+      return inst !== undefined && inst.zone === 'battlefield' && inst.doors?.[door] === true;
+    };
+    for (const trigger of script.triggers ?? []) {
+      const prior = trigger.condition;
+      const doorOf = (event: unknown): unknown => ((event as { kind?: string }).kind === 'door-unlocked' ? { ...(event as object), door } : event);
+      triggers.push({
+        ...trigger,
+        on: (Array.isArray(trigger.on) ? trigger.on.map(doorOf) : doorOf(trigger.on)) as TriggerDef['on'],
+        condition: (c) => open(c.state, c.source) && (prior === undefined || prior(c)),
+      });
+    }
+    for (const ability of script.abilities ?? []) {
+      const prior = ability.activateOnlyIf;
+      abilities.push({ ...ability, activateOnlyIf: (state, source, controller) => open(state, source) && (prior === undefined || prior(state, source, controller)) });
+    }
+    for (const fixed of script.statics ?? []) {
+      const effect = ((fixed as unknown as { effect?: Record<string, unknown> }).effect) ?? {};
+      if (effect['while'] !== undefined || effect['grants'] !== undefined || effect['grantsAbilities'] !== undefined) return null;
+      statics.push({ ...fixed, effect: { ...effect, while: { kind: 'source-door-unlocked', door } } });
+    }
+  }
+  return {
+    name,
+    ...(triggers.length === 0 ? {} : { triggers }),
+    ...(abilities.length === 0 ? {} : { abilities }),
+    ...(statics.length === 0 ? {} : { statics: statics as CardScript['statics'] }),
   };
 }
 

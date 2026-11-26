@@ -387,6 +387,13 @@ describe("costs that are choices", () => {
     }
   })
 
+  it("sends a Room door's unlock as its own special action, naming the door (D1298)", () => {
+    const door = play({ kind: "unlock", name: "Test Hall // Test Den", door: 1, manaCost: "{1}{W}", targetSpecs: [], candidates: [] })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: door }).action).toEqual({
+      type: "auto:unlock", card: "c1", door: 1,
+    })
+  })
+
   it("sends the flashback flag when the play came out of the graveyard", () => {
     /*
       The flag the client forgot, and the reason this test exists rather than a comment.

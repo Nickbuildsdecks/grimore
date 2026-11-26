@@ -2112,6 +2112,13 @@ export interface AutoSuspendAction {
 export interface AutoPlotAction {
   readonly type: 'auto:plot'; readonly by: SeatIndex; readonly card: string;
 }
+/**
+ * Unlocking a Room's door (D1298, CR 709.5e): a special action, as a sorcery, paying the locked
+ * door's mana cost. `door` is the face index.
+ */
+export interface AutoUnlockAction {
+  readonly type: 'auto:unlock'; readonly by: SeatIndex; readonly card: string; readonly door: number;
+}
 
 export interface AutoForetellAction {
   readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
@@ -2248,13 +2255,13 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoPlotAction | AutoDredgeAction
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoPlotAction | AutoUnlockAction | AutoDredgeAction
   | AutoDredgeStopsAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend', 'auto:plot',
+  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend', 'auto:plot', 'auto:unlock',
   'auto:dredge', 'auto:dredgeStops',
 ]);
 

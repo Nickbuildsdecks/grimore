@@ -938,6 +938,11 @@ export type TriggerEvent =
   // you control is turned face up". See `BoardSubjectFilter`.
   | ({ readonly kind: 'turned-face-up' } & BoardSubjectFilter)
   /**
+   * "When you unlock this door" (D1298, CR 709.5): a Room's own door, by face index. The compiler
+   * reads the line with no door and the Room's merge (`compileSplit`) sets the door it is printed on.
+   */
+  | { readonly kind: 'door-unlocked'; readonly door?: number }
+  /**
    * "When this creature transforms into ~" — a transforming double-faced card's own trigger
    * (CR 701.28, CR 603.2).
    *

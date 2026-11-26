@@ -8110,6 +8110,9 @@ describe('deck coverage', () => {
       // D1296: aftermath split cards from card data; no pool deck plays one. Driven at runtime by
       // "aftermath: a split card's second half, cast from the graveyard and then exiled (D1296)".
       'script aftermath',
+      // D1298: Rooms from card data; no pool deck plays one. Driven at runtime by
+      // "Rooms: two doors, each unlocked on its own (D1298)".
+      'trigger door-unlocked',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -47459,7 +47462,8 @@ describe('split cards from card data (D1294)', () => {
   // Aftermath was refused here until D1296, which reads it.
   it('Rooms are refused; aftermath reads (D1296); Fuse is an unread line where the halves do not compose', () => {
     expect(compileCard(AFTER as never)).toMatchObject({ ok: true, unread: [] });
-    expect(compileCard(ROOM as never)).toMatchObject({ ok: false });
+    // Rooms were refused here until D1298, which plays them.
+    expect(compileCard(ROOM as never)).toMatchObject({ ok: true });
     const fused = compileCard(FUSED as never);
     expect(fused.ok).toBe(true);
     if (!fused.ok) return;
@@ -47653,6 +47657,128 @@ describe('aftermath: a split card\'s second half, cast from the graveyard and th
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
     expect(s.instances[card]!.zone).toBe('graveyard');
     expect(halvesOffered(s, card)).toEqual([{ half: 1, aftermath: true }]);
+  });
+});
+
+describe('Rooms: two doors, each unlocked on its own (D1298)', () => {
+  const door = (name: string, cost: string, text: string) => ({ name, type_line: 'Enchantment — Room', mana_cost: cost, oracle_text: `(You may cast either half. That door unlocks on the battlefield. As a sorcery, you may pay the mana cost of a locked door to unlock it.)\n${text}`, colors: ['W'] });
+  const ROOM = {
+    name: 'Test Hall', type_line: 'Enchantment — Room', oracle_text: '', mana_cost: '{W}', cmc: 0, colors: ['W'], layout: 'split',
+    card_faces: [
+      door('Test Hall', '{W}', 'When you unlock this door, you gain 3 life.'),
+      door('Test Den', '{1}{W}', 'Creatures you control get +1/+0.\nAt the beginning of your end step, you gain 1 life.'),
+    ],
+  };
+  const BEAR = { name: 'Test Bear', type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '2', toughness: '2' };
+  const WHOLE = 'Test Hall // Test Den';
+  const deck = customDeck({ id: 'd1298', name: 'Rooms', entries: [{ name: 'Test Hall', count: 4 }, { name: 'Test Bear', count: 4 }, { name: 'Plains', count: 52 }], data: [ROOM, BEAR] as never[] });
+  const table = (opts: { hand?: string[]; mine?: string[] }) => advanceTo(arena({
+    decks: { 0: 'd1298', 1: 'd1298' }, deckSpecs: { d1298: deck.deck },
+    hands: { 0: opts.hand ?? [] }, battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Test Bear', ...(opts.mine ?? [])] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const unlocks = (s: GameState, card: string) => legalActions(s, 0).plays.filter((p) => p.kind === 'unlock' && p.card === card).map((p) => p.door);
+  const bearPower = (s: GameState) => characteristicsOf(s, s.instances[find(s, 0, 'battlefield', 'Test Bear')]!).power;
+
+  it('compiles as one enchantment with both doors\' abilities, each scoped to its door', () => {
+    expect(deck.unknown).toEqual([]);
+    const read = compileCard(ROOM as never);
+    expect(read).toMatchObject({ ok: true, unread: [] });
+    if (!read.ok) return;
+    expect(read.def.typeLine).toBe('Enchantment — Room');
+    expect(read.def.faces?.kind).toBe('split');
+    expect(read.script?.triggers?.[0]?.on).toMatchObject({ kind: 'door-unlocked', door: 0 });
+    expect(read.script?.statics?.[0]?.effect).toMatchObject({ while: { kind: 'source-door-unlocked', door: 1 } });
+  });
+
+  it('cast as one door: that door is unlocked and its unlock trigger fires; the other door does nothing', () => {
+    let s = table({ hand: [WHOLE] });
+    const card = find(s, 0, 'hand', WHOLE);
+    const before = life(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(s.instances[card]!.doors).toEqual([true, false]);
+    expect(life(s, 0 as SeatIndex)).toBe(before + 3);
+    expect(bearPower(s)).toBe(2);
+    expect(unlocks(s, card)).toEqual([1]);
+  });
+
+  it('unlocking the other door as a sorcery: paid, unlocked, and its static applies', () => {
+    let s = table({ hand: [WHOLE] });
+    const card = find(s, 0, 'hand', WHOLE);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
+    const before = life(s, 0 as SeatIndex);
+    s = drain(apply(s, { type: 'auto:unlock', by: 0, card, door: 1 } as Action), 20);
+    expect(s.instances[card]!.doors).toEqual([true, true]);
+    expect(bearPower(s)).toBe(3);
+    // The first door's "When you unlock this door" is about the first door only.
+    expect(life(s, 0 as SeatIndex)).toBe(before);
+    expect(unlocks(s, card)).toEqual([]);
+    expect(refusal(s, { type: 'auto:unlock', by: 0, card, door: 1 } as Action)).toContain('already unlocked');
+  });
+
+  it('a locked door\'s trigger does nothing; unlocked, it fires', () => {
+    let s = table({ hand: [WHOLE] });
+    const card = find(s, 0, 'hand', WHOLE);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
+    const locked = life(s, 0 as SeatIndex);
+    const atEnd = drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action), 'end'), 20);
+    expect(life(atEnd, 0 as SeatIndex)).toBe(locked);
+    s = drain(apply(s, { type: 'auto:unlock', by: 0, card, door: 1 } as Action), 20);
+    const open = life(s, 0 as SeatIndex);
+    const later = drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] } as Action), 'end'), 20);
+    expect(life(later, 0 as SeatIndex)).toBe(open + 1);
+  });
+
+  it('only as a sorcery, and only a door the card has', () => {
+    const s = table({ mine: [WHOLE] });
+    const card = find(s, 0, 'battlefield', WHOLE);
+    expect(refusal(s, { type: 'auto:unlock', by: 0, card, door: 2 } as Action)).toContain('no door');
+    const combat = advanceTo(s, 'begin-combat');
+    expect(refusal(combat, { type: 'auto:unlock', by: 0, card, door: 1 } as Action)).toContain('only as a sorcery');
+    expect(unlocks(combat, card)).toEqual([]);
+  });
+
+  it('put onto the battlefield without being cast, both doors are locked; unlocking one fires its trigger', () => {
+    let s = table({ mine: [WHOLE] });
+    const card = find(s, 0, 'battlefield', WHOLE);
+    expect(s.instances[card]!.doors).toBeUndefined();
+    expect(bearPower(s)).toBe(2);
+    expect(unlocks(s, card)).toEqual([0, 1]);
+    const before = life(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, { type: 'auto:unlock', by: 0, card, door: 0 } as Action)), 20);
+    expect(life(s, 0 as SeatIndex)).toBe(before + 3);
+    expect(bearPower(s)).toBe(2);
+  });
+
+  it('the bot plays a turn with a locked Room on its side and the engine takes every action it sends', () => {
+    let s = table({ mine: [WHOLE] });
+    const card = find(s, 0, 'battlefield', WHOLE);
+    const sent: string[] = [];
+    for (let i = 0; i < 12 && s.activeSeat === 0 && s.step !== 'end'; i++) {
+      const action = botAction(s, 0);
+      if (action === null || action === undefined) break;
+      sent.push(action.type);
+      s = apply(s, action);
+    }
+    expect(sent).toContain('auto:unlock');
+    expect((s.instances[card]!.doors ?? []).some((open) => open)).toBe(true);
+  });
+
+  it('a Room that leaves the battlefield comes back locked', () => {
+    let s = table({ hand: [WHOLE] });
+    const card = find(s, 0, 'hand', WHOLE);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card, half: 0 } as Action)), 20);
+    s = relocate(s, s.instances[card]!, 'hand', 0, 'top');
+    s = relocate(s, s.instances[card]!, 'battlefield', 0, 'bottom');
+    expect(s.instances[card]!.doors).toBeUndefined();
+  });
+
+  it('a Room whose door has a grant is refused rather than played with the grant always on', () => {
+    const granting = { ...ROOM, card_faces: [ROOM.card_faces[0]!, door('Test Garden', '{2}{G}', 'Lands you control have "{T}: Add one mana of any color."')] };
+    expect(compileCard(granting as never)).toMatchObject({ ok: false });
+    // And a door with a rule that is neither a trigger, an ability nor a static (Steaming Sauna's).
+    const ruled = { ...ROOM, card_faces: [ROOM.card_faces[0]!, door('Test Sauna', '{3}{U}', 'You have no maximum hand size.')] };
+    expect(compileCard(ruled as never)).toMatchObject({ ok: false });
   });
 });
 

@@ -417,6 +417,8 @@ export const SELF_TYPE_WORDS = [
   'Class',
   // D734: "this emblem deals 1 damage to any target".
   'emblem',
+  // D1298: "When you unlock this door, this Room deals 6 damage to target creature".
+  'Room',
 ] as const;
 
 /**
@@ -2161,6 +2163,11 @@ export interface ContinuousEffect {
         readonly atLeast: number;
       }
     | {
+        /** A Room's door unlocked (D1298, CR 709.5): the source's own `doors`, by face index. */
+        readonly kind: 'source-door-unlocked';
+        readonly door: number;
+      }
+    | {
         /**
          * "As long as there are seven or more cards in your graveyard" — threshold (D502).
          *
@@ -2623,6 +2630,10 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'source-class-level') {
     const source = state.instances[effect.source];
     return source !== undefined && source.zone === 'battlefield' && (source.classLevel ?? 1) >= cond.atLeast;
+  }
+  if (cond.kind === 'source-door-unlocked') {
+    const source = state.instances[effect.source];
+    return source !== undefined && source.zone === 'battlefield' && source.doors?.[cond.door] === true;
   }
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];

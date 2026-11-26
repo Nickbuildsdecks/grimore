@@ -27,7 +27,7 @@ import {
   type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
-  isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance,
+  defKeyFor, isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance,
 } from './cards.js';
 import { listAt, relocate, requireInstance, setArrivalBan, withInstance, withZones } from './cardActions.js';
 import {
@@ -2162,6 +2162,12 @@ function triggerMatches(
       }
       return isSubject;
     }
+    // A Room's door (D1298): its own permanent's, and the door this ability is printed on.
+    case 'door-unlocked': {
+      const door = (event as Extract<TriggerEvent, { kind: 'door-unlocked' }>).door;
+      const wanted = (want as Extract<TriggerEvent, { kind: 'door-unlocked' }>).door;
+      return isSubject && (wanted === undefined || wanted === door);
+    }
     // And a transform, for exactly the same reason.
     case 'transformed':
     // And phasing (D1029), narrowed to its own permanent the same way.
@@ -3092,6 +3098,8 @@ function raise(
   }
   const selfOnly = new Set([
     'becomes-tapped', 'becomes-untapped', 'leaves', 'turned-face-up', 'phases-in', 'phases-out', 'transformed', 'state',
+    // A Room's own door (D1298).
+    'door-unlocked',
     'chapter',
     // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
     // permanent itself, and this event is raised for every landing of damage in every combat the
@@ -6884,7 +6892,16 @@ function completeResolution(
       }
     }
     if (isPermanent && inst !== undefined && !replacedArrival) {
+      // A Room cast as one door arrives with that door unlocked (D1298, CR 709.5c).
+      const roomFaces = next.cardDefs[inst.defKey]?.faces;
+      const castDoor = roomFaces?.kind === 'split' && inst.castAs !== undefined
+        ? roomFaces.cards.findIndex((face) => defKeyFor(face) === inst.castAs) : -1;
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');
+      if (castDoor >= 0 && roomFaces!.cards.some((face) => /\bRoom\b/.test(face.typeLine))) {
+        next = withInstance(next, inst.id, { doors: roomFaces!.cards.map((_face, i) => i === castDoor) });
+        // The door unlocks as the Room enters, so its "When you unlock this door" triggers (CR 709.5).
+        next = raise(next, { kind: 'door-unlocked', door: castDoor }, object.controller, inst.id);
+      }
       // Edgar's "that artifact enters tapped" (D1289): it arrives tapped.
       if (object.yardTapped === true) next = withInstance(next, inst.id, { tapped: true });
       // Overflow Submatrix's "enters with a finality counter on it" (D1289).
