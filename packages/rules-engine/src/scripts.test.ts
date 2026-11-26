@@ -46976,6 +46976,40 @@ describe('others enter with an additional +1/+1 counter (D1285)', () => {
   });
 });
 
+describe('Metallic Mimic: others of the chosen type enter with an additional counter (D1286)', () => {
+  const MIMIC = {
+    name: 'Test Mimic', type_line: 'Artifact Creature — Shapeshifter', mana_cost: '{0}', cmc: 0, colors: [], layout: 'normal', power: '2', toughness: '1',
+    oracle_text: 'As Test Mimic enters, choose a creature type.\nTest Mimic is the chosen type in addition to its other types.\nEach other creature you control of the chosen type enters with an additional +1/+1 counter on it.',
+  };
+  const C = (name: string, type: string) => ({ name, type_line: `Creature — ${type}`, oracle_text: '', mana_cost: '{0}', cmc: 0, colors: ['G'], layout: 'normal', power: '1', toughness: '1' });
+  const ROWS = [MIMIC, C('Test Elf', 'Elf'), C('Test Goblin', 'Goblin')];
+  const deck = customDeck({ id: 'd1286', name: 'Mimic', entries: [...ROWS.map((r) => ({ name: r.name, count: 3 })), { name: 'Forest', count: 51 }], data: ROWS as never[] });
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(MIMIC as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('Elf chosen: an Elf enters with a counter, a Goblin does not', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'd1286', 1: 'd1286' }, deckSpecs: { d1286: deck.deck },
+      hands: { 0: ['Test Mimic', 'Test Elf', 'Test Goblin'] }, turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const mimic = find(s, 0, 'hand', 'Test Mimic');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: mimic } as Action));
+    expect(s.pendingDecision?.prompt).toBe('Choose a creature type');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Elf' } as Action), 20);
+    expect(s.instances[mimic]!.chosen).toEqual({ type: 'Elf' });
+    expect(s.instances[mimic]!.counters['+1/+1'] ?? 0).toBe(0);
+    const elf = find(s, 0, 'hand', 'Test Elf');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: elf } as Action)), 20);
+    expect(s.instances[elf]!.counters['+1/+1']).toBe(1);
+    const goblin = find(s, 0, 'hand', 'Test Goblin');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: goblin } as Action)), 20);
+    expect(s.instances[goblin]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life

@@ -38404,6 +38404,27 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
     "Each other non-Human creature you control …" (Grumgully), "Each Dragon you control …"
     (Dragonstorm Globe). The kind is a permanent description; see `CardScript.othersEnterWith`.
   */
+  /*
+    "Each other creature you control of the chosen type …" (D1286, Metallic Mimic): the type the
+    permanent making the replacement chose as it entered (`chosen.type`). With nothing chosen, nothing
+    fits.
+  */
+  const chosenKind = /^each other creature you control of the chosen type enters with an additional (\+1\/\+1) counter on it$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (chosenKind !== null) {
+    return {
+      othersEnterWith: {
+        counter: chosenKind[1]!, amount: 1,
+        fits: (state, id, source) => {
+          const type = state.instances[source]?.chosen?.type;
+          const inst = state.instances[id];
+          if (type === undefined || inst === undefined) return false;
+          const line = characteristicsOf(state, inst).typeLine;
+          return hasType(line, 'creature') && hasSubtype(line, type.toLowerCase());
+        },
+      },
+    };
+  }
   const others = /^each (other )?(.+?) you control enters with an additional (\+1\/\+1) counter on it$/i
     .exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (others !== null) {

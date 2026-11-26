@@ -4499,7 +4499,7 @@ function arrivalReplacements(state: GameState, done: Set<string>): GameState {
     for (const source of listAt(next, zoneKey(inst.zoneSeat, 'battlefield'))) {
       if (source === id || state.entered.includes(source)) continue;
       const adds = scriptOf(next, source)?.othersEnterWith;
-      if (adds === undefined || !adds.fits(next, id)) continue;
+      if (adds === undefined || !adds.fits(next, id, source)) continue;
       next = addCounters(next, id, adds.counter, adds.amount);
     }
     /*

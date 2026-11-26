@@ -3765,7 +3765,8 @@ export interface CardScript {
   readonly othersEnterWith?: {
     readonly counter: string;
     readonly amount: number;
-    readonly fits: (state: GameState, id: string) => boolean;
+    /** Asked of the arriving permanent; `source` is the permanent making the replacement (D1286). */
+    readonly fits: (state: GameState, id: string, source: string) => boolean;
   };
   /**
    * "If it's neither day nor night, it becomes day as ~ enters" (D593) — a replacement on the
