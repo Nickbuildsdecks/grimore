@@ -237,3 +237,4 @@ control get +1/+1", "Artifact creatures you control have flying"; done). D736 wa
 - D1317 pushed in 0b3fbcd. D1318 Doran, combat damage by toughness (assignsByToughness, combatDamageOf): characteristics, effects, combat.ts, scripts.ts reader.
 - D1318 pushed in f13b82e. D1319 adamant (spentByType on payFrom, the stack object and castPermanents; condition row; leading-if enters-with): automation.ts, autoActions.ts, turnTypes.ts, scripts.ts.
 - D1319 pushed in 315c969. D1320 the Clockworks' end-of-combat counter (builtin 'remove-plus-one'): scripts.ts selfEffect, automation BUILTIN_DELAYED, unions.
+- D1320 pushed in 2cca3d9. D1321 Frostwielder's exile-instead (CardScript.exilesWhatItDamaged, damagedByAnExiler): automation.ts, scripts.ts staticFromLine.

@@ -38344,6 +38344,11 @@ function staticFromLine(line: string): Partial<CardScript> | null {
   if (byToughness !== null) {
     return { statics: [{ scope: byToughness[1] === undefined ? 'all-creatures' : 'controller-creatures', effect: { assignsByToughness: true } }] };
   }
+  // Frostwielder, Kumano (D1321): see `CardScript.exilesWhatItDamaged`. The card's own name, full or
+  // short ("Kumano"), or "this creature": no card prints this about another permanent.
+  if (/^if a creature dealt damage by (?!a |another |target )[^,]+? this turn would die, exile it instead\.?$/i.test(plain(line).trim())) {
+    return { exilesWhatItDamaged: true };
+  }
   // Glacial Chasm (D716): see `CardScript.preventsDamageToYou`.
   if (/^prevent all damage that would be dealt to you\.?$/i.test(plain(line).trim())) return { preventsDamageToYou: true };
   // The Spheres, Urza's Armor, Guardian Seraph (D1308): see `CardScript.damageToYouReduced`.

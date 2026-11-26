@@ -4309,10 +4309,10 @@ function replaceZoneChange(
       replaced.add(id);
       continue;
     }
-    if (on === 'dies' && next.effects.some(
+    if (on === 'dies' && (next.effects.some(
       (fx) => fx.exiledInsteadOfDying === true
         && fx.scope.kind === 'cards' && fx.scope.ids.includes(id),
-    )) {
+    ) || damagedByAnExiler(next, id))) {
       const named = next.cardDefs[inst.defKey]?.name ?? 'a card';
       next = exileCard(next, id);
       // Said in words for the same reason every other replacement is: a creature that silently
@@ -4501,6 +4501,23 @@ function drainOwedDraws(state: GameState): GameState {
  * `done` is the caller's, so one `settle` cannot apply the same arrival twice: the list is read
  * once before the state-based actions and again at the top of each pass.
  */
+/**
+ * Whether a permanent that says "If a creature dealt damage by ~ this turn would die, exile it
+ * instead" (D1321) hit this creature this turn, as the object it is now (`damagedBy`'s `id#seq`),
+ * and is still on the battlefield with its abilities to say so.
+ */
+function damagedByAnExiler(state: GameState, id: string): boolean {
+  for (const ref of state.damagedBy?.[id] ?? []) {
+    const at = ref.lastIndexOf('#');
+    const source = ref.slice(0, at);
+    const inst = state.instances[source];
+    if (inst === undefined || inst.zone !== 'battlefield' || String(inst.objectSeq ?? 0) !== ref.slice(at + 1)) continue;
+    if (inst.faceDown || allAbilitiesLost(state, inst)) continue;
+    if (scriptForCard(state.cardDefs[inst.defKey])?.exilesWhatItDamaged === true) return true;
+  }
+  return false;
+}
+
 function arrivalReplacements(state: GameState, done: Set<string>): GameState {
   let next = state;
   for (const id of state.entered) {

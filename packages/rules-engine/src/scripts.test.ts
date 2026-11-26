@@ -8119,6 +8119,9 @@ describe('deck coverage', () => {
       // D1308: the Spheres and Urza's Armor, from card data; no pool deck plays one. Driven at
       // runtime by "If a red source would deal damage to you, prevent 2 of that damage" (D1308).
       'script damageToYouReduced',
+      // D1321: Frostwielder, Kumano, Incendiary Oracle, from card data; no pool deck plays one. Driven
+      // at runtime by "If a creature dealt damage by ~ this turn would die, exile it instead" (D1321).
+      'script exilesWhatItDamaged',
       // D1287: Karador, Gisa and Geralf, Danitha; no pool deck plays one. Driven at runtime by
       // "During each of your turns, you may cast a creature spell from your graveyard" (D1287).
       'script castsFromGraveyard',
@@ -48715,6 +48718,53 @@ describe('"remove a +1/+1 counter from it at end of combat": the Clockworks (D13
     expect(s.seats[1]!.life).toBe(18);
     s = drain(passBoth(s), 4);
     expect(s.instances[beetle]!.counters['+1/+1']).toBe(1);
+  });
+});
+
+describe('"If a creature dealt damage by ~ this turn would die, exile it instead" (D1321)', () => {
+  const FROST = { name: 'Test Frost', type_line: 'Creature — Human Wizard', mana_cost: '{0}', cmc: 0, colors: ['U'], layout: 'normal', power: '1', toughness: '2',
+    oracle_text: '{T}: Test Frost deals 1 damage to any target.\nIf a creature dealt damage by Test Frost this turn would die, exile it instead.' };
+  const PINGER = { name: 'Test Pinger', type_line: 'Creature — Human Shaman', mana_cost: '{0}', cmc: 0, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: '{T}: Test Pinger deals 1 damage to any target.' };
+  const KILL = { name: 'Test Kill', type_line: 'Instant', mana_cost: '{0}', cmc: 0, colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature.' };
+  const deck = customDeck({ id: 'd1321', name: 'Frost', entries: [{ name: 'Test Frost', count: 4 }, { name: 'Test Kill', count: 4 }, { name: 'Test Pinger', count: 4 }, { name: 'Raging Goblin', count: 4 }, { name: 'Grizzly Bears', count: 4 }, { name: 'Island', count: 44 }], data: [FROST, KILL, PINGER] as never[] });
+  const board = (): GameState => advanceTo(arena({
+    decks: { 0: 'd1321', 1: 'd1321' }, deckSpecs: { d1321: deck.deck },
+    hands: { 0: ['Test Kill', 'Test Kill'] }, battlefield: { 0: ['Test Frost', 'Test Pinger'], 1: ['Raging Goblin', 'Grizzly Bears'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const ping = (s: GameState, id: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Frost'), abilityIndex: 0, targets: [{ kind: 'card', id }],
+  } as Action)), 4);
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(FROST as never)).toMatchObject({ ok: true, unread: [], script: { exilesWhatItDamaged: true } });
+  });
+
+  it('a creature it killed is exiled, not put into the graveyard', () => {
+    let s = board();
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = ping(s, goblin);
+    expect(s.instances[goblin]!.zone).toBe('exile');
+  });
+
+  it('and one it only hurt is exiled when something else kills it this turn; one it never touched is not', () => {
+    let s = board();
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = ping(s, bears);
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: ids(s, 0, 'hand').find((id) => nameOf(s, id) === 'Test Kill')!, targets: [{ kind: 'card', id: bears }] } as Action)), 4);
+    expect(s.instances[bears]!.zone).toBe('exile');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: ids(s, 0, 'hand').find((id) => nameOf(s, id) === 'Test Kill')!, targets: [{ kind: 'card', id: goblin }] } as Action)), 4);
+    expect(s.instances[goblin]!.zone).toBe('graveyard');
+  });
+
+  it("a creature killed by another permanent's damage goes to the graveyard, Frostwielder or no", () => {
+    let s = board();
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Test Pinger'), abilityIndex: 0, targets: [{ kind: 'card', id: goblin }] } as Action)), 4);
+    expect(s.instances[goblin]!.zone).toBe('graveyard');
   });
 });
 

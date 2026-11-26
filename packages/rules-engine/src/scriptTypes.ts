@@ -4475,6 +4475,13 @@ export interface CardScript {
    */
   readonly preventsDamageToYou?: true;
   /**
+   * "If a creature dealt damage by ~ this turn would die, exile it instead." (D1321, CR 614.1):
+   * Frostwielder, Kumano, Incendiary Oracle. A replacement this permanent makes, while it is on the
+   * battlefield with its abilities, on the death of any creature `damagedBy` says it hit this turn
+   * as the object it is now.
+   */
+  readonly exilesWhatItDamaged?: true;
+  /**
    * "If a red source would deal damage to you, prevent 2 of that damage." (D1308, CR 615.7): the
    * Spheres, Urza's Armor's "a source", Guardian Seraph's "a source an opponent controls", Orbs of
    * Warding's "a creature" and Sphere of Purity's "an artifact". `amount` comes off each damage event
