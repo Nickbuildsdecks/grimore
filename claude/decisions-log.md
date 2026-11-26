@@ -65231,3 +65231,30 @@ Faults injected by hand: 5, all caught.
 - The Enchant line without commas.
 
 Coverage: 17,253 of 31,900 cards (+5 over D1289's 17,248), 40,004 of 59,888 lines (+10).
+
+## D1291 — Neoform
+
+"As an additional cost to cast this spell, sacrifice a creature. Search your library for a creature
+card with mana value equal to 1 plus the sacrificed creature's mana value, put that card onto the
+battlefield with an additional +1/+1 counter on it, then shuffle."
+
+D1265 already reads the search one mana value up from what was sacrificed. The one missing piece
+was the destination: the search reader takes "onto the battlefield with an additional +1/+1
+counter on it", and puts the counter on as the card arrives, the way the arrival pass puts on an
+`entersWith` counter. Neoform is the only legal card that prints this destination.
+
+Still unread in the family:
+- Enigmatic Incarnation, Vivien on the Hunt, Iron Man: the sacrifice is "you may sacrifice …. If
+  you do", in the effect rather than the cost, so no stack object carries what was sacrificed.
+- Broadside Bombardiers: a damage amount rather than a search.
+
+Read whole now: Neoform.
+
+**Tests.** 2 engine tests:
+- It reads whole.
+- A 2 sacrificed offers only the threes, and the one found enters with a +1/+1 counter, the
+  sacrificed creature in the graveyard.
+
+Faults injected by hand: 1, caught: the counter dropped.
+
+Coverage: 17,254 of 31,900 cards (+1 over D1290's 17,253), 40,005 of 59,888 lines (+1).
