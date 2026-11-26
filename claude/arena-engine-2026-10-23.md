@@ -48349,3 +48349,22 @@ A test fixture error of mine on the way: a question with one possible answer is 
 engine, so the card was already exiled when the test went looking for it in the graveyard.
 
 Coverage: 17,322 of 31,900 cards (+10 over D1303's 17,312), 40,104 of 59,888 lines (+11).
+
+## D1305 — The table shows a Room's doors
+
+D1298 sends each Room's doors in the view, and the table offered "Unlock …" for a locked door, but
+nothing on the board said which door was already unlocked. That is the half whose abilities are
+working, so a tester could not read a Room. `cardBadges` now gives a battlefield Room one badge per
+door, by the door's own name: "Bottomless Pool unlocked", "Locker Room locked". A split card that is
+not a Room gets none.
+
+**Tests.** 1 web test: a Room with its first door unlocked shows both badges, and a split instant
+shows neither.
+
+Faults injected by hand: 2, both caught.
+- The badges dropped.
+- Every split card badged.
+
+No rules-engine change, so the coverage line below is unchanged.
+
+Coverage: 17,322 of 31,900 cards (+0 over D1304's 17,322), 40,104 of 59,888 lines (+0).
