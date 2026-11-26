@@ -24751,7 +24751,14 @@ function optionalEffect(
  * Anchored to the **end** of the line, because that is where every printing puts it, and because a
  * sentence taken out of the middle would leave the compiler reading a line nobody printed.
  */
-function triggerRestriction(text: string): { readonly rest: string; readonly onceEachTurn?: true } {
+function triggerRestriction(text: string): { readonly rest: string; readonly onceEachTurn?: true; readonly doOnceEachTurn?: true } {
+  /*
+    "… you may X. Do this only once each turn." (D1301): Chekov and McCoy, Terrasymbiosis, Cosmic
+    Crucible, Baron Strucker. Not "triggers only once": the ability triggers every time, and only
+    the doing is limited, so a "no" does not spend the turn's one. See the trigger built below.
+  */
+  const doOnce = /^(.*\byou may\b.*?)\s*Do this only once each turn\.?\s*$/i.exec(text);
+  if (doOnce !== null) return { ...triggerRestriction(doOnce[1]!), doOnceEachTurn: true };
   const found = /^(.*?)\s*This ability triggers only once (?:each|per) turn\.?\s*$/i.exec(text);
   if (found === null) {
     /*
@@ -25255,6 +25262,22 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       divide correctly (#119); it is the choose path that has no machinery.
     */
     if (dividesAQuantity(read)) return null;
+    /*
+      "Do this only once each turn" (D1301): the turn's one is spent when the effect did something,
+      which a "no" to its "you may" does not, and is kept on the permanent beside the once-each-turn
+      record (`abilityUsedTurn`). Once spent, the ability is not put on the stack again that turn.
+      The rules have it trigger and do nothing; nothing in the pool can tell the two apart, except
+      a card that counts abilities triggering, and none of those prints this.
+    */
+    const doneKey = `done:${shown}`;
+    const doneThisTurn = (c: EffectContext): boolean => c.state.instances[c.source]?.abilityUsedTurn?.[doneKey] === c.state.turn;
+    // The condition is asked again as the ability resolves, so two that triggered together do it once.
+    const effect: EffectFn = restriction.doOnceEachTurn !== true ? read.effect : (c) => {
+      const after = read.effect(c);
+      const holder = after.instances[c.source];
+      return after === c.state || holder === undefined ? after
+        : withInstance(after, c.source, { abilityUsedTurn: { ...holder.abilityUsedTurn, [doneKey]: after.turn } });
+    };
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.
     return {
@@ -25263,11 +25286,12 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         description: shown,
         // "This ability triggers only once each turn" (D532), spent in `fireTrigger`.
         ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
+        ...(restriction.doOnceEachTurn === true ? { condition: (c: EffectContext) => !doneThisTurn(c) } : {}),
         ...(read.targets === undefined ? {} : { targets: read.targets }),
         ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
         // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.
         ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
-        effect: read.effect,
+        effect,
       } as TriggerDef)).concat(read.reflexive ?? []),
     };
   }

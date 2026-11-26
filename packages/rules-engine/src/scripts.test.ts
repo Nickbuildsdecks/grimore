@@ -47902,6 +47902,53 @@ describe('"Whenever you put one or more counters on …": who put them, and how 
   });
 });
 
+describe('"Do this only once each turn" (D1301)', () => {
+  const C = { name: 'Test Healer', type_line: 'Creature — Cleric', oracle_text: 'Whenever you cast a spell, you may gain 2 life. Do this only once each turn.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal', power: '1', toughness: '1' };
+  const S = { name: 'Test Spark', type_line: 'Instant', oracle_text: 'Draw a card.', mana_cost: '{0}', cmc: 0, colors: ['W'], layout: 'normal' };
+  const deck = customDeck({ id: 'd1301', name: 'Once', entries: [{ name: 'Test Healer', count: 4 }, { name: 'Test Spark', count: 8 }, { name: 'Plains', count: 48 }], data: [C, S] as never[] });
+  const table = () => advanceTo(arena({
+    decks: { 0: 'd1301', 1: 'd1301' }, deckSpecs: { d1301: deck.deck },
+    hands: { 0: ['Test Spark', 'Test Spark', 'Test Spark'] }, battlefield: { 0: ['Test Healer'] }, turn: 3, firstSeat: 0,
+  }), 'precombat-main');
+  const spark = (s: GameState) => passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Test Spark') } as Action));
+
+  it('reads whole', () => {
+    expect(deck.unknown).toEqual([]);
+    expect(compileCard(C as never)).toMatchObject({ ok: true, unread: [] });
+  });
+
+  it('done once, not again that turn', () => {
+    let s = table();
+    const before = life(s, 0 as SeatIndex);
+    s = passBoth(say(spark(s), 0, 'Yes'));
+    expect(life(s, 0 as SeatIndex)).toBe(before + 2);
+    // Not even asked again: the ability does not go on the stack once it has been done this turn.
+    s = spark(s);
+    expect(s.pendingDecision?.options).toBeUndefined();
+    expect(life(s, 0 as SeatIndex)).toBe(before + 2);
+  });
+
+  it('a "no" does not spend it', () => {
+    let s = spark(table());
+    const before = life(s, 0 as SeatIndex);
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = passBoth(say(s, 0, 'No'));
+    expect(life(s, 0 as SeatIndex)).toBe(before);
+    s = passBoth(say(spark(s), 0, 'Yes'));
+    expect(life(s, 0 as SeatIndex)).toBe(before + 2);
+  });
+
+  it('spent for this turn only: next turn it can be done again', () => {
+    let s = passBoth(say(spark(table()), 0, 'Yes'));
+    const healer = find(s, 0, 'battlefield', 'Test Healer');
+    expect(Object.values(s.instances[healer]!.abilityUsedTurn ?? {})).toContain(s.turn);
+    s = { ...s, turn: s.turn + 2 };
+    const before = life(s, 0 as SeatIndex);
+    s = passBoth(say(spark(s), 0, 'Yes'));
+    expect(life(s, 0 as SeatIndex)).toBe(before + 2);
+  });
+});
+
 describe('the tenth deck: the life total that goes up', () => {
   /*
     `life-gained` had one reader in the whole pool — an Ajani's Pridemate in a deck that gains life
