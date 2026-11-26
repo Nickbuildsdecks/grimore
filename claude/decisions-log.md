@@ -65729,3 +65729,37 @@ with no, and my first spell asked a scry question of its own. Each test now answ
 itself.
 
 Coverage: 17,285 of 31,900 cards (+7 over D1300's 17,278), 40,042 of 59,888 lines (+8).
+
+## D1302 — Counters removed as an effect
+
+"At the beginning of your upkeep, remove a time counter from ~." "Whenever ~ deals combat damage
+to a player, remove all -1/-1 counters from it." "{1}: Remove a -1/-1 counter from target
+creature." "Whenever you cast a spell, you may remove a slumber counter from ~." The cost form ("Remove
+a +1/+1 counter from ~: …") has read for a long time; the effect form had no reader. 563 legal
+lines print the phrase, and 335 of them were unread.
+
+`removeCountersEffect`, in the effect chain after the targeted readers, reads:
+- a number, or "all";
+- of one named kind, or "all counters" of every kind;
+- from the card itself, or from a target permanent.
+Fewer come off when fewer are there, and none when none are. "All counters" leaves the engine's own
+markers, a regeneration shield or a kicked flag, which are not counters. A bare "a counter", which
+leaves the kind to the player, stays unread. A "you may" in front reads through the existing
+optional reader.
+
+Unread lines with the phrase: 300 now, from 335. Many of the rest name "it" for the permanent, or
+pair the removal with a reader that is missing ("Then if it has no … counters on it").
+
+**Tests.** 4 engine tests:
+- The three test cards read, and a bare "a counter" stays unread.
+- One -1/-1 counter off a target that has two.
+- All +1/+1 counters off itself, its oil counters kept.
+- All counters off a target, every kind.
+
+Faults injected by hand: 4, all caught.
+- The bare "a counter" read.
+- One counter asked for, every one removed.
+- "All counters" removing nothing.
+- A target's counters taken off the source.
+
+Coverage: 17,304 of 31,900 cards (+19 over D1301's 17,285), 40,082 of 59,888 lines (+40).
