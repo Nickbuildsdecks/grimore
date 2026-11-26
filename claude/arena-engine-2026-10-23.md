@@ -47190,3 +47190,34 @@ Faults injected by hand: 2, all caught.
 - The verb restored only from the third part on.
 
 Coverage: 17,170 of 31,900 cards (+8 over D1271's 17,162), 39,868 of 59,888 lines (+9).
+
+## D1273 — Counters "for each": any counter kind, opponents dealt damage, two types in a graveyard
+
+- "Put a corpse counter on ~ for each creature that died this turn" (Scavenging Ghoul). The "for
+  each" reader on the card itself placed only +1/+1 counters. It now takes any counter
+  (`PT_COUNTER` or a named kind). A rules counter (`RULES_COUNTERS`: time, lore, loyalty …) is still
+  refused, as it is everywhere else.
+- `forEachCount` gains "opponent that was dealt damage this turn" (Furious Spinesplitter), any
+  damage, read through `damagedThisTurn`.
+- It also gains "<type> and/or <type> card in your graveyard" (Ceti Eel's "artifact and/or creature
+  card"), a card of either type counted once.
+
+Read whole now: Scavenging Ghoul, Furious Spinesplitter, Ceti Eel. Still unread:
+- Ooze Patrol: "this creature enters the battlefield" wording.
+- Asmira: creatures put into your graveyard from the battlefield this turn.
+- Huatli: a loyalty counter for each.
+- Ramos: "for each of that spell's colors".
+
+**Tests.** 4 engine tests:
+- Three forms read; "time counter … for each" stays unread.
+- Corpse counters, one for each creature card in the graveyard.
+- An artifact and a creature in the graveyard count once each; a land does not.
+- Opponents dealt damage this turn: none, then one after a bolt.
+
+Faults injected by hand: 4, all caught.
+- Every counter placed as +1/+1.
+- A rules counter let through.
+- Every opponent counted, damaged or not.
+- "And/or" read as both types at once.
+
+Coverage: 17,182 of 31,900 cards (+12 over D1272's 17,170), 39,886 of 59,888 lines (+18).
