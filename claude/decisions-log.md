@@ -64749,3 +64749,47 @@ Faults injected by hand: 3, all caught.
 - "Choose three" read as one to three picks.
 
 Coverage: 17,197 of 31,900 cards (+6 over D1274's 17,191), 39,925 of 59,888 lines (+24).
+
+## D1276 — Finality counters
+
+"If a permanent with a finality counter on it would be put into a graveyard from the battlefield,
+exile it instead" (CR 122.1i). 44 legal cards print finality counters and nothing applied the rule.
+`replaceZoneChange` now asks it first in the to-graveyard pass, the engine's rule rather than any
+permanent's. It looks at the permanent as it last was (`vanished`, whose counters survive the move
+that wiped the card's), and only at what left the battlefield in this move (`left`). Exiled
+instead, the permanent did not die, so death triggers do not see it. That holds for a token too:
+its last state is recorded after its move, which is why the check reads `left` and not the
+snapshot's zone.
+
+Readers:
+- `finality` leaves `RULES_COUNTERS`, so "enters with a finality counter" and "put a finality
+  counter on ~" read.
+- The targeted counter reader takes finality, aimed at somebody else's creature.
+- "Return target … card … to the battlefield with a finality counter on it" reads, and
+  "… to the battlefield tapped with …" too.
+- The graveyard self-return ("Return this card from your graveyard to the battlefield [tapped] with
+  a finality counter on it", Grim Repriser's shape) reads, the counter on the card that came back.
+
+Read whole now: Balustrade Wurm, Resurrected Cultist, Soulcoil Viper, Uchbenbak, Wolfbat, U.S.S.
+Reliant, and other finality cards whose other lines read.
+
+**Pins changed.**
+- D527 refused "Return target creature card … with a finality counter on it" as a rider the move did
+  not carry. It now reads.
+- D1078 kept "enters with a finality counter" unread among the rules counters. It now reads.
+
+**Tests.** 4 engine tests:
+- Both forms read.
+- A card comes back from the graveyard with a finality counter, and is exiled rather than dying: no
+  death trigger.
+- A finality counter put on an opponent's creature: exiled when destroyed; one without the counter
+  dies and triggers.
+- A token with a finality counter does not die: no death trigger. This test found a bug on the way:
+  the first check read the snapshot's zone, which for a token is recorded after its move.
+
+Faults injected by hand: 3, all caught.
+- The finality check never true.
+- The snapshot's zone used again instead of `left`.
+- The self-return's counter dropped.
+
+Coverage: 17,205 of 31,900 cards (+8 over D1275's 17,197), 39,936 of 59,888 lines (+11).
