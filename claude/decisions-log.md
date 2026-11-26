@@ -66384,3 +66384,40 @@ Faults injected by hand: 3, all caught.
 The scripts tests, compile tests, pins and combat tests: 6479 of 6479 pass.
 
 Coverage: 17,415 of 31,900 cards (+4 over D1317's 17,411), 40,219 of 59,888 lines (+8).
+
+## D1319 — Adamant: at least three mana of one colour spent
+
+Throne of Eldraine's adamant asks how much of one colour paid for a spell: "If at least three white
+mana was spent to cast this spell, …". It also comes as "three mana of the same color" and "three
+colorless". The engine knew which colours were spent (D742) and how many colours (D917), but not
+how much of each.
+
+**The record.** `payFrom` now returns how much of each mana type it took from the pool,
+colourless included. The cast puts it on the stack object (`spentByType`), and a permanent's
+"you cast it" record keeps it as it resolves (`castPermanents[].spent`, beside D742's colours).
+
+**The condition** is read in the intervening-condition vocabulary. It arrives as "three or more",
+because D892 rewrites "at least". It reads the resolving spell's amounts, or for a permanent its
+cast record, so a permanent that arrived any other way spent nothing.
+
+The cards it now reads:
+- a spell's guarded sentence ("Adamant — If …, create a Food token");
+- an enters trigger's intervening "if" (Clockwork Servant);
+- a new leading "If …, ~ enters with a +1/+1 counter on it" for the Paladins and Henge Walker,
+  asked as the permanent arrives (`entersWith.if`, D1046's field).
+
+**Tests.** 3 tests:
+- Both fixtures read whole.
+- The Paladin:
+  - off four Plains, it enters with a counter;
+  - off a Plains and three Mountains, it enters without one.
+- The sorcery draws off three Swamps and not off a Swamp and two Mountains.
+
+Faults injected by hand: 3, all caught.
+- The amounts not put on the stack.
+- The amounts not on the cast record.
+- "At least" read as "more than".
+
+The scripts tests, compile tests and pins: 6435 of 6435 pass.
+
+Coverage: 17,428 of 31,900 cards (+13 over D1318's 17,415), 40,238 of 59,888 lines (+19).
