@@ -49041,3 +49041,31 @@ Faults injected by hand: 2, both caught.
 The scripts tests, compile tests and pins: 6444 of 6444 pass.
 
 Coverage: 17,443 of 31,900 cards (+6 over D1321's 17,437), 40,254 of 59,888 lines (+7).
+
+## D1323 — "Target creature can't block ~ this turn"
+
+Kozilek's Pathfinder, Screeching Griffin and Shrewd Hatchling print an ability that bars one
+creature from blocking this one creature. "Target creature can't block this turn" (blocking
+nothing) has long read; the one-attacker form had no reader and no rule behind it.
+
+**The rule.** `ContinuousEffect.cantBlockAttacker` names the attacker. The creature in scope
+gathers it into its characteristics' `cantBlockAttackers`, as `mustBlockAttacker` is gathered, and
+`canBlock` refuses that one pairing, saying why. The creature may still block anything else.
+
+**The reader** puts the effect on the target until the turn ends, with the source as the attacker
+named.
+
+**Tests.** 2 tests:
+- The fixture reads whole.
+- After the Pathfinder targets the opponent's Bears and attacks beside a Bears of its own:
+  - the opponent's Bears can't block the Pathfinder, with the reason given;
+  - they can block the other attacker;
+  - a block on the Pathfinder is refused.
+
+Faults injected by hand: 2, both caught.
+- Not checked in `canBlock`.
+- Not gathered into the characteristics.
+
+The scripts tests, compile tests, pins and combat tests: 6493 of 6493 pass.
+
+Coverage: 17,451 of 31,900 cards (+8 over D1322's 17,443), 40,262 of 59,888 lines (+8).
